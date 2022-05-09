@@ -1,0 +1,8 @@
+Molteni
+1		! NP, type of potential
+2.618d0		! phi1
+1.203d0		! phi2
+2.360d0		! r0
+1.36d0		! N; rcut = N*r0
+0.2d0		! d
+0.358d0		! alpha (NP=1) or m (NP=2)

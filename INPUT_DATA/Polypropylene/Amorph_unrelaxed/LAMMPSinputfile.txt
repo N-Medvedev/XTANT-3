@@ -1,0 +1,56 @@
+# General parameters
+units	real
+atom_style        full
+boundary          p p p
+special_bonds     lj/coul 0.0 0.0 1.0 dihedral yes
+dielectric        1.0
+pair_style        lj/cut  12.0
+bond_style        harmonic
+angle_style       harmonic
+dihedral_style    harmonic
+improper_style    harmonic
+read_data         polymer_relax.data
+neighbor          0.3 bin
+thermo_style      custom step etotal ke temp pe ebond eangle edihed eimp evdwl ecoul elong press pxx pyy pzz pxy pxz pyz lx ly lz vol density
+thermo            10
+thermo_modify     flush yes
+# Minimization parameters
+min_style         cg  # hftn
+min_modify        dmax 0.02
+min_modify        line quadratic  # backtrack
+neigh_modify      every 1 delay 0
+# Minimization 1
+pair_coeff        1  1  0.0076  1.423210702229192
+pair_coeff        1  2  0.019009997369805184  1.5720682570755309
+pair_coeff        2  2  0.04755  1.7364952364632422
+minimize          1.0e-9 1.0e-9 5000 100000
+# Minimization 2
+pair_coeff        1  1  0.0114  2.134816053343788
+pair_coeff        1  2  0.028514996054707774  2.3581023856132965
+pair_coeff        2  2  0.071325  2.6047428546948637
+minimize          1.0e-9 1.0e-9 5000 100000
+# Minimization 3
+pair_coeff        1  1  0.0152  2.846421404458384
+pair_coeff        1  2  0.03801999473961037  3.1441365141510618
+pair_coeff        2  2  0.0951  3.4729904729264844
+minimize          1.0e-9 1.0e-9 5000 100000
+# Dump minimized system
+dump              1 all atom 1 min.dump
+dump_modify       1 image yes scale no
+run               0
+undump            1
+# MD parameters
+neigh_modify	every 1 delay 5
+pair_style        buck/coul/long  12.0 12.0
+kspace_style      pppm 1e-4
+pair_coeff	1 	1 	3407.78599213 0.258035858504 31.3691508534   # H_  H_
+pair_coeff	1 	2 	17353.2373206 0.267542023409 135.235974836   # H_  C_3
+pair_coeff	2 	2 	88366.7126395 0.277775402594 583.017658827   # C_3  C_3
+run_style         respa 3 2 2 bond 1 pair 2 kspace 3
+velocity all create 300.0 1622273463 loop geom
+reset_timestep    0
+timestep          4
+dump              1 all custom 100 md.dump id type x y z
+fix 1 all nvt temp 300.0 300.0 100.0
+run 1000
+write_restart restart.lammps

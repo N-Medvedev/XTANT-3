@@ -1,0 +1,14 @@
+Simple_wall
+1.5d2		! C [eV]
+0.0d0		! r0 [A]
+2.05d0			! d0 [A]
+0.030d0			! dd [A]
+
+
+
+
+Simple_wall
+1.0d2		! C [eV]
+0.0d0		! r0 [A]
+1.85d0			! d0 [A]
+0.025d0			! dd [A]

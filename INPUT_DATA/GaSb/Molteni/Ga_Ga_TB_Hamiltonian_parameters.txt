@@ -1,0 +1,15 @@
+Molteni
+-3.899d0		! Es, on-site energy of s-orbital [eV]
+2.915d0		! Ep, on-site energy of p-orbital [eV]
+5.985d0		! Es*, on-site energy of s*-orbital [eV]
+-2.000d0		! V0 (s s sigma)
+2.100d0		! V0 (s p sigma)
+2.200d0		! V0 (p p sigma)
+-0.670d0		! V0 (p p pi)
+2.000d0		! V0 (s* p)
+2.460d0		! r0
+2.0d0		! n
+3.511d0     ! rc
+13.0d0		! nc
+1.36d0		! N; rcut = N*r0
+0.2d0		! d

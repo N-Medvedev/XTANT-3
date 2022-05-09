@@ -1,0 +1,2 @@
+xTB
+GFN0		! xTB parameterization

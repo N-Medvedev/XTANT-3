@@ -1,0 +1,342 @@
+NN00000                           (Non-Orthogonal)
+Ni-Al system  -- 7 May 2002
+2                                 (Two atom types in this file)
+16.5   0.50                       (RCUT and SCREENL for 1-1 interactions)
+16.5   0.50                       (RCUT and SCREENL for 2-2 interactions)
+16.5   0.50                       (RCUT and SCREENL for 2-1 interactions)
+9                                 (Orbitals for atom 1)
+58.710                            (Atomic Weight of atom 1)
+ 2.0  0.0  8.0                    (formal spd valence occupancy for atom 1)
+9                                 (Orbitals for atom 2)
+26.9815                           (Atomic Weight of atom 2)
+ 2.0  0.0  1.0                    (formal spd valence occupancy for atom 2)
+  0.106644679516E+01    0   1   lambda ni (eq.4) nial
+  0.411724707163E+00    0   2   a_s       (eq.4) nial
+ -0.124741722168E+01    0   3   b_s       (eq.4) nial
+  0.991920867888E+00    0   4   c_s       (eq.4) nial
+  0.347886389808E+02    0   5   d_s       (eq.4) nial
+  0.637401400496E+00    0   6   a_p       (eq.4) nial
+  0.757657075263E+01    0   7   b_p       (eq.4) nial
+ -0.127126662107E+02    0   8   c_p       (eq.4) nial
+  0.290171446182E+03    0   9   d_p       (eq.4) nial
+  0.334912156843E-01    0  10   a_t2g     (eq.4) nial
+ -0.325657185902E-01    0  11   b_t2g     (eq.4) nial
+  0.967126346253E+00    0  12   c_t2g     (eq.4) nial
+  0.237540513793E+01    0  13   d_t2g     (eq.4) nial
+  0.334912156843E-01  -10  14   a_eg      (eq.4) nial
+ -0.325657185902E-01  -11  15   b_eg      (eq.4) nial
+  0.967126346253E+00  -12  16   c_eg      (eq.4) nial
+  0.237540513793E+01  -13  17   d_eg      (eq.4) nial
+  0.108608629969E+01    0  18   lambda  al       nial
+  0.100633890140E+00    0  19  Onsite s orbitals:nial
+  0.667735702436E+00    0  20  Onsite s orbitals:nial
+  0.146767721464E+02    0  21  Onsite s orbitals:nial
+  0.101896896102E+02    0  22  Onsite s orbitals:nial
+  0.341811924410E+00    0  23  Onsite p orbitals:nial
+  0.341191645365E+01    0  24  Onsite p orbitals:nial
+  0.499565758293E+02    0  25  Onsite p orbitals:nial
+ -0.244887019937E+03    0  26  Onsite p orbitals:nial
+  0.876639490874E+00    0  27  Onsite d orbitals:nial
+  0.557180038780E+01    0  28  Onsite d orbitals:nial
+  0.140404701579E+02    0  29  Onsite d orbitals:nial
+  0.339149334305E+03    0  30  Onsite d orbitals:nial
+  0.876639490874E+00  -27  31  Onsite d orbitals:nial
+  0.557180038780E+01  -28  32  Onsite d orbitals:nial
+  0.140404701579E+02  -29  33  Onsite d orbitals:nial
+  0.339149334305E+03  -30  34  Onsite d orbitals:nial
+  0.433284755113E+00    0  35  al on ni s       :feal
+  0.366899179522E+02    0  36  al on ni s       :feal
+  0.380622055733E+01    0  37  al on ni s       :feal
+  0.421922281213E+01    0  38  al on ni p       :feal
+ -0.491676167575E+01    0  39  al on ni p       :feal
+ -0.103268185557E+03    0  40  al on ni p       :feal
+  0.439546097531E-01    0  41  al on ni d       :feal
+  0.138643681141E+01    0  42  al on ni d       :feal
+  0.291264675859E+01    0  43  al on ni d       :feal
+  0.439546097531E-01  -41  44  al on ni d       :feal
+  0.138643681141E+01  -42  45  al on ni d       :feal
+  0.291264675859E+01  -43  46  al on ni d       :feal
+ -0.955556727249E+00    0  47  ni on al s       :feal
+  0.823104788574E+01    0  48  ni on al s       :feal
+  0.532595969633E+02    0  49  ni on al s       :feal
+ -0.438779636849E+00    0  50  ni on al p       :feal
+  0.693028809093E+01    0  51  ni on al p       :feal
+  0.879031598112E+01    0  52  ni on al p       :feal
+  0.157690842401E+01    0  53  ni on al d       :feal
+  0.977519535245E+01    0  54  ni on al d       :feal
+ -0.991364785074E+02    0  55  ni on al d       :feal
+  0.157690842401E+01  -53  56  ni on al d       :feal
+  0.977519535245E+01  -54  57  ni on al d       :feal
+ -0.991364785074E+02  -55  58  ni on al d       :feal
+ -0.112648286742E+03    0  59   e_{ss sigma}    (nial
+ -0.161843786379E+02    0  60   f_{ss sigma}    (nial
+ -0.969761422613E+01    0  61   fbar_{ss sigma} (nial
+  0.144227188460E+01    0 263   g_{ss sigma} H  (nial
+ -0.567100880199E+01    0  62   e_{sp sigma}    (nial
+ -0.376002306285E+00    0  63   f_{sp sigma}    (nial
+ -0.801882090719E-01    0  64   fbar_{sp sigma} (nial
+  0.953980223854E+00    0 264   g_{sp sigma}    (nial
+  0.172387089118E+02    0  65   e_{pp sigma}    (nial
+  0.209985805941E+01    0  66   f_{pp sigma}    (nial
+ -0.578067771791E-01    0  67   fbar_{pp sigma} (nial
+  0.954456957920E+00    0 265   g_{pp sigma}    (nial
+  0.657791879791E+02    0  68   e_{pp pi}       (nial
+  0.118051234618E+02    0  69   f_{pp pi}       (nial
+  0.151467119997E+01    0  70   fbar_{pp pi}    (nial
+  0.121734145261E+01    0 266   g_{pp pi}       (nial
+ -0.190794302549E+00    0  71   e_{sd sigma}    (nial
+ -0.702116716927E-01    0  72   f_{sd sigma}    (nial
+ -0.728137337220E-02    0  73   fbar_{sd sigma} (nial
+  0.688080656105E+00    0 267   g_{sd sigma}    (nial
+  0.500374200917E+01    0  74   e_{pd sigma}    (nial
+ -0.918538040845E+00    0  75   f_{pd sigma}    (nial
+  0.603929488787E-01    0  76   fbar_{pd sigma} (nial
+  0.814650090722E+00    0 268   g_{pd sigma}    (nial
+  0.118716547652E+03    0  77   e_{pd pi}       (nial
+  0.174748380390E+02    0  78   f_{pd pi}       (nial
+ -0.485527349570E+01    0  79   fbar_{pd pi}    (nial
+  0.125825138789E+01    0 269   g_{pd pi}       (nial
+  0.420137013945E+00    0  80   e_{dd sigma}    (nial
+  0.267337980707E+00    0  81   f_{dd sigma}    (nial
+ -0.859028669498E-01    0  82   fbar_{dd sigma} (nial
+  0.897048490757E+00    0 270   g_{dd sigma}    (nial
+  0.261645978992E+01    0  83   e_{dd pi}       (nial
+ -0.319404658483E+00    0  84   f_{dd pi}       (nial
+  0.214569135894E-02    0  85   fbar_{dd pi}    (nial
+  0.812596933452E+00    0 271   g_{dd pi}       (nial
+  0.325535357656E+03    0  86   e_{dd delta}    (nial
+ -0.262490603023E+02    0  87   f_{dd delta}    (nial
+ -0.223227482247E+02    0  88   fbar_{dd delta} (nial
+  0.130893883610E+01    0 272   g_{dd delta}    (nial
+ -0.493272801647E+02    0  89  SSS param a Eq.3  nial
+  0.183816739630E+02    0  90      param b Eq.3  nial
+ -0.287025209965E+01    0  91      param c Eq.3  nial
+  0.108689529569E+01    0 273      sss   Exp     nial
+  0.108209157424E+02    0  92  SPS param a Eq.3  nial
+ -0.480003087900E+01    0  93      param b Eq.3  nial
+  0.265856837338E+00    0  94      param c Eq.3  nial
+  0.876586154693E+00    0 274      sps   exp     nial
+ -0.103143108055E+02    0  95  PPS param a Eq.3  nial
+  0.320111799849E+01    0  96      param b Eq.3  nial
+  0.146988572908E+01    0  97      param c Eq.3  nial
+  0.101080211755E+01    0 275      pps   Exp     nial
+  0.121313446757E+02    0  98  PPP param a Eq.3  nial
+  0.375924900798E+01    0  99      param b Eq.3  nial
+ -0.116049437580E+01    0 100      param c Eq.3  nial
+  0.101315405851E+01    0 276      ppp   Exp     nial
+ -0.305078161283E+02    0 101  SDS param a Eq.3  nial
+  0.117850056464E+02    0 102      param b Eq.3  nial
+ -0.193728112635E+01    0 103      param c Eq.3  nial
+  0.989054641574E+00    0 277      sds   exp     nial
+  0.143519538100E+02    0 104  PDS param a Eq.3  nial
+  0.791147614819E+00    0 105      param b Eq.3  nial
+  0.655371316218E+00    0 106      param c Eq.3  nial
+  0.990130394737E+00    0 278      pds   exp     nial
+  0.340588328282E+02    0 107  PDP param a Eq.3  nial
+ -0.782075494141E+01    0 108      param b Eq.3  nial
+ -0.405086211952E+00    0 109      param c Eq.3  nial
+  0.124469533202E+01    0 279      pdp   exp     nial
+ -0.493160786142E+02    0 110  DDS param a Eq.3  nial
+ -0.823256365500E+01    0 111      param b Eq.3  nial
+  0.107333032040E+01    0 112      param c Eq.3  nial
+  0.113360464872E+01    0 280      dds   exp     nial
+  0.642695349265E+02    0 113  DDP param a Eq.3  nial
+  0.826955296490E+01    0 114      param b Eq.3  nial
+ -0.440892833899E+01    0 115      param c Eq.3  nial
+  0.114367967310E+01    0 281      ddp   exp     nial
+ -0.243482123009E+01    0 116  DDD param a Eq.3  nial
+ -0.147809449627E+02    0 117      param b Eq.3  nial
+  0.275003000163E+01    0 118      param c Eq.3  nial
+  0.104046504043E+01    0 282      ddd   exp     nial
+  0.761862478165E+00    0 119          sss       nial
+  0.457108365483E-01    0 120                    nial
+ -0.689284715107E-01    0 121                    nial
+  0.807511808356E+00    0 283      sss   exp     nial
+ -0.550506021684E+00    0 122           sps      nial
+ -0.144943995175E+00    0 123                    nial
+ -0.103241370801E-02    0 124                    nial
+  0.693174619556E+00    0 284      sps   exp     nial
+  0.328769932481E+01    0 125           pps      nial
+  0.733466612571E+00    0 126                    nial
+  0.195692604636E+00    0 127                    nial
+  0.913802700790E+00    0 285      pps   exp     nial
+  0.194159478704E+01    0 128           ppp      nial
+ -0.377172514902E+00    0 129                    nial
+ -0.279813937207E+00    0 130                    nial
+  0.124645162098E+01    0 286      ppp   exp     nial
+  0.445684946445E+01    0 131           sds      nial
+ -0.784811237717E+00    0 132                    nial
+ -0.682851315798E+00    0 133                    nial
+  0.957571161362E+00    0 287      sds   exp     nial
+  0.317126219198E+01    0 134           pds      nial
+  0.158104334027E+01    0 135                    nial
+  0.484317249346E+00    0 136                    nial
+  0.964233455760E+00    0 288      pds   exp     nial
+ -0.126554640777E+01    0 137           pdp      nial
+ -0.507651363908E+00    0 138                    nial
+ -0.137317810127E+00    0 139                    nial
+  0.994626661792E+00    0 289      pdp   exp     nial
+  0.206035173044E+02    0 140           dds      nial
+  0.223626041250E+01    0 141                    nial
+ -0.399578320672E+00    0 142                    nial
+  0.126921943804E+01    0 290      dds   exp     nial
+ -0.153789875696E+02    0 143           ddp      nial
+  0.892627824145E+01    0 144                    nial
+  0.515617210477E+01    0 145                    nial
+  0.137105335417E+01    0 291      ddp   exp     nial
+  0.317190895856E+02    0 146           ddd      nial
+ -0.241374193611E+01    0 147                    nial
+ -0.150121346680E+01    0 148                    nial
+  0.109258349715E+01    0 292      ddd   exp     nial
+  0.104381561960E+02    0 149           pss      nial
+  0.334779204747E+01    0 150                    nial
+  0.102369549451E+01    0 151                    nial
+  0.115836821101E+01    0 293      pss   exp     nial
+  0.152461081941E+01    0 152           dss      nial
+ -0.814855518961E-01    0 153                    nial
+ -0.125891431669E+00    0 154                    nial
+  0.836082232650E+00    0 294      dss   exp     nial
+  0.943387145581E+01    0 155           dps      nial
+ -0.176824701451E+01    0 156                    nial
+ -0.178167056405E+01    0 157                    nial
+  0.122518756548E+01    0 295      dps   exp     nial
+ -0.230820412452E+00    0 158           dpp      nial
+  0.851438919630E-01    0 159                    nial
+  0.818053115241E-01    0 160                    nial
+  0.838786962249E+00    0 296      dpp   exp     nial
+  0.462040610396E+08    0 161   e_{ss sigma}    (nial
+  0.126525996554E+08    0 162   f_{ss sigma}    (nial
+ -0.342496133656E+07    0 163   fbar_{ss sigma} (nial
+  0.214004584749E+01    0 297  g_{ss sigma} Ov (nial
+ -0.107402568331E+06    0 164   e_{sp sigma}    (nial
+  0.616326108357E+04    0 165   f_{sp sigma}    (nial
+  0.107624934727E+05    0 166   fbar_{sp sigma} (nial
+  0.173271543809E+01    0 298  g_{sp sigma}    (nial
+ -0.161186753887E+00    0 167  e_{pp sigma}    (nial
+ -0.580521539448E-01    0 168  f_{pp sigma}    (nial
+  0.359765905454E-02    0 169  fbar_{pp sigma} (nial
+  0.554399363999E+00    0 299  g_{pp sigma}    (nial
+ -0.385170679804E+00    0 170  e_{pp pi}       (nial
+  0.315129959554E-01    0 171  f_{pp pi}       (nial
+  0.678804065810E-02    0 172  fbar_{pp pi}    (nial
+  0.610846248127E+00    0 300  g_{pp pi}       (nial
+ -0.353716567417E-01    0 173  e_{sd sigma}    (nial
+ -0.316153245196E-02    0 174  f_{sd sigma}    (nial
+ -0.613131232860E-02    0 175  fbar_{sd sigma} (nial
+  0.725503084868E+00    0 301  g_{sd sigma}    (nial
+  0.767724117960E+01    0 176  e_{pd sigma}    (nial
+ -0.904355836202E-01    0 177  f_{pd sigma}    (nial
+ -0.631632318720E+00    0 178  fbar_{pd sigma} (nial
+  0.121905870965E+01    0 302  g_{pd sigma}    (nial
+ -0.467021337469E+00    0 179  e_{pd pi}       (nial
+ -0.148811893773E+00    0 180  f_{pd pi}       (nial
+ -0.408600928872E-01    0 181  fbar_{pd pi}    (nial
+  0.915697144694E+00    0 303  g_{pd pi}       (nial
+  0.120187014066E+00    0 182  e_{dd sigma}    (nial
+ -0.266356903388E-01    0 183  f_{dd sigma}    (nial
+ -0.199778114881E-01    0 184  fbar_{dd sigma} (nial
+  0.666782693324E+00    0 304  g_{dd sigma}    (nial
+  0.673124018524E+00    0 185  e_{dd pi}       (nial
+  0.158750691237E+00    0 186  f_{dd pi}       (nial
+  0.319891589736E-01    0 187  fbar_{dd pi}    (nial
+  0.911437729638E+00    0 305  g_{dd pi}       (nial
+  0.542959104420E+00    0 188  e_{dd delta}    (nial
+  0.953771899359E-01    0 189  f_{dd delta}    (nial
+  0.180178444020E-01    0 190  fbar_{dd delta} (nial
+  0.942576928478E+00    0 306  g_{dd delta}    (nial
+ -0.106651320673E+07    0 191 SSS Overlap Integrnial
+ -0.273245812485E+06    0 192     param b Eq.3  nial
+ -0.141294660047E+04    0 193     param c Eq.3  nial
+  0.198896027941E+01    0 307     sss           nial
+  0.170430105943E+00    0 194 SPS Overlap Integrnial
+  0.179732890497E-01    0 195     param b Eq.3  nial
+  0.507622125866E-03    0 196     param c Eq.3  nial
+  0.611132871816E+00    0 308     sps           nial
+  0.478059784162E+03    0 197 PPS Overlap Integrnial
+ -0.111115588982E+03    0 198     param b Eq.3  nial
+ -0.503151548274E+02    0 199     param c Eq.3  nial
+  0.144610454070E+01    0 309     pps           nial
+  0.348630826176E+00    0 200 PPP Overlap Integrnial
+  0.168629354516E-01    0 201     param b Eq.3  nial
+ -0.169632753508E-02    0 202     param c Eq.3  nial
+  0.610801214471E+00    0 310     ppp           nial
+  0.161144731711E+00    0 203 SDS Overlap Integrnial
+  0.582322886098E-02    0 204     param b Eq.3  nial
+ -0.162700913878E-02    0 205     param c Eq.3  nial
+  0.385910468560E+00    0 311     param c Eq.3  nial
+ -0.418606065245E+01    0 206 PDS Overlap Integrnial
+ -0.136165967228E+01    0 207     param b Eq.3  nial
+ -0.395178298497E+00    0 208     param c Eq.3  nial
+  0.100947323408E+01    0 312     param c Eq.3  nial
+  0.192301371155E+00    0 209 PDP Overlap Integrnial
+  0.861085165527E-02    0 210     param b Eq.3  nial
+ -0.600412473289E-03    0 211     param c Eq.3  nial
+  0.470406797121E+00    0 313     param c Eq.3  nial
+ -0.123703150707E+02    0 212 DDS Overlap Integrnial
+  0.207929954612E+00    0 213     param b Eq.3  nial
+  0.111305638297E+01    0 214     param c Eq.3  nial
+  0.943822046048E+00    0 314     param c Eq.3  nial
+ -0.551763036609E+01    0 215 DDP Overlap Integrnial
+ -0.504804437722E+00    0 216     param b Eq.3  nial
+ -0.198119413520E+00    0 217     param c Eq.3  nial
+  0.108603416388E+01    0 315     param c Eq.3  nial
+  0.448044480548E+02    0 218 DDD Overlap Integrnial
+ -0.883391435043E+00    0 219     param b Eq.3  nial
+ -0.145441096268E+01    0 220     param c Eq.3  nial
+  0.100469813705E+01    0 316     param c Eq.3  nial
+  0.641461388354E-01    0 221          sss      nial
+  0.482760529144E-02    0 222                   nial
+ -0.394370410162E-04    0 223                   nial
+  0.511673164248E+00    0 317     sss           nial
+  0.125241891538E+01    0 224           sps     nial
+  0.298432931898E+00    0 225                   nial
+  0.569442859448E-01    0 226                   nial
+  0.865621773236E+00    0 318     sps           nial
+  0.163618372244E+00    0 227           pps     nial
+ -0.678054913466E-01    0 228                   nial
+ -0.316542113687E-01    0 229                   nial
+  0.721430802245E+00    0 319     pps           nial
+ -0.126867597033E+00    0 230           ppp     nial
+  0.458256358882E-01    0 231                   nial
+  0.457509947644E-01    0 232                   nial
+  0.808352585702E+00    0 320     ppp           nial
+  0.163492774493E+02    0 233           sds     nial
+  0.556339626718E+00    0 234                   nial
+ -0.476295859341E+00    0 235                   nial
+  0.969860010568E+00    0 321     param c Eq.3  nial
+ -0.335964340096E+00    0 236           pds     nial
+ -0.812660189883E-02    0 237                   nial
+ -0.203407075738E-01    0 238                   nial
+  0.749979341709E+00    0 322                   nial
+  0.929348999950E+00    0 239           pdp     nial
+  0.283195275928E+00    0 240                   nial
+  0.604196438593E-01    0 241                   nial
+  0.955123928064E+00    0 323                   nial
+  0.119333311878E+01    0 242           dds     nial
+ -0.135453437416E+00    0 243                   nial
+ -0.757391736468E-01    0 244                   nial
+  0.824718657329E+00    0 324                   nial
+ -0.135440858080E+00    0 245           ddp     nial
+ -0.509017625847E-02    0 246                   nial
+  0.158991495355E-02    0 247                   nial
+  0.460325806396E+00    0 325                   nial
+  0.498529816430E+01    0 248           ddd     nial
+  0.135833638608E+01    0 249                   nial
+  0.352337240280E+00    0 250                   nial
+  0.112388028854E+01    0 326                   nial
+  0.481557020157E+01    0 251           pss     nial
+ -0.153288718173E+01    0 252                   nial
+  0.122711887799E+00    0 253                   nial
+  0.140645087046E+01    0 327     pss           nial
+ -0.540984387157E+01    0 254           dss     nial
+  0.655191399588E+00    0 255                   nial
+  0.728963525638E+00    0 256                   nial
+  0.142251591722E+01    0 328     dss           nial
+ -0.201025696492E+01    0 257           dps     nial
+ -0.211774299172E+00    0 258                   nial
+  0.191378086917E+00    0 259                   nial
+  0.810331532590E+00    0 329     dps           nial
+ -0.153791609894E+00    0 260           dpp     nial
+ -0.384071987389E-01    0 261                   nial
+ -0.661779503326E-02    0 262                   nial
+  0.714627773975E+00    0 330     dpp           nial

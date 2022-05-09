@@ -1,0 +1,15 @@
+Al2O3           ! material name
+Al2O3            ! chemical formula of the compound
+300.0d0 	   ! initial electron temperature [K]
+300.0d0		   ! initial atomic temperature [K]
+-100.0		   ! start of simulation [fs]
+1000.0		   ! end of simulation [fs]
+1		       ! number of FEL-pulses
+1.0d0		   ! absorbed dose per this pulse [eV/atom]
+30.0d0		   ! hw, photon energy [eV]
+10.0d0		   ! pulse FWHM-duration [fs]
+1		       ! type of pulse to be analysed: 0 = rectangular, 1 = Gaussian, 2 = SASE
+0.0d0		   ! position of the maximum of the laser pulse [fs]
+0	2	1.0d-1	5.0d0	1.0d-1	! optical: 0=no, 1=Drude, 2=Trani-k, 3=Trani gamma; spectrum (1) using KK (2), no (0); hw_min, hw_max, d_hw (eV)
+2	800.0	-70.0  	! how many rays (0=exclude, 1=1st ray, (>1)=sum all); probe-pulse wavelength [nm]; FWHM probe pulse [fs]
+89.0	50.0d0    	! angle of prob-pulse with respect to normal [degrees]; material thickness [nm]

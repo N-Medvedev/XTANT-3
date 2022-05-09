@@ -1,0 +1,2 @@
+BOP
+5.0e0	0.1e0		! rcut [A], dcut [A]

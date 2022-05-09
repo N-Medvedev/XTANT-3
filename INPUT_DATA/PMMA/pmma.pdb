@@ -1,0 +1,266 @@
+REMARK   This PDB file was created by CS Chem3D.
+SEQRES   1      1  GRP
+HETATM    1  C   GRP     0       0.845  -2.071   1.191                      C 
+HETATM    2  C   GRP     0       5.816   1.941   1.398                      C 
+HETATM    3  C   GRP     0       2.702  -0.678   2.417                      C 
+HETATM    4  C   GRP     0       6.987  -0.079   0.378                      C 
+HETATM    5  C   GRP     0       3.513   0.571   0.360                      C 
+HETATM    6  C   GRP     0      13.026   1.190  14.502                      C 
+HETATM    7  C   GRP     0       4.259  -2.652  -1.549                      C 
+HETATM    8  C   GRP     0       0.489   0.389   1.618                      C 
+HETATM    9  C   GRP     0      12.054   0.758   8.404                      C 
+HETATM   10  C   GRP     0      11.199  -0.009   0.006                      C 
+HETATM   11  C   GRP     0      12.316   3.017   7.175                      C 
+HETATM   12  C   GRP     0      14.213   1.248   9.688                      C 
+HETATM   13  C   GRP     0      12.011   1.581   3.854                      C 
+HETATM   14  C   GRP     0       9.626   0.724   4.091                      C 
+HETATM   15  C   GRP     0       3.881  -1.878   0.583                      C 
+HETATM   16  C   GRP     0       3.848  -0.554   1.354                      C 
+HETATM   17  C   GRP     0      12.088   2.419  10.414                      C 
+HETATM   18  C   GRP     0       1.188  -0.906   2.115                      C 
+HETATM   19  C   GRP     0      15.592   1.696   5.682                      C 
+HETATM   20  C   GRP     0       0.529  -1.281   3.473                      C 
+HETATM   21  C   GRP     0       8.185   4.110   5.401                      C 
+HETATM   22  C   GRP     0      12.767   1.188  12.988                      C 
+HETATM   23  C   GRP     0      13.475   1.005   6.254                      C 
+HETATM   24  C   GRP     0      11.004   1.115   6.147                      C 
+HETATM   25  C   GRP     0       4.675   3.628   2.490                      C 
+HETATM   26  C   GRP     0      10.096   3.054   4.654                      C 
+HETATM   27  C   GRP     0       9.592  -0.044   1.642                      C 
+HETATM   28  C   GRP     0      12.245   1.491   7.031                      C 
+HETATM   29  C   GRP     0       8.966   0.899   2.677                      C 
+HETATM   30  C   GRP     0      10.727   1.658   4.700                      C 
+HETATM   31  C   GRP     0       6.399   0.546   1.655                      C 
+HETATM   32  C   GRP     0      14.424  -0.486  12.039                      C 
+HETATM   33  C   GRP     0      -1.039   0.309   1.465                      C 
+HETATM   34  C   GRP     0       7.457   0.497   2.815                      C 
+HETATM   35  C   GRP     0      12.208  -1.283  12.926                      C 
+HETATM   36  C   GRP     0       5.174  -0.296   2.157                      C 
+HETATM   37  C   GRP     0      12.286   0.010  10.783                      C 
+HETATM   38  C   GRP     0      16.360  -0.312  13.252                      C 
+HETATM   39  C   GRP     0      12.680   1.154   9.783                      C 
+HETATM   40  C   GRP     0      12.943  -0.133  12.195                      C 
+HETATM   41  C   GRP     0       9.053   2.329   2.116                      C 
+HETATM   42  C   GRP     0      10.067   3.379  10.999                      C 
+HETATM   43  C   GRP     0       0.380  -2.566  -1.012                      C 
+HETATM   44  H   GRP     0      -1.558   0.235   2.447                      H 
+HETATM   45  O   GRP     0       9.635  -1.380   2.068                      O 
+HETATM   46  O   GRP     0      11.024   4.098   4.582                      O 
+HETATM   47  O   GRP     0      13.614  -0.390   6.269                      O 
+HETATM   48  O   GRP     0       4.325  -2.952   1.368                      O 
+HETATM   49  O   GRP     0       5.787   2.765   2.537                      O 
+HETATM   50  H   GRP     0      16.551   2.067   6.106                      H 
+HETATM   51  H   GRP     0       0.725   1.234   2.307                      H 
+HETATM   52  H   GRP     0       2.728   0.246   3.044                      H 
+HETATM   53  H   GRP     0       3.023  -1.498   3.103                      H 
+HETATM   54  H   GRP     0       4.886   0.219   3.105                      H 
+HETATM   55  H   GRP     0       5.549  -1.288   2.494                      H 
+HETATM   56  H   GRP     0       7.031   1.073   3.669                      H 
+HETATM   57  H   GRP     0       7.483  -0.554   3.188                      H 
+HETATM   58  H   GRP     0       8.804   0.772   4.845                      H 
+HETATM   59  H   GRP     0       9.988  -0.327   4.161                      H 
+HETATM   60  H   GRP     0      11.181   0.077  10.934                      H 
+HETATM   61  H   GRP     0      13.417   1.974  12.539                      H 
+HETATM   62  H   GRP     0      11.709   1.520  12.863                      H 
+HETATM   63  H   GRP     0       4.719   4.295   3.379                      H 
+HETATM   64  H   GRP     0       4.704   4.248   1.567                      H 
+HETATM   65  H   GRP     0       3.736   3.033   2.532                      H 
+HETATM   66  H   GRP     0      16.830  -0.560  14.230                      H 
+HETATM   67  H   GRP     0      16.949  -0.781  12.433                      H 
+HETATM   68  H   GRP     0      16.335   0.794  13.127                      H 
+HETATM   69  H   GRP     0       9.043   3.588  10.616                      H 
+HETATM   70  H   GRP     0       9.989   2.740  11.906                      H 
+HETATM   71  H   GRP     0      10.564   4.343  11.245                      H 
+HETATM   72  O   GRP     0      12.838   3.568  10.143                      O 
+HETATM   73  O   GRP     0      15.046  -0.818  13.255                      O 
+HETATM   74  O   GRP     0      14.614  -1.673  11.313                      O 
+HETATM   75  O   GRP     0       1.218  -1.841  -0.143                      O 
+HETATM   76  H   GRP     0      12.433  -0.968  10.270                      H 
+HETATM   77  O   GRP     0      10.777   2.697   9.993                      O 
+HETATM   78  H   GRP     0      12.332  -0.304   8.211                      H 
+HETATM   79  O   GRP     0       6.465   2.665   0.389                      O 
+HETATM   80  O   GRP     0       9.318   3.366   5.782                      O 
+HETATM   81  O   GRP     0      10.937   0.241   1.367                      O 
+HETATM   82  O   GRP     0       4.782  -1.885  -0.491                      O 
+HETATM   83  O   GRP     0      14.700   1.475   6.748                      O 
+HETATM   84  O   GRP     0       1.507  -3.240   1.589                      O 
+HETATM   85  H   GRP     0       0.885   0.685   0.624                      H 
+HETATM   86  H   GRP     0      10.086   1.303   6.748                      H 
+HETATM   87  H   GRP     0      11.050   0.002   6.069                      H 
+HETATM   88  H   GRP     0      10.959   0.692   8.605                      H 
+HETATM   89  H   GRP     0      15.780   0.748   5.131                      H 
+HETATM   90  H   GRP     0      15.174   2.467   4.997                      H 
+HETATM   91  H   GRP     0       7.637   4.402   6.324                      H 
+HETATM   92  H   GRP     0       8.490   5.028   4.851                      H 
+HETATM   93  H   GRP     0       7.517   3.480   4.773                      H 
+HETATM   94  H   GRP     0      12.264   0.244  -0.193                      H 
+HETATM   95  H   GRP     0      11.029  -1.083  -0.228                      H 
+HETATM   96  H   GRP     0      10.545   0.634  -0.625                      H 
+HETATM   97  H   GRP     0       5.014  -2.675  -2.365                      H 
+HETATM   98  H   GRP     0       4.054  -3.692  -1.210                      H 
+HETATM   99  H   GRP     0       3.328  -2.177  -1.931                      H 
+HETATM  100  H   GRP     0       0.665  -2.313  -2.057                      H 
+HETATM  101  H   GRP     0       0.515  -3.659  -0.856                      H 
+HETATM  102  H   GRP     0      -0.681  -2.277  -0.843                      H 
+HETATM  103  H   GRP     0      12.673  -1.531  13.905                      H 
+HETATM  104  H   GRP     0      11.143  -1.022  13.121                      H 
+HETATM  105  H   GRP     0      12.213  -2.223  12.331                      H 
+HETATM  106  H   GRP     0      14.543   2.080   9.035                      H 
+HETATM  107  H   GRP     0      14.685   1.474  10.667                      H 
+HETATM  108  H   GRP     0      14.653   0.304   9.296                      H 
+HETATM  109  H   GRP     0      11.362   3.447   7.550                      H 
+HETATM  110  H   GRP     0      13.132   3.341   7.849                      H 
+HETATM  111  H   GRP     0      12.557   3.502   6.207                      H 
+HETATM  112  H   GRP     0       6.303  -0.005  -0.490                      H 
+HETATM  113  H   GRP     0       7.905   0.442   0.033                      H 
+HETATM  114  H   GRP     0       7.242  -1.151   0.532                      H 
+HETATM  115  H   GRP     0      12.829   2.200   4.277                      H 
+HETATM  116  H   GRP     0      12.380   0.534   3.770                      H 
+HETATM  117  H   GRP     0      11.883   1.979   2.829                      H 
+HETATM  118  H   GRP     0       8.417   3.042   2.680                      H 
+HETATM  119  H   GRP     0      10.081   2.741   2.105                      H 
+HETATM  120  H   GRP     0       8.742   2.359   1.052                      H 
+HETATM  121  H   GRP     0       3.209   1.505   0.879                      H 
+HETATM  122  H   GRP     0       4.353   0.824  -0.317                      H 
+HETATM  123  H   GRP     0       2.699   0.271  -0.333                      H 
+HETATM  124  H   GRP     0      -0.537  -1.574   3.354                      H 
+HETATM  125  H   GRP     0       1.022  -2.153   3.957                      H 
+HETATM  126  H   GRP     0       0.573  -0.436   4.197                      H 
+HETATM  127  H   GRP     0      12.788   2.191  14.933                      H 
+HETATM  128  H   GRP     0      12.388   0.456  15.043                      H 
+HETATM  129  H   GRP     0      14.088   0.993  14.759                      H 
+HETATM  130  H   GRP     0      -1.435   1.227   0.971                      H 
+HETATM  131  H   GRP     0      -1.345  -0.560   0.841                      H 
+TER
+CONECT    1   18   75   84
+CONECT    2   31   79   49
+CONECT    3   18   16   53   52
+CONECT    4   31  112  113  114
+CONECT    5   16  121  122  123
+CONECT    6   22  127  128  129
+CONECT    7   99   82   97   98
+CONECT    8   18   33   85   51
+CONECT    9   39   28   88   78
+CONECT   10   81   94   95   96
+CONECT   11   28  109  110  111
+CONECT   12   39  106  107  108
+CONECT   13   30  115  116  117
+CONECT   14   29   30   58   59
+CONECT   15   16   82   48
+CONECT   16   36    3   15    5
+CONECT   17   39   72   77
+CONECT   18    8    3    1   20
+CONECT   19   90   89   50   83
+CONECT   20   18  124  125  126
+CONECT   21   80   91   92   93
+CONECT   22    6   40   62   61
+CONECT   23   28   47   83
+CONECT   24   28   30   87   86
+CONECT   25   49   63   64   65
+CONECT   26   30   80   46
+CONECT   27   29   81   45
+CONECT   28   24    9   23   11
+CONECT   29   34   14   27   41
+CONECT   30   24   14   26   13
+CONECT   31    2   36   34    4
+CONECT   32   40   74   73
+CONECT   33    8  130  131   44
+CONECT   34   29   31   57   56
+CONECT   35   40  103  104  105
+CONECT   36   31   16   54   55
+CONECT   37   40   39   60   76
+CONECT   38   67   68   73   66
+CONECT   39    9   37   17   12
+CONECT   40   37   32   22   35
+CONECT   41   29  118  119  120
+CONECT   42   69   70   71   77
+CONECT   43   75  100  101  102
+CONECT   44   33
+CONECT   45   27
+CONECT   46   26
+CONECT   47   23
+CONECT   48   15
+CONECT   49    2   25
+CONECT   50   19
+CONECT   51    8
+CONECT   52    3
+CONECT   53    3
+CONECT   54   36
+CONECT   55   36
+CONECT   56   34
+CONECT   57   34
+CONECT   58   14
+CONECT   59   14
+CONECT   60   37
+CONECT   61   22
+CONECT   62   22
+CONECT   63   25
+CONECT   64   25
+CONECT   65   25
+CONECT   66   38
+CONECT   67   38
+CONECT   68   38
+CONECT   69   42
+CONECT   70   42
+CONECT   71   42
+CONECT   72   17
+CONECT   73   38   32
+CONECT   74   32
+CONECT   75   43    1
+CONECT   76   37
+CONECT   77   17   42
+CONECT   78    9
+CONECT   79    2
+CONECT   80   21   26
+CONECT   81   10   27
+CONECT   82    7   15
+CONECT   83   19   23
+CONECT   84    1
+CONECT   85    8
+CONECT   86   24
+CONECT   87   24
+CONECT   88    9
+CONECT   89   19
+CONECT   90   19
+CONECT   91   21
+CONECT   92   21
+CONECT   93   21
+CONECT   94   10
+CONECT   95   10
+CONECT   96   10
+CONECT   97    7
+CONECT   98    7
+CONECT   99    7
+CONECT  100   43
+CONECT  101   43
+CONECT  102   43
+CONECT  103   35
+CONECT  104   35
+CONECT  105   35
+CONECT  106   12
+CONECT  107   12
+CONECT  108   12
+CONECT  109   11
+CONECT  110   11
+CONECT  111   11
+CONECT  112    4
+CONECT  113    4
+CONECT  114    4
+CONECT  115   13
+CONECT  116   13
+CONECT  117   13
+CONECT  118   41
+CONECT  119   41
+CONECT  120   41
+CONECT  121    5
+CONECT  122    5
+CONECT  123    5
+CONECT  124   20
+CONECT  125   20
+CONECT  126   20
+CONECT  127    6
+CONECT  128    6
+CONECT  129    6
+CONECT  130   33
+CONECT  131   33
+END

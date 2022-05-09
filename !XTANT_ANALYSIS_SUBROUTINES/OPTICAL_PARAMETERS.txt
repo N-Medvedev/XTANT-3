@@ -1,0 +1,4 @@
+50.0d0		! thickness [nm]
+90.0d0		! with respect to surface [deg]
+1.0d0	0.0d0			! n and k of the material above the target
+3.6941d0	0.0065435d0	! n and k of the material below the target
