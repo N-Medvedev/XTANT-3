@@ -1,5 +1,11 @@
 # XTANT-3
  X-ray-induced Thermal And Nonthermal Transitions
+ 
+It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matter. The code combines the following methods into one model with feed-backs:
+ a) Monte Carlo (MC) method for modeling X-ray-induced electron kinetics
+ b) tight binding molecular dynamics (TBMD) for tracing atomic responce to modification of the interatomic potential due to electronic excitation
+ c) Boltzmann collision integrals (BCI) for evaluation of the nonadiabatic electron-ion (electron-phonon) coupling
+ d) random phase approximation (RPA) for calculation of the change of the optical properties of the material
 
 *Disclamer*
 
