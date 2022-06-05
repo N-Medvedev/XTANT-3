@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <coefs>
+    <version>2</version>
+    <dim>2</dim>
+    <datH> -1.2771430981898544e+00  8.2511962871701605e-01 -2.0170498574934104e-01 -1.9874845655715283e-02 -2.8622368530439236e-02 -7.9781884860322935e-02  1.2248458011197234e-01  4.2999249640391438e-02  5.3616407952207885e-03</datH>
+    <datS>  1.7704329490661621e+00 -6.4639693498611450e-01  3.1583786010742188e-01 -1.0164016857743263e-02  2.4763250723481178e-02  4.6467874199151993e-03</datS>
+    <sizeH>9</sizeH>
+    <sizeS>6</sizeS>
+    <inds>Dict{Array{Symbol,N} where N,Array{Int64,1}}([:H, :s, :H, :s, :S] =&gt; [1, 2, 3, 4, 5, 6],[:H, :s, :s, :O] =&gt; [6, 7, 8, 9],[:H, :s, :H, :s, :H] =&gt; [1, 2, 3, 4, 5])</inds>
+    <names>H  </names>
+    <cutoff>18.01</cutoff>
+    <min_dist>1.151229014626324</min_dist>
+    <maxmin_val_train>[:H, :s, :H, :s, :S] =&gt; (1.0e7, -1.0e7)
+[:H, :s, :s, :O] =&gt; (1.0e7, -1.0e7)
+[:H, :s, :H, :s, :H] =&gt; (1.0e7, -1.0e7)
+</maxmin_val_train>
+    <dist_frontier>(:H, :H) =&gt; 1.151229014626324
+</dist_frontier>
+  </coefs>
+</root>
