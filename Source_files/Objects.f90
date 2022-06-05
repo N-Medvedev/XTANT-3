@@ -216,14 +216,25 @@ type, EXTENDS (TB_Hamiltonian) :: TB_H_3TB ! hamiltonian coefficients:
 !    real(8) :: Ud, Up, Us    ! the Hubbard U values for the appropriate angular momenta (currently not used in XTANT)
    ! Onsite parameters:
    real(8) :: Ed, Ep, Es    ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom
-   real(8), dimension(3,4) :: Hhx ! coefficients before Leguerres in 2-body onsite, Eq.(19) in [1]
-   real(8), dimension(3,4) :: Hhcf ! coefficients before Leguerres in crystal-field onsite, Eq.(20) in [1]
+   real(8), dimension(3,4) :: Hhavg  ! coefficients before Leguerres in 2-body onsite, Eq.(19) in [1]
+   real(8), dimension(3,3,4) :: Hhcf ! coefficients before Leguerres in crystal-field onsite, Eq.(20) in [1]
    real(8), dimension(:,:,:), allocatable :: Hh3bdy ! coefficients before Leguerres in 3-body onsite, Eq.(20) in [1]
    ! Overlap parameters:
-   real(8), dimension(:,:), allocatable :: Hfx ! coefficients before Leguerres in 2-body Hamiltonian, Eq.(12) in [1]
-   real(8), dimension(:,:), allocatable :: Sfx ! coefficients before Leguerres in 2-body overlap, Eq.(12) in [1]
+   real(8), dimension(10,5)  :: Vrfx ! coefficients before Leguerres in 2-body Hamiltonian, Eq.(12) in [1]
+   real(8), dimension(10,6)  :: Srfx ! coefficients before Leguerres in 2-body overlap, Eq.(12) in [1]
    real(8), dimension(:,:,:), allocatable :: Hg3bdy ! coefficients before Leguerres in 3-body onsite, Eq.(14) in [1]
    real(8), dimension(:,:,:), allocatable :: Sg3bdy ! coefficients before Leguerres in 3-body onsite, Eq.(14) in [1]
+   ! Reminder:
+   !Vr(1,5) = (s s sigma)
+   !Vr(2,5) = (s p sigma)
+   !Vr(3,5) = (s d sigma)
+   !Vr(4,5) = (p p sigma)
+   !Vr(5,5) = (p p pi)
+   !Vr(6,5) = (p d sigma)
+   !Vr(7,5) = (p d pi)
+   !Vr(8,5) = (d d sigma)
+   !Vr(9,5) = (d d pi)
+   !Vr(10,5) = (d d delta)
 end type TB_H_3TB
 
 

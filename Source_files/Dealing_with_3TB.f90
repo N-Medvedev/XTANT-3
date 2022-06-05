@@ -106,17 +106,23 @@ subroutine read_3TB_2bdy_file(FN, Element1, Element2, TB_Hamil, error_message)
    !-------------------------------------------
    integer :: Reason, i, count_lines, Nsiz, sizeH, sizeS
    real(8) :: Es, Ep, Ed
+   logical :: read_well, found_element
    character(3) :: El_name1, El_name2
    character(30) :: found_tag
    character(100) :: temp_ch
-   logical :: read_well, found_element
+   character(5000) :: string_ind
    real(8), dimension(:), allocatable :: Hdata, Sdata   ! text with data containing H and S
-   integer, dimension(:), allocatable :: inds   ! indices to intepret these data
+   !integer, dimension(:), allocatable :: inds   ! indices to intepret these data
 
    ! To start with:
    count_lines = 0
    error_message = ''
    found_element = .false.
+   ! Default values, no overlap coefficients to start with:
+   TB_Hamil%Hhavg = 0.0d0
+   TB_Hamil%Hhcf = 0.0d0
+   TB_Hamil%Vrfx = 0.0d0
+   TB_Hamil%Srfx = 0.0d0
 
    ! Find how many lines are in the file:
    call Count_lines_in_file(FN, Nsiz)  ! module "Dealing_with_files"
@@ -127,13 +133,17 @@ subroutine read_3TB_2bdy_file(FN, Element1, Element2, TB_Hamil, error_message)
    RD2bd: do i = 1, Nsiz
       read(FN,*, IOSTAT=Reason) temp_ch
       call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
+      if (.not.read_well) exit RD2bd
 
       ! Find the tag in this string, if any:
       call extract_tag(temp_ch, found_tag)  ! below
 
       ! Find the sizes of the arrays with the H and S parameters:
       call react_to_tag(FN, found_tag, count_lines, read_well, error_message, sizeH=sizeH, sizeS=sizeS)   ! below
+      if (.not.read_well) exit RD2bd
    enddo RD2bd
+   if (.not.read_well) goto 5001
+
    ! Rewind the file to start reading it again:
    count_lines = 0
    REWIND(FN)
@@ -145,15 +155,297 @@ subroutine read_3TB_2bdy_file(FN, Element1, Element2, TB_Hamil, error_message)
    RD2bd2: do i = 1, Nsiz
       read(FN,*, IOSTAT=Reason) temp_ch
       call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
+      if (.not.read_well) exit RD2bd2
 
       ! Find the tag in this string, if any:
       call extract_tag(temp_ch, found_tag)  ! below
 
       ! Find the sizes of the arrays with the H and S parameters:
-      call react_to_tag(FN, found_tag, count_lines, read_well, error_message, Hdata=Hdata, Sdata=Sdata)   ! below
+      call react_to_tag(FN, found_tag, count_lines, read_well, error_message, Hdata=Hdata, Sdata=Sdata, inds=string_ind)   ! below
+      if (.not.read_well) exit RD2bd2
    enddo RD2bd2
+   if (.not.read_well) goto 5001
 
+   ! Assign the read parameters to the variables to be used in the code:
+   call sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, string_ind)   ! below
+
+5001 continue
 end subroutine read_3TB_2bdy_file
+
+
+
+subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, string_ind)
+   type(TB_H_3TB), intent(inout) :: TB_Hamil    ! Hamiltonian and Overlap data
+   character(*), intent(in) :: Element1, Element2   ! elements from the periodic table
+   real(8), dimension(:), intent(in) :: Hdata, Sdata   ! text with data containing H and S
+   character(*), intent(in) :: string_ind   ! string with all the indices to intepret these data
+   !-------------------------
+   integer :: i, count_brackets, block_start, block_end, current_block, str_len
+   integer :: block2_start, block2_end
+   integer :: colon_pos, ind4(4), ind5(5), ind6(6), ind8(8), ind10(10), ind12(12), ind15(15), ind18(18)
+   character(1) :: ind_var
+   character(3) :: ch_ind_atom1, ch_ind_atom2, ch_ind_sh1, ch_ind_sh2
+
+   ! To start counting breakets in the data
+   count_brackets = 0
+   current_block = 0
+   str_len = LEN(trim(string_ind))
+
+   ! Go through all the indices data and sort them out:
+   strind:do
+      count_brackets = count_brackets + 1
+
+      ! 1) Find opening and closing tags for a data block: "[" and "]":
+      block_start = INDEX(string_ind(current_block+1:str_len), '[')  ! intrinsic
+      block_end = INDEX(string_ind(current_block+1:str_len), ']')    ! intrinsic
+
+      ! 2) Read indices:
+      ! find first what kind of variables are saved in this block: H, S or O
+      colon_pos = INDEX(string_ind(current_block+block_start:current_block+block_end), ':', BACK=.true.)
+      ind_var = string_ind(current_block+block_start+colon_pos:current_block+block_start+colon_pos)
+
+      ! Find the positions for the second block that contains the indices:
+      block2_start = INDEX(string_ind(current_block+block_end+1:str_len), '[')  ! intrinsic
+      block2_end = INDEX(string_ind(current_block+block_end+1:str_len), ']')    ! intrinsic
+
+      !print*, block_start, block_end, string_ind(current_block+block_start:current_block+block_end)
+      !print*, block2_start, block2_end, string_ind(current_block+block_end+block2_start:current_block+block_end+block2_end)
+
+      ! Having the lables of the indices, sort them out:
+      select case (ind_var)   ! chose the variable: H, S or O
+      case('H')   ! there are 4 more indices: atom 1, shell 1, atom 2, shell2
+         ! Get these indices:
+         read(string_ind(current_block+block_start+1:current_block+block_end),*) ch_ind_atom1, ch_ind_sh1, ch_ind_atom2, ch_ind_sh2
+
+         ! Find if the indices belong to this Hamiltonian parameter set:
+         AT1: if ( (trim(adjustl(Element1)) == trim(adjustl(ch_ind_atom1(2:))) ) .and. &
+              (trim(adjustl(Element2)) == trim(adjustl(ch_ind_atom2(2:))) ) ) then
+
+            ! Read indices of the overlapping shells from the second block:
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind5(:)
+               !print*, ind5(:)
+
+               ! Now, save the (s s sigma) parameters into Hamiltonian:
+               do i = 1, 5
+                  TB_Hamil%Vrfx(1,i) = Hdata( ind5(i) )
+               enddo
+            endif
+
+            if ( ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'p') ) .or. &
+                 ( (trim(adjustl(ch_ind_sh1(2:2))) == 'p') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind5(:)
+               !print*, ind5(:)
+
+               ! Now, save the (s p sigma) parameters into Hamiltonian:
+               do i = 1, 5
+                  TB_Hamil%Vrfx(2,i) = Hdata( ind5(i) )
+               enddo
+            endif
+
+            if ( ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'd') ) .or. &
+                 ( (trim(adjustl(ch_ind_sh1(2:2))) == 'd') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind5(:)
+               !print*, ind5(:)
+
+               ! Now, save the (s d sigma) parameters into Hamiltonian:
+               do i = 1, 5
+                  TB_Hamil%Vrfx(3,i) = Hdata( ind5(i) )
+               enddo
+            endif
+
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 'p') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'p') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind10(:)
+               !print*, ind10(:)
+               ! Now, save the parameters into Hamiltonian:
+               do i = 1, 5
+                  TB_Hamil%Vrfx(4,i) = Hdata( ind10(i) )    ! (p p sigma)
+                  TB_Hamil%Vrfx(5,i) = Hdata( ind10(i+5) )  ! (p p pi)
+               enddo
+            endif
+
+            if ( ( (trim(adjustl(ch_ind_sh1(2:2))) == 'p') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'd') ) .or. &
+                 ( (trim(adjustl(ch_ind_sh1(2:2))) == 'd') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'p') ) ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind10(:)
+               !print*, ind10(:)
+               ! Now, save the parameters into Hamiltonian:
+               do i = 1, 5
+                  TB_Hamil%Vrfx(6,i) = Hdata( ind10(i) )    ! (p d sigma)
+                  TB_Hamil%Vrfx(7,i) = Hdata( ind10(i+5) )  ! (p d pi)
+               enddo
+            endif
+
+            if ( ( (trim(adjustl(ch_ind_sh1(2:2))) == 'd') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'd') ) ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind15(:)
+               !print*, ind15(:)
+               ! Now, save the parameters into Hamiltonian:
+               do i = 1, 5
+                  TB_Hamil%Vrfx(8,i) = Hdata( ind15(i) )       ! (d d sigma)
+                  TB_Hamil%Vrfx(9,i) = Hdata( ind15(i+5) )     ! (d d pi)
+                  TB_Hamil%Vrfx(10,i) = Hdata( ind15(i+10) )   ! (d d delta)
+               enddo
+            endif
+
+         endif AT1
+
+
+         !print*, ind_var, ch_ind_atom1, ch_ind_sh1, ch_ind_atom2, ch_ind_sh2
+      case('S')   ! there are 4 more indices: atom 1, shell 1, atom 2, shell2
+         read(string_ind(current_block+block_start+1:current_block+block_end),*) ch_ind_atom1, ch_ind_sh1, ch_ind_atom2, ch_ind_sh2
+
+         ! Find if the indices belong to this Hamiltonian parameter set:
+         AT2: if ( (trim(adjustl(Element1)) == trim(adjustl(ch_ind_atom1(2:))) ) .and. &
+              (trim(adjustl(Element2)) == trim(adjustl(ch_ind_atom2(2:))) ) ) then
+
+            ! Read indices of the overlapping shells from the second block:
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind6(:)
+               ! Now, save the (s s sigma) parameters into Overlap:
+               do i = 1, 6
+                  TB_Hamil%Srfx(1,i) = Sdata( ind6(i) )
+               enddo
+            endif
+
+            if ( ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'p') ) .or. &
+                 ( (trim(adjustl(ch_ind_sh1(2:2))) == 'p') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind6(:)
+               ! Now, save the (s p sigma) parameters into Overlap:
+               do i = 1, 6
+                  TB_Hamil%Srfx(2,i) = Sdata( ind6(i) )
+               enddo
+            endif
+
+            if ( ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'd') ) .or. &
+                 ( (trim(adjustl(ch_ind_sh1(2:2))) == 'd') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind6(:)
+               ! Now, save the (s d sigma) parameters into Overlap:
+               do i = 1, 6
+                  TB_Hamil%Srfx(3,i) = Sdata( ind6(i) )
+               enddo
+            endif
+
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 'p') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'p') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind12(:)
+               ! Now, save the parameters into Hamiltonian:
+               do i = 1, 6
+                  TB_Hamil%Srfx(4,i) = Sdata( ind12(i) )    ! (p p sigma)
+                  TB_Hamil%Srfx(5,i) = Sdata( ind12(i+6) )  ! (p p pi)
+               enddo
+            endif
+
+            if ( ( (trim(adjustl(ch_ind_sh1(2:2))) == 'p') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'd') ) .or. &
+                 ( (trim(adjustl(ch_ind_sh1(2:2))) == 'd') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'p') ) ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind12(:)
+               ! Now, save the parameters into Hamiltonian:
+               do i = 1, 6
+                  TB_Hamil%Srfx(6,i) = Sdata( ind12(i) )    ! (p d sigma)
+                  TB_Hamil%Srfx(7,i) = Sdata( ind12(i+6) )  ! (p d pi)
+               enddo
+            endif
+
+            if ( ( (trim(adjustl(ch_ind_sh1(2:2))) == 'd') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'd') ) ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind18(:)
+               ! Now, save the parameters into Hamiltonian:
+               do i = 1, 6
+                  TB_Hamil%Srfx(8,i) = Sdata( ind18(i) )       ! (d d sigma)
+                  TB_Hamil%Srfx(9,i) = Sdata( ind18(i+6) )     ! (d d pi)
+                  TB_Hamil%Srfx(10,i) = Sdata( ind18(i+12) )   ! (d d delta)
+               enddo
+            endif
+
+         endif AT2
+
+      case('O')   ! there are 3 more indices: atom 1, shell 1, shell2
+         read(string_ind(current_block+block_start+1:current_block+block_end),*) ch_ind_atom1, ch_ind_sh1, ch_ind_sh2
+
+         ! Find if the indices belong to this Hamiltonian parameter set:
+         AT3: if (trim(adjustl(Element1)) == trim(adjustl(ch_ind_atom1(2:))) ) then
+
+            ! Read indices of the overlapping shells from the second block:
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind4(:)
+               !print*, ind4(:)
+               do i = 1, 4
+                  TB_Hamil%Hhcf(1,1,i) = Hdata( ind4(i) )
+               enddo
+            endif
+
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'p') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind4(:)
+               !print*, ind4(:)
+               do i = 1, 4
+                  TB_Hamil%Hhcf(1,2,i) = Hdata( ind4(i) )
+               enddo
+            endif
+
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'd') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind4(:)
+               !print*, ind4(:)
+               do i = 1, 4
+                  TB_Hamil%Hhcf(1,3,i) = Hdata( ind4(i) )
+               enddo
+            endif
+
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 'p') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind4(:)
+               !print*, ind4(:)
+               do i = 1, 4
+                  TB_Hamil%Hhcf(2,1,i) = Hdata( ind4(i) )
+               enddo
+            endif
+
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 'p') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'd') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind4(:)
+               !print*, ind4(:)
+               do i = 1, 4
+                  TB_Hamil%Hhcf(2,3,i) = Hdata( ind4(i) )
+               enddo
+            endif
+
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 'd') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind4(:)
+               !print*, ind4(:)
+               do i = 1, 4
+                  TB_Hamil%Hhcf(3,1,i) = Hdata( ind4(i) )
+               enddo
+            endif
+
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 'd') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'p') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind4(:)
+               !print*, ind4(:)
+               do i = 1, 4
+                  TB_Hamil%Hhcf(3,2,i) = Hdata( ind4(i) )
+               enddo
+            endif
+
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 'p') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'p') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind8(:)
+               !print*, ind8(:)
+               do i = 1, 4
+                  TB_Hamil%Hhcf(2,2,i) = Hdata( ind8(i) )
+                  TB_Hamil%Hhavg(2,i) = Hdata( ind8(i+4) )
+               enddo
+            endif
+
+            if ( (trim(adjustl(ch_ind_sh1(2:2))) == 'd') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'd') ) then
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind8(:)
+               !print*, ind8(:)
+               do i = 1, 4
+                  TB_Hamil%Hhcf(3,3,i) = Hdata( ind8(i) )
+                  TB_Hamil%Hhavg(3,i) = Hdata( ind8(i+4) )
+               enddo
+            endif
+
+         endif AT3
+
+      end select
+
+      current_block = current_block + block_end + block2_end  ! mark these 2 blocks as done, next starts after this one
+
+      if ((block_end == 0) .or. (block2_end == 0) .or. (current_block >= str_len)) exit strind
+   enddo strind
+end subroutine sort_2bdy_parameters
+
 
 
 
@@ -165,51 +457,104 @@ subroutine react_to_tag(FN, found_tag, count_lines, read_well, error_message, si
    character(*), intent(inout) :: error_message ! error message if id did not read well
    integer, intent(out), optional :: sizeH, sizeS  ! sizes of data arrays containing H and S coefficients
    real(8), dimension(:), intent(out), optional :: Hdata, Sdata   ! text with data containing H and S
-   integer, dimension(:), intent(out), optional :: inds   ! indices to intepret these data
+   character(*), intent(out), optional :: inds   ! string with all the indices to intepret these data
    !-----------------------
-   integer :: N_ver, Reason
-
-   print*, 'Tag: ', trim(adjustl(found_tag))
+   integer :: N_ver, Reason, str_len
+   character(30) :: temp_ch
+   character(5000) :: temp_string
 
    ! Check if the tag is a key word that we need:
    select case(trim(adjustl(found_tag)))
-   case ('datH')
+   case ('inds') ! dictionary of indices, attributing array of data to proper parameters
+      if (present(inds)) then ! read the list of indices
+         backspace(FN) ! to read this line again, extracting the parameters we need
+         count_lines = count_lines - 1
+         !First read the data as text:
+         read(FN, '(a)', IOSTAT=Reason) temp_string
+         call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
+
+         ! Now, interpret the data from the string (excluding the tag at the end with "/"):
+         str_len = LEN(trim(temp_string)) ! length of the string
+         inds = temp_string(55:str_len-7)
+      endif
+
+   case ('datH') ! Hamiltonian 2-body parameters
       if (present(Hdata)) then ! read the H coefficients into the array
-         backspace(FN) ! to read this line again, extracting the parameter we need
+         backspace(FN) ! to read this line again, extracting the parameters we need
          count_lines = count_lines - 1
-         read(FN,'(10X,(es))', IOSTAT=Reason) Hdata
+         !First read the data as text:
+         read(FN, '(a)', IOSTAT=Reason) temp_string
          call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
 
-         print*, 'Hdata', Hdata
+         ! Now, interpret the data from the string (excluding the tag at the end with "/"):
+         str_len = LEN(trim(temp_string)) ! length of the string
+         read(temp_string(11:str_len-7), *, IOSTAT=Reason) Hdata
+
+         if (Hdata(size(Hdata)) == 0.0d0) then ! probably reading of the string failed
+            print*, 'Hdata', Hdata
+            error_message = 'Reading from 3TB H parameters failed'
+            read_well = .false.
+         endif
       endif
-   case ('datS')
+
+   case ('datS') ! Overlap matrix 2-body parameters
       if (present(Sdata)) then ! read the S coefficients into the array
-         backspace(FN) ! to read this line again, extracting the parameter we need
+         backspace(FN) ! to read this line again, extracting the parameters we need
          count_lines = count_lines - 1
-         read(FN,'(10X,(es))', IOSTAT=Reason) Sdata
+
+         !First read the data as text:
+         read(FN, '(a)', IOSTAT=Reason) temp_string
          call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
 
-         print*, 'Sdata', Sdata
+         ! Now, interpret the data from the string (excluding the tag at the end with "/"):
+         str_len = LEN(trim(temp_string)) ! length of the string
+         read(temp_string(11:str_len-7), *, IOSTAT=Reason) Sdata
+
+         if (Sdata(size(Sdata)) == 0.0d0) then ! probably reading of the string failed
+            print*, 'Sdata', Sdata
+            error_message = 'Reading from 3TB S parameters failed'
+            read_well = .false.
+         endif
       endif
-   case ('sizeH')
+
+   case ('sizeH') ! size of the array with H parameters
       if (present(sizeH)) then
          backspace(FN) ! to read this line again, extracting the parameter we need
          count_lines = count_lines - 1
-         read(FN,'(11X,i2)', IOSTAT=Reason) sizeH
+
+         !First read the data as text:
+         !read(FN,'(11X,i3)', IOSTAT=Reason) sizeH
+         read(FN, '(a)', IOSTAT=Reason) temp_ch
          call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
 
-         print*, 'sizeH:', sizeH
+         ! Now, interpret the data from the string (excluding the tag at the end with "/"):
+         str_len = LEN(trim(temp_ch)) ! length of the string
+         read(temp_ch(12:str_len-8), *, IOSTAT=Reason) sizeH
+         call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
+
+         if (sizeH < 1) then ! probably reading of the string failed
+            print*, 'sizeH', Sdata
+            error_message = 'Reading from 3TB sizeH parameter failed'
+            read_well = .false.
+         endif
       endif
-   case ('sizeS')
+
+   case ('sizeS') ! size of the array with S parameters
       if (present(sizeS)) then
          backspace(FN) ! to read this line again, extracting the parameter we need
          count_lines = count_lines - 1
-         read(FN,'(11X,i2)', IOSTAT=Reason) sizeS
+
+         !First read the data as text:
+         !read(FN,'(11X,i2)', IOSTAT=Reason) sizeS
+         read(FN, '(a)', IOSTAT=Reason) temp_ch
          call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
 
-         print*, 'sizeS:', sizeS
+         ! Now, interpret the data from the string (excluding the tag at the end with "/"):
+         str_len = LEN(trim(temp_ch)) ! length of the string
+         read(temp_ch(12:str_len-8), *, IOSTAT=Reason) sizeS
       endif
-   case ('version')
+
+   case ('version') ! index of the parameterization type
       backspace(FN) ! to read this line again, extracting the parameter we need
       count_lines = count_lines - 1
       read(FN,'(13X,i1)', IOSTAT=Reason) N_ver
