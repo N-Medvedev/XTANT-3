@@ -52,7 +52,7 @@ else
 endif
 
 # list the files necessary for the compilation in the order of their dependencies
-OBJS = Universal_constants.o Objects.o Variables.o BS_Cartesian_Gaussians.o BS_Spherical_Gaussians.o Gnuplotting.o Periodic_table.o Algebra_tools.o BS_Basis_sets.o TB_Koster_Slater.o Dealing_with_files.o Little_subroutines.o Dealing_with_EADL.o Dealing_with_DFTB.o Dealing_with_BOP.o Dealing_with_xTB.o Atomic_tools.o  Electron_tools.o Nonadiabatic.o Read_input_data.o Van_der_Waals.o Coulomb.o ZBL_potential.o Exponential_wall.o MC_cross_sections.o Dealing_with_output_files.o Monte_Carlo.o TB_Fu.o TB_Pettifor.o TB_Molteni.o TB_NRL.o TB_DFTB.o TB_BOP.o TB_xTB.o TB.o Initial_configuration.o  Optical_parameters.o Transport.o XTANT_MAIN_FILE.o
+OBJS = Universal_constants.o Objects.o Variables.o BS_Cartesian_Gaussians.o BS_Spherical_Gaussians.o Gnuplotting.o Periodic_table.o Algebra_tools.o BS_Basis_sets.o TB_Koster_Slater.o Dealing_with_files.o Little_subroutines.o Dealing_with_EADL.o Dealing_with_DFTB.o Dealing_with_3TB.o Dealing_with_BOP.o Dealing_with_xTB.o Atomic_tools.o  Electron_tools.o Nonadiabatic.o Read_input_data.o Van_der_Waals.o Coulomb.o ZBL_potential.o Exponential_wall.o MC_cross_sections.o Dealing_with_output_files.o Monte_Carlo.o TB_Fu.o TB_Pettifor.o TB_Molteni.o TB_NRL.o TB_DFTB.o TB_BOP.o TB_xTB.o TB.o Initial_configuration.o  Optical_parameters.o Transport.o XTANT_MAIN_FILE.o
 
 # print explanations
 default:

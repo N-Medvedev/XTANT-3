@@ -33,6 +33,9 @@ use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int,
 use Dealing_with_DFTB, only : m_DFTB_directory, construct_skf_filename, read_skf_file, same_or_different_atom_types, idnetify_basis_size
 use Dealing_with_BOP, only : m_BOP_directory, m_BOP_file, read_BOP_parameters, idnetify_basis_size_BOP, &
                             read_BOP_repulsive, check_if_repulsion_exists
+use Dealing_with_3TB, only : m_3TB_directory, m_3TB_onsite_data, read_3TB_onsite_file , construct_3TB_filenames, &
+                            read_3TB_2bdy_file !, read_3TB_3bdy_file
+
 use Dealing_with_xTB, only : m_xTB_directory, read_xTB_parameters, identify_basis_size_xTB, identify_AOs_xTB
 use Periodic_table, only : Decompose_compound
 
@@ -92,7 +95,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    matter%cell_x = 1
    matter%cell_y = 1
    matter%cell_z = 1
-   numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, XATOM...)
+   numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, etc...)
    matter%dens = -1.0d0 ! [g/cm^3] density of the material (negative = use MD supercell to evaluate it)
    numpar%NMC = 30000	! number of iterations in the MC module
 #ifdef OMP_inside
@@ -100,7 +103,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
    numpar%NOMP = 1	! unparallelized by default
 #endif
-   numpar%N_basis_size = 0  ! DFTB or BOP basis set default (0=s, 1=sp3, 2=sp3d5)
+   numpar%N_basis_size = 0  ! DFTB, BOP or 3TB basis set default (0=s, 1=sp3, 2=sp3d5)
    numpar%do_atoms = .true.	! Atoms are allowed to move
    matter%W_PR = 25.5d0  ! Parinello-Rahman super-vell mass coefficient
    numpar%dt = 0.01d0 	! Time step for MD [fs]
@@ -1054,13 +1057,20 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endif
                TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
 
+            case ('3TB')
+               if (.not.allocated(TB_Hamil)) then
+                  allocate(TB_H_3TB::TB_Hamil(matter%N_KAO,matter%N_KAO)) ! make it for 3TB parametrization
+                  TB_Hamil%Param = ''
+               endif
+               TB_Hamil(i,j)%Param = trim(adjustl(ch_temp))
+
             case ('BOP')
                if (.not.allocated(TB_Hamil)) then
                   allocate(TB_H_BOP::TB_Hamil(matter%N_KAO,matter%N_KAO)) ! make it for BOP parametrization
                   TB_Hamil%Param = ''
                endif
                TB_Hamil(i,j)%Param = trim(adjustl(ch_temp))
-               ! DFTB skf files contain parameters for both Hamiltonian and Repulsive potential, allocate both of them here:
+               ! BOP files contain parameters for both Hamiltonian and Repulsive potential, allocate both of them here:
                if (.not.allocated(TB_Repuls)) then
                   allocate(TB_Rep_BOP::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for BOP parametrization
                   TB_Repuls%Param = ''
@@ -1136,6 +1146,15 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endselect
                if (INFO .NE. 0) then
                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
+                  call Save_error_details(Err, INFO, Err%Err_descript)
+                  print*, trim(adjustl(Err%Err_descript))
+                  goto 3421
+               endif
+            type is (TB_H_3TB)
+               Error_descript = ''
+               call read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript, INFO) ! below
+               if (INFO .NE. 0) then
+                  Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name))
                   call Save_error_details(Err, INFO, Err%Err_descript)
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
@@ -1258,6 +1277,12 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   TB_Repuls%Param = ''
                endif
                TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+            case ('3TB')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_3TB::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for 3TB parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
             case ('BOP')
                if (.not.allocated(TB_Repuls)) then
                   allocate(TB_Rep_BOP::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for BOP parametrization
@@ -1324,6 +1349,9 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
+            type is (TB_Rep_3TB)
+               Error_descript = ''
+               ! There is no repulsive part in 3TB
             type is (TB_Rep_BOP)
                Error_descript = ''
                ! Nothing to do with repulsive part in BOP parameterization
@@ -3302,7 +3330,7 @@ subroutine read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Err
        INFO = 3
        goto 3426
    endif
-   
+
    read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%rcut, TB_Hamil(i,j)%d  ! [A] cut off, and width of cut-off region [A]
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
@@ -3352,6 +3380,139 @@ subroutine read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Err
    call close_file('close', FN=FN_skf) ! module "Dealing_with_files"
    call close_file('close', FN=FN) ! module "Dealing_with_files"
 end subroutine read_DFTB_TB_Params
+
+
+
+subroutine read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript, INFO)
+   integer, intent(in) :: FN ! file number where to read from
+   integer, intent(in) :: i, j  ! numbers of pair of elements for which we read the data
+   type(TB_H_3TB), dimension(:,:), intent(inout) ::  TB_Hamil ! parameters of the Hamiltonian of TB
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Solid), intent(in) :: matter	! all material parameters
+   character(*), intent(out) :: Error_descript	! error save
+   integer, intent(out) :: INFO	! error description
+   !------------------------------------------------------
+   character(100) :: Folder_name, File_name
+   character(200) :: Filename_onsite, Filename_2body, Filename_3body
+   integer count_lines, Reason, FN_onsite, FN_2bdy, FN_3bdy, N_basis_siz
+   logical file_exist, file_opened, read_well
+
+   ! To start with:
+   INFO = 0
+   count_lines = 1
+   FN_onsite=110
+   FN_2bdy=111
+   FN_3bdy=112
+
+   ! Read the second line of the input file:
+   read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%rcut, TB_Hamil(i,j)%d  ! [A] cut off, and width of cut-off region [A]
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+       write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+       INFO = 3
+       goto 3500
+   endif
+
+   ! Folder with all 3TB data:
+   Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_3TB_directory))//numpar%path_sep
+
+   ! Read onsite parameters:
+   Filename_onsite = trim(adjustl(Folder_name))//trim(adjustl(m_3TB_onsite_data))
+   inquire(file=trim(adjustl(Filename_onsite)),exist=file_exists)
+   if (.not.file_exists) then
+      INFO = 1 ! file with onsite parameters not found
+      Error_descript = 'File '//trim(adjustl(Filename_onsite))//' not found, the program terminates'
+      goto 3500
+   endif
+   open(UNIT=FN_onsite, FILE = trim(adjustl(Filename_onsite)), status = 'old', action='read')
+   inquire(file=trim(adjustl(Filename_onsite)),opened=file_opened)
+   if (.not.file_opened) then
+      Error_descript = 'File '//trim(adjustl(Filename_onsite))//' could not be opened, the program terminates'
+      INFO = 2
+      goto 3500
+   endif
+   ! Having constructed the name of the file with onsite parameters, read it:
+   call read_3TB_onsite_file(FN_onsite, trim(adjustl(matter%Atoms(i)%Name)), TB_Hamil(i,j), &
+                              N_basis_siz, Error_descript)    ! module "Dealing_with_3TB"
+   if (LEN(trim(adjustl(Error_descript))) > 0) then
+      INFO = 5
+      goto 3500
+   endif
+
+   ! Save the basis size as the maximal among all elements:
+   numpar%N_basis_size = max(numpar%N_basis_size,N_basis_siz)
+
+
+
+   ! Construct name of the 3TB files with 2-body and 3-body parameters:
+   call construct_3TB_filenames(trim(adjustl(Folder_name)), trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
+                     numpar%path_sep, Filename_2body, Filename_3body, INFO)  ! module "Dealing_with_3TB"
+   ! Check if such 3TB parameterization exists:
+   if (INFO /= 0) then
+      select case(INFO)
+      case (1)
+         Error_descript = 'File '//trim(adjustl(Filename_2body))//' not found, the program terminates'
+         INFO = 1
+      case (2)
+         Error_descript = 'File '//trim(adjustl(Filename_3body))//' not found, the program terminates'
+         INFO = 1
+      case (3)
+         Error_descript = 'File '//trim(adjustl(Filename_2body))//' not found, the program terminates'
+         INFO = 1
+      case (4)
+         Error_descript = 'File '//trim(adjustl(Filename_3body))//' not found, the program terminates'
+         INFO = 1
+      end select
+      goto 3500
+   endif
+
+   ! Open and read from the parameters files:
+   ! 2-body parameters:
+   open(UNIT=FN_2bdy, FILE = trim(adjustl(Filename_2body)), status = 'old', action='read')
+   inquire(file=trim(adjustl(Filename_2body)),opened=file_opened)
+   if (.not.file_opened) then
+      Error_descript = 'File '//trim(adjustl(Filename_2body))//' could not be opened, the program terminates'
+      INFO = 2
+      goto 3500
+   endif
+   ! File exists and opened, read from it:
+   call read_3TB_2bdy_file(FN_2bdy, trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
+                           TB_Hamil(i,j), Error_descript)    ! module "Dealing_with_3TB"
+   if (LEN(trim(adjustl(Error_descript))) > 0) then
+      INFO = 5
+      goto 3500
+   endif
+
+   ! 3-body parameters:
+   open(UNIT=FN_3bdy, FILE = trim(adjustl(Filename_3body)), status = 'old', action='read')
+   inquire(file=trim(adjustl(Filename_3body)),opened=file_opened)
+   if (.not.file_opened) then
+      Error_descript = 'File '//trim(adjustl(Filename_3body))//' could not be opened, the program terminates'
+      INFO = 2
+      goto 3500
+   endif
+   ! File exists and opened, read from it:
+   !call read_3TB_3bdy_file(FN_3bdy, TB_Hamil(i,j), Error_descript)    ! module "Dealing_with_3TB"
+   if (LEN(trim(adjustl(Error_descript))) > 0) then
+      INFO = 5
+      goto 3500
+   endif
+
+3500 continue
+   ! Close files that have been read through:
+   call close_file('close', FN=FN_onsite) ! module "Dealing_with_files"
+   call close_file('close', FN=FN_2bdy) ! module "Dealing_with_files"
+   call close_file('close', FN=FN_3bdy) ! module "Dealing_with_files"
+   call close_file('close', FN=FN) ! module "Dealing_with_files"
+
+
+   ! While testing :
+   if (INFO .NE. 0) then
+      print*, trim(adjustl(Error_descript))
+   endif
+   PAUSE 'pause read_3TB_TB_Params'
+
+end subroutine read_3TB_TB_Params
 
 
 
