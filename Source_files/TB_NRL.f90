@@ -2391,7 +2391,7 @@ end function d_exp_F_NRL
 !AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 ! Repulsive part of TB:
 
-subroutine get_Erep_s_NRL(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_Pettifor"
+subroutine get_Erep_s_NRL(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_Rep_NRL), dimension(:,:), intent(in)   :: TB_Repuls
