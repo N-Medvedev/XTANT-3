@@ -23,6 +23,7 @@ use TB_Pettifor
 use TB_Molteni
 use TB_NRL
 use TB_DFTB
+use TB_3TB
 use Van_der_Waals
 use Coulomb
 use Exponential_wall

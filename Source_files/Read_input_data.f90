@@ -34,7 +34,7 @@ use Dealing_with_DFTB, only : m_DFTB_directory, construct_skf_filename, read_skf
 use Dealing_with_BOP, only : m_BOP_directory, m_BOP_file, read_BOP_parameters, idnetify_basis_size_BOP, &
                             read_BOP_repulsive, check_if_repulsion_exists
 use Dealing_with_3TB, only : m_3TB_directory, m_3TB_onsite_data, read_3TB_onsite_file , construct_3TB_filenames, &
-                            read_3TB_2bdy_file !, read_3TB_3bdy_file
+                            read_3TB_2bdy_file, read_3TB_3bdy_file
 
 use Dealing_with_xTB, only : m_xTB_directory, read_xTB_parameters, identify_basis_size_xTB, identify_AOs_xTB
 use Periodic_table, only : Decompose_compound
@@ -3492,7 +3492,8 @@ subroutine read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript
       goto 3500
    endif
    ! File exists and opened, read from it:
-   !call read_3TB_3bdy_file(FN_3bdy, TB_Hamil(i,j), Error_descript)    ! module "Dealing_with_3TB"
+   call read_3TB_3bdy_file(FN_3bdy, trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
+                           TB_Hamil(i,j), Error_descript)    ! module "Dealing_with_3TB"
    if (LEN(trim(adjustl(Error_descript))) > 0) then
       INFO = 5
       goto 3500

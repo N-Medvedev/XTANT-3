@@ -215,15 +215,17 @@ type, EXTENDS (TB_Hamiltonian) :: TB_H_3TB ! hamiltonian coefficients:
    real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-like cut-off [A]
 !    real(8) :: Ud, Up, Us    ! the Hubbard U values for the appropriate angular momenta (currently not used in XTANT)
    ! Onsite parameters:
-   real(8) :: Ed, Ep, Es    ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom
-   real(8), dimension(3,4) :: Hhavg  ! coefficients before Leguerres in 2-body onsite, Eq.(19) in [1]
-   real(8), dimension(3,3,4) :: Hhcf ! coefficients before Leguerres in crystal-field onsite, Eq.(20) in [1]
-   real(8), dimension(:,:,:), allocatable :: Hh3bdy ! coefficients before Leguerres in 3-body onsite, Eq.(20) in [1]
+   real(8) :: Ed, Ep, Es      ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom
+   real(8), dimension(3,4)   :: Hhavg     ! coefficients before Leguerres in 2-body onsite, Eq.(19) in [1]
+   real(8), dimension(3,3,4) :: Hhcf      ! coefficients before Leguerres in crystal-field onsite, Eq.(20) in [1]
+   real(8), dimension(3,4)   :: Hh3bdy    ! coefficients before Leguerres in 3-body onsite, Eq.(20) in [1]
    ! Overlap parameters:
-   real(8), dimension(10,5)  :: Vrfx ! coefficients before Leguerres in 2-body Hamiltonian, Eq.(12) in [1]
-   real(8), dimension(10,6)  :: Srfx ! coefficients before Leguerres in 2-body overlap, Eq.(12) in [1]
-   real(8), dimension(:,:,:), allocatable :: Hg3bdy ! coefficients before Leguerres in 3-body onsite, Eq.(14) in [1]
-   real(8), dimension(:,:,:), allocatable :: Sg3bdy ! coefficients before Leguerres in 3-body onsite, Eq.(14) in [1]
+   real(8), dimension(10,5)    :: Vrfx    ! coefficients before Leguerres in 2-body Hamiltonian, Eq.(12) in [1]
+   real(8), dimension(10,6)    :: Srfx    ! coefficients before Leguerres in 2-body overlap, Eq.(12) in [1]
+   real(8), dimension(3,3,3,4) :: V3bdy   ! coefficients before Leguerres in 3-body H, Eq.(14) in [1]
+   ! Reminder:
+   ! V3bdy (atoms index; shell 1; shell 2; Laguerre parameter index)
+   ! "atoms indices" are defined in the function find_3bdy_ind, module "Dealing_with_3TB"
    ! Reminder:
    !Vr(1,5) = (s s sigma)
    !Vr(2,5) = (s p sigma)

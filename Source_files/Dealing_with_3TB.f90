@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2022 Nikita Medvedev
+! Copyright (C) 2022 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -32,6 +32,13 @@ use Dealing_with_DFTB, only: same_or_different_atom_types
 
 implicit none
 
+
+interface find_3bdy_ind
+   module procedure find_3bdy_ind_ch	! find by element names
+   module procedure find_3bdy_ind_int	! find by kind of atoms
+end interface find_3bdy_ind
+
+
 ! Modular parameters:
 character(14) :: m_3TB_directory
 character(20) :: m_3TB_onsite_data
@@ -42,6 +49,10 @@ parameter (m_3TB_directory = '3TB_PARAMETERS')
 parameter (m_3TB_onsite_data = 'Onsite_energies.dat')
 parameter (m_3TB_elements_data = 'els')
 parameter (m_3TB_binary_data = 'binary')
+
+
+public :: find_3bdy_ind
+
 
  contains
 
@@ -98,6 +109,191 @@ subroutine read_3TB_onsite_file(FN, Element1, TB_Hamil, N_basis_siz, error_messa
 end subroutine read_3TB_onsite_file
 
 
+
+subroutine read_3TB_3bdy_file(FN, Element1, Element2, TB_Hamil, error_message)
+   integer, intent(in) :: FN    ! 2-bosy parameters of 3TB file to read from (must be already opened)
+   character(*), intent(in) :: Element1, Element2   ! elements from the periodic table
+   type(TB_H_3TB), intent(inout) :: TB_Hamil    ! Hamiltonian and Overlap data
+   character(*), intent(inout) :: error_message
+   !-------------------------------------------
+   integer :: Reason, i, count_lines, Nsiz, sizeH, sizeS
+   logical :: read_well
+   character(30) :: found_tag
+   character(100) :: temp_ch
+   character(5000) :: string_ind
+   real(8), dimension(:), allocatable :: Hdata   ! text with data containing 3-body parameters for H
+
+   ! To start with:
+   count_lines = 0
+   error_message = ''
+
+   ! Find how many lines are in the file:
+   call Count_lines_in_file(FN, Nsiz)  ! module "Dealing_with_files"
+
+   ! Read file with 3-body parameters
+   ! It is done in a few steps:
+   ! 1) Find the dimensions of the data strings
+   RD3bd: do i = 1, Nsiz
+      read(FN,*, IOSTAT=Reason) temp_ch
+      call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
+      if (.not.read_well) exit RD3bd
+
+      ! Find the tag in this string, if any:
+      call extract_tag(temp_ch, found_tag)  ! below
+
+      ! Find the sizes of the arrays with the H and S parameters:
+      call react_to_tag(FN, found_tag, count_lines, read_well, error_message, sizeH=sizeH)   ! below
+      if (.not.read_well) exit RD3bd
+   enddo RD3bd
+   if (.not.read_well) goto 5002
+
+   ! Rewind the file to start reading it again:
+   count_lines = 0
+   REWIND(FN)
+
+   ! 2) Read the data from the strings into the arrays:
+   ! Knowing the size of array, allocate it:
+   allocate(Hdata(sizeH), source=0.0d0)
+
+   RD2bd2: do i = 1, Nsiz
+      read(FN,*, IOSTAT=Reason) temp_ch
+      call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
+      if (.not.read_well) exit RD2bd2
+
+      ! Find the tag in this string, if any:
+      call extract_tag(temp_ch, found_tag)  ! below
+
+      ! Find the sizes of the arrays with the H and S parameters:
+      call react_to_tag(FN, found_tag, count_lines, read_well, error_message, Hdata=Hdata, inds=string_ind)   ! below
+      if (.not.read_well) exit RD2bd2
+   enddo RD2bd2
+   if (.not.read_well) goto 5002
+
+   ! Assign the read parameters to the variables to be used in the code:
+   call sort_3bdy_parameters(TB_Hamil, Element1, Element2, Hdata, string_ind)   ! below
+
+   ! Convert Hamiltonian parameters from Ry to eV:
+   TB_Hamil%V3bdy = TB_Hamil%V3bdy * g_Ry    ! [Ry] -> [eV]
+   TB_Hamil%Hh3bdy = TB_Hamil%Hh3bdy * g_Ry  ! [Ry] -> [eV]
+
+5002 continue
+end subroutine read_3TB_3bdy_file
+
+
+
+subroutine sort_3bdy_parameters(TB_Hamil, Element1, Element2, Hdata, string_ind)
+   type(TB_H_3TB), intent(inout) :: TB_Hamil    ! Hamiltonian and Overlap data
+   character(*), intent(in) :: Element1, Element2   ! elements from the periodic table
+   real(8), dimension(:), intent(in) :: Hdata   ! text with data containing H
+   character(*), intent(in) :: string_ind   ! string with all the indices to intepret these data
+   !-------------------------
+   integer :: i, block_start, block_end, current_block, str_len, H_ind
+   integer :: block2_start, block2_end
+   integer :: colon_pos, ind3(3), ind4(4), ind5(5), ind6(6), ind8(8), ind10(10), ind12(12), ind15(15), ind18(18)
+   integer :: sh1, sh2
+   character(1) :: ind_var
+   character(3) :: ch_ind_atom1, ch_ind_atom2, ch_ind_atom3, ch_ind_sh1, ch_ind_sh2
+
+   ! To start counting brakets in the data
+   current_block = 0
+   str_len = LEN(trim(string_ind))  ! last symbol in the string of data
+
+   ! Go through all the indices data and sort all of them out:
+   strind:do
+
+      ! 1) Find opening and closing tags for a data block: "[" and "]":
+      block_start = INDEX(string_ind(current_block+1:str_len), '[')  ! intrinsic
+      block_end = INDEX(string_ind(current_block+1:str_len), ']')    ! intrinsic
+
+      ! 2) Read indices:
+      ! first, find what kind of variables are saved in this block: H or O
+      colon_pos = INDEX(string_ind(current_block+block_start:current_block+block_end), ':', BACK=.true.) ! intrinsic
+      ind_var = string_ind(current_block+block_start+colon_pos:current_block+block_start+colon_pos)   ! this symbol is the lable
+
+      ! second, find the positions for the second block that contains the indices:
+      block2_start = INDEX(string_ind(current_block+block_end+1:str_len), '[')  ! intrinsic
+      block2_end = INDEX(string_ind(current_block+block_end+1:str_len), ']')    ! intrinsic
+
+      ! Having the lables and the indices, sort them out:
+      select case (ind_var)   ! choose the variable: H or O
+      case('H')   ! there are 5 more indices: atom 1, shell 1, atom 2, shell 2, atom 3
+         ! Read these indices:
+         read(string_ind(current_block+block_start+1:current_block+block_end),*) &
+                  ch_ind_atom1, ch_ind_sh1, ch_ind_atom2, ch_ind_sh2, ch_ind_atom3
+
+         ! Find if the indices belong to this Hamiltonian parameter set:
+         AT1: if (trim(adjustl(Element1)) == trim(adjustl(ch_ind_atom1(2:))) ) then
+
+            ! find to which index this combination of 3 atoms corresponds to:
+            H_ind = find_3bdy_ind(trim(adjustl(ch_ind_atom1(2:))), trim(adjustl(ch_ind_atom2(2:))), trim(adjustl(ch_ind_atom3(2:)))) ! below
+
+            ! find indices of the shells:
+            sh1 = ind_of_shell( trim(adjustl(ch_ind_sh1(2:2))) )   ! below
+            sh2 = ind_of_shell( trim(adjustl(ch_ind_sh2(2:2))) )   ! below
+
+            ! check if the atoms are of the same or different type:
+            if ( trim(adjustl(ch_ind_atom1(2:))) == trim(adjustl(ch_ind_atom2(2:))) ) then   ! the same type, 3 indices
+               ! Read indices of the overlapping atoms from the second block:
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind3(:)
+
+               ! Now, save the parameters into Hamiltonian:
+               TB_Hamil%V3bdy(H_ind, sh1, sh2, 1) = Hdata( ind3(1) )
+               TB_Hamil%V3bdy(H_ind, sh1, sh2, 2) = Hdata( ind3(2) )
+               TB_Hamil%V3bdy(H_ind, sh1, sh2, 3) = Hdata( ind3(2) )  ! due to permutation symmetry, g2=g3
+               TB_Hamil%V3bdy(H_ind, sh1, sh2, 4) = Hdata( ind3(3) )
+
+            else  ! different types, 4 indices
+               ! Read indices of the overlapping atoms from the second block:
+               read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind4(:)
+
+               ! Now, save the parameters into Hamiltonian:
+               do i = 1, 4
+                  TB_Hamil%V3bdy(H_ind, sh1, sh2, i) = Hdata( ind4(i) )
+               enddo
+            endif
+         endif AT1
+
+      case('O')   ! there are 3 more indices: atom 1, atom 2, atom 3
+         read(string_ind(current_block+block_start+1:current_block+block_end),*) ch_ind_atom1, ch_ind_atom2, ch_ind_atom3
+
+         ! Find if the indices belong to this Hamiltonian parameter set:
+         AT3: if (trim(adjustl(Element1)) == trim(adjustl(ch_ind_atom1(2:))) ) then
+            ! Read indices of the overlapping atoms from the second block:
+            read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind4(:)
+
+            ! find to which index this combination of 3 atoms corresponds to:
+            H_ind = find_3bdy_ind(trim(adjustl(ch_ind_atom1(2:))), trim(adjustl(ch_ind_atom2(2:))), trim(adjustl(ch_ind_atom3(2:)))) ! below
+
+            ! Knowing indices of the parameters and or the H, save them:
+            do i = 1, 4
+               TB_Hamil%Hh3bdy(H_ind,i) = Hdata( ind4(i) )
+            enddo
+         endif AT3
+
+      end select
+
+      current_block = current_block + block_end + block2_end  ! mark these 2 blocks as done, next starts after this one
+
+      if ((block_end == 0) .or. (block2_end == 0) .or. (current_block >= str_len)) exit strind
+   enddo strind
+end subroutine sort_3bdy_parameters
+
+
+function ind_of_shell(sh_name) result(sh)
+   integer sh  ! index of the shell
+   character(*), intent(in) :: sh_name ! shell name: s, p, d
+   select case (trim(adjustl(sh_name)))
+   case ('s', 'S')
+      sh = 1
+   case ('p', 'P')
+      sh = 2
+   case ('d', 'D')
+      sh = 3
+   end select
+end function ind_of_shell
+
+
+
 subroutine read_3TB_2bdy_file(FN, Element1, Element2, TB_Hamil, error_message)
    integer, intent(in) :: FN    ! 2-bosy parameters of 3TB file to read from (must be already opened)
    character(*), intent(in) :: Element1, Element2   ! elements from the periodic table
@@ -105,19 +301,15 @@ subroutine read_3TB_2bdy_file(FN, Element1, Element2, TB_Hamil, error_message)
    character(*), intent(inout) :: error_message
    !-------------------------------------------
    integer :: Reason, i, count_lines, Nsiz, sizeH, sizeS
-   real(8) :: Es, Ep, Ed
-   logical :: read_well, found_element
-   character(3) :: El_name1, El_name2
+   logical :: read_well
    character(30) :: found_tag
    character(100) :: temp_ch
    character(5000) :: string_ind
    real(8), dimension(:), allocatable :: Hdata, Sdata   ! text with data containing H and S
-   !integer, dimension(:), allocatable :: inds   ! indices to intepret these data
 
    ! To start with:
    count_lines = 0
    error_message = ''
-   found_element = .false.
    ! Default values, no overlap coefficients to start with:
    TB_Hamil%Hhavg = 0.0d0
    TB_Hamil%Hhcf = 0.0d0
@@ -169,6 +361,11 @@ subroutine read_3TB_2bdy_file(FN, Element1, Element2, TB_Hamil, error_message)
    ! Assign the read parameters to the variables to be used in the code:
    call sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, string_ind)   ! below
 
+   ! Convert Hamiltonian parameters from Ry to eV:
+   TB_Hamil%Hhavg = TB_Hamil%Hhavg * g_Ry ! [Ry] -> [eV]
+   TB_Hamil%Hhcf = TB_Hamil%Hhcf * g_Ry ! [Ry] -> [eV]
+   TB_Hamil%Vrfx = TB_Hamil%Vrfx * g_Ry ! [Ry] -> [eV]
+
 5001 continue
 end subroutine read_3TB_2bdy_file
 
@@ -180,41 +377,39 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
    real(8), dimension(:), intent(in) :: Hdata, Sdata   ! text with data containing H and S
    character(*), intent(in) :: string_ind   ! string with all the indices to intepret these data
    !-------------------------
-   integer :: i, count_brackets, block_start, block_end, current_block, str_len
+   integer :: i, block_start, block_end, current_block, str_len
    integer :: block2_start, block2_end
    integer :: colon_pos, ind4(4), ind5(5), ind6(6), ind8(8), ind10(10), ind12(12), ind15(15), ind18(18)
    character(1) :: ind_var
    character(3) :: ch_ind_atom1, ch_ind_atom2, ch_ind_sh1, ch_ind_sh2
 
-   ! To start counting breakets in the data
-   count_brackets = 0
+   ! To start counting brakets in the data
    current_block = 0
-   str_len = LEN(trim(string_ind))
+   str_len = LEN(trim(string_ind))  ! last symbol in the string of data
 
-   ! Go through all the indices data and sort them out:
+   ! Go through all the indices data and sort all of them out:
    strind:do
-      count_brackets = count_brackets + 1
 
       ! 1) Find opening and closing tags for a data block: "[" and "]":
       block_start = INDEX(string_ind(current_block+1:str_len), '[')  ! intrinsic
       block_end = INDEX(string_ind(current_block+1:str_len), ']')    ! intrinsic
 
       ! 2) Read indices:
-      ! find first what kind of variables are saved in this block: H, S or O
-      colon_pos = INDEX(string_ind(current_block+block_start:current_block+block_end), ':', BACK=.true.)
-      ind_var = string_ind(current_block+block_start+colon_pos:current_block+block_start+colon_pos)
+      ! first, find what kind of variables are saved in this block: H, S or O
+      colon_pos = INDEX(string_ind(current_block+block_start:current_block+block_end), ':', BACK=.true.) ! intrinsic
+      ind_var = string_ind(current_block+block_start+colon_pos:current_block+block_start+colon_pos)   ! this symbol is the lable
 
-      ! Find the positions for the second block that contains the indices:
+      ! second, find the positions for the second block that contains the indices:
       block2_start = INDEX(string_ind(current_block+block_end+1:str_len), '[')  ! intrinsic
       block2_end = INDEX(string_ind(current_block+block_end+1:str_len), ']')    ! intrinsic
 
       !print*, block_start, block_end, string_ind(current_block+block_start:current_block+block_end)
       !print*, block2_start, block2_end, string_ind(current_block+block_end+block2_start:current_block+block_end+block2_end)
 
-      ! Having the lables of the indices, sort them out:
-      select case (ind_var)   ! chose the variable: H, S or O
-      case('H')   ! there are 4 more indices: atom 1, shell 1, atom 2, shell2
-         ! Get these indices:
+      ! Having the lables and the indices, sort them out:
+      select case (ind_var)   ! choose the variable: H, S or O
+      case('H')   ! there are 4 more indices: atom 1, shell 1, atom 2, shell 2
+         ! Read these indices:
          read(string_ind(current_block+block_start+1:current_block+block_end),*) ch_ind_atom1, ch_ind_sh1, ch_ind_atom2, ch_ind_sh2
 
          ! Find if the indices belong to this Hamiltonian parameter set:
@@ -561,7 +756,7 @@ subroutine react_to_tag(FN, found_tag, count_lines, read_well, error_message, si
       call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
       if (N_ver /= 2) then
          print*, '*=============================================*'
-         print*, ' Attention: 3TB parameterization version is wrong!'
+         print*, ' Attention: 3TB parameterization version is not supported!'
          print*, ' Version:', N_ver
          print*, ' It may cause some problems...'
          print*, ' *=============================================*'
@@ -675,6 +870,38 @@ subroutine construct_3TB_filenames(Folder_name, Element1, Element2, path_sep, Fi
    endif
 
 end subroutine construct_3TB_filenames
+
+
+
+pure function find_3bdy_ind_ch(El1, El2, El3) result(ind)
+   integer :: ind ! index of the parameters to use in setting 3-body Hamiltonian
+   character(*), intent(in) :: El1, El2, El3 ! elements of these 3 atoms
+
+   if ((trim(adjustl(El1)) == trim(adjustl(El2))) .and. (trim(adjustl(El2)) == trim(adjustl(El3)))) then ! same elements (1 1 1) or (2 2 2) etc.
+      ind = 1
+   else if (trim(adjustl(El1)) == trim(adjustl(El2))) then ! (1 1 2) or (2 2 1) etc.
+      ind = 1
+   else if (trim(adjustl(El1)) == trim(adjustl(El3))) then ! (1 2 1) or (2 1 2) etc.
+      ind = 2
+   else if (trim(adjustl(El2)) == trim(adjustl(El3))) then ! (1 2 2) or (2 1 1) etc.
+      ind = 3
+   endif
+end function find_3bdy_ind_ch
+
+pure function find_3bdy_ind_int(El1, El2, El3) result(ind)
+   integer :: ind ! index of the parameters to use in setting 3-body Hamiltonian
+   integer, intent(in) :: El1, El2, El3 ! kinds of elements of these 3 atoms
+
+   if ((El1 == El2) .and. (El2 == El3)) then ! same elements (1 1 1) or (2 2 2) etc.
+      ind = 1
+   else if (El1 == El2) then ! (1 1 2) or (2 2 1) etc.
+      ind = 1
+   else if (El1 == El3) then ! (1 2 1) or (2 1 2) etc.
+      ind = 2
+   else if (El2 == El3) then ! (1 2 2) or (2 1 1) etc.
+      ind = 3
+   endif
+end function find_3bdy_ind_int
 
 
 
