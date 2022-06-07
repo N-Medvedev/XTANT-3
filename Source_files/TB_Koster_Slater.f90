@@ -1075,7 +1075,7 @@ pure subroutine KS_sp3d5_hetero(Vsr12, Vsr21, l, m, n, ts)
    
    ! functions above:
    ts(1,1) = t_s_s(Vsr12(1))		! s s
-   ts(1,2) = -t_s_px(l, Vsr12(2))		! s px
+   ts(1,2) = -t_s_px(l, Vsr12(2))	! s px
    ts(1,3) = -t_s_px(m, Vsr12(2))	! s py
    ts(1,4) = -t_s_px(n, Vsr12(2))	! s pz
    ts(1,5) = t_s_dab(l, m, Vsr12(3))	! s dxy

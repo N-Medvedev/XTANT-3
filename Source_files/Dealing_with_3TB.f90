@@ -238,8 +238,8 @@ subroutine sort_3bdy_parameters(TB_Hamil, Element1, Element2, Hdata, string_ind)
 
                ! Now, save the parameters into Hamiltonian:
                TB_Hamil%V3bdy(H_ind, sh1, sh2, 1) = Hdata( ind3(1) )
-               TB_Hamil%V3bdy(H_ind, sh1, sh2, 2) = Hdata( ind3(2) )
-               TB_Hamil%V3bdy(H_ind, sh1, sh2, 3) = Hdata( ind3(2) )  ! due to permutation symmetry, g2=g3
+               TB_Hamil%V3bdy(H_ind, sh1, sh2, 2) = Hdata( ind3(2) ) * 0.5d0
+               TB_Hamil%V3bdy(H_ind, sh1, sh2, 3) = Hdata( ind3(2) ) * 0.5d0 ! due to permutation symmetry, g2=g3
                TB_Hamil%V3bdy(H_ind, sh1, sh2, 4) = Hdata( ind3(3) )
 
             else  ! different types, 4 indices

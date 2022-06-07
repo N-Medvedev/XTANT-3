@@ -39,7 +39,7 @@ use TB_NRL
 use TB_DFTB, only : Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_drij_DFTB, &
                      Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB
 use TB_3TB, only : get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, &
-                     Construct_Vij_3TB, construct_TB_H_3TB
+                     Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors
 use TB_BOP, only : Construct_Vij_BOP, construct_TB_H_BOP, get_Erep_s_BOP
 use TB_xTB, only : Construct_Vij_xTB, construct_TB_H_xTB, get_Erep_s_xTB, identify_xTB_orbitals_per_atom
 use Van_der_Waals
@@ -70,9 +70,11 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
    real(8), dimension(:,:,:), allocatable :: M_dSVij	! matrix of derivatives of Overlap functions for Overlap matrix for all pairs of atoms, all orbitals
    real(8), dimension(:,:,:), allocatable :: M_E0ij     ! matrix of functions for on-site energies for all pairs of atoms, all orbitals (used for BOP)
    real(8), dimension(:,:,:), allocatable :: M_dE0ij     ! matrix of derivatives of functions for on-site energies for all pairs of atoms, all orbitals (used for BOP)
+   real(8), dimension(:,:,:), allocatable :: M_Lag_exp	! matrix of Laguerres for 3-body radial funcs (for 3TB)
    real(8), dimension(:,:,:), allocatable :: M_lmn	! matrix of directional cosines l, m, n
    real(8), dimension(:,:,:), allocatable :: M_x1	! matrix of x1 elements, used for forces calculations
    real(8), dimension(:,:,:), allocatable :: M_xrr	! matrix of xrr elements, used for forces calculations
+   real(8), dimension(:,:,:), allocatable :: Mjs    ! matrix of K-S part of overlaps with s-orb. (for 3TB)
    real(8), dimension(:,:), allocatable :: M_Aij_x_Ei		! matrix of multipliers for non-orthogonal forces calculation
 
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
@@ -106,8 +108,9 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                call Construct_Vij_DFTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_DFTB"
                call construct_TB_H_DFTB(numpar, matter, ARRAY, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_DFTB"
             type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
-               call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_3TB"
-               call construct_TB_H_3TB(numpar, matter, ARRAY, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_3TB"
+               call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+               call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp)	! module "TB_3TB"
+               call construct_TB_H_3TB(numpar, matter, ARRAY, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Scell, NSC, Err) ! module "TB_3TB"
             type is (TB_H_BOP)  ! TB parametrization accroding to BOP (incomplete)
                call Construct_Vij_BOP(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_E0ij, M_dE0ij)    ! module "TB_BOP"
                call construct_TB_H_BOP(numpar, ARRAY, matter, M_Vij, M_SVij, M_E0ij, M_lmn, Scell, NSC, Err)    ! module "TB_BOP"
@@ -2076,6 +2079,8 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    real(8), dimension(:,:,:), allocatable :: M_x1	! matrix of x1 elements, used for forces calculations
    real(8), dimension(:,:,:), allocatable :: M_xrr	! matrix of xrr elements, used for forces calculations
    real(8), dimension(:,:), allocatable :: M_Aij_x_Ei		! matrix of multipliers for non-orthogonal forces calculation
+   real(8), dimension(:,:,:), allocatable :: M_Lag_exp	! matrix of Laguerres for 3-body radial funcs (for 3TB)
+   real(8), dimension(:,:,:), allocatable :: Mjs    ! matrix of K-S part of overlaps with s-orb. (for 3TB)
 
    
    ! so far we only have one supercell:
@@ -2115,9 +2120,10 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
       type is (TB_H_3TB) ! TB parametrization according to 3TB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below
-         call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_3TB"
+         call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+         call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp)	! module "TB_3TB"
          call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
-         call Attract_TB_Forces_Press_3TB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_3TB"
+         !call Attract_TB_Forces_Press_3TB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_3TB"
       type is (TB_H_xTB) ! TB parametrization according to xTB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below
