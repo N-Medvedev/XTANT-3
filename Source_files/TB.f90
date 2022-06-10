@@ -108,9 +108,21 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                call Construct_Vij_DFTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_DFTB"
                call construct_TB_H_DFTB(numpar, matter, ARRAY, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_DFTB"
             type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
+
+!                print*, 'before get_Mjs_factors'
+
                call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+
+!                print*, 'before Construct_Vij_3TB'
+
                call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp)	! module "TB_3TB"
+
+!                print*, 'before construct_TB_H_3TB'
+
                call construct_TB_H_3TB(numpar, matter, ARRAY, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Scell, NSC, Err) ! module "TB_3TB"
+
+!                print*, 'after construct_TB_H_3TB'
+
             type is (TB_H_BOP)  ! TB parametrization accroding to BOP (incomplete)
                call Construct_Vij_BOP(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_E0ij, M_dE0ij)    ! module "TB_BOP"
                call construct_TB_H_BOP(numpar, ARRAY, matter, M_Vij, M_SVij, M_E0ij, M_lmn, Scell, NSC, Err)    ! module "TB_BOP"

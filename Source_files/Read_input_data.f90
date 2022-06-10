@@ -3413,6 +3413,13 @@ subroutine read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript
        goto 3500
    endif
 
+   read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%include_3body  ! flag, include 3-body terms or not
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      TB_Hamil(i,j)%include_3body = .true.  ! by default, include 3-body terms
+   endif
+
+
    ! Folder with all 3TB data:
    Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_3TB_directory))//numpar%path_sep
 
@@ -3511,7 +3518,7 @@ subroutine read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript
    if (INFO .NE. 0) then
       print*, trim(adjustl(Error_descript))
    endif
-   PAUSE 'pause read_3TB_TB_Params'
+   !PAUSE 'pause read_3TB_TB_Params'
 
 end subroutine read_3TB_TB_Params
 

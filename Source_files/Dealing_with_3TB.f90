@@ -423,7 +423,7 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
 
                ! Now, save the (s s sigma) parameters into Hamiltonian:
                do i = 1, 5
-                  TB_Hamil%Vrfx(1,i) = Hdata( ind5(i) )
+                  TB_Hamil%Vrfx(1,i) = Hdata( ind5(i) ) ! (s s sigma)
                enddo
             endif
 
@@ -434,7 +434,7 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
 
                ! Now, save the (s p sigma) parameters into Hamiltonian:
                do i = 1, 5
-                  TB_Hamil%Vrfx(2,i) = Hdata( ind5(i) )
+                  TB_Hamil%Vrfx(2,i) = Hdata( ind5(i) ) ! (s p sigma)
                enddo
             endif
 
@@ -445,7 +445,7 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
 
                ! Now, save the (s d sigma) parameters into Hamiltonian:
                do i = 1, 5
-                  TB_Hamil%Vrfx(3,i) = Hdata( ind5(i) )
+                  TB_Hamil%Vrfx(3,i) = Hdata( ind5(i) )  ! (s d sigma)
                enddo
             endif
 
@@ -560,8 +560,10 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
             if ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) then
                read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind4(:)
                !print*, ind4(:)
-               do i = 1, 4
-                  TB_Hamil%Hhcf(1,1,i) = Hdata( ind4(i) )
+               do i = 1, 4 ! Diagonal elements go into average atom part
+                  !TB_Hamil%Hhcf(1,1,i) = Hdata( ind4(i) )
+                  TB_Hamil%Hhavg(1,i) = Hdata( ind4(i) )
+!                   print*, 's-s O:', TB_Hamil%Hhavg(1,i)
                enddo
             endif
 
@@ -570,6 +572,7 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
                !print*, ind4(:)
                do i = 1, 4
                   TB_Hamil%Hhcf(1,2,i) = Hdata( ind4(i) )
+                  !print*, 'cf s-p', TB_Hamil%Hhcf(1,2,i)
                enddo
             endif
 
@@ -586,6 +589,7 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
                !print*, ind4(:)
                do i = 1, 4
                   TB_Hamil%Hhcf(2,1,i) = Hdata( ind4(i) )
+                  !print*, 'cf p-s', TB_Hamil%Hhcf(2,1,i)
                enddo
             endif
 
@@ -617,8 +621,11 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
                read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind8(:)
                !print*, ind8(:)
                do i = 1, 4
-                  TB_Hamil%Hhcf(2,2,i) = Hdata( ind8(i) )
-                  TB_Hamil%Hhavg(2,i) = Hdata( ind8(i+4) )
+!                   TB_Hamil%Hhcf(2,2,i) = Hdata( ind8(i) )
+!                   TB_Hamil%Hhavg(2,i) = Hdata( ind8(i+4) )
+                  TB_Hamil%Hhcf(2,2,i) = Hdata( ind8(i+4) )
+                  TB_Hamil%Hhavg(2,i) = Hdata( ind8(i) )
+!                   print*, 'p-p O:', TB_Hamil%Hhavg(2,i)
                enddo
             endif
 
@@ -626,8 +633,11 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
                read(string_ind(current_block+block_end+block2_start+1:current_block+block_end+block2_end-1),*) ind8(:)
                !print*, ind8(:)
                do i = 1, 4
-                  TB_Hamil%Hhcf(3,3,i) = Hdata( ind8(i) )
-                  TB_Hamil%Hhavg(3,i) = Hdata( ind8(i+4) )
+!                   TB_Hamil%Hhcf(3,3,i) = Hdata( ind8(i) )
+!                   TB_Hamil%Hhavg(3,i) = Hdata( ind8(i+4) )
+                  TB_Hamil%Hhcf(3,3,i) = Hdata( ind8(i+4) )
+                  TB_Hamil%Hhavg(3,i) = Hdata( ind8(i) )
+!                   print*, 'd-d O:', TB_Hamil%Hhavg(3,i)
                enddo
             endif
 
@@ -857,7 +867,7 @@ subroutine construct_3TB_filenames(Folder_name, Element1, Element2, path_sep, Fi
       write(Filename_3body,'(a)') trim(adjustl(folder))//path_sep//trim(adjustl(file_name3bdy))
 
       ! Check if such a file exists:
-      inquire(file=trim(adjustl(file_name3bdy)),exist=file_exists)
+      inquire(file=trim(adjustl(Filename_3body)),exist=file_exists)
       if (.not.file_exists) then ! check if the order of elements is different
          write(file_name3bdy,'(a)') trim(adjustl(name_3body))//trim(adjustl(Element2))//'.'//trim(adjustl(Element1))//'.xml'
          write(Filename_3body,'(a)') trim(adjustl(folder))//path_sep//trim(adjustl(file_name3bdy))

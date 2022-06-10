@@ -98,7 +98,7 @@ subroutine Construct_Vij_DFTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_d
             M_SVij(j,i,3) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 4) ! (p p sigma)
             M_Vij(j,i,4) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 5)   ! (p p pi)
             M_SVij(j,i,4) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 5) ! (p p pi)
-         case default    ! sp3d5
+         case (2)    ! sp3d5
             do ihop = 2, 10
                M_Vij(j,i,ihop) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, ihop)
                M_SVij(j,i,ihop) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, ihop)
@@ -118,7 +118,7 @@ subroutine Construct_Vij_DFTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_d
             M_dSVij(j,i,3) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 4) ! (p p sigma)
             M_dVij(j,i,4) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 5)   ! (p p pi)
             M_dSVij(j,i,4) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 5) ! (p p pi)
-         case default    ! sp3d5
+         case (2)    ! sp3d5
             do ihop = 2, 10
                M_dVij(j,i,ihop) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, ihop)
                M_dSVij(j,i,ihop) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, ihop)

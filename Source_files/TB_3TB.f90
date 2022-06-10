@@ -112,7 +112,7 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
          ! Include it into the solution:
          Laguer(:) = Laguer(:) * exp_ad
 
-         ! Save Laguerre * exp(-a*r_ij)
+         ! Save [Laguerre * exp(-a*r_ij)]
          M_Lag_exp(j,i,:) = Laguer(:)
 
          ! All radial functions for Hamiltonian (functions below):
@@ -126,7 +126,7 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
             M_SVij(j,i,3) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, Laguer, 4, 6) ! (p p sigma)
             M_Vij(j,i,4) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, Laguer, 5, 5)   ! (p p pi)
             M_SVij(j,i,4) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, Laguer, 5, 6) ! (p p pi)
-         case default    ! sp3d5
+         case (2)    ! sp3d5
             do ihop = 2, 10
                M_Vij(j,i,ihop) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, Laguer, ihop, 5)
                M_SVij(j,i,ihop) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, Laguer, ihop, 6)
@@ -144,7 +144,7 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
             M_dSVij(j,i,3) = d_radial_function_3TB(r, M_SVij(j,i,3), TB(KOA1,KOA2)%Srfx, d_Laguer, 4, 6) ! (p p sigma)
             M_dVij(j,i,4) = d_radial_function_3TB(r, M_Vij(j,i,4), TB(KOA1,KOA2)%Vrfx, d_Laguer, 5, 5)   ! (p p pi)
             M_dSVij(j,i,4) = d_radial_function_3TB(r, M_SVij(j,i,4), TB(KOA1,KOA2)%Srfx, d_Laguer, 5, 6) ! (p p pi)
-         case default    ! sp3d5
+         case (2)    ! sp3d5
             do ihop = 2, 10
                M_dVij(j,i,ihop) = d_radial_function_3TB(r, M_Vij(j,i,ihop), TB(KOA1,KOA2)%Vrfx, d_Laguer, ihop, 5)
                M_dSVij(j,i,ihop) = d_radial_function_3TB(r, M_SVij(j,i,ihop), TB(KOA1,KOA2)%Srfx, d_Laguer, ihop, 6)
@@ -236,6 +236,8 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    Sij = 0.0d0
    Hij = 0.0d0
 
+!    print*, 'Hamil_tot_3TB test 0'
+
    !-----------------------------------
    ! 1) Construct non-orthogonal Hamiltonian H and Overlap matrix S in 2 steps:
 !$omp parallel private(j, m, atom_2, i, KOA1, KOA2, j1, l, i1, k, Hij1, Sij1)
@@ -244,8 +246,10 @@ if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb))
 !$omp do
    do j = 1,nat	! all atoms
       m => Scell(NSC)%Near_neighbor_size(j)
+
       do atom_2 = 0,m ! do only for atoms close to that one
-         if (atom_2 .EQ. 0) then ! the same atom
+
+         if (atom_2 == 0) then ! the same atom
             i = j
          else  ! different atoms
             i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
@@ -256,7 +260,7 @@ if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb))
             KOA2 => Scell(NSC)%MDatoms(i)%KOA
             ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
             ! Contruct a block-hamiltonian:
-            call Hamilton_one_3TB(numpar%N_basis_size, Scell(NSC), j, i, TB_Hamil(KOA1,KOA2), Hij1, &
+            call Hamilton_one_3TB(numpar%N_basis_size, Scell(NSC), j, i, TB_Hamil, Hij1, &
                                     M_Vij, M_Lag_exp, M_lmn, Mjs)   ! below
 
             ! Construct overlap matrix for this pair of atoms:
@@ -285,7 +289,7 @@ deallocate(Hij1, Sij1)
       m => Scell(NSC)%Near_neighbor_size(j)
       do atom_2 = 1,m ! do only for atoms close to that one
          i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-         if (i < j) then ! it's a new pair of atoms, calculate everything
+         if (i < j) then   ! lower triangle, copy from the upper one
             do j1 = 1,n_orb ! all orbitals
                l = (j-1)*n_orb+j1
                do i1 = 1,n_orb ! all orbitals
@@ -299,6 +303,10 @@ deallocate(Hij1, Sij1)
    enddo ! i
 !$omp end do
 !$omp end parallel
+
+
+! print*, 'Hij(k,l)', Hij(1,2)   ! Printout for testing
+
 
    ! 2)    ! Save the non-orthogonalized Hamiltonian:
    !$OMP WORKSHARE
@@ -320,8 +328,6 @@ deallocate(Hij1, Sij1)
    endforall
    !-----------------------------------
    ! 4) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
-!    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, check_M=.true.)
-!    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, use_DSYEV=.false.)
    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript) ! module "Algebra_tools"
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Subroutine Hamil_tot_DFTB: '//trim(adjustl(Error_descript))
@@ -333,6 +339,7 @@ deallocate(Hij1, Sij1)
    !-----------------------------------
    ! 5) Convert the eigenvectors back into the non-orthogonal basis:
    call mkl_matrix_mult('N', 'N', Sij, Hij, Scell(NSC)%Ha)	! module "Algebra_tools"
+
 
    !ccccccccccccccccccccccccc
    ! Optical coefficients:
@@ -405,7 +412,7 @@ subroutine Hamilton_one_3TB(basis_ind, Scell, i, j, TB, Hij, M_Vij, M_Lag_exp, M
    integer, intent(in) :: basis_ind ! index of the basis set used: 0=s, 1=sp3, 2=sp3d5
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: i, j   ! atoms indices
-   type(TB_H_3TB), intent(in) :: TB	! all tight binding parameters
+   type(TB_H_3TB), dimension(:,:), intent(in) :: TB	! all tight binding parameters
    real(8), dimension(:,:), intent(out) :: Hij  ! hamiltonian, all orbitals in sp3d5 basis set
    real(8), dimension(:,:,:), intent(in) :: M_Vij	! matrix of Overlap functions for all pairs of atoms, all orbitals
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij)
@@ -425,7 +432,7 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
    integer, intent(in) :: basis_ind ! index of the basis set used: 0=s, 1=sp3, 2=sp3d5
    integer, intent(in) :: i, j ! indices of the atoms
    type(Super_cell), intent(inout), target :: Scell  ! supercell with all the atoms as one object
-   type(TB_H_3TB), intent(in) :: TB_Hamil   ! parameters of the Hamiltonian of TB
+   type(TB_H_3TB), dimension(:,:), intent(in) :: TB_Hamil   ! parameters of the Hamiltonian of TB
    real(8), dimension(:), intent(in) :: M_Vij12, M_Vij21	! Overlap functions for all pairs of atoms, all orbitals
    real(8), dimension(:), intent(in) :: M_lmn	! cosine directions
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of Laguerre*exp for 3-body-interactions
@@ -464,154 +471,162 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
 
 
    ! 2) Construct the 3-body terms:
-   ! types of atoms:
-   KOA1 => Scell%MDatoms(i)%KOA  ! kind of atoms #1
-   KOA2 => Scell%MDatoms(j)%KOA  ! kind of atoms #2
-   m => Scell%Near_neighbor_size(i) ! how many near neighbors
    H_3bdy_part = 0.0d0  ! to start with
 
-!!!$omp PARALLEL ! it is already inside parallelized region, do not parallelized again!
+   KOA1 => Scell%MDatoms(i)%KOA  ! kind of atoms #1
+
+   if (TB_Hamil(KOA1,KOA1)%include_3body) then  ! only if user defined it to include
+
+      ! types of atoms:
+      KOA2 => Scell%MDatoms(j)%KOA  ! kind of atoms #2
+      m => Scell%Near_neighbor_size(i) ! how many near neighbors
+
+!     goto 5000   ! For testing, exclude 3-body terms
+
+!!!$omp PARALLEL ! it is already inside parallelized region, do not parallelize again!
 !!!$omp do private(atom_3, k, KOA3, at_ind, sh1, sh2)
-   AT3:do atom_3 = 1,m ! do only for atoms close to that one
-      k = Scell%Near_neighbor_list(i,atom_3) ! this is the list of such close atoms
-      ! Make sure the third atoms is not the second atom:
-      if (k /= j) then
-         KOA3 => Scell%MDatoms(k)%KOA   ! kind of atom #3
+      AT3:do atom_3 = 1,m ! do only for atoms close to that one
+         k = Scell%Near_neighbor_list(i,atom_3) ! this is the list of such close atoms
+         ! Make sure the third atoms is not the second atom:
+         if (k /= j) then
+            KOA3 => Scell%MDatoms(k)%KOA   ! kind of atom #3
 
-         ! Find the combination-of-atoms index:
-         at_ind = find_3bdy_ind(KOA1, KOA2, KOA3)  ! module "Dealing_with_3TB"
+            ! Find the combination-of-atoms index:
+            at_ind = find_3bdy_ind(KOA1, KOA2, KOA3)  ! module "Dealing_with_3TB"
 
-         ! Get the radial function for 3-body interaction:
-         do sh1 = 1, 1+basis_ind
-            do sh2 = 1, 1+basis_ind
-               G_IJK(sh1,sh2) = TB_Hamil%V3bdy(at_ind, sh1, sh2, 1) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,1) + &
-                                TB_Hamil%V3bdy(at_ind, sh1, sh2, 2) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,2) + &
-                                TB_Hamil%V3bdy(at_ind, sh1, sh2, 3) * M_Lag_exp(i,k,2) * M_Lag_exp(j,k,1) + &
-                                TB_Hamil%V3bdy(at_ind, sh1, sh2, 4) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,1) * M_Lag_exp(i,j,1)
+            ! Get the radial function for 3-body interaction:
+            do sh1 = 1, 1+basis_ind
+               do sh2 = 1, 1+basis_ind
+                  G_IJK(sh1,sh2) = TB_Hamil(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 1) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,1) + &
+                              TB_Hamil(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 2) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,2) + &
+                              TB_Hamil(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 3) * M_Lag_exp(i,k,2) * M_Lag_exp(j,k,1) + &
+                              TB_Hamil(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 4) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,1) * M_Lag_exp(i,j,1)
+               enddo
             enddo
-         enddo
-         ! Include angular parts:
-         H_3bdy_part(1,1) = H_3bdy_part(1,1) + G_IJK(1,1)  ! s-s * s-s
+            ! Include angular parts:
+            H_3bdy_part(1,1) = H_3bdy_part(1,1) + G_IJK(1,1)  ! s-s * s-s
 
-         if (basis_ind > 0) then ! p3 orbitals:
+            if (basis_ind > 0) then ! p3 orbitals:
 
-            H_3bdy_part(1,2:4) = H_3bdy_part(1,2:4) + G_IJK(2,1) * Mjs(j,k,2:4)   ! s-s * p[x,y,z]-s
-            H_3bdy_part(2:4,1) = H_3bdy_part(2:4,1) + G_IJK(1,2) * Mjs(i,k,2:4)   ! p[x,y,z]-s * s-s
-
-            ! Calculate repeating part the K-S matrix elements:
-            H_temp(1) = G_IJK(2,2) * Mjs(i,k,2) ! G * px-s
-            H_temp(2) = G_IJK(2,2) * Mjs(i,k,3) ! G * px-s
-            H_temp(3) = G_IJK(2,2) * Mjs(i,k,4) ! G * px-s
-            ! Add it into the Hamiltonian part:
-            H_3bdy_part(2,2:4) = H_3bdy_part(2,2:4) + H_temp(1) * Mjs(j,k,2:4) ! p[x,y,z]-s
-            H_3bdy_part(3,2:4) = H_3bdy_part(3,2:4) + H_temp(2) * Mjs(j,k,2:4) ! p[x,y,z]-s
-            H_3bdy_part(4,2:4) = H_3bdy_part(4,2:4) + H_temp(3) * Mjs(j,k,2:4) ! p[x,y,z]-s
-
-            if (basis_ind > 1) then ! d5 orbitals:
-               H_3bdy_part(1,5) = H_3bdy_part(1,5) + G_IJK(1,3) * Mjs(j,k,5) ! s-s * dxy-s
-               H_3bdy_part(1,6) = H_3bdy_part(1,6) + G_IJK(1,3) * Mjs(j,k,6) ! s-s * dxz-s
-               H_3bdy_part(1,7) = H_3bdy_part(1,7) + G_IJK(1,3) * Mjs(j,k,7) ! s-s * dxz-s
-               H_3bdy_part(1,8) = H_3bdy_part(1,8) + G_IJK(1,3) * Mjs(j,k,8) ! s-s * (dx2-y2)-s
-               H_3bdy_part(1,9) = H_3bdy_part(1,9) + G_IJK(1,3) * Mjs(j,k,9) ! s-s * (d3z2-r2)-s
-
-               H_3bdy_part(5,1) = H_3bdy_part(5,1) + G_IJK(3,1) * Mjs(i,k,5) ! dxy-s * s-s
-               H_3bdy_part(6,1) = H_3bdy_part(6,1) + G_IJK(3,1) * Mjs(i,k,6) ! dxz-s * s-s
-               H_3bdy_part(7,1) = H_3bdy_part(7,1) + G_IJK(3,1) * Mjs(i,k,7) ! dxz-s * s-s
-               H_3bdy_part(8,1) = H_3bdy_part(8,1) + G_IJK(3,1) * Mjs(i,k,8) ! (dx2-y2)-s * s-s
-               H_3bdy_part(9,1) = H_3bdy_part(9,1) + G_IJK(3,1) * Mjs(i,k,9) ! (d3z2-r2)-s * s-s
+               H_3bdy_part(1,2:4) = H_3bdy_part(1,2:4) + G_IJK(2,1) * Mjs(j,k,2:4)   ! s-s * p[x,y,z]-s
+               H_3bdy_part(2:4,1) = H_3bdy_part(2:4,1) + G_IJK(1,2) * Mjs(i,k,2:4)   ! p[x,y,z]-s * s-s
 
                ! Calculate repeating part the K-S matrix elements:
-               H_temp(1) = Mjs(i,k,2) * Mjs(j,k,5) ! px-s * dxy-s
-               H_temp(2) = Mjs(i,k,2) * Mjs(j,k,6) ! px-s * dxz-s
-               H_temp(3) = Mjs(i,k,2) * Mjs(j,k,7) ! px-s * dxz-s
-               H_temp(4) = Mjs(i,k,2) * Mjs(j,k,8) ! px-s * (dx2-y2)-s
-               H_temp(5) = Mjs(i,k,2) * Mjs(j,k,9) ! px-s * (d3z2-r2)-s
+               H_temp(1) = G_IJK(2,2) * Mjs(i,k,2) ! G * px-s
+               H_temp(2) = G_IJK(2,2) * Mjs(i,k,3) ! G * px-s
+               H_temp(3) = G_IJK(2,2) * Mjs(i,k,4) ! G * px-s
                ! Add it into the Hamiltonian part:
-               H_3bdy_part(2,5:9) = H_3bdy_part(2,5:9) + H_temp(1:5) * G_IJK(2,3)
-               H_3bdy_part(5:9,2) = H_3bdy_part(5:9,2) + H_temp(1:5) * G_IJK(3,2)
+               H_3bdy_part(2,2:4) = H_3bdy_part(2,2:4) + H_temp(1) * Mjs(j,k,2:4) ! p[x,y,z]-s
+               H_3bdy_part(3,2:4) = H_3bdy_part(3,2:4) + H_temp(2) * Mjs(j,k,2:4) ! p[x,y,z]-s
+               H_3bdy_part(4,2:4) = H_3bdy_part(4,2:4) + H_temp(3) * Mjs(j,k,2:4) ! p[x,y,z]-s
 
-               ! Calculate repeating part the K-S matrix elements:
-               H_temp(1) = Mjs(i,k,3) * Mjs(j,k,5) ! py-s * dxy-s
-               H_temp(2) = Mjs(i,k,3) * Mjs(j,k,6) ! py-s * dxz-s
-               H_temp(3) = Mjs(i,k,3) * Mjs(j,k,7) ! py-s * dxz-s
-               H_temp(4) = Mjs(i,k,3) * Mjs(j,k,8) ! py-s * (dx2-y2)-s
-               H_temp(5) = Mjs(i,k,3) * Mjs(j,k,9) ! py-s * (d3z2-r2)-s
-               ! Add it into the Hamiltonian part:
-               H_3bdy_part(3,5:9) = H_3bdy_part(3,5:9) + H_temp(1:5) * G_IJK(2,3)
-               H_3bdy_part(5:9,3) = H_3bdy_part(5:9,3) + H_temp(1:5) * G_IJK(3,2)
+               if (basis_ind > 1) then ! d5 orbitals:
+                  H_3bdy_part(1,5) = H_3bdy_part(1,5) + G_IJK(1,3) * Mjs(j,k,5) ! s-s * dxy-s
+                  H_3bdy_part(1,6) = H_3bdy_part(1,6) + G_IJK(1,3) * Mjs(j,k,6) ! s-s * dxz-s
+                  H_3bdy_part(1,7) = H_3bdy_part(1,7) + G_IJK(1,3) * Mjs(j,k,7) ! s-s * dxz-s
+                  H_3bdy_part(1,8) = H_3bdy_part(1,8) + G_IJK(1,3) * Mjs(j,k,8) ! s-s * (dx2-y2)-s
+                  H_3bdy_part(1,9) = H_3bdy_part(1,9) + G_IJK(1,3) * Mjs(j,k,9) ! s-s * (d3z2-r2)-s
 
-               ! Calculate repeating part the K-S matrix elements:
-               H_temp(1) = Mjs(i,k,4) * Mjs(j,k,5) ! dxy-s * pz-s
-               H_temp(2) = Mjs(i,k,4) * Mjs(j,k,6) ! dxz-s * pz-s
-               H_temp(3) = Mjs(i,k,4) * Mjs(j,k,7) ! dyz-s * pz-s
-               H_temp(4) = Mjs(i,k,4) * Mjs(j,k,8) ! (dx2-y2)-s * pz-s
-               H_temp(5) = Mjs(i,k,4) * Mjs(j,k,9) ! (d3z2-r2)-s * pz-s
-               ! Add it into the Hamiltonian part:
-               H_3bdy_part(4,5:9) = H_3bdy_part(4,5:9) + H_temp(1:5) * G_IJK(2,3)
-               H_3bdy_part(5:9,4) = H_3bdy_part(5:9,4) + H_temp(1:5) * G_IJK(3,2)
+                  H_3bdy_part(5,1) = H_3bdy_part(5,1) + G_IJK(3,1) * Mjs(i,k,5) ! dxy-s * s-s
+                  H_3bdy_part(6,1) = H_3bdy_part(6,1) + G_IJK(3,1) * Mjs(i,k,6) ! dxz-s * s-s
+                  H_3bdy_part(7,1) = H_3bdy_part(7,1) + G_IJK(3,1) * Mjs(i,k,7) ! dxz-s * s-s
+                  H_3bdy_part(8,1) = H_3bdy_part(8,1) + G_IJK(3,1) * Mjs(i,k,8) ! (dx2-y2)-s * s-s
+                  H_3bdy_part(9,1) = H_3bdy_part(9,1) + G_IJK(3,1) * Mjs(i,k,9) ! (d3z2-r2)-s * s-s
 
-               ! Calculate the K-S matrix elements:
-               H_temp(6) = Mjs(i,k,5) * G_IJK(3,3)
-               H_temp(1) = H_temp(6) * Mjs(j,k,5) ! dxy-s * dxy-s
-               H_temp(2) = H_temp(6) * Mjs(j,k,6) ! dxy-s * dxz-s
-               H_temp(3) = H_temp(6) * Mjs(j,k,7) ! dxy-s * dyz-s
-               H_temp(4) = H_temp(6) * Mjs(j,k,8) ! dxy-s * (dx2-y2)-s
-               H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dxy-s * (d3z2-r2)-s
-               ! Add it into the Hamiltonian part:
-               H_3bdy_part(5,5:9) = H_3bdy_part(5,5:9) + H_temp(1:5)
-               H_3bdy_part(5:9,5) = H_3bdy_part(5:9,5) + H_temp(1:5)
+                  ! Calculate repeating part the K-S matrix elements:
+                  H_temp(1) = Mjs(i,k,2) * Mjs(j,k,5) ! px-s * dxy-s
+                  H_temp(2) = Mjs(i,k,2) * Mjs(j,k,6) ! px-s * dxz-s
+                  H_temp(3) = Mjs(i,k,2) * Mjs(j,k,7) ! px-s * dxz-s
+                  H_temp(4) = Mjs(i,k,2) * Mjs(j,k,8) ! px-s * (dx2-y2)-s
+                  H_temp(5) = Mjs(i,k,2) * Mjs(j,k,9) ! px-s * (d3z2-r2)-s
+                  ! Add it into the Hamiltonian part:
+                  H_3bdy_part(2,5:9) = H_3bdy_part(2,5:9) + H_temp(1:5) * G_IJK(2,3)
+                  H_3bdy_part(5:9,2) = H_3bdy_part(5:9,2) + H_temp(1:5) * G_IJK(3,2)
 
-               ! Calculate the K-S matrix elements:
-               H_temp(6) = Mjs(i,k,6) * G_IJK(3,3)
-               H_temp(1) = H_temp(6) * Mjs(j,k,5) ! dxz-s * dxy-s
-               H_temp(2) = H_temp(6) * Mjs(j,k,6) ! dxz-s * dxz-s
-               H_temp(3) = H_temp(6) * Mjs(j,k,7) ! dxz-s * dyz-s
-               H_temp(4) = H_temp(6) * Mjs(j,k,8) ! dxz-s * (dx2-y2)-s
-               H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dxz-s * (d3z2-r2)-s
-               ! Add it into the Hamiltonian part:
-               H_3bdy_part(6,5:9) = H_3bdy_part(6,5:9) + H_temp(1:5)
-               H_3bdy_part(5:9,6) = H_3bdy_part(5:9,6) + H_temp(1:5)
+                  ! Calculate repeating part the K-S matrix elements:
+                  H_temp(1) = Mjs(i,k,3) * Mjs(j,k,5) ! py-s * dxy-s
+                  H_temp(2) = Mjs(i,k,3) * Mjs(j,k,6) ! py-s * dxz-s
+                  H_temp(3) = Mjs(i,k,3) * Mjs(j,k,7) ! py-s * dxz-s
+                  H_temp(4) = Mjs(i,k,3) * Mjs(j,k,8) ! py-s * (dx2-y2)-s
+                  H_temp(5) = Mjs(i,k,3) * Mjs(j,k,9) ! py-s * (d3z2-r2)-s
+                  ! Add it into the Hamiltonian part:
+                  H_3bdy_part(3,5:9) = H_3bdy_part(3,5:9) + H_temp(1:5) * G_IJK(2,3)
+                  H_3bdy_part(5:9,3) = H_3bdy_part(5:9,3) + H_temp(1:5) * G_IJK(3,2)
 
-               ! Calculate the K-S matrix elements:
-               H_temp(6) = Mjs(i,k,7) * G_IJK(3,3)
-               H_temp(1) = H_temp(6) * Mjs(j,k,5) ! dyz-s * dxy-s
-               H_temp(2) = H_temp(6) * Mjs(j,k,6) ! dyz-s * dxz-s
-               H_temp(3) = H_temp(6) * Mjs(j,k,7) ! dyz-s * dyz-s
-               H_temp(4) = H_temp(6) * Mjs(j,k,8) ! dyz-s * (dx2-y2)-s
-               H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dyz-s * (d3z2-r2)-s
-               ! Add it into the Hamiltonian part:
-               H_3bdy_part(7,5:9) = H_3bdy_part(7,5:9) + H_temp(1:5)
-               H_3bdy_part(5:9,7) = H_3bdy_part(5:9,7) + H_temp(1:5)
+                  ! Calculate repeating part the K-S matrix elements:
+                  H_temp(1) = Mjs(i,k,4) * Mjs(j,k,5) ! dxy-s * pz-s
+                  H_temp(2) = Mjs(i,k,4) * Mjs(j,k,6) ! dxz-s * pz-s
+                  H_temp(3) = Mjs(i,k,4) * Mjs(j,k,7) ! dyz-s * pz-s
+                  H_temp(4) = Mjs(i,k,4) * Mjs(j,k,8) ! (dx2-y2)-s * pz-s
+                  H_temp(5) = Mjs(i,k,4) * Mjs(j,k,9) ! (d3z2-r2)-s * pz-s
+                  ! Add it into the Hamiltonian part:
+                  H_3bdy_part(4,5:9) = H_3bdy_part(4,5:9) + H_temp(1:5) * G_IJK(2,3)
+                  H_3bdy_part(5:9,4) = H_3bdy_part(5:9,4) + H_temp(1:5) * G_IJK(3,2)
 
-               ! Calculate the K-S matrix elements:
-               H_temp(6) = Mjs(i,k,8) * G_IJK(3,3)
-               H_temp(1) = H_temp(6) * Mjs(j,k,5) ! (dx2-y2)-s * dxy-s
-               H_temp(2) = H_temp(6) * Mjs(j,k,6) ! (dx2-y2)-s * dxz-s
-               H_temp(3) = H_temp(6) * Mjs(j,k,7) ! (dx2-y2)-s * dyz-s
-               H_temp(4) = H_temp(6) * Mjs(j,k,8) ! (dx2-y2)-s * (dx2-y2)-s
-               H_temp(5) = H_temp(6) * Mjs(j,k,9) ! (dx2-y2)-s * (d3z2-r2)-s
-               ! Add it into the Hamiltonian part:
-               H_3bdy_part(8,5:9) = H_3bdy_part(8,5:9) + H_temp(1:5)
-               H_3bdy_part(5:9,8) = H_3bdy_part(5:9,8) + H_temp(1:5)
+                  ! Calculate the K-S matrix elements:
+                  H_temp(6) = Mjs(i,k,5) * G_IJK(3,3)
+                  H_temp(1) = H_temp(6) * Mjs(j,k,5) ! dxy-s * dxy-s
+                  H_temp(2) = H_temp(6) * Mjs(j,k,6) ! dxy-s * dxz-s
+                  H_temp(3) = H_temp(6) * Mjs(j,k,7) ! dxy-s * dyz-s
+                  H_temp(4) = H_temp(6) * Mjs(j,k,8) ! dxy-s * (dx2-y2)-s
+                  H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dxy-s * (d3z2-r2)-s
+                  ! Add it into the Hamiltonian part:
+                  H_3bdy_part(5,5:9) = H_3bdy_part(5,5:9) + H_temp(1:5)
+                  H_3bdy_part(5:9,5) = H_3bdy_part(5:9,5) + H_temp(1:5)
 
-               ! Calculate the K-S matrix elements:
-               H_temp(6) = Mjs(i,k,9) * G_IJK(3,3)
-               H_temp(1) = H_temp(6) * Mjs(j,k,5) ! (d3z2-r2)-s * dxy-s
-               H_temp(2) = H_temp(6) * Mjs(j,k,6) ! (d3z2-r2)-s * dxz-s
-               H_temp(3) = H_temp(6) * Mjs(j,k,7) ! (d3z2-r2)-s * dyz-s
-               H_temp(4) = H_temp(6) * Mjs(j,k,8) ! (d3z2-r2)-s * (dx2-y2)-s
-               H_temp(5) = H_temp(6) * Mjs(j,k,9) ! (d3z2-r2)-s * (d3z2-r2)-s
-               ! Add it into the Hamiltonian part:
-               H_3bdy_part(9,5:9) = H_3bdy_part(9,5:9) + H_temp(1:5)
-               H_3bdy_part(5:9,9) = H_3bdy_part(5:9,9) + H_temp(1:5)
+                  ! Calculate the K-S matrix elements:
+                  H_temp(6) = Mjs(i,k,6) * G_IJK(3,3)
+                  H_temp(1) = H_temp(6) * Mjs(j,k,5) ! dxz-s * dxy-s
+                  H_temp(2) = H_temp(6) * Mjs(j,k,6) ! dxz-s * dxz-s
+                  H_temp(3) = H_temp(6) * Mjs(j,k,7) ! dxz-s * dyz-s
+                  H_temp(4) = H_temp(6) * Mjs(j,k,8) ! dxz-s * (dx2-y2)-s
+                  H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dxz-s * (d3z2-r2)-s
+                  ! Add it into the Hamiltonian part:
+                  H_3bdy_part(6,5:9) = H_3bdy_part(6,5:9) + H_temp(1:5)
+                  H_3bdy_part(5:9,6) = H_3bdy_part(5:9,6) + H_temp(1:5)
 
-            endif ! (basis_ind > 1)
-         endif ! (basis_ind > 0)
-      endif ! (k /= j)
-   enddo AT3
+                  ! Calculate the K-S matrix elements:
+                  H_temp(6) = Mjs(i,k,7) * G_IJK(3,3)
+                  H_temp(1) = H_temp(6) * Mjs(j,k,5) ! dyz-s * dxy-s
+                  H_temp(2) = H_temp(6) * Mjs(j,k,6) ! dyz-s * dxz-s
+                  H_temp(3) = H_temp(6) * Mjs(j,k,7) ! dyz-s * dyz-s
+                  H_temp(4) = H_temp(6) * Mjs(j,k,8) ! dyz-s * (dx2-y2)-s
+                  H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dyz-s * (d3z2-r2)-s
+                  ! Add it into the Hamiltonian part:
+                  H_3bdy_part(7,5:9) = H_3bdy_part(7,5:9) + H_temp(1:5)
+                  H_3bdy_part(5:9,7) = H_3bdy_part(5:9,7) + H_temp(1:5)
+
+                  ! Calculate the K-S matrix elements:
+                  H_temp(6) = Mjs(i,k,8) * G_IJK(3,3)
+                  H_temp(1) = H_temp(6) * Mjs(j,k,5) ! (dx2-y2)-s * dxy-s
+                  H_temp(2) = H_temp(6) * Mjs(j,k,6) ! (dx2-y2)-s * dxz-s
+                  H_temp(3) = H_temp(6) * Mjs(j,k,7) ! (dx2-y2)-s * dyz-s
+                  H_temp(4) = H_temp(6) * Mjs(j,k,8) ! (dx2-y2)-s * (dx2-y2)-s
+                  H_temp(5) = H_temp(6) * Mjs(j,k,9) ! (dx2-y2)-s * (d3z2-r2)-s
+                  ! Add it into the Hamiltonian part:
+                  H_3bdy_part(8,5:9) = H_3bdy_part(8,5:9) + H_temp(1:5)
+                  H_3bdy_part(5:9,8) = H_3bdy_part(5:9,8) + H_temp(1:5)
+
+                  ! Calculate the K-S matrix elements:
+                  H_temp(6) = Mjs(i,k,9) * G_IJK(3,3)
+                  H_temp(1) = H_temp(6) * Mjs(j,k,5) ! (d3z2-r2)-s * dxy-s
+                  H_temp(2) = H_temp(6) * Mjs(j,k,6) ! (d3z2-r2)-s * dxz-s
+                  H_temp(3) = H_temp(6) * Mjs(j,k,7) ! (d3z2-r2)-s * dyz-s
+                  H_temp(4) = H_temp(6) * Mjs(j,k,8) ! (d3z2-r2)-s * (dx2-y2)-s
+                  H_temp(5) = H_temp(6) * Mjs(j,k,9) ! (d3z2-r2)-s * (d3z2-r2)-s
+                  ! Add it into the Hamiltonian part:
+                  H_3bdy_part(9,5:9) = H_3bdy_part(9,5:9) + H_temp(1:5)
+                  H_3bdy_part(5:9,9) = H_3bdy_part(5:9,9) + H_temp(1:5)
+
+               endif ! (basis_ind > 1)
+            endif ! (basis_ind > 0)
+         endif ! (k /= j)
+      enddo AT3
 !!!$omp end do
 !!!$omp END PARALLEL
+   endif ! (TB(KOA1,KOA1)%include_3body)
 
+   5000 continue
 
    ! Add up 2-body and 3-body parts:
    ts = ts + H_3bdy_part
@@ -626,7 +641,7 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
    integer, intent(in) :: basis_ind ! index of the basis set used: 0=s, 1=sp3, 2=sp3d5
    integer, intent(in) :: i         ! indix of the atom
    type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
-   type(TB_H_3TB), intent(in) :: TB	  ! all tight binding parameters
+   type(TB_H_3TB), dimension(:,:), intent(in) :: TB	  ! all tight binding parameters
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij)
    real(8), dimension(:,:,:), intent(in) :: Mjs ! matrix of overlaps with s-orbital
    real(8), dimension(:,:), intent(out) :: Hij	! overlap integerals [eV]
@@ -639,6 +654,8 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
 
    ! Kind of atom:
    KOA1 => Scell%MDatoms(i)%KOA
+   ! Number of the nearest neighbors
+   m => Scell%Near_neighbor_size(i)
 
    ! Size of the basis:
    Bsiz = size(Hij,1)
@@ -658,82 +675,100 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
 
    !-----------------
    ! 1) Onsite energies of spin-unpolirized orbital values:
-   E_onsite(1,1) = TB%Es ! s orbital
+   E_onsite(1,1) = TB(KOA1,KOA1)%Es ! s orbital
    if (basis_ind > 0) then ! p3 orbitals:
       do i1 = 2, 4
-         E_onsite(i1,i1) = TB%Ep
+         E_onsite(i1,i1) = TB(KOA1,KOA1)%Ep
       enddo
-   endif
-   if (basis_ind > 1) then ! d5 orbitals:
-      do i1 = 5, 9
-         E_onsite(i1,i1) = TB%Ed
-      enddo
+
+      if (basis_ind > 1) then ! d5 orbitals:
+         do i1 = 5, 9
+            E_onsite(i1,i1) = TB(KOA1,KOA1)%Ed
+         enddo
+      endif
    endif
 
+
+!    print*, 'Onsite_3TB test 0', m
+! goto 5001   ! For testing, exclude environmental contributions: seems to work...
+
+!goto 5002
 
    !-----------------
    ! 2) Average term:
-   m => Scell%Near_neighbor_size(i)  ! number of nearest neighbours
-!$omp parallel private(atom_2, j, i1, term_s, term_p, term_d)
-!$omp do
-   do atom_2 = 0, m ! do only for atoms close to that one
+!!!$omp parallel private(atom_2, j, i1, term_s, term_p, term_d) ! in is called from parallelized region, don't parallelize it again
+!!!$omp do reduction( + : H_avg)
+   do atom_2 = 1, m ! do only for atoms close to that one
       j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
+      KOA2 => Scell%MDatoms(j)%KOA
 
-      term_s = SUM( TB%Hhavg(1,1:4) * M_Lag_exp(i,j,1:4) )  ! s orbitals
+      term_s = SUM( TB(KOA1,KOA2)%Hhavg(1,1:4) * M_Lag_exp(i,j,1:4) )  ! s orbitals
       H_avg(1,1) = H_avg(1,1) + term_s
 
       if (basis_ind > 0) then ! p3 orbitals:
-         term_p = SUM( TB%Hhavg(2,1:4) * M_Lag_exp(i,j,1:4) )  ! p3 orbitals
+         term_p = SUM( TB(KOA1,KOA2)%Hhavg(2,1:4) * M_Lag_exp(i,j,1:4) )  ! p3 orbitals
          do i1 = 2, 4
             H_avg(i1,i1) = H_avg(i1,i1) + term_p
          enddo
 
          if (basis_ind > 1) then ! d5 orbitals:
-            term_d = SUM( TB%Hhavg(3,1:4) * M_Lag_exp(i,j,1:4) )  ! d5 orbitals
+            term_d = SUM( TB(KOA1,KOA2)%Hhavg(3,1:4) * M_Lag_exp(i,j,1:4) )  ! d5 orbitals
             do i1 = 5, 9
                H_avg(i1,i1) = H_avg(i1,i1) + term_d
             enddo
          endif ! (basis_ind > 0)
       endif ! (basis_ind > 1)
-
    enddo
-!$omp enddo
-!$omp end parallel
+!!!$omp enddo
+!!!$omp end parallel
 
+5002 continue
+
+! print*, 'Onsite_3TB test 1', m
+! goto 5001  ! For testing, exclude crystal field and 3-body terms
+
+!  goto 5003
 
    !-----------------
    ! 3) Crystal field:
-   m => Scell%Near_neighbor_size(i)  ! number of nearest neighbours
-!$omp parallel private(m, atom_2, j, sh1, sh2, i1, matr_spd, H_cf_temp)
-!$omp do
-   do atom_2 = 0, m ! do only for atoms close to that one
+!!!$omp parallel private(atom_2, j, sh1, sh2, i1, matr_spd, H_cf_temp)
+!!!$omp do
+   do atom_2 = 1, m ! do only for atoms close to that one
       j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
+      KOA2 => Scell%MDatoms(j)%KOA
 
       ! Radial parts:
-      matr_spd(1,1) = SUM( TB%Hhcf(1,1,1:4) * M_Lag_exp(i,j,1:4) )  ! s-s orbitals
+      matr_spd(1,1) = SUM( TB(KOA1,KOA2)%Hhcf(1,1,1:4) * M_Lag_exp(i,j,1:4) )  ! s-s orbitals
       if (basis_ind > 0) then ! p3 orbitals:
-         matr_spd(1,2) = SUM( TB%Hhcf(1,2,1:4) * M_Lag_exp(i,j,1:4) )  ! s-p orbitals
-         matr_spd(2,1) = SUM( TB%Hhcf(2,1,1:4) * M_Lag_exp(i,j,1:4) )  ! p-s orbitals
-         matr_spd(2,2) = SUM( TB%Hhcf(2,2,1:4) * M_Lag_exp(i,j,1:4) )  ! p-p orbitals
+         matr_spd(1,2) = SUM( TB(KOA1,KOA2)%Hhcf(1,2,1:4) * M_Lag_exp(i,j,1:4) )  ! s-p orbitals
+         matr_spd(2,1) = SUM( TB(KOA1,KOA2)%Hhcf(2,1,1:4) * M_Lag_exp(i,j,1:4) )  ! p-s orbitals
+         matr_spd(2,2) = SUM( TB(KOA1,KOA2)%Hhcf(2,2,1:4) * M_Lag_exp(i,j,1:4) )  ! p-p orbitals
          if (basis_ind > 1) then ! d5 orbitals:
-            matr_spd(1,3) = SUM( TB%Hhcf(1,2,1:4) * M_Lag_exp(i,j,1:4) )  ! s-d orbitals
-            matr_spd(3,1) = SUM( TB%Hhcf(2,1,1:4) * M_Lag_exp(i,j,1:4) )  ! d-s orbitals
-            matr_spd(2,3) = SUM( TB%Hhcf(1,2,1:4) * M_Lag_exp(i,j,1:4) )  ! p-d orbitals
-            matr_spd(3,2) = SUM( TB%Hhcf(2,2,1:4) * M_Lag_exp(i,j,1:4) )  ! d-p orbitals
-            matr_spd(3,3) = SUM( TB%Hhcf(3,3,1:4) * M_Lag_exp(i,j,1:4) )  ! d-d orbitals
+            matr_spd(1,3) = SUM( TB(KOA1,KOA2)%Hhcf(1,3,1:4) * M_Lag_exp(i,j,1:4) )  ! s-d orbitals
+            matr_spd(3,1) = SUM( TB(KOA1,KOA2)%Hhcf(3,1,1:4) * M_Lag_exp(i,j,1:4) )  ! d-s orbitals
+            matr_spd(2,3) = SUM( TB(KOA1,KOA2)%Hhcf(2,3,1:4) * M_Lag_exp(i,j,1:4) )  ! p-d orbitals
+            matr_spd(3,2) = SUM( TB(KOA1,KOA2)%Hhcf(3,2,1:4) * M_Lag_exp(i,j,1:4) )  ! d-p orbitals
+            matr_spd(3,3) = SUM( TB(KOA1,KOA2)%Hhcf(3,3,1:4) * M_Lag_exp(i,j,1:4) )  ! d-d orbitals
          endif ! (basis_ind > 0)
       endif ! (basis_ind > 1)
 
       ! Include angular parts:
       H_cf(1,1) = H_cf(1,1) + matr_spd(1,1)  ! s-s * s-s
 
+!  goto 5004
+
       if (basis_ind > 0) then ! p3 orbitals:
 
-         H_cf(1,2:4) = H_cf(1,2:4) + matr_spd(2,1) * Mjs(i,j,2:4)   ! s-s * p[x,y,z]-s
+         H_cf(1,2) = H_cf(1,2) + matr_spd(2,1) * Mjs(i,j,2)   ! s-s * px-s
+         H_cf(1,3) = H_cf(1,3) + matr_spd(2,1) * Mjs(i,j,3)   ! s-s * py-s
+         H_cf(1,4) = H_cf(1,4) + matr_spd(2,1) * Mjs(i,j,4)   ! s-s * pz-s
 
-         H_cf(2:4,1) = H_cf(2:4,1) + matr_spd(1,2) * Mjs(i,j,2:4)   ! p[x,y,z]-s * s-s
+         H_cf(2,1) = H_cf(2,1) + matr_spd(1,2) * Mjs(i,j,2)   ! px-s * s-s
+         H_cf(3,1) = H_cf(3,1) + matr_spd(1,2) * Mjs(i,j,3)   ! py-s * s-s
+         H_cf(4,1) = H_cf(4,1) + matr_spd(1,2) * Mjs(i,j,4)   ! pz-s * s-s
 
          ! Calculate repeating part the K-S matrix elements:
+         H_cf_temp = 0.0d0 ! reinitialize
          H_cf_temp(1) = matr_spd(2,2) * Mjs(i,j,2)
          H_cf_temp(2) = H_cf_temp(1) * Mjs(i,j,2) ! px-s * px-s
          H_cf_temp(3) = H_cf_temp(1) * Mjs(i,j,3) ! px-s * py-s
@@ -741,15 +776,21 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
          H_cf_temp(5) = matr_spd(2,2) * Mjs(i,j,3)
          H_cf_temp(6) = H_cf_temp(5) * Mjs(i,j,4)
          ! Add it into the Hamiltonian part:
-         H_cf(2,2:4) = H_cf(2,2:4) + H_cf_temp(2:4)
 
+
+         ! Diagonal part:
+         H_cf(2,2) = H_cf(2,2) + H_cf_temp(2) / 3.0d0                               ! px-s * px-s
+         H_cf(3,3) = H_cf(3,3) + H_cf_temp(5) / 3.0d0 * Mjs(i,j,3)                  ! py-s * py-s
+         H_cf(4,4) = H_cf(4,4) + matr_spd(2,2) / 3.0d0 * Mjs(i,j,4) * Mjs(i,j,4)    ! pz-s * pz-s
+
+
+         ! Off-diagonal part:
+         H_cf(2,3) = H_cf(2,3) + H_cf_temp(3)  ! px-s * py-s
+         H_cf(2,4) = H_cf(2,4) + H_cf_temp(4)  ! px-s * pz-s
          H_cf(3,2) = H_cf(3,2) + H_cf_temp(3)  ! py-s * px-s
-         H_cf(3,3) = H_cf(3,3) + H_cf_temp(5) * Mjs(i,j,3)  ! py-s * py-s
          H_cf(3,4) = H_cf(3,4) + H_cf_temp(6)  ! py-s * pz-s
-
          H_cf(4,2) = H_cf(4,2) + H_cf_temp(4)  ! pz-s * px-s
          H_cf(4,3) = H_cf(4,3) + H_cf_temp(6)  ! pz-s * py-s
-         H_cf(4,4) = H_cf(4,4) + matr_spd(2,2) * Mjs(i,j,4) * Mjs(i,j,4)  ! pz-s * pz-s
 
          if (basis_ind > 1) then ! d5 orbitals:
             H_cf(1,5) = H_cf(1,5) + Mjs(i,j,5) * matr_spd(1,3) ! s-s * dxy-s
@@ -851,49 +892,63 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
 
          endif ! (basis_ind > 0)
       endif ! (basis_ind > 1)
-   enddo ! atom_2 = 0, m
-!$omp enddo
-!$omp end parallel
 
+5004 continue
+
+   enddo ! atom_2 = 0, m
+!!!$omp enddo
+!!!$omp end parallel
+
+5003 continue
+
+
+
+! print*, 'Onsite_3TB test 2', m
+!goto 5001   ! For testing, exclude 3-body terms
 
    !-----------------
    ! 4) 3-body contributions:
-   ! Index of our atom:
-   KOA1 => Scell%MDatoms(i)%KOA
-   ! Number of the nearest neighbors
-   m => Scell%Near_neighbor_size(i)
+   if (TB(KOA1,KOA1)%include_3body) then  ! only if user defined it to include
+      atom_2 = 0  ! to restart
+!!!$omp PARALLEL
+!!!$omp do private(atom_2, j, KOA2, atom_3, k, KOA3, at_ind, term_s, sh1)
+      AT2:do atom_2 = 1,m ! do only for atoms close to that one
+         j = Scell%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+         KOA2 => Scell%MDatoms(j)%KOA   ! index of the second atom
 
-!$omp PARALLEL
-!$omp do private(atom_2, i, KOA2, atom_3, k, KOA3, at_ind, term_s, sh1)
-   AT2:do atom_2 = 1,m ! do only for atoms close to that one
-      j = Scell%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
-      KOA2 => Scell%MDatoms(j)%KOA   ! index of the second atom
+!          print*, 'Onsite_3TB test 2.5', j
 
-      ! To start summing up
-      AT3:do atom_3 = 1,m ! do only for atoms close to that one
-         k = Scell%Near_neighbor_list(j,atom_3) ! this is the list of such close atoms
-         ! Make sure the third atoms is not the second atom:
-         if (k /= i) then
-            KOA3 => Scell%MDatoms(k)%KOA   ! kind of atom #3
+         ! To start summing up
+         AT3:do atom_3 = 1,m ! do only for atoms close to that one
+            k = Scell%Near_neighbor_list(i,atom_3) ! this is the list of such close atoms
+            ! Make sure the third atoms is not the second atom:
+            if (k /= j) then
+               KOA3 => Scell%MDatoms(k)%KOA   ! kind of atom #3
 
-            ! Find the combination-of-atoms index:
-            at_ind = find_3bdy_ind(KOA1, KOA2, KOA3)  ! module "Dealing_with_3TB"
+               ! Find the combination-of-atoms index:
+               at_ind = find_3bdy_ind(KOA1, KOA2, KOA3)  ! module "Dealing_with_3TB"
 
-            ! Get the 3-body elements for each shells combination:
+               ! Get the 3-body elements for each shells combination:
 
-            term_s = TB%Hh3bdy(at_ind, 1) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,1) * M_Lag_exp(i,j,1) + &
-                     TB%Hh3bdy(at_ind, 2) * M_Lag_exp(i,k,2) * M_Lag_exp(j,k,1) * M_Lag_exp(i,j,1) + &
-                     TB%Hh3bdy(at_ind, 3) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,2) * M_Lag_exp(i,j,1) + &
-                     TB%Hh3bdy(at_ind, 4) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,1) * M_Lag_exp(i,j,2)  ! Eq.(22) in [1]
+               term_s = TB(KOA1,KOA2)%Hh3bdy(at_ind, 1) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,1) * M_Lag_exp(i,j,1) + &
+                        TB(KOA1,KOA2)%Hh3bdy(at_ind, 2) * M_Lag_exp(i,k,2) * M_Lag_exp(j,k,1) * M_Lag_exp(i,j,1) + &
+                        TB(KOA1,KOA2)%Hh3bdy(at_ind, 3) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,2) * M_Lag_exp(i,j,1) + &
+                        TB(KOA1,KOA2)%Hh3bdy(at_ind, 4) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,1) * M_Lag_exp(i,j,2) ! Eq.(22) in [1]
 
-            do sh1 = 1, Bsiz  ! for all shells
-               H_3bdy(sh1,sh1) = H_3bdy(sh1,sh1) + term_s   ! no orbital resolution
-            enddo ! sh1
-         endif ! (k /= i)
-      enddo AT3
-   enddo AT2
-!$omp end do
-!$omp END PARALLEL
+               do sh1 = 1, Bsiz  ! for all shells
+                  H_3bdy(sh1,sh1) = H_3bdy(sh1,sh1) + term_s   ! no orbital resolution
+               enddo ! sh1
+            endif ! (k /= i)
+         enddo AT3
+      enddo AT2
+!!!$omp end do
+!!!$omp END PARALLEL
+   endif ! (TB(KOA1,KOA1)%include_3body)
+
+
+! print*, 'Onsite_3TB test 3', m
+
+5001 continue
 
    ! Collect all the terms into Hamiltonian:
    Hij = E_onsite + H_avg + H_cf + H_3bdy
@@ -928,15 +983,15 @@ subroutine get_Mjs_factors(basis_ind, Scell, M_lmn, Mjs)
 !$omp do private(i, j, m, atom_2)
    do i = 1, nat	! all atoms
       m => Scell%Near_neighbor_size(i)
-      do atom_2 = 0,m ! do only for atoms close to that one
+      do atom_2 = 1,m ! do only for atoms close to that one
          j = Scell%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
 
          Mjs(i,j,1) = 1.0d0  ! s-s
 
          if (basis_ind > 0) then ! p3 orbitals:
-            Mjs(i,j,2) = M_lmn(1,i,j)   ! px-s
-            Mjs(i,j,3) = M_lmn(2,i,j)   ! py-s
-            Mjs(i,j,4) = M_lmn(3,i,j)   ! pz-s
+            Mjs(i,j,2) = -M_lmn(1,i,j)   ! px-s
+            Mjs(i,j,3) = -M_lmn(2,i,j)   ! py-s
+            Mjs(i,j,4) = -M_lmn(3,i,j)   ! pz-s
 
             if (basis_ind > 1) then ! d5 orbitals (functions from module "TB_Koster_Slater"):
                Mjs(i,j,5) = t_s_dab(M_lmn(1,i,j),M_lmn(2,i,j),1.0d0)        ! dxy-s
@@ -965,10 +1020,32 @@ subroutine get_Laguerres(r_given, Laguer)
    real(8) :: d, ad
    ! normalized distance, since coefficients are fitted in this units [1]:
    d = r_given * g_A2au   ! [A] -> [Bohr]
+   !d = r_given    ! [A] -> [Bohr] ! Testing
    ad = m_a * d ! for some reason, it is multiplied with the scaling parameter [2]
+   !ad = d ! for some reason, it is multiplied with the scaling parameter [2] ! Testing
+   !ad = m_a*g_A2au*d ! for some reason, it is multiplied with the scaling parameter [2] ! Testing
 
    call Laguerre_up_to_6(ad, Laguer)   ! module "Algebra_tools"
 end subroutine get_Laguerres
+
+
+pure function Laguerre_exponent(r_given) result(exp_L)
+   real(8) exp_L
+   real(8), intent(in) :: r_given   ! distance [A]
+   real(8) :: d, ad
+
+   ! normalized distance, since coefficients are fitted in this units [1]:
+   d = r_given * g_A2au   ! [A] -> [Bohr]
+   !d = r_given       ! [A] -> [Bohr] ! Testing
+   ad = m_a * d ! for some reason, it is multiplied with the scaling parameter [2]
+   !ad = m_a*g_A2au*d ! for some reason, it is multiplied with the scaling parameter [2] ! Testing
+
+   ! Get the exponential term:
+   exp_L = exp(-0.5d0 * ad)
+   !exp_L = exp(-ad)   ! Testing
+end function Laguerre_exponent
+
+
 
 
 subroutine get_d_Laguerres(r_given, Laguer)
@@ -977,7 +1054,8 @@ subroutine get_d_Laguerres(r_given, Laguer)
    real(8) :: d, ad
    ! normalized distance, since coefficients are fitted in this units [1]:
    d = r_given * g_A2au   ! [A] -> [Bohr]
-   ad = m_a * d ! for some reason, it is multiplied with the scaling parameter [2]
+   !ad = m_a * d ! for some reason, it is multiplied with the scaling parameter [2]
+   ad = m_a*g_A2au*d ! for some reason, it is multiplied with the scaling parameter [2] ! Testing
 
    call d_Laguerre_up_to_6(ad, Laguer)   ! module "Algebra_tools"
 end subroutine get_d_Laguerres
@@ -1009,7 +1087,7 @@ function radial_function_3TB(r_given, fx_coefs, Laguer, sh_ind, num_lag, no_exp)
       f_out = f_out + fx_coefs(sh_ind, i) * Laguer(i)
    enddo
 
-   ! In case the Laguerre polynomials did not contai exponent, calculate it:
+   ! In case the Laguerre polynomials did not contain exponent, calculate it:
    if (.not.there_is_exp) then
       ! Get the exponential term:
       exp_ad = Laguerre_exponent(r_given) ! below
@@ -1019,19 +1097,6 @@ function radial_function_3TB(r_given, fx_coefs, Laguer, sh_ind, num_lag, no_exp)
    endif
 end function radial_function_3TB
 
-
-pure function Laguerre_exponent(r_given) result(exp_L)
-   real(8) exp_L
-   real(8), intent(in) :: r_given   ! distance [A]
-   real(8) :: d, ad
-
-   ! normalized distance, since coefficients are fitted in this units [1]:
-   d = r_given * g_A2au   ! [A] -> [Bohr]
-   ad = m_a * d ! for some reason, it is multiplied with the scaling parameter [2]
-
-   ! Get the exponential term:
-   exp_L = exp(-0.5d0 * ad)
-end function Laguerre_exponent
 
 
 function d_radial_function_3TB(r_given, M_Vij, fx_coefs, d_Laguer, sh_ind, num_lag) result(f_out)

@@ -2433,12 +2433,14 @@ subroutine save_duration(matter, numpar, chtext)
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
    character(*), intent(in) :: chtext ! time duration to print out
    integer FN
-   logical file_opened
+   logical file_opened, file_exists
    character(200) :: File_name
    character(1) path_sep
    path_sep = trim(adjustl(numpar%path_sep))
    File_name = trim(adjustl(numpar%output_path))//path_sep
    File_name = trim(adjustl(File_name))//'!OUTPUT_'//trim(adjustl(matter%Name))//'_Parameters.txt'
+   inquire(file=trim(adjustl(File_name)),exist=file_exists)
+   if (.not.file_exists) return  ! no such file exists, nowhere to print
    inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN)
    if (.not.file_opened) then
       FN = 300
@@ -2946,6 +2948,21 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
                text = 'sp3d5'
             endselect
             write(print_to,'(a,a)') ' With the basis set: ', trim(adjustl(text))
+          type is (TB_H_3TB) ! TB parametrization
+            select case (numpar%N_basis_size)
+            case (0)
+               text = 's'
+            case (1)    ! sp3
+               text = 'sp3'
+            case default    ! sp3d5
+               text = 'sp3d5'
+            endselect
+            write(print_to,'(a,a)') ' With the basis set: ', trim(adjustl(text))
+            if (ARRAY%include_3body) then
+               write(print_to,'(a,a)') ' With 3-body terms included'
+            else
+               write(print_to,'(a,a)') ' Only 2-body terms included (no 3-body terms)'
+            endif
           type is (TB_H_BOP) ! TB parametrization
             select case (numpar%N_basis_size)
             case (0)
