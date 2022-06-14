@@ -138,14 +138,14 @@ if (g_Err%Err) goto 2012 	! if there was an error in preparing the output files,
 ! If user set '-size' option to vary the super-cell size:
 if (g_numpar%change_size) then
    call vary_size(Err=g_Err%Err) ! see below, used for testing
-   if (g_Err%Err) goto 2016      ! if the USER does not want to run the calculations
+   if (g_Err%Err) goto 2012      ! if the USER does not want to run the calculations
 endif
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! If user set to calculate the coordinate path between two phases of material:
 
 if (g_numpar%do_path_coordinate) then
    call coordinate_path( )  ! below
-   if (g_Err%Err) goto 2016      ! if the USER does not want to run the calculations
+   if (g_Err%Err) goto 2012      ! if the USER does not want to run the calculations
 endif
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 
@@ -645,7 +645,7 @@ subroutine vary_size(do_forces, Err)
 !    write(*,'(a)') '*************************************************************'
 !    print*, ' Would you like to proceed with XTANT calculation? (y/n)',char(13)
 !    read(*,*) char1
-   write(*,'(a,$)') '*************************************************************' 
+   write(*,'(a)') '*************************************************************'
    char1 = 'n' ! by default, stop calculations here
    call parse_yes_no(trim(adjustl(char1)), yesno) ! Little_subroutines
    Err = .not.yesno

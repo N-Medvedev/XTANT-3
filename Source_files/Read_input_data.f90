@@ -3413,6 +3413,14 @@ subroutine read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript
        goto 3500
    endif
 
+   read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%rc  ! distance rescaling coefficient
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+       write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+       INFO = 3
+       goto 3500
+   endif
+
    read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%include_3body  ! flag, include 3-body terms or not
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
@@ -3490,21 +3498,26 @@ subroutine read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript
       goto 3500
    endif
 
+
    ! 3-body parameters:
-   open(UNIT=FN_3bdy, FILE = trim(adjustl(Filename_3body)), status = 'old', action='read')
-   inquire(file=trim(adjustl(Filename_3body)),opened=file_opened)
-   if (.not.file_opened) then
-      Error_descript = 'File '//trim(adjustl(Filename_3body))//' could not be opened, the program terminates'
-      INFO = 2
-      goto 3500
-   endif
-   ! File exists and opened, read from it:
-   call read_3TB_3bdy_file(FN_3bdy, trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
+   if (TB_Hamil(i,j)%include_3body) then  ! only if user defined it to include
+
+      open(UNIT=FN_3bdy, FILE = trim(adjustl(Filename_3body)), status = 'old', action='read')
+      inquire(file=trim(adjustl(Filename_3body)),opened=file_opened)
+      if (.not.file_opened) then
+         Error_descript = 'File '//trim(adjustl(Filename_3body))//' could not be opened, the program terminates'
+         INFO = 2
+         goto 3500
+      endif
+      ! File exists and opened, read from it:
+      call read_3TB_3bdy_file(FN_3bdy, trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
                            TB_Hamil(i,j), Error_descript)    ! module "Dealing_with_3TB"
-   if (LEN(trim(adjustl(Error_descript))) > 0) then
-      INFO = 5
-      goto 3500
-   endif
+      if (LEN(trim(adjustl(Error_descript))) > 0) then
+         INFO = 5
+         goto 3500
+      endif
+   endif ! (TB_Hamil(i,j)%include_3body)
+
 
 3500 continue
    ! Close files that have been read through:

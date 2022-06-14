@@ -623,9 +623,9 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
                do i = 1, 4
 !                   TB_Hamil%Hhcf(2,2,i) = Hdata( ind8(i) )
 !                   TB_Hamil%Hhavg(2,i) = Hdata( ind8(i+4) )
-                  TB_Hamil%Hhcf(2,2,i) = Hdata( ind8(i+4) )
                   TB_Hamil%Hhavg(2,i) = Hdata( ind8(i) )
-!                   print*, 'p-p O:', TB_Hamil%Hhavg(2,i)
+                  TB_Hamil%Hhcf(2,2,i) = Hdata( ind8(i+4) ) !/ 1.5d0
+!                   print*, 'p-p O:', ind8(i), TB_Hamil%Hhavg(2,i), TB_Hamil%Hhcf(2,2,i)
                enddo
             endif
 
@@ -635,8 +635,8 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
                do i = 1, 4
 !                   TB_Hamil%Hhcf(3,3,i) = Hdata( ind8(i) )
 !                   TB_Hamil%Hhavg(3,i) = Hdata( ind8(i+4) )
-                  TB_Hamil%Hhcf(3,3,i) = Hdata( ind8(i+4) )
                   TB_Hamil%Hhavg(3,i) = Hdata( ind8(i) )
+                  TB_Hamil%Hhcf(3,3,i) = Hdata( ind8(i+4) ) !/ 1.5d0
 !                   print*, 'd-d O:', TB_Hamil%Hhavg(3,i)
                enddo
             endif
