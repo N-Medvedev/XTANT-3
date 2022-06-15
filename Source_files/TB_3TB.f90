@@ -831,13 +831,9 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
 
          ! Diagonal part is excluded (no self-interaction of orbitals):
          ! [ C 1 ]
-         H_cf(2,2) = 0.0d0
-         H_cf(3,3) = 0.0d0
-         H_cf(4,4) = 0.0d0
-         ! [ C 2 ]
-!          H_cf(2,2) = H_cf(2,2) + H_cf_temp(2)                              ! px-s * px-s
-!          H_cf(3,3) = H_cf(3,3) + H_cf_temp(5) * Mjs(i,j,3)                 ! py-s * py-s
-!          H_cf(4,4) = H_cf(4,4) + matr_spd(2,2) * Mjs(i,j,4) * Mjs(i,j,4)   ! pz-s * pz-s
+         H_cf(2,2) = 0.0d0 ! px-s * px-s
+         H_cf(3,3) = 0.0d0 ! py-s * py-s
+         H_cf(4,4) = 0.0d0 ! pz-s * pz-s
 
 
          ! Off-diagonal part:
@@ -1007,10 +1003,11 @@ end subroutine Onsite_3TB
 ! Derivatives of the attractive part of TB:
 
 ! Subroutine for derivative of the Hamiltonian:
-subroutine get_dHij_drij_3TB(numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp)
+subroutine get_dHij_drij_3TB(numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp)
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell	! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of supercell
+   type(TB_H_3TB), dimension(:,:), intent(in) :: TB	! parameters of the Hamiltonian of TB
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
@@ -1030,11 +1027,11 @@ subroutine get_dHij_drij_3TB(numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_d
       Scell(NSC)%MDatoms(k)%forces%att(:) = 0.0d0	! just to start
 
       ! 1) 2-body part:
-      call get_forces_3TB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Lag_exp, M_d_Lag_exp, Aij_x_Ei, Mjs) !below
+      call get_forces_3TB(k, numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Lag_exp, M_d_Lag_exp, Aij_x_Ei, Mjs) !below
 
       ! 2) 3-body part:
       KOA1 => Scell(NSC)%MDatoms(k)%KOA  ! kind of atoms #1
-      if (TB_Hamil(KOA1,KOA1)%include_3body) then  ! only if user defined it to include
+      if (TB(KOA1,KOA1)%include_3body) then  ! only if user defined it to include
 
       endif ! (TB_Hamil(KOA1,KOA1)%include_3body)
    enddo ATOMS
@@ -1045,11 +1042,12 @@ end subroutine get_dHij_drij_3TB
 
 
 
-subroutine get_forces_3TB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Lag_exp, M_d_Lag_exp, Aij_x_Ei, Mjs)
+subroutine get_forces_3TB(k, numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Lag_exp, M_d_Lag_exp, Aij_x_Ei, Mjs)
    integer, intent(in) :: k	! forces for this atom
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell	! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of the supercell
+   type(TB_H_3TB), dimension(:,:), intent(in) :: TB	! parameters of the Hamiltonian of TB
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
@@ -1084,7 +1082,7 @@ subroutine get_forces_3TB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_d
          j4 = (j-1)*n_orb	! orbitals
          IJ:if (j >= i) then ! it's a new pair of atoms, calculate everything
             ! Get the matrix of dH/drij and dS/drij:
-            call d_Hamilton_one_3TB(numpar%N_basis_size, k, Scell, NSC, i, j, atom_2, dH1, M_Vij, M_dVij, &
+            call d_Hamilton_one_3TB(numpar%N_basis_size, k, Scell(NSC), TB, i, j, atom_2, dH1, M_Vij, M_dVij, &
                   M_lmn, M_Lag_exp, M_d_Lag_exp, dS1, M_SVij, M_dSVij, Mjs) ! this calls the block-hamiltonian
 
             do j1 = 1,n_orb	! all orbitals
@@ -1101,6 +1099,8 @@ subroutine get_forces_3TB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_d
                   dH(:,sh2,sh1) = dH(:,sh1,sh2)
                   dS(:,sh2,sh1) = dS(:,sh1,sh2)
 
+!                   print*, 'dH', sh1, sh2, dH(:,sh1,sh2)
+
                enddo ! i1
             enddo ! j1
          endif IJ
@@ -1108,7 +1108,6 @@ subroutine get_forces_3TB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_d
    enddo ATOM1
    ! Clean up the temporary arrays:
    deallocate(dH1, dS1)
-
 
    ! 2) Calculate the forces form the derivatives and the eigervectors:
    call Attract_TB_forces_3TB(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Scell(NSC)%MDatoms(k)%forces%att(:), n_orb)
@@ -1171,23 +1170,23 @@ end subroutine Attract_TB_forces_3TB
 
 !ddddddddddddddddddddddddddddddddddddddddddddddddddd
 ! Derivatives:
-subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, NSC, i, j, atom_2, dH, M_Vij, M_dVij, M_lmn, M_Lag_exp, M_d_Lag_exp, &
+subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, TB, i, j, atom_2, dH, M_Vij, M_dVij, M_lmn, M_Lag_exp, M_d_Lag_exp, &
                               dS, M_SVij, M_dSVij, Mjs)
    integer, intent(in) :: basis_ind ! index of the basis set used: 0=s, 1=sp3, 2=sp3d5
-   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
-   integer, intent(in) :: NSC, i, j, atom_2, k
-   real(8), dimension(:,:,:), intent(out) :: dH, dS  ! hamiltonian, all orbitals in sp3d5 basis set
+   type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   type(TB_H_3TB), dimension(:,:), intent(in), target :: TB	! parameters of the Hamiltonian of TB
+   integer, intent(in) :: i, j, atom_2, k
+   real(8), dimension(:,:,:), intent(out) :: dH, dS  ! hamiltonian, all orbitals
    real(8), dimension(:,:,:), intent(in), target :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp, M_d_Lag_exp   ! Laguerres and their derivatives
    real(8), dimension(:,:,:), intent(in), target :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms for S-matrix, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: Mjs ! matrix of overlaps with s-orbital
-   real(8), dimension(:,:,:), intent(in), target :: M_drij_dsk  ! matrix of derivatives of distances between atoms i and j
-   real(8), dimension(:,:,:), intent(in), target :: Mdlmn   ! matrix of derivatives of directional cosines
    !---------------------------------------
-   real(8), dimension(9), pointer :: M_dlmn	! dl/dx, dl/dy, dl/dz, dm/dx, dm/dy, dm/dz, dn/dx, dn/dy, dn/dz
+   real(8), dimension(9) :: M_dlmn	! dl/dx, dl/dy, dl/dz, dm/dx, dm/dy, dm/dz, dn/dx, dn/dy, dn/dz
    real(8), pointer :: x1, y1, z1, r1
-   real(8), pointer :: drij_dsk(3)
+   integer, pointer :: KOA1
+   real(8) :: drij_dsk(3)
    integer :: n_orb, n_overlap
    real(8), dimension(:), allocatable :: vec_M_Vij12, vec_M_Vij21, vec_M_SVij12, vec_M_SVij21
    real(8), dimension(:), allocatable :: vec_M_dVij12, vec_M_dVij21, vec_M_dSVij12, vec_M_dSVij21
@@ -1197,7 +1196,6 @@ subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, NSC, i, j, atom_2, dH, M_Vij,
       dS = 0.0d0  ! Here are constants on-site, derivatives = 0
 
       call d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_exp, Mjs, dH) ! below
-
 
    else	! For pairs of atoms, fill the hamiltonain with Hopping Integrals:
 
@@ -1215,19 +1213,26 @@ subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, NSC, i, j, atom_2, dH, M_Vij,
       allocate(dH1(n_orb,n_orb))
       allocate(dS1(n_orb,n_orb))
 
-      drij_dsk(1) => M_drij_dsk(i,j,1) ! dr_{ij}/ds_{k,x}
-      drij_dsk(2) => M_drij_dsk(i,j,2) ! dr_{ij}/ds_{k,y}
-      drij_dsk(3) => M_drij_dsk(i,j,3) ! dr_{ij}/ds_{k,z}
+      x1 => Scell%Near_neighbor_dist(i,atom_2,1)	! at this distance, X
+      y1 => Scell%Near_neighbor_dist(i,atom_2,2)	! at this distance, Y
+      z1 => Scell%Near_neighbor_dist(i,atom_2,3)	! at this distance, Z
+      r1 => Scell%Near_neighbor_dist(i,atom_2,4)	! at this distance, R
 
-      M_dlmn(1) => Mdlmn(i,j,1)  ! dl/dsx
-      M_dlmn(2) => Mdlmn(i,j,2)  ! dl/dsy
-      M_dlmn(3) => Mdlmn(i,j,3)  ! dl/dsz
-      M_dlmn(4) => Mdlmn(i,j,4)  ! dm/dsx
-      M_dlmn(5) => Mdlmn(i,j,5)  ! dm/dsy
-      M_dlmn(6) => Mdlmn(i,j,6)  ! dm/dsz
-      M_dlmn(7) => Mdlmn(i,j,7)  ! dn/dsx
-      M_dlmn(8) => Mdlmn(i,j,8)  ! dn/dsy
-      M_dlmn(9) => Mdlmn(i,j,9)  ! dn/dsz
+      ! Derivatives of rij by sk:
+      ! All functions are from the module "TB_Koster_Slater":
+      drij_dsk(1) = drij_dska(i, j, k, x1, y1, z1, r1, Scell%supce, 1, .true.)	! dr_{ij}/ds_{k,x}
+      drij_dsk(2) = drij_dska(i, j, k, x1, y1, z1, r1, Scell%supce, 2, .true.)	! dr_{ij}/ds_{k,y}
+      drij_dsk(3) = drij_dska(i, j, k, x1, y1, z1, r1, Scell%supce, 3, .true.)	! dr_{ij}/ds_{k,z}
+
+      M_dlmn(1) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 1, drij_dsk(1))	! dl/dsx
+      M_dlmn(2) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 2, drij_dsk(2))	! dl/dsy
+      M_dlmn(3) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 3, drij_dsk(3))	! dl/dsz
+      M_dlmn(4) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 1, drij_dsk(1))	! dm/dsx
+      M_dlmn(5) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 2, drij_dsk(2))	! dm/dsy
+      M_dlmn(6) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 3, drij_dsk(3))	! dm/dsz
+      M_dlmn(7) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 1, drij_dsk(1))	! dn/dsx
+      M_dlmn(8) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 2, drij_dsk(2))	! dn/dsy
+      M_dlmn(9) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 3, drij_dsk(3))	! dn/dsz
 
       ! Create vectors from the slices of arrays to pass into subroutines:
       vec_M_Vij21 = M_Vij(i,j,:)
@@ -1301,10 +1306,18 @@ subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, NSC, i, j, atom_2, dH, M_Vij,
       dS(3,:,:) = dS1(:,:)
 
       deallocate(vec_M_Vij12, vec_M_Vij21, vec_M_SVij12, vec_M_SVij21, vec_M_dVij12, vec_M_dVij21, vec_M_dSVij12, vec_M_dSVij21, dH1, dS1)
+
+
+      ! 2) 3-body contributions:
+      KOA1 => Scell%MDatoms(k)%KOA  ! Kind of atom:
+      if (TB(KOA1,KOA1)%include_3body) then  ! only if user defined it to include
+
+      endif ! (TB(KOA1,KOA1)%include_3body)
+
    endif ! (i == j)
 
    ! Clean up at the end:
-   nullify (x1, y1, z1, r1, drij_dsk, M_dlmn)
+   nullify (x1, y1, z1, r1, KOA1)
 end subroutine d_Hamilton_one_3TB
 
 
@@ -1320,7 +1333,7 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij) * cutoff
    real(8), dimension(:,:,:), intent(in) :: M_d_Lag_exp   ! matrix of derivatives of laguerre * exp(-a*r_ij) * cutoff
    real(8), dimension(:,:,:), intent(in) :: Mjs ! matrix of overlaps with s-orbital
-   real(8), dimension(:), intent(out) :: dHij	! derivatives of the overlap integerals along x,y,z [eV/A]
+   real(8), dimension(:,:,:), intent(out) :: dHij	! derivatives of the overlap integerals along x,y,z [eV/A]
    !---------------------
    integer :: i1, Bsiz, atom_2, sh1, sh2, j, at_ind, atom_3, kk
    real(8) :: r, term_s, term_p, term_d, term_3bdy(3)
@@ -1338,7 +1351,15 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
    m => Scell%Near_neighbor_size(i)
 
    ! Size of the basis:
-   Bsiz = size(Hij,1)
+   select case (basis_ind)
+   case (0) ! s
+      Bsiz = 1
+   case (1) ! sp3
+      Bsiz = 4
+   case(2)  ! sp3d5
+      Bsiz = 9
+   end select
+
    ! To start with:
    allocate(E_onsite(3,Bsiz,Bsiz), source=0.0d0)
    allocate(H_avg(3,Bsiz,Bsiz), source=0.0d0)
@@ -1903,11 +1924,11 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
       enddo AT2
    endif ! (TB(KOA1,KOA1)%include_3body)
 
-   ! Collect all the terms into Hamiltonian:
-   Hij = E_onsite + H_avg + H_cf + H_3bdy
+   ! Collect all the terms into derivative of the Hamiltonian:
+   dHij = E_onsite + H_avg + H_cf + H_3bdy
 
    deallocate(E_onsite, H_avg, H_cf, H_3bdy)
-   nullify(m, KOA1, KOA2, KOA3, drij_dsk, M_dlmn)
+   nullify(m, KOA1, KOA2, KOA3)
 end subroutine d_Onsite_3TB
 
 
@@ -2007,8 +2028,6 @@ subroutine dHamil_tot_Press_3TB(Scell, NSC, numpar, M_Vij, M_dVij, M_SVij, M_dSV
                   i2 = i4+i1
                   dHij(:,i2,j2) = dHij1(:,i1,j1)	! construct the total Hamiltonian from
                   dSij(:,i2,j2) = dSij1(:,i1,j1)	! construct the total Overlap Matrix from
-!                   dHij(:,i2,j2) = dHij1(:,j1,i1)	! construct the total Hamiltonian from   ! WRONG
-!                   dSij(:,i2,j2) = dSij1(:,j1,I1)	! construct the total Overlap Matrix from
                enddo ! i1
             enddo ! j1
          endif ! (j .GT. 0) then
@@ -2048,8 +2067,6 @@ subroutine dHamilton_one_Press_3TB(i, atom_2, Scell, NSC, norb, n_overlap, M_Vij
       ! H.Jeschke PhD thesis, Eq.(2.42), Page 40:
       do ki = 1, norb
          do kj = 1, norb
-!             dHij_press(:,kj,ki) = dH(:,ki,kj)   ! Hopping Integrals ! WRONG
-!             dSij_press(:,kj,ki) = dS(:,ki,kj)   ! Hopping Integrals
             dHij_press(:,ki,kj) = dH(:,ki,kj)   ! Hopping Integrals ! CORRECT, tested on sp3 basis set
             dSij_press(:,ki,kj) = dS(:,ki,kj)   ! Hopping Integrals
          enddo ! kj
@@ -2112,10 +2129,6 @@ subroutine dHopping_Press_3TB(i, atom_2, Scell, NSC, norb, n_overlap, M_Vij, M_d
          ! TESTED, CORRECT:
          drij_dh = drij_dhab(rij(j1), sij(i1), r)	! dr_{ij}/dh_{gamma,delta}, module "TB_Koster_Slater"
 
-!          vec_M_dVij12 = M_dVij(i,j,:)*drij_dh
-!          vec_M_dVij21 = M_dVij(j,i,:)*drij_dh
-!          vec_M_dSVij12 = M_dSVij(i,j,:)*drij_dh
-!          vec_M_dSVij21 = M_dSVij(j,i,:)*drij_dh
          vec_M_dVij21 = M_dVij(i,j,:)*drij_dh   ! correct
          vec_M_dVij12 = M_dVij(j,i,:)*drij_dh
          vec_M_dSVij21 = M_dSVij(i,j,:)*drij_dh
@@ -2162,10 +2175,6 @@ subroutine get_Mjs_factors(basis_ind, Scell, M_lmn, Mjs)
 
    if (.not.allocated(Mjs)) allocate( Mjs(nat,nat,Nsiz) )
    Mjs = 0.0d0 ! to start with
-   if (.not.allocated(Mjs)) allocate( drij_dsk(nat,nat,3) )
-   drij_dsk = 0.0d0 ! to start with
-   if (.not.allocated(Mjs)) allocate( M_dlmn(nat,nat,9) )
-   M_dlmn = 0.0d0
 
 !$omp parallel
 !$omp do private(i, j, m, atom_2, x1, y1, z1, r1)

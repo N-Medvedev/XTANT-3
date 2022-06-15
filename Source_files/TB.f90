@@ -38,8 +38,8 @@ use TB_Molteni
 use TB_NRL
 use TB_DFTB, only : Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_drij_DFTB, &
                      Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB
-use TB_3TB, only : get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, &
-                     Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors
+use TB_3TB, only : get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, Attract_TB_Forces_Press_3TB, &
+                     Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors, get_dHij_drij_3TB
 use TB_BOP, only : Construct_Vij_BOP, construct_TB_H_BOP, get_Erep_s_BOP
 use TB_xTB, only : Construct_Vij_xTB, construct_TB_H_xTB, get_Erep_s_xTB, identify_xTB_orbitals_per_atom
 use Van_der_Waals
@@ -113,7 +113,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
 
             type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
                ! Get the overlaps between orbitals and ficticios s orbital (for 3-body parts):
-               call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs, M_drij_dsk, M_dlmn)   ! module "TB_3TB"
+               call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
                ! Get the overlaps and reusable functions:
                call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
                ! Construct the Hamiltonian, diagonalize it, get the energy:
@@ -181,7 +181,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                   ! Get the energy-weighted density matrix:
                   call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
                   ! Get the derivatives of the Hamiltonian:
-                  call get_dHij_drij_3TB(numpar, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
+                  call get_dHij_drij_3TB(numpar, Scell, NSC, ARRAY, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
                         M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
                   call Attract_TB_Forces_Press_3TB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_3TB"
@@ -2091,9 +2091,6 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    real(8), dimension(:,:,:), allocatable :: M_Lag_exp   ! matrix of Laguerres for 3-body radial funcs (for 3TB)
    real(8), dimension(:,:,:), allocatable :: M_d_Lag_exp   ! matrix of derivatives of Laguerres for 3-body radial funcs
    real(8), dimension(:,:,:), allocatable :: Mjs      ! matrix of K-S part of overlaps with s-orb. (for 3TB)
-   real(8), dimension(:,:,:), allocatable :: M_drij_dsk  ! matrix of derivatives of distances between atoms i and j
-   real(8), dimension(:,:,:), allocatable :: M_dlmn   ! matrix of derivatives of directional cosines
-
    
    ! so far we only have one supercell:
    NSC = 1
@@ -2132,7 +2129,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
       type is (TB_H_3TB) ! TB parametrization according to 3TB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below
-         call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs, M_drij_dsk, M_dlmn)   ! module "TB_3TB"
+         call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
          call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
          call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
          call Attract_TB_Forces_Press_3TB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_3TB"
