@@ -1281,8 +1281,8 @@ subroutine Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz,
    ! Convert to SI units used later:
    !temp = g_me*g_e/g_h*1d-10 / 2.0d0	! UNCLEAR WHERE THE 1/2 COMES FROM ???
    ! mass and Plank constant cancel out in the final expression (subroutine get_Trani, module "Optical_parameters")
-!    temp = 1.0d0
-   temp = 1.0d0 / 2.0d0	! UNCLEAR WHERE THE 1/2 COMES FROM ???
+   temp = 1.0d0
+   !temp = 1.0d0 / 2.0d0	! UNCLEAR WHERE THE 1/2 COMES FROM ???
    Scell(NSC)%cPRRx = Scell(NSC)%cPRRx * temp
    Scell(NSC)%cPRRy = Scell(NSC)%cPRRy * temp
    Scell(NSC)%cPRRz = Scell(NSC)%cPRRz * temp
