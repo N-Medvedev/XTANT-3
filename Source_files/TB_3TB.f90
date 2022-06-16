@@ -1481,20 +1481,25 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
       if (basis_ind > 0) then ! p3 orbitals:
 
          ! Define derivatives of the p-symmetry factors to be reused below:
-         dMjs(1,1) = M_dlmn(1) ! px-s / ds_x
-         dMjs(2,1) = M_dlmn(2) ! px-s / ds_y
-         dMjs(3,1) = M_dlmn(3) ! px-s / ds_z
-         dMjs(1,2) = M_dlmn(4) ! py-s / ds_x
-         dMjs(2,2) = M_dlmn(5) ! py-s / ds_y
-         dMjs(3,2) = M_dlmn(6) ! py-s / ds_z
-         dMjs(1,3) = M_dlmn(7) ! pz-s / ds_x
-         dMjs(2,3) = M_dlmn(8) ! pz-s / ds_y
-         dMjs(3,3) = M_dlmn(9) ! pz-s / ds_z
+         ! [F 1]
+         dMjs(1,1) = -M_dlmn(1) ! px-s / ds_x
+         dMjs(2,1) = -M_dlmn(2) ! px-s / ds_y
+         dMjs(3,1) = -M_dlmn(3) ! px-s / ds_z
+         dMjs(1,2) = -M_dlmn(4) ! py-s / ds_x
+         dMjs(2,2) = -M_dlmn(5) ! py-s / ds_y
+         dMjs(3,2) = -M_dlmn(6) ! py-s / ds_z
+         dMjs(1,3) = -M_dlmn(7) ! pz-s / ds_x
+         dMjs(2,3) = -M_dlmn(8) ! pz-s / ds_y
+         dMjs(3,3) = -M_dlmn(9) ! pz-s / ds_z
 
-
-         Mjs(2) = -Mjs_in(i,j,2)  ! px-s
-         Mjs(3) = -Mjs_in(i,j,3)  ! py-s
-         Mjs(4) = -Mjs_in(i,j,4)  ! pz-s
+         ! [E 2]
+         Mjs(2) = Mjs_in(i,j,2)  ! px-s
+         Mjs(3) = Mjs_in(i,j,3)  ! py-s
+         Mjs(4) = Mjs_in(i,j,4)  ! pz-s
+!          ! [E 1]
+!          Mjs(2) = -Mjs_in(i,j,2)  ! px-s
+!          Mjs(3) = -Mjs_in(i,j,3)  ! py-s
+!          Mjs(4) = -Mjs_in(i,j,4)  ! pz-s
 
 
          H_cf_temp(1) = d_matr_spd(2,1) * Mjs(2)
