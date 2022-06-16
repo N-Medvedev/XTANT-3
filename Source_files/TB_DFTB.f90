@@ -313,7 +313,7 @@ deallocate(Hij1, Sij1)
                do i1 = 1,n_orb ! all orbitals
                   k = (i-1)*n_orb+i1
                   Hij(k,l) = Hij(l,k)
-                  Sij(k,l) =  Sij(l,k)
+                  Sij(k,l) = Sij(l,k)
                enddo ! i1
             enddo ! j1
          endif
@@ -586,8 +586,8 @@ subroutine get_forces_DFTB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_
    Nsiz = size(Scell(NSC)%Ha,1)	! total number of orbitals
    n_orb =  identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! size of the basis set per atom, below
 
-   if (.not.allocated(dH)) allocate(dH1(3,n_orb,n_orb))
-   if (.not.allocated(dS)) allocate(dS1(3,n_orb,n_orb))
+   if (.not.allocated(dH1)) allocate(dH1(3,n_orb,n_orb))
+   if (.not.allocated(dS1)) allocate(dS1(3,n_orb,n_orb))
    dH1 = 0.0d0
    dS1 = 0.0d0
    if (.not.allocated(dH)) allocate(dH(3,Nsiz,Nsiz))

@@ -1112,11 +1112,11 @@ pure subroutine KS_sp3d5_hetero_TEST(Vsr12, Vsr21, l, m, n, ts)
    ts(4,2) = t_pa_pb(l, n, Vsr21(4), Vsr21(5))	! pz px
    ts(4,3) = t_pa_pb(m, n, Vsr21(4), Vsr21(5))	! pz py
    ts(4,4) = t_pa_pa(n, Vsr12(4), Vsr12(5))		! pz pz
-   ts(4,5) = -t_px_dyz(n, l, m, Vsr12(6), Vsr12(7))	! pz dxy
-   ts(4,6) = -t_px_dxy(n, l, Vsr12(6), Vsr12(7))	! pz dxz
-   ts(4,7) = -t_px_dxy(n, m, Vsr12(6), Vsr12(7))	! pz dyz
-   ts(4,8) = -t_pz_dx2_y2(l, m, n, Vsr12(6), Vsr12(7))	! pz dx2-y2
-   ts(4,9) = -t_pz_d3z2_r2(l, m, n, Vsr12(6), Vsr12(7))	! pz d3z2-r2
+   ts(4,5) = t_px_dyz(n, l, m, Vsr12(6), Vsr12(7))	! pz dxy
+   ts(4,6) = t_px_dxy(n, l, Vsr12(6), Vsr12(7))	! pz dxz
+   ts(4,7) = t_px_dxy(n, m, Vsr12(6), Vsr12(7))	! pz dyz
+   ts(4,8) = t_pz_dx2_y2(l, m, n, Vsr12(6), Vsr12(7))	! pz dx2-y2
+   ts(4,9) = t_pz_d3z2_r2(l, m, n, Vsr12(6), Vsr12(7))	! pz d3z2-r2
 
 
    ts(5,1) = t_s_dab(l, m, Vsr21(3))	! dxy s

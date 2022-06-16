@@ -95,13 +95,14 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
 !$omp do private(j, m, atom_2, i, KOA1, KOA2, r, Laguer, d_Laguer, exp_ad, d_exp_ad, ihop, Fermi, dFermi)
    AT1:do j = 1,nat	! all atoms
 
-      KOA1 => Scell(NSC)%MDatoms(j)%KOA
-
       m => Scell(NSC)%Near_neighbor_size(j)
       AT2:do atom_2 = 1,m ! do only for atoms close to that one
          i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
 
-         KOA2 => Scell(NSC)%MDatoms(i)%KOA
+         !KOA1 => Scell(NSC)%MDatoms(j)%KOA
+         !KOA2 => Scell(NSC)%MDatoms(i)%KOA
+         KOA1 => Scell(NSC)%MDatoms(i)%KOA
+         KOA2 => Scell(NSC)%MDatoms(j)%KOA  ! Correct order, checked by cohesive energy minimum
 
          r = Scell(NSC)%Near_neighbor_dist(j,atom_2,4) ! at this distance, R [A]
 
@@ -119,7 +120,7 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
 
          ! Include the exponenet and the cut-off in the solution:
          ! 1) First, construct the derivative via chain rule:
-         d_Laguer(:) = d_Laguer(:)*exp_ad*Fermi + Laguer(:)*(d_exp_ad * Fermi + exp_ad * dFermi)
+         d_Laguer(:) = d_Laguer(:)*exp_ad*Fermi + Laguer(:)*(d_exp_ad*Fermi + exp_ad*dFermi)
          ! 2) Now, update the Laguerres themselves:
          Laguer(:) = Laguer(:)*exp_ad*Fermi
 
@@ -247,8 +248,8 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    !-----------------------------------
    ! 1) Construct non-orthogonal Hamiltonian H and Overlap matrix S in 2 steps:
 !$omp parallel private(j, m, atom_2, i, KOA1, KOA2, j1, l, i1, k, Hij1, Sij1)
-if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb))
-if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb))
+if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
+if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
 !$omp do
    do j = 1,nat	! all atoms
       m => Scell(NSC)%Near_neighbor_size(j)
@@ -273,29 +274,15 @@ if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb))
             call Get_overlap_S_matrix_3TB(numpar%N_basis_size, j, i, Sij1, M_SVij, M_lmn)  ! below
 
             do j1 = 1,n_orb ! all orbitals
-               l = (j-1)*n_orb+j1   ! atom 1
+               l = (j-1)*n_orb+j1   ! atom 1 (j)
                do i1 = 1,n_orb ! all orbitals
-                  k = (i-1)*n_orb+i1   ! atom 2
-                  ! [ A 1 ]
-!                   Hij(k,l) = Hij1(j1,i1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
-!                   Sij(k,l) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
-                  ! [ A 2 ] test indices, bare no meaning in the code itself
-                  Hij(l,k) = Hij1(j1,i1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
-                  Sij(l,k) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
-                  ! [ A 3 ] test indices, bare no meaning in the code itself
-!                   Hij(l,k) = Hij1(i1,j1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
-!                   Sij(l,k) = Sij1(i1,j1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
-                  ! [ A 4 ]
-!                   Hij(k,l) = Hij1(i1,j1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
-!                   Sij(k,l) = Sij1(i1,j1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
+                  k = (i-1)*n_orb+i1   ! atom 2 (i)
+                  ! We fill the LOWER triangle here
+                  ! (the order does not matter, just have to be consistent with the Slater-Koster functions):
+                  ! (tested, correct)
+                  Hij(k,l) = Hij1(i1,j1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
+                  Sij(k,l) = Sij1(i1,j1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
                   if (ABS(Sij(k,l)) <= epsylon) Sij(k,l) = 0.0d0
-
-!                   Hij(l,k) = Hij(k,l)
-!                   Sij(l,k) = Sij(k,l)
-                  ! Build lower triangle using symmetry:
-                  Hij(k,l) = Hij(l,k)
-                  Sij(k,l) = Sij(l,k)
-
                enddo ! i1
             enddo ! j1
          endif IJ
@@ -305,11 +292,30 @@ if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb))
 deallocate(Hij1, Sij1)
 !$omp end parallel
 
+   ! b) Construct upper triangle - use symmetry:
+!$omp parallel
+!$omp do  private(j, m, atom_2, i, j1, l, i1, k)
+   do j = 1,nat	! all atoms
+      m => Scell(NSC)%Near_neighbor_size(j)
+      do atom_2 = 1,m ! do only for atoms close to that one
+         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         if (i < j) then ! it's a new pair of atoms, calculate everything
+            do j1 = 1,n_orb ! all orbitals
+               l = (j-1)*n_orb+j1
+               do i1 = 1,n_orb ! all orbitals
+                  k = (i-1)*n_orb+i1
+                  Hij(k,l) = Hij(l,k)
+                  Sij(k,l) = Sij(l,k)
+               enddo ! i1
+            enddo ! j1
+         endif
+      enddo ! j
+   enddo ! i
+!$omp end do
+!$omp end parallel
+
    ! Check if Hamiltonian is symmetric (for testing purpuses):
-   call check_symmetry(Hij) ! module "Algebra_tools"
-
-! print*, 'Hij(k,l)', Hij(1,2)   ! Printout for testing
-
+!    call check_symmetry(Hij) ! module "Algebra_tools"
 
    ! 2)    ! Save the non-orthogonalized Hamiltonian:
    !$OMP WORKSHARE
@@ -411,7 +417,6 @@ end subroutine Hamil_tot_3TB
 
 
 
-
 subroutine Get_overlap_S_matrix_3TB(basis_ind, i, j, Sij, M_SVij, M_lmn)
    integer, intent(in) :: basis_ind ! index of the basis set: 0=s, 1=sp3, 2=sp3d5
    integer, intent(in) :: i, j  ! atomic indices
@@ -433,19 +438,13 @@ subroutine Get_overlap_S_matrix_3TB(basis_ind, i, j, Sij, M_SVij, M_lmn)
          vec_M_SVij12(:) = M_SVij(i,j,:)
          allocate(vec_M_SVij21(4))
          vec_M_SVij21(:) = M_SVij(j,i,:)
-         ! [ B 1 ]
-!          call KS_sp3_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij)   ! module "TB_Koster_Slater"
-         ! [ B 2 ]
-         call KS_sp3_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij)	! module "TB_Koster_Slater"
+         call KS_sp3_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij)   ! module "TB_Koster_Slater"
       case default ! for sp3d5 basis set:
          allocate(vec_M_SVij12(10))
          vec_M_SVij12(:) = M_SVij(i,j,:)
          allocate(vec_M_SVij21(10))
          vec_M_SVij21(:) = M_SVij(j,i,:)
-         ! [ B 1 ]
-         !call KS_sp3d5_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij) ! module "TB_Koster_Slater"
-         ! [ B 2 ]
-         call KS_sp3d5_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij)	! module "TB_Koster_Slater"
+         call KS_sp3d5_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij) ! module "TB_Koster_Slater"
       end select
    else	! it is the same atom
       Sij = 0.0d0
@@ -507,19 +506,18 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
       vec_M_SVij12(:) = M_Vij12(:)
       allocate(vec_M_SVij21(4))
       vec_M_SVij21(:) = M_Vij21(:)
-      ! [ B 1 ]
-!       call KS_sp3_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
-      ! [ B 2 ]
-      call KS_sp3_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
+      ! This subroutine is used because we fill the LOWER triangle in the Hamiltonian matrix:
+      call KS_sp3_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
+      ! This subroutine could be used if we were filling the UPPER triangle first:
+      !call KS_sp3_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
    case default ! for sp3d5 basis set:
       allocate(vec_M_SVij12(10))
       vec_M_SVij12(:) = M_Vij12(:)
       allocate(vec_M_SVij21(10))
       vec_M_SVij21(:) = M_Vij21(:)
-      ! [ B 1 ]
-!       call KS_sp3d5_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
-      ! [ B 2 ]
-      call KS_sp3d5_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
+      call KS_sp3d5_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
+      ! Same here, the upper triangle vs. the lower one:
+      !call KS_sp3d5_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
    end select
    if (allocated(vec_M_SVij12)) deallocate(vec_M_SVij12)
    if (allocated(vec_M_SVij21)) deallocate(vec_M_SVij21)
@@ -535,8 +533,6 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
       ! types of atoms:
       KOA2 => Scell%MDatoms(j)%KOA  ! kind of atoms #2
       m => Scell%Near_neighbor_size(i) ! how many near neighbors
-
-!     goto 5000   ! For testing, exclude 3-body terms
 
 !!!$omp PARALLEL ! it is already inside parallelized region, do not parallelize again!
 !!!$omp do private(atom_3, k, KOA3, at_ind, sh1, sh2)
@@ -558,10 +554,6 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
             ! Get the radial function for 3-body interaction:
             do sh1 = 1, 1+basis_ind
                do sh2 = 1, 1+basis_ind
-!                   G_IJK(sh1,sh2) = TB_Hamil(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 1) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,1) + &
-!                               TB_Hamil(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 2) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,2) + &
-!                               TB_Hamil(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 3) * M_Lag_exp(i,k,2) * M_Lag_exp(j,k,1) + &
-!                               TB_Hamil(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 4) * M_Lag_exp(i,k,1) * M_Lag_exp(j,k,1) * M_Lag_exp(i,j,1)
                     G_IJK(sh1,sh2) = TB_Hamil(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 1) * MM(1) + &
                                      TB_Hamil(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 2) * MM(2) + &
                                      TB_Hamil(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 3) * MM(3) + &
@@ -692,7 +684,6 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
    endif ! (TB(KOA1,KOA1)%include_3body)
 
    5000 continue
-
    ! Add up 2-body and 3-body parts:
    ts = ts + H_3bdy_part
 
@@ -754,7 +745,7 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
    endif
 
    !-----------------
-   ! 2) Average term:
+   ! 2) Average term (testet, correct):
 !!!$omp parallel private(atom_2, j, i1, term_s, term_p, term_d) ! in is called from parallelized region, don't parallelize it again
 !!!$omp do reduction( + : H_avg)
    do atom_2 = 1, m ! do only for atoms close to that one
@@ -781,6 +772,8 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
 !!!$omp enddo
 !!!$omp end parallel
 
+
+! goto 5001   ! testing
 
    !-----------------
    ! 3) Crystal field:
@@ -1026,7 +1019,7 @@ subroutine get_dHij_drij_3TB(numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij,
    ATOMS:do k = 1, nat	! forces for all atoms
       Scell(NSC)%MDatoms(k)%forces%att(:) = 0.0d0	! just to start
 
-      ! 1) 2-body part:
+      ! 1) 2-body part (tested, correct):
       call get_forces_3TB(k, numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Lag_exp, M_d_Lag_exp, Aij_x_Ei, Mjs) !below
 
       ! 2) 3-body part:
@@ -1063,10 +1056,14 @@ subroutine get_forces_3TB(k, numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij,
    Nsiz = size(Scell(NSC)%Ha,1)	! total number of orbitals
    n_orb =  identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! size of the basis set per atom, below
 
-   if (.not.allocated(dH)) allocate(dH1(3,n_orb,n_orb), source = 0.0d0)
-   if (.not.allocated(dS)) allocate(dS1(3,n_orb,n_orb), source = 0.0d0)
-   if (.not.allocated(dH)) allocate(dH(3,Nsiz,Nsiz), source = 0.0d0)
-   if (.not.allocated(dS)) allocate(dS(3,Nsiz,Nsiz), source = 0.0d0)
+   if (.not.allocated(dH1)) allocate(dH1(3,n_orb,n_orb))
+   if (.not.allocated(dS1)) allocate(dS1(3,n_orb,n_orb))
+   dH1 = 0.0d0
+   dS1 = 0.0d0
+   if (.not.allocated(dH)) allocate(dH(3,Nsiz,Nsiz))
+   if (.not.allocated(dS)) allocate(dS(3,Nsiz,Nsiz))
+   dH = 0.0d0
+   dS = 0.0d0
 
    ! 1) Construct the derivatives of the Hamiltonian and Overlap matrix:
    ! Construct upper triangle - calculate each element:
@@ -1089,17 +1086,12 @@ subroutine get_forces_3TB(k, numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij,
                sh2 = j4+j1
                do i1 = 1,n_orb	! all orbitals
                   sh1 = i4+i1
+                  ! [FA 1]
                   dH(:,sh1,sh2) = dH1(:,i1,j1)	! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40)
                   dS(:,sh1,sh2) = dS1(:,i1,j1)	! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
-                  ! WRONG:
+                  ! [FA 2]
 !                   dH(:,sh1,sh2) = dH1(:,j1,i1)	! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40)
 !                   dS(:,sh1,sh2) = dS1(:,j1,i1)	! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
-
-                  ! To construct lower triangle, use symmetry:
-                  dH(:,sh2,sh1) = dH(:,sh1,sh2)
-                  dS(:,sh2,sh1) = dS(:,sh1,sh2)
-
-!                   print*, 'dH', sh1, sh2, dH(:,sh1,sh2)
 
                enddo ! i1
             enddo ! j1
@@ -1108,6 +1100,26 @@ subroutine get_forces_3TB(k, numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij,
    enddo ATOM1
    ! Clean up the temporary arrays:
    deallocate(dH1, dS1)
+
+   ! b) Construct lower triangle - use symmetry:
+   do i = 1,nat	! all pairs of atoms contribute to the force (to some degree)
+      i4 = (i-1)*n_orb
+      m = Scell(NSC)%Near_neighbor_size(i)
+      do atom_2 = 1,m ! do only for atoms close to that one
+         j = Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+         j4 = (j-1)*n_orb
+         if (j < i) then ! this pair of atoms was already calculated, use the symmetry
+            do j1 = 1,n_orb	! all orbitals
+               sh2 = j4+j1
+               do i1 = 1,n_orb	! all orbitals
+                  sh1 = i4+i1
+                  dH(:,sh1,sh2) = dH(:,sh2,sh1)
+                  dS(:,sh1,sh2) = dS(:,sh2,sh1)
+               enddo ! i1
+            enddo ! j1
+         endif ! (j < i)
+      enddo ! i
+   enddo ! atom_2
 
    ! 2) Calculate the forces form the derivatives and the eigervectors:
    call Attract_TB_forces_3TB(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Scell(NSC)%MDatoms(k)%forces%att(:), n_orb)
@@ -1193,9 +1205,9 @@ subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, TB, i, j, atom_2, dH, M_Vij, 
    real(8), dimension(:,:), allocatable :: dH1, dS1
 
    if (i == j) then ! Onsite contributions (incl. 3-body parts etc.):
-      dS = 0.0d0  ! Here are constants on-site, derivatives = 0
 
       call d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_exp, Mjs, dH) ! below
+      dS = 0.0d0  ! Here are constants on-site, derivatives = 0
 
    else	! For pairs of atoms, fill the hamiltonain with Hopping Integrals:
 
@@ -1324,7 +1336,7 @@ end subroutine d_Hamilton_one_3TB
 
 
 
-subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_exp, Mjs, dHij)
+subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_exp, Mjs_in, dHij)
    integer, intent(in) :: basis_ind ! index of the basis set used: 0=s, 1=sp3, 2=sp3d5
    integer, intent(in) :: k, i         ! indix of the atom#1, and atoms #2=#3
    type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
@@ -1332,7 +1344,7 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
    real(8), dimension(:,:,:), intent(in) :: M_lmn  ! matrix of l, m, n
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij) * cutoff
    real(8), dimension(:,:,:), intent(in) :: M_d_Lag_exp   ! matrix of derivatives of laguerre * exp(-a*r_ij) * cutoff
-   real(8), dimension(:,:,:), intent(in) :: Mjs ! matrix of overlaps with s-orbital
+   real(8), dimension(:,:,:), intent(in) :: Mjs_in ! matrix of overlaps with s-orbital
    real(8), dimension(:,:,:), intent(out) :: dHij	! derivatives of the overlap integerals along x,y,z [eV/A]
    !---------------------
    integer :: i1, Bsiz, atom_2, sh1, sh2, j, at_ind, atom_3, kk
@@ -1340,6 +1352,7 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
    real(8) :: matr_spd(3,3), d_matr_spd(3,3), H_cf_temp(9), drij_dsk(3), drikk_dsk(3), drjkk_dsk(3)
    real(8), dimension(9) :: M_dlmn	! dl/dx, dl/dy, dl/dz, dm/dx, dm/dy, dm/dz, dn/dx, dn/dy, dn/dz
    real(8), dimension(3, 8) :: dMjs ! 3p, 5d
+   real(8), dimension(9) :: Mjs ! 1s, 3p, 5d
    real(8), dimension(:,:,:), allocatable :: E_onsite, H_avg, H_cf, H_3bdy
    integer, pointer :: m, KOA1, KOA2, KOA3
    real(8), pointer :: r1, x1, y1, z1
@@ -1378,8 +1391,9 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
    ! 1) Onsite energies of spin-unpolirized orbital values:
    E_onsite = 0.0d0     ! constants -> all derivatives = 0
 
+
    !-----------------
-   ! Average and crystal field terms:
+   ! 2,3) Average and crystal field terms (tested, correct):
    do atom_2 = 1, m ! do only for atoms close to that one
       j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
       KOA2 => Scell%MDatoms(j)%KOA
@@ -1394,16 +1408,6 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
       drij_dsk(1) = drij_dska(i, j, k, x1, y1, z1, r1, Scell%supce, 1, .true.)	! dr_{ij}/ds_{k,x}
       drij_dsk(2) = drij_dska(i, j, k, x1, y1, z1, r1, Scell%supce, 2, .true.)	! dr_{ij}/ds_{k,y}
       drij_dsk(3) = drij_dska(i, j, k, x1, y1, z1, r1, Scell%supce, 3, .true.)	! dr_{ij}/ds_{k,z}
-
-      M_dlmn(1) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 1, drij_dsk(1))	! dl/dsx
-      M_dlmn(2) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 2, drij_dsk(2))	! dl/dsy
-      M_dlmn(3) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 3, drij_dsk(3))	! dl/dsz
-      M_dlmn(4) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 1, drij_dsk(1))	! dm/dsx
-      M_dlmn(5) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 2, drij_dsk(2))	! dm/dsy
-      M_dlmn(6) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 3, drij_dsk(3))	! dm/dsz
-      M_dlmn(7) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 1, drij_dsk(1))	! dn/dsx
-      M_dlmn(8) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 2, drij_dsk(2))	! dn/dsy
-      M_dlmn(9) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 3, drij_dsk(3))	! dn/dsz
 
 
       ! 2) Average terms:
@@ -1424,8 +1428,23 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
          endif ! (basis_ind > 0)
       endif ! (basis_ind > 1)
 
+
+! goto 5003   ! testing
+
+
       !-----------------
       ! 3) Crystal field:
+
+      M_dlmn(1) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 1, drij_dsk(1))	! dl/dsx
+      M_dlmn(2) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 2, drij_dsk(2))	! dl/dsy
+      M_dlmn(3) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 3, drij_dsk(3))	! dl/dsz
+      M_dlmn(4) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 1, drij_dsk(1))	! dm/dsx
+      M_dlmn(5) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 2, drij_dsk(2))	! dm/dsy
+      M_dlmn(6) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 3, drij_dsk(3))	! dm/dsz
+      M_dlmn(7) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 1, drij_dsk(1))	! dn/dsx
+      M_dlmn(8) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 2, drij_dsk(2))	! dn/dsy
+      M_dlmn(9) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 3, drij_dsk(3))	! dn/dsz
+
       ! Radial parts:
       matr_spd(1,1) = SUM( TB(KOA1,KOA2)%Hhcf(1,1,1:4) * M_Lag_exp(i,j,1:4) )  ! s-s orbitals
       if (basis_ind > 0) then ! p3 orbitals:
@@ -1456,6 +1475,7 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
       endif ! (basis_ind > 1)
 
       ! Include angular parts:
+      ! Mjs(1) = Mjs_in(i,j,1) ! s-s  = 1.0
       H_cf(:,1,1) = H_cf(:,1,1) + d_matr_spd(1,1) * drij_dsk(:)  ! s-s * s-s
 
       if (basis_ind > 0) then ! p3 orbitals:
@@ -1472,71 +1492,66 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
          dMjs(3,3) = M_dlmn(9) ! pz-s / ds_z
 
 
-         H_cf_temp(1) = d_matr_spd(2,1) * Mjs(i,j,2)
-         H_cf(1,1,2) = H_cf(1,1,2) + H_cf_temp(1) * drij_dsk(1) + &
-           matr_spd(2,1) * dMjs(1,1)  ! s-s * px-s / ds_x
-         H_cf(2,1,2) = H_cf(2,1,2) + H_cf_temp(1) * drij_dsk(2) + &
-           matr_spd(2,1) * dMjs(2,1)  ! s-s * px-s / ds_y
-         H_cf(3,1,2) = H_cf(3,1,2) + H_cf_temp(1) * drij_dsk(3) + &
-           matr_spd(2,1) * dMjs(3,1)  ! s-s * px-s / ds_z
+         Mjs(2) = -Mjs_in(i,j,2)  ! px-s
+         Mjs(3) = -Mjs_in(i,j,3)  ! py-s
+         Mjs(4) = -Mjs_in(i,j,4)  ! pz-s
+
+
+         H_cf_temp(1) = d_matr_spd(2,1) * Mjs(2)
+         H_cf(1,1,2) = H_cf(1,1,2) + H_cf_temp(1) * drij_dsk(1) + matr_spd(2,1) * dMjs(1,1)  ! s-s * px-s / ds_x
+         H_cf(2,1,2) = H_cf(2,1,2) + H_cf_temp(1) * drij_dsk(2) + matr_spd(2,1) * dMjs(2,1)  ! s-s * px-s / ds_y
+         H_cf(3,1,2) = H_cf(3,1,2) + H_cf_temp(1) * drij_dsk(3) + matr_spd(2,1) * dMjs(3,1)  ! s-s * px-s / ds_z
          ! Lower triangle use symmetry:
          H_cf(:,2,1) = H_cf(:,1,2)
 
-         H_cf_temp(1) = d_matr_spd(2,1) * Mjs(i,j,3)
-         H_cf(1,1,3) = H_cf(1,1,3) + H_cf_temp(1) * drij_dsk(1) + &
-           matr_spd(2,1) * dMjs(1,2)  ! s-s * py-s / ds_x
-         H_cf(2,1,3) = H_cf(2,1,3) + H_cf_temp(1) * drij_dsk(2) + &
-           matr_spd(2,1) * dMjs(2,2)  ! s-s * py-s / ds_y
-         H_cf(3,1,3) = H_cf(3,1,3) + H_cf_temp(1) * drij_dsk(3) + &
-           matr_spd(2,1) * dMjs(3,2)  ! s-s * py-s / ds_z
+         H_cf_temp(1) = d_matr_spd(2,1) * Mjs(3)
+         H_cf(1,1,3) = H_cf(1,1,3) + H_cf_temp(1) * drij_dsk(1) + matr_spd(2,1) * dMjs(1,2)  ! s-s * py-s / ds_x
+         H_cf(2,1,3) = H_cf(2,1,3) + H_cf_temp(1) * drij_dsk(2) + matr_spd(2,1) * dMjs(2,2)  ! s-s * py-s / ds_y
+         H_cf(3,1,3) = H_cf(3,1,3) + H_cf_temp(1) * drij_dsk(3) + matr_spd(2,1) * dMjs(3,2)  ! s-s * py-s / ds_z
          ! Lower triangle use symmetry:
          H_cf(:,3,1) = H_cf(:,1,3)
 
-         H_cf_temp(1) = d_matr_spd(2,1) * Mjs(i,j,4)
-         H_cf(1,1,4) = H_cf(1,1,4) + H_cf_temp(1) * drij_dsk(1) + &
-           matr_spd(2,1) * dMjs(1,3)  ! s-s * pz-s / ds_x
-         H_cf(2,1,4) = H_cf(2,1,4) + H_cf_temp(1) * drij_dsk(2) + &
-           matr_spd(2,1) * dMjs(2,3)  ! s-s * pz-s / ds_y
-         H_cf(3,1,4) = H_cf(3,1,4) + H_cf_temp(1) * drij_dsk(3) + &
-           matr_spd(2,1) * dMjs(3,3)  ! s-s * pz-s / ds_z
+         H_cf_temp(1) = d_matr_spd(2,1) * Mjs(4)
+         H_cf(1,1,4) = H_cf(1,1,4) + H_cf_temp(1) * drij_dsk(1) + matr_spd(2,1) * dMjs(1,3)  ! s-s * pz-s / ds_x
+         H_cf(2,1,4) = H_cf(2,1,4) + H_cf_temp(1) * drij_dsk(2) + matr_spd(2,1) * dMjs(2,3)  ! s-s * pz-s / ds_y
+         H_cf(3,1,4) = H_cf(3,1,4) + H_cf_temp(1) * drij_dsk(3) + matr_spd(2,1) * dMjs(3,3)  ! s-s * pz-s / ds_z
          ! Lower triangle use symmetry:
          H_cf(:,4,1) = H_cf(:,1,4)
 
          ! Diagonal part is excluded (no self-interaction of orbitals):
-         ! [ C 1 ]
          H_cf(:,2,2) = 0.0d0
          H_cf(:,3,3) = 0.0d0
          H_cf(:,4,4) = 0.0d0
 
          ! Off-diagonal part:
-         H_cf_temp(1) = d_matr_spd(2,2) * Mjs(i,j,2) * Mjs(i,j,3)
+         H_cf_temp(1) = d_matr_spd(2,2) * Mjs(2) * Mjs(3)
          H_cf(1,2,3) = H_cf(1,2,3) + H_cf_temp(1) * drij_dsk(1) + &
-                        matr_spd(2,2) * (dMjs(1,1) * Mjs(i,j,3) + Mjs(i,j,2) * dMjs(1,2) ) ! px-s * py-s /ds_x
+                        matr_spd(2,2) * (dMjs(1,1) * Mjs(3) + Mjs(2) * dMjs(1,2) ) ! px-s * py-s /ds_x
          H_cf(2,2,3) = H_cf(2,2,3) + H_cf_temp(1) * drij_dsk(2) + &
-                        matr_spd(2,2) * (dMjs(2,1) * Mjs(i,j,3) + Mjs(i,j,2) * dMjs(2,2) ) ! px-s * py-s /ds_y
+                        matr_spd(2,2) * (dMjs(2,1) * Mjs(3) + Mjs(2) * dMjs(2,2) ) ! px-s * py-s /ds_y
          H_cf(3,2,3) = H_cf(3,2,3) + H_cf_temp(1) * drij_dsk(3) + &
-                        matr_spd(2,2) * (dMjs(3,1) * Mjs(i,j,3) + Mjs(i,j,2) * dMjs(3,2) ) ! px-s * py-s /ds_z
+                        matr_spd(2,2) * (dMjs(3,1) * Mjs(3) + Mjs(2) * dMjs(3,2) ) ! px-s * py-s /ds_z
          ! For lower triangle use symmetry:
-         H_cf(:,2,3) = H_cf(:,3,2) ! py-s * px-s /ds_{x,y,z}
+         H_cf(:,3,2) = H_cf(:,2,3) ! py-s * px-s /ds_{x,y,z}
 
-         H_cf_temp(1) = d_matr_spd(2,2) * Mjs(i,j,2) * Mjs(i,j,4)
+         H_cf_temp(1) = d_matr_spd(2,2) * Mjs(2) * Mjs(4)
          H_cf(1,2,4) = H_cf(1,2,4) + H_cf_temp(1) * drij_dsk(1) + &
-                        matr_spd(2,2) * (dMjs(1,1) * Mjs(i,j,4) + Mjs(i,j,2) * dMjs(1,3) ) ! px-s * pz-s /ds_x
+                        matr_spd(2,2) * (dMjs(1,1) * Mjs(4) + Mjs(2) * dMjs(1,3) ) ! px-s * pz-s /ds_x
          H_cf(2,2,4) = H_cf(2,2,4) + H_cf_temp(1) * drij_dsk(2) + &
-                        matr_spd(2,2) * (dMjs(2,1) * Mjs(i,j,4) + Mjs(i,j,2) * dMjs(2,3) ) ! px-s * pz-s /ds_y
+                        matr_spd(2,2) * (dMjs(2,1) * Mjs(4) + Mjs(2) * dMjs(2,3) ) ! px-s * pz-s /ds_y
          H_cf(3,2,4) = H_cf(3,2,4) + H_cf_temp(1) * drij_dsk(3) + &
-                        matr_spd(2,2) * (dMjs(3,1) * Mjs(i,j,4) + Mjs(i,j,2) * dMjs(3,3) ) ! px-s * pz-s /ds_z
+                        matr_spd(2,2) * (dMjs(3,1) * Mjs(4) + Mjs(2) * dMjs(3,3) ) ! px-s * pz-s /ds_z
          ! For lower triangle use symmetry:
-         H_cf(:,2,4) = H_cf(:,4,2) ! pz-s * px-s /ds_{x,y,z}
+         H_cf(:,4,2) = H_cf(:,2,4) ! pz-s * px-s /ds_{x,y,z}
 
 
-         H_cf_temp(1) = d_matr_spd(2,2) * Mjs(i,j,3) * Mjs(i,j,4)
+         H_cf_temp(1) = d_matr_spd(2,2) * Mjs(3) * Mjs(4)
          H_cf(1,3,4) = H_cf(1,3,4) + H_cf_temp(1) * drij_dsk(1) + &
-                        matr_spd(2,2) * (dMjs(1,2) * Mjs(i,j,4) + Mjs(i,j,3) * dMjs(1,3) ) ! py-s * pz-s /ds_x
+                        matr_spd(2,2) * (dMjs(1,2) * Mjs(4) + Mjs(3) * dMjs(1,3) ) ! py-s * pz-s /ds_x
          H_cf(2,3,4) = H_cf(2,3,4) + H_cf_temp(1) * drij_dsk(2) + &
-                        matr_spd(2,2) * (dMjs(2,2) * Mjs(i,j,4) + Mjs(i,j,3) * dMjs(2,3) ) ! py-s * pz-s /ds_y
+                        matr_spd(2,2) * (dMjs(2,2) * Mjs(4) + Mjs(3) * dMjs(2,3) ) ! py-s * pz-s /ds_y
          H_cf(3,3,4) = H_cf(3,3,4) + H_cf_temp(1) * drij_dsk(3) + &
-                        matr_spd(2,2) * (dMjs(3,2) * Mjs(i,j,4) + Mjs(i,j,3) * dMjs(3,3) ) ! py-s * pz-s /ds_z
+                        matr_spd(2,2) * (dMjs(3,2) * Mjs(4) + Mjs(3) * dMjs(3,3) ) ! py-s * pz-s /ds_z
          ! For lower triangle use symmetry:
          H_cf(:,4,3) = H_cf(:,3,4)  ! pz-s * py-s /ds_{x,y,z}
 
@@ -1560,6 +1575,12 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
             dMjs(2,8) = 2.0d0*M_dlmn(8)*M_lmn(3,i,j) - (M_dlmn(2)*M_lmn(1,i,j) + M_lmn(2,i,j)*M_dlmn(5)) ! (d3z2-r2)-s / ds_y
             dMjs(3,8) = 2.0d0*M_dlmn(9)*M_lmn(3,i,j) - (M_dlmn(3)*M_lmn(1,i,j) + M_lmn(2,i,j)*M_dlmn(6)) ! (d3z2-r2)-s / ds_z
 
+            Mjs(5) = Mjs_in(i,j,5)  ! dxy-s
+            Mjs(6) = Mjs_in(i,j,6)  ! dxz-s
+            Mjs(7) = Mjs_in(i,j,7)  ! dyz-s
+            Mjs(8) = Mjs_in(i,j,8)  ! (dx2-y2)-s
+            Mjs(9) = Mjs_in(i,j,9)  ! (d3z2-r2)-s
+
 
             ! Diagonal terms:
             H_cf(:,5,5) = 0.0d0  ! dxy-s * dxy-s
@@ -1570,35 +1591,35 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
 
 
             ! Off-diagonal terms:
-            H_cf_temp(1) = d_matr_spd(1,3) * Mjs(i,j,5)
+            H_cf_temp(1) = d_matr_spd(1,3) * Mjs(5)
             H_cf(1,1,5) = H_cf(1,1,5) + H_cf_temp(1) * drij_dsk(1) + matr_spd(1,3) * dMjs(1,4)  ! s-s * dxy-s / ds_x
             H_cf(2,1,5) = H_cf(2,1,5) + H_cf_temp(1) * drij_dsk(2) + matr_spd(1,3) * dMjs(2,4)  ! s-s * dxy-s / ds_y
             H_cf(3,1,5) = H_cf(3,1,5) + H_cf_temp(1) * drij_dsk(3) + matr_spd(1,3) * dMjs(3,4)  ! s-s * dxy-s / ds_z
             ! For lower triangle use symmetry:
             H_cf(:,5,1) = H_cf(:,1,5)  ! dxy-s * s-s/ ds_{x,y,z}
 
-            H_cf_temp(1) = d_matr_spd(1,3) * Mjs(i,j,6)
+            H_cf_temp(1) = d_matr_spd(1,3) * Mjs(6)
             H_cf(1,1,6) = H_cf(1,1,6) + H_cf_temp(1) * drij_dsk(1) + matr_spd(1,3) * dMjs(1,5)  ! s-s * dxz-s / ds_x
             H_cf(2,1,6) = H_cf(2,1,6) + H_cf_temp(1) * drij_dsk(2) + matr_spd(1,3) * dMjs(2,5)  ! s-s * dxz-s / ds_y
             H_cf(3,1,6) = H_cf(3,1,6) + H_cf_temp(1) * drij_dsk(3) + matr_spd(1,3) * dMjs(3,5)  ! s-s * dxz-s / ds_z
             ! For lower triangle use symmetry:
             H_cf(:,6,1) = H_cf(:,1,6)  ! dxz-s * s-s/ ds_{x,y,z}
 
-            H_cf_temp(1) = d_matr_spd(1,3) * Mjs(i,j,7)
+            H_cf_temp(1) = d_matr_spd(1,3) * Mjs(7)
             H_cf(1,1,7) = H_cf(1,1,7) + H_cf_temp(1) * drij_dsk(1) + matr_spd(1,3) * dMjs(1,6)  ! s-s * dyz-s / ds_x
             H_cf(2,1,7) = H_cf(2,1,7) + H_cf_temp(1) * drij_dsk(2) + matr_spd(1,3) * dMjs(2,6)  ! s-s * dyz-s / ds_y
             H_cf(3,1,7) = H_cf(3,1,7) + H_cf_temp(1) * drij_dsk(3) + matr_spd(1,3) * dMjs(3,6)  ! s-s * dyz-s / ds_z
             ! For lower triangle use symmetry:
             H_cf(:,7,1) = H_cf(:,1,7)  ! dyz-s * s-s/ ds_{x,y,z}
 
-            H_cf_temp(1) = d_matr_spd(1,3) * Mjs(i,j,8)
+            H_cf_temp(1) = d_matr_spd(1,3) * Mjs(8)
             H_cf(1,1,8) = H_cf(1,1,8) + H_cf_temp(1) * drij_dsk(1) + matr_spd(1,3) * dMjs(1,7)  ! s-s * (dx2-y2)-s / ds_x
             H_cf(2,1,8) = H_cf(2,1,8) + H_cf_temp(1) * drij_dsk(2) + matr_spd(1,3) * dMjs(2,7)  ! s-s * (dx2-y2)-s / ds_y
             H_cf(3,1,8) = H_cf(3,1,8) + H_cf_temp(1) * drij_dsk(3) + matr_spd(1,3) * dMjs(3,7)  ! s-s * (dx2-y2)-s / ds_z
             ! For lower triangle use symmetry:
             H_cf(:,8,1) = H_cf(:,1,8)  ! (dx2-y2)-s * s-s / ds_{x,y,z}
 
-            H_cf_temp(1) = d_matr_spd(1,3) * Mjs(i,j,9)
+            H_cf_temp(1) = d_matr_spd(1,3) * Mjs(9)
             H_cf(1,1,9) = H_cf(1,1,9) + H_cf_temp(1) * drij_dsk(1) + matr_spd(1,3) * dMjs(1,8)  ! s-s * (d3z2-r2)-s / ds_x
             H_cf(2,1,9) = H_cf(2,1,9) + H_cf_temp(1) * drij_dsk(2) + matr_spd(1,3) * dMjs(2,8)  ! s-s * (d3z2-r2)-s / ds_y
             H_cf(3,1,9) = H_cf(3,1,9) + H_cf_temp(1) * drij_dsk(3) + matr_spd(1,3) * dMjs(3,8)  ! s-s * (d3z2-r2)-s / ds_z
@@ -1607,264 +1628,267 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
 
 
             ! Calculate repeating part the K-S matrix elements:
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,2) * Mjs(i,j,5)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(2) * Mjs(5)
             H_cf(1,2,5) = H_cf(1,2,5) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,1) * Mjs(i,j,5) + Mjs(i,j,2) * dMjs(1,4) ) ! px-s * dxy-s / ds_x
+               matr_spd(2,3) * ( dMjs(1,1) * Mjs(5) + Mjs(2) * dMjs(1,4) ) ! px-s * dxy-s / ds_x
             H_cf(2,2,5) = H_cf(2,2,5) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,1) * Mjs(i,j,5) + Mjs(i,j,2) * dMjs(2,4) ) ! px-s * dxy-s / ds_y
+               matr_spd(2,3) * ( dMjs(2,1) * Mjs(5) + Mjs(2) * dMjs(2,4) ) ! px-s * dxy-s / ds_y
             H_cf(3,2,5) = H_cf(3,2,5) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,1) * Mjs(i,j,5) + Mjs(i,j,2) * dMjs(3,4) ) ! px-s * dxy-s / ds_z
+               matr_spd(2,3) * ( dMjs(3,1) * Mjs(5) + Mjs(2) * dMjs(3,4) ) ! px-s * dxy-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,5,2) = H_cf(:,2,5)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,2) * Mjs(i,j,6)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(2) * Mjs(6)
             H_cf(1,2,6) = H_cf(1,2,6) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,1) * Mjs(i,j,6) + Mjs(i,j,2) * dMjs(1,5) ) ! px-s * dxz-s / ds_x
+               matr_spd(2,3) * ( dMjs(1,1) * Mjs(6) + Mjs(2) * dMjs(1,5) ) ! px-s * dxz-s / ds_x
             H_cf(2,2,6) = H_cf(2,2,6) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,1) * Mjs(i,j,6) + Mjs(i,j,2) * dMjs(2,5) ) ! px-s * dxz-s / ds_y
+               matr_spd(2,3) * ( dMjs(2,1) * Mjs(6) + Mjs(2) * dMjs(2,5) ) ! px-s * dxz-s / ds_y
             H_cf(3,2,6) = H_cf(3,2,6) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,1) * Mjs(i,j,6) + Mjs(i,j,2) * dMjs(3,5) ) ! px-s * dxz-s / ds_z
+               matr_spd(2,3) * ( dMjs(3,1) * Mjs(6) + Mjs(2) * dMjs(3,5) ) ! px-s * dxz-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,6,2) = H_cf(:,2,6)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,2) * Mjs(i,j,7)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(2) * Mjs(7)
             H_cf(1,2,7) = H_cf(1,2,7) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,1) * Mjs(i,j,7) + Mjs(i,j,2) * dMjs(1,6) ) ! px-s * dyz-s / ds_x
+               matr_spd(2,3) * ( dMjs(1,1) * Mjs(7) + Mjs(2) * dMjs(1,6) ) ! px-s * dyz-s / ds_x
             H_cf(2,2,7) = H_cf(2,2,7) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,1) * Mjs(i,j,7) + Mjs(i,j,2) * dMjs(2,6) ) ! px-s * dyz-s / ds_y
+               matr_spd(2,3) * ( dMjs(2,1) * Mjs(7) + Mjs(2) * dMjs(2,6) ) ! px-s * dyz-s / ds_y
             H_cf(3,2,7) = H_cf(3,2,7) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(2,1) * Mjs(i,j,7) + Mjs(i,j,2) * dMjs(3,6) ) ! px-s * dyz-s / ds_z
+               matr_spd(2,3) * ( dMjs(2,1) * Mjs(7) + Mjs(2) * dMjs(3,6) ) ! px-s * dyz-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,7,2) = H_cf(:,2,7)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,2) * Mjs(i,j,8)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(2) * Mjs(8)
             H_cf(1,2,8) = H_cf(1,2,8) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,1) * Mjs(i,j,8) + Mjs(i,j,2) * dMjs(1,7) ) ! px-s * (dx2-y2)-s / ds_x
+               matr_spd(2,3) * ( dMjs(1,1) * Mjs(8) + Mjs(2) * dMjs(1,7) ) ! px-s * (dx2-y2)-s / ds_x
             H_cf(2,2,8) = H_cf(2,2,8) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,1) * Mjs(i,j,8) + Mjs(i,j,2) * dMjs(2,7) ) ! px-s * (dx2-y2)-s / ds_y
+               matr_spd(2,3) * ( dMjs(2,1) * Mjs(8) + Mjs(2) * dMjs(2,7) ) ! px-s * (dx2-y2)-s / ds_y
             H_cf(3,2,8) = H_cf(3,2,8) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,1) * Mjs(i,j,8) + Mjs(i,j,2) * dMjs(3,7) ) ! px-s * (dx2-y2)-s / ds_z
+               matr_spd(2,3) * ( dMjs(3,1) * Mjs(8) + Mjs(2) * dMjs(3,7) ) ! px-s * (dx2-y2)-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,8,2) = H_cf(:,2,8)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,2) * Mjs(i,j,9)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(2) * Mjs(9)
             H_cf(1,2,9) = H_cf(1,2,9) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,1) * Mjs(i,j,9) + Mjs(i,j,2) * dMjs(1,8) ) ! px-s * (d3z2-r2)-s / ds_x
+               matr_spd(2,3) * ( dMjs(1,1) * Mjs(9) + Mjs(2) * dMjs(1,8) ) ! px-s * (d3z2-r2)-s / ds_x
             H_cf(2,2,9) = H_cf(2,2,9) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,1) * Mjs(i,j,9) + Mjs(i,j,2) * dMjs(2,8) ) ! px-s * (d3z2-r2)-s / ds_y
+               matr_spd(2,3) * ( dMjs(2,1) * Mjs(9) + Mjs(2) * dMjs(2,8) ) ! px-s * (d3z2-r2)-s / ds_y
             H_cf(3,2,9) = H_cf(3,2,9) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,1) * Mjs(i,j,9) + Mjs(i,j,2) * dMjs(3,8) ) ! px-s * (d3z2-r2)-s / ds_z
+               matr_spd(2,3) * ( dMjs(3,1) * Mjs(9) + Mjs(2) * dMjs(3,8) ) ! px-s * (d3z2-r2)-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,9,2) = H_cf(:,2,9)
 
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,3) * Mjs(i,j,5)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(3) * Mjs(5)
             H_cf(1,3,5) = H_cf(1,3,5) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,2) * Mjs(i,j,5) + Mjs(i,j,3) * dMjs(1,4) ) ! py-s * dxy-s / ds_x
+               matr_spd(2,3) * ( dMjs(1,2) * Mjs(5) + Mjs(3) * dMjs(1,4) ) ! py-s * dxy-s / ds_x
             H_cf(2,3,5) = H_cf(2,3,5) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,2) * Mjs(i,j,5) + Mjs(i,j,3) * dMjs(2,4) ) ! py-s * dxy-s / ds_y
+               matr_spd(2,3) * ( dMjs(2,2) * Mjs(5) + Mjs(3) * dMjs(2,4) ) ! py-s * dxy-s / ds_y
             H_cf(3,3,5) = H_cf(3,3,5) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,2) * Mjs(i,j,5) + Mjs(i,j,3) * dMjs(3,4) ) ! py-s * dxy-s / ds_z
+               matr_spd(2,3) * ( dMjs(3,2) * Mjs(5) + Mjs(3) * dMjs(3,4) ) ! py-s * dxy-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,5,3) = H_cf(:,3,5)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,3) * Mjs(i,j,6)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(3) * Mjs(6)
             H_cf(1,3,6) = H_cf(1,3,6) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,2) * Mjs(i,j,6) + Mjs(i,j,3) * dMjs(1,5) ) ! py-s * dxz-s / ds_x
+               matr_spd(2,3) * ( dMjs(1,2) * Mjs(6) + Mjs(3) * dMjs(1,5) ) ! py-s * dxz-s / ds_x
             H_cf(2,3,6) = H_cf(2,3,6) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,2) * Mjs(i,j,6) + Mjs(i,j,3) * dMjs(2,5) ) ! py-s * dxz-s / ds_y
+               matr_spd(2,3) * ( dMjs(2,2) * Mjs(6) + Mjs(3) * dMjs(2,5) ) ! py-s * dxz-s / ds_y
             H_cf(3,3,6) = H_cf(3,3,6) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,2) * Mjs(i,j,6) + Mjs(i,j,3) * dMjs(3,5) ) ! py-s * dxz-s / ds_z
+               matr_spd(2,3) * ( dMjs(3,2) * Mjs(6) + Mjs(3) * dMjs(3,5) ) ! py-s * dxz-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,6,3) = H_cf(:,3,6)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,3) * Mjs(i,j,7)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(3) * Mjs(7)
             H_cf(1,3,7) = H_cf(1,3,7) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,2) * Mjs(i,j,7) + Mjs(i,j,3) * dMjs(1,6) ) ! py-s * dyz-s / ds_x
+               matr_spd(2,3) * ( dMjs(1,2) * Mjs(7) + Mjs(3) * dMjs(1,6) ) ! py-s * dyz-s / ds_x
             H_cf(2,3,7) = H_cf(2,3,7) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,2) * Mjs(i,j,7) + Mjs(i,j,3) * dMjs(2,6) ) ! py-s * dyz-s / ds_y
+               matr_spd(2,3) * ( dMjs(2,2) * Mjs(7) + Mjs(3) * dMjs(2,6) ) ! py-s * dyz-s / ds_y
             H_cf(3,3,7) = H_cf(3,3,7) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,2) * Mjs(i,j,7) + Mjs(i,j,3) * dMjs(3,6) ) ! py-s * dyz-s / ds_z
+               matr_spd(2,3) * ( dMjs(3,2) * Mjs(7) + Mjs(3) * dMjs(3,6) ) ! py-s * dyz-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,7,3) = H_cf(:,3,7)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,3) * Mjs(i,j,8)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(3) * Mjs(8)
             H_cf(1,3,8) = H_cf(1,3,8) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,2) * Mjs(i,j,8) + Mjs(i,j,3) * dMjs(1,7) ) ! py-s * (dx2-y2) / ds_x
+               matr_spd(2,3) * ( dMjs(1,2) * Mjs(8) + Mjs(3) * dMjs(1,7) ) ! py-s * (dx2-y2) / ds_x
             H_cf(2,3,8) = H_cf(2,3,8) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,2) * Mjs(i,j,8) + Mjs(i,j,3) * dMjs(2,7) ) ! py-s * (dx2-y2) / ds_y
+               matr_spd(2,3) * ( dMjs(2,2) * Mjs(8) + Mjs(3) * dMjs(2,7) ) ! py-s * (dx2-y2) / ds_y
             H_cf(3,3,8) = H_cf(3,3,8) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,2) * Mjs(i,j,8) + Mjs(i,j,3) * dMjs(3,7) ) ! py-s * (dx2-y2) / ds_z
+               matr_spd(2,3) * ( dMjs(3,2) * Mjs(8) + Mjs(3) * dMjs(3,7) ) ! py-s * (dx2-y2) / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,8,3) = H_cf(:,3,8)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,3) * Mjs(i,j,9)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(3) * Mjs(9)
             H_cf(1,3,9) = H_cf(1,3,9) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,2) * Mjs(i,j,9) + Mjs(i,j,3) * dMjs(1,8) ) ! py-s * (d3z2-r2) / ds_x
+               matr_spd(2,3) * ( dMjs(1,2) * Mjs(9) + Mjs(3) * dMjs(1,8) ) ! py-s * (d3z2-r2) / ds_x
             H_cf(2,3,9) = H_cf(2,3,9) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,2) * Mjs(i,j,9) + Mjs(i,j,3) * dMjs(2,8) ) ! py-s * (d3z2-r2) / ds_y
+               matr_spd(2,3) * ( dMjs(2,2) * Mjs(9) + Mjs(3) * dMjs(2,8) ) ! py-s * (d3z2-r2) / ds_y
             H_cf(3,3,9) = H_cf(3,3,9) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,2) * Mjs(i,j,9) + Mjs(i,j,3) * dMjs(3,8) ) ! py-s * (d3z2-r2) / ds_z
+               matr_spd(2,3) * ( dMjs(3,2) * Mjs(9) + Mjs(3) * dMjs(3,8) ) ! py-s * (d3z2-r2) / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,9,3) = H_cf(:,3,9)
 
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,4) * Mjs(i,j,5)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(4) * Mjs(5)
             H_cf(1,4,5) = H_cf(1,4,5) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,3) * Mjs(i,j,5) + Mjs(i,j,4) * dMjs(1,4) ) ! pz-s * dxy / ds_x
+               matr_spd(2,3) * ( dMjs(1,3) * Mjs(5) + Mjs(4) * dMjs(1,4) ) ! pz-s * dxy / ds_x
             H_cf(2,4,5) = H_cf(2,4,5) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,3) * Mjs(i,j,5) + Mjs(i,j,4) * dMjs(2,4) ) ! pz-s * dxy / ds_y
+               matr_spd(2,3) * ( dMjs(2,3) * Mjs(5) + Mjs(4) * dMjs(2,4) ) ! pz-s * dxy / ds_y
             H_cf(3,4,5) = H_cf(3,4,5) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,3) * Mjs(i,j,5) + Mjs(i,j,4) * dMjs(3,4) ) ! pz-s * dxy / ds_z
+               matr_spd(2,3) * ( dMjs(3,3) * Mjs(5) + Mjs(4) * dMjs(3,4) ) ! pz-s * dxy / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,5,4) = H_cf(:,4,5)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,4) * Mjs(i,j,6)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(4) * Mjs(6)
             H_cf(1,4,6) = H_cf(1,4,6) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,3) * Mjs(i,j,6) + Mjs(i,j,4) * dMjs(1,5) ) ! pz-s * dxz / ds_x
+               matr_spd(2,3) * ( dMjs(1,3) * Mjs(6) + Mjs(4) * dMjs(1,5) ) ! pz-s * dxz / ds_x
             H_cf(2,4,6) = H_cf(2,4,6) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,3) * Mjs(i,j,6) + Mjs(i,j,4) * dMjs(2,5) ) ! pz-s * dxz / ds_y
+               matr_spd(2,3) * ( dMjs(2,3) * Mjs(6) + Mjs(4) * dMjs(2,5) ) ! pz-s * dxz / ds_y
             H_cf(3,4,6) = H_cf(3,4,6) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,3) * Mjs(i,j,6) + Mjs(i,j,4) * dMjs(3,5) ) ! pz-s * dxz / ds_z
+               matr_spd(2,3) * ( dMjs(3,3) * Mjs(6) + Mjs(4) * dMjs(3,5) ) ! pz-s * dxz / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,6,4) = H_cf(:,4,6)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,4) * Mjs(i,j,7)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(4) * Mjs(7)
             H_cf(1,4,7) = H_cf(1,4,7) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,3) * Mjs(i,j,7) + Mjs(i,j,4) * dMjs(1,6) ) ! pz-s * dyz / ds_x
+               matr_spd(2,3) * ( dMjs(1,3) * Mjs(7) + Mjs(4) * dMjs(1,6) ) ! pz-s * dyz / ds_x
             H_cf(2,4,7) = H_cf(2,4,7) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,3) * Mjs(i,j,7) + Mjs(i,j,4) * dMjs(2,6) ) ! pz-s * dyz / ds_y
+               matr_spd(2,3) * ( dMjs(2,3) * Mjs(7) + Mjs(4) * dMjs(2,6) ) ! pz-s * dyz / ds_y
             H_cf(3,4,7) = H_cf(3,4,7) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,3) * Mjs(i,j,7) + Mjs(i,j,4) * dMjs(3,6) ) ! pz-s * dyz / ds_z
+               matr_spd(2,3) * ( dMjs(3,3) * Mjs(7) + Mjs(4) * dMjs(3,6) ) ! pz-s * dyz / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,7,4) = H_cf(:,4,7)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,4) * Mjs(i,j,8)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(4) * Mjs(8)
             H_cf(1,4,8) = H_cf(1,4,8) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,3) * Mjs(i,j,8) + Mjs(i,j,4) * dMjs(1,7) ) ! pz-s * (dx2-y2) / ds_x
+               matr_spd(2,3) * ( dMjs(1,3) * Mjs(8) + Mjs(4) * dMjs(1,7) ) ! pz-s * (dx2-y2) / ds_x
             H_cf(2,4,8) = H_cf(2,4,8) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,3) * Mjs(i,j,8) + Mjs(i,j,4) * dMjs(2,7) ) ! pz-s * (dx2-y2) / ds_y
+               matr_spd(2,3) * ( dMjs(2,3) * Mjs(8) + Mjs(4) * dMjs(2,7) ) ! pz-s * (dx2-y2) / ds_y
             H_cf(3,4,8) = H_cf(3,4,8) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,3) * Mjs(i,j,8) + Mjs(i,j,4) * dMjs(3,7) ) ! pz-s * (dx2-y2) / ds_z
+               matr_spd(2,3) * ( dMjs(3,3) * Mjs(8) + Mjs(4) * dMjs(3,7) ) ! pz-s * (dx2-y2) / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,8,4) = H_cf(:,4,8)
 
-            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(i,j,4) * Mjs(i,j,9)
+            H_cf_temp(1) = d_matr_spd(2,3) * Mjs(4) * Mjs(9)
             H_cf(1,4,9) = H_cf(1,4,9) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(2,3) * ( dMjs(1,3) * Mjs(i,j,9) + Mjs(i,j,4) * dMjs(1,8) ) ! pz-s * (d3z2-r2) / ds_x
+               matr_spd(2,3) * ( dMjs(1,3) * Mjs(9) + Mjs(4) * dMjs(1,8) ) ! pz-s * (d3z2-r2) / ds_x
             H_cf(2,4,9) = H_cf(2,4,9) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(2,3) * ( dMjs(2,3) * Mjs(i,j,9) + Mjs(i,j,4) * dMjs(2,8) ) ! pz-s * (d3z2-r2) / ds_y
+               matr_spd(2,3) * ( dMjs(2,3) * Mjs(9) + Mjs(4) * dMjs(2,8) ) ! pz-s * (d3z2-r2) / ds_y
             H_cf(3,4,9) = H_cf(3,4,9) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(2,3) * ( dMjs(3,3) * Mjs(i,j,9) + Mjs(i,j,4) * dMjs(3,8) ) ! pz-s * (d3z2-r2) / ds_z
+               matr_spd(2,3) * ( dMjs(3,3) * Mjs(9) + Mjs(4) * dMjs(3,8) ) ! pz-s * (d3z2-r2) / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,9,4) = H_cf(:,4,9)
 
 
-            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(i,j,5) * Mjs(i,j,6)
+            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(5) * Mjs(6)
             H_cf(1,5,6) = H_cf(1,5,6) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(3,3) * ( dMjs(1,4) * Mjs(i,j,6) + Mjs(i,j,5) * dMjs(1,5) ) ! dxy-s * dxz-s / ds_x
+               matr_spd(3,3) * ( dMjs(1,4) * Mjs(6) + Mjs(5) * dMjs(1,5) ) ! dxy-s * dxz-s / ds_x
             H_cf(2,5,6) = H_cf(2,5,6) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(3,3) * ( dMjs(2,4) * Mjs(i,j,6) + Mjs(i,j,5) * dMjs(2,5) ) ! dxy-s * dxz-s / ds_y
+               matr_spd(3,3) * ( dMjs(2,4) * Mjs(6) + Mjs(5) * dMjs(2,5) ) ! dxy-s * dxz-s / ds_y
             H_cf(3,5,6) = H_cf(3,5,6) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(3,3) * ( dMjs(3,4) * Mjs(i,j,6) + Mjs(i,j,5) * dMjs(3,5) ) ! dxy-s * dxz-s / ds_z
+               matr_spd(3,3) * ( dMjs(3,4) * Mjs(6) + Mjs(5) * dMjs(3,5) ) ! dxy-s * dxz-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,6,5) = H_cf(:,5,6)
 
-            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(i,j,5) * Mjs(i,j,7)
+            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(5) * Mjs(7)
             H_cf(1,5,7) = H_cf(1,5,7) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(3,3) * ( dMjs(1,4) * Mjs(i,j,7) + Mjs(i,j,5) * dMjs(1,6) ) ! dxy-s * dyz-s / ds_x
+               matr_spd(3,3) * ( dMjs(1,4) * Mjs(7) + Mjs(5) * dMjs(1,6) ) ! dxy-s * dyz-s / ds_x
             H_cf(2,5,7) = H_cf(2,5,7) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(3,3) * ( dMjs(2,4) * Mjs(i,j,7) + Mjs(i,j,5) * dMjs(2,6) ) ! dxy-s * dyz-s / ds_y
+               matr_spd(3,3) * ( dMjs(2,4) * Mjs(7) + Mjs(5) * dMjs(2,6) ) ! dxy-s * dyz-s / ds_y
             H_cf(3,5,7) = H_cf(3,5,7) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(3,3) * ( dMjs(3,4) * Mjs(i,j,7) + Mjs(i,j,5) * dMjs(3,6) ) ! dxy-s * dyz-s / ds_z
+               matr_spd(3,3) * ( dMjs(3,4) * Mjs(7) + Mjs(5) * dMjs(3,6) ) ! dxy-s * dyz-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,7,5) = H_cf(:,5,7)
 
-            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(i,j,5) * Mjs(i,j,8)
+            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(5) * Mjs(8)
             H_cf(1,5,8) = H_cf(1,5,8) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(3,3) * ( dMjs(1,4) * Mjs(i,j,8) + Mjs(i,j,5) * dMjs(1,7) ) ! dxy-s * (dx2-y2) / ds_x
+               matr_spd(3,3) * ( dMjs(1,4) * Mjs(8) + Mjs(5) * dMjs(1,7) ) ! dxy-s * (dx2-y2) / ds_x
             H_cf(2,5,8) = H_cf(2,5,8) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(3,3) * ( dMjs(2,4) * Mjs(i,j,8) + Mjs(i,j,5) * dMjs(2,7) ) ! dxy-s * (dx2-y2) / ds_y
+               matr_spd(3,3) * ( dMjs(2,4) * Mjs(8) + Mjs(5) * dMjs(2,7) ) ! dxy-s * (dx2-y2) / ds_y
             H_cf(3,5,8) = H_cf(3,5,8) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(3,3) * ( dMjs(3,4) * Mjs(i,j,8) + Mjs(i,j,5) * dMjs(3,7) ) ! dxy-s * (dx2-y2) / ds_z
+               matr_spd(3,3) * ( dMjs(3,4) * Mjs(8) + Mjs(5) * dMjs(3,7) ) ! dxy-s * (dx2-y2) / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,8,5) = H_cf(:,5,8)
 
-            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(i,j,5) * Mjs(i,j,9)
+            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(5) * Mjs(9)
             H_cf(1,5,9) = H_cf(1,5,9) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(3,3) * ( dMjs(1,4) * Mjs(i,j,9) + Mjs(i,j,5) * dMjs(1,8) ) ! dxy-s * (d3z2-r2) / ds_x
+               matr_spd(3,3) * ( dMjs(1,4) * Mjs(9) + Mjs(5) * dMjs(1,8) ) ! dxy-s * (d3z2-r2) / ds_x
             H_cf(2,5,9) = H_cf(2,5,9) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(3,3) * ( dMjs(2,4) * Mjs(i,j,9) + Mjs(i,j,5) * dMjs(2,8) ) ! dxy-s * (d3z2-r2) / ds_y
+               matr_spd(3,3) * ( dMjs(2,4) * Mjs(9) + Mjs(5) * dMjs(2,8) ) ! dxy-s * (d3z2-r2) / ds_y
             H_cf(3,5,9) = H_cf(3,5,9) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(3,3) * ( dMjs(3,4) * Mjs(i,j,9) + Mjs(i,j,5) * dMjs(3,8) ) ! dxy-s * (d3z2-r2) / ds_z
+               matr_spd(3,3) * ( dMjs(3,4) * Mjs(9) + Mjs(5) * dMjs(3,8) ) ! dxy-s * (d3z2-r2) / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,9,5) = H_cf(:,5,9)
 
 
-            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(i,j,6) * Mjs(i,j,7)
+            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(6) * Mjs(7)
             H_cf(1,6,7) = H_cf(1,6,7) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(3,3) * ( dMjs(1,5) * Mjs(i,j,7) + Mjs(i,j,6) * dMjs(1,6) ) ! dxz-s * dyz-s / ds_x
+               matr_spd(3,3) * ( dMjs(1,5) * Mjs(7) + Mjs(6) * dMjs(1,6) ) ! dxz-s * dyz-s / ds_x
             H_cf(2,6,7) = H_cf(2,6,7) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(3,3) * ( dMjs(2,5) * Mjs(i,j,7) + Mjs(i,j,6) * dMjs(2,6) ) ! dxz-s * dyz-s / ds_y
+               matr_spd(3,3) * ( dMjs(2,5) * Mjs(7) + Mjs(6) * dMjs(2,6) ) ! dxz-s * dyz-s / ds_y
             H_cf(3,6,7) = H_cf(3,6,7) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(3,3) * ( dMjs(3,5) * Mjs(i,j,7) + Mjs(i,j,6) * dMjs(3,6) ) ! dxz-s * dyz-s / ds_z
+               matr_spd(3,3) * ( dMjs(3,5) * Mjs(7) + Mjs(6) * dMjs(3,6) ) ! dxz-s * dyz-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,7,6) = H_cf(:,6,7)
 
-            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(i,j,6) * Mjs(i,j,8)
+            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(6) * Mjs(8)
             H_cf(1,6,8) = H_cf(1,6,8) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(3,3) * ( dMjs(1,5) * Mjs(i,j,8) + Mjs(i,j,6) * dMjs(1,7) ) ! dxz-s * (dx2-y2)-s / ds_x
+               matr_spd(3,3) * ( dMjs(1,5) * Mjs(8) + Mjs(6) * dMjs(1,7) ) ! dxz-s * (dx2-y2)-s / ds_x
             H_cf(2,6,8) = H_cf(2,6,8) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(3,3) * ( dMjs(2,5) * Mjs(i,j,8) + Mjs(i,j,6) * dMjs(2,7) ) ! dxz-s * (dx2-y2)-s / ds_y
+               matr_spd(3,3) * ( dMjs(2,5) * Mjs(8) + Mjs(6) * dMjs(2,7) ) ! dxz-s * (dx2-y2)-s / ds_y
             H_cf(3,6,8) = H_cf(3,6,8) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(3,3) * ( dMjs(3,5) * Mjs(i,j,8) + Mjs(i,j,6) * dMjs(3,7) ) ! dxz-s * (dx2-y2)-s / ds_z
+               matr_spd(3,3) * ( dMjs(3,5) * Mjs(8) + Mjs(6) * dMjs(3,7) ) ! dxz-s * (dx2-y2)-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,8,6) = H_cf(:,6,8)
 
-            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(i,j,6) * Mjs(i,j,9)
+            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(6) * Mjs(9)
             H_cf(1,6,9) = H_cf(1,6,9) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(3,3) * ( dMjs(1,5) * Mjs(i,j,9) + Mjs(i,j,6) * dMjs(1,8) ) ! dxz-s * (d3z2-r2)-s / ds_x
+               matr_spd(3,3) * ( dMjs(1,5) * Mjs(9) + Mjs(6) * dMjs(1,8) ) ! dxz-s * (d3z2-r2)-s / ds_x
             H_cf(2,6,9) = H_cf(2,6,9) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(3,3) * ( dMjs(2,5) * Mjs(i,j,9) + Mjs(i,j,6) * dMjs(2,8) ) ! dxz-s * (d3z2-r2)-s / ds_y
+               matr_spd(3,3) * ( dMjs(2,5) * Mjs(9) + Mjs(6) * dMjs(2,8) ) ! dxz-s * (d3z2-r2)-s / ds_y
             H_cf(3,6,9) = H_cf(3,6,9) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(3,3) * ( dMjs(3,5) * Mjs(i,j,9) + Mjs(i,j,6) * dMjs(3,8) ) ! dxz-s * (d3z2-r2)-s / ds_z
+               matr_spd(3,3) * ( dMjs(3,5) * Mjs(9) + Mjs(6) * dMjs(3,8) ) ! dxz-s * (d3z2-r2)-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,9,6) = H_cf(:,6,9)
 
 
-            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(i,j,7) * Mjs(i,j,8)
+            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(7) * Mjs(8)
             H_cf(1,7,8) = H_cf(1,7,8) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(3,3) * ( dMjs(1,6) * Mjs(i,j,8) + Mjs(i,j,7) * dMjs(1,7) ) ! dyz-s * (dx2-y2)-s / ds_x
+               matr_spd(3,3) * ( dMjs(1,6) * Mjs(8) + Mjs(7) * dMjs(1,7) ) ! dyz-s * (dx2-y2)-s / ds_x
             H_cf(2,7,8) = H_cf(2,7,8) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(3,3) * ( dMjs(2,6) * Mjs(i,j,8) + Mjs(i,j,7) * dMjs(2,7) ) ! dyz-s * (dx2-y2)-s / ds_y
+               matr_spd(3,3) * ( dMjs(2,6) * Mjs(8) + Mjs(7) * dMjs(2,7) ) ! dyz-s * (dx2-y2)-s / ds_y
             H_cf(3,7,8) = H_cf(3,7,8) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(3,3) * ( dMjs(3,6) * Mjs(i,j,8) + Mjs(i,j,7) * dMjs(3,7) ) ! dyz-s * (dx2-y2)-s / ds_z
+               matr_spd(3,3) * ( dMjs(3,6) * Mjs(8) + Mjs(7) * dMjs(3,7) ) ! dyz-s * (dx2-y2)-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,8,7) = H_cf(:,7,8)
 
-            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(i,j,7) * Mjs(i,j,9)
+            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(7) * Mjs(9)
             H_cf(1,7,9) = H_cf(1,7,9) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(3,3) * ( dMjs(1,7) * Mjs(i,j,9) + Mjs(i,j,7) * dMjs(1,8) ) ! dyz-s * (d3z2-r2)-s / ds_x
+               matr_spd(3,3) * ( dMjs(1,7) * Mjs(9) + Mjs(7) * dMjs(1,8) ) ! dyz-s * (d3z2-r2)-s / ds_x
             H_cf(2,7,9) = H_cf(2,7,9) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(3,3) * ( dMjs(2,7) * Mjs(i,j,9) + Mjs(i,j,7) * dMjs(2,8) ) ! dyz-s * (d3z2-r2)-s / ds_y
+               matr_spd(3,3) * ( dMjs(2,7) * Mjs(9) + Mjs(7) * dMjs(2,8) ) ! dyz-s * (d3z2-r2)-s / ds_y
             H_cf(3,7,9) = H_cf(3,7,9) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(3,3) * ( dMjs(3,7) * Mjs(i,j,9) + Mjs(i,j,7) * dMjs(3,8) ) ! dyz-s * (d3z2-r2)-s / ds_z
+               matr_spd(3,3) * ( dMjs(3,7) * Mjs(9) + Mjs(7) * dMjs(3,8) ) ! dyz-s * (d3z2-r2)-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,9,7) = H_cf(:,7,9)
 
 
-            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(i,j,8) * Mjs(i,j,9)
+            H_cf_temp(1) = d_matr_spd(3,3) * Mjs(8) * Mjs(9)
             H_cf(1,8,9) = H_cf(1,8,9) + H_cf_temp(1) * drij_dsk(1) + &
-               matr_spd(3,3) * ( dMjs(1,7) * Mjs(i,j,9) + Mjs(i,j,8) * dMjs(1,8) ) ! (dx2-y2)-s * (d3z2-r2)-s / ds_x
+               matr_spd(3,3) * ( dMjs(1,7) * Mjs(9) + Mjs(8) * dMjs(1,8) ) ! (dx2-y2)-s * (d3z2-r2)-s / ds_x
             H_cf(2,8,9) = H_cf(2,8,9) + H_cf_temp(1) * drij_dsk(2) + &
-               matr_spd(3,3) * ( dMjs(2,7) * Mjs(i,j,9) + Mjs(i,j,8) * dMjs(2,8) ) ! (dx2-y2)-s * (d3z2-r2)-s / ds_y
+               matr_spd(3,3) * ( dMjs(2,7) * Mjs(9) + Mjs(8) * dMjs(2,8) ) ! (dx2-y2)-s * (d3z2-r2)-s / ds_y
             H_cf(3,8,9) = H_cf(3,8,9) + H_cf_temp(1) * drij_dsk(3) + &
-               matr_spd(3,3) * ( dMjs(3,7) * Mjs(i,j,9) + Mjs(i,j,8) * dMjs(3,8) ) ! (dx2-y2)-s * (d3z2-r2)-s / ds_z
+               matr_spd(3,3) * ( dMjs(3,7) * Mjs(9) + Mjs(8) * dMjs(3,8) ) ! (dx2-y2)-s * (d3z2-r2)-s / ds_z
             ! Lower triangle use symmetry:
             H_cf(:,9,8) = H_cf(:,8,9)
 
          endif ! (basis_ind > 0)
       endif ! (basis_ind > 1)
+
+5003 continue
+
    enddo ! atom_2 = 0, m
 
    !-----------------
@@ -1924,6 +1948,7 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
       enddo AT2
    endif ! (TB(KOA1,KOA1)%include_3body)
 
+5002 continue
    ! Collect all the terms into derivative of the Hamiltonian:
    dHij = E_onsite + H_avg + H_cf + H_3bdy
 
@@ -2260,10 +2285,12 @@ subroutine get_d_Laguerres(r_given, rc, Laguer)
    real(8), dimension(6), intent(out) :: Laguer ! derivatives of the polynomials up to 6
    real(8) :: d, ad
    ! normalized distance, since coefficients are fitted in this units [1]:
-   d = r_given * g_A2au * rc  ! [A] -> [Bohr]
-   ad = m_a * d ! scaling parameter [2]
-
+   d = m_a * g_A2au * rc  ! [A] -> [Bohr]
+   ad = r_given * d ! scaling parameter [2]
+   ! dL/dd:
    call d_Laguerre_up_to_6(ad, Laguer)   ! module "Algebra_tools"
+   ! dL/dx = dL/dd * dd/dx:
+   Laguer = d * Laguer
 end subroutine get_d_Laguerres
 
 
@@ -2274,11 +2301,11 @@ pure function d_Laguerre_exponent(r_given, rc) result(exp_L)
    real(8) :: d, ad
 
    ! normalized distance, since coefficients are fitted in this units [1]:
-   d = r_given * g_A2au * rc  ! [A] -> [Bohr]
-   ad = m_a * d ! scaling parameter [2]
+   d = m_a * g_A2au * rc  ! [A] -> [Bohr]
+   ad = r_given * d ! scaling parameter [2]
 
    ! Get the exponential term:
-   exp_L = -(0.5d0 * g_A2au * rc * m_a) * exp(-0.5d0 * ad)      ! [2]
+   exp_L = -(0.5d0 * d) * exp(-0.5d0 * ad)      ! [2]
 end function d_Laguerre_exponent
 
 
