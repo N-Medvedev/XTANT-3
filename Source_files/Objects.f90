@@ -215,6 +215,7 @@ type, EXTENDS (TB_Hamiltonian) :: TB_H_3TB ! hamiltonian coefficients:
    real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-like cut-off [A]
    real(8) :: rc       ! rescaling coefficient for the distance entering inside Laguerres
    logical :: include_3body   ! include or exclude 3-body parts
+   logical :: nullify_diag_cf   ! exclude diagonal part of crystal field
 !    real(8) :: Ud, Up, Us    ! the Hubbard U values for the appropriate angular momenta (currently not used in XTANT)
    ! Onsite parameters:
    real(8) :: Ed, Ep, Es      ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom

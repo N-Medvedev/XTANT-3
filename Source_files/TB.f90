@@ -181,10 +181,20 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                   ! Get the energy-weighted density matrix:
                   call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
                   ! Get the derivatives of the Hamiltonian:
+
+!                   print*, 'Before get_dHij_drij_3TB'
+
                   call get_dHij_drij_3TB(numpar, Scell, NSC, ARRAY, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
                         M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
-                  call Attract_TB_Forces_Press_3TB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_3TB"
+
+!                   print*, 'Before Attract_TB_Forces_Press_3TB'
+
+                  call Attract_TB_Forces_Press_3TB(Scell, NSC, ARRAY, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
+                        M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
+
+!                   print*, 'After Attract_TB_Forces_Press_3TB'
+
                type is (TB_H_BOP)
                   ! Get the energy-weighted density matrix:
                   call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
@@ -2132,7 +2142,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
          call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
          call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
-         call Attract_TB_Forces_Press_3TB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_3TB"
+         call Attract_TB_Forces_Press_3TB(Scell, NSC, ARRAY, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
       type is (TB_H_xTB) ! TB parametrization according to xTB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below

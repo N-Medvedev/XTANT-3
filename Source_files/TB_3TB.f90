@@ -93,16 +93,14 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
    ! Construct matrix of all the radial functions for each pair of atoms:
 !$omp PARALLEL
 !$omp do private(j, m, atom_2, i, KOA1, KOA2, r, Laguer, d_Laguer, exp_ad, d_exp_ad, ihop, Fermi, dFermi)
-   AT1:do j = 1,nat	! all atoms
+   AT1:do j = 1,nat	! atom #1
 
       m => Scell(NSC)%Near_neighbor_size(j)
       AT2:do atom_2 = 1,m ! do only for atoms close to that one
-         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-
-         !KOA1 => Scell(NSC)%MDatoms(j)%KOA
-         !KOA2 => Scell(NSC)%MDatoms(i)%KOA
-         KOA1 => Scell(NSC)%MDatoms(i)%KOA
-         KOA2 => Scell(NSC)%MDatoms(j)%KOA  ! Correct order, checked by cohesive energy minimum
+         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
+         ! Kinds of atoms (elements indices):
+         KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! atom #1
+         KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! atom #2
 
          r = Scell(NSC)%Near_neighbor_dist(j,atom_2,4) ! at this distance, R [A]
 
@@ -251,20 +249,20 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
 if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
 if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
 !$omp do
-   do j = 1,nat	! all atoms
+   do j = 1,nat	! atom #1
       m => Scell(NSC)%Near_neighbor_size(j)
 
       do atom_2 = 0,m ! do only for atoms close to that one
 
          if (atom_2 == 0) then ! the same atom
-            i = j
+            i = j    ! atom #2 = atom #1, onsite
          else  ! different atoms
-            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
          endif
 
          IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
-            KOA1 => Scell(NSC)%MDatoms(j)%KOA
-            KOA2 => Scell(NSC)%MDatoms(i)%KOA
+            KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! atom #1
+            KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! atom #2
             ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
             ! Contruct a block-hamiltonian:
             call Hamilton_one_3TB(numpar%N_basis_size, Scell(NSC), j, i, TB_Hamil, Hij1, &
@@ -273,15 +271,14 @@ if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
             ! Construct overlap matrix for this pair of atoms:
             call Get_overlap_S_matrix_3TB(numpar%N_basis_size, j, i, Sij1, M_SVij, M_lmn)  ! below
 
-            do j1 = 1,n_orb ! all orbitals
-               l = (j-1)*n_orb+j1   ! atom 1 (j)
-               do i1 = 1,n_orb ! all orbitals
-                  k = (i-1)*n_orb+i1   ! atom 2 (i)
-                  ! We fill the LOWER triangle here
+            do j1 = 1,n_orb ! all orbitals of atom #1
+               l = (j-1)*n_orb+j1   ! atom #1 (j)
+               do i1 = 1,n_orb ! all orbitals of atom #2
+                  k = (i-1)*n_orb+i1   ! atom #2 (i)
+                  ! We fill the upper triangle here
                   ! (the order does not matter, just have to be consistent with the Slater-Koster functions):
-                  ! (tested, correct)
-                  Hij(k,l) = Hij1(i1,j1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
-                  Sij(k,l) = Sij1(i1,j1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
+                  Hij(l,k) = Hij1(j1,i1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
+                  Sij(l,k) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
                   if (ABS(Sij(k,l)) <= epsylon) Sij(k,l) = 0.0d0
                enddo ! i1
             enddo ! j1
@@ -292,20 +289,20 @@ if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
 deallocate(Hij1, Sij1)
 !$omp end parallel
 
-   ! b) Construct upper triangle - use symmetry:
+   ! b) Construct lower triangle - use symmetry:
 !$omp parallel
 !$omp do  private(j, m, atom_2, i, j1, l, i1, k)
    do j = 1,nat	! all atoms
       m => Scell(NSC)%Near_neighbor_size(j)
       do atom_2 = 1,m ! do only for atoms close to that one
          i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-         if (i < j) then ! it's a new pair of atoms, calculate everything
-            do j1 = 1,n_orb ! all orbitals
-               l = (j-1)*n_orb+j1
-               do i1 = 1,n_orb ! all orbitals
-                  k = (i-1)*n_orb+i1
-                  Hij(k,l) = Hij(l,k)
-                  Sij(k,l) = Sij(l,k)
+         if (i < j) then ! lower triangle
+            do j1 = 1,n_orb ! all orbitals of atom #1
+               l = (j-1)*n_orb+j1   ! atom #1
+               do i1 = 1,n_orb ! all orbitals of atom #2
+                  k = (i-1)*n_orb+i1   ! atom #2
+                  Hij(l,k) = Hij(k,l)
+                  Sij(l,k) = Sij(k,l)
                enddo ! i1
             enddo ! j1
          endif
@@ -438,13 +435,15 @@ subroutine Get_overlap_S_matrix_3TB(basis_ind, i, j, Sij, M_SVij, M_lmn)
          vec_M_SVij12(:) = M_SVij(i,j,:)
          allocate(vec_M_SVij21(4))
          vec_M_SVij21(:) = M_SVij(j,i,:)
-         call KS_sp3_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij)   ! module "TB_Koster_Slater"
+         !call KS_sp3_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij)   ! module "TB_Koster_Slater"
+         call KS_sp3_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij)   ! module "TB_Koster_Slater"
       case default ! for sp3d5 basis set:
          allocate(vec_M_SVij12(10))
          vec_M_SVij12(:) = M_SVij(i,j,:)
          allocate(vec_M_SVij21(10))
          vec_M_SVij21(:) = M_SVij(j,i,:)
-         call KS_sp3d5_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij) ! module "TB_Koster_Slater"
+         !call KS_sp3d5_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij) ! module "TB_Koster_Slater"
+         call KS_sp3d5_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), Sij) ! module "TB_Koster_Slater"
       end select
    else	! it is the same atom
       Sij = 0.0d0
@@ -507,17 +506,17 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
       allocate(vec_M_SVij21(4))
       vec_M_SVij21(:) = M_Vij21(:)
       ! This subroutine is used because we fill the LOWER triangle in the Hamiltonian matrix:
-      call KS_sp3_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
+      !call KS_sp3_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
       ! This subroutine could be used if we were filling the UPPER triangle first:
-      !call KS_sp3_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
+      call KS_sp3_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
    case default ! for sp3d5 basis set:
       allocate(vec_M_SVij12(10))
       vec_M_SVij12(:) = M_Vij12(:)
       allocate(vec_M_SVij21(10))
       vec_M_SVij21(:) = M_Vij21(:)
-      call KS_sp3d5_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
+      !call KS_sp3d5_hetero(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
       ! Same here, the upper triangle vs. the lower one:
-      !call KS_sp3d5_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
+      call KS_sp3d5_hetero_TEST(vec_M_SVij12, vec_M_SVij21, M_lmn(1), M_lmn(2), M_lmn(3), ts)	! module "TB_Koster_Slater"
    end select
    if (allocated(vec_M_SVij12)) deallocate(vec_M_SVij12)
    if (allocated(vec_M_SVij21)) deallocate(vec_M_SVij21)
@@ -629,7 +628,7 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
                   H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dxy-s * (d3z2-r2)-s
                   ! Add it into the Hamiltonian part:
                   H_3bdy_part(5,5:9) = H_3bdy_part(5,5:9) + H_temp(1:5)
-                  H_3bdy_part(5:9,5) = H_3bdy_part(5:9,5) + H_temp(1:5)
+                  !H_3bdy_part(5:9,5) = H_3bdy_part(5:9,5) + H_temp(1:5)
 
                   ! Calculate the K-S matrix elements:
                   H_temp(6) = Mjs(i,k,6) * G_IJK(3,3)
@@ -640,7 +639,7 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
                   H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dxz-s * (d3z2-r2)-s
                   ! Add it into the Hamiltonian part:
                   H_3bdy_part(6,5:9) = H_3bdy_part(6,5:9) + H_temp(1:5)
-                  H_3bdy_part(5:9,6) = H_3bdy_part(5:9,6) + H_temp(1:5)
+                  !H_3bdy_part(5:9,6) = H_3bdy_part(5:9,6) + H_temp(1:5)
 
                   ! Calculate the K-S matrix elements:
                   H_temp(6) = Mjs(i,k,7) * G_IJK(3,3)
@@ -651,7 +650,7 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
                   H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dyz-s * (d3z2-r2)-s
                   ! Add it into the Hamiltonian part:
                   H_3bdy_part(7,5:9) = H_3bdy_part(7,5:9) + H_temp(1:5)
-                  H_3bdy_part(5:9,7) = H_3bdy_part(5:9,7) + H_temp(1:5)
+                  !H_3bdy_part(5:9,7) = H_3bdy_part(5:9,7) + H_temp(1:5)
 
                   ! Calculate the K-S matrix elements:
                   H_temp(6) = Mjs(i,k,8) * G_IJK(3,3)
@@ -662,7 +661,7 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
                   H_temp(5) = H_temp(6) * Mjs(j,k,9) ! (dx2-y2)-s * (d3z2-r2)-s
                   ! Add it into the Hamiltonian part:
                   H_3bdy_part(8,5:9) = H_3bdy_part(8,5:9) + H_temp(1:5)
-                  H_3bdy_part(5:9,8) = H_3bdy_part(5:9,8) + H_temp(1:5)
+                  !H_3bdy_part(5:9,8) = H_3bdy_part(5:9,8) + H_temp(1:5)
 
                   ! Calculate the K-S matrix elements:
                   H_temp(6) = Mjs(i,k,9) * G_IJK(3,3)
@@ -673,7 +672,7 @@ subroutine Hopping_3TB(basis_ind, i, j, Scell, TB_Hamil, M_Vij12, M_Vij21, M_lmn
                   H_temp(5) = H_temp(6) * Mjs(j,k,9) ! (d3z2-r2)-s * (d3z2-r2)-s
                   ! Add it into the Hamiltonian part:
                   H_3bdy_part(9,5:9) = H_3bdy_part(9,5:9) + H_temp(1:5)
-                  H_3bdy_part(5:9,9) = H_3bdy_part(5:9,9) + H_temp(1:5)
+                  !H_3bdy_part(5:9,9) = H_3bdy_part(5:9,9) + H_temp(1:5)
 
                endif ! (basis_ind > 1)
             endif ! (basis_ind > 0)
@@ -823,11 +822,15 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
 
 
          ! Diagonal part is excluded (no self-interaction of orbitals):
-         ! [ C 1 ]
-         H_cf(2,2) = 0.0d0 ! px-s * px-s
-         H_cf(3,3) = 0.0d0 ! py-s * py-s
-         H_cf(4,4) = 0.0d0 ! pz-s * pz-s
-
+         if (TB(KOA1,KOA1)%nullify_diag_cf) then
+            H_cf(2,2) = 0.0d0 ! px-s * px-s
+            H_cf(3,3) = 0.0d0 ! py-s * py-s
+            H_cf(4,4) = 0.0d0 ! pz-s * pz-s
+         else
+            H_cf(2,2) = H_cf(2,2) + H_cf_temp(2)  ! px-s * px-s
+            H_cf(3,3) = H_cf(3,3) + H_cf_temp(5) * Mjs(i,j,3)  ! py-s * py-s
+            H_cf(4,4) = H_cf(4,4) + matr_spd(2,2) * Mjs(i,j,4) * Mjs(i,j,4) ! pz-s * pz-s
+         endif
 
          ! Off-diagonal part:
          H_cf(2,3) = H_cf(2,3) + H_cf_temp(3)  ! px-s * py-s
@@ -882,8 +885,11 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
 
             ! Calculate the K-S matrix elements:
             H_cf_temp(6) = Mjs(i,j,5) * matr_spd(3,3)
-            !H_cf_temp(1) = H_cf_temp(6) * Mjs(i,j,5) ! dxy-s * dxy-s
-            H_cf_temp(1) = 0.0d0                     ! dxy-s * dxy-s
+            if (TB(KOA1,KOA1)%nullify_diag_cf) then
+               H_cf_temp(1) = 0.0d0                     ! dxy-s * dxy-s
+            else
+               H_cf_temp(1) = H_cf_temp(6) * Mjs(i,j,5) ! dxy-s * dxy-s
+            endif
             H_cf_temp(2) = H_cf_temp(6) * Mjs(i,j,6) ! dxy-s * dxz-s
             H_cf_temp(3) = H_cf_temp(6) * Mjs(i,j,7) ! dxy-s * dyz-s
             H_cf_temp(4) = H_cf_temp(6) * Mjs(i,j,8) ! dxy-s * (dx2-y2)-s
@@ -894,8 +900,11 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
             ! Calculate the K-S matrix elements:
             H_cf_temp(6) = Mjs(i,j,6) * matr_spd(3,3)
             H_cf_temp(1) = H_cf_temp(6) * Mjs(i,j,5) ! dxz-s * dxy-s
-            !H_cf_temp(2) = H_cf_temp(6) * Mjs(i,j,6) ! dxz-s * dxz-s
-            H_cf_temp(2) = 0.0d0                     ! dxz-s * dxz-s
+            if (TB(KOA1,KOA1)%nullify_diag_cf) then
+               H_cf_temp(2) = 0.0d0                     ! dxz-s * dxz-s
+            else
+               H_cf_temp(2) = H_cf_temp(6) * Mjs(i,j,6) ! dxz-s * dxz-s
+            endif
             H_cf_temp(3) = H_cf_temp(6) * Mjs(i,j,7) ! dxz-s * dyz-s
             H_cf_temp(4) = H_cf_temp(6) * Mjs(i,j,8) ! dxz-s * (dx2-y2)-s
             H_cf_temp(5) = H_cf_temp(6) * Mjs(i,j,9) ! dxz-s * (d3z2-r2)-s
@@ -906,8 +915,11 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
             H_cf_temp(6) = Mjs(i,j,7) * matr_spd(3,3)
             H_cf_temp(1) = H_cf_temp(6) * Mjs(i,j,5) ! dyz-s * dxy-s
             H_cf_temp(2) = H_cf_temp(6) * Mjs(i,j,6) ! dyz-s * dxz-s
-            !H_cf_temp(3) = H_cf_temp(6) * Mjs(i,j,7) ! dyz-s * dyz-s
-            H_cf_temp(3) = 0.0d0                     ! dyz-s * dyz-s
+            if (TB(KOA1,KOA1)%nullify_diag_cf) then
+               H_cf_temp(3) = 0.0d0                     ! dyz-s * dyz-s
+            else
+               H_cf_temp(3) = H_cf_temp(6) * Mjs(i,j,7) ! dyz-s * dyz-s
+            endif
             H_cf_temp(4) = H_cf_temp(6) * Mjs(i,j,8) ! dyz-s * (dx2-y2)-s
             H_cf_temp(5) = H_cf_temp(6) * Mjs(i,j,9) ! dyz-s * (d3z2-r2)-s
             ! Add it into the Hamiltonian part:
@@ -918,8 +930,11 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
             H_cf_temp(1) = H_cf_temp(6) * Mjs(i,j,5) ! (dx2-y2)-s * dxy-s
             H_cf_temp(2) = H_cf_temp(6) * Mjs(i,j,6) ! (dx2-y2)-s * dxz-s
             H_cf_temp(3) = H_cf_temp(6) * Mjs(i,j,7) ! (dx2-y2)-s * dyz-s
-            !H_cf_temp(4) = H_cf_temp(6) * Mjs(i,j,8) ! (dx2-y2)-s * (dx2-y2)-s
-            H_cf_temp(4) = 0.0d0                     ! (dx2-y2)-s * (dx2-y2)-s
+            if (TB(KOA1,KOA1)%nullify_diag_cf) then
+               H_cf_temp(4) = 0.0d0                     ! (dx2-y2)-s * (dx2-y2)-s
+            else
+               H_cf_temp(4) = H_cf_temp(6) * Mjs(i,j,8) ! (dx2-y2)-s * (dx2-y2)-s
+            endif
             H_cf_temp(5) = H_cf_temp(6) * Mjs(i,j,9) ! (dx2-y2)-s * (d3z2-r2)-s
             ! Add it into the Hamiltonian part:
             H_cf(8,5:9) = H_cf(8,5:9) + H_cf_temp(1:5)
@@ -930,8 +945,11 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
             H_cf_temp(2) = H_cf_temp(6) * Mjs(i,j,6) ! (d3z2-r2)-s * dxz-s
             H_cf_temp(3) = H_cf_temp(6) * Mjs(i,j,7) ! (d3z2-r2)-s * dyz-s
             H_cf_temp(4) = H_cf_temp(6) * Mjs(i,j,8) ! (d3z2-r2)-s * (dx2-y2)-s
-            !H_cf_temp(5) = H_cf_temp(6) * Mjs(i,j,9) ! (d3z2-r2)-s * (d3z2-r2)-s
-            H_cf_temp(5) = 0.0d0                     ! (d3z2-r2)-s * (d3z2-r2)-s
+            if (TB(KOA1,KOA1)%nullify_diag_cf) then
+               H_cf_temp(5) = 0.0d0                     ! (d3z2-r2)-s * (d3z2-r2)-s
+            else
+               H_cf_temp(5) = H_cf_temp(6) * Mjs(i,j,9) ! (d3z2-r2)-s * (d3z2-r2)-s
+            endif
             ! Add it into the Hamiltonian part:
             H_cf(9,5:9) = H_cf(9,5:9) + H_cf_temp(1:5)
 
@@ -1009,28 +1027,23 @@ subroutine get_dHij_drij_3TB(numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij,
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp, M_d_Lag_exp
    !------------------------------------------------------------
    integer :: nat, k
-   integer, pointer :: KOA1
    !------------------------------------------------------------
 
    nat = size(Scell(NSC)%MDatoms)	! number of atoms
 
-   !$omp PARALLEL private(k, KOA1)
+   !$omp PARALLEL private(k)
    !$omp do
    ATOMS:do k = 1, nat	! forces for all atoms
       Scell(NSC)%MDatoms(k)%forces%att(:) = 0.0d0	! just to start
 
-      ! 1) 2-body part (tested, correct):
-      call get_forces_3TB(k, numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Lag_exp, M_d_Lag_exp, Aij_x_Ei, Mjs) !below
+      ! (tested, correct):
+      call get_forces_3TB(k, numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
+                           M_lmn, M_Lag_exp, M_d_Lag_exp, Aij_x_Ei, Mjs) !below
 
-      ! 2) 3-body part:
-      KOA1 => Scell(NSC)%MDatoms(k)%KOA  ! kind of atoms #1
-      if (TB(KOA1,KOA1)%include_3body) then  ! only if user defined it to include
-
-      endif ! (TB_Hamil(KOA1,KOA1)%include_3body)
    enddo ATOMS
    !$omp end do
    !$omp end parallel
-   nullify(KOA1)
+
 end subroutine get_dHij_drij_3TB
 
 
@@ -1183,7 +1196,7 @@ end subroutine Attract_TB_forces_3TB
 !ddddddddddddddddddddddddddddddddddddddddddddddddddd
 ! Derivatives:
 subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, TB, i, j, atom_2, dH, M_Vij, M_dVij, M_lmn, M_Lag_exp, M_d_Lag_exp, &
-                              dS, M_SVij, M_dSVij, Mjs)
+                              dS, M_SVij, M_dSVij, Mjs_in)
    integer, intent(in) :: basis_ind ! index of the basis set used: 0=s, 1=sp3, 2=sp3d5
    type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
    type(TB_H_3TB), dimension(:,:), intent(in), target :: TB	! parameters of the Hamiltonian of TB
@@ -1193,23 +1206,36 @@ subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, TB, i, j, atom_2, dH, M_Vij, 
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp, M_d_Lag_exp   ! Laguerres and their derivatives
    real(8), dimension(:,:,:), intent(in), target :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms for S-matrix, all orbitals, and derivatives
-   real(8), dimension(:,:,:), intent(in) :: Mjs ! matrix of overlaps with s-orbital
+   real(8), dimension(:,:,:), intent(in) :: Mjs_in ! matrix of overlaps with s-orbital
    !---------------------------------------
    real(8), dimension(9) :: M_dlmn	! dl/dx, dl/dy, dl/dz, dm/dx, dm/dy, dm/dz, dn/dx, dn/dy, dn/dz
-   real(8), pointer :: x1, y1, z1, r1
-   integer, pointer :: KOA1
-   real(8) :: drij_dsk(3)
-   integer :: n_orb, n_overlap
+   real(8), dimension(9) :: M_dlmn_ik, M_dlmn_jk
+   real(8), dimension(3, 8) :: dMis, dMjs ! 3p, 5d
+   real(8), dimension(9) :: Mjs, Mjks, Miks ! 1s, 3p, 5d
+   real(8) :: drij_dsk(3), drikk_dsk(3), drjkk_dsk(3), G_IJK(3,3), dG_IJK(3,3,3), H_temp(6), MM(4), dMM(3,4)
+   integer :: n_orb, n_overlap, kk, atom_3, sh1, sh2, at_ind
    real(8), dimension(:), allocatable :: vec_M_Vij12, vec_M_Vij21, vec_M_SVij12, vec_M_SVij21
    real(8), dimension(:), allocatable :: vec_M_dVij12, vec_M_dVij21, vec_M_dSVij12, vec_M_dSVij21
    real(8), dimension(:,:), allocatable :: dH1, dS1
+   real(8), dimension(:,:,:), allocatable :: dH_3bdy
+   real(8), pointer :: x1, y1, z1, r1
+   integer, pointer :: KOA1, KOA2, KOA3, m
+   real(8), pointer :: rij, xij, yij, zij
+   real(8), pointer :: rik, xik, yik, zik
+   real(8), pointer :: rjk, xjk, yjk, zjk
 
    if (i == j) then ! Onsite contributions (incl. 3-body parts etc.):
 
-      call d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_exp, Mjs, dH) ! below
+!       print*, 'before d_Onsite_3TB', i
+
+      call d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_exp, Mjs_in, dH) ! below
       dS = 0.0d0  ! Here are constants on-site, derivatives = 0
 
+!       print*, 'after d_Onsite_3TB', i
+
    else	! For pairs of atoms, fill the hamiltonain with Hopping Integrals:
+
+!       print*, 'before d_Hamilton_one_3TB', i, j
 
       ! Depending on the basis set:
       n_overlap = identify_DFTB_basis_size(basis_ind)   ! below
@@ -1317,19 +1343,332 @@ subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, TB, i, j, atom_2, dH, M_Vij, 
       dH(3,:,:) = dH1(:,:)
       dS(3,:,:) = dS1(:,:)
 
-      deallocate(vec_M_Vij12, vec_M_Vij21, vec_M_SVij12, vec_M_SVij21, vec_M_dVij12, vec_M_dVij21, vec_M_dSVij12, vec_M_dSVij21, dH1, dS1)
+      deallocate(vec_M_Vij12, vec_M_Vij21, vec_M_SVij12, vec_M_SVij21, vec_M_dVij12, vec_M_dVij21, vec_M_dSVij12, &
+                  vec_M_dSVij21, dH1, dS1)
 
+!       print*, 'test 1 d_Hamilton_one_3TB', i, j
 
       ! 2) 3-body contributions:
       KOA1 => Scell%MDatoms(k)%KOA  ! Kind of atom:
       if (TB(KOA1,KOA1)%include_3body) then  ! only if user defined it to include
+         allocate(dH_3bdy(3,n_orb,n_orb))
+         ! Number of the nearest neighbors
+         m => Scell%Near_neighbor_size(i)
+         ! Kind of atom #2
+         KOA2 => Scell%MDatoms(j)%KOA   ! index of the second atom
+         ! Distances between atom #1 and #2:
+         xij => Scell%Near_neighbor_dist(i,atom_2,1)	! at this distance, X
+         yij => Scell%Near_neighbor_dist(i,atom_2,2)	! at this distance, Y
+         zij => Scell%Near_neighbor_dist(i,atom_2,3)	! at this distance, Z
+         rij => Scell%Near_neighbor_dist(i,atom_2,4)	! at this distance, R
+         ! d r_ij / d s_k:
+         drij_dsk(1) = drij_dska(i, j, k, xij, yij, zij, rij, Scell%supce, 1, .true.)	! dr_{ij}/ds_{k,x}
+         drij_dsk(2) = drij_dska(i, j, k, xij, yij, zij, rij, Scell%supce, 2, .true.)	! dr_{ij}/ds_{k,y}
+         drij_dsk(3) = drij_dska(i, j, k, xij, yij, zij, rij, Scell%supce, 3, .true.)	! dr_{ij}/ds_{k,z}
 
+         M_dlmn(1) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 1, drij_dsk(1))	! dl/dsx
+         M_dlmn(2) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 2, drij_dsk(2))	! dl/dsy
+         M_dlmn(3) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 3, drij_dsk(3))	! dl/dsz
+         M_dlmn(4) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 1, drij_dsk(1))	! dm/dsx
+         M_dlmn(5) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 2, drij_dsk(2))	! dm/dsy
+         M_dlmn(6) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 2, 3, drij_dsk(3))	! dm/dsz
+         M_dlmn(7) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 1, drij_dsk(1))	! dn/dsx
+         M_dlmn(8) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 2, drij_dsk(2))	! dn/dsy
+         M_dlmn(9) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 3, 3, drij_dsk(3))	! dn/dsz
+
+
+         ! To start summing up:
+         dH_3bdy = 0.0d0
+         AT3:do atom_3 = 1,m ! do only for atoms close to that one
+            kk = Scell%Near_neighbor_list(i,atom_3) ! this is the list of such close atoms
+            ! Make sure the third atom is not the second atom:
+            if (kk /= j) then
+               KOA3 => Scell%MDatoms(kk)%KOA   ! kind of atom #3
+
+               ! Distances between atom #1 and #3:
+               xik => Scell%Near_neighbor_dist(i,atom_3,1)	! at this distance, X
+               yik => Scell%Near_neighbor_dist(i,atom_3,2)	! at this distance, Y
+               zik => Scell%Near_neighbor_dist(i,atom_3,3)	! at this distance, Z
+               rik => Scell%Near_neighbor_dist(i,atom_3,4)	! at this distance, R
+               ! Distances between atom #2 and #3:
+               xjk => Scell%Near_neighbor_dist(j,atom_3,1)	! at this distance, X
+               yjk => Scell%Near_neighbor_dist(j,atom_3,2)	! at this distance, Y
+               zjk => Scell%Near_neighbor_dist(j,atom_3,3)	! at this distance, Z
+               rjk => Scell%Near_neighbor_dist(j,atom_3,4)	! at this distance, R
+
+               ! Derivatives of rij by sk:
+               ! All functions are from the module "TB_Koster_Slater":
+               drikk_dsk(1) = drij_dska(i, kk, k, xik, yik, zik, rik, Scell%supce, 1, .true.)	! dr_{ikk}/ds_{k,x}
+               drikk_dsk(2) = drij_dska(i, kk, k, xik, yik, zik, rik, Scell%supce, 2, .true.)	! dr_{ikk}/ds_{k,y}
+               drikk_dsk(3) = drij_dska(i, kk, k, xik, yik, zik, rik, Scell%supce, 3, .true.)	! dr_{ikk}/ds_{k,z}
+
+               drjkk_dsk(1) = drij_dska(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 1, .true.)	! dr_{jkk}/ds_{k,x}
+               drjkk_dsk(2) = drij_dska(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 2, .true.)	! dr_{jkk}/ds_{k,y}
+               drjkk_dsk(3) = drij_dska(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 3, .true.)	! dr_{jkk}/ds_{k,z}
+
+
+               ! Find the combination-of-atoms index:
+               at_ind = find_3bdy_ind(KOA1, KOA2, KOA3)  ! module "Dealing_with_3TB"
+
+               ! Factors including Laguerres are independent of shells:
+               MM(1) = M_Lag_exp(i,kk,1) * M_Lag_exp(j,kk,1)
+               MM(2) = M_Lag_exp(i,kk,1) * M_Lag_exp(j,kk,2)
+               MM(3) = M_Lag_exp(i,kk,2) * M_Lag_exp(j,kk,1)
+               MM(4) = MM(1) * M_Lag_exp(i,j,1)
+
+               dMM(:,1) = M_d_Lag_exp(i,kk,1)*M_Lag_exp(j,kk,1)*drikk_dsk(:) + &
+                          M_Lag_exp(i,kk,1)*M_d_Lag_exp(j,kk,1)*drjkk_dsk(:)
+               dMM(:,2) = M_d_Lag_exp(i,kk,1)*M_Lag_exp(j,kk,2)*drikk_dsk(:) + &
+                          M_Lag_exp(i,kk,1)*M_d_Lag_exp(j,kk,2)*drjkk_dsk(:)
+               dMM(:,3) = M_d_Lag_exp(i,kk,2)*M_Lag_exp(j,kk,1)*drikk_dsk(:) + &
+                          M_Lag_exp(i,kk,2)*M_d_Lag_exp(j,kk,1)*drjkk_dsk(:)
+               dMM(:,4) = dMM(:,1)*M_Lag_exp(i,j,1) + MM(1)*M_d_Lag_exp(i,j,1)*drij_dsk(:)
+
+               ! Get the radial function for 3-body interaction:
+               do sh1 = 1, 1+basis_ind
+                  do sh2 = 1, 1+basis_ind
+                     G_IJK(sh1,sh2) = TB(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 1) * MM(1) + &
+                                     TB(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 2) * MM(2) + &
+                                     TB(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 3) * MM(3) + &
+                                     TB(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 4) * MM(4)
+
+                     dG_IJK(:,sh1,sh2) = TB(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 1) * dMM(:,1) + &
+                                     TB(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 2) * dMM(:,2) + &
+                                     TB(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 3) * dMM(:,3) + &
+                                     TB(KOA1,KOA2)%V3bdy(at_ind, sh1, sh2, 4) * dMM(:,4)
+                  enddo
+               enddo
+               ! Include angular parts:
+               dH_3bdy(:,1,1) = dH_3bdy(:,1,1) + dG_IJK(:,1,1)   ! s-s * s-s / d s_{x,y,z}
+
+               if (basis_ind > 0) then ! p3 orbitals:
+                  ! Slater-Koster angular parts:
+                  Miks(2) = Mjs_in(i,kk,2)  ! px-s
+                  Miks(3) = Mjs_in(i,kk,3)  ! py-s
+                  Miks(4) = Mjs_in(i,kk,4)  ! pz-s
+
+                  Mjks(2) = Mjs_in(j,kk,2)  ! px-s
+                  Mjks(3) = Mjs_in(j,kk,3)  ! py-s
+                  Mjks(4) = Mjs_in(j,kk,4)  ! pz-s
+
+
+                  M_dlmn_ik(1) = ddija_dskb_kd(i, kk, k, xik, yik, zik, rik, Scell%supce, 1, 1, drikk_dsk(1))	! dl/dsx
+                  M_dlmn_ik(2) = ddija_dskb_kd(i, kk, k, xik, yik, zik, rik, Scell%supce, 1, 2, drikk_dsk(2))	! dl/dsy
+                  M_dlmn_ik(3) = ddija_dskb_kd(i, kk, k, xik, yik, zik, rik, Scell%supce, 1, 3, drikk_dsk(3))	! dl/dsz
+                  M_dlmn_ik(4) = ddija_dskb_kd(i, kk, k, xik, yik, zik, rik, Scell%supce, 2, 1, drikk_dsk(1))	! dm/dsx
+                  M_dlmn_ik(5) = ddija_dskb_kd(i, kk, k, xik, yik, zik, rik, Scell%supce, 2, 2, drikk_dsk(2))	! dm/dsy
+                  M_dlmn_ik(6) = ddija_dskb_kd(i, kk, k, xik, yik, zik, rik, Scell%supce, 2, 3, drikk_dsk(3))	! dm/dsz
+                  M_dlmn_ik(7) = ddija_dskb_kd(i, kk, k, xik, yik, zik, rik, Scell%supce, 3, 1, drikk_dsk(1))	! dn/dsx
+                  M_dlmn_ik(8) = ddija_dskb_kd(i, kk, k, xik, yik, zik, rik, Scell%supce, 3, 2, drikk_dsk(2))	! dn/dsy
+                  M_dlmn_ik(9) = ddija_dskb_kd(i, kk, k, xik, yik, zik, rik, Scell%supce, 3, 3, drikk_dsk(3))	! dn/dsz
+
+                  M_dlmn_jk(1) = ddija_dskb_kd(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 1, 1, drjkk_dsk(1))	! dl/dsx
+                  M_dlmn_jk(2) = ddija_dskb_kd(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 1, 2, drjkk_dsk(2))	! dl/dsy
+                  M_dlmn_jk(3) = ddija_dskb_kd(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 1, 3, drjkk_dsk(3))	! dl/dsz
+                  M_dlmn_jk(4) = ddija_dskb_kd(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 2, 1, drjkk_dsk(1))	! dm/dsx
+                  M_dlmn_jk(5) = ddija_dskb_kd(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 2, 2, drjkk_dsk(2))	! dm/dsy
+                  M_dlmn_jk(6) = ddija_dskb_kd(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 2, 3, drjkk_dsk(3))	! dm/dsz
+                  M_dlmn_jk(7) = ddija_dskb_kd(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 3, 1, drjkk_dsk(1))	! dn/dsx
+                  M_dlmn_jk(8) = ddija_dskb_kd(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 3, 2, drjkk_dsk(2))	! dn/dsy
+                  M_dlmn_jk(9) = ddija_dskb_kd(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 3, 3, drjkk_dsk(3))	! dn/dsz
+
+
+                  dMis(1,1) = -M_dlmn_ik(1) ! px-s / ds_x
+                  dMis(2,1) = -M_dlmn_ik(2) ! px-s / ds_y
+                  dMis(3,1) = -M_dlmn_ik(3) ! px-s / ds_z
+                  dMis(1,2) = -M_dlmn_ik(4) ! py-s / ds_x
+                  dMis(2,2) = -M_dlmn_ik(5) ! py-s / ds_y
+                  dMis(3,2) = -M_dlmn_ik(6) ! py-s / ds_z
+                  dMis(1,3) = -M_dlmn_ik(7) ! pz-s / ds_x
+                  dMis(2,3) = -M_dlmn_ik(8) ! pz-s / ds_y
+                  dMis(3,3) = -M_dlmn_ik(9) ! pz-s / ds_z
+
+                  dMjs(1,1) = -M_dlmn_jk(1) ! px-s / ds_x
+                  dMjs(2,1) = -M_dlmn_jk(2) ! px-s / ds_y
+                  dMjs(3,1) = -M_dlmn_jk(3) ! px-s / ds_z
+                  dMjs(1,2) = -M_dlmn_jk(4) ! py-s / ds_x
+                  dMjs(2,2) = -M_dlmn_jk(5) ! py-s / ds_y
+                  dMjs(3,2) = -M_dlmn_jk(6) ! py-s / ds_z
+                  dMjs(1,3) = -M_dlmn_jk(7) ! pz-s / ds_x
+                  dMjs(2,3) = -M_dlmn_jk(8) ! pz-s / ds_y
+                  dMjs(3,3) = -M_dlmn_jk(9) ! pz-s / ds_z
+
+
+                  dH_3bdy(:,1,2) = dH_3bdy(:,1,2) + dG_IJK(:,2,1) * Mjks(2) + &
+                                    G_IJK(2,1) * dMjs(:,1)   ! s-s * px-s / d s_{x,y,z}
+                  dH_3bdy(:,1,3) = dH_3bdy(:,1,3) + dG_IJK(:,2,1) * Mjks(3) + &
+                                    G_IJK(2,1) * dMjs(:,2)   ! s-s * py-s / d s_{x,y,z}
+                  dH_3bdy(:,1,4) = dH_3bdy(:,1,4) + dG_IJK(:,2,1) * Mjks(4) + &
+                                    G_IJK(2,1) * dMjs(:,3)   ! s-s * pz-s / d s_{x,y,z}
+
+                  dH_3bdy(:,2,1) = dH_3bdy(:,2,1) + dG_IJK(:,2,1) * Miks(2) + &
+                                    G_IJK(2,1) * dMis(:,1)   ! px-s * s-s / d s_{x,y,z}
+                  dH_3bdy(:,3,1) = dH_3bdy(:,3,1) + dG_IJK(:,2,1) * Miks(3) + &
+                                    G_IJK(2,1) * dMis(:,2)   ! py-s * s-s / d s_{x,y,z}
+                  dH_3bdy(:,4,1) = dH_3bdy(:,4,1) + dG_IJK(:,2,1) * Miks(4) + &
+                                    G_IJK(2,1) * dMis(:,3)   ! pz-s * s-s / d s_{x,y,z}
+
+
+                  dH_3bdy(:,2,2) = dH_3bdy(:,2,2) + dG_IJK(:,2,2) * Miks(2) * Mjks(2) + &
+                     G_IJK(2,2)*( dMis(:,1) * Mjks(2) + Miks(2) * dMjs(:,1) ) ! px-s px-s / d s_{x,y,z}
+                  dH_3bdy(:,2,3) = dH_3bdy(:,2,3) + dG_IJK(:,2,2) * Miks(2) * Mjks(3) + &
+                     G_IJK(2,2)*( dMis(:,1) * Mjks(3) + Miks(2) * dMjs(:,2) ) ! px-s py-s / d s_{x,y,z}
+                  dH_3bdy(:,2,4) = dH_3bdy(:,2,4) + dG_IJK(:,2,2) * Miks(2) * Mjks(4) + &
+                     G_IJK(2,2)*( dMis(:,1) * Mjks(4) + Miks(2) * dMjs(:,3) ) ! px-s pz-s / d s_{x,y,z}
+
+                  dH_3bdy(:,3,2) = dH_3bdy(:,3,2) + dG_IJK(:,2,2) * Miks(3) * Mjks(2) + &
+                     G_IJK(2,2)*( dMis(:,2) * Mjks(2) + Miks(3) * dMjs(:,1) ) ! py-s px-s / d s_{x,y,z}
+                  dH_3bdy(:,4,2) = dH_3bdy(:,4,2) + dG_IJK(:,2,2) * Miks(4) * Mjks(2) + &
+                     G_IJK(2,2)*( dMis(:,3) * Mjks(2) + Miks(4) * dMjs(:,1) ) ! pz-s px-s / d s_{x,y,z}
+
+
+                  dH_3bdy(:,3,3) = dH_3bdy(:,3,3) + dG_IJK(:,2,2) * Miks(3) * Mjks(3) + &
+                     G_IJK(2,2)*( dMis(:,2) * Mjks(3) + Miks(3) * dMjs(:,2) ) ! py-s py-s / d s_{x,y,z}
+                  dH_3bdy(:,3,4) = dH_3bdy(:,3,4) + dG_IJK(:,2,2) * Miks(3) * Mjks(4) + &
+                     G_IJK(2,2)*( dMis(:,2) * Mjks(4) + Miks(3) * dMjs(:,3) ) ! py-s pz-s / d s_{x,y,z}
+                  dH_3bdy(:,4,3) = dH_3bdy(:,4,3) + dG_IJK(:,2,2) * Miks(4) * Mjks(3) + &
+                     G_IJK(2,2)*( dMis(:,3) * Mjks(3) + Miks(4) * dMjs(:,2) ) ! pz-s py-s / d s_{x,y,z}
+
+                  dH_3bdy(:,4,4) = dH_3bdy(:,4,4) + dG_IJK(:,2,2) * Miks(4) * Mjks(4) + &
+                     G_IJK(2,2)*( dMis(:,3) * Mjks(4) + Miks(4) * dMjs(:,3) ) ! pz-s pz-s / d s_{x,y,z}
+
+                  if (basis_ind > 1) then ! d5 orbitals:
+
+                     ! Define d-symmetry factors to be reused below:
+                     dMjs(1,4) = m_sqrt3 * (M_dlmn(1)*M_lmn(2,i,j) + M_lmn(1,i,j)*M_dlmn(4)) ! dxy-s / ds_x
+                     dMjs(2,4) = m_sqrt3 * (M_dlmn(2)*M_lmn(2,i,j) + M_lmn(1,i,j)*M_dlmn(5)) ! dxy-s / ds_y
+                     dMjs(3,4) = m_sqrt3 * (M_dlmn(3)*M_lmn(2,i,j) + M_lmn(1,i,j)*M_dlmn(6)) ! dxy-s / ds_z
+                     dMjs(1,5) = m_sqrt3 * (M_dlmn(1)*M_lmn(3,i,j) + M_lmn(1,i,j)*M_dlmn(7)) ! dxz-s / ds_x
+                     dMjs(2,5) = m_sqrt3 * (M_dlmn(2)*M_lmn(3,i,j) + M_lmn(1,i,j)*M_dlmn(8)) ! dxz-s / ds_y
+                     dMjs(3,5) = m_sqrt3 * (M_dlmn(3)*M_lmn(3,i,j) + M_lmn(1,i,j)*M_dlmn(9)) ! dxz-s / ds_z
+                     dMjs(1,6) = m_sqrt3 * (M_dlmn(4)*M_lmn(3,i,j) + M_lmn(2,i,j)*M_dlmn(7)) ! dyz-s / ds_x
+                     dMjs(2,6) = m_sqrt3 * (M_dlmn(5)*M_lmn(3,i,j) + M_lmn(2,i,j)*M_dlmn(8)) ! dyz-s / ds_y
+                     dMjs(3,6) = m_sqrt3 * (M_dlmn(6)*M_lmn(3,i,j) + M_lmn(2,i,j)*M_dlmn(9)) ! dyz-s / ds_z
+                     dMjs(1,7) = m_sqrt3 * (M_dlmn(1)*M_lmn(1,i,j) - M_lmn(2,i,j)*M_dlmn(4)) ! (dx2-y2)-s / ds_x
+                     dMjs(2,7) = m_sqrt3 * (M_dlmn(2)*M_lmn(1,i,j) - M_lmn(2,i,j)*M_dlmn(5)) ! (dx2-y2)-s / ds_y
+                     dMjs(3,7) = m_sqrt3 * (M_dlmn(3)*M_lmn(1,i,j) - M_lmn(2,i,j)*M_dlmn(6)) ! (dx2-y2)-s / ds_z
+                     dMjs(1,8) = 2.0d0*M_dlmn(7)*M_lmn(3,i,j) - (M_dlmn(1)*M_lmn(1,i,j) + M_lmn(2,i,j)*M_dlmn(4)) ! (d3z2-r2)-s / ds_x
+                     dMjs(2,8) = 2.0d0*M_dlmn(8)*M_lmn(3,i,j) - (M_dlmn(2)*M_lmn(1,i,j) + M_lmn(2,i,j)*M_dlmn(5)) ! (d3z2-r2)-s / ds_y
+                     dMjs(3,8) = 2.0d0*M_dlmn(9)*M_lmn(3,i,j) - (M_dlmn(3)*M_lmn(1,i,j) + M_lmn(2,i,j)*M_dlmn(6)) ! (d3z2-r2)-s / ds_z
+
+                     Mjs(5) = Mjs_in(i,j,5)  ! dxy-s
+                     Mjs(6) = Mjs_in(i,j,6)  ! dxz-s
+                     Mjs(7) = Mjs_in(i,j,7)  ! dyz-s
+                     Mjs(8) = Mjs_in(i,j,8)  ! (dx2-y2)-s
+                     Mjs(9) = Mjs_in(i,j,9)  ! (d3z2-r2)-s
+
+
+!                      dH_3bdy(1,5) = dH_3bdy(1,5) + G_IJK(1,3) * Mjs(j,k,5) ! s-s * dxy-s
+!                      dH_3bdy(1,6) = dH_3bdy(1,6) + G_IJK(1,3) * Mjs(j,k,6) ! s-s * dxz-s
+!                      dH_3bdy(1,7) = dH_3bdy(1,7) + G_IJK(1,3) * Mjs(j,k,7) ! s-s * dxz-s
+!                      dH_3bdy(1,8) = dH_3bdy(1,8) + G_IJK(1,3) * Mjs(j,k,8) ! s-s * (dx2-y2)-s
+!                      dH_3bdy(1,9) = dH_3bdy(1,9) + G_IJK(1,3) * Mjs(j,k,9) ! s-s * (d3z2-r2)-s
+!
+!                      dH_3bdy(5,1) = dH_3bdy(5,1) + G_IJK(3,1) * Mjs(i,k,5) ! dxy-s * s-s
+!                      dH_3bdy(6,1) = dH_3bdy(6,1) + G_IJK(3,1) * Mjs(i,k,6) ! dxz-s * s-s
+!                      dH_3bdy(7,1) = dH_3bdy(7,1) + G_IJK(3,1) * Mjs(i,k,7) ! dxz-s * s-s
+!                      dH_3bdy(8,1) = dH_3bdy(8,1) + G_IJK(3,1) * Mjs(i,k,8) ! (dx2-y2)-s * s-s
+!                      dH_3bdy(9,1) = dH_3bdy(9,1) + G_IJK(3,1) * Mjs(i,k,9) ! (d3z2-r2)-s * s-s
+
+                     ! Calculate repeating part the K-S matrix elements:
+!                      H_temp(1) = Mjs(i,k,2) * Mjs(j,k,5) ! px-s * dxy-s
+!                      H_temp(2) = Mjs(i,k,2) * Mjs(j,k,6) ! px-s * dxz-s
+!                      H_temp(3) = Mjs(i,k,2) * Mjs(j,k,7) ! px-s * dxz-s
+!                      H_temp(4) = Mjs(i,k,2) * Mjs(j,k,8) ! px-s * (dx2-y2)-s
+!                      H_temp(5) = Mjs(i,k,2) * Mjs(j,k,9) ! px-s * (d3z2-r2)-s
+                     ! Add it into the Hamiltonian part:
+!                      dH_3bdy(2,5:9) = dH_3bdy(2,5:9) + H_temp(1:5) * G_IJK(2,3)
+!                      dH_3bdy(5:9,2) = dH_3bdy(5:9,2) + H_temp(1:5) * G_IJK(3,2)
+
+                     ! Calculate repeating part the K-S matrix elements:
+!                      H_temp(1) = Mjs(i,k,3) * Mjs(j,k,5) ! py-s * dxy-s
+!                      H_temp(2) = Mjs(i,k,3) * Mjs(j,k,6) ! py-s * dxz-s
+!                      H_temp(3) = Mjs(i,k,3) * Mjs(j,k,7) ! py-s * dxz-s
+!                      H_temp(4) = Mjs(i,k,3) * Mjs(j,k,8) ! py-s * (dx2-y2)-s
+!                      H_temp(5) = Mjs(i,k,3) * Mjs(j,k,9) ! py-s * (d3z2-r2)-s
+                     ! Add it into the Hamiltonian part:
+!                      dH_3bdy(3,5:9) = dH_3bdy(3,5:9) + H_temp(1:5) * G_IJK(2,3)
+!                      dH_3bdy(5:9,3) = dH_3bdy(5:9,3) + H_temp(1:5) * G_IJK(3,2)
+
+                     ! Calculate repeating part the K-S matrix elements:
+!                      H_temp(1) = Mjs(i,k,4) * Mjs(j,k,5) ! dxy-s * pz-s
+!                      H_temp(2) = Mjs(i,k,4) * Mjs(j,k,6) ! dxz-s * pz-s
+!                      H_temp(3) = Mjs(i,k,4) * Mjs(j,k,7) ! dyz-s * pz-s
+!                      H_temp(4) = Mjs(i,k,4) * Mjs(j,k,8) ! (dx2-y2)-s * pz-s
+!                      H_temp(5) = Mjs(i,k,4) * Mjs(j,k,9) ! (d3z2-r2)-s * pz-s
+                     ! Add it into the Hamiltonian part:
+!                      dH_3bdy(4,5:9) = dH_3bdy(4,5:9) + H_temp(1:5) * G_IJK(2,3)
+!                      dH_3bdy(5:9,4) = dH_3bdy(5:9,4) + H_temp(1:5) * G_IJK(3,2)
+
+                     ! Calculate the K-S matrix elements:
+!                      H_temp(6) = Mjs(i,k,5) * G_IJK(3,3)
+!                      H_temp(1) = H_temp(6) * Mjs(j,k,5) ! dxy-s * dxy-s
+!                      H_temp(2) = H_temp(6) * Mjs(j,k,6) ! dxy-s * dxz-s
+!                      H_temp(3) = H_temp(6) * Mjs(j,k,7) ! dxy-s * dyz-s
+!                      H_temp(4) = H_temp(6) * Mjs(j,k,8) ! dxy-s * (dx2-y2)-s
+!                      H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dxy-s * (d3z2-r2)-s
+                     ! Add it into the Hamiltonian part:
+!                      dH_3bdy(5,5:9) = dH_3bdy(5,5:9) + H_temp(1:5)
+
+                     ! Calculate the K-S matrix elements:
+!                      H_temp(6) = Mjs(i,k,6) * G_IJK(3,3)
+!                      H_temp(1) = H_temp(6) * Mjs(j,k,5) ! dxz-s * dxy-s
+!                      H_temp(2) = H_temp(6) * Mjs(j,k,6) ! dxz-s * dxz-s
+!                      H_temp(3) = H_temp(6) * Mjs(j,k,7) ! dxz-s * dyz-s
+!                      H_temp(4) = H_temp(6) * Mjs(j,k,8) ! dxz-s * (dx2-y2)-s
+!                      H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dxz-s * (d3z2-r2)-s
+                     ! Add it into the Hamiltonian part:
+!                      dH_3bdy(6,5:9) = dH_3bdy(6,5:9) + H_temp(1:5)
+
+                     ! Calculate the K-S matrix elements:
+!                      H_temp(6) = Mjs(i,k,7) * G_IJK(3,3)
+!                      H_temp(1) = H_temp(6) * Mjs(j,k,5) ! dyz-s * dxy-s
+!                      H_temp(2) = H_temp(6) * Mjs(j,k,6) ! dyz-s * dxz-s
+!                      H_temp(3) = H_temp(6) * Mjs(j,k,7) ! dyz-s * dyz-s
+!                      H_temp(4) = H_temp(6) * Mjs(j,k,8) ! dyz-s * (dx2-y2)-s
+!                      H_temp(5) = H_temp(6) * Mjs(j,k,9) ! dyz-s * (d3z2-r2)-s
+                     ! Add it into the Hamiltonian part:
+!                      dH_3bdy(7,5:9) = dH_3bdy(7,5:9) + H_temp(1:5)
+
+                     ! Calculate the K-S matrix elements:
+!                      H_temp(6) = Mjs(i,k,8) * G_IJK(3,3)
+!                      H_temp(1) = H_temp(6) * Mjs(j,k,5) ! (dx2-y2)-s * dxy-s
+!                      H_temp(2) = H_temp(6) * Mjs(j,k,6) ! (dx2-y2)-s * dxz-s
+!                      H_temp(3) = H_temp(6) * Mjs(j,k,7) ! (dx2-y2)-s * dyz-s
+!                      H_temp(4) = H_temp(6) * Mjs(j,k,8) ! (dx2-y2)-s * (dx2-y2)-s
+!                      H_temp(5) = H_temp(6) * Mjs(j,k,9) ! (dx2-y2)-s * (d3z2-r2)-s
+                     ! Add it into the Hamiltonian part:
+!                      dH_3bdy(8,5:9) = dH_3bdy(8,5:9) + H_temp(1:5)
+
+                     ! Calculate the K-S matrix elements:
+!                      H_temp(6) = Mjs(i,k,9) * G_IJK(3,3)
+!                      H_temp(1) = H_temp(6) * Mjs(j,k,5) ! (d3z2-r2)-s * dxy-s
+!                      H_temp(2) = H_temp(6) * Mjs(j,k,6) ! (d3z2-r2)-s * dxz-s
+!                      H_temp(3) = H_temp(6) * Mjs(j,k,7) ! (d3z2-r2)-s * dyz-s
+!                      H_temp(4) = H_temp(6) * Mjs(j,k,8) ! (d3z2-r2)-s * (dx2-y2)-s
+!                      H_temp(5) = H_temp(6) * Mjs(j,k,9) ! (d3z2-r2)-s * (d3z2-r2)-s
+                     ! Add it into the Hamiltonian part:
+!                      dH_3bdy(9,5:9) = dH_3bdy(9,5:9) + H_temp(1:5)
+
+                  endif ! (basis_ind > 1)
+               endif ! (basis_ind > 0)
+
+            endif ! (kk /= j)
+         enddo AT3
+         ! add the contributions into the output:
+         dH = dH + dH_3bdy
+
+         deallocate(dH_3bdy)
       endif ! (TB(KOA1,KOA1)%include_3body)
 
    endif ! (i == j)
 
+
    ! Clean up at the end:
-   nullify (x1, y1, z1, r1, KOA1)
+   nullify (x1, y1, z1, r1, KOA1, KOA2, KOA3, m)
+   nullify(xij, yij, zij, rij)
+   nullify(xik, yik, zik, rik)
+   nullify(xjk, yjk, zjk, rjk)
 end subroutine d_Hamilton_one_3TB
 
 
@@ -1356,6 +1695,10 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
    real(8), dimension(:,:,:), allocatable :: E_onsite, H_avg, H_cf, H_3bdy
    integer, pointer :: m, KOA1, KOA2, KOA3
    real(8), pointer :: r1, x1, y1, z1
+   real(8), pointer :: rij, xij, yij, zij
+   real(8), pointer :: rik, xik, yik, zik
+   real(8), pointer :: rjk, xjk, yjk, zjk
+
 
 
    ! Kind of atom:
@@ -1524,9 +1867,21 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
          H_cf(:,4,1) = H_cf(:,1,4)
 
          ! Diagonal part is excluded (no self-interaction of orbitals):
-         H_cf(:,2,2) = 0.0d0
-         H_cf(:,3,3) = 0.0d0
-         H_cf(:,4,4) = 0.0d0
+         if (TB(KOA1,KOA1)%nullify_diag_cf) then
+            H_cf(:,2,2) = 0.0d0
+            H_cf(:,3,3) = 0.0d0
+            H_cf(:,4,4) = 0.0d0
+         else
+            H_cf_temp(1) = d_matr_spd(2,2) * Mjs(2) * Mjs(2)
+            H_cf(:,2,2) = H_cf(:,2,2) + H_cf_temp(1) * drij_dsk(:) + &
+                        matr_spd(2,2) * 2.0d0* dMjs(:,1) * Mjs(2) ! px-s * px-s /ds_x
+            H_cf_temp(1) = d_matr_spd(2,2) * Mjs(3) * Mjs(3)
+            H_cf(:,3,3) = H_cf(:,3,3) + H_cf_temp(1) * drij_dsk(:) + &
+                        matr_spd(2,2) * 2.0d0* dMjs(:,2) * Mjs(3) ! py-s * py-s /ds_x
+            H_cf_temp(1) = d_matr_spd(2,2) * Mjs(4) * Mjs(4)
+            H_cf(:,4,4) = H_cf(:,4,4) + H_cf_temp(1) * drij_dsk(:) + &
+                        matr_spd(2,2) * 2.0d0* dMjs(:,3) * Mjs(4) ! pz-s * pz-s /ds_x
+         endif
 
          ! Off-diagonal part:
          H_cf_temp(1) = d_matr_spd(2,2) * Mjs(2) * Mjs(3)
@@ -1588,12 +1943,29 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
 
 
             ! Diagonal terms:
-            H_cf(:,5,5) = 0.0d0  ! dxy-s * dxy-s
-            H_cf(:,6,6) = 0.0d0  ! dxz-s * dxz-s
-            H_cf(:,7,7) = 0.0d0  ! dyz-s * dyz-s
-            H_cf(:,8,8) = 0.0d0  ! (dx2-y2) * (dx2-y2)
-            H_cf(:,9,9) = 0.0d0  ! (d3z2-r2) * (d3z2-r2)
-
+            if (TB(KOA1,KOA1)%nullify_diag_cf) then
+               H_cf(:,5,5) = 0.0d0  ! dxy-s * dxy-s
+               H_cf(:,6,6) = 0.0d0  ! dxz-s * dxz-s
+               H_cf(:,7,7) = 0.0d0  ! dyz-s * dyz-s
+               H_cf(:,8,8) = 0.0d0  ! (dx2-y2) * (dx2-y2)
+               H_cf(:,9,9) = 0.0d0  ! (d3z2-r2) * (d3z2-r2)
+            else
+               H_cf_temp(1) = d_matr_spd(3,3) * Mjs(5)
+               H_cf(:,5,5) = H_cf(:,5,5) + H_cf_temp(1) * drij_dsk(:) + &
+                              matr_spd(3,3) * 2.0d0 * Mjs(5) * dMjs(:,4)  ! dxy-s * dxy-s / ds_{x,y,z}
+               H_cf_temp(1) = d_matr_spd(3,3) * Mjs(6)
+               H_cf(:,6,6) = H_cf(:,6,6) + H_cf_temp(1) * drij_dsk(:) + &
+                              matr_spd(3,3) * 2.0d0 * Mjs(6) * dMjs(:,5)  ! dxz-s * dxz-s / ds_{x,y,z}
+               H_cf_temp(1) = d_matr_spd(3,3) * Mjs(7)
+               H_cf(:,7,7) = H_cf(:,7,7) + H_cf_temp(1) * drij_dsk(:) + &
+                              matr_spd(3,3) * 2.0d0 * Mjs(7) * dMjs(:,6)  ! dyz-s * dyz-s / ds_{x,y,z}
+               H_cf_temp(1) = d_matr_spd(3,3) * Mjs(8)
+               H_cf(:,8,8) = H_cf(:,8,8) + H_cf_temp(1) * drij_dsk(:) + &
+                              matr_spd(3,3) * 2.0d0 * Mjs(8) * dMjs(:,7)  ! (dx2-y2) * (dx2-y2) / ds_{x,y,z}
+               H_cf_temp(1) = d_matr_spd(3,3) * Mjs(9)
+               H_cf(:,9,9) = H_cf(:,9,9) + H_cf_temp(1) * drij_dsk(:) + &
+                              matr_spd(3,3) * 2.0d0 * Mjs(9) * dMjs(:,8)  ! (d3z2-r2) * (d3z2-r2) / ds_{x,y,z}
+            endif
 
             ! Off-diagonal terms:
             H_cf_temp(1) = d_matr_spd(1,3) * Mjs(5)
@@ -1903,6 +2275,15 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
       AT2:do atom_2 = 1,m ! do only for atoms close to that one
          j = Scell%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
          KOA2 => Scell%MDatoms(j)%KOA   ! index of the second atom
+         ! Distances between atom #1 and #2:
+         xij => Scell%Near_neighbor_dist(i,atom_2,1)	! at this distance, X
+         yij => Scell%Near_neighbor_dist(i,atom_2,2)	! at this distance, Y
+         zij => Scell%Near_neighbor_dist(i,atom_2,3)	! at this distance, Z
+         rij => Scell%Near_neighbor_dist(i,atom_2,4)	! at this distance, R
+         ! d r_ij / d s_k:
+         drij_dsk(1) = drij_dska(i, j, k, xij, yij, zij, rij, Scell%supce, 1, .true.)	! dr_{ij}/ds_{k,x}
+         drij_dsk(2) = drij_dska(i, j, k, xij, yij, zij, rij, Scell%supce, 2, .true.)	! dr_{ij}/ds_{k,y}
+         drij_dsk(3) = drij_dska(i, j, k, xij, yij, zij, rij, Scell%supce, 3, .true.)	! dr_{ij}/ds_{k,z}
 
          ! To start summing up
          AT3:do atom_3 = 1,m ! do only for atoms close to that one
@@ -1911,18 +2292,25 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
             if (kk /= j) then
                KOA3 => Scell%MDatoms(kk)%KOA   ! kind of atom #3
 
+               ! Distances between atom #1 and #3:
+               xik => Scell%Near_neighbor_dist(i,atom_3,1)	! at this distance, X
+               yik => Scell%Near_neighbor_dist(i,atom_3,2)	! at this distance, Y
+               zik => Scell%Near_neighbor_dist(i,atom_3,3)	! at this distance, Z
+               rik => Scell%Near_neighbor_dist(i,atom_3,4)	! at this distance, R
+               ! Distances between atom #2 and #3:
+               xjk => Scell%Near_neighbor_dist(j,atom_3,1)	! at this distance, X
+               yjk => Scell%Near_neighbor_dist(j,atom_3,2)	! at this distance, Y
+               zjk => Scell%Near_neighbor_dist(j,atom_3,3)	! at this distance, Z
+               rjk => Scell%Near_neighbor_dist(j,atom_3,4)	! at this distance, R
+
                ! Derivatives of rij by sk:
                ! All functions are from the module "TB_Koster_Slater":
-               drij_dsk(1) = drij_dska(i, j, k, x1, y1, z1, r1, Scell%supce, 1, .true.)	! dr_{ij}/ds_{k,x}
-               drij_dsk(2) = drij_dska(i, j, k, x1, y1, z1, r1, Scell%supce, 2, .true.)	! dr_{ij}/ds_{k,y}
-               drij_dsk(3) = drij_dska(i, j, k, x1, y1, z1, r1, Scell%supce, 3, .true.)	! dr_{ij}/ds_{k,z}
-               drikk_dsk(1) = drij_dska(i, kk, k, x1, y1, z1, r1, Scell%supce, 1, .true.)	! dr_{ikk}/ds_{k,x}
-               drikk_dsk(2) = drij_dska(i, kk, k, x1, y1, z1, r1, Scell%supce, 2, .true.)	! dr_{ikk}/ds_{k,y}
-               drikk_dsk(3) = drij_dska(i, kk, k, x1, y1, z1, r1, Scell%supce, 3, .true.)	! dr_{ikk}/ds_{k,z}
-               drjkk_dsk(1) = drij_dska(j, kk, k, x1, y1, z1, r1, Scell%supce, 1, .true.)	! dr_{jkk}/ds_{k,x}
-               drjkk_dsk(2) = drij_dska(j, kk, k, x1, y1, z1, r1, Scell%supce, 2, .true.)	! dr_{jkk}/ds_{k,y}
-               drjkk_dsk(3) = drij_dska(j, kk, k, x1, y1, z1, r1, Scell%supce, 3, .true.)	! dr_{jkk}/ds_{k,z}
-
+               drikk_dsk(1) = drij_dska(i, kk, k, xik, yik, zik, rik, Scell%supce, 1, .true.)	! dr_{ikk}/ds_{k,x}
+               drikk_dsk(2) = drij_dska(i, kk, k, xik, yik, zik, rik, Scell%supce, 2, .true.)	! dr_{ikk}/ds_{k,y}
+               drikk_dsk(3) = drij_dska(i, kk, k, xik, yik, zik, rik, Scell%supce, 3, .true.)	! dr_{ikk}/ds_{k,z}
+               drjkk_dsk(1) = drij_dska(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 1, .true.)	! dr_{jkk}/ds_{k,x}
+               drjkk_dsk(2) = drij_dska(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 2, .true.)	! dr_{jkk}/ds_{k,y}
+               drjkk_dsk(3) = drij_dska(j, kk, k, xjk, yjk, zjk, rjk, Scell%supce, 3, .true.)	! dr_{jkk}/ds_{k,z}
 
                ! Find the combination-of-atoms index:
                at_ind = find_3bdy_ind(KOA1, KOA2, KOA3)  ! module "Dealing_with_3TB"
@@ -1958,7 +2346,10 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
    dHij = E_onsite + H_avg + H_cf + H_3bdy
 
    deallocate(E_onsite, H_avg, H_cf, H_3bdy)
-   nullify(m, KOA1, KOA2, KOA3)
+   nullify(m, KOA1, KOA2, KOA3, x1, y1, z1, r1)
+   nullify(xij, yij, zij, rij)
+   nullify(xik, yik, zik, rik)
+   nullify(xjk, yjk, zjk, rjk)
 end subroutine d_Onsite_3TB
 
 
@@ -1966,14 +2357,19 @@ end subroutine d_Onsite_3TB
 
 !PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP
 ! Attractive forces for supercell from the derivatives of the Hamiltonian:
-subroutine Attract_TB_Forces_Press_3TB(Scell, NSC, numpar, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Aij_x_Ei)
+subroutine Attract_TB_Forces_Press_3TB(Scell, NSC, TB, numpar, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, &
+                                       Aij_x_Ei, Mjs_in, M_Lag_exp, M_d_Lag_exp)
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
+   type(TB_H_3TB), dimension(:,:), intent(in) :: TB	  ! all tight binding parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
    real(8), dimension(:,:), intent(in) :: Aij, Aij_x_Ei
+   real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij) * cutoff
+   real(8), dimension(:,:,:), intent(in) :: M_d_Lag_exp   ! matrix of derivatives of laguerre * exp(-a*r_ij) * cutoff
+   real(8), dimension(:,:,:), intent(in) :: Mjs_in ! matrix of overlaps with s-orbital
    !------------------------------------------------------------------
    real(8), allocatable, dimension(:,:) :: dwr_press, dS_press
    real(8), allocatable, dimension(:,:,:) :: dHij, dSij
@@ -1991,7 +2387,8 @@ subroutine Attract_TB_Forces_Press_3TB(Scell, NSC, numpar, Aij, M_Vij, M_dVij, M
       dS_press = 0.0d0
       !$OMP END WORKSHARE
 
-      call dHamil_tot_Press_3TB(Scell, NSC, numpar, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, dHij, dSij)   ! below
+      call dHamil_tot_Press_3TB(Scell, NSC, TB, numpar, M_Vij, M_dVij, M_SVij, M_dSVij, &
+                                 M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dHij, dSij)   ! below
 
       !$omp PARALLEL DO private(i,j)
       do j = 1, 9
@@ -2005,8 +2402,8 @@ subroutine Attract_TB_Forces_Press_3TB(Scell, NSC, numpar, Aij, M_Vij, M_dVij, M
       Scell(NSC)%SCforce%att = 0.0d0
       do i = 1,3
          do k = 1,3
-            Scell(NSC)%SCforce%att(k,i) = SUM(dwr_press((i-1)*3+k,:)) - SUM(dS_press((i-1)*3+k,:))
-!             Scell(NSC)%SCforce%att(i,k) = SUM(dwr_press((i-1)*3+k,:)) - SUM(dS_press((i-1)*3+k,:))
+!             Scell(NSC)%SCforce%att(k,i) = SUM(dwr_press((i-1)*3+k,:)) - SUM(dS_press((i-1)*3+k,:))
+            Scell(NSC)%SCforce%att(i,k) = SUM(dwr_press((i-1)*3+k,:)) - SUM(dS_press((i-1)*3+k,:)) ! test
          enddo ! k
       enddo ! i
       deallocate(dwr_press, dS_press, dHij, dSij)
@@ -2015,23 +2412,26 @@ end subroutine Attract_TB_Forces_Press_3TB
 
 
 
-subroutine dHamil_tot_Press_3TB(Scell, NSC, numpar, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, dHij, dSij)
-! construct the whole Hamilton matrix:
-! (with respect to which Rk we take the derivatives, Appendix F of H.Jeschke PhD Thesis)
+subroutine dHamil_tot_Press_3TB(Scell, NSC, TB, numpar, M_Vij, M_dVij, M_SVij, M_dSVij, &
+                                 M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dHij, dSij)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
+   type(TB_H_3TB), dimension(:,:), intent(in) :: TB	  ! all tight binding parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
+   real(8), dimension(:,:,:), intent(in) :: Mjs_in
+   real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij) * cutoff
+   real(8), dimension(:,:,:), intent(in) :: M_d_Lag_exp   ! matrix of derivatives of laguerre * exp(-a*r_ij) * cutoff
    real(8), dimension(:,:,:), intent(inout) :: dHij, dSij
-!    real(8), dimension(9,9,9) :: dHij1, dSij1
+   !-----------------------------------------------------
    real(8), dimension(:,:,:), allocatable :: dHij1, dSij1
    integer :: i, j, j1, i1, atom_2, m, nat, i2, j2
    integer :: i4, j4, norb, n_overlap
    ! Depending on the basis set:
-   n_overlap = identify_DFTB_basis_size(numpar%N_basis_size)   ! below
-   norb = identify_DFTB_orbitals_per_atom(numpar%N_basis_size)    ! below
+   n_overlap = identify_DFTB_basis_size(numpar%N_basis_size)   ! module "TB_DFTB"
+   norb = identify_DFTB_orbitals_per_atom(numpar%N_basis_size)    ! module "TB_DFTB"
    nat = size(Scell(NSC)%MDatoms)	! number of atoms
    dHij = 0.0d0 ! to start with
    dSij = 0.0d0 ! to start with
@@ -2050,7 +2450,9 @@ subroutine dHamil_tot_Press_3TB(Scell, NSC, numpar, M_Vij, M_dVij, M_SVij, M_dSV
          endif
          if (j .GT. 0) then
             j4 = (j-1)*norb
-            call dHamilton_one_Press_3TB(i, atom_2, Scell, NSC, norb, n_overlap, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, dHij1, dSij1)
+            call dHamilton_one_Press_3TB(i, atom_2, numpar%N_basis_size, Scell, NSC, TB, norb, n_overlap, &
+                                          M_Vij, M_dVij, M_SVij, M_dSVij, &
+                                          M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dHij1, dSij1)  ! below
             ! Eqs. (2.41), (2.42), Page 40 in H.Jeschke PhD thesis.
             do j1 = 1,norb	! all orbitals
                j2 = j4+j1
@@ -2067,34 +2469,43 @@ subroutine dHamil_tot_Press_3TB(Scell, NSC, numpar, M_Vij, M_dVij, M_SVij, M_dSV
    if (allocated(dHij1)) deallocate(dHij1)
    if (allocated(dSij1)) deallocate(dSij1)
    !$omp end parallel
-end subroutine dHamil_tot_Press_3TB ! CHECKED
+end subroutine dHamil_tot_Press_3TB
 
 
-subroutine dHamilton_one_Press_3TB(i, atom_2, Scell, NSC, norb, n_overlap, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, dHij_press, dSij_press)
+subroutine dHamilton_one_Press_3TB(i, atom_2, basis_size, Scell, NSC, TB, norb, n_overlap, M_Vij, M_dVij, M_SVij, M_dSVij, &
+                                    M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dHij_press, dSij_press)
 ! Create a Hamiltonain-matrix, a block
 ! of which the total Hamiltonain is constructed
-! See H.Jeschke PhD thesis, Eq.(2.40) and its description, Page 40
    integer, intent(in) :: i, atom_2
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   integer, intent(in) :: NSC ! number of supercell
+   integer, intent(in) :: basis_size, NSC ! number of supercell
+   type(TB_H_3TB), dimension(:,:), intent(in) :: TB	  ! all tight binding parameters
    integer, intent(in) :: norb, n_overlap  ! number of orbitals per atom (depends on the basis set), and number of overlap functions
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
+   real(8), dimension(:,:,:), intent(in) :: Mjs_in
+   real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij) * cutoff
+   real(8), dimension(:,:,:), intent(in) :: M_d_Lag_exp   ! matrix of derivatives of laguerre * exp(-a*r_ij) * cutoff
    real(8), dimension(:,:,:), intent(out) :: dHij_press, dSij_press
    !---------------------------------------------------
    integer :: ki, kj
    real(8), dimension(9,norb,norb) ::  dH, dS ! hopping integrals
    dHij_press = 0.0d0
    if (atom_2 == 0) then ! Onsite contributions are constant, so derivatives are always zero:
-      dHij_press = 0.0d0
+      dH = 0.0d0  ! to start with
+      call d_Onsite_Press_3TB(i, Scell(NSC), TB, basis_size, norb, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dH) ! below
+      dS = 0.0d0
+      do ki = 1, norb
+         do kj = 1, norb
+            dHij_press(:,ki,kj) = dH(:,ki,kj)   ! Hopping Integrals
+         enddo ! kj
+      enddo  ! ki
       dSij_press = 0.0d0
    else
       ! For pairs of atoms, fill the hamiltonain with Hopping Integrals.
       ! Call the subroutine to calculate these hoppings:
-      call dHopping_Press_3TB(i, atom_2, Scell, NSC, norb, n_overlap, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn,  dH, dS)    ! below
-      ! Then fill the hamiltonain with correspongin hopping integrals, as in
-      ! H.Jeschke PhD thesis, Eq.(2.42), Page 40:
+      call dHopping_Press_3TB(i, atom_2, Scell, NSC, TB, norb, n_overlap, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn,  dH, dS)    ! below
       do ki = 1, norb
          do kj = 1, norb
             dHij_press(:,ki,kj) = dH(:,ki,kj)   ! Hopping Integrals ! CORRECT, tested on sp3 basis set
@@ -2105,12 +2516,463 @@ subroutine dHamilton_one_Press_3TB(i, atom_2, Scell, NSC, norb, n_overlap, M_Vij
 end subroutine dHamilton_one_Press_3TB
 
 
+subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dH) ! below
+   integer, intent(in) :: i
+   type(Super_cell), intent(inout), target :: Scell	! supercell with all the atoms as one object
+   type(TB_H_3TB), dimension(:,:), intent(in) :: TB	  ! all tight binding parameters
+   integer, intent(in) :: basis_ind, norb   ! number of orbitals per atom
+   real(8), dimension(:,:,:), intent(in), target :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
+   real(8), dimension(:,:,:), intent(in), target :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
+   real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
+   real(8), dimension(:,:,:), intent(in) :: Mjs_in ! symmetry factors for s-s,p-s,d-s overlap
+   real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij) * cutoff
+   real(8), dimension(:,:,:), intent(in) :: M_d_Lag_exp   ! matrix of derivatives of laguerre * exp(-a*r_ij) * cutoff
+   real(8), dimension(:,:,:), intent(out) :: dH
+   !---------------------------------------------
+   integer :: i1, j1, k1, Bsiz, atom_2, sh1, sh2, j, at_ind, atom_3, kk
+   real(8) :: r, term_s, term_p, term_d, term_3bdy(3)
+   real(8) :: matr_spd(3,3), d_matr_spd(3,3), H_cf_temp(9), drij_dsk(3), drikk_dsk(3), drjkk_dsk(3)
+   real(8) :: rij(3), sij(3), drij_dh
+   real(8), dimension(3) :: M_dlmn
+   real(8), dimension(8) :: dMjs ! 3p, 5d
+   real(8), dimension(9) :: Mjs ! 1s, 3p, 5d
+   real(8), dimension(:,:,:), allocatable :: E_onsite, H_avg, H_cf, H_3bdy
+   integer, pointer :: m, KOA1, KOA2, KOA3
+   real(8), pointer :: r1, x1, y1, z1
 
-subroutine dHopping_Press_3TB(i, atom_2, Scell, NSC, norb, n_overlap, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, dH, dS)
+   dH = 0.0d0   ! to start with
+
+   ! Kind of atom:
+   KOA1 => Scell%MDatoms(i)%KOA
+   ! Number of the nearest neighbors
+   m => Scell%Near_neighbor_size(i)
+
+   ! Size of the basis:
+   Bsiz = norb
+
+   ! To start with:
+   allocate(E_onsite(9,Bsiz,Bsiz), source=0.0d0)
+   allocate(H_avg(9,Bsiz,Bsiz), source=0.0d0)
+   allocate(H_cf(9,Bsiz,Bsiz), source=0.0d0)
+   allocate(H_3bdy(9,Bsiz,Bsiz), source=0.0d0)
+
+   ! The onsite energies are constructed out of 4 terms [1]:
+   ! 1) onsite eigenvalues
+   ! 2) average contribution of atoms around
+   ! 3) crystall field contribution
+   ! 4) 3-body contributions
+   ! Let's calculate them all:
+
+
+   !-----------------
+   ! 1) Onsite energies of spin-unpolirized orbital values:
+   E_onsite = 0.0d0     ! constants -> all derivatives = 0
+
+
+   !-----------------
+   ! 2,3) Average and crystal field terms (tested, correct):
+   do atom_2 = 1, m ! do only for atoms close to that one
+      j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
+      KOA2 => Scell%MDatoms(j)%KOA
+
+      r1 => Scell%Near_neighbor_dist(i,atom_2,4)  ! at this distance, R
+      rij(:) = Scell%Near_neighbor_dist(i,atom_2,:)  ! at this distance, X
+      sij(:) = Scell%Near_neighbor_dist_s(i,atom_2,:) ! at this distance, SX
+
+      ! Radial parts for aferage atom contribution:
+      term_s = SUM( TB(KOA1,KOA2)%Hhavg(1,1:4) * M_d_Lag_exp(i,j,1:4) )  ! s orbitals
+      if (basis_ind > 0) then ! p3 orbitals:
+         term_p = SUM( TB(KOA1,KOA2)%Hhavg(2,1:4) * M_d_Lag_exp(i,j,1:4) )  ! p3 orbitals
+         if (basis_ind > 1) then ! d5 orbitals:
+            term_d = SUM( TB(KOA1,KOA2)%Hhavg(3,1:4) * M_d_Lag_exp(i,j,1:4) )  ! d5 orbitals
+         endif
+      endif
+
+      ! Radial parts for crystal field:
+      matr_spd(1,1) = SUM( TB(KOA1,KOA2)%Hhcf(1,1,1:4) * M_Lag_exp(i,j,1:4) )  ! s-s orbitals
+      if (basis_ind > 0) then ! p3 orbitals:
+         matr_spd(1,2) = SUM( TB(KOA1,KOA2)%Hhcf(1,2,1:4) * M_Lag_exp(i,j,1:4) )  ! s-p orbitals
+         matr_spd(2,1) = SUM( TB(KOA1,KOA2)%Hhcf(2,1,1:4) * M_Lag_exp(i,j,1:4) )  ! p-s orbitals
+         matr_spd(2,2) = SUM( TB(KOA1,KOA2)%Hhcf(2,2,1:4) * M_Lag_exp(i,j,1:4) )  ! p-p orbitals
+         if (basis_ind > 1) then ! d5 orbitals:
+            matr_spd(1,3) = SUM( TB(KOA1,KOA2)%Hhcf(1,3,1:4) * M_Lag_exp(i,j,1:4) )  ! s-d orbitals
+            matr_spd(3,1) = SUM( TB(KOA1,KOA2)%Hhcf(3,1,1:4) * M_Lag_exp(i,j,1:4) )  ! d-s orbitals
+            matr_spd(2,3) = SUM( TB(KOA1,KOA2)%Hhcf(2,3,1:4) * M_Lag_exp(i,j,1:4) )  ! p-d orbitals
+            matr_spd(3,2) = SUM( TB(KOA1,KOA2)%Hhcf(3,2,1:4) * M_Lag_exp(i,j,1:4) )  ! d-p orbitals
+            matr_spd(3,3) = SUM( TB(KOA1,KOA2)%Hhcf(3,3,1:4) * M_Lag_exp(i,j,1:4) )  ! d-d orbitals
+         endif ! (basis_ind > 0)
+      endif ! (basis_ind > 1)
+      ! and its derivatives:
+      d_matr_spd(1,1) = SUM( TB(KOA1,KOA2)%Hhcf(1,1,1:4) * M_d_Lag_exp(i,j,1:4) )  ! s-s orbitals
+      if (basis_ind > 0) then ! p3 orbitals:
+         d_matr_spd(1,2) = SUM( TB(KOA1,KOA2)%Hhcf(1,2,1:4) * M_d_Lag_exp(i,j,1:4) )  ! s-p orbitals
+         d_matr_spd(2,1) = SUM( TB(KOA1,KOA2)%Hhcf(2,1,1:4) * M_d_Lag_exp(i,j,1:4) )  ! p-s orbitals
+         d_matr_spd(2,2) = SUM( TB(KOA1,KOA2)%Hhcf(2,2,1:4) * M_d_Lag_exp(i,j,1:4) )  ! p-p orbitals
+         if (basis_ind > 1) then ! d5 orbitals:
+            d_matr_spd(1,3) = SUM( TB(KOA1,KOA2)%Hhcf(1,3,1:4) * M_d_Lag_exp(i,j,1:4) )  ! s-d orbitals
+            d_matr_spd(3,1) = SUM( TB(KOA1,KOA2)%Hhcf(3,1,1:4) * M_d_Lag_exp(i,j,1:4) )  ! d-s orbitals
+            d_matr_spd(2,3) = SUM( TB(KOA1,KOA2)%Hhcf(2,3,1:4) * M_d_Lag_exp(i,j,1:4) )  ! p-d orbitals
+            d_matr_spd(3,2) = SUM( TB(KOA1,KOA2)%Hhcf(3,2,1:4) * M_d_Lag_exp(i,j,1:4) )  ! d-p orbitals
+            d_matr_spd(3,3) = SUM( TB(KOA1,KOA2)%Hhcf(3,3,1:4) * M_d_Lag_exp(i,j,1:4) )  ! d-d orbitals
+         endif ! (basis_ind > 0)
+      endif ! (basis_ind > 1)
+
+
+      do i1 = 1, 3	! gamma
+         do j1 = 1, 3	! delta
+            k1 = (i1-1)*3 + j1
+            ! all the components of the h_alpha_beta(3,3):
+
+
+            drij_dh = drij_dhab(rij(j1), sij(i1), r1)	! dr_{ij}/dh_{gamma,delta}, module "TB_Koster_Slater"
+            !drij_dh = drij_dhab(rij(i1), sij(j1), r1)	! dr_{ij}/dh_{gamma,delta}, module "TB_Koster_Slater"
+
+            ! 2) Average terms:
+            H_avg(k1,1,1) = H_avg(k1,1,1) + term_s * drij_dh
+            if (basis_ind > 0) then ! p3 orbitals:
+               do sh1 = 2, 4
+                  H_avg(k1,sh1,sh1) = H_avg(k1,sh1,sh1) + term_p * drij_dh
+               enddo
+               if (basis_ind > 1) then ! d5 orbitals:
+                  do sh1 = 5, 9
+                     H_avg(k1,sh1,sh1) = H_avg(k1,sh1,sh1) + term_d * drij_dh
+                  enddo
+               endif ! (basis_ind > 0)
+            endif ! (basis_ind > 1)
+
+
+            !-----------------
+            ! 3) Crystal field:
+
+!             goto 5004
+
+            H_cf(k1,1,1) = H_cf(k1,1,1) + d_matr_spd(1,1) * drij_dh ! s-s * s-s / dh
+
+            M_dlmn(1) = dda_dhgd(1, j1, rij(1), rij(j1), sij(i1), r1)	! dl/dh{gamma,delta}, module "TB_Koster_Slater"
+            M_dlmn(2) = dda_dhgd(2, j1, rij(2), rij(j1), sij(i1), r1)	! dm/dh{gamma,delta}, module "TB_Koster_Slater"
+            M_dlmn(3) = dda_dhgd(3, j1, rij(3), rij(j1), sij(i1), r1)	! dn/dh{gamma,delta}, module "TB_Koster_Slater"
+!             M_dlmn(1) = dda_dhgd(1, j1, rij(1), rij(i1), sij(j1), r1)	! dl/dh{gamma,delta}, module "TB_Koster_Slater"
+!             M_dlmn(2) = dda_dhgd(2, j1, rij(2), rij(i1), sij(j1), r1)	! dm/dh{gamma,delta}, module "TB_Koster_Slater"
+!             M_dlmn(3) = dda_dhgd(3, j1, rij(3), rij(i1), sij(j1), r1)	! dn/dh{gamma,delta}, module "TB_Koster_Slater"
+            ! Koster-Slater smmetry factors:
+            if (basis_ind > 0) then ! p3 orbitals:
+               Mjs(2) = Mjs_in(i,j,2)  ! px-s
+               Mjs(3) = Mjs_in(i,j,3)  ! py-s
+               Mjs(4) = Mjs_in(i,j,4)  ! pz-s
+
+               dMjs(1) = -M_dlmn(1) ! dl/dh{gamma,delta}
+               dMjs(2) = -M_dlmn(2) ! dm/dh{gamma,delta}
+               dMjs(3) = -M_dlmn(3) ! dn/dh{gamma,delta}
+
+               H_cf_temp(1) = d_matr_spd(2,1) * Mjs(2)
+               H_cf(k1,1,2) = H_cf(k1,1,2) + H_cf_temp(1) * drij_dh + matr_spd(2,1) * dMjs(1)  ! s-s * px-s / dh
+               ! Lower triangle use symmetry:
+               H_cf(k1,2,1) = H_cf(k1,1,2)
+
+               H_cf_temp(1) = d_matr_spd(2,1) * Mjs(3)
+               H_cf(k1,1,3) = H_cf(k1,1,3) + H_cf_temp(1) * drij_dh + matr_spd(2,1) * dMjs(2)  ! s-s * py-s / dh
+               ! Lower triangle use symmetry:
+               H_cf(k1,3,1) = H_cf(k1,1,3)
+
+               H_cf_temp(1) = d_matr_spd(2,1) * Mjs(4)
+               H_cf(k1,1,4) = H_cf(k1,1,4) + H_cf_temp(1) * drij_dh + matr_spd(2,1) * dMjs(3)  ! s-s * pz-s / ds_x
+               ! Lower triangle use symmetry:
+               H_cf(k1,4,1) = H_cf(k1,1,4)
+
+               ! Diagonal part is excluded (no self-interaction of orbitals):
+               if (TB(KOA1,KOA1)%nullify_diag_cf) then
+                  H_cf(k1,2,2) = 0.0d0
+                  H_cf(k1,3,3) = 0.0d0
+                  H_cf(k1,4,4) = 0.0d0
+               else
+                  H_cf_temp(1) = d_matr_spd(2,2) * Mjs(2) * Mjs(2)
+                  H_cf(k1,2,2) = H_cf(k1,2,2) + H_cf_temp(1) * drij_dh + &
+                        matr_spd(2,2) * 2.0d0* dMjs(1) * Mjs(2) ! px-s * px-s /ds_x
+                  H_cf_temp(1) = d_matr_spd(2,2) * Mjs(3) * Mjs(3)
+                  H_cf(k1,3,3) = H_cf(k1,3,3) + H_cf_temp(1) * drij_dh + &
+                        matr_spd(2,2) * 2.0d0* dMjs(2) * Mjs(3) ! py-s * py-s /ds_x
+                  H_cf_temp(1) = d_matr_spd(2,2) * Mjs(4) * Mjs(4)
+                  H_cf(k1,4,4) = H_cf(k1,4,4) + H_cf_temp(1) * drij_dh + &
+                        matr_spd(2,2) * 2.0d0* dMjs(3) * Mjs(4) ! pz-s * pz-s /ds_x
+               endif
+
+               ! Off-diagonal part:
+               H_cf_temp(1) = d_matr_spd(2,2) * Mjs(2) * Mjs(3)
+               H_cf(k1,2,3) = H_cf(k1,2,3) + H_cf_temp(1) * drij_dh + &
+                        matr_spd(2,2) * (dMjs(1) * Mjs(3) + Mjs(2) * dMjs(2) ) ! px-s * py-s /ds_x
+               ! For lower triangle use symmetry:
+               H_cf(k1,3,2) = H_cf(k1,2,3) ! py-s * px-s /ds_{x,y,z}
+
+               H_cf_temp(1) = d_matr_spd(2,2) * Mjs(2) * Mjs(4)
+               H_cf(k1,2,4) = H_cf(k1,2,4) + H_cf_temp(1) * drij_dh + &
+                        matr_spd(2,2) * (dMjs(1) * Mjs(4) + Mjs(2) * dMjs(3) ) ! px-s * pz-s /ds_x
+               ! For lower triangle use symmetry:
+               H_cf(k1,4,2) = H_cf(k1,2,4) ! pz-s * px-s /ds_{x,y,z}
+
+
+               H_cf_temp(1) = d_matr_spd(2,2) * Mjs(3) * Mjs(4)
+               H_cf(k1,3,4) = H_cf(k1,3,4) + H_cf_temp(1) * drij_dh + &
+                        matr_spd(2,2) * (dMjs(2) * Mjs(4) + Mjs(3) * dMjs(3) ) ! py-s * pz-s /ds_x
+               ! For lower triangle use symmetry:
+               H_cf(k1,4,3) = H_cf(k1,3,4)  ! pz-s * py-s /ds_{x,y,z}
+
+               if (basis_ind > 1) then ! d5 orbitals:
+                  Mjs(5) = Mjs_in(i,j,5)  ! dxy-s
+                  Mjs(6) = Mjs_in(i,j,6)  ! dxz-s
+                  Mjs(7) = Mjs_in(i,j,7)  ! dyz-s
+                  Mjs(8) = Mjs_in(i,j,8)  ! (dx2-y2)-s
+                  Mjs(9) = Mjs_in(i,j,9)  ! (d3z2-r2)-s
+                  ! Define d-symmetry factors to be reused below:
+                  dMjs(4) = m_sqrt3 * (M_dlmn(1)*M_lmn(2,i,j) + M_lmn(1,i,j)*M_dlmn(2)) ! dxy-s / dh
+                  dMjs(5) = m_sqrt3 * (M_dlmn(1)*M_lmn(3,i,j) + M_lmn(1,i,j)*M_dlmn(3)) ! dxz-s / dh
+                  dMjs(6) = m_sqrt3 * (M_dlmn(2)*M_lmn(3,i,j) + M_lmn(2,i,j)*M_dlmn(3)) ! dyz-s / dh
+                  dMjs(7) = m_sqrt3 * (M_dlmn(1)*M_lmn(1,i,j) - M_lmn(2,i,j)*M_dlmn(2)) ! (dx2-y2)-s / dh
+                  dMjs(8) = 2.0d0*M_dlmn(3)*M_lmn(3,i,j) - (M_dlmn(1)*M_lmn(1,i,j) + M_lmn(2,i,j)*M_dlmn(2)) ! (d3z2-r2)-s / dh
+
+
+                  ! Diagonal terms:
+                  if (TB(KOA1,KOA1)%nullify_diag_cf) then
+                     H_cf(k1,5,5) = 0.0d0  ! dxy-s * dxy-s
+                     H_cf(k1,6,6) = 0.0d0  ! dxz-s * dxz-s
+                     H_cf(k1,7,7) = 0.0d0  ! dyz-s * dyz-s
+                     H_cf(k1,8,8) = 0.0d0  ! (dx2-y2) * (dx2-y2)
+                     H_cf(k1,9,9) = 0.0d0  ! (d3z2-r2) * (d3z2-r2)
+                  else
+                     H_cf_temp(1) = d_matr_spd(3,3) * Mjs(5)
+                     H_cf(k1,5,5) = H_cf(k1,5,5) + H_cf_temp(1) * drij_dh + &
+                              matr_spd(3,3) * 2.0d0 * Mjs(5) * dMjs(4)  ! dxy-s * dxy-s / dh
+                     H_cf_temp(1) = d_matr_spd(3,3) * Mjs(6)
+                     H_cf(k1,6,6) = H_cf(k1,6,6) + H_cf_temp(1) * drij_dh + &
+                              matr_spd(3,3) * 2.0d0 * Mjs(6) * dMjs(5)  ! dxz-s * dxz-s / dh
+                     H_cf_temp(1) = d_matr_spd(3,3) * Mjs(7)
+                     H_cf(k1,7,7) = H_cf(k1,7,7) + H_cf_temp(1) * drij_dh + &
+                              matr_spd(3,3) * 2.0d0 * Mjs(7) * dMjs(6)  ! dyz-s * dyz-s / dh
+                     H_cf_temp(1) = d_matr_spd(3,3) * Mjs(8)
+                     H_cf(k1,8,8) = H_cf(k1,8,8) + H_cf_temp(1) * drij_dh + &
+                              matr_spd(3,3) * 2.0d0 * Mjs(8) * dMjs(7)  ! (dx2-y2) * (dx2-y2) / dh
+                     H_cf_temp(1) = d_matr_spd(3,3) * Mjs(9)
+                     H_cf(k1,9,9) = H_cf(k1,9,9) + H_cf_temp(1) * drij_dh + &
+                              matr_spd(3,3) * 2.0d0 * Mjs(9) * dMjs(8)  ! (d3z2-r2) * (d3z2-r2) / dh
+                  endif
+
+                  ! Off-diagonal terms:
+                  H_cf_temp(1) = d_matr_spd(1,3) * Mjs(5)
+                  H_cf(k1,1,5) = H_cf(k1,1,5) + H_cf_temp(1) * drij_dh + matr_spd(1,3) * dMjs(4)  ! s-s * dxy-s / dh
+                  ! For lower triangle use symmetry:
+                  H_cf(k1,5,1) = H_cf(k1,1,5)  ! dxy-s * s-s/ dh
+
+                  H_cf_temp(1) = d_matr_spd(1,3) * Mjs(6)
+                  H_cf(k1,1,6) = H_cf(k1,1,6) + H_cf_temp(1) * drij_dh + matr_spd(1,3) * dMjs(5)  ! s-s * dxz-s / dh
+                  ! For lower triangle use symmetry:
+                  H_cf(k1,6,1) = H_cf(k1,1,6)  ! dxz-s * s-s/ dh
+
+                  H_cf_temp(1) = d_matr_spd(1,3) * Mjs(7)
+                  H_cf(k1,1,7) = H_cf(k1,1,7) + H_cf_temp(1) * drij_dh + matr_spd(1,3) * dMjs(6)  ! s-s * dyz-s / dh
+                  ! For lower triangle use symmetry:
+                  H_cf(k1,7,1) = H_cf(k1,1,7)  ! dyz-s * s-s/ dh
+
+                  H_cf_temp(1) = d_matr_spd(1,3) * Mjs(8)
+                  H_cf(k1,1,8) = H_cf(k1,1,8) + H_cf_temp(1) * drij_dh + matr_spd(1,3) * dMjs(7)  ! s-s * (dx2-y2)-s / dh
+                  ! For lower triangle use symmetry:
+                  H_cf(k1,8,1) = H_cf(k1,1,8)  ! (dx2-y2)-s * s-s / dh
+
+                  H_cf_temp(1) = d_matr_spd(1,3) * Mjs(9)
+                  H_cf(k1,1,9) = H_cf(k1,1,9) + H_cf_temp(1) * drij_dh + matr_spd(1,3) * dMjs(8)  ! s-s * (d3z2-r2)-s / dh
+                  ! For lower triangle use symmetry:
+                  H_cf(k1,9,1) = H_cf(k1,1,9)  ! (d3z2-r2)-s * s-s / dh
+
+
+                  ! Calculate repeating part the K-S matrix elements:
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(2) * Mjs(5)
+                  H_cf(k1,2,5) = H_cf(k1,2,5) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(1) * Mjs(5) + Mjs(2) * dMjs(4) ) ! px-s * dxy-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,5,2) = H_cf(k1,2,5)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(2) * Mjs(6)
+                  H_cf(k1,2,6) = H_cf(k1,2,6) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(1) * Mjs(6) + Mjs(2) * dMjs(5) ) ! px-s * dxz-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,6,2) = H_cf(k1,2,6)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(2) * Mjs(7)
+                  H_cf(k1,2,7) = H_cf(k1,2,7) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(1) * Mjs(7) + Mjs(2) * dMjs(6) ) ! px-s * dyz-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,7,2) = H_cf(k1,2,7)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(2) * Mjs(8)
+                  H_cf(k1,2,8) = H_cf(k1,2,8) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(1) * Mjs(8) + Mjs(2) * dMjs(7) ) ! px-s * (dx2-y2)-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,8,2) = H_cf(k1,2,8)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(2) * Mjs(9)
+                  H_cf(k1,2,9) = H_cf(k1,2,9) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(1) * Mjs(9) + Mjs(2) * dMjs(8) ) ! px-s * (d3z2-r2)-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,9,2) = H_cf(k1,2,9)
+
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(3) * Mjs(5)
+                  H_cf(k1,3,5) = H_cf(k1,3,5) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(2) * Mjs(5) + Mjs(3) * dMjs(4) ) ! py-s * dxy-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,5,3) = H_cf(k1,3,5)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(3) * Mjs(6)
+                  H_cf(k1,3,6) = H_cf(k1,3,6) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(2) * Mjs(6) + Mjs(3) * dMjs(5) ) ! py-s * dxz-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,6,3) = H_cf(k1,3,6)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(3) * Mjs(7)
+                  H_cf(k1,3,7) = H_cf(k1,3,7) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(2) * Mjs(7) + Mjs(3) * dMjs(6) ) ! py-s * dyz-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,7,3) = H_cf(k1,3,7)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(3) * Mjs(8)
+                  H_cf(k1,3,8) = H_cf(k1,3,8) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(2) * Mjs(8) + Mjs(3) * dMjs(7) ) ! py-s * (dx2-y2) / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,8,3) = H_cf(k1,3,8)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(3) * Mjs(9)
+                  H_cf(k1,3,9) = H_cf(k1,3,9) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(2) * Mjs(9) + Mjs(3) * dMjs(8) ) ! py-s * (d3z2-r2) / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,9,3) = H_cf(k1,3,9)
+
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(4) * Mjs(5)
+                  H_cf(k1,4,5) = H_cf(k1,4,5) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(3) * Mjs(5) + Mjs(4) * dMjs(4) ) ! pz-s * dxy / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,5,4) = H_cf(k1,4,5)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(4) * Mjs(6)
+                  H_cf(k1,4,6) = H_cf(k1,4,6) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(3) * Mjs(6) + Mjs(4) * dMjs(5) ) ! pz-s * dxz / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,6,4) = H_cf(k1,4,6)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(4) * Mjs(7)
+                  H_cf(k1,4,7) = H_cf(k1,4,7) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(3) * Mjs(7) + Mjs(4) * dMjs(6) ) ! pz-s * dyz / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,7,4) = H_cf(k1,4,7)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(4) * Mjs(8)
+                  H_cf(k1,4,8) = H_cf(k1,4,8) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(3) * Mjs(8) + Mjs(4) * dMjs(7) ) ! pz-s * (dx2-y2) / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,8,4) = H_cf(k1,4,8)
+
+                  H_cf_temp(1) = d_matr_spd(2,3) * Mjs(4) * Mjs(9)
+                  H_cf(k1,4,9) = H_cf(k1,4,9) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(2,3) * ( dMjs(3) * Mjs(9) + Mjs(4) * dMjs(8) ) ! pz-s * (d3z2-r2) / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,9,4) = H_cf(k1,4,9)
+
+
+                  H_cf_temp(1) = d_matr_spd(3,3) * Mjs(5) * Mjs(6)
+                  H_cf(k1,5,6) = H_cf(k1,5,6) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(3,3) * ( dMjs(4) * Mjs(6) + Mjs(5) * dMjs(5) ) ! dxy-s * dxz-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,6,5) = H_cf(k1,5,6)
+
+                  H_cf_temp(1) = d_matr_spd(3,3) * Mjs(5) * Mjs(7)
+                  H_cf(k1,5,7) = H_cf(k1,5,7) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(3,3) * ( dMjs(4) * Mjs(7) + Mjs(5) * dMjs(6) ) ! dxy-s * dyz-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,7,5) = H_cf(k1,5,7)
+
+                  H_cf_temp(1) = d_matr_spd(3,3) * Mjs(5) * Mjs(8)
+                  H_cf(k1,5,8) = H_cf(k1,5,8) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(3,3) * ( dMjs(4) * Mjs(8) + Mjs(5) * dMjs(7) ) ! dxy-s * (dx2-y2) / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,8,5) = H_cf(k1,5,8)
+
+                  H_cf_temp(1) = d_matr_spd(3,3) * Mjs(5) * Mjs(9)
+                  H_cf(k1,5,9) = H_cf(k1,5,9) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(3,3) * ( dMjs(4) * Mjs(9) + Mjs(5) * dMjs(8) ) ! dxy-s * (d3z2-r2) / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,9,5) = H_cf(k1,5,9)
+
+
+                  H_cf_temp(1) = d_matr_spd(3,3) * Mjs(6) * Mjs(7)
+                  H_cf(k1,6,7) = H_cf(k1,6,7) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(3,3) * ( dMjs(5) * Mjs(7) + Mjs(6) * dMjs(6) ) ! dxz-s * dyz-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,7,6) = H_cf(k1,6,7)
+
+                  H_cf_temp(1) = d_matr_spd(3,3) * Mjs(6) * Mjs(8)
+                  H_cf(k1,6,8) = H_cf(k1,6,8) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(3,3) * ( dMjs(5) * Mjs(8) + Mjs(6) * dMjs(7) ) ! dxz-s * (dx2-y2)-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,8,6) = H_cf(k1,6,8)
+
+                  H_cf_temp(1) = d_matr_spd(3,3) * Mjs(6) * Mjs(9)
+                  H_cf(k1,6,9) = H_cf(k1,6,9) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(3,3) * ( dMjs(5) * Mjs(9) + Mjs(6) * dMjs(8) ) ! dxz-s * (d3z2-r2)-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,9,6) = H_cf(k1,6,9)
+
+
+                  H_cf_temp(1) = d_matr_spd(3,3) * Mjs(7) * Mjs(8)
+                  H_cf(k1,7,8) = H_cf(k1,7,8) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(3,3) * ( dMjs(6) * Mjs(8) + Mjs(7) * dMjs(7) ) ! dyz-s * (dx2-y2)-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,8,7) = H_cf(k1,7,8)
+
+                  H_cf_temp(1) = d_matr_spd(3,3) * Mjs(7) * Mjs(9)
+                  H_cf(k1,7,9) = H_cf(k1,7,9) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(3,3) * ( dMjs(7) * Mjs(9) + Mjs(7) * dMjs(8) ) ! dyz-s * (d3z2-r2)-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,9,7) = H_cf(k1,7,9)
+
+
+                  H_cf_temp(1) = d_matr_spd(3,3) * Mjs(8) * Mjs(9)
+                  H_cf(k1,8,9) = H_cf(k1,8,9) + H_cf_temp(1) * drij_dh + &
+                     matr_spd(3,3) * ( dMjs(7) * Mjs(9) + Mjs(8) * dMjs(8) ) ! (dx2-y2)-s * (d3z2-r2)-s / dh
+                  ! Lower triangle use symmetry:
+                  H_cf(k1,9,8) = H_cf(k1,8,9)
+
+               endif ! (basis_ind > 1)
+
+            endif ! (basis_ind > 0)
+
+5004 continue
+
+         enddo ! j1
+      enddo ! i1
+   enddo ! atom_2 = 0, m
+
+   !-----------------
+   ! 4) 3-body contributions:
+   if (TB(KOA1,KOA1)%include_3body) then  ! only if user defined it to include
+      ! not ready yet
+      H_3bdy = 0.0d0
+   endif ! (TB(KOA1,KOA1)%include_3body)
+
+5002 continue
+   ! Collect all the terms into derivative of the Hamiltonian:
+   dH = E_onsite + H_avg + H_cf + H_3bdy
+
+   deallocate(E_onsite, H_avg, H_cf, H_3bdy)
+   nullify(m, KOA1, KOA2, KOA3, x1, y1, z1, r1)
+end subroutine d_Onsite_Press_3TB
+
+
+
+
+subroutine dHopping_Press_3TB(i, atom_2, Scell, NSC, TB, norb, n_overlap, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, dH, dS)
 ! subroutine making the derivatives of the hopping integrals
    integer, intent(in) :: i, atom_2	! atoms
    type(Super_cell), dimension(:), intent(inout), target :: Scell	! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of supercell
+   type(TB_H_3TB), dimension(:,:), intent(in) :: TB	  ! all tight binding parameters
    integer, intent(in) :: norb, n_overlap
    real(8), dimension(:,:,:), intent(in), target :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in), target :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
@@ -2124,7 +2986,7 @@ subroutine dHopping_Press_3TB(i, atom_2, Scell, NSC, norb, n_overlap, M_Vij, M_d
    real(8), dimension(n_overlap) ::  vec_M_Vij12, vec_M_Vij21, vec_M_SVij12, vec_M_SVij21
    real(8), dimension(norb,norb) :: dH1, dS1
    real(8), pointer :: r
-   integer, pointer :: j
+   integer, pointer :: j, KOA1
 
    dH = 0.0d0
    dS = 0.0d0
@@ -2180,7 +3042,13 @@ subroutine dHopping_Press_3TB(i, atom_2, Scell, NSC, norb, n_overlap, M_Vij, M_d
       enddo
    enddo
 
-   nullify(r, j)
+   ! Kind of atom:
+   KOA1 => Scell(NSC)%MDatoms(i)%KOA
+   if (TB(KOA1,KOA1)%include_3body) then  ! only if user defined it to include 3-body terms
+      ! Not ready yet
+   endif
+
+   nullify(r, j, KOA1)
 end subroutine dHopping_Press_3TB
 
 
@@ -2207,17 +3075,16 @@ subroutine get_Mjs_factors(basis_ind, Scell, M_lmn, Mjs)
    Mjs = 0.0d0 ! to start with
 
 !$omp parallel
-!$omp do private(i, j, m, atom_2, x1, y1, z1, r1)
-   do i = 1, nat	! all atoms
+!$omp do private(i, j, m, atom_2)
+   do i = 1, nat	! atom #1
       m => Scell%Near_neighbor_size(i)
       do atom_2 = 1,m ! do only for atoms close to that one
-         j = Scell%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+         j = Scell%Near_neighbor_list(i,atom_2) ! atom #2
 
-         x1 => Scell%Near_neighbor_dist(i,atom_2,1)	! at this distance, X
-         y1 => Scell%Near_neighbor_dist(i,atom_2,2)	! at this distance, Y
-         z1 => Scell%Near_neighbor_dist(i,atom_2,3)	! at this distance, Z
-         r1 => Scell%Near_neighbor_dist(i,atom_2,4)	! at this distance, R
-
+!          x1 => Scell%Near_neighbor_dist(i,atom_2,1)	! at this distance, X
+!          y1 => Scell%Near_neighbor_dist(i,atom_2,2)	! at this distance, Y
+!          z1 => Scell%Near_neighbor_dist(i,atom_2,3)	! at this distance, Z
+!          r1 => Scell%Near_neighbor_dist(i,atom_2,4)	! at this distance, R
 
          Mjs(i,j,1) = 1.0d0  ! s-s
 
@@ -2235,7 +3102,7 @@ subroutine get_Mjs_factors(basis_ind, Scell, M_lmn, Mjs)
             if (basis_ind > 1) then ! d5 orbitals (functions from module "TB_Koster_Slater"):
                Mjs(i,j,5) = t_s_dab(M_lmn(1,i,j),M_lmn(2,i,j),1.0d0)        ! dxy-s
                Mjs(i,j,6) = t_s_dab(M_lmn(1,i,j),M_lmn(3,i,j),1.0d0)        ! dxz-s
-               Mjs(i,j,7) = t_s_dab(M_lmn(2,i,j),M_lmn(3,i,j),1.0d0)        ! dxz-s
+               Mjs(i,j,7) = t_s_dab(M_lmn(2,i,j),M_lmn(3,i,j),1.0d0)        ! dyz-s
                Mjs(i,j,8) = t_s_dx2_y2(M_lmn(1,i,j),M_lmn(2,i,j),1.0d0)     ! (dx2-y2)-s
                Mjs(i,j,9) = t_s_dz2_r2(M_lmn(1,i,j),M_lmn(2,i,j),M_lmn(3,i,j),1.0d0)    ! (d3z2-r2)-s
             endif
@@ -2245,7 +3112,7 @@ subroutine get_Mjs_factors(basis_ind, Scell, M_lmn, Mjs)
    enddo
 !$omp enddo
 !$omp end parallel
-   nullify(m, x1, y1, z1, r1)
+   nullify(m)
 end subroutine get_Mjs_factors
 
 

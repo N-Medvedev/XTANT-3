@@ -1591,7 +1591,8 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
 
       enddo do_second
    enddo do_first
-   !write(File_name2, '(a,a,a)') trim(adjustl(Path)), path_sep, 'TB_Repulsive_parameters.txt'
+
+
 3421 continue
 end subroutine read_TB_parameters
 
@@ -3424,7 +3425,13 @@ subroutine read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript
    read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%include_3body  ! flag, include 3-body terms or not
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      TB_Hamil(i,j)%include_3body = .true.  ! by default, include 3-body terms
+      TB_Hamil(i,j)%include_3body = .false.  ! by default, exclude 3-body terms
+   endif
+
+   read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%nullify_diag_cf  ! flag, exclude diagonal part of crystal field
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      TB_Hamil(i,j)%nullify_diag_cf = .true.  ! by default, exclude diagonal part of crystal field
    endif
 
 
