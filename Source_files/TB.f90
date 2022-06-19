@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2022 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -37,7 +37,9 @@ use TB_Pettifor
 use TB_Molteni
 use TB_NRL
 use TB_DFTB, only : Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_drij_DFTB, &
-                                Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB
+                     Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB
+use TB_3TB, only : get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, Attract_TB_Forces_Press_3TB, &
+                     Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors, get_dHij_drij_3TB
 use TB_BOP, only : Construct_Vij_BOP, construct_TB_H_BOP, get_Erep_s_BOP
 use TB_xTB, only : Construct_Vij_xTB, construct_TB_H_xTB, get_Erep_s_xTB, identify_xTB_orbitals_per_atom
 use Van_der_Waals
@@ -49,7 +51,7 @@ implicit none
  contains
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
-!Common tools:
+!Common TB tools:
 
 
 ! Attractive part:
@@ -68,10 +70,15 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
    real(8), dimension(:,:,:), allocatable :: M_dSVij	! matrix of derivatives of Overlap functions for Overlap matrix for all pairs of atoms, all orbitals
    real(8), dimension(:,:,:), allocatable :: M_E0ij     ! matrix of functions for on-site energies for all pairs of atoms, all orbitals (used for BOP)
    real(8), dimension(:,:,:), allocatable :: M_dE0ij     ! matrix of derivatives of functions for on-site energies for all pairs of atoms, all orbitals (used for BOP)
+   real(8), dimension(:,:,:), allocatable :: M_Lag_exp	! matrix of Laguerres for 3-body radial funcs (for 3TB)
+   real(8), dimension(:,:,:), allocatable :: M_d_Lag_exp	! matrix of derivatives of Laguerres (for 3TB)
    real(8), dimension(:,:,:), allocatable :: M_lmn	! matrix of directional cosines l, m, n
    real(8), dimension(:,:,:), allocatable :: M_x1	! matrix of x1 elements, used for forces calculations
    real(8), dimension(:,:,:), allocatable :: M_xrr	! matrix of xrr elements, used for forces calculations
+   real(8), dimension(:,:,:), allocatable :: Mjs    ! matrix of K-S part of overlaps with s-orb. (for 3TB)
    real(8), dimension(:,:), allocatable :: M_Aij_x_Ei		! matrix of multipliers for non-orthogonal forces calculation
+   real(8), dimension(:,:,:), allocatable :: M_drij_dsk  ! matrix of derivatives of distances between atoms i and j
+   real(8), dimension(:,:,:), allocatable :: M_dlmn   ! matrix of derivatives of directional cosines
 
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
       ! Create and diaganalize Hamiltonain (in Pettifor form):
@@ -97,18 +104,27 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                call construct_TB_H_Molteni(numpar, matter, ARRAY, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Molteni"
             type is (TB_H_Fu)  ! TB parametrization accroding to Fu
                call construct_TB_H_Fu(numpar, matter, ARRAY, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Fu"
-            type is (TB_H_NRL)  ! TB parametrization accroding to NRL method
+            type is (TB_H_NRL)  ! TB parametrization accroding to NRL
                call Construct_Vij_NRL(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_NRL"
                call construct_TB_H_NRL(numpar, matter, ARRAY, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_NRL"
             type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB
                call Construct_Vij_DFTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_DFTB"
                call construct_TB_H_DFTB(numpar, matter, ARRAY, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_DFTB"
-            type is (TB_H_BOP)  ! TB parametrization accroding to BOP
+
+            type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
+               ! Get the overlaps between orbitals and ficticios s orbital (for 3-body parts):
+               call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+               ! Get the overlaps and reusable functions:
+               call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
+               ! Construct the Hamiltonian, diagonalize it, get the energy:
+               call construct_TB_H_3TB(numpar, matter, ARRAY, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Scell, NSC, Err) ! module "TB_3TB"
+
+            type is (TB_H_BOP)  ! TB parametrization accroding to BOP (incomplete)
                call Construct_Vij_BOP(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_E0ij, M_dE0ij)    ! module "TB_BOP"
                call construct_TB_H_BOP(numpar, ARRAY, matter, M_Vij, M_SVij, M_E0ij, M_lmn, Scell, NSC, Err)    ! module "TB_BOP"
             type is (TB_H_xTB)  ! TB parametrization accroding to xTB (NOT READY)
-!                call Construct_Vij_xTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_DFTB"
-!                call construct_TB_H_xTB(numpar, matter, ARRAY, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_DFTB"
+!                call Construct_Vij_xTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_xTB"
+!                call construct_TB_H_xTB(numpar, matter, ARRAY, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_xTB"
             end select
             
             ! Get the DOS weights for each energy level, if required:
@@ -149,15 +165,11 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                   call Attract_TB_Forces_Press_F(ARRAY, Scell(NSC)%MDatoms, Scell, NSC, numpar, Scell(NSC)%Aij) ! module "TB_Fu"
                type is (TB_H_NRL)
                   ! Get the energy-weighted density matrix:
-!                   print*, 'before Construct_Aij_x_En'
                   call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
                   ! Get the derivatives of the Hamiltonian:
-!                   print*, 'before get_dHij_drij_NRL'
                   call get_dHij_drij_NRL(ARRAY, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei)	! module "TB_NRL"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
-!                   print*, 'before Attract_TB_Forces_Press_NRL'
                   call Attract_TB_Forces_Press_NRL(ARRAY, Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_NRL"
-!                   print*, 'after Attract_TB_Forces_Press_NRL'
                type is (TB_H_DFTB)
                   ! Get the energy-weighted density matrix:
                   call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
@@ -165,6 +177,24 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                   call get_dHij_drij_DFTB(numpar, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei)	! module "TB_DFTB"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
                   call Attract_TB_Forces_Press_DFTB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_DFTB"
+               type is (TB_H_3TB)
+                  ! Get the energy-weighted density matrix:
+                  call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+                  ! Get the derivatives of the Hamiltonian:
+
+!                   print*, 'Before get_dHij_drij_3TB'
+
+                  call get_dHij_drij_3TB(numpar, Scell, NSC, ARRAY, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
+                        M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
+                  ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
+
+!                   print*, 'Before Attract_TB_Forces_Press_3TB'
+
+                  call Attract_TB_Forces_Press_3TB(Scell, NSC, ARRAY, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
+                        M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
+
+!                   print*, 'After Attract_TB_Forces_Press_3TB'
+
                type is (TB_H_BOP)
                   ! Get the energy-weighted density matrix:
                   call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
@@ -206,7 +236,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                call dErdr_s_F(ARRAY2, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! derivatives of the repulsive energy by s; module "TB_Fu"
                ! Get repulsive forces acting on the supercell:
                call dErdr_Pressure_s_F(ARRAY2, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_Fu"
-            type is (TB_Rep_NRL) ! TB parametrization according to Mehl
+            type is (TB_Rep_NRL) ! TB parametrization according to Mehl (NRL)
                ! Get repulsive forces acting on all atoms:
                call dErdr_s_NRL(ARRAY2, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! derivatives of the repulsive energy by s; module "TB_NRL"
                ! Get repulsive forces acting on the supercell:
@@ -216,6 +246,11 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                call dErdr_s_DFTB(ARRAY2, Scell, NSC) ! derivatives of the repulsive energy by s; module "TB_DFTB"
                ! Get repulsive forces acting on the supercell:
                call dErdr_Pressure_s_DFTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_DFTB"
+            type is (TB_Rep_3TB) ! TB parametrization according to 3TB
+               ! Get repulsive forces acting on all atoms:
+               call dErdr_s_3TB(ARRAY2, Scell, NSC) ! derivatives of the repulsive energy by s; module "TB_3TB"
+               ! Get repulsive forces acting on the supercell:
+               call dErdr_Pressure_s_3TB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_3TB"
             type is (TB_Rep_BOP)    ! TB parametrization according to BOP
                ! Get repulsive forces acting on all atoms:
                ! Get repulsive forces acting on the supercell:
@@ -744,6 +779,8 @@ subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, 
                call Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_NRL"
             type is (TB_H_DFTB)
                call Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_DFTB"   
+            type is (TB_H_3TB)
+               call Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_DFTB", the are the same
             type is (TB_H_xTB)
 !                call Complex_Hamil_xTB(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_xTB"
          end select	!  type of Hamiltonain parameterization
@@ -946,6 +983,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       type is (TB_H_NRL)
          temp = 1.0d0   ! 0.5d0 for testing
       type is (TB_H_DFTB)
+         temp = 1.0d0
+      type is (TB_H_3TB)
          temp = 1.0d0
       type is (TB_H_xTB)
          temp = 1.0d0
@@ -1547,6 +1586,8 @@ FUNCTION Erep_s(TB_Repuls, Scell, NSC, numpar)   ! repulsive energy as a functio
       call get_Erep_s_NRL(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_NRL"
    type is (TB_Rep_DFTB)
       call get_Erep_s_DFTB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_DFTB"
+   type is (TB_Rep_3TB)
+      call get_Erep_s_3TB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_3TB"
    type is (TB_Rep_BOP)
       call get_Erep_s_BOP(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_BOP"
    type is (TB_Rep_xTB)
@@ -1694,17 +1735,19 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
                             endif
                         type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB: non-orthogonal
                             if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
-!                                 print*, 'Electron_ion_coupling 2'
                                 call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, numpar%NA_kind, Sij=Scell(NSC)%Sij) ! module "Nonadiabatic"
-!                                 print*, 'Electron_ion_coupling 3'
+                            else ! non-gamma k-point, complex Hamiltonian needed:
+                                call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, numpar%NA_kind) ! module "Nonadiabatic"
+                            endif
+                        type is (TB_H_3TB)  ! TB parametrization accroding to 3TB: non-orthogonal
+                            if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
+                                call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, numpar%NA_kind, Sij=Scell(NSC)%Sij) ! module "Nonadiabatic"
                             else ! non-gamma k-point, complex Hamiltonian needed:
                                 call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, numpar%NA_kind) ! module "Nonadiabatic"
                             endif
                         type is (TB_H_xTB)  ! TB parametrization accroding to xTB: non-orthogonal
                             if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
-!                                 print*, 'Electron_ion_coupling 2'
                                 call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, numpar%NA_kind, Sij=Scell(NSC)%Sij) ! module "Nonadiabatic"
-!                                 print*, 'Electron_ion_coupling 3'
                             else ! non-gamma k-point, complex Hamiltonian needed:
                                 call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, numpar%NA_kind) ! module "Nonadiabatic"
                             endif
@@ -1928,7 +1971,9 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF)
       type is (TB_H_NRL)  ! TB parametrization accroding to NRL
          print*, 'Configurational temperature calculations are not implemented for NRL: Attractive'
       type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB
-         print*, 'Configurational temperature calculations are not implemented for DFTB: Attractive'   
+         print*, 'Configurational temperature calculations are not implemented for DFTB: Attractive'
+      type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
+         print*, 'Configurational temperature calculations are not implemented for 3TB: Attractive'
       type is (TB_H_xTB)  ! TB parametrization accroding to xTB
          print*, 'Configurational temperature calculations are not implemented for xTB: Attractive'
       end select
@@ -1956,6 +2001,8 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF)
          print*, 'Configurational temperature calculations are not implemented for NRL: Repulsive'
       type is (TB_Rep_DFTB)  ! TB parametrization accroding to DFTB
          print*, 'Configurational temperature calculations are not implemented for DFTB: Repulsive'
+      type is (TB_Rep_3TB)  ! TB parametrization accroding to 3TB
+         print*, 'Configurational temperature calculations are not implemented for 3TB: Repulsive'
       type is (TB_Rep_BOP)  ! TB parametrization accroding to BOP
          print*, 'Configurational temperature calculations are not implemented for BOP: Repulsive'
       type is (TB_Rep_xTB)  ! TB parametrization accroding to xTB
@@ -2047,11 +2094,13 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    real(8), dimension(:,:,:), allocatable :: M_dVij	! matrix of derivatives of Overlap functions for Hamiltonian for all pairs of atoms, all orbitals
    real(8), dimension(:,:,:), allocatable :: M_SVij	! matrix of Overlap functions for Overlap matrix for all pairs of atoms, all orbitals
    real(8), dimension(:,:,:), allocatable :: M_dSVij	! matrix of derivatives of Overlap functions for Overlap matrix for all pairs of atoms, all orbitals
-   real(8), dimension(:,:,:), allocatable :: M_lmn	! matrix of directional cosines l, m, n
-   real(8), dimension(:,:,:), allocatable :: M_x1	! matrix of x1 elements, used for forces calculations
-   real(8), dimension(:,:,:), allocatable :: M_xrr	! matrix of xrr elements, used for forces calculations
-   real(8), dimension(:,:), allocatable :: M_Aij_x_Ei		! matrix of multipliers for non-orthogonal forces calculation
-
+   real(8), dimension(:,:,:), allocatable :: M_lmn ! matrix of directional cosines l, m, n
+   real(8), dimension(:,:,:), allocatable :: M_x1  ! matrix of x1 elements, used for forces calculations
+   real(8), dimension(:,:,:), allocatable :: M_xrr ! matrix of xrr elements, used for forces calculations
+   real(8), dimension(:,:), allocatable :: M_Aij_x_Ei ! matrix of multipliers for non-orthogonal forces calculation
+   real(8), dimension(:,:,:), allocatable :: M_Lag_exp   ! matrix of Laguerres for 3-body radial funcs (for 3TB)
+   real(8), dimension(:,:,:), allocatable :: M_d_Lag_exp   ! matrix of derivatives of Laguerres for 3-body radial funcs
+   real(8), dimension(:,:,:), allocatable :: Mjs      ! matrix of K-S part of overlaps with s-orb. (for 3TB)
    
    ! so far we only have one supercell:
    NSC = 1
@@ -2087,6 +2136,13 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          call Construct_Vij_DFTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_DFTB"
          call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
          call Attract_TB_Forces_Press_DFTB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_DFTB"
+      type is (TB_H_3TB) ! TB parametrization according to 3TB
+         ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
+         call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below
+         call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+         call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
+         call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+         call Attract_TB_Forces_Press_3TB(Scell, NSC, ARRAY, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
       type is (TB_H_xTB) ! TB parametrization according to xTB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below
@@ -2108,11 +2164,13 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
       type is (TB_Rep_Fu)  ! TB parametrization accroding to Fu
          ! Get repulsive forces acting on the supercell:
          call dErdr_Pressure_s_F(ARRAY2, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_Fu"
-      type is (TB_Rep_NRL) ! TB parametrization according to Mehl
+      type is (TB_Rep_NRL) ! TB parametrization according to Mehl (NRL)
          call dErdr_Pressure_s_NRL(ARRAY2, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_NRL"
       type is (TB_Rep_DFTB) ! TB parametrization according to DFTB
          call dErdr_Pressure_s_DFTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_DFTB"
-      type is (TB_Rep_BOP) ! TB parametrization according to DFTB
+      type is (TB_Rep_3TB) ! TB parametrization according to 3TB
+         call dErdr_Pressure_s_3TB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_3TB"
+      type is (TB_Rep_BOP) ! TB parametrization according to BOP
 !          call dErdr_Pressure_s_DFTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_BOP"
       type is (TB_Rep_xTB) ! TB parametrization according to xTB
 !          call dErdr_Pressure_s_xTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_xTB"

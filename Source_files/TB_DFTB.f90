@@ -98,7 +98,7 @@ subroutine Construct_Vij_DFTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_d
             M_SVij(j,i,3) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 4) ! (p p sigma)
             M_Vij(j,i,4) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 5)   ! (p p pi)
             M_SVij(j,i,4) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 5) ! (p p pi)
-         case default    ! sp3d5
+         case (2)    ! sp3d5
             do ihop = 2, 10
                M_Vij(j,i,ihop) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, ihop)
                M_SVij(j,i,ihop) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, ihop)
@@ -118,7 +118,7 @@ subroutine Construct_Vij_DFTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_d
             M_dSVij(j,i,3) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 4) ! (p p sigma)
             M_dVij(j,i,4) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 5)   ! (p p pi)
             M_dSVij(j,i,4) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 5) ! (p p pi)
-         case default    ! sp3d5
+         case (2)    ! sp3d5
             do ihop = 2, 10
                M_dVij(j,i,ihop) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, ihop)
                M_dSVij(j,i,ihop) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, ihop)
@@ -313,7 +313,7 @@ deallocate(Hij1, Sij1)
                do i1 = 1,n_orb ! all orbitals
                   k = (i-1)*n_orb+i1
                   Hij(k,l) = Hij(l,k)
-                  Sij(k,l) =  Sij(l,k)
+                  Sij(k,l) = Sij(l,k)
                enddo ! i1
             enddo ! j1
          endif
@@ -586,8 +586,8 @@ subroutine get_forces_DFTB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_
    Nsiz = size(Scell(NSC)%Ha,1)	! total number of orbitals
    n_orb =  identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! size of the basis set per atom, below
 
-   if (.not.allocated(dH)) allocate(dH1(3,n_orb,n_orb))
-   if (.not.allocated(dS)) allocate(dS1(3,n_orb,n_orb))
+   if (.not.allocated(dH1)) allocate(dH1(3,n_orb,n_orb))
+   if (.not.allocated(dS1)) allocate(dS1(3,n_orb,n_orb))
    dH1 = 0.0d0
    dS1 = 0.0d0
    if (.not.allocated(dH)) allocate(dH(3,Nsiz,Nsiz))
@@ -1281,8 +1281,8 @@ subroutine Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz,
    ! Convert to SI units used later:
    !temp = g_me*g_e/g_h*1d-10 / 2.0d0	! UNCLEAR WHERE THE 1/2 COMES FROM ???
    ! mass and Plank constant cancel out in the final expression (subroutine get_Trani, module "Optical_parameters")
-!    temp = 1.0d0
-   temp = 1.0d0 / 2.0d0	! UNCLEAR WHERE THE 1/2 COMES FROM ???
+   temp = 1.0d0
+   !temp = 1.0d0 / 2.0d0	! UNCLEAR WHERE THE 1/2 COMES FROM ???
    Scell(NSC)%cPRRx = Scell(NSC)%cPRRx * temp
    Scell(NSC)%cPRRy = Scell(NSC)%cPRRy * temp
    Scell(NSC)%cPRRz = Scell(NSC)%cPRRz * temp

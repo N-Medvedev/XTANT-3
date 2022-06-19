@@ -1056,6 +1056,125 @@ pure subroutine d_KS_sp3s_hetero(Vsr12, Vsr21, dVsr12, dVsr21, l, m, n, dl, dm, 
 end subroutine d_KS_sp3s_hetero
 
 
+
+! Constructing Koster Slater part for sp3d5 basis set:
+pure subroutine KS_sp3d5_hetero_TEST(Vsr12, Vsr21, l, m, n, ts)
+   real(8), intent(in) :: l, m, n		! direction cosines
+   real(8), dimension(10), intent(in) :: Vsr12, Vsr21		! coefficients for this pair of atoms
+   real(8), dimension(9,9), intent(out) :: ts	! constructed hopping integrals
+!    Reminder:
+!    V(1) = (s s sigma)
+!    V(2) = (s p sigma)
+!    V(3) = (s d sigma)
+!    V(4) = (p p sigma)
+!    V(5) = (p p pi)
+!    V(6) = (p d sigma)
+!    V(7) = (p d pi)
+!    V(8) = (d d sigma)
+!    V(9) = (d d pi)
+!    V(10) = (d d delta)
+
+   ! functions above:
+   ts(1,1) = t_s_s(Vsr12(1))		! s s
+   ts(1,2) = t_s_px(l, Vsr12(2))	! s px
+   ts(1,3) = t_s_px(m, Vsr12(2))	! s py
+   ts(1,4) = t_s_px(n, Vsr12(2))	! s pz
+   ts(1,5) = t_s_dab(l, m, Vsr12(3))	! s dxy
+   ts(1,6) = t_s_dab(l, n, Vsr12(3))	! s dxz
+   ts(1,7) = t_s_dab(m, n, Vsr12(3))	! s dyz
+   ts(1,8) = t_s_dx2_y2(l, m, Vsr12(3))	! s dx2-y2
+   ts(1,9) = t_s_dz2_r2(l, m, n, Vsr12(3))	! s d3z2-r2
+
+
+   ts(2,1) = -t_s_px(l, Vsr21(2))		! px s
+   ts(2,2) = t_pa_pa(l, Vsr12(4), Vsr12(5))		! px px
+   ts(2,3) = t_pa_pb(l, m, Vsr12(4), Vsr12(5))	! px py
+   ts(2,4) = t_pa_pb(l, n, Vsr12(4), Vsr12(5))	! px pz
+   ts(2,5) = t_px_dxy(l, m, Vsr12(6), Vsr12(7))	! px dxy
+   ts(2,6) = t_px_dxy(l, n, Vsr12(6), Vsr12(7))	! px dxz
+   ts(2,7) = t_px_dyz(l, m, n, Vsr12(6), Vsr12(7))	! px dyz
+   ts(2,8) = t_px_dx2_y2(l, m, Vsr12(6), Vsr12(7))	! px dx2-y2
+   ts(2,9) = t_pa_d3z2_r2(l, l, m, n, Vsr12(6), Vsr12(7))	! px d3z2-r2
+
+
+   ts(3,1) = -t_s_px(m, Vsr21(2))	! py s
+   ts(3,2) = t_pa_pb(l, m, Vsr21(4), Vsr21(5))	! py px
+   ts(3,3) = t_pa_pa(m, Vsr12(4), Vsr12(5))		! py py
+   ts(3,4) = t_pa_pb(m, n, Vsr12(4), Vsr12(5))	! py pz
+   ts(3,5) = t_px_dxy(m, l, Vsr12(6), Vsr12(7))	! py dxy
+   ts(3,6) = t_px_dyz(m, l, n, Vsr12(6), Vsr12(7))	! py dxz
+   ts(3,7) = t_px_dxy(m, n,  Vsr12(6), Vsr12(7))	! py dyz
+   ts(3,8) = t_py_dx2_y2(l, m, Vsr12(6), Vsr12(7))	! py dx2-y2
+   ts(3,9) = t_pa_d3z2_r2(m, l, m, n, Vsr12(6), Vsr12(7))	! py d3z2-r2
+
+
+   ts(4,1) = -t_s_px(n, Vsr21(2))	! pz s
+   ts(4,2) = t_pa_pb(l, n, Vsr21(4), Vsr21(5))	! pz px
+   ts(4,3) = t_pa_pb(m, n, Vsr21(4), Vsr21(5))	! pz py
+   ts(4,4) = t_pa_pa(n, Vsr12(4), Vsr12(5))		! pz pz
+   ts(4,5) = t_px_dyz(n, l, m, Vsr12(6), Vsr12(7))	! pz dxy
+   ts(4,6) = t_px_dxy(n, l, Vsr12(6), Vsr12(7))	! pz dxz
+   ts(4,7) = t_px_dxy(n, m, Vsr12(6), Vsr12(7))	! pz dyz
+   ts(4,8) = t_pz_dx2_y2(l, m, n, Vsr12(6), Vsr12(7))	! pz dx2-y2
+   ts(4,9) = t_pz_d3z2_r2(l, m, n, Vsr12(6), Vsr12(7))	! pz d3z2-r2
+
+
+   ts(5,1) = t_s_dab(l, m, Vsr21(3))	! dxy s
+   ts(5,2) = -t_px_dxy(l, m, Vsr21(6), Vsr21(7))	! dxy px
+   ts(5,3) = -t_px_dxy(m, l, Vsr21(6), Vsr21(7))	! dxy py
+   ts(5,4) = -t_px_dyz(n, l, m, Vsr21(6), Vsr21(7))	! dxy pz
+   ts(5,5) = t_dab_dab(l, m, n, Vsr12(8), Vsr12(9), Vsr12(10))	! dxy dxy
+   ts(5,6) = t_dab_dbg(m, l, n, Vsr12(8), Vsr12(9), Vsr12(10))	! dxy dxz
+   ts(5,7) = t_dab_dbg(l, m, n, Vsr12(8), Vsr12(9), Vsr12(10))	! dxy dyz
+   ts(5,8) = t_dxy_dx2_y2(l, m, Vsr12(8), Vsr12(9), Vsr12(10))	! dxy dx2-y2
+   ts(5,9) = t_dxy_d3z2_r2(l, m, n, Vsr12(8), Vsr12(9), Vsr12(10)) 	! dxy d3z2-r2
+
+
+   ts(6,1) = t_s_dab(l, n, Vsr21(3))	! dxz s
+   ts(6,2) = -t_px_dxy(l, n, Vsr21(6), Vsr21(7))	! dxz px
+   ts(6,3) = -t_px_dyz(m, l, n, Vsr21(6), Vsr21(7))	! dxz py
+   ts(6,4) = -t_px_dxy(n, l, Vsr21(6), Vsr21(7))	! dxz pz
+   ts(6,5) = t_dab_dbg(m, l, n, Vsr21(8), Vsr21(9), Vsr21(10))	! dxz dxy
+   ts(6,6) = t_dab_dab(l, n, m, Vsr12(8), Vsr12(9), Vsr12(10))	! dxz dxz
+   ts(6,7) = t_dab_dbg(l, n, m, Vsr12(8), Vsr12(9), Vsr12(10))	! dxz dyz
+   ts(6,8) = t_dxz_dx2_y2(l, m, n, Vsr12(8), Vsr12(9), Vsr12(10))	! dxz dx2-y2
+   ts(6,9) = t_dxz_d3z2_r2(l, m, n, Vsr12(8), Vsr12(9), Vsr12(10)) 	! dxz d3z2-r2
+
+
+   ts(7,1) = t_s_dab(m, n, Vsr21(3))	! dyz s
+   ts(7,2) = -t_px_dyz(l, m, n, Vsr21(6), Vsr21(7))	! dyz px
+   ts(7,3) = -t_px_dxy(m, n,  Vsr21(6), Vsr21(7))	! dyz py
+   ts(7,4) = -t_px_dxy(n, m, Vsr21(6), Vsr21(7))	! dyz pz
+   ts(7,5) = t_dab_dbg(l, m, n, Vsr21(8), Vsr21(9), Vsr21(10))	! dyz dxy
+   ts(7,6) = t_dab_dbg(l, n, m, Vsr21(8), Vsr21(9), Vsr21(10))	! dyz dxz
+   ts(7,7) = t_dab_dab(m, n, l, Vsr12(8), Vsr12(9), Vsr12(10))	! dyz dyz
+   ts(7,8) = t_dyz_dx2_y2(l, m, n, Vsr12(8), Vsr12(9), Vsr12(10))	! dyz dx2-y2
+   ts(7,9) = t_dyz_d3z2_r2(l, m, n, Vsr12(8), Vsr12(9), Vsr12(10)) 	! dyz d3z2-r2
+
+
+   ts(8,1) = t_s_dx2_y2(l, m, Vsr21(3))	! dx2-y2 s
+   ts(8,2) = -t_px_dx2_y2(l, m, Vsr21(6), Vsr21(7))	! dx2-y2 px
+   ts(8,3) = -t_py_dx2_y2(l, m, Vsr21(6), Vsr21(7))	! dx2-y2 py
+   ts(8,4) = -t_pz_dx2_y2(l, m, n, Vsr21(6), Vsr21(7))	! dx2-y2 pz
+   ts(8,5) = t_dxy_dx2_y2(l, m, Vsr21(8), Vsr21(9), Vsr21(10))	! dx2-y2 dxy
+   ts(8,6) = t_dxz_dx2_y2(l, m, n, Vsr21(8), Vsr21(9), Vsr21(10))	! dx2-y2 dxz
+   ts(8,7) = t_dyz_dx2_y2(l, m, n, Vsr21(8), Vsr21(9), Vsr21(10))	! dx2-y2 dyz
+   ts(8,8) = t_dx2_y2_dx2_y2(l, m, n, Vsr12(8), Vsr12(9), Vsr12(10))	! dx2-y2 dx2-y2
+   ts(8,9) = t_dx2_y2_d3z2_r2(l, m, n, Vsr12(8), Vsr12(9), Vsr12(10)) 	! dx2-y2 d3z2-r2
+
+
+   ts(9,1) = t_s_dz2_r2(l, m, n, Vsr21(3))	! d3z2-r2 s
+   ts(9,2) = -t_pa_d3z2_r2(l, l, m, n, Vsr21(6), Vsr21(7))	! d3z2-r2 px
+   ts(9,3) = -t_pa_d3z2_r2(m, l, m, n, Vsr21(6), Vsr21(7))	! d3z2-r2 py
+   ts(9,4) = -t_pz_d3z2_r2(l, m, n, Vsr21(6), Vsr21(7))	    ! d3z2-r2 pz
+   ts(9,5) = t_dxy_d3z2_r2(l, m, n, Vsr21(8), Vsr21(9), Vsr21(10)) 	! d3z2-r2 dxy
+   ts(9,6) = t_dxz_d3z2_r2(l, m, n, Vsr21(8), Vsr21(9), Vsr21(10)) 	! d3z2-r2 dxz
+   ts(9,7) = t_dyz_d3z2_r2(l, m, n, Vsr21(8), Vsr21(9), Vsr21(10)) 	! d3z2-r2 dyz
+   ts(9,8) = t_dx2_y2_d3z2_r2(l, m, n, Vsr21(8), Vsr21(9), Vsr21(10)) 	! d3z2-r2 dx2-y2
+   ts(9,9) = t_d3z2_r2_d3z2_r2(l, m, n, Vsr12(8), Vsr12(9), Vsr12(10)) 	! d3z2-r2 d3z2-r2
+end subroutine KS_sp3d5_hetero_TEST
+
+
 ! Constructing Koster Slater part for sp3d5 basis set:
 pure subroutine KS_sp3d5_hetero(Vsr12, Vsr21, l, m, n, ts)
    real(8), intent(in) :: l, m, n		! direction cosines
@@ -1075,7 +1194,7 @@ pure subroutine KS_sp3d5_hetero(Vsr12, Vsr21, l, m, n, ts)
    
    ! functions above:
    ts(1,1) = t_s_s(Vsr12(1))		! s s
-   ts(1,2) = -t_s_px(l, Vsr12(2))		! s px
+   ts(1,2) = -t_s_px(l, Vsr12(2))	! s px
    ts(1,3) = -t_s_px(m, Vsr12(2))	! s py
    ts(1,4) = -t_s_px(n, Vsr12(2))	! s pz
    ts(1,5) = t_s_dab(l, m, Vsr12(3))	! s dxy
@@ -2373,17 +2492,17 @@ pure subroutine KS_sp3_hetero_TEST(Vsr12, Vsr21, l, m, n, ts)
    ts(1,3) = t_s_px(m, Vsr12(2))
    ts(1,4) = t_s_px(n, Vsr12(2))
    
-   ts(2,1) = -t_s_px(l, Vsr21(2))
+   ts(2,1) = -t_s_px(l, Vsr21(2))   ! (px s) = -(s px)
    ts(2,2) = t_pa_pa(l, Vsr12(3), Vsr12(4))
    ts(2,3) = t_pa_pb(l, m, Vsr12(3), Vsr12(4))
    ts(2,4) = t_pa_pb(l, n, Vsr12(3), Vsr12(4))
    
-   ts(3,1) = -t_s_px(m, Vsr21(2))
+   ts(3,1) = -t_s_px(m, Vsr21(2))   ! (py s) = -(s py)
    ts(3,2) = t_pa_pb(l, m, Vsr21(3), Vsr21(4))
    ts(3,3) = t_pa_pa(m, Vsr12(3), Vsr12(4))
    ts(3,4) = t_pa_pb(m, n, Vsr12(3), Vsr12(4))
    
-   ts(4,1) = -t_s_px(n, Vsr21(2))
+   ts(4,1) = -t_s_px(n, Vsr21(2))   ! (pz s) = -(s pz)
    ts(4,2) = t_pa_pb(l, n, Vsr21(3), Vsr21(4))
    ts(4,3) = t_pa_pb(m, n, Vsr21(3), Vsr21(4))
    ts(4,4) = t_pa_pa(n, Vsr12(3), Vsr12(4))

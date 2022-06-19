@@ -537,7 +537,7 @@ subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij
                                       TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
             M_SVij(j,i,5) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (p p pi)
                                       TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
-         case default    ! sp3d5
+         case (2)    ! sp3d5
             do Vr_ind = 2, 14
                M_Vij(j,i,Vr_ind) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &
                                       TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
@@ -592,7 +592,7 @@ subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij
                                       TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
             M_dSVij(j,i,5) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (p p pi)
                                       TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
-         case default    ! sp3d5
+         case (2)    ! sp3d5
             do Vr_ind = 2, 14
                M_dVij(j,i,Vr_ind) =  d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &
                                       TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below

@@ -241,10 +241,11 @@ subroutine unix_unlimiting()
    CALL system(command)
    command='limit stacksize unlimited'
    CALL system(command)
-   command='export LD_LIBRARY_PATH=/opt/intel/2011/lib/intel64:$LD_LIBRARY_PATH'
-   CALL system(command)
-   command='export LD_LIBRARY_PATH=/opt/products/mkl/11.0/mkl/lib/em64t:$LD_LIBRARY_PATH'
-   CALL system(command)
+   ! System-specific comands to find paths to libraries:
+!    command='export LD_LIBRARY_PATH=/opt/intel/2011/lib/intel64:$LD_LIBRARY_PATH'
+!    CALL system(command)
+!    command='export LD_LIBRARY_PATH=/opt/products/mkl/11.0/mkl/lib/em64t:$LD_LIBRARY_PATH'
+!    CALL system(command)
 end subroutine unix_unlimiting
 
 

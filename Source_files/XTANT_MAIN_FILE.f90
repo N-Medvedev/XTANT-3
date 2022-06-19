@@ -118,9 +118,15 @@ if (.not.g_numpar%do_path_coordinate) then  ! only for real calculations, not fo
    call save_last_timestep(g_Scell) ! save atomic before making next time-step, module "Atomic_tools"
 endif
 
+
+! print*, 'TEST 0'
+
+
 ! Create the folder where output files will be storred, and prepare the files:
 call prepare_output_files(g_Scell,g_matter, g_laser, g_numpar, g_Scell(1)%TB_Hamil(1,1), g_Scell(1)%TB_Repuls(1,1), g_Err) ! module "Dealing_with_output_files"
 if (g_Err%Err) goto 2012 	! if there was an error in preparing the output files, cannot continue, go to the end...
+
+! print*, 'TEST 0.5'
 
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Project-specific analysis of C60:
@@ -132,16 +138,18 @@ if (g_Err%Err) goto 2012 	! if there was an error in preparing the output files,
 ! If user set '-size' option to vary the super-cell size:
 if (g_numpar%change_size) then
    call vary_size(Err=g_Err%Err) ! see below, used for testing
-   if (g_Err%Err) goto 2016      ! if the USER does not want to run the calculations
+   if (g_Err%Err) goto 2012      ! if the USER does not want to run the calculations
 endif
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! If user set to calculate the coordinate path between two phases of material:
 
 if (g_numpar%do_path_coordinate) then
    call coordinate_path( )  ! below
-   if (g_Err%Err) goto 2016      ! if the USER does not want to run the calculations
+   if (g_Err%Err) goto 2012      ! if the USER does not want to run the calculations
 endif
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
+
+! print*, 'TEST 1'
 
 ! After the initial data are read, and necessay files created,
 ! now we can proceed with the real calculations
@@ -172,6 +180,9 @@ call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)
    
 ! Save initial step in output:
 call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
+
+
+! print*, 'TEST 2'
 
 
 !DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD
@@ -568,14 +579,14 @@ subroutine vary_size(do_forces, Err)
 !       z_sh0 = z_sh
 !       !----------------------------------------------
 
-!       print*, 'Test 0'
+!        print*, 'Test 0'
       call Det_3x3(g_Scell(1)%supce,g_Scell(1)%V) !<-
       !g_time = g_Scell(1)%supce(3,3)/real(g_matter%cell_x)*0.25d0*sqrt(3.0d0)  !<- ZnS
       !g_time = g_Scell(1)%supce(2,2)/real(g_matter%cell_x)*(r_sh)
       
       call Coordinates_rel_to_abs(g_Scell, 1, if_old=.true.)	! from the module "Atomic_tools"!<-
       
-!       print*, 'Test 1'
+!        print*, 'Test 1'
       
       g_time = 1d9
       r_sh = 1d10
@@ -584,11 +595,11 @@ subroutine vary_size(do_forces, Err)
          if (g_time > r_sh) g_time = r_sh ! [A] nearest neighbor distance
       enddo
       !call change_r_cut_TB_Hamiltonian(1.70d0*(g_Scell(1)%supce(3,3)*0.25d0)/1.3d0, TB_Waals=g_Scell(1)%TB_Waals) !<-
-      !print*, 'Test 2'
+!       print*, 'Test 2'
       
       ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
       call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 1, g_Err, g_time) ! module "TB"
-      !print*, 'Test 2.5'
+!       print*, 'Test 2.5'
 
       ! Get global energy of the system at the beginning:
       call get_glob_energy(g_Scell, g_matter) ! module "Electron_tools"
@@ -596,17 +607,17 @@ subroutine vary_size(do_forces, Err)
       ! Get initial optical coefficients:
       call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
       
-!       print*, 'Test 3'
+!        print*, 'Test 3'
       
       ! Get initial DOS:
       call get_DOS(g_numpar, g_matter, g_Scell, g_Err)	! module "TB"
 
-!       print*, 'Test 4'
+!        print*, 'Test 4'
 
       ! Save initial step in output:
       call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
 
-!       print*, 'Test 5'
+!        print*, 'Test 5'
       
       ! Get interplane energy for vdW potential:
       E_vdW_interplane = vdW_interplane(g_Scell(1)%TB_Waals, g_Scell, 1, g_numpar, g_matter)/dble(g_Scell(1)%Na) !module "TB"
@@ -622,16 +633,20 @@ subroutine vary_size(do_forces, Err)
          write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, E_vdW_interplane, g_Scell(1)%supce(3,3)*0.25d0 !<-
       endif
       
-!       print*, 'Test 6'
+!        print*, 'Test 6'
       
    enddo !<-
    !g_time = -100.0d0
    g_time = g_time_save
    g_Scell(1)%supce = g_Scell(1)%supce0
+
+   ! Uncomment here if you want to be able to proceed with regular calculations after "size",
+   ! this option has never been used, so now by default it is depricated.
+!    write(*,'(a)') '*************************************************************'
+!    print*, ' Would you like to proceed with XTANT calculation? (y/n)',char(13)
+!    read(*,*) char1
    write(*,'(a)') '*************************************************************'
-   print*, ' Would you like to proceed with XTANT calculation? (y/n)',char(13)
-   read(*,*) char1
-   write(*,'(a,$)') '*************************************************************' 
+   char1 = 'n' ! by default, stop calculations here
    call parse_yes_no(trim(adjustl(char1)), yesno) ! Little_subroutines
    Err = .not.yesno
 end subroutine vary_size

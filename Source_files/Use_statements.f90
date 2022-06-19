@@ -7,6 +7,7 @@ use BS_Basis_sets
 use Dealing_with_files
 use Dealing_with_EADL
 use Dealing_with_DFTB
+use Dealing_with_3TB
 use Dealing_with_xTB
 use Algebra_tools
 use Read_input_data
@@ -22,6 +23,7 @@ use TB_Pettifor
 use TB_Molteni
 use TB_NRL
 use TB_DFTB
+use TB_3TB
 use Van_der_Waals
 use Coulomb
 use Exponential_wall

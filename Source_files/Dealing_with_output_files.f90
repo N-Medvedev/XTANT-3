@@ -2433,12 +2433,14 @@ subroutine save_duration(matter, numpar, chtext)
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
    character(*), intent(in) :: chtext ! time duration to print out
    integer FN
-   logical file_opened
+   logical file_opened, file_exists
    character(200) :: File_name
    character(1) path_sep
    path_sep = trim(adjustl(numpar%path_sep))
    File_name = trim(adjustl(numpar%output_path))//path_sep
    File_name = trim(adjustl(File_name))//'!OUTPUT_'//trim(adjustl(matter%Name))//'_Parameters.txt'
+   inquire(file=trim(adjustl(File_name)),exist=file_exists)
+   if (.not.file_exists) return  ! no such file exists, nowhere to print
    inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN)
    if (.not.file_opened) then
       FN = 300
@@ -2514,11 +2516,13 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
          FN = 300
          open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'new')
       endif
+
       select case(trim(adjustl(given_line_processed)))
       case ('time', 'TIME', 'Time', 'TIme', 'TIMe', 'tIme', 'emit', 'Vremya')
          numpar%t_total = given_num ! total duration of simulation [fs]
          print*, 'Duration of simulation is changed to', given_num
          write(FN,'(a,f10.3,a,f10.3)') 'At time instance of ', time, ' duration of simulation is changed to ', given_num
+
       case ('MDdt', 'dtMD', 'mddt', 'dtmd', 'MDDT', 'DTMD')
          numpar%dt = given_num ! Time step for MD [fs]
          call reset_support_times(numpar)   ! above
@@ -2528,6 +2532,7 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
          !numpar%dt4 = numpar%dt*numpar%dt3/8.0d0    ! dt^4/48, often used
          print*, 'Time-step of MD simulation is changed to', given_num
          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' time-step of MD simulation is changed to ', given_num 
+
       case ('SAVEdt', 'savedt', 'dtsave', 'dtSAVE', 'Savedt', 'SaveDT', 'SaveDt')
          numpar%dt_save = given_num ! save data into files every 'dt_save_time' [fs]
          print*, 'Time-step of saving output files is changed to', given_num
@@ -2554,11 +2559,11 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
 #endif
 
       case ('Te', 'te', 'TE') ! DO NOT USE: this option is not finished yet!
-         print*, 'Time-step of saving output files is changed to', given_num
-         write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' electronic temperature is changed to ', given_num
+!          print*, 'Time-step of saving output files is changed to', given_num
+!          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' electronic temperature is changed to ', given_num
       case ('pulse', 'PULSE', 'Pulse') ! DO NOT USE: this option is not finished yet!
-         print*, 'Parameters of the pulse number', int(given_num), 'are changed'
-         write(FN,'(a,f10.3,a,i4,a)') 'At time instance of ', time, ' parameters of the pulse number ', int(given_num), ' are changed'
+!          print*, 'Parameters of the pulse number', int(given_num), 'are changed'
+!          write(FN,'(a,f10.3,a,i4,a)') 'At time instance of ', time, ' parameters of the pulse number ', int(given_num), ' are changed'
       case default
          print*, 'Could not interpret what is read from the file: ', trim(adjustl(given_line)), given_num
       end select
@@ -2946,6 +2951,21 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
                text = 'sp3d5'
             endselect
             write(print_to,'(a,a)') ' With the basis set: ', trim(adjustl(text))
+          type is (TB_H_3TB) ! TB parametrization
+            select case (numpar%N_basis_size)
+            case (0)
+               text = 's'
+            case (1)    ! sp3
+               text = 'sp3'
+            case default    ! sp3d5
+               text = 'sp3d5'
+            endselect
+            write(print_to,'(a,a)') ' With the basis set: ', trim(adjustl(text))
+            if (ARRAY%include_3body) then
+               write(print_to,'(a,a)') ' With 3-body terms included'
+            else
+               write(print_to,'(a,a)') ' Only 2-body terms included (no 3-body terms)'
+            endif
           type is (TB_H_BOP) ! TB parametrization
             select case (numpar%N_basis_size)
             case (0)

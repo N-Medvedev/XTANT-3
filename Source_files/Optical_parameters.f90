@@ -359,6 +359,8 @@ subroutine get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz,
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, cPRRx, cPRRy, cPRRz, Scell(NSC)%Sij, CSij) ! module "TB"
       type is (TB_H_DFTB) 	! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, cPRRx, cPRRy, cPRRz, Scell(NSC)%Sij, CSij) ! module "TB"
+      type is (TB_H_3TB) 	! nonorthogonal
+         call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, cPRRx, cPRRy, cPRRz, Scell(NSC)%Sij, CSij) ! module "TB"
       type is (TB_H_xTB) 	! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, cPRRx, cPRRy, cPRRz, Scell(NSC)%Sij, CSij) ! module "TB"
       end select
@@ -1505,7 +1507,7 @@ end subroutine get_trani_all_complex_NRL
 
 
 subroutine get_trani_all_complex_DFTB(numpar, Scell, NSC, fe, all_w, Err)
- type (Numerics_param), intent(inout) :: numpar	! numerical parameters, including drude-function 
+   type (Numerics_param), intent(inout) :: numpar	! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(inout) :: Scell	! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of supercell
    real(8), dimension(:), intent(in) :: fe	! electron distribution function
@@ -1610,6 +1612,7 @@ subroutine get_trani_all_complex_DFTB(numpar, Scell, NSC, fe, all_w, Err)
    Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,1), Eps_hw(14,1))  ! Re_E_yy and Im_E_yy
    Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,1), Eps_hw(16,1))  ! Re_E_zz and Im_E_zz
 end subroutine get_trani_all_complex_DFTB
+
 
 
 
@@ -1819,6 +1822,7 @@ subroutine get_Fnn_complex_DFTB(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx, ky
    
    deallocate (Fnn_temp_x,Fnn_temp_y,Fnn_temp_z,PBx,PBy,PBz,CHij,CSij)
 end subroutine get_Fnn_complex_DFTB
+
 
 
 subroutine get_Fnn_complex_F(numpar, Scell, NSC, atoms, TB, CHij, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz, Err)

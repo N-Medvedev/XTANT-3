@@ -113,6 +113,7 @@ end type TB_Rep_Molteni
 
 type, EXTENDS (TB_repulsive) :: TB_Rep_NRL	! repulsive potential coefficients:
    ! D.A. Papaconstantopoulos and M.J. Mehl, J. Phys.: Condens. Matter 15 (2003) R413–R440
+   ! No repulsive part in this parameterization
 end type TB_Rep_NRL
 
 type, EXTENDS (TB_repulsive) :: TB_Rep_BOP	! repulsive potential coefficients:
@@ -122,6 +123,7 @@ type, EXTENDS (TB_repulsive) :: TB_Rep_BOP	! repulsive potential coefficients:
    ! https://en.wikipedia.org/wiki/Stopping_power_(particle_radiation)#Repulsive_interatomic_potentials
    real(8), dimension(:), allocatable :: R  ! [A] distance
    real(8), dimension(:), allocatable :: V_rep  ! [eV] parameterized repulsive potential
+   ! unfinished, do not use!
 end type TB_Rep_BOP
 
 
@@ -139,9 +141,16 @@ type, EXTENDS (TB_repulsive) :: TB_Rep_DFTB	! repulsive potential coefficients:
    real(8), dimension(:,:), allocatable :: V_rep  ! [eV] parameterized repulsive potential for spline
 end type TB_Rep_DFTB
 
+
+type, EXTENDS (TB_repulsive) :: TB_Rep_3TB	! repulsive potential coefficients:
+   ! https://arxiv.org/pdf/2112.11585.pdf
+   ! No repulsive part in this parameterization
+end type TB_Rep_3TB
+
+
 type, EXTENDS (TB_repulsive) :: TB_Rep_xTB  ! Repulsive part of the xTB Hamiltonian
    ! https://github.com/grimme-lab/xtb
-
+   ! unfinished, do not use!
 end type TB_Rep_xTB
 
 
@@ -181,7 +190,7 @@ end type TB_H_NRL
 type, EXTENDS (TB_Hamiltonian) :: TB_H_DFTB ! hamiltonian coefficients:
    ! http://www.dftb.org
    character(20) :: param_name  ! name of parameterization used
-   real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-lik cut-off [A]
+   real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-like cut-off [A]
    real(8) :: Ed, Ep, Es    ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom
 !    real(8) :: Ud, Up, Us    ! the Hubbard U values for the appropriate angular momenta (currently not used in XTANT)
    real(8), dimension(:), allocatable :: Rr ! Radial grid [A]
@@ -199,6 +208,39 @@ type, EXTENDS (TB_Hamiltonian) :: TB_H_DFTB ! hamiltonian coefficients:
    !Vr(ir,9) = (d d pi)
    !Vr(ir,10) = (d d delta)
 end type TB_H_DFTB
+
+
+type, EXTENDS (TB_Hamiltonian) :: TB_H_3TB ! hamiltonian coefficients:
+   ! [1] https://arxiv.org/pdf/2112.11585.pdf
+   real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-like cut-off [A]
+   real(8) :: rc       ! rescaling coefficient for the distance entering inside Laguerres
+   logical :: include_3body   ! include or exclude 3-body parts
+   logical :: nullify_diag_cf   ! exclude diagonal part of crystal field
+!    real(8) :: Ud, Up, Us    ! the Hubbard U values for the appropriate angular momenta (currently not used in XTANT)
+   ! Onsite parameters:
+   real(8) :: Ed, Ep, Es      ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom
+   real(8), dimension(3,4)   :: Hhavg     ! coefficients before Leguerres in 2-body onsite, Eq.(19) in [1]
+   real(8), dimension(3,3,4) :: Hhcf      ! coefficients before Leguerres in crystal-field onsite, Eq.(20) in [1]
+   real(8), dimension(3,4)   :: Hh3bdy    ! coefficients before Leguerres in 3-body onsite, Eq.(20) in [1]
+   ! Overlap parameters:
+   real(8), dimension(10,5)    :: Vrfx    ! coefficients before Leguerres in 2-body Hamiltonian, Eq.(12) in [1]
+   real(8), dimension(10,6)    :: Srfx    ! coefficients before Leguerres in 2-body overlap, Eq.(12) in [1]
+   real(8), dimension(3,3,3,4) :: V3bdy   ! coefficients before Leguerres in 3-body H, Eq.(14) in [1]
+   ! Reminder:
+   ! V3bdy (atoms index; shell 1; shell 2; Laguerre parameter index)
+   ! "atoms indices" are defined in the function find_3bdy_ind, module "Dealing_with_3TB"
+   ! Reminder:
+   !Vr(1,5) = (s s sigma)
+   !Vr(2,5) = (s p sigma)
+   !Vr(3,5) = (s d sigma)
+   !Vr(4,5) = (p p sigma)
+   !Vr(5,5) = (p p pi)
+   !Vr(6,5) = (p d sigma)
+   !Vr(7,5) = (p d pi)
+   !Vr(8,5) = (d d sigma)
+   !Vr(9,5) = (d d pi)
+   !Vr(10,5) = (d d delta)
+end type TB_H_3TB
 
 
 type, EXTENDS (TB_Hamiltonian) :: TB_H_BOP ! hamiltonian coefficients:
@@ -239,6 +281,7 @@ type, EXTENDS (TB_Hamiltonian) :: TB_H_xTB ! hamiltonian coefficients:
    real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-lik cut-off [A]
    integer :: Nprim     ! number of primitive gaussian-type orbitals (GTO) in Slater-type orb. (STO) (can be from 1 to 6 [1])
    type(Basis_set_STO), dimension(:), allocatable :: STO ! STO parameteres (via GTO)
+   ! unfinished, do not use!
 end type TB_H_xTB
 
 
@@ -526,6 +569,7 @@ type At_data
    integer :: sh	! number of shells of the element
    real(8) :: percentage ! contribution to the compound
    integer :: NVB	! number valence electrons according to periodic table
+   real(8) :: Hubbard_U ! [eV] Hubbard U for SCC
    type(Basis_set), dimension(:), allocatable :: Cart_Basis  ! Cartesian GTO basis set functions for this element (if xTB is used)
    type(Basis_set), dimension(:), allocatable :: Spher_Basis  ! Spherical (pure) GTO basis set functions for this element (if xTB is used)
    real(8) :: mulliken_Ne   ! electron population according to Mulliken analysis
@@ -602,6 +646,7 @@ type Numerics_param
    real(8) :: dt_cooling  ! time-step how often to cool down the atoms [fs]
    logical :: p_const	  ! P=const, otherwise V=const for Parinello-Rahman MD simulations
    logical :: Nonadiabat  ! true=included / false=excluded
+   logical :: scc         ! include seclf-consistent charge corrections in TB?
    integer :: NA_kind     ! number of different kinds of atoms
    integer :: N_basis_size   ! index for the size of the basis set used in DFTB case: s=0; sp3=1; sp3d5=2
    logical :: Transport		 ! true=included / false=excluded ; for atoms

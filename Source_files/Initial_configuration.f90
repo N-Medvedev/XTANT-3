@@ -526,6 +526,18 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                if (.not.allocated(Scell(i)%Sij)) allocate(Scell(i)%Sij(n1,n1))	! Overlap matrix for non-orthogonal TB
                if (.not.allocated(Scell(i)%Hij)) allocate(Scell(i)%Hij(n1,n1))	! Non-orthogonal TB Hamiltonian
                if (.not.allocated(Scell(i)%Hij_sol)) allocate(Scell(i)%Hij_sol(n1,n1))	! eigenvectors of nondiagonalized Hamiltonian
+            type is (TB_H_3TB)   ! it can be various basis sets:
+               select case (numpar%N_basis_size)    ! find which one is used now:
+               case (0)    ! s
+                  n1 = 1.0d0*Scell(i)%Na ! number of energy levels is defined by the number of TB parameters included
+               case (1)    ! sp3
+                  n1 = 4.0d0*Scell(i)%Na ! number of energy levels is defined by the number of TB parameters included
+               case default    ! sp3d5
+                  n1 = 9.0d0*Scell(i)%Na ! number of energy levels is defined by the number of TB parameters included
+               endselect
+               if (.not.allocated(Scell(i)%Sij)) allocate(Scell(i)%Sij(n1,n1))	! Overlap matrix for non-orthogonal TB
+               if (.not.allocated(Scell(i)%Hij)) allocate(Scell(i)%Hij(n1,n1))	! Non-orthogonal TB Hamiltonian
+               if (.not.allocated(Scell(i)%Hij_sol)) allocate(Scell(i)%Hij_sol(n1,n1))	! eigenvectors of nondiagonalized Hamiltonian
             type is (TB_H_BOP)   ! it can be various basis sets:
                select case (numpar%N_basis_size)    ! find which one is used now:
                case (0)    ! s

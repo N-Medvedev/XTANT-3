@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2022 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -57,6 +57,72 @@ public :: sym_diagonalize, nonsym_diagonalize, check_Ha, Kronecker_delta
 
  contains
  
+
+
+pure subroutine Laguerre_up_to_6(d, L, ind_max)
+   ! https://en.wikipedia.org/wiki/Laguerre_polynomials#The_first_few_polynomials
+   real(8), intent(in) :: d   ! variable
+   real(8), dimension(6), intent(out) :: L   ! Laguerre polinomial with indices from 0 to 5
+   integer, intent(in), optional :: ind_max  ! up to which polinomial we need it?
+   integer :: ind
+   real(8) :: d2, d3, d4, d5
+   ! set how many polynomials we need:
+   if (present(ind_max)) then
+      ind = ind_max
+   else
+      ind = 6  ! all 6 by default
+   endif
+
+   L(:) = 0.0d0   ! to start with
+
+   ! to be reused below:
+   d2 = d*d
+   d3 = d2*d
+   d4 = d2*d2
+   d5 = d4*d
+   ! Polynomials:
+   L(1) = 1.0d0
+   L(2) = 1.0d0 - d
+   L(3) = 0.5d0*(d2 - 4.0d0*d + 2.0d0)
+   L(4) = 1.0d0/6.0d0*(-d3 + 9.0d0*d2 - 18.0d0*d + 6.0d0)
+   L(5) = 1.0d0/24.0d0*(d4 - 16.0d0*d3 + 72.0d0*d2 - 96.0d0*d + 24.0d0)
+   L(6) = 1.0d0/120.0d0*(-d5 + 25.0d0*d4 - 200.0d0*d3 + 600.0d0*d2 - 600.0d0*d + 120.0d0)
+   ! if (ind > 6) L(7) = 1.0d0/720.0d0*(d5*d - 36.0d0*d5 + 450.0d0*d4 - 2400.0d0*d3 + 5400.0d0*d2 - 4320.0d0*d + 720.0d0)
+end subroutine Laguerre_up_to_6
+
+
+pure subroutine d_Laguerre_up_to_6(d, L, ind_max)
+   ! derivatives of the first 6 Laguerre polynomials
+   real(8), intent(in) :: d   ! variable
+   real(8), dimension(6), intent(out) :: L   ! derivatives of Laguerre polinomial with indices from 0 to 5
+   integer, intent(in), optional :: ind_max  ! up to which polinomial we need it?
+   integer :: ind
+   real(8) :: d2, d3, d4, d5
+
+   ! set how many polynomials we need:
+   if (present(ind_max)) then
+      ind = ind_max
+   else
+      ind = 6  ! all 6 by default
+   endif
+
+   L(:) = 0.0d0   ! to start with
+
+   ! to be reused below:
+   d2 = d*d
+   d3 = d2*d
+   d4 = d2*d2
+   !d5 = d4*d
+   ! Polynomials' derivatives:
+   L(1) = 0.0d0
+   L(2) = -1.0d0
+   L(3) = 0.5d0*(2.0d0*d - 4.0d0)
+   L(4) = 1.0d0/6.0d0*(-3.0d0*d2 + 18.0d0*d - 18.0d0)
+   L(5) = 1.0d0/24.0d0*(4.0d0*d3 - 48.0d0*d2 + 144.0d0*d - 96.0d0)
+   L(6) = 1.0d0/120.0d0*(-5.0d0*d4 + 100.0d0*d3 - 600.0d0*d2 + 1200.0d0*d - 600.0d0)
+   !if (ind > 6) L(7) = 1.0d0/720.0d0*(6.0d0*d5 - 180.0d0*d4 + 1800.0d0*d3 - 7200.0d0*d2 + 10800.0d0*d - 4320.0d0)
+end subroutine d_Laguerre_up_to_6
+
 
 
 pure function get_factorial(n, step) result(fact)   ! factorial of an integer number "n"
