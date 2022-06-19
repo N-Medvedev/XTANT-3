@@ -569,6 +569,7 @@ type At_data
    integer :: sh	! number of shells of the element
    real(8) :: percentage ! contribution to the compound
    integer :: NVB	! number valence electrons according to periodic table
+   real(8) :: Hubbard_U ! [eV] Hubbard U for SCC
    type(Basis_set), dimension(:), allocatable :: Cart_Basis  ! Cartesian GTO basis set functions for this element (if xTB is used)
    type(Basis_set), dimension(:), allocatable :: Spher_Basis  ! Spherical (pure) GTO basis set functions for this element (if xTB is used)
    real(8) :: mulliken_Ne   ! electron population according to Mulliken analysis
@@ -645,6 +646,7 @@ type Numerics_param
    real(8) :: dt_cooling  ! time-step how often to cool down the atoms [fs]
    logical :: p_const	  ! P=const, otherwise V=const for Parinello-Rahman MD simulations
    logical :: Nonadiabat  ! true=included / false=excluded
+   logical :: scc         ! include seclf-consistent charge corrections in TB?
    integer :: NA_kind     ! number of different kinds of atoms
    integer :: N_basis_size   ! index for the size of the basis set used in DFTB case: s=0; sp3=1; sp3d5=2
    logical :: Transport		 ! true=included / false=excluded ; for atoms

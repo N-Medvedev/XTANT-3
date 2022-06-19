@@ -5,7 +5,7 @@ EXEPATH = .
 EXE = $(EXEPATH)/XTANT.x
 LD = ld
 
-# choose the compiles among gfortran, gfortran6.1.0, ifort2011, ifort2013
+# choose the compilers among gfortran, gfortran6.1.0, ifort2011, ifort2013
 ifeq ($(c),gf)
 	F90 = gfortran
 	F90FLAGS = -ffree-line-length-0

@@ -45,12 +45,14 @@ USE OMP_LIB
 implicit none
 
 ! Modular parameters:
-character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS
+character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
 
 
 parameter (m_INPUT_directory = 'INPUT_DATA')
 parameter (m_INPUT_MATERIAL = 'INPUT_MATERIAL')
 parameter (m_NUMERICAL_PARAMETERS = 'NUMERICAL_PARAMETERS')
+parameter (m_Atomic_parameters = 'Atomic_parameters')
+parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat')
 
 
  contains
@@ -119,6 +121,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%t_Te_Ee = 1.0d-3	! when to start coupling
    numpar%NA_kind = 1	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
    numpar%Nonadiabat = .true.  ! included
+   numpar%scc = .true.  ! included
    numpar%t_NA = 1.0d-3	! [fs] start of the nonadiabatic
    numpar%acc_window = 5.0d0	! [eV] acceptance window for nonadiabatic coupling:
    numpar%do_cool = .false.	! quenching excluded
@@ -295,7 +298,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          print*, trim(adjustl(Error_descript))
          goto 3416
       endif INPUT_MATERIAL
-!    print* ,'File ', trim(adjustl(File_name)), ' is read'
+
 
       ! Read numerical parameters:
       if (.not.present(Numb)) then ! first run, use default files:
@@ -318,8 +321,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          goto 3416
       endif NUMERICAL_PARAMETERS
    endif NEW_FORMAT
-!    print* ,'File ', trim(adjustl(File_name)), ' is read'
-!    pause
+
 
    if (.not.allocated(Scell)) allocate(Scell(1)) ! for the moment, only one super-cell
 
@@ -335,17 +337,92 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       else ! do only MC part
           ! Run it like XCASCADE
       endif
-      !       print*, 'read_TB_parameters is done time#', i
    enddo
    !if (matter%dens < 0.0d0) matter%dens = ABS(matter%dens) ! just in case there was no better given density (no cdf file was used)
    matter%At_dens = matter%dens/(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3)   ! atomic density [1/cm^3]
-!    print*, 'Read_Input_Files: matter%At_dens: ', matter%At_dens 
 
    ! Check k-space grid file:
    call read_k_grid(matter, numpar, Err)	! below
 
+   ! Read Hubbard U parameter for self-consistent charge (SCC), if requested:
+   if (numpar%scc) then
+      ! Get file with Hubbard parameter:
+      File_name = trim(adjustl(Folder_name))//trim(adjustl(m_Atomic_parameters))//numpar%path_sep//trim(adjustl(m_Hubbard_U))
+      inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      if (file_exist) then
+         call read_SCC_Hubbard(File_name, matter, numpar%scc)  ! below
+      else  ! if there is no Hubbard parameters file, cannot use SCC:
+         print*, 'File '//trim(adjustl(File_name))//' not found, SCC cannot be used'
+         numpar%scc = .false.
+      endif
+   endif
+
 3416 continue !exit in case if input files could not be read
 end subroutine Read_Input_Files
+
+
+subroutine read_SCC_Hubbard(File_name, matter, SCC)
+   character(*), intent(in) :: File_name  ! file with Hubbard parameters
+   type(Solid), intent(inout) :: matter   ! all material parameters
+   logical, intent(inout) :: SCC ! flag to use SCC or not
+   !---------------------------
+   real(8) :: U_read
+   integer :: TOA, i, j, FN, count_lines, Reason
+   logical :: file_opened, read_well, found_el
+   character(3) :: El_name
+
+   FN = 103
+   open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read')
+   inquire(file=trim(adjustl(File_name)),opened=file_opened)
+   if (.not.file_opened) then
+      print*, 'File '//trim(adjustl(File_name))//' could not be opened, SCC cannot be used'
+      SCC = .false.
+      goto 3430
+   endif
+
+   RF:do i = 1, size(matter%Atoms) ! for all types of atoms
+      found_el = .false.
+      count_lines = 0   ! to start with
+      read(FN,*,IOSTAT=Reason) ! skip first two lines with comments
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         print*, 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         print*, 'SCC cannot be used, proceeding at non-self-consistent level'
+         SCC = .false.
+         exit RF  ! problem reading file, no need to continue
+      endif
+      read(FN,*,IOSTAT=Reason) ! skip first two lines with comments
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         print*, 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         print*, 'SCC cannot be used, proceeding at non-self-consistent level'
+         SCC = .false.
+         exit RF  ! problem reading file, no need to continue
+      endif
+
+      SFE:do while (.not.found_el)
+         read(FN,*,IOSTAT=Reason) El_name, U_read
+         if (.not. read_well) then
+            print*, 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            print*, 'SCC cannot be used, proceeding at non-self-consistent level'
+            SCC = .false.
+            exit RF  ! problem reading file, no need to continue
+         endif
+         ! Check if this is the element we need:
+         if ( trim(adjustl(El_name)) == trim(adjustl(matter%Atoms(i)%Name)) ) then
+            found_el = .true.
+            matter%Atoms(i)%Hubbard_U = U_read
+            !print*, 'Hubbard:', trim(adjustl(matter%Atoms(i)%Name)), matter%Atoms(i)%Hubbard_U
+            rewind(FN)  ! start the search for the next element
+            exit SFE ! found element, go to the next one
+         endif
+      enddo SFE
+   enddo RF
+
+3430 continue
+   call close_file('close', FN=FN) ! module "Dealing_with_files"
+end subroutine read_SCC_Hubbard
+
 
 
 subroutine read_k_grid(matter, numpar, Err)
@@ -526,7 +603,7 @@ subroutine get_CDF_data(matter, numpar, Err)
       endif
 
       !Folder_name2 = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))//'Atomic_parameters'
-      Folder_name2 = trim(adjustl(numpar%input_path))//'Atomic_parameters'
+      Folder_name2 = trim(adjustl(numpar%input_path))//trim(adjustl(m_Atomic_parameters))  ! 'Atomic_parameters'
       call Decompose_compound(Folder_name2, matter%Chem, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, at_percentage, at_short_names, at_names, at_masses, at_NVE) ! molude 'Dealing_with_EADL'
       if (INFO .NE. 0) then
          call Save_error_details(Err, INFO, error_message)
@@ -645,7 +722,7 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot)
 
    ! Open eadl.all database:
    !Folder_name = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))//'Atomic_parameters'
-   Folder_name = trim(adjustl(numpar%input_path))//'Atomic_parameters'
+   Folder_name = trim(adjustl(numpar%input_path))//trim(adjustl(m_Atomic_parameters))   !'Atomic_parameters'
    !File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//'eadl.all'
    File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(m_EADL_file))
    
@@ -743,7 +820,7 @@ subroutine get_EADL_data(matter, numpar, Err)
    logical file_exist, file_opened
 
    !Folder_name = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))//'Atomic_parameters'
-   Folder_name = trim(adjustl(numpar%input_path))//'Atomic_parameters'
+   Folder_name = trim(adjustl(numpar%input_path))//trim(adjustl(m_Atomic_parameters))   !'Atomic_parameters'
 
    call Decompose_compound(Folder_name, matter%Chem, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, at_percentage, at_short_names, at_names, at_masses, at_NVE) ! molude 'Periodic_table'
    if (INFO .NE. 0) then
