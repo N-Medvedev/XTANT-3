@@ -13,10 +13,19 @@ cd Source_files
 :: read argument from user
    SET arg1=%1 
     
-::  in case of empty argument, assume no debug
+:: in case of empty argument, assume no debug
    IF "%1"=="" ( 
       SET arg1=NODEBUG
    )
+
+:: shorthand expressions for debug options (convert them into DEBUGOMP option):
+   IF /I %arg1%==DBG (
+      SET arg1=DEBUGOMP
+   )
+   IF /I %arg1%==DB (
+      SET arg1=DEBUGOMP
+   )
+
    
    SET "Starline=************************************************************************************"
    echo %Starline%
