@@ -2576,7 +2576,7 @@ subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SV
       KOA2 => Scell%MDatoms(j)%KOA
 
       r1 => Scell%Near_neighbor_dist(i,atom_2,4)  ! at this distance, R
-      rij(:) = Scell%Near_neighbor_dist(i,atom_2,:)  ! at this distance, X
+      rij(:) = Scell%Near_neighbor_dist(i,atom_2,1:3)  ! at this distance, X
       sij(:) = Scell%Near_neighbor_dist_s(i,atom_2,:) ! at this distance, SX
 
       ! Radial parts for aferage atom contribution:

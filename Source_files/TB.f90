@@ -2147,10 +2147,15 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
       type is (TB_H_3TB) ! TB parametrization according to 3TB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below
+         if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_M_x1 succesful'
          call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+         if (numpar%verbose) print*, 'Get_pressure 3TB : get_Mjs_factors succesful'
          call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
+         if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_Vij_3TB succesful'
          call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+         if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_Aij_x_En succesful'
          call Attract_TB_Forces_Press_3TB(Scell, NSC, ARRAY, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
+         if (numpar%verbose) print*, 'Get_pressure 3TB : Attract_TB_Forces_Press_3TB succesful'
       type is (TB_H_xTB) ! TB parametrization according to xTB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below

@@ -801,6 +801,7 @@ subroutine Cooling_atoms_SC(numpar, nrg, matter, Scell, NSC, t_time, dt, t_start
       else
          numpar%dt_cooling = numpar%dt_cooling + numpar%dt ! [fs]
       endif
+      if (numpar%verbose) print*, 'Quenching succesful : Cooling_atoms_SC'
    endif
 end subroutine Cooling_atoms_SC
 
