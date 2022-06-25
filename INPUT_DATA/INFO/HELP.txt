@@ -1,0 +1,30 @@
+*******************************************************
+The following flags are supported in XTANT:
+
+1) Help -- this very help output
+2) Info -- basic information about XTANT
+3) Size -- conmputes cohesive energy of the material as a function of the nearest neighbour distance
+4) Allow_rotation -- run MD simulation without removing total angular momentum
+5) Verbose -- prints out a lot of extra information useful for debugging
+
+*******************************************************
+The list of known errors (to check in the file OUTPUT_Error_log.dat if exists):
+Error #1: file not found
+Error #2: file could not be opened
+Error #3: file could not be read on the line number given
+Error #4: some problem with databases (EADL, EPDL97, periodic table file, etc.)
+Error #5: inconsistent TB parametrization (only the same type of parametrization is allowed for all elements within compound)
+Error #6: diagonalization subroutine with LAPACK failed (uses MKL library)
+Error #7: some errors in low-energy electrons (probably in tempereature or chem.potential calculation)
+Error #8: error in optical coefficients (probably in complex Hamiltonian)
+
+*******************************************************
+You can communicate with the program on-the-fly
+Type in the file "Communication.txt" (in the OUTPUT folder created) one of the following options:
+1) time "number" : to change total duration of the program (give new number in [fs])
+2) MDdt "number" : to change time-step of MD (give new number in [fs])
+3) SAVEdt "number" : to change how often outputs are saved (give new number in [fs])
+
+*******************************************************
+Also, read the manual for details on how to run XTANT:
+!XTANT_3_manual.pdf   or   !XTANT_3_manual.docx

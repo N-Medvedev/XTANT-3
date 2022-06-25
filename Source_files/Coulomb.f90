@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2022 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -21,7 +21,18 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-! This module contains subroutines to deal with van der Waals forces within TB
+! This module contains subroutines to deal with Coulomb potential
+!
+! For Ewalds summation, it follows the example of Allen and Tildesley:
+! [1] https://github.com/Allen-Tildesley/examples/blob/master/ewald_module.f90
+! Which accompanies the book "Computer Simulation of Liquids", second edition, 2017
+! [2] http://micro.stanford.edu/mediawiki/images/4/46/Ewald_notes.pdf
+!
+! For Wolf's et al. treatement of truncated Coulomb, see:
+! [3] D. Wolf, et al., J. Chem. Phys. 110, 8254 (1999); https://doi.org/10.1063/1.478738
+! [4] C. J. Fennell and J. D. Gezelter, J. Chem. Phys. 124, 234104 (2006)
+
+
 
 MODULE Coulomb
 use Universal_constants
@@ -32,24 +43,65 @@ use Atomic_tools
 
 implicit none
 
+
+real(8) :: m_k, m_2Pi2, m_sqrtPi
+
+parameter(m_k = g_ke * g_e * 1.0d10)  ! Constant in the Coulomb law, converting potential into [eV]
+parameter(m_2Pi2 = g_2Pi*g_2Pi)     ! 2*Pi^2
+parameter(m_sqrtPi = sqrt(g_Pi))    ! sqrt(Pi)
+
+
  contains
 
 
-subroutine test_Coulomb(TB_Coul)
-   class(TB_Coulomb), dimension(:,:), allocatable, intent(inout):: TB_Coul ! Coulomb parameters + TB
-   if (allocated(TB_Coul)) then
-      select type(TB_Coul)
-      type is (TB_Coulomb_cut)
-         print*, 'type is TB_Coulomb_cut'
-      type is (Cutie)
-         print*, 'type is Cutie'
-      end select
-      pause 'test_Coulomb'
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Wolf's method of Coulomb trunkation:
+
+pure function Coulomb_Wolf_pot(q1, q2, r, Rc, alpha) result(WPot) ! truncated Coulomb potential [4]
+   real(8) :: WPot  ! [eV]
+   real(8), intent(in) :: q1, q2    ! [e] charges
+   real(8), intent(in) :: r, Rc ! [A] interatomic distance, truncation distance
+   real(8), intent(in) :: alpha ! truncation parameter
+   real(8) :: Rc2, a2, term
+   if (r < Rc) then
+      Rc2 = Rc*Rc
+      a2 = alpha*alpha
+      term = erfc(alpha*Rc)/Rc
+      WPot = m_k*q1*q2 * (erfc(alpha*r)/r - term + &
+         (term/Rc + 2.0d0*alpha/m_sqrtPi*exp(-a2*Rc2)/Rc)*(r-Rc) )  ! [eV]
    else
-      print*, 'For this material Coulomb class is undefined!'
-      pause 'test_Coulomb'
+      WPot = 0.0d0
    endif
-end subroutine test_Coulomb
+end function Coulomb_Wolf_pot
+
+
+pure function Coulomg_Wolf_self_term(q1, Rc, alpha) result(SelfPot)   ! Self-term, Eq.(5.13) [3]
+   real(8) :: SelfPot  ! [eV]
+   real(8), intent(in) :: q1    ! [e] charges
+   real(8), intent(in) :: Rc    ! [A] interatomic distance, truncation distance
+   real(8), intent(in) :: alpha ! truncation parameter
+   SelfPot = m_k*q1*q1*(erfc(alpha*Rc)/Rc + 2.0d0*alpha/m_sqrtPi)    ! [eV]
+end function Coulomg_Wolf_self_term
+
+
+pure function d_Coulomb_Wolf_pot(q1, q2, r, Rc, alpha) result(dWPot) ! derivative truncated Coulomb potential, Eq.(5.22) [3]
+   real(8) :: dWPot ! [eV/A]
+   real(8), intent(in) :: q1, q2    ! [e] charges
+   real(8), intent(in) :: r, Rc ! [A] interatomic distance, truncation distance
+   real(8), intent(in) :: alpha ! truncation parameter
+   real(8) :: r2, Rc2, a2
+   if (r < Rc) then
+      r2 = r*r
+      Rc2 = Rc*Rc
+      a2 = alpha*alpha
+      dWPot = -m_k*q1*q2*( erfc(alpha*r)/r2 - erfc(alpha*Rc)/Rc2 + &
+               2.0d0*alpha/m_sqrtPi*(exp(-a2*r2)/r - exp(-a2*Rc2)/Rc) )  ! [eV/A]
+   else
+      dWPot = 0.0d0
+   endif
+end function d_Coulomb_Wolf_pot
+
 
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

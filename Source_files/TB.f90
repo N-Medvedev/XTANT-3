@@ -86,7 +86,6 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
 
          ! Get lists of nearest neighbors:
          call get_near_neighbours(Scell, numpar) ! see "Atomic_tools"
-!          call print_time('Starting H', ind=1)
          
          ! Get and save in matrices often-used elements for forces calculations:
          ! Here, get the matrix of directional cosines and associated expressions:
@@ -94,56 +93,14 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
          
          ! Electronic TB Hamiltonian part:
          ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:)) ! this is the sintax we have to use to check the class of defined types
-            !print*, 'before construct_TB_H'
-            
+
             ! Create and diagonalize TB Hamiltonian:
-            select type(ARRAY)
-            type is (TB_H_Pettifor) ! TB parametrization according to Pettifor
-               call construct_TB_H_Pettifor(numpar, matter, ARRAY, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Pettifor"
-            type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni
-               call construct_TB_H_Molteni(numpar, matter, ARRAY, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Molteni"
-            type is (TB_H_Fu)  ! TB parametrization accroding to Fu
-               call construct_TB_H_Fu(numpar, matter, ARRAY, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Fu"
-            type is (TB_H_NRL)  ! TB parametrization accroding to NRL
-               call Construct_Vij_NRL(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_NRL"
-               call construct_TB_H_NRL(numpar, matter, ARRAY, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_NRL"
-            type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB
-               call Construct_Vij_DFTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_DFTB"
-               call construct_TB_H_DFTB(numpar, matter, ARRAY, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_DFTB"
-
-            type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
-               ! Get the overlaps between orbitals and ficticios s orbital (for 3-body parts):
-               call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
-               ! Get the overlaps and reusable functions:
-               call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
-               ! Construct the Hamiltonian, diagonalize it, get the energy:
-               call construct_TB_H_3TB(numpar, matter, ARRAY, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Scell, NSC, Err) ! module "TB_3TB"
-
-            type is (TB_H_BOP)  ! TB parametrization accroding to BOP (incomplete)
-               call Construct_Vij_BOP(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_E0ij, M_dE0ij)    ! module "TB_BOP"
-               call construct_TB_H_BOP(numpar, ARRAY, matter, M_Vij, M_SVij, M_E0ij, M_lmn, Scell, NSC, Err)    ! module "TB_BOP"
-            type is (TB_H_xTB)  ! TB parametrization accroding to xTB (NOT READY)
-!                call Construct_Vij_xTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_xTB"
-!                call construct_TB_H_xTB(numpar, matter, ARRAY, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_xTB"
-            end select
-            
-            ! Get the DOS weights for each energy level, if required:
-            !call get_DOS_weights(numpar%DOS_splitting, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha) ! below
-            call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha) ! below
-            
-            ! Fill corresponding energy levels + repulsive energy cotribution:
-            select case (which_fe)
-            case (1) ! distribution for given Te:
-               call set_initial_fe(Scell, matter, Err) ! module "Electron_tools"
-               call get_new_global_energy(Scell(NSC), Scell(NSC)%nrg) ! module "Electron_tools"
-            case (2) ! distribution for given Ee + repulsive energy:
-               call get_new_energies(Scell, matter, numpar, t, Err) ! below
-               !call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
-            end select
+            call create_and_diagonalize_H(Scell, NSC, numpar, matter, ARRAY, which_fe, t, &
+                                    M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Mjs, M_Lag_exp, M_d_Lag_exp, &
+                                    M_E0ij, M_dE0ij, Err)   ! Below
 
             ! Get the matrix of coefficients used for calculation of forces:
             call Construct_Aij(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Aij) ! see below
-            !print*, 'before dHij_s'
 
             if (numpar%do_atoms) then ! atoms are allowed to be moving:
                ! Construct forces:
@@ -181,20 +138,11 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                   ! Get the energy-weighted density matrix:
                   call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
                   ! Get the derivatives of the Hamiltonian:
-
-!                   print*, 'Before get_dHij_drij_3TB'
-
                   call get_dHij_drij_3TB(numpar, Scell, NSC, ARRAY, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
                         M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
-
-!                   print*, 'Before Attract_TB_Forces_Press_3TB'
-
                   call Attract_TB_Forces_Press_3TB(Scell, NSC, ARRAY, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
                         M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
-
-!                   print*, 'After Attract_TB_Forces_Press_3TB'
-
                type is (TB_H_BOP)
                   ! Get the energy-weighted density matrix:
                   call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
@@ -216,7 +164,6 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
             endif !(numpar%do_atoms)
          END ASSOCIATE
          !aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-         !print*, 'before dErdr_s'
          
          ! Repulsive TB Hamiltonian part:
          ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Repuls(:,:))
@@ -262,8 +209,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
             end select
          END ASSOCIATE
          !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
-         !print*, 'before vdW_forces'
-         
+
          ! van der Waals part with TB Hamiltonian:
          call vdW_forces(Scell(NSC)%TB_Waals, Scell, NSC, numpar) ! get all the van der Waals forces, see below
 
@@ -273,30 +219,25 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
          ! Exponential wall potential part:
          call Exponential_wall_forces(Scell(NSC)%TB_Expwall, Scell, NSC, numpar) ! get Exponential wall forces, see below
          !cccccccccccccccccccccccccccccccccccccccccccccc
-         !print*, 'before total_forces'
 
 
          ! Get total forces for all atoms:
          call total_forces(Scell(NSC)%MDatoms) ! sum up repulsive and attractive forces, module "Atomic_tools"
-         !print*, 'before Potential_super_cell_forces'
 
          ! Get forces for the supercell:
          call Potential_super_cell_forces(numpar, Scell, NSC, matter)  ! module "Atomic_tools"
-         !print*, 'before super_cell_forces'
 
          ! Adding kinetic part and pressure to super-cell forces:
          call super_cell_forces(numpar, Scell, NSC, matter, Scell(NSC)%SCforce) ! module "Atomic_tools"
 
          ! Get new volume of the supercell:
          call Det_3x3(Scell(NSC)%supce, Scell(NSC)%V) ! finding initial volume of the super-cell, module "Algebra_tools"
-         !print*, 'cycle done'
 
       enddo SC
    endif DO_TB
    
    ! Get new energies of the system: potential, kinetic, global:
    call get_new_energies(Scell, matter, numpar, t, Err) ! module "TB"
-   !print*, 'done get_Hamilonian_and_E'
 
    ! Clean up a bit:
    if (allocated(M_x1)) deallocate(M_x1)
@@ -310,6 +251,74 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
    if (allocated(M_Aij_x_Ei)) deallocate(M_Aij_x_Ei)
 end subroutine get_Hamilonian_and_E
 
+
+
+subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_fe, t, &
+                                    M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Mjs, M_Lag_exp, M_d_Lag_exp, &
+                                    M_E0ij, M_dE0ij, Err)
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Solid), intent(inout) :: matter ! material parameters
+   class(TB_Hamiltonian), dimension(:,:), intent(in) :: TB_Hamil
+   integer, intent(in) :: which_fe ! which method is used to get electron distribution
+   real(8), intent(in) :: t ! [fs] timestep
+   real(8), dimension(:,:,:), allocatable, intent(inout) :: M_Vij    ! Overlap functions for H, all pairs of atoms, all orbitals
+   real(8), dimension(:,:,:), allocatable, intent(inout) :: M_dVij   ! derivatives of Overlap functions for H orbitals
+   real(8), dimension(:,:,:), allocatable, intent(inout) :: M_SVij   ! Overlap matrix for all pairs of atoms, all orbitals
+   real(8), dimension(:,:,:), allocatable, intent(inout) :: M_dSVij  ! derivatives of Overlap matrix,  all pairs of atoms, all orbitals
+   real(8), dimension(:,:,:), allocatable, intent(inout) :: M_E0ij   ! on-site energies (used for BOP)
+   real(8), dimension(:,:,:), allocatable, intent(inout) :: M_dE0ij     ! derivatives on-site energies (used for BOP)
+   real(8), dimension(:,:,:), allocatable, intent(inout) :: M_Lag_exp   ! Laguerres for 3-body radial funcs (for 3TB)
+   real(8), dimension(:,:,:), allocatable, intent(inout) :: M_d_Lag_exp ! derivatives of Laguerres (for 3TB)
+   real(8), dimension(:,:,:), allocatable, intent(inout) :: M_lmn    ! directional cosines l, m, n
+   real(8), dimension(:,:,:), allocatable, intent(inout) :: Mjs      ! K-S part of overlaps with s-orb. (for 3TB)
+   type(Error_handling), intent(inout) :: Err	! error save
+
+
+   select type(TB_Hamil)
+      type is (TB_H_Pettifor) ! TB parametrization according to Pettifor
+         call construct_TB_H_Pettifor(numpar, matter, TB_Hamil, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Pettifor"
+      type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni
+         call construct_TB_H_Molteni(numpar, matter, TB_Hamil, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Molteni"
+      type is (TB_H_Fu)  ! TB parametrization accroding to Fu
+         call construct_TB_H_Fu(numpar, matter, TB_Hamil, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Fu"
+      type is (TB_H_NRL)  ! TB parametrization accroding to NRL
+         call Construct_Vij_NRL(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_NRL"
+         call construct_TB_H_NRL(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_NRL"
+      type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB
+         call Construct_Vij_DFTB(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_DFTB"
+         call construct_TB_H_DFTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_DFTB"
+
+      type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
+         ! Get the overlaps between orbitals and ficticios s orbital (for 3-body parts):
+         call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+         ! Get the overlaps and reusable functions:
+         call Construct_Vij_3TB(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
+         ! Construct the Hamiltonian, diagonalize it, get the energy:
+         call construct_TB_H_3TB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Scell, NSC, Err) ! module "TB_3TB"
+
+      type is (TB_H_BOP)  ! TB parametrization accroding to BOP (incomplete)
+         call Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_E0ij, M_dE0ij)    ! module "TB_BOP"
+         call construct_TB_H_BOP(numpar, TB_Hamil, matter, M_Vij, M_SVij, M_E0ij, M_lmn, Scell, NSC, Err)    ! module "TB_BOP"
+      type is (TB_H_xTB)  ! TB parametrization accroding to xTB (NOT READY)
+!         call Construct_Vij_xTB(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_xTB"
+!         call construct_TB_H_xTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_xTB"
+      end select
+
+      ! Get the DOS weights for each energy level, if required:
+      call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha) ! below
+
+      ! Fill corresponding energy levels + repulsive energy cotribution:
+      select case (which_fe)
+      case (1) ! distribution for given Te:
+         call set_initial_fe(Scell, matter, Err) ! module "Electron_tools"
+         call get_new_global_energy(Scell(NSC), Scell(NSC)%nrg) ! module "Electron_tools"
+      case (2) ! distribution for given Ee + repulsive energy:
+         call get_new_energies(Scell, matter, numpar, t, Err) ! below
+      end select
+
+end subroutine create_and_diagonalize_H
 
 
 
@@ -1442,7 +1451,7 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    !type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
-   real(8) Erepuls, Pot_phi
+   real(8) Erepuls, Pot_phi, Na_inv
    integer NSC
    ! Calculations of the contribution of electrons into potential energy of atoms,
    ! first term in Eq.(2.44) from H.Jeschke PhD Thesis, Page 41
@@ -1450,32 +1459,31 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
    
       call get_low_e_energy(Scell, matter) ! module "Electron_tools"
-      !print*, 'get_pot_nrg 0'
 
       ! Calculations of the contribution of repulsive energies into potential energy of atoms,
       ! second term in Eq.(2.44) from H.Jeschke PhD Thesis, Page 41
       do NSC = 1, size(Scell) ! for all supercells
+         ! Real number of atoms inversed:
+         Na_inv = 1.0d0 / dble(Scell(NSC)%Na)
          
          Erepuls = Erep_s(Scell(NSC)%TB_Repuls(:,:), Scell, NSC, numpar) ! sum over all atom pairs
-         !print*, 'get_pot_nrg 1'
          
          !Pot_phi = Scell(NSC)%nrg%El_tot + Erepuls + TB_Repuls%E0_TB*Scell(NSC)%Na ! [eV] potential energy, Eq.(2.44) in H.Jeschke Thesis, Page 41
          Pot_phi = Scell(NSC)%nrg%El_low + Erepuls ! [eV] potential energy, Eq.(2.44) in H.Jeschke Thesis, Page 41
          
-         Scell(NSC)%nrg%At_pot = Pot_phi/real(Scell(NSC)%Na) ! [eV/atom]
+         Scell(NSC)%nrg%At_pot = Pot_phi * Na_inv ! [eV/atom]
          
          !Scell(NSC)%nrg%E_rep = Erepuls + TB_Repuls%E0_TB * Scell(NSC)%Na  ! [eV/atom]
          Scell(NSC)%nrg%E_rep = Erepuls ! [eV]
          
          ! van der Waals potential energy:
-         Scell(NSC)%nrg%E_vdW = vdW_s(Scell(NSC)%TB_Waals, Scell, NSC, numpar)/real(Scell(NSC)%Na) ! [eV/atom], function below
+         Scell(NSC)%nrg%E_vdW = vdW_s(Scell(NSC)%TB_Waals, Scell, NSC, numpar) * Na_inv ! [eV/atom], function below
          
          ! Coulomb potential energy:
-         Scell(NSC)%nrg%E_coul = Coulomb_s(Scell(NSC)%TB_Coul, Scell, NSC, numpar)/real(Scell(NSC)%Na) ! [eV/atom], function below
+         Scell(NSC)%nrg%E_coul = Coulomb_s(Scell(NSC)%TB_Coul, Scell, NSC, numpar) * Na_inv ! [eV/atom], function below
          
          ! Exponential wall potential energy:
-         Scell(NSC)%nrg%E_expwall = Exponential_wall_s(Scell(NSC)%TB_Expwall, Scell, NSC, numpar)/real(Scell(NSC)%Na) ! [eV/atom], function below
-         !print*, 'get_pot_nrg 2'
+         Scell(NSC)%nrg%E_expwall = Exponential_wall_s(Scell(NSC)%TB_Expwall, Scell, NSC, numpar) * Na_inv ! [eV/atom], below
       enddo
       
    endif DO_TB

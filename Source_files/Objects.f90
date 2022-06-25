@@ -325,9 +325,11 @@ end type TB_vdW_Dumitrica
 ! d) Coulomb energy contribution:
 type, EXTENDS (TB_Coulomb) :: TB_Coulomb_cut
    ! Coulomb with smooth cut-off at lond distances:
+   integer :: ind    ! 0=softly truncated; 1=Wolf's truncated; 2=Ewalds method
    real(8) :: k		! [N*A^2] coupling constant of Coulomb field (e/(4*Pi*e0))
    real(8) :: dm	! [A] cut-off radius: f_cut = 1/(1+exp((r-dm)/dd))
    real(8) :: dd	! [A] cut-off smoothing distance
+   real(8) :: alpha  ! Wolf's truncation parameter
 end type TB_Coulomb_cut
 
 ! e) Exponential wall at short distances:
@@ -348,19 +350,20 @@ end type Cutie
 !==============================================
 
 type Energies
-   real(8) :: At_pot	! [eV] potential energy of atoms
-   real(8) :: E_rep	! [eV] repulsive part of the potential energy
-   real(8) :: E_vdW	! [eV] van der Waals potential energy
-   real(8) :: E_coul	! [eV] Coulomb potential energy
-   real(8) :: E_expwall	! [eV] Exponential wall potential energy
-   real(8) :: At_kin	! [eV] kinetic energy of atoms
-   real(8) :: E_tot	! [eV] total electron energy in the super-cell
-   real(8) :: El_low	! [eV] total energy of electrons (low-energy domain)
-   real(8) :: El_high	! [eV] total energy of electrons (high-energy domain)
-   real(8) :: Eh_tot	! [eV] total energy of holes
-   real(8) :: Total	! [eV] total energy within the super-cell
-   real(8) :: E_supce	! [eV] total energy of the supercell
-   real(8) :: E_glob	! [eV] total energy (atoms + electrons) in the super-cell
+   real(8) :: At_pot       ! [eV] potential energy of atoms
+   real(8) :: E_rep        ! [eV] repulsive part of the potential energy
+   real(8) :: E_vdW        ! [eV] van der Waals potential energy
+   real(8) :: E_coul       ! [eV] Coulomb potential energy (electron emission contribution)
+   real(8) :: E_coul_scc   ! [eV] Coulomb potential energy (self-consistent charge contribution)
+   real(8) :: E_expwall    ! [eV] Exponential wall potential energy
+   real(8) :: At_kin       ! [eV] kinetic energy of atoms
+   real(8) :: E_tot        ! [eV] total electron energy in the super-cell
+   real(8) :: El_low       ! [eV] total energy of electrons (low-energy domain)
+   real(8) :: El_high      ! [eV] total energy of electrons (high-energy domain)
+   real(8) :: Eh_tot       ! [eV] total energy of holes
+   real(8) :: Total        ! [eV] total energy within the super-cell
+   real(8) :: E_supce      ! [eV] total energy of the supercell
+   real(8) :: E_glob       ! [eV] total energy (atoms + electrons) in the super-cell
    real(8) :: E_high_heating ! [eV] energy transfer from high-energy electrons to atoms
 end type Energies
 
@@ -628,6 +631,7 @@ type Numerics_param
    real(8), dimension(:), allocatable :: Subcell_coord_sx, Subcell_coord_sy, Subcell_coord_sz
    ! Other parameters:
    integer :: which_input ! number of input file used (for using more then one sequentially)
+   logical :: verbose
    ! MD:
    real(8) :: dt	      ! [fs] time-step for MD
    real(8) :: halfdt      ! dt/2, often used
