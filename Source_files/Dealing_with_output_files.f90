@@ -571,10 +571,10 @@ subroutine write_energies(FN, time, nrg)
    integer, intent(in) :: FN	! file number to write to
    real(8), intent(in) :: time	! [fs]
    type(Energies), intent(in) :: nrg
-   !write(FN, '(.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, nrg%E_tot, nrg%Eh_tot, nrg%At_pot, nrg%At_kin, nrg%Total, & !+nrg%E_supce,
-   !nrg%Total+nrg%E_supce+nrg%El_high, nrg%Total+nrg%E_supce+nrg%El_high+nrg%Eh_tot + nrg%E_vdW, nrg%E_vdW
+
    write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, nrg%E_tot, nrg%Eh_tot, nrg%At_pot+nrg%E_vdW, nrg%At_kin, nrg%Total, & !+nrg%E_supce,
-   nrg%Total+nrg%E_supce+nrg%El_high, nrg%Total+nrg%E_supce+nrg%El_high+nrg%Eh_tot, nrg%E_vdW
+   nrg%Total+nrg%E_supce+nrg%El_high, &
+   nrg%Total+nrg%E_supce+nrg%El_high+nrg%Eh_tot, nrg%E_vdW
 end subroutine write_energies
 
 
@@ -1127,7 +1127,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          endif
       endif
    endif
-   write(FN, '(a)') 'echo "Gnuplot scripts are executed, see created eps-files."' 
+   write(FN, '(a)') 'echo Gnuplot scripts are executed, see created plots.'
    close(FN)
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
    else ! It is linux
@@ -3004,6 +3004,26 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
             enddo
          endselect
       END ASSOCIATE
+
+      if (numpar%scc) then
+         write(print_to,'(a)') ' Second-order TB: including self-consistent charge calculations:'
+         select case (numpar%scc_gam_ind)
+         case (-1)
+            text1 = ' Garrity-Choudhary'
+         case (1)
+            text1 = ' Klopman-Ohno'
+         case (2)
+            text1 = ' Mataga-Nishimoto'
+         case default
+            text1 = " Garrity-Choudhary with Wolf's Coulomb "
+         end select
+         write(print_to,'(a,a)') ' Model for gamma-function used: ', trim(adjustl(text1))
+         write(text1, '(f6.2)') numpar%scc_mix
+         write(print_to,'(a,a)') ' Mixing factor for SCC : ', trim(adjustl(text1))
+      else
+         write(print_to,'(a)') ' Zero-order TB: non-self-consistent-charge calculations'
+      endif
+
       
       if (allocated(Scell(1)%TB_Waals)) then ! if we have vdW potential defined
          write(print_to,'(a,a)') ' van der Waals energy: ', trim(adjustl(Scell(1)%TB_Waals(1,1)%Param))

@@ -35,6 +35,7 @@ implicit none
  contains
 
 
+<<<<<<< Updated upstream
 subroutine test_Coulomb(TB_Coul)
    class(TB_Coulomb), dimension(:,:), allocatable, intent(inout):: TB_Coul ! Coulomb parameters + TB
    if (allocated(TB_Coul)) then
@@ -45,11 +46,150 @@ subroutine test_Coulomb(TB_Coul)
          print*, 'type is Cutie'
       end select
       pause 'test_Coulomb'
+=======
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Wolf's method of Coulomb trunkation:
+
+
+subroutine get_Coulomb_Wolf_s(Scell, NSC, numpar, matter, E_coulomb, gam_ij)   ! Coulomb energy
+! This subroutine calcualtes the full Coulomb energy following Wolf's truncation method
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(solid), intent(in), target :: matter   ! material parameters
+   real(8), intent(out) :: E_coulomb  ! Total Coulomb energy of all atoms [eV]
+   real(8), dimension(:,:), intent(in), optional :: gam_ij  ! effective energy values [eV]
+   !=====================================================
+   real(8) :: alpha, sum_a, Coul_pot, r_cut, q1, q2
+   integer :: j, nat, atom_2, i
+   real(8), pointer :: r
+   integer, pointer :: m, KOA1, KOA2
+
+   nat = Scell(NSC)%Na ! number of atoms
+   ! Get the cut-off distance
+   r_cut = cut_off_distance(Scell(NSC)) ! below
+   sum_a = 0.0d0  ! to start with
+
+   !$omp PARALLEL private( j, KOA1, q1, m, atom_2, i, KOA2, q2, r, alpha, Coul_pot )
+   !$omp do reduction( + : sum_a)
+   do j = 1, nat  ! atom #1
+      KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! kind of atom #1
+      q1 = matter%Atoms(KOA1)%NVB - matter%Atoms(KOA1)%mulliken_Ne ! Mulliken charge of atom #1
+      m => Scell(NSC)%Near_neighbor_size(j)  ! number of nearest neighbors of atom #1
+      do atom_2 = 1, m  ! only for atoms close to #1
+         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
+         KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! kind of atom #2
+         q2 = matter%Atoms(KOA2)%NVB - matter%Atoms(KOA2)%mulliken_Ne ! Mulliken charge of atom #2
+
+         r => Scell(NSC)%Near_neighbor_dist(j,atom_2,4) ! distance between atoms #1 and #2, R [A]
+         alpha = 3.0d0/(4.0d0*r_cut) ! it's chosen according to optimal value from [4]
+
+         Coul_pot = Coulomb_Wolf_pot(q1, q2, r, r_cut, alpha)    ! function below
+         if (present(gam_ij)) then  ! Effective value according to Hubbard model:
+            ! Renormalize Coulomb potential to a.u., and then to the given Hubbard parameters:
+            sum_a = sum_a + Coul_pot * gam_ij(j,i) * g_ev2au
+         else  ! Bare Coulomb:
+            sum_a = sum_a + Coul_pot
+         endif
+      enddo ! atom_2
+   enddo ! j
+   !$omp end do
+   !$omp end parallel
+   ! Total Coulomb energy, excluding double-counting:
+   E_coulomb = sum_a * 0.5d0   ! [eV]
+
+   nullify(KOA1, KOA2, r)
+end subroutine get_Coulomb_Wolf_s
+
+
+
+pure function Coulomb_Wolf_pot(q1, q2, r, Rc, alpha) result(WPot) ! truncated Coulomb potential [4]
+   real(8) :: WPot  ! [eV]
+   real(8), intent(in) :: q1, q2    ! [e] charges
+   real(8), intent(in) :: r, Rc ! [A] interatomic distance, truncation distance
+   real(8), intent(in) :: alpha ! truncation parameter
+   real(8) :: Rc2, a2, term
+   if (r < Rc) then
+      Rc2 = Rc*Rc
+      a2 = alpha*alpha
+      term = erfc(alpha*Rc)/Rc
+      WPot = m_k*q1*q2 * (erfc(alpha*r)/r - term + &
+         (term/Rc + 2.0d0*alpha/m_sqrtPi*exp(-a2*Rc2)/Rc)*(r-Rc) )  ! [eV]
+>>>>>>> Stashed changes
    else
       print*, 'For this material Coulomb class is undefined!'
       pause 'test_Coulomb'
    endif
+<<<<<<< Updated upstream
 end subroutine test_Coulomb
+=======
+end function Coulomb_Wolf_pot
+
+
+pure function Coulomb_Wolf_self_term(q1, Rc, alpha) result(SelfPot)   ! Self-term, Eq.(5.13) [3]
+   real(8) :: SelfPot  ! [eV]
+   real(8), intent(in) :: q1    ! [e] charges
+   real(8), intent(in) :: Rc    ! [A] interatomic distance, truncation distance
+   real(8), intent(in) :: alpha ! truncation parameter
+   SelfPot = m_k*q1*q1*(erfc(alpha*Rc)/Rc + 2.0d0*alpha/m_sqrtPi)    ! [eV]
+end function Coulomb_Wolf_self_term
+
+
+pure function d_Coulomb_Wolf_pot(q1, q2, r, Rc, alpha) result(dWPot) ! derivative truncated Coulomb potential, Eq.(5.22) [3]
+   real(8) :: dWPot ! [eV/A]
+   real(8), intent(in) :: q1, q2    ! [e] charges
+   real(8), intent(in) :: r, Rc ! [A] interatomic distance, truncation distance
+   real(8), intent(in) :: alpha ! truncation parameter
+   real(8) :: r2, Rc2, a2
+   if (r < Rc) then
+      r2 = r*r
+      Rc2 = Rc*Rc
+      a2 = alpha*alpha
+      dWPot = -m_k*q1*q2*( erfc(alpha*r)/r2 - erfc(alpha*Rc)/Rc2 + &
+               2.0d0*alpha/m_sqrtPi*(exp(-a2*r2)/r - exp(-a2*Rc2)/Rc) )  ! [eV/A]
+   else
+      dWPot = 0.0d0
+   endif
+end function d_Coulomb_Wolf_pot
+
+>>>>>>> Stashed changes
+
+
+function cut_off_distance(Scell) result(d_cut)
+   real(8) d_cut  ! [A] cut off distance defined for the given TB Hamiltonian
+   type(Super_cell), intent(in) :: Scell  ! supercell with all the atoms as one object
+   real(8) :: r(1)
+   ASSOCIATE (ARRAY => Scell%TB_Hamil(:,:)) ! attractive part
+      select type(ARRAY)
+      type is (TB_H_Pettifor)
+         r = maxval(ARRAY(:,:)%rm)
+         d_cut = r(1)
+      type is (TB_H_Fu)
+         r = maxval(ARRAY(:,:)%rm)
+         d_cut = r(1)
+      type is (TB_H_Molteni)
+         r = maxval(ARRAY(:,:)%rcut)
+         d_cut = r(1)
+      type is (TB_H_NRL)
+         r = maxval(ARRAY(:,:)%Rc)
+         d_cut = r(1)*g_au2A	! [a.u.] -> [A]
+      type is (TB_H_DFTB)
+         r = maxval(ARRAY(:,:)%rcut)
+         d_cut = r(1)
+      type is (TB_H_3TB)
+         r = maxval(ARRAY(:,:)%rcut)
+         d_cut = r(1)
+      type is (TB_H_BOP)
+         d_cut = maxval(ARRAY(:,:)%rcut + ARRAY(:,:)%dcut)
+      type is (TB_H_xTB)
+         r = maxval(ARRAY(:,:)%rcut)
+         d_cut = r(1)
+      end select
+   END ASSOCIATE
+end function cut_off_distance
+
+
 
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

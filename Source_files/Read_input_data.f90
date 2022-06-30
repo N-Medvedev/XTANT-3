@@ -122,6 +122,8 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%NA_kind = 1	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
    numpar%Nonadiabat = .true.  ! included
    numpar%scc = .true.  ! included
+   numpar%scc_gam_ind = 0  ! Wolf's Coulomb model
+   numpar%scc_mix = 1.0d0  ! maximal mixing
    numpar%t_NA = 1.0d-3	! [fs] start of the nonadiabatic
    numpar%acc_window = 5.0d0	! [eV] acceptance window for nonadiabatic coupling:
    numpar%do_cool = .false.	! quenching excluded
@@ -355,6 +357,15 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          print*, 'File '//trim(adjustl(File_name))//' not found, SCC cannot be used'
          numpar%scc = .false.
       endif
+
+      ! Consistency check:
+      if (size(matter%Atoms) < 2) then ! no need for self-consistent charge calculations
+         numpar%scc = .false.
+         print*, 'SCC: Self-consistent change calculations for elemental solids are excluded'
+      else
+         if (numpar%scc_mix < 0.1d0) numpar%scc_mix = 0.1d0
+         if (numpar%scc_mix > 1.0d0) numpar%scc_mix = 1.0d0
+      endif
    endif
 
 3416 continue !exit in case if input files could not be read
@@ -411,7 +422,7 @@ subroutine read_SCC_Hubbard(File_name, matter, SCC)
          ! Check if this is the element we need:
          if ( trim(adjustl(El_name)) == trim(adjustl(matter%Atoms(i)%Name)) ) then
             found_el = .true.
-            matter%Atoms(i)%Hubbard_U = U_read
+            matter%Atoms(i)%Hubbard_U = U_read * 0.5d0   ! alternative definition with 1/2
             !print*, 'Hubbard:', trim(adjustl(matter%Atoms(i)%Name)), matter%Atoms(i)%Hubbard_U
             rewind(FN)  ! start the search for the next element
             exit SFE ! found element, go to the next one
@@ -3948,6 +3959,17 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
       goto 3418
    endif
 !    if (matter%p_ext < 0.0d0) matter%p_ext = g_P_atm	! atmospheric pressure
+
+   ! SCC:
+   read(FN,*,IOSTAT=Reason) numpar%scc, numpar%scc_gam_ind, numpar%scc_mix
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 3418
+   endif
+
 
    ! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO); when to start coupling
    read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee

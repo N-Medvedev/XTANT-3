@@ -174,9 +174,9 @@ end subroutine Construct_Vij_3TB
 
 
 ! Tight Binding Hamiltonian within 3TB parametrization:
-subroutine construct_TB_H_3TB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Scell, NSC, Err)
+subroutine construct_TB_H_3TB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Scell, NSC, Err, scc, H_scc_0, H_scc_1)
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
-   type(solid), intent(inout) :: matter	! materil parameters
+   type(solid), intent(inout) :: matter	! material parameters
    type(TB_H_3TB), dimension(:,:), intent(in) :: TB_Hamil	! parameters of the Hamiltonian of TB
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_SVij	! matrix of Overlap functions for all pairs of atoms, all orbitals
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij)
@@ -185,6 +185,8 @@ subroutine construct_TB_H_3TB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_Lag_exp
    type(Super_cell), dimension(:), intent(inout) :: Scell		! supercell with all the atoms as one object
    integer, intent(in) :: NSC		! number of supercell
    type(Error_handling), intent(inout) :: Err	! error save
+   integer, intent(in), optional :: scc   ! flag to do self-consistent charge calculations
+   real(8), dimension(:,:), intent(inout), optional :: H_scc_0, H_scc_1 ! zero and first order contributions to Hamiltonian
    character(200) :: Error_descript
    Error_descript = ''
 
@@ -195,7 +197,11 @@ subroutine construct_TB_H_3TB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_Lag_exp
 !$OMP END WORKSHARE
 
     ! Construct TB Hamiltonian (with DFTB parameters),  orthogonalize it,  and then solve generalized eigenvalue problem:
-   call Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Err)	! see below
+   if (present(scc) .and. present(H_scc_0) .and. present(H_scc_1)) then
+      call Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Err, scc, H_scc_0, H_scc_1) ! below
+   else
+      call Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Err)  ! below
+   endif
 
 !    ! Test (comment out for release):
 !    call test_nonorthogonal_solution(Scell(NSC)) ! module "TB_NRL"
@@ -206,7 +212,7 @@ end subroutine construct_TB_H_3TB
 
 
 
-subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Err)
+subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Err, scc, H_scc_0, H_scc_1)
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -216,12 +222,14 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines
    real(8), dimension(:,:,:), intent(in) :: Mjs ! matrix of overlaps with s-orbital
    type(Error_handling), intent(inout) :: Err	! error save
+   integer, intent(in), optional :: scc   ! flag to do self-consistent charge calculations
+   real(8), dimension(:,:), intent(inout), optional :: H_scc_0, H_scc_1 ! zero and first order contributions to Hamiltonian
    !-------------------------------------------
    real(8), dimension(:,:), allocatable :: Hij	 ! Hamiltonian
    real(8), dimension(:,:), allocatable :: Sij  ! Overlap
    real(8), dimension(size(Scell(NSC)%Ha,1)) :: Evec, EvecS
    real(8), dimension(:,:), allocatable :: Hij1, Sij1
-   integer :: nat, Nsiz, n_orb
+   integer :: nat, Nsiz, n_orb, do_scc
    integer, target :: j
    integer :: j1, i1, k, l, atom_2, FN, i
    real(8) :: temp, epsylon, Ev, SH_1
@@ -241,84 +249,102 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    Sij = 0.0d0
    Hij = 0.0d0
 
+   ! Identify flag for scc calcilations:
+   if (present(scc) .and. present(H_scc_0) .and. present(H_scc_1)) then
+      do_scc = scc   ! follow the flag that was passed into here
+   else
+      do_scc = 0  ! no scc required
+   endif
+
 !    print*, 'Hamil_tot_3TB test 0'
 
    !-----------------------------------
-   ! 1) Construct non-orthogonal Hamiltonian H and Overlap matrix S in 2 steps:
+
+   WNTSCC:if (do_scc == 0) then   ! no scc calculations, construct regular (zero-order) Hamiltonian:
+
+      ! 1) Construct non-orthogonal Hamiltonian H and Overlap matrix S in 2 steps:
 !$omp parallel private(j, m, atom_2, i, KOA1, KOA2, j1, l, i1, k, Hij1, Sij1)
-if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
-if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
+      if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
+      if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
 !$omp do
-   do j = 1,nat	! atom #1
-      m => Scell(NSC)%Near_neighbor_size(j)
+      do j = 1,nat	! atom #1
+         m => Scell(NSC)%Near_neighbor_size(j)
 
-      do atom_2 = 0,m ! do only for atoms close to that one
+         do atom_2 = 0,m ! do only for atoms close to that one
 
-         if (atom_2 == 0) then ! the same atom
-            i = j    ! atom #2 = atom #1, onsite
-         else  ! different atoms
-            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
-         endif
+            if (atom_2 == 0) then ! the same atom
+               i = j    ! atom #2 = atom #1, onsite
+            else  ! different atoms
+               i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
+            endif
 
-         IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
-            KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! atom #1
-            KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! atom #2
-            ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
-            ! Contruct a block-hamiltonian:
-            call Hamilton_one_3TB(numpar%N_basis_size, Scell(NSC), j, i, TB_Hamil, Hij1, &
+            IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
+               KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! atom #1
+               KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! atom #2
+               ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
+               ! Contruct a block-hamiltonian:
+               call Hamilton_one_3TB(numpar%N_basis_size, Scell(NSC), j, i, TB_Hamil, Hij1, &
                                     M_Vij, M_Lag_exp, M_lmn, Mjs)   ! below
 
-            ! Construct overlap matrix for this pair of atoms:
-            call Get_overlap_S_matrix_3TB(numpar%N_basis_size, j, i, Sij1, M_SVij, M_lmn)  ! below
+               ! Construct overlap matrix for this pair of atoms:
+               call Get_overlap_S_matrix_3TB(numpar%N_basis_size, j, i, Sij1, M_SVij, M_lmn)  ! below
 
-            do j1 = 1,n_orb ! all orbitals of atom #1
-               l = (j-1)*n_orb+j1   ! atom #1 (j)
-               do i1 = 1,n_orb ! all orbitals of atom #2
-                  k = (i-1)*n_orb+i1   ! atom #2 (i)
-                  ! We fill the upper triangle here
-                  ! (the order does not matter, just have to be consistent with the Slater-Koster functions):
-                  Hij(l,k) = Hij1(j1,i1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
-                  Sij(l,k) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
-                  if (ABS(Sij(k,l)) <= epsylon) Sij(k,l) = 0.0d0
-               enddo ! i1
-            enddo ! j1
-         endif IJ
-      enddo ! j
-   enddo ! i
+               do j1 = 1,n_orb ! all orbitals of atom #1
+                  l = (j-1)*n_orb+j1   ! atom #1 (j)
+                  do i1 = 1,n_orb ! all orbitals of atom #2
+                     k = (i-1)*n_orb+i1   ! atom #2 (i)
+                     ! We fill the upper triangle here
+                     ! (the order does not matter, just have to be consistent with the Slater-Koster functions):
+                     Hij(l,k) = Hij1(j1,i1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
+                     Sij(l,k) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
+                     if (ABS(Sij(k,l)) <= epsylon) Sij(k,l) = 0.0d0
+                  enddo ! i1
+               enddo ! j1
+            endif IJ
+         enddo ! j
+      enddo ! i
 !$omp end do
-deallocate(Hij1, Sij1)
+      deallocate(Hij1, Sij1)
 !$omp end parallel
 
    ! b) Construct lower triangle - use symmetry:
 !$omp parallel
 !$omp do  private(j, m, atom_2, i, j1, l, i1, k)
-   do j = 1,nat	! all atoms
-      m => Scell(NSC)%Near_neighbor_size(j)
-      do atom_2 = 1,m ! do only for atoms close to that one
-         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-         if (i < j) then ! lower triangle
-            do j1 = 1,n_orb ! all orbitals of atom #1
-               l = (j-1)*n_orb+j1   ! atom #1
-               do i1 = 1,n_orb ! all orbitals of atom #2
-                  k = (i-1)*n_orb+i1   ! atom #2
-                  Hij(l,k) = Hij(k,l)
-                  Sij(l,k) = Sij(k,l)
-               enddo ! i1
-            enddo ! j1
-         endif
-      enddo ! j
-   enddo ! i
+      do j = 1,nat	! all atoms
+         m => Scell(NSC)%Near_neighbor_size(j)
+         do atom_2 = 1,m ! do only for atoms close to that one
+            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+            if (i < j) then ! lower triangle
+               do j1 = 1,n_orb ! all orbitals of atom #1
+                  l = (j-1)*n_orb+j1   ! atom #1
+                  do i1 = 1,n_orb ! all orbitals of atom #2
+                     k = (i-1)*n_orb+i1   ! atom #2
+                     Hij(l,k) = Hij(k,l)
+                     Sij(l,k) = Sij(k,l)
+                  enddo ! i1
+               enddo ! j1
+            endif
+         enddo ! j
+      enddo ! i
 !$omp end do
 !$omp end parallel
+      ! Check if Hamiltonian is symmetric (for testing purpuses):
+!     call check_symmetry(Hij) ! module "Algebra_tools"
 
-   ! Check if Hamiltonian is symmetric (for testing purpuses):
-!    call check_symmetry(Hij) ! module "Algebra_tools"
+      ! 2)    ! Save the non-orthogonalized Hamiltonian:
+!$OMP WORKSHARE
+      Scell(NSC)%H_non = Hij  ! nondiagonalized Hamiltonian
+      Scell(NSC)%Sij = Sij    ! save Overlap matrix
+!$OMP END WORKSHARE
 
-   ! 2)    ! Save the non-orthogonalized Hamiltonian:
-   !$OMP WORKSHARE
-   Scell(NSC)%H_non = Hij		! nondiagonalized Hamiltonian
-   Scell(NSC)%Sij = Sij		! save Overlap matrix
-   !$OMP END WORKSHARE
+   else WNTSCC ! scc cycle, construct only use second order scc correction:
+!$OMP WORKSHARE
+      Hij = H_scc_0 + H_scc_1 ! zero and second order scc contributions into Hamiltonian
+      Scell(NSC)%H_non = Hij  ! save new nondiagonalized Hamiltonian
+      Sij = Scell(NSC)%Sij
+!$OMP END WORKSHARE
+   endif WNTSCC
+
 
    !-----------------------------------
    ! 3) Orthogonalize the Hamiltonian using Lowedin procidure

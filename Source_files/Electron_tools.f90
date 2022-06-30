@@ -599,7 +599,7 @@ subroutine get_total_el_energy(Scell, matter, numpar, t, Err) ! get total electr
    real(8) nat
    integer NSC
    do NSC = 1, size(Scell)
-      nat = real(Scell(NSC)%Na) ! number of atoms
+      nat = dble(Scell(NSC)%Na) ! number of atoms
       select case (numpar%el_ion_scheme)
       case (1) ! Enforced energy conservation:
          Scell(NSC)%nrg%E_tot = Scell(NSC)%nrg%E_glob - Scell(NSC)%nrg%At_kin*nat - Scell(NSC)%nrg%E_rep - Scell(NSC)%nrg%E_supce*nat	! total electron energy
@@ -607,12 +607,19 @@ subroutine get_total_el_energy(Scell, matter, numpar, t, Err) ! get total electr
          ! Correspondingly update distribution function:
          call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
          call get_low_e_energy(Scell, matter) ! get the total electron energy
+<<<<<<< Updated upstream
          Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall ! [eV/atom] initial total energy
       case default
+=======
+         Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + &
+               Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall + Scell(NSC)%nrg%E_coul_scc/nat ! [eV/atom] initial total energy
+      case default   ! Separate electronic and atomic energies:
+>>>>>>> Stashed changes
          call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
          call get_low_e_energy(Scell, matter) ! get the total electron energy
          Scell(NSC)%nrg%E_tot = Scell(NSC)%nrg%El_low + Scell(NSC)%nrg%El_high*nat ! energy of all electrons (low + high energies)
-         Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall ! [eV/atom] initial total energy
+         Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + &
+               Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall + Scell(NSC)%nrg%E_coul_scc/nat ! [eV/atom] initial total energy
       end select
    enddo
 end subroutine get_total_el_energy
@@ -631,8 +638,10 @@ end subroutine get_glob_energy
 subroutine get_new_global_energy(Scell, nrg)
    type(Super_cell), intent(in) :: Scell  ! supercell with all the atoms as one object
    type(Energies), intent(inout) :: nrg	! energies in the material
-   nrg%Total = nrg%At_pot + nrg%At_kin + nrg%E_vdW + nrg%E_coul + nrg%E_expwall ! [eV/atom] initial total energy
-   nrg%E_glob = (nrg%Total + nrg%E_supce)*real(Scell%Na) ! [eV] total energy in the super-cell, save it
+   real(8) :: nat
+   nat = dble(Scell%Na)
+   nrg%Total = nrg%At_pot + nrg%At_kin + nrg%E_vdW + nrg%E_coul + nrg%E_expwall + nrg%E_coul_scc/nat ! [eV/atom] initial total energy
+   nrg%E_glob = (nrg%Total + nrg%E_supce)*nat ! [eV] total energy in the super-cell, save it
 end subroutine get_new_global_energy
 
 
