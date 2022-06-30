@@ -3,7 +3,7 @@
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2012-2022 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -62,7 +62,8 @@ g_Err%File_Num = 99
 open(UNIT = g_Err%File_Num, FILE = 'OUTPUT_Error_log.dat')
 
 ! Check if the user needs any additional info (by setting the flags):
-call get_add_data(change_size=g_numpar%change_size, contin=g_Err%Err, allow_rotate=g_numpar%allow_rotate) ! module "Dealing_with_output_files"
+call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_Err%Err, &
+                  allow_rotate=g_numpar%allow_rotate, verbose=g_numpar%verbose) ! module "Dealing_with_output_files"
 
 if (g_Err%Err) goto 2016     ! if the USER does not want to run the calculations
 ! Otherwise, run the calculations:
@@ -81,6 +82,8 @@ else ! it is the first run:
    call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err) ! module "Read_input"
 endif
 if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
+! Printout additional info, if requested:
+if (g_numpar%verbose) print*, 'Input files read succesfully'
 
 ! if you set to use OpenMP in compiling: "make"
 #ifdef OMP_inside
@@ -104,29 +107,26 @@ call print_time('Start at', ind=0) ! prints out the current time, module "Little
 ! Prepare initial conditions (read supercell and atomic positions from the files):
 call set_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err) ! module "Initial_configuration"
 if (g_Err%Err) goto 2012	! if there was an error in preparing the initial configuration, cannot continue, go to the end...
-
+if (g_numpar%verbose) print*, 'Initial configuration set succesfully'
 
 ! Read (or create) electronic mean free paths (both, inelastic and elastic):
 call get_MFPs(g_matter, g_laser, g_numpar, g_Err) ! module "MC_cross_sections"
 if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
+if (g_numpar%verbose) print*, 'Electron mean free paths set succesfully'
 
 ! Read (or create) photonic mean free paths:
 call get_photon_attenuation(g_matter, g_laser, g_numpar, g_Err) ! module "MC_cross_sections"
 if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
+if (g_numpar%verbose) print*, 'Photon attenuation lengths set succesfully'
 
 if (.not.g_numpar%do_path_coordinate) then  ! only for real calculations, not for coordinate path
    call save_last_timestep(g_Scell) ! save atomic before making next time-step, module "Atomic_tools"
 endif
 
-
-! print*, 'TEST 0'
-
-
 ! Create the folder where output files will be storred, and prepare the files:
 call prepare_output_files(g_Scell,g_matter, g_laser, g_numpar, g_Scell(1)%TB_Hamil(1,1), g_Scell(1)%TB_Repuls(1,1), g_Err) ! module "Dealing_with_output_files"
 if (g_Err%Err) goto 2012 	! if there was an error in preparing the output files, cannot continue, go to the end...
-
-! print*, 'TEST 0.5'
+if (g_numpar%verbose) print*, 'Output directory prepared succesfully'
 
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Project-specific analysis of C60:
@@ -149,47 +149,44 @@ if (g_numpar%do_path_coordinate) then
 endif
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 
-! print*, 'TEST 1'
-
 ! After the initial data are read, and necessay files created,
 ! now we can proceed with the real calculations
 
 ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
 call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 1, g_Err, g_time) ! module "TB"
+if (g_numpar%verbose) print*, 'Initial Hamiltonian prepared succesfully'
 
 ! Get global energy of the system at the beginning:
 call get_glob_energy(g_Scell, g_matter) ! module "Electron_tools"
+if (g_numpar%verbose) print*, 'Initial energy prepared succesfully'
 
 ! Get initial optical coefficients:
 call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
+if (g_numpar%verbose) print*, 'Optical parameters prepared succesfully'
 
 ! Get initial DOS:
 call get_DOS(g_numpar, g_matter, g_Scell, g_Err)	! module "TB"
+if (g_numpar%verbose) print*, 'DOS calculated succesfully'
 
 ! Get current Mulliken charges, if required:
-<<<<<<< Updated upstream
-call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, g_Scell(1)%fe, g_Scell(1)%MDatoms, g_matter%Atoms(:)%mulliken_Ne) ! module "TB"
-=======
 call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
                   g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne) ! module "TB"
 if (g_numpar%verbose) print*, 'Mulliken charges calculated succesfully'
->>>>>>> Stashed changes
       
 ! Get the pressure in the atomic system:
 call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure,  g_Scell(1)%Stress)	! module "TB"
+if (g_numpar%verbose) print*, 'Pressure calculated succesfully'
 
 ! Calculate the mean square displacement of all atoms:
 call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
+if (g_numpar%verbose) print*, 'Mean displacement calculated succesfully'
 
 ! Calculate configurational temperature:
 ! call Get_configurational_temperature(g_Scell, g_numpar, g_Scell(1)%Tconf)	! module "TB"
    
 ! Save initial step in output:
 call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
-
-
-! print*, 'TEST 2'
-
+if (g_numpar%verbose) print*, 'Initial output files set succesfully'
 
 !DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD
 ! Now we can proceed with time:
@@ -270,10 +267,12 @@ do while (g_time .LT. g_numpar%t_total)
          ! For Supercell, use Verlet:
          call make_time_step_supercell(g_Scell, g_matter, g_numpar, 2) ! supercall Verlet step, module "Atomic_tools"
       endselect
+      if (g_numpar%verbose) print*, 'First step of MD step succesful'
       
       !2222222222222222222222222222222222222222222222222222222
       ! Nonadiabatic electron-ion coupling:
       call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
+      if (g_numpar%verbose) print*, 'Electron_ion_coupling succesful'
 
       ! Quenching of atoms (zero-temperature MD):
       call Cooling_atoms(g_numpar, g_matter, g_Scell, g_time, g_numpar%at_cool_dt, g_numpar%at_cool_start, g_numpar%do_cool) ! module "Atomic_tools"
@@ -282,17 +281,20 @@ do while (g_time .LT. g_numpar%t_total)
       if (g_numpar%Transport_e) then ! for electrons
          ! Include Berendsen thermostat in the electronic system:
          call Electron_transport(1, g_time, g_Scell, g_numpar, g_matter, g_numpar%dt, g_matter%tau_bath_e, g_Err) ! module "Transport"
+         if (g_numpar%verbose) print*, 'Electron Berendsen thermostat succesful'
       endif
       if (g_numpar%Transport) then ! for atoms
          ! Include Berendsen thermostat in the atomic system:
          call Atomic_heat_transport(1, g_Scell, g_matter, g_numpar%dt, g_matter%tau_bath) ! module "Transport"
          ! Include change of the affected layer for calculation of optical constants:
          call Change_affected_layer(1, g_Scell(1)%eps%dd, g_Scell, g_numpar%dt, g_matter%tau_bath)  ! module "Transport"
+         if (g_numpar%verbose) print*, 'Atomic Berendsen thermostat succesful'
       endif
    endif AT_MOVE_1
    
    ! Monte-Carlo for photons, high-energy electrons, and core holes:
    call MC_Propagate(g_MC, g_numpar, g_matter, g_Scell, g_laser, g_time, g_Err) ! module "Monte_Carlo"
+   if (g_numpar%verbose) print*, 'Monte Carlo model executed succesfully'
    
    ! Update corresponding energies of the system:
    call update_nrg_after_change(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
@@ -322,6 +324,7 @@ do while (g_time .LT. g_numpar%t_total)
          call get_new_energies(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
       endselect
    endif AT_MOVE_2
+   if (g_numpar%verbose) print*, 'Second step of MD step succesful'
 
    !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
    g_time = g_time + g_numpar%dt        ! [fs] next time-step
@@ -350,6 +353,8 @@ do while (g_time .LT. g_numpar%t_total)
       ! Communicate with the program (program reads your commands from the communication-file):
       call communicate(g_numpar%FN_communication, g_time, g_numpar, g_matter) ! module "Dealing_with_output_files"
       g_dt_save = 0.0d0
+
+      if (g_numpar%verbose) print*, 'Output files written succesfully'
    endif
    !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
 enddo
@@ -371,6 +376,9 @@ else ! if there was no error, no need to keep the file, delete it
 endif
 call close_save_files()           ! module "Dealing_with_files"
 call close_output_files(g_Scell, g_numpar) ! module "Dealing_with_files"
+
+if (g_numpar%verbose) print*, 'Opened files closed succesfully'
+
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 ! Convolve output files with finite duration of the probe pulse:
 !if (g_numpar%do_drude) then
@@ -396,6 +404,7 @@ call print_time('Finished at') ! module "Little_subroutines"
 !print*, '   '
 write(*,'(a)')  'Executing gnuplot scripts to create plots...'
 call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
+if (g_numpar%verbose) print*, 'Gnuplot calles executed succesfully'
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !Check if there is another set of input files to run next simulation:

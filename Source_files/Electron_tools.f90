@@ -104,8 +104,6 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
          ! 0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO
          select case (numpar%el_ion_scheme)
          case (1) ! Enforced energy conservation:
-            !Scell(NSC)%nrg%E_tot = Scell(NSC)%nrg%E_glob - Scell(NSC)%nrg%At_kin*real(Scell(NSC)%Na) - Scell(NSC)%nrg%E_rep - Scell(NSC)%nrg%E_supce*real(Scell(NSC)%Na)
-            !call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%E_tot) ! get the total electron energy
             if (t .GT. numpar%t_Te_Ee) then ! Total energy is fixed:
                !call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! (SLOW) below
                call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! (FAST) below
@@ -121,23 +119,17 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
          case (3) ! Born-Oppenheimer:
             ! Do nothing with fe!
          case (4) ! Nonequilibrium distribution dynamics: Boltzmann electron-electron collision integral:
-!             print*, 'test 0 : update_fe'
-            if (t > -8.5d0) then
+            if (t > -8.5d0) then ! testing, unfnishd
                call test_evolution_of_fe(Scell(NSC)%Ei, Scell(NSC)%fe, t) ! see below
-!                PAUSE 'update_fe'
             endif
          case default ! Decoupled electrons and ions:
             !call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%E_tot) ! get the total electron energy
             if (.not.present(do_E_tot)) then ! if we do not have total energy given, get it from distribution:
                call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low) ! get the total electron energy
             endif
-!             mu_cur = Scell(NSC)%mu
-!             Te_cur = Scell(NSC)%TeeV
-            ! New temperature:
-            !call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! (SLOW) below
-!             print*, 'one:', Scell(NSC)%mu, Scell(NSC)%TeeV
+
             call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! (FAST)
-!             print*, 'two:', mu_cur, Te_cur
+
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
          end select
@@ -607,14 +599,9 @@ subroutine get_total_el_energy(Scell, matter, numpar, t, Err) ! get total electr
          ! Correspondingly update distribution function:
          call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
          call get_low_e_energy(Scell, matter) ! get the total electron energy
-<<<<<<< Updated upstream
-         Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall ! [eV/atom] initial total energy
-      case default
-=======
          Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + &
                Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall + Scell(NSC)%nrg%E_coul_scc/nat ! [eV/atom] initial total energy
       case default   ! Separate electronic and atomic energies:
->>>>>>> Stashed changes
          call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
          call get_low_e_energy(Scell, matter) ! get the total electron energy
          Scell(NSC)%nrg%E_tot = Scell(NSC)%nrg%El_low + Scell(NSC)%nrg%El_high*nat ! energy of all electrons (low + high energies)
@@ -703,10 +690,12 @@ subroutine set_initial_fe(Scell, matter, Err, norm_fe)
       endif
       Error_descript = ''
       do NSC = 1, size(Scell)
-         if (.not. allocated(Scell(NSC)%fe)) allocate(Scell(NSC)%fe(size(Scell(NSC)%Ei))) ! electron distribution function (Fermi-function)
+         ! Allocate electron distribution function (Fermi-function):
+         if (.not. allocated(Scell(NSC)%fe)) allocate(Scell(NSC)%fe(size(Scell(NSC)%Ei)))
+         ! Define the distribution function:
          TE:if (Scell(NSC)%Te <= 1.0d-12) then ! zero temperature
             sumNe = 0.0d0
-            Scell(NSC)%mu = -1d15
+            Scell(NSC)%mu = -1d15   ! just to start with
             do i = 1,size(Scell(NSC)%fe) ! all energy levels
                sumNe = sumNe + f_norm
                if (sumNe <= Scell(NSC)%Ne) then
@@ -719,7 +708,9 @@ subroutine set_initial_fe(Scell, matter, Err, norm_fe)
             enddo
 !             pause 'set_initial_fe'
          else TE ! finite temperature
-            call Electron_fixed_Te(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! finding chem.potential mu for given temperature Te, module "Electron_tools"
+            ! Find chem.potential mu for given temperature Te:
+            call Electron_fixed_Te(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! module "Electron_tools"
+            ! Knowing the chem.potential, set the Fermi-distribution:
             if (present(norm_fe)) then
                call set_Fermi(Scell(NSC)%Ei, Scell(NSC)%TeeV, Scell(NSC)%mu, Scell(NSC)%fe, Error_descript, norm_fe)	! module "Electron_tools"
             else
@@ -729,7 +720,8 @@ subroutine set_initial_fe(Scell, matter, Err, norm_fe)
                call Save_error_details(Err, 7, Error_descript)
                print*, trim(adjustl(Error_descript))
             endif
-            Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! [K]
+            ! Also set temperature in [K]:
+            Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! [eV] -> [K]
          endif TE
       enddo
    endif DO_TB

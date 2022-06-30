@@ -38,8 +38,15 @@ use Dealing_with_files
 use Electron_tools
 use Dealing_with_EADL
 use Gnuplotting
+use Read_input_data, only : m_INPUT_directory
 
 implicit none
+
+! Modular parameters:
+character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
+character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT info
+character(15), parameter :: m_HELP_file = 'HELP.txt'  ! file with the helpful info
+
 
  contains
 
@@ -2714,120 +2721,137 @@ subroutine pars_comunications(readline, out_line, out_num, read_well)
 end subroutine pars_comunications
 
 
-! Reads additional data from the command line passed along with the XTANT.x:
-subroutine get_add_data(change_size, contin, allow_rotate)
+! Reads additional data from the command line passed along with the XTANT:
+subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose)
+   character(1), intent(inout) :: path_sep
    logical, intent(inout), optional :: change_size
    logical, intent(out), optional :: contin
    logical, intent(out), optional :: allow_rotate
-   character(200) :: string, char1, command
-   character(10000) :: printline
-   integer :: iret
-   logical yesno
+   logical, intent(out), optional :: verbose
+   !---------------
+   character(1000) :: read_string, string, printline, ch_temp
+   character(200) :: char1, command, starline, file_name
+   integer :: iret, i_arg, FN, Reason, Reason_arg, count_lines, count_args, N_arg
+   logical yesno, read_text_well, read_well, file_exists, file_opened
+
+   starline = '*******************************************************'
+
+   ! Default values:
    if (present(change_size)) change_size = .false. ! don't do changing size
-   call getarg(1, string)
-!    print*, trim(adjustl(string))
-   select case (trim(adjustl(string)))
-   case ('-allow_rotation', '-allow_rotate', '-no_ang_removal')
-      write(*,'(a)') '*************************************************************'
-      print*, 'The angular momenta of the sample will not be removed'
-      if (present(allow_rotate)) allow_rotate = .true. ! don't remove angular momentum from initial conditions
-      write(*,'(a)') '*************************************************************'
-   case ('-size', '-Size', '-SIZE')
-      write(*,'(a)') '*************************************************************'
-      print*, 'Supercell size variation will be performed to plot potential energy curve'
-      if (present(change_size)) change_size = .true. ! do changing size
-!       print*, 'change_size', change_size
-      write(*,'(a)') '*************************************************************'
-   case ('-test')
-      write(*,'(a)') '*************************************************************'
-      print*, 'Wow, this feature really works!'
-      if (present(contin)) contin = .false.
-      write(*,'(a)') '*************************************************************'
-   case ('-help', '-HELP', '-Help')
-      write(*,'(a)') '*************************************************************'
-      printline = 'There are following flags that can be used with XTANT:'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'-help, which given this very help'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'-info, which tells you about the author and citations'//NEW_LINE('A')
+   if (present(verbose)) verbose = .false.   ! don't print a lot of stuff
 
-      printline = trim(adjustl(printline))//'How to run XTANT at DESY facilities:'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Register and reserve the time: http://it-hpc-web.desy.de/phpScheduleIt/Web/schedule.php'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'In the terminal, connect to the node you register: ssh it-hpc1XX'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Go to the folder with XTANT files, e.g.: cd /data/fhgfs/nmedved/'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Compile source files into XTANT.x executable: make'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Run script that executes neseccary commands and runs the program: ./XTANT.sh'//NEW_LINE('A')  
-      printline = trim(adjustl(printline))//'Or symply call ./XTANT.x'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'...if it does not run, you might need to set the following manually:'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'ulimit -s unlimited'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'limit stacksize unlimited'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'export LD_LIBRARY_PATH=/opt/intel/2011/lib/intel64:$LD_LIBRARY_PATH'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'export LD_LIBRARY_PATH=/opt/products/mkl/11.0/mkl/lib/em64t:$LD_LIBRARY_PATH'//NEW_LINE('A')
 
-      printline = trim(adjustl(printline))//'You can also communicate with the program on-the-fly:'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Type in the file "Communication.txt" (in the OUTPUT folder created):'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'time "number" : to change total duration of the program (give new number in [fs])'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'MDdt "number" : to change time-step of MD (give new number in [fs])'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'SAVEdt "number" : to change how often outputs are saved (give new number in [fs])'//NEW_LINE('A')
+   ! Identify the OS by the system-used path separator:
+   call Path_separator(path_sep) ! module "Dealing_with_files"
 
-      printline = trim(adjustl(printline))//'The list of known errors (to check the file OUTPUT_Error_log.dat if exists):'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Error #1: file not found'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Error #2: file could not be opened'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Error #3: file could not be read on the line number given'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Error #4: some problem with databases (EADL, EPDL97, periodic table file)'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Error #5: inconsistent TB parametrization (only the same type of parametrization is allowed for all within compound)'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Error #6: diagonalization subroutine with LAPACK failed (uses MKL library)'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Error #7: some errors in low-energy electrons (probably in tempereature or chem.potential calculation)'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Error #8: error in optical coefficients (probably in complex Hamiltonian)'//NEW_LINE('A')
+   ! Count how many arguments the user provided:
+   N_arg = COMMAND_ARGUMENT_COUNT() ! Fortran intrinsic function
 
-      printline = trim(adjustl(printline))//'Also, read the manual for details on how to run XTANT.'
-      write(*,'(A)') trim(adjustl(printline))
-!     call system('kpdf !XTANT_manual.pdf')
+   read_well = .true.   ! to start with
+   count_args = 0 ! to start with
 
-      write(*,'(a)') '*************************************************************'
-      print*, ' Would you like to proceed with XTANT calculation? (y/n)',char(13)
-      read(*,*) char1
-      write(*,'(a,$)') '*************************************************************' 
-      call parse_yes_no(trim(adjustl(char1)), yesno)
-      if (yesno) then
-         !call system('clear')
-         !call system('clear')
-         command = 'clear'
-         iret = system(command)
-         iret = system(command)
-      endif
-      if (present(contin)) contin = .not.yesno
-   case ('-info', '-INFO', '-Info')
-      printline = 'XTANT stands for X-ray-induced Thermal And Nonthermal Transitions.'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'The hybrid code is written by' !//NEW_LINE('c')
-      printline = trim(adjustl(printline))//' Dr. Nikita Medvedev'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'as a part of postdoctoral research at'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'CFEL at DESY, Hamburg, Germany, 2011-2015.'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'The model is described in the referenes:'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'[1] N.Medvedev, H.O.Jeschke, B.Ziaja, New J Phys 15, 015016 (2013)'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'[2] N.Medvedev, H.O.Jeschke, B.Ziaja, Phys Rev B 88, 224304 (2013)'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'[3] N.Medvedev, V.Tkachenko, B.Ziaja, Contrib Plasma Phys 55, 12 (2013)'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'[4] N.Medvedev, Z.Li, B.Ziaja, Phys Rev B 91, 054113 (2015)'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'[5] V.Tkachenko, N.Medvedev, et al. Phys Rev B 93, 144101 (2016)'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'Should you have any questions, contact the author: nikita.medvedev@desy.de'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'(Or by private email : n.a.medvedev@gmail.com)'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'If you are using XTANT in your research, please cite at least Refs.[1] and [4]'//NEW_LINE('A')
-      printline = trim(adjustl(printline))//'If you use optical coefficients, additionally cite Ref.[5]' !//NEW_LINE('A')
-      write(*,'(a)') '*************************************************************'
-      write(*,'(A)') trim(adjustl(printline))
-      write(*,'(a)') '*************************************************************'
-      print*, ' Would you like to proceed with XTANT calculation? (y/n)',char(13)
-      read(*,*) char1
-      write(*,'(a,$)') '*************************************************************' 
-      call parse_yes_no(trim(adjustl(char1)), yesno) ! module "Little_subroutines"
-      if (yesno) then
-         !call system('clear')
-         !call system('clear')
-         command = 'clear'
-         iret = system(command)
-         iret = system(command)
-      endif
-      if (present(contin)) contin = .not.yesno
-   case default
-   end select
+   ALLARG:do i_arg = 1, N_arg ! read all the arguments passed
+      ! Read the argument provided:
+      call GET_COMMAND_ARGUMENT(i_arg,string)  ! intrinsic
+
+      select case (trim(adjustl(string)))
+      case ('verbose', '-verbose', 'VERBOSE', '-VERBOSE', 'Verbose', '-Verbose')
+         print*, 'XTANT will print a lot of markers for testing and debugging'
+         if (present(verbose)) verbose = .true.
+         write(*,'(a)') trim(adjustl(starline))
+
+      case ('-allow_rotation', '-allow_rotate', '-no_ang_removal', 'allow_rotation', 'allow_rotate', 'no_ang_removal')
+         print*, 'The angular momenta of the sample will not be removed'
+         if (present(allow_rotate)) allow_rotate = .true. ! don't remove angular momentum from initial conditions
+         write(*,'(a)') trim(adjustl(starline))
+
+      case ('-size', '-Size', '-SIZE', 'size', 'Size', 'SIZE')
+         print*, 'Supercell size variation will be performed to plot potential energy curve'
+         if (present(change_size)) change_size = .true. ! do changing size
+         write(*,'(a)') trim(adjustl(starline))
+
+      case ('-test', 'test', 'TEST', 'Test')
+         print*, 'Wow, it really works!'
+         !if (present(contin)) contin = .false.
+         write(*,'(a)') trim(adjustl(starline))
+
+      case ('-help', '-HELP', '-Help', 'help', 'HELP', 'Help')
+         ! Filename with help:
+         file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_HELP_file))
+
+         inquire(file=trim(adjustl(file_name)),exist=file_exists)
+         if (.not.file_exists) then ! no file, cannot print help
+            write(*,'(a)') 'Could not find file ', trim(adjustl(file_name))
+            write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+         else ! (.not.file_exists)
+            FN=200
+            open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'old', action='READ')
+            inquire(file=trim(adjustl(file_name)),opened=file_opened)
+            if (.not.file_opened) then
+               write(*,'(a)') 'Could not open file ', trim(adjustl(file_name))
+               write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+            else ! (.not.file_opened)
+               read_text_well = .true. ! to start with
+               count_lines = 0   ! to start with
+               do while (read_text_well)
+                  read(FN,'(a)',IOSTAT=Reason) printline
+                  call read_file(Reason, count_lines, read_text_well)   ! module "Dealing_with_files"
+                  if (Reason > 0) then   ! something wrong in the line
+                     write(*,'(a)') 'Problem reading file '//trim(adjustl(file_name))
+                     write(ch_temp, '(i)') count_lines
+                     write(*,'(a)') 'in line '//trim(adjustl(ch_temp))
+                     read_well = .false.
+                  elseif (Reason < 0) then ! end of file reached ...
+                     close(FN)
+                  else
+                     write(*,'(A)') trim(adjustl(printline))
+                  endif
+               enddo
+            endif ! (.not.file_opened)
+         endif ! (.not.file_exists)
+
+         write(*,'(a)') trim(adjustl(starline))
+         if (present(contin)) contin = .true.  ! stop calculations, user only wanted some help
+      case ('-info', '-INFO', '-Info', 'info', 'INFO', 'Info')
+         ! Filename with help:
+         file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_INFO_file))
+
+         inquire(file=trim(adjustl(file_name)),exist=file_exists)
+         if (.not.file_exists) then ! no file, cannot print help
+            write(*,'(a)') 'Could not find file ', trim(adjustl(file_name))
+            write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+         else ! (.not.file_exists)
+            FN=201
+            open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'old', action='READ')
+            inquire(file=trim(adjustl(file_name)),opened=file_opened)
+            if (.not.file_opened) then
+               write(*,'(a)') 'Could not open file ', trim(adjustl(file_name))
+               write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+            else ! (.not.file_opened)
+               read_text_well = .true. ! to start with
+               count_lines = 0   ! to start with
+               do while (read_text_well)
+                  read(FN,'(a)',IOSTAT=Reason) printline
+                  call read_file(Reason, count_lines, read_text_well)   ! module "Dealing_with_files"
+                  if (Reason > 0) then   ! something wrong in the line
+                     write(*,'(a)') 'Problem reading file '//trim(adjustl(file_name))
+                     write(ch_temp, '(i)') count_lines
+                     write(*,'(a)') 'in line '//trim(adjustl(ch_temp))
+                     read_well = .false.
+                  elseif (Reason < 0) then ! end of file reached ...
+                     close(FN)
+                  else
+                     write(*,'(A)') trim(adjustl(printline))
+                  endif
+               enddo
+            endif ! (.not.file_opened)
+         endif ! (.not.file_exists)
+
+         write(*,'(a)') trim(adjustl(starline))
+         if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
+      case default
+      end select
+   enddo ALLARG
 end subroutine get_add_data
 
 
@@ -2840,18 +2864,20 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
    !type(TB_repulsive), dimension(:), intent(in) :: TB_Repuls  ! parameters of the repulsive part of TB
    !type(TB_Hamiltonian), dimension(:), intent(in) ::  TB_Hamil ! parameters of the Hamiltonian of TB
    integer i 
-   character(100) :: text, text1, text2, text3
+   character(100) :: text, text1, text2, text3, starline
 
-   write(print_to,'(a)') '*************************************************************'
+   starline = '*************************************************************'
+
+   write(print_to,'(a)') trim(adjustl(starline))
    write(print_to,'(a)') '*  XTANT: X-ray-induced Thermal And Nonthermal Transitions  *'
-   write(print_to,'(a)') '*************************************************************'
+   write(print_to,'(a)') trim(adjustl(starline))
    write(print_to,'(a)') '  A hybrid approach consisting of: '
    write(print_to,'(a)') ' (1) Monte Carlo '
    write(print_to,'(a)') ' (2) Transferable Tight Binding '
    write(print_to,'(a)') ' (3) Molecular Dynamics '
    write(print_to,'(a)') ' (4) Boltzmann collision integrals '
    write(print_to,'(a,a)') ' Applied for ', trim(adjustl(matter%Name))
-   write(print_to,'(a)') '*************************************************************'
+   write(print_to,'(a)') trim(adjustl(starline))
    write(print_to,'(a)') ' Chemical formula of target material interpreted as: '
    do i = 1, size(matter%Atoms)
       write(text,'(f12.6)') matter%Atoms(i)%percentage
@@ -2927,7 +2953,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
          endif
       endif
    enddo SCL
-   write(print_to,'(a)') '*************************************************************'
+   write(print_to,'(a)') trim(adjustl(starline))
    write(text, '(f15.5)') numpar%t_total
    write(print_to,'(a,a,a)') ' Duration of modelling ' , trim(adjustl(text)), ' [fs]'
 
@@ -3203,7 +3229,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       write(print_to,'(a,a,a)') ' Nearest neighbors numbers within the radius of ', trim(adjustl(text1)), ' [A] are saved'
    endif
 
-9999   write(print_to,'(a)') '*************************************************************'
+9999   write(print_to,'(a)') trim(adjustl(starline))
 end subroutine Print_title
 
 END MODULE Dealing_with_output_files

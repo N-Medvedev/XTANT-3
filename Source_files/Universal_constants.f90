@@ -1,3 +1,25 @@
+! 000000000000000000000000000000000000000000000000000000000000
+! This file is part of XTANT
+!
+! Copyright (C) 2012-2022 Nikita Medvedev
+!
+! XTANT is free software: you can redistribute it and/or modify it under
+! the terms of the GNU Lesser General Public License as published by
+! the Free Software Foundation, either version 3 of the License, or
+! (at your option) any later version.
+!
+! Although we endeavour to ensure that the code XTANT and results delivered are correct,
+! no warranty is given as to its accuracy. We assume no responsibility for possible errors or omissions.
+! We shall not be liable for any damage arising from the use of this code or its parts
+! or any results produced with it, or from any action or decision taken
+! as a result of using this code or any related material.
+!
+! This code is distributed as is for non-commercial peaceful purposes only,
+! such as research and education. It is explicitly prohibited to use the code,
+! its parts, its results or any related material for military-related and other than peaceful purposes.
+!
+! By using this code or its materials, you agree with these terms and conditions.
+!
 ! 1111111111111111111111111111111111111111111111111111111111111
 ! This module contains universal constants
 
@@ -5,16 +27,23 @@ MODULE Universal_constants
  implicit none
 
 ! Constants:
-real(8) :: g_Pi, g_exp, g_e, g_me, g_cvel, g_Mp, g_h, g_kb, g_kb_EV, g_kb_J, g_e0, g_mu0, g_Ry, g_a0, g_v0, g_alpha, g_P_atm, g_e_m, g_h_MeVs, g_e_ESU, g_me_MeV, g_u_MeV, g_re, g_lambda_e, g_SIGMA_0, g_MU_B_MeV_T, g_E_M_e, g_E_M_P, g_G, g_g_Earth, g_N_A, g_V_MOLAR, g_LAMBDAT, g_SIGMA_SB, g_G_F, g_M_W, g_M_Z0, g_G_S, g_AUENERGY, g_AUACTION, g_AUTIME, g_AUFORCE, g_AUVELOCITY, g_AUMOMENTUM, g_AUEFIELD, g_AUEDIPOLE, g_AUMFLUX, g_AUMDIPOLE, g_ASTRONOMICALUNIT, g_NA
+real(8) :: g_Pi, g_2Pi, g_half_Pi, g_exp, g_e, g_me, g_cvel, g_Mp, g_h, g_kb, g_kb_EV, g_kb_J, g_e0, g_ke, g_mu0, &
+g_Ry, g_a0, g_v0, g_alpha, g_P_atm, g_e_m, g_h_MeVs, g_e_ESU, g_me_MeV, g_u_MeV, g_re, g_lambda_e, g_SIGMA_0, &
+g_MU_B_MeV_T, g_E_M_e, g_E_M_P, g_G, g_g_Earth, g_N_A, g_V_MOLAR, g_LAMBDAT, g_SIGMA_SB, g_G_F, g_M_W, g_M_Z0, &
+g_G_S, g_AUENERGY, g_AUACTION, g_AUTIME, g_AUFORCE, g_AUVELOCITY, g_AUMOMENTUM, g_AUEFIELD, g_AUEDIPOLE, &
+g_AUMFLUX, g_AUMDIPOLE, g_ASTRONOMICALUNIT, g_NA
 
 complex :: g_CI
 
 ! Conversion coefficients:
-real(8) :: g_au2A, g_A2au, g_au2ev, g_ev2au, g_au2am, g_am2au, g_au2fs, g_fs2au, g_ev2kc, g_kc2ev, g_au2kc, g_kc2au, g_au2ic, g_ic2au, g_ev2ic, g_ic2ev, g_ev2kj, g_kj2ev, g_in2cm, g_ft2m, g_yd2m, g_cm2in, g_m2ft, g_m2yd, g_ev2Ry
+real(8) :: g_au2A, g_A2au, g_au2ev, g_ev2au, g_au2am, g_am2au, g_au2fs, g_fs2au, g_ev2kc, g_kc2ev, g_au2kc, g_kc2au, g_au2ic, &
+g_ic2au, g_ev2ic, g_ic2ev, g_ev2kj, g_kj2ev, g_in2cm, g_ft2m, g_yd2m, g_cm2in, g_m2ft, g_m2yd, g_ev2Ry
 
 !UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU
 ! Universal constants:
 parameter (g_Pi 	= 3.1415926535897932384626433832795d0)	! Pi
+parameter (g_2Pi   = 2.0d0*g_Pi)        ! 2*Pi
+parameter (g_half_Pi   = 0.5d0*g_Pi)    ! Pi/2
 parameter (g_exp 	= dexp(1.0d0))		! e
 parameter (g_e 		= 1.602176487d-19)	! Electron charge	[Coulomb]
 parameter (g_e_ESU	= 4.8032068d-10)	! Electron charge magnitude	[esu]
@@ -29,6 +58,7 @@ parameter (g_kb		= 11604.0d0)		! Boltzmann constant	[K/eV]
 parameter (g_kb_EV	= 8.617385d-05)		! Boltzmann constant	[eV/K]
 parameter (g_kb_J	= 1.38064852d-23)	! Boltzmann constant	[J/K]
 parameter (g_e0		= 8.854187817620d-12)	! Electrical constant	[F/m]
+parameter (g_ke     = 1.0d0/(4.0d0*g_Pi*g_e0))  ! Coulomb constant
 parameter (g_mu0	= 1.2566370614359d-6)	! Magnetic constant	[H*A^-2]
 parameter (g_Ry	= 13.6056981d0)		! Rydberg constant	[eV]
 parameter (g_a0		= 0.5291772085936d0)	! Bohr radius		[A]
