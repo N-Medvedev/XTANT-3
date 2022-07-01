@@ -523,9 +523,9 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
    real(8), dimension(:), intent(in) :: q   ! Mulliken charges (deviation from neutral)
    real(8), dimension(:,:), allocatable, intent(inout) :: HperS
    !------------------
-   integer, pointer :: nat, m, KOA1, KOA2, KOA3
-   integer :: j, atom_2, i, j1, l, i1, k, atom_3, n_orb
-   real(8) :: H_ij
+   integer, pointer :: nat, m, m2, KOA1, KOA2, KOA3
+   integer :: j, atom_2, i, j1, l, i1, k, atom_3, n_orb, n
+   real(8) :: H_ij, H_ij_1, H_ij_2
 
    if (.not.allocated(HperS)) allocate(HperS(size(Scell%Ha,1),size(Scell%Ha,2)))
    HperS = 0.0d0  ! to start with
@@ -533,12 +533,24 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
    nat => Scell%Na	! number of atoms in the supercell
    n_orb = identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! module "TB_DFTB"
 
-!$omp parallel private(j, m, atom_2, i, KOA1, KOA2, KOA3, j1, l, i1, k, atom_3, H_ij)
+!$omp parallel private(j, m, atom_2, i, KOA1, KOA2, KOA3, m2, j1, l, i1, k, n, atom_3, H_ij_1, H_ij_2)
 !$omp do
    do j = 1,nat	! atom #1
       KOA1 => Scell%MDatoms(j)%KOA   ! atom #1
-
       m => Scell%Near_neighbor_size(j)
+
+      H_ij_1 = 0.0d0   ! to start with
+      do atom_3 = 0, m  ! sum up interactions between atom #1 and atom #3
+         if (atom_3 == 0) then ! the same atom
+            n = j    ! atom #3 = atom #1, onsite
+         else  ! different atoms
+            n = Scell%Near_neighbor_list(j,atom_3) ! index of atom #3
+         endif
+         KOA3 => Scell%MDatoms(n)%KOA   ! type of atom #3
+         ! Construct a part of the second-order correction to the Hamiltonian:
+         H_ij_1 = H_ij_1 + 0.5d0 * gam_ij(j,n) * q(KOA3)  ! First half of the last term in Eq.(10) [1]
+      enddo ! atom_3
+
       do atom_2 = 0,m ! do only for atoms close to that one
 
          if (atom_2 == 0) then ! the same atom
@@ -550,11 +562,17 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
          IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
             KOA2 => Scell%MDatoms(i)%KOA   ! atom #2
 
-            H_ij = 0.0d0   ! to start with
-            do atom_3 = 1, nat
-               KOA3 => Scell%MDatoms(atom_3)%KOA   ! atom #3
+            m2 => Scell%Near_neighbor_size(i)
+            H_ij_2 = 0.0d0 ! to start with
+            do atom_3 = 0, m2 ! sum up interactions between atom #2 and atom #3
+               if (atom_3 == 0) then ! the same atom
+                  n = i    ! atom #3 = atom #2, onsite
+               else  ! different atoms
+                  n = Scell%Near_neighbor_list(i,atom_3) ! index of atom #3
+               endif
+               KOA3 => Scell%MDatoms(n)%KOA   ! type of atom #3
                ! Construct a part of the second-order correction to the Hamiltonian:
-               H_ij = H_ij + 0.5d0*(gam_ij(j,atom_3) + gam_ij(i,atom_3)) * q(KOA3)  ! last term in Eq.(10) [1]
+               H_ij_2 = H_ij_2 + 0.5d0 * gam_ij(i,n) * q(KOA3)  ! Second half of the last term in Eq.(10) [1]
             enddo ! atom_3
 
             ! Save it into all shells of the two atoms:
@@ -563,7 +581,7 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
                do i1 = 1,n_orb ! all orbitals of atom #2
                   k = (i-1)*n_orb+i1   ! atom #2 (i)
                   ! We fill the upper triangle here
-                  HperS(l,k) = H_ij
+                  HperS(l,k) = (H_ij_1+H_ij_2)
                enddo ! i1
             enddo ! j1
 
@@ -718,8 +736,6 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
    integer :: NSC, Nsiz, Ei_siz, i, n_types
    real(8) :: dE, Estart
    real(8), dimension(:), allocatable :: Ei_cur
-   
-!    print*, 'get_DOS test 0'
    
    do NSC = 1, size(Scell) ! for all super-cells
       if (numpar%save_DOS) then	! only calculate DOS if the user chose to do so:
