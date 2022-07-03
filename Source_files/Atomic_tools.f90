@@ -30,6 +30,13 @@ use Algebra_tools
 use Little_subroutines
 implicit none
 
+! this interface finds by itself which of the two subroutine to use depending on the array passed:
+interface shortest_distance
+   module procedure shortest_distance_NEW ! for Scell as single object
+   module procedure shortest_distance_OLD ! for Scell as an array
+end interface shortest_distance
+
+
 !=======================================
 ! Yoshida parameters for 4th order MD integrator:
 ! https://en.wikipedia.org/wiki/Leapfrog_integration#Yoshida_algorithms
@@ -2041,7 +2048,94 @@ subroutine Convert_reciproc_rel_to_abs(ksx, ksy, ksz, k_supce, kx, ky, kz)
 end subroutine Convert_reciproc_rel_to_abs
 
 
-subroutine shortest_distance(Scell, NSC, atoms, i1, j1, a_r, x1, y1, z1, sx1, sy1, sz1, cell_x, cell_y, cell_z)
+subroutine shortest_distance_NEW(Scell, i1, j1, a_r, x1, y1, z1, sx1, sy1, sz1, cell_x, cell_y, cell_z)
+   type(Super_cell), intent(in), target :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: i1, j1 ! atomic numbers
+   real(8), intent(out) ::  a_r	! [A] shortest distance between the two atoms within supercell with periodic boundaries
+   real(8), intent(out), optional :: x1, y1, z1		! [A] projections of the shortest distance
+   real(8), intent(out), optional :: sx1, sy1, sz1 	! relative projections of the shortest distance
+   integer, intent(out), optional :: cell_x, cell_y, cell_z ! cell numbers
+   real(8) x, y, z, zb(3), r, x0, y0, z0, r1
+   integer i, j, k, ik
+   type(Atom), dimension(:), pointer :: atoms	! array of atoms in the supercell
+
+   atoms => Scell%MDAtoms
+   x = 0.0d0
+   y = 0.0d0
+   z = 0.0d0
+   if (i1 == j1) then ! it's the same atom:
+      a_r = 0.0d0
+      ! save the shortest distance projections
+      if (present(x1)) x1 = x
+      if (present(y1)) y1 = y
+      if (present(z1)) z1 = z
+      ! save the relative shortest distance projections
+      if (present(sx1)) sx1 = 0.0d0
+      if (present(sy1)) sy1 = 0.0d0
+      if (present(sz1)) sz1 = 0.0d0
+      ! save the cell numbers
+      if (present(cell_x)) cell_x = 0
+      if (present(cell_y)) cell_y = 0
+      if (present(cell_z)) cell_z = 0
+   else
+      ! For the case of periodic boundaries:
+      do ik = 1,3
+         x = x + (atoms(i1)%S(ik) - atoms(j1)%S(ik))*Scell%supce(ik,1)
+         y = y + (atoms(i1)%S(ik) - atoms(j1)%S(ik))*Scell%supce(ik,2)
+         z = z + (atoms(i1)%S(ik) - atoms(j1)%S(ik))*Scell%supce(ik,3)
+      enddo ! ik
+      a_r = DSQRT(x*x + y*y + z*z)
+      if (present(x1)) x1 = x
+      if (present(y1)) y1 = y
+      if (present(z1)) z1 = z
+      if (present(sx1)) sx1 = atoms(i1)%S(1) - atoms(j1)%S(1)
+      if (present(sy1)) sy1 = atoms(i1)%S(2) - atoms(j1)%S(2)
+      if (present(sz1)) sz1 = atoms(i1)%S(3) - atoms(j1)%S(3)
+      if (present(cell_x)) cell_x = 0
+      if (present(cell_y)) cell_y = 0
+      if (present(cell_z)) cell_z = 0
+
+      do i = -1,1 ! if the distance between the atoms is more than a half of supercell, we account for
+         ! interaction with the atom not from this, but from the neigbour ("mirrored") supercell:
+         ! periodic boundary conditions
+         zb(1) = dble(i)
+         do j =-1,1
+            zb(2) = dble(j)
+            do k = -1,1
+               zb(3) = dble(k)
+               x0 = 0.0d0
+               y0 = 0.0d0
+               z0 = 0.0d0
+               do ik = 1,3
+                  x0 = x0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell%supce(ik,1)
+                  y0 = y0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell%supce(ik,2)
+                  z0 = z0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell%supce(ik,3)
+               enddo ! ik
+               r1 = DSQRT(x0*x0 + y0*y0 + z0*z0)
+               if (r1 <= a_r) then
+                  x = x0
+                  y = y0
+                  z = z0
+                  a_r = r1
+                  if (present(x1)) x1 = x
+                  if (present(y1)) y1 = y
+                  if (present(z1)) z1 = z
+                  if (present(sx1)) sx1 = atoms(i1)%S(1) - atoms(j1)%S(1) + zb(1)
+                  if (present(sy1)) sy1 = atoms(i1)%S(2) - atoms(j1)%S(2) + zb(2)
+                  if (present(sz1)) sz1 = atoms(i1)%S(3) - atoms(j1)%S(3) + zb(3)
+                  if (present(cell_x)) cell_x = i
+                  if (present(cell_y)) cell_y = j
+                  if (present(cell_z)) cell_z = k
+               endif
+            enddo ! k
+         enddo ! j
+      enddo ! i
+   endif ! i1 = j1
+end subroutine shortest_distance_NEW
+
+
+
+subroutine shortest_distance_OLD(Scell, NSC, atoms, i1, j1, a_r, x1, y1, z1, sx1, sy1, sz1, cell_x, cell_y, cell_z)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
@@ -2100,7 +2194,7 @@ subroutine shortest_distance(Scell, NSC, atoms, i1, j1, a_r, x1, y1, z1, sx1, sy
       cell_z = 0
    endif
    do i = -1,1 ! if the distance between the atoms is more than a half of supercell, we account for
-      ! interaction with the atom not from this, but from the neigbour ("mirrored") supercell: 
+      ! interaction with the atom not from this, but from the neigbour ("mirrored") supercell:
       ! periodic boundary conditions.
       zb(1) = dble(i)
       do j =-1,1
@@ -2144,7 +2238,7 @@ subroutine shortest_distance(Scell, NSC, atoms, i1, j1, a_r, x1, y1, z1, sx1, sy
       enddo ! j
    enddo ! i
   endif ! i1 = j1
-end subroutine shortest_distance
+end subroutine shortest_distance_OLD
 
 
 

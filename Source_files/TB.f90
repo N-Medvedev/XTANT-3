@@ -280,8 +280,8 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
    real(8), dimension(:,:), allocatable :: H_scc_0, H_scc_1
    real(8), dimension(:,:), allocatable :: gam_ij
    real(8), dimension(:,:), allocatable :: HperS   ! H_1/S
-   real(8), dimension(size(matter%Atoms)) :: q, q0
-   real(8) :: eps, iteralpha
+   real(8), dimension(size(matter%Atoms)) :: q, q0, q00
+   real(8) :: eps, iteralpha, E_coul
    integer :: i, Niter
 
 
@@ -345,20 +345,28 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
       call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
                             Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne) ! below
       q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge of all elements
-      q0 = 0.0d0   ! to start with
-      if (numpar%verbose) print*, 'SCC Mulliken charges calculated succesfully', q(:)
+      q0 = 0.0d0     ! to start with
+      q00 = 0.0d0    ! to start with
+      E_coul = 1.0d10 ! to start with
+      Scell(NSC)%nrg%E_coul_scc = 0.0d0   ! to start with
+      if (numpar%verbose) write(*,'(a,f10.5,f10.5)') ' Initial Mulliken charges calculated ', q(:)
 
       ! Get the gamma parameters for each pair of atoms:
       call get_all_gam_ij(Scell(NSC), matter, numpar, gam_ij) ! below
       if (numpar%verbose) print*, 'SCC gamma parameter obtained succesfully'
 
       ! SCC iterations:
-      SCC_ITER:do while ( abs(q(1) - q0(1))/abs(q(1)) > eps )
+      !SCC_ITER:do while ( abs(q(1) - q0(1))/abs(q(1)) > eps )
+      SCC_ITER:do while ( abs(E_coul - Scell(NSC)%nrg%E_coul_scc)/max(abs(E_coul),abs(Scell(NSC)%nrg%E_coul_scc)) > eps )
+
          i = i + 1   ! count iterations
          if (i > Niter) then
             print*, ' Problem in SCC: number of iterations exceeds the limit: ', Niter
-            print*, ' Charges before last iteration:', q0(:)
-            print*, ' Charges on the last iteration:', q(:)
+            print*, ' Charges 2 before last iteration:', q00(:)
+            print*, ' Charges before last iteration  :', q0(:)
+            print*, ' Charges on the last iteration  :', q(:)
+            print*, ' Coulomb energy before last iteration:', E_coul
+            print*, ' Coulomb energy at the last iteration:', Scell(NSC)%nrg%E_coul_scc
             exit SCC_ITER  ! too many iterations
          endif
 
@@ -417,18 +425,29 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
          ! Define deviations of Mulliken charges from atomic ones:
          call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
                             Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne) ! below
+         q00 = q0 ! save for the next step of scc cycle
          q0 = q   ! save for the next step of scc cycle
          ! Mulliken charge of all elements, as mixing of the fraction of old and new charges:
          q(:) = q(:)*(1.0d0 - iteralpha) + iteralpha*(matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne)
 
+         ! Get the Coulomb contribution to energy from the charge redistribution:
+         E_coul = Scell(NSC)%nrg%E_coul_scc  ! save for the next iteration
+         call get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, Scell(NSC)%nrg%E_coul_scc)   ! below
+
+         ! Check if we are moving towards convergence, or away from it:
+         if ( ( abs(q(1) - q0(1)) > abs(q0(1) - q00(1)) ) .or. &
+              ( abs(q(1) - q00(1)) < abs(q(1) - q0(1)) ) ) then
+            iteralpha = max(0.1d0, iteralpha * 0.75d0)
+            print*, 'SCC convergence may not be reached, reducing mixing:', iteralpha
+         endif
       enddo SCC_ITER
-      if (numpar%verbose) print*, 'SCC cycles completed succesfully'
-
-!       print*, 'After scc:', Scell(NSC)%Ei
-      pause 'create_and_diagonalize_H'
-
-      ! Get the Coulomb contribution to energy from the charge redistribution:
-      call get_Coulomb_Wolf_s(Scell, NSC, numpar, matter, Scell(NSC)%nrg%E_coul_scc, gam_ij)   ! module "Coulomb"
+      if (numpar%verbose) print*, 'SCC cycles completed with iteration #', i
+      if (numpar%verbose) then
+         print*, ' Charges before last iteration:', q0(:)
+         print*, ' Charges on the last iteration:', q(:)
+         print*, ' Coulomb energy before last iteration:', E_coul
+         print*, ' Coulomb energy at the last iteration:', Scell(NSC)%nrg%E_coul_scc
+      endif
 
 
       ! Fill corresponding energy levels + repulsive energy cotribution:
@@ -446,6 +465,47 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
       Scell(NSC)%nrg%E_coul_scc = 0.0d0 ! no energy associated with charge redistribution
    endif
 end subroutine create_and_diagonalize_H
+
+
+subroutine get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, E_coulomb)   ! Coulomb energy
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in), target :: matter   ! material parameters
+   real(8), dimension(:,:), intent(in) :: gam_ij  ! effective energy values [eV]
+   real(8), intent(out) :: E_coulomb  ! Total Coulomb energy of all atoms [eV]
+   !=====================================================
+   real(8) :: sum_a, Coul_pot, q1, q2
+   integer :: j, nat, atom_2, i
+   integer, pointer :: m, KOA1, KOA2
+
+   nat = Scell(NSC)%Na ! number of atoms
+   sum_a = 0.0d0  ! to start with
+
+   !$omp PARALLEL private( j, KOA1, q1, m, atom_2, i, KOA2, q2, Coul_pot )
+   !$omp do reduction( + : sum_a)
+   do j = 1, nat  ! atom #1
+      KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! kind of atom #1
+      q1 = matter%Atoms(KOA1)%NVB - matter%Atoms(KOA1)%mulliken_Ne ! Mulliken charge of atom #1
+      m => Scell(NSC)%Near_neighbor_size(j)  ! number of nearest neighbors of atom #1
+      do atom_2 = 1, m  ! only for atoms close to #1
+         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
+         KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! kind of atom #2
+         q2 = matter%Atoms(KOA2)%NVB - matter%Atoms(KOA2)%mulliken_Ne ! Mulliken charge of atom #2
+
+         ! Energy:
+         Coul_pot = gam_ij(j,i) * q1 * q2
+
+         ! Add to total:
+         sum_a = sum_a + Coul_pot
+      enddo ! atom_2
+   enddo ! j
+   !$omp end do
+   !$omp end parallel
+   ! Total Coulomb energy, excluding double-counting:
+   E_coulomb = sum_a * 0.5d0   ! [eV]
+
+   nullify(KOA1, KOA2, m)
+end subroutine get_Coulomb_scc_energy
 
 
 
@@ -468,11 +528,13 @@ subroutine create_second_order_scc_term_H(Scell, matter, numpar, Sij, HperS, H_s
    do j = 1,nat	! atom #1
       m => Scell%Near_neighbor_size(j)
       do atom_2 = 0,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! for all atoms, no cut off
 
          if (atom_2 == 0) then ! the same atom
             i = j    ! atom #2 = atom #1, onsite
          else  ! different atoms
             i = Scell%Near_neighbor_list(j,atom_2) ! atom #2
+            !i = atom_2 ! atom #2 - no cut off
          endif
 
          IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
@@ -496,7 +558,9 @@ subroutine create_second_order_scc_term_H(Scell, matter, numpar, Sij, HperS, H_s
    do j = 1,nat	! all atoms
       m => Scell%Near_neighbor_size(j)
       do atom_2 = 1,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! for all atoms, no cut off
          i = Scell%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         !i = atom_2 ! this is the list of such close atoms - no cut off
          if (i < j) then ! lower triangle
             do j1 = 1,n_orb ! all orbitals of atom #1
                l = (j-1)*n_orb+j1   ! atom #1
@@ -541,10 +605,12 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
 
       H_ij_1 = 0.0d0   ! to start with
       do atom_3 = 0, m  ! sum up interactions between atom #1 and atom #3
+      !do atom_3 = 1, nat  ! sum up interactions between atom #1 and atom #3 - no cut off
          if (atom_3 == 0) then ! the same atom
             n = j    ! atom #3 = atom #1, onsite
          else  ! different atoms
             n = Scell%Near_neighbor_list(j,atom_3) ! index of atom #3
+            !n = atom_3 ! index of atom #3 - no cut off
          endif
          KOA3 => Scell%MDatoms(n)%KOA   ! type of atom #3
          ! Construct a part of the second-order correction to the Hamiltonian:
@@ -552,11 +618,12 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
       enddo ! atom_3
 
       do atom_2 = 0,m ! do only for atoms close to that one
-
+      !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
          if (atom_2 == 0) then ! the same atom
             i = j    ! atom #2 = atom #1, onsite
          else  ! different atoms
             i = Scell%Near_neighbor_list(j,atom_2) ! atom #2
+            !i = atom_2 ! atom #2 - no cut off
          endif
 
          IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
@@ -565,10 +632,12 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
             m2 => Scell%Near_neighbor_size(i)
             H_ij_2 = 0.0d0 ! to start with
             do atom_3 = 0, m2 ! sum up interactions between atom #2 and atom #3
+            !do atom_3 = 1, nat ! sum up interactions between atom #2 and atom #3 - no cut off
                if (atom_3 == 0) then ! the same atom
                   n = i    ! atom #3 = atom #2, onsite
                else  ! different atoms
                   n = Scell%Near_neighbor_list(i,atom_3) ! index of atom #3
+                  !n = atom_3 ! index of atom #3 - no cut off
                endif
                KOA3 => Scell%MDatoms(n)%KOA   ! type of atom #3
                ! Construct a part of the second-order correction to the Hamiltonian:
@@ -597,7 +666,9 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
    do j = 1,nat	! all atoms
       m => Scell%Near_neighbor_size(j)
       do atom_2 = 1,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
          i = Scell%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         !i = atom_2 ! this is the list of such close atoms - no cut off
          if (i < j) then ! lower triangle
             do j1 = 1,n_orb ! all orbitals of atom #1
                l = (j-1)*n_orb+j1   ! atom #1
@@ -632,7 +703,7 @@ subroutine get_all_gam_ij(Scell, matter, numpar, gam_ij)
    if(.not.allocated(gam_ij)) allocate(gam_ij(nat,nat))
    gam_ij = 0.0d0 ! to start with
 
-   ! Get the cut-off distance
+   ! Get the cot off distance
    r_cut = cut_off_distance(Scell) ! module "Coulomb"
    alpha = 3.0d0/(4.0d0*r_cut) ! Wolf's parameter chosen according to optimal value from [4]
 
@@ -643,13 +714,16 @@ subroutine get_all_gam_ij(Scell, matter, numpar, gam_ij)
       KOA1 => Scell%MDatoms(j)%KOA   ! atom #1
       m => Scell%Near_neighbor_size(j)
       do atom_2 = 0,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
 
          if (atom_2 == 0) then ! the same atom
             i = j    ! atom #2 = atom #1, onsite
             r = 0.0d0   ! same atom, no distance
          else  ! different atoms
             i = Scell%Near_neighbor_list(j,atom_2) ! atom #2
+            !i = atom_2 ! atom #2 - no cut off
             r = Scell%Near_neighbor_dist(j,atom_2,4) ! at this distance, R [A]
+            !call shortest_distance(Scell, j, i, r) ! at this distance, R [A] - no cut off
          endif
 
          IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
@@ -671,7 +745,9 @@ subroutine get_all_gam_ij(Scell, matter, numpar, gam_ij)
       do j = 1,nat	! all atoms
          m => Scell%Near_neighbor_size(j)
          do atom_2 = 1,m ! do only for atoms close to that one
+         !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
             i = Scell%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+            !i = atom_2 ! this is the list of such close atoms - no cut off
             if (i < j) then ! lower triangle
                gam_ij(j,i) = gam_ij(i,j)
             endif
@@ -691,7 +767,7 @@ subroutine get_gamma_scc(Ui, Uj, Rij, i, j, gam_ij, r_cut, alpha, ind_gam)
    real(8), intent(in) :: Ui, Uj ! Hubbard parameteres for atoms i and j
    real(8), intent(in) :: Rij    ! [A] distance between atoms i and j
    real(8), intent(out) :: gam_ij   ! gamma_i,j
-   real(8), intent(in) :: r_cut, alpha ! [A] Wolf's method cut-off distance and alpha parameter
+   real(8), intent(in) :: r_cut, alpha ! [A] Wolf's method cot off distance and alpha parameter
    integer, intent(in) :: ind_gam   ! which formula to use for gamma (use only option 0, others are not ready!)
    real(8) :: Cij, R0, WCoul, SCoul
    if (i == j) then  ! the same atom
@@ -2710,7 +2786,7 @@ subroutine Transfere_Temp_conditions(Scell, TEMP_Scell, Nat)
       end select
    END ASSOCIATE
    
-   ! Set Coulomb (with soft cut-off) parameters:
+   ! Set Coulomb (with soft cot off) parameters:
    ASSOCIATE (ARRAY2 => Scell(1)%TB_Coul(:,:))
       select type (ARRAY2)
          type is (TB_Coulomb_cut)
@@ -2719,7 +2795,7 @@ subroutine Transfere_Temp_conditions(Scell, TEMP_Scell, Nat)
          select type (TEMP_ARRAY)
             type is (TB_Coulomb_cut)
             TEMP_ARRAY = ARRAY2 ! copy from the main super-cell
-            ! Replace the Coulomb cut-off by the proper value:
+            ! Replace the Coulomb cot off by the proper value:
             TEMP_ARRAY(1,1)%dm = maxval(TEMP_Scell%MDatoms(:)%R(3)) - minval(TEMP_Scell%MDatoms(:)%R(3)) ! allow all atoms to interact with each other
          end select
          END ASSOCIATE

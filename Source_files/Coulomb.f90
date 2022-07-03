@@ -59,11 +59,10 @@ parameter(m_sqrtPi = sqrt(g_Pi))    ! sqrt(Pi)
 ! Wolf's method of Coulomb trunkation:
 
 
-subroutine get_Coulomb_Wolf_s(Scell, NSC, numpar, matter, E_coulomb, gam_ij)   ! Coulomb energy
+subroutine get_Coulomb_Wolf_s(Scell, NSC, matter, E_coulomb, gam_ij)   ! Coulomb energy
 ! This subroutine calcualtes the full Coulomb energy following Wolf's truncation method
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    type(solid), intent(in), target :: matter   ! material parameters
    real(8), intent(out) :: E_coulomb  ! Total Coulomb energy of all atoms [eV]
    real(8), dimension(:,:), intent(in), optional :: gam_ij  ! effective energy values [eV]
@@ -100,6 +99,8 @@ subroutine get_Coulomb_Wolf_s(Scell, NSC, numpar, matter, E_coulomb, gam_ij)   !
             sum_a = sum_a + Coul_pot
          endif
       enddo ! atom_2
+      ! Add the Wolf's self-term:
+      sum_a = sum_a + Coulomb_Wolf_self_term(q1, r_cut, alpha) ! below
    enddo ! j
    !$omp end do
    !$omp end parallel
@@ -160,7 +161,9 @@ end function d_Coulomb_Wolf_pot
 function cut_off_distance(Scell) result(d_cut)
    real(8) d_cut  ! [A] cut off distance defined for the given TB Hamiltonian
    type(Super_cell), intent(in) :: Scell  ! supercell with all the atoms as one object
-   real(8) :: r(1)
+   real(8) :: r(1), Sup_Cell
+
+   ! Cut off of the potential/Hamiltonian:
    ASSOCIATE (ARRAY => Scell%TB_Hamil(:,:)) ! attractive part
       select type(ARRAY)
       type is (TB_H_Pettifor)
@@ -188,6 +191,10 @@ function cut_off_distance(Scell) result(d_cut)
          d_cut = r(1)
       end select
    END ASSOCIATE
+
+   ! Make sure it is not larger than half of the supercell:
+   !Sup_Cell = min( sqrt( sum(Scell%supce(1,:)**2) ) , sqrt( sum(Scell%supce(2,:)**2) ), sqrt( sum(Scell%supce(3,:)**2) ) )
+   !d_cut = min( d_cut, Sup_Cell*0.5d0 )
 end function cut_off_distance
 
 
