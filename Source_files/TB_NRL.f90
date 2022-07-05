@@ -720,9 +720,9 @@ subroutine Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err)	! below
    if ( (N_zero > 0) .or. (N_neg > 0) ) then
       print*, 'Subroutine Loewdin_Orthogonalization has zero or negative eigenvalues in the overlap matrix!'
       print*, 'Negative: ', N_neg, 'Zero: ', N_zero
-      do i1 = 1, size(Ev)
-         if (Ev(i1) <= 0.0d0) print*, 'NEG:', Ev(i1)
-      enddo
+!       do i1 = 1, size(Ev)
+!          if (Ev(i1) <= 0.0d0) print*, 'NEG:', Ev(i1)
+!       enddo
       where(Ev(:)<0.0d0) Ev(:) = ABS(Ev(:))
    endif
 
@@ -1004,9 +1004,9 @@ subroutine Loewdin_Orthogonalization_c(Nsiz, Sij, Hij, Err)	! below
    if ( (N_zero > 0) .or. (N_neg > 0) ) then
       print*, 'Subroutine Loewdin_Orthogonalization_c has zero or negative eigenvalues in the COMPLEX overlap matrix!'
       print*, 'Negative: ', N_neg, 'Zero: ', N_zero
-      do i1 = 1, size(Ev)
-         print*, 'NEG:', i1, Ev(i1)
-      enddo
+!       do i1 = 1, size(Ev)
+!          print*, 'NEG:', i1, Ev(i1)
+!       enddo
       where(Ev(:)<0.0d0) Ev(:) = ABS(Ev(:))
    endif
 
@@ -1793,7 +1793,7 @@ subroutine Attract_TB_forces_NRL(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Eelectr_s)
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(out)  :: Eelectr_s ! part of the forces
 
-   integer :: j, k, i, ste, n, n_orb, norb_1, j_norb
+   integer :: j, k, i, ste, n, n_orb, norb_1, j_norb, n_too
    integer, target :: i2
    integer, pointer :: m, j1
 
@@ -1801,6 +1801,7 @@ subroutine Attract_TB_forces_NRL(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Eelectr_s)
    n_orb = 9	! sp3d5 basis set
    norb_1 = n_orb - 1
    Eelectr_s = 0.0d0
+   n_too = 0   ! to start with
 
    i2 = 0
    ste = 1
@@ -1823,15 +1824,22 @@ subroutine Attract_TB_forces_NRL(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Eelectr_s)
              Eelectr_s(2) = Eelectr_s(2) + SUM(dH(2,i,j:j_norb)*Aij(i,j:j_norb) - dS(2,i,j:j_norb)*Aij_x_Ei(i,j:j_norb))
              Eelectr_s(3) = Eelectr_s(3) + SUM(dH(3,i,j:j_norb)*Aij(i,j:j_norb) - dS(3,i,j:j_norb)*Aij_x_Ei(i,j:j_norb))
 
-             if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d7) then
-                write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_NRL, too large attractive force:'
-                write(*,'(i12,i12)', advance='no') i, j
-                write(*,'(e25.16,$)') dH(1,i,j:j_norb), Aij(i,j:j_norb)
-                write(*,'(e25.16,e25.16,e25.16)') Eelectr_s(:)
-             endif
+             if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d7) n_too = n_too + 1
+!              if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d7) then
+!                 write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_NRL, too large attractive force:'
+!                 write(*,'(i12,i12)', advance='no') i, j
+!                 write(*,'(e25.16,$)') dH(1,i,j:j_norb), Aij(i,j:j_norb)
+!                 write(*,'(e25.16,e25.16,e25.16)') Eelectr_s(:)
+!              endif
           endif
        enddo
    enddo
+
+   if (n_too > 0) then
+      write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_NRL, too large attractive force'
+      write(*,'(a,i)') 'For elements: ', n_too
+   endif
+
    nullify(m, j1)
 end subroutine Attract_TB_forces_NRL
 

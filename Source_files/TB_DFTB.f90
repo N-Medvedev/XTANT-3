@@ -691,13 +691,14 @@ subroutine Attract_TB_forces_DFTB(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Eelectr_s, 
    real(8), dimension(:), intent(out)  :: Eelectr_s ! part of the forces
    integer, intent(in) :: n_orb ! number of orbitals in the used basis set
    !--------------------------------------
-   integer :: j, k, i, ste, n, norb_1, j_norb
+   integer :: j, k, i, ste, n, norb_1, j_norb, n_too
    integer, target :: i2
    integer, pointer :: m, j1
 
    n = size(Aij,1)	! total number of orbitals
    norb_1 = n_orb - 1
    Eelectr_s = 0.0d0
+   n_too = 0   ! to srtart with
 
    i2 = 0
    ste = 1
@@ -720,16 +721,23 @@ subroutine Attract_TB_forces_DFTB(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Eelectr_s, 
              Eelectr_s(2) = Eelectr_s(2) + SUM(dH(2,i,j:j_norb)*Aij(i,j:j_norb) - dS(2,i,j:j_norb)*Aij_x_Ei(i,j:j_norb))
              Eelectr_s(3) = Eelectr_s(3) + SUM(dH(3,i,j:j_norb)*Aij(i,j:j_norb) - dS(3,i,j:j_norb)*Aij_x_Ei(i,j:j_norb))
 
-             if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d5) then
-                write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_DFTB, too large attractive force:'
-                write(*,*) i, j
-                write(*,*) dH(1,i,j:j_norb)
-                write(*,*) Aij(i,j:j_norb)
-                write(*,'(e25.16,e25.16,e25.16)') Eelectr_s(:)
-             endif
+             if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d6) n_too = n_too + 1
+!              if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d5) then
+!                 write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_DFTB, too large attractive force:'
+!                 write(*,*) i, j
+!                 write(*,*) dH(1,i,j:j_norb)
+!                 write(*,*) Aij(i,j:j_norb)
+!                 write(*,'(e25.16,e25.16,e25.16)') Eelectr_s(:)
+!              endif
           endif
        enddo
    enddo
+
+   if (n_too > 0) then
+      write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_DFTB, too large attractive force'
+      write(*,'(a,i)') 'For elements: ', n_too
+   endif
+
    nullify(m, j1)
 end subroutine Attract_TB_forces_DFTB
 

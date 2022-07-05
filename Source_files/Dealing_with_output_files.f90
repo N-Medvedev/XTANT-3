@@ -52,11 +52,12 @@ character(15), parameter :: m_HELP_file = 'HELP.txt'  ! file with the helpful in
 
 
 subroutine write_output_files(numpar, time, matter, Scell)
-   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in):: Scell ! super-cell with all the atoms inside
    real(8), intent(in) :: time ! time instance [fs]
    type(Solid), intent(inout) :: matter ! parameters of the material
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
    !------------------------------------------------------
+   type(Energies) :: nrg   ! [eV] energies in the super-cell
    real(8) :: Pressure
    real(8), dimension(3,3) :: Stress
    integer NSC
@@ -64,14 +65,15 @@ subroutine write_output_files(numpar, time, matter, Scell)
    do NSC = 1, size(Scell)
       ! All subroutines for saving output data into files are within this file below:
       call update_save_files(time, Scell(NSC)%MDatoms, matter, numpar, Scell(NSC))
-!       call write_output_file_one(numpar%FN_temperatures, time, Scell(NSC)%Te, Scell(NSC)%Ta, g_Scell(NSC)%MSD)
-!       call write_output_file_one(numpar%FN_temperatures, time, Scell(NSC)%Te, Scell(NSC)%Ta, g_Scell(NSC)%Tconf,  g_Scell(NSC)%MSD)
       call write_temperatures_n_displacements(numpar%FN_temperatures, time, Scell(NSC)%Te, Scell(NSC)%Ta,  &
-                                                                    Scell(NSC)%Ta_sub, g_Scell(NSC)%MSD, g_Scell(NSC)%MSDP)
+                                                      Scell(NSC)%Ta_sub, g_Scell(NSC)%MSD, g_Scell(NSC)%MSDP)
+      ! Renormalization to printing units:
       Pressure = Scell(NSC)%Pressure * 1.0d-9
       Stress = Scell(NSC)%Stress * 1.0d-9
+      nrg = Scell(NSC)%nrg
+      nrg%E_coul_scc = nrg%E_coul_scc/dble(Scell(NSC)%Na)  ! -> per atom
       call write_pressure(numpar%FN_pressure, time, Pressure, Stress)
-      call write_energies(numpar%FN_energies, time, Scell(NSC)%nrg)
+      call write_energies(numpar%FN_energies, time, nrg)
       call write_numbers(numpar%FN_numbers, time, Scell(NSC))
       call write_holes(g_numpar%FN_deep_holes, time, matter, Scell(NSC))
       if (numpar%save_raw) call write_atomic_relatives(numpar%FN_atoms_S, Scell(NSC)%MDatoms)
@@ -579,7 +581,7 @@ subroutine write_energies(FN, time, nrg)
    real(8), intent(in) :: time	! [fs]
    type(Energies), intent(in) :: nrg
 
-   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, nrg%E_tot, nrg%Eh_tot, nrg%At_pot+nrg%E_vdW, nrg%At_kin, nrg%Total, & !+nrg%E_supce,
+   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, nrg%E_tot, nrg%Eh_tot, nrg%At_pot+nrg%E_vdW+nrg%E_coul_scc, nrg%At_kin, nrg%Total, & !+nrg%E_supce,
    nrg%Total+nrg%E_supce+nrg%El_high, &
    nrg%Total+nrg%E_supce+nrg%El_high+nrg%Eh_tot, nrg%E_vdW
 end subroutine write_energies

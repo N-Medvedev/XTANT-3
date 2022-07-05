@@ -249,7 +249,7 @@ subroutine Attract_TB_H3_near(Aij, dHijx_s, dHijy_s, dHijz_s, Scell, NSC, Eelect
               Eelectr_s(1) = Eelectr_s(1) + (dHijx_s(i,j)*Aijij) + (dHijx_s(i,j+1)*Aijij1) + (dHijx_s(i,j+2)*Aijij2) + (dHijx_s(i,j+3)*Aijij3)
               Eelectr_s(2) = Eelectr_s(2) + (dHijy_s(i,j)*Aijij) + (dHijy_s(i,j+1)*Aijij1) + (dHijy_s(i,j+2)*Aijij2) + (dHijy_s(i,j+3)*Aijij3)
               Eelectr_s(3) = Eelectr_s(3) + (dHijz_s(i,j)*Aijij) + (dHijz_s(i,j+1)*Aijij1) + (dHijz_s(i,j+2)*Aijij2) + (dHijz_s(i,j+3)*Aijij3)
-             if (minval(ABS(Eelectr_s(:))) .GE. 1.0d5) then
+             if (minval(ABS(Eelectr_s(:))) .GE. 1.0d6) then
                 write(*,'(a)') 'Trouble in subroutine Attract_TB_H3_near, too large attractive force:'
                 write(*,'(i12,i12,f25.16,f25.16,f25.16,e25.16)') i, j, dHijx_s(i,j), dHijy_s(i,j), dHijz_s(i,j), Aijij
                 write(*,'(i12,i12,f25.16,f25.16,f25.16,e25.16)') i, j, dHijx_s(i,j+1), dHijy_s(i,j+1), dHijz_s(i,j+1), Aijij1
