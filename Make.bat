@@ -13,10 +13,19 @@ cd Source_files
 :: read argument from user
    SET arg1=%1 
     
-::  in case of empty argument, assume no debug
+:: in case of empty argument, assume no debug
    IF "%1"=="" ( 
       SET arg1=NODEBUG
    )
+
+:: shorthand expressions for debug options (convert them into DEBUGOMP option):
+   IF /I %arg1%==DBG (
+      SET arg1=DEBUGOMP
+   )
+   IF /I %arg1%==DB (
+      SET arg1=DEBUGOMP
+   )
+
    
    SET "Starline=************************************************************************************"
    echo %Starline%
@@ -50,19 +59,32 @@ cd Source_files
          :: Set name of the executable:
          SET "Name_of_exe=XTANT_DEBUG_OMP.exe"
      ) ELSE (
-         echo %Starline%
-         echo Compiling for release, OpenMP and optimizations are included
-         echo Started at: %date% %time%
-         echo %Starline%
+        IF /I %arg1%==FAST (
+            echo %Starline%
+            echo Compiling with FAST option, OpenMP, no optimizations, no debug
+            echo Started at: %date% %time%
+            echo %Starline%
 
-         :: List compiler options 
-         SET "Compile_options=  /Qopenmp /D OMP_inside /Qmkl=parallel /O3 /fpp /Qvec /Qipo /real-size:64 /standard-semantics /F9999999999 "
+            :: List compiler options
+            SET "Compile_options=/F9999999999 /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /Od /fpe:0 /fp:precise /Qvec /standard-semantics"
 
-         :: Set name of the executable:
-         SET "Name_of_exe=XTANT.exe"
+            :: Set name of the executable:
+            SET "Name_of_exe=XTANT_OMP.exe"
+        ) ELSE (
+            echo %Starline%
+            echo Compiling for release, OpenMP and optimizations are included
+            echo Started at: %date% %time%
+            echo %Starline%
 
-         del *.pdb
-        )
+            :: List compiler options
+            SET "Compile_options= /Qopenmp /D OMP_inside /Qmkl=parallel /O3 /fpp /Qvec /Qipo /real-size:64 /standard-semantics /F9999999999 "
+
+            :: Set name of the executable:
+            SET "Name_of_exe=XTANT.exe"
+
+            del *.pdb
+         )
+       )
     )
 
 :: Compile modules

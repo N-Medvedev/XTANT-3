@@ -422,7 +422,8 @@ subroutine read_SCC_Hubbard(File_name, matter, SCC)
          ! Check if this is the element we need:
          if ( trim(adjustl(El_name)) == trim(adjustl(matter%Atoms(i)%Name)) ) then
             found_el = .true.
-            matter%Atoms(i)%Hubbard_U = U_read * 0.5d0   ! alternative definition with 1/2
+            !matter%Atoms(i)%Hubbard_U = U_read * 0.5d0   ! alternative definition with 1/2
+            matter%Atoms(i)%Hubbard_U = U_read
 
             rewind(FN)  ! start the search for the next element
             exit SFE ! found element, go to the next one

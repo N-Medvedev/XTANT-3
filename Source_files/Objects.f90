@@ -499,9 +499,11 @@ type Super_cell
 !    real(8), dimension(:,:), allocatable :: Vij	! Radial part of the hamiltonian matrix
    real(8), dimension(:,:), allocatable :: Sij	! Overlap matrix for non-orthogonal TB
    real(8), dimension(:,:), allocatable :: Hij	! Non-orthogonal TB Hamiltonian
-   real(8), dimension(:,:), allocatable :: Hij_sol	! Eigenvectors of non-orthogonal TB Hamiltonian
+   real(8), dimension(:,:), allocatable :: Hij_sol ! Eigenvectors of non-orthogonal TB Hamiltonian
+   real(8), dimension(:), allocatable :: eigen_S   ! eigenvalues of the hamiltonian overlap matrix
    real(8), dimension(:), allocatable :: Ei	! energy levels, eigenvalues of the hamiltonian matrix
    real(8), dimension(:), allocatable :: Ei0	! energy levels, eigenvalues of the hamiltonian matrix on the last step
+   real(8), dimension(:), allocatable :: Ei_scc_part  ! eigenvalues of the non-SCC part of the hamiltonian
    real(8), dimension(:,:), allocatable :: Aij	! coefficients used for forces in TB
    ! Complex Hamiltonian for multiple k-points:
    complex, dimension(:,:,:,:,:), allocatable :: CHa	! Complex hamiltonian matrix for each (kx, ky, kz) points

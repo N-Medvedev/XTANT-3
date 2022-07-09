@@ -633,12 +633,21 @@ end subroutine get_new_global_energy
 
 
 
-subroutine get_low_e_energy(Scell, matter)
+subroutine get_low_e_energy(Scell, matter, numpar)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Solid), intent(in) :: matter ! material parameters
+   type(Numerics_param), intent(in), optional :: numpar  ! numerical parameters
    integer NSC
    do NSC = 1, size(Scell)
-      call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+      if (present(numpar)) then  ! there may be SCC calculations involved
+         if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
+            call set_total_el_energy(Scell(NSC)%Ei_scc_part, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+         else ! non-SCC:
+            call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+         endif
+      else
+         call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+      endif
    enddo
 end subroutine get_low_e_energy
 
@@ -834,13 +843,19 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
    integer, intent(in) :: NSC ! number of supercell
    real(8), intent(out) :: Ce	! current electron heat capacity [eV]
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
-   real(8) :: Ntot	! number of electrons [eV]
+   real(8) :: Ntot	! number of electrons
+   real(8) :: nat   ! number of atoms
    real(8) :: Te	! current electron temperature [eV]
    real(8) :: mu	! current electron chemical potential [eV]
-   real(8) dmu, dTe, mu0	! electron differential chemical potential [eV], temperature [eV]
-   real(8) Dens	! atomic density
+   real(8) :: dmu, dTe, mu0	! electron differential chemical potential [eV], temperature [eV]
+   real(8) :: Dens	 ! atomic density
+   real(8) :: coef   ! conversion coefficients with units
+   real(8) :: C1, C2
    dTe = 10.0d0/g_kb	! [eV] -> [K]
-   Ntot = real(Scell(NSC)%Ne)
+   Ntot = dble(Scell(NSC)%Ne)
+   nat = dble(Scell(NSC)%Na) ! number of atoms
+
+   ! 1) Low-energy electrons populating TB-band structure:
    Te = Scell(NSC)%TeeV
    mu = Scell(NSC)%mu
    if (present(norm_fe)) then
@@ -854,8 +869,21 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
    else
       call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce)
    endif
-   Dens = Scell(NSC)%Ne_low/(Scell(NSC)%V)*1d24 ! [1/cm^3]
-   Ce = Ce/Scell(NSC)%Ne_low*Dens*1d6*g_e/g_kb	! [J/(m^3 K)]
+
+   !Dens = Scell(NSC)%Ne_low/(Scell(NSC)%V)*1d24 ! [1/cm^3]
+   !Dens = Dens*1d6   ! -> [1/m^3]
+   !Ce = Ce/Scell(NSC)%Ne_low * Dens*g_e/g_kb	! [J/(m^3 K)]
+
+   coef = 1.0d30*g_e/g_kb  ! [eV/A^3] -> [J/m^3/K]
+   Dens = 1.0d0/(Scell(NSC)%V) ! [1/A^3]
+   Ce = Ce * Dens*coef  ! [J/(m^3 K)]
+!    C1 = Ce
+
+   ! 2) High-energy electrons from MC:
+   C2 = Scell(NSC)%Ne_high * Dens*coef
+   Ce = Ce + C2
+!    print*, 'Ce:', C1, C2, Scell(NSC)%Ne_high
+
    if (isnan(Ce) .or. abs(Ce) >= 1d30) Ce = 0.0d0 ! if undefined or infinite
 end subroutine get_electron_heat_capacity
 
@@ -899,7 +927,6 @@ pure function Diff_Fermi_Te(Te, mu, dmu, E, norm_fe)
       buf = dexp((E - mu)/Te)
       if ( buf .gt. 1.0d30) then ! dealing with the problem of large and small numbers
          F = f_norm/(buf)
-!         Diff_Fermi_Te = 4.0d0*F*(E - mu + Te*dmu)/(Te*Te)
          Diff_Fermi_Te = F*(E - mu + Te*dmu)/(Te*Te)
       else	! in case everything is ok
          F = 1.0d0/(1.0d0 + buf)

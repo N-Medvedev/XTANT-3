@@ -349,7 +349,7 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    !-----------------------------------
    ! 3) Orthogonalize the Hamiltonian using Lowedin procidure
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
-   call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err)	! module "TB_NRL"
+   call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, Scell(NSC)%eigen_S) ! module "TB_NRL"
 
    !$OMP WORKSHARE
    Scell(NSC)%Hij = Hij ! save orthogonalized but non-diagonalized Hamiltonian
@@ -1189,7 +1189,7 @@ subroutine Attract_TB_forces_3TB(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Eelectr_s, n
    ste = 1
    do i = 1, n	! all orbitals
        if (i .GE. ste) then
-          i2 = i2 + 1	! number atom corresponding to these set of orbitals
+          i2 = i2 + 1	! number atom corresponding to this set of orbitals
           ste = ste + n_orb	! counter to switch to the next atom
        endif
        m => Scell(NSC)%Near_neighbor_size(i2)

@@ -271,7 +271,7 @@ subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err
    !-----------------------------------
    ! 3) Orthogonalize the Hamiltonian using Lowedin procidure
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
-   call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err)	! below
+   call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, Scell(NSC)%eigen_S)	! below
    
    !$OMP WORKSHARE
    Scell(NSC)%Hij = Hij ! save orthogonalized but non-diagonalized Hamiltonian
@@ -499,7 +499,7 @@ subroutine Hamil_tot_NRL_unitcell(numpar, Scell, NSC, TB_Hamil, Err)
    !-----------------------------------
    ! 3) Orthogonalize the Hamiltonian using Lowedin procidure
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
-   call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err)	! below
+   call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, Scell(NSC)%eigen_S) ! below
    
    !$OMP WORKSHARE
    where (ABS(Hij) < epsylon) Hij = 0.0d0
@@ -678,10 +678,11 @@ end subroutine get_mirror_cell_num_NRL
 
 
 
-subroutine Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err)	! below
+subroutine Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, eigen_S) ! below
    integer, intent(in) :: Nsiz
    real(8), dimension(:,:), intent(inout) :: Sij, Hij
    type(Error_handling), intent(inout) :: Err	! error save
+   real(8), dimension(:), intent(out), optional :: eigen_S   ! eigenvalues of S
    !------------------------------
    real(8), dimension(:,:), allocatable :: Xij, Sij_temp !, Sij_save
    real(8), dimension(:,:), allocatable :: s_mat
@@ -690,7 +691,7 @@ subroutine Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err)	! below
    real(8) :: epsylon
    character(200) :: Error_descript
    Error_descript = ''
-   epsylon = 1d-12
+   epsylon = 1d-8
    
    ! Save the overlap matrix to test the orthogonalization later:
 !     allocate(Sij_save(Nsiz,Nsiz))
@@ -705,6 +706,9 @@ subroutine Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err)	! below
 !    call sym_diagonalize(Sij, Ev, Error_descript) ! module "Algebra_tools"
    call sym_diagonalize(Sij, Ev, Error_descript, use_DSYEV=.true.) ! module "Algebra_tools"
    
+   ! If requested, output the eigenvalues of the overlap matrix:
+   if (present(eigen_S)) eigen_S = Ev
+
    ! Now Sij is the collection of eigenvectors, Ev contains eigenvalues
    ! Moreover, Sij is now unitary matrix that can be used as U from Eq.(3.166) [Szabo "Modern Quantum Chemistry" 1986, p. 143]
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
@@ -718,10 +722,12 @@ subroutine Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err)	! below
    N_zero = COUNT(ABS(Ev) < epsylon)
    !$OMP END WORKSHARE
    if ( (N_zero > 0) .or. (N_neg > 0) ) then
-      print*, 'Subroutine Loewdin_Orthogonalization has zero or negative eigenvalues in the overlap matrix!'
-      print*, 'Negative: ', N_neg, 'Zero: ', N_zero
+      print*, 'Subroutine Loewdin_Orthogonalization has problems in the overlap matrix:'
+      print*, 'Negative: ', N_neg, 'Zeros: ', N_zero
+!       print*, 'Above one:', COUNT(Ev > 1.0d0)
 !       do i1 = 1, size(Ev)
-!          if (Ev(i1) <= 0.0d0) print*, 'NEG:', Ev(i1)
+!          if (Ev(i1) <= epsylon) print*, 'NEG:', Ev(i1)
+!          if (Ev(i1) > 1.0d0 + epsylon) print*, 'BIG:', Ev(i1)
 !       enddo
       where(Ev(:)<0.0d0) Ev(:) = ABS(Ev(:))
    endif

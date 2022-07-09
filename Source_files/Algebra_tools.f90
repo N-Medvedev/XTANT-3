@@ -24,7 +24,14 @@
 ! This module includes some tools for performing vector algebra operations:
 MODULE Algebra_tools
 use Universal_constants
+
 implicit none
+
+! Interface to automatically chose from the bubble array-sorting subroutines
+interface sort_array
+   module procedure sort_array_r ! for real arrays
+   module procedure sort_array_c ! for complex arrays
+end interface sort_array
 
 ! this interface finds by itself which of the two subroutine to use depending on the array passed:
 interface mkl_matrix_mult
@@ -53,7 +60,7 @@ interface check_Ha
 end interface check_Ha
 
 !private  ! hides items not listed on public statement
-public :: sym_diagonalize, nonsym_diagonalize, check_Ha, Kronecker_delta
+public :: sym_diagonalize, nonsym_diagonalize, check_Ha, Kronecker_delta, sort_array
 
  contains
  
@@ -423,6 +430,7 @@ subroutine sort_eigenvalues(Ev, Evec)
    N = size(Ev)
    allocate(temp_c2(N))
    do j = N-1, 1, -1
+      swapped = .false. ! nothing swapped at the start
       do i = 1, j
          IF (real(Ev(i)) > real(Ev(i+1))) THEN
             ! Eigenvalue:
@@ -435,12 +443,53 @@ subroutine sort_eigenvalues(Ev, Evec)
                Evec(:,i) = Evec(:,i+1)
                Evec(:,i+1) = temp_c2(:)
             endif
-            swapped = .TRUE.
+            swapped = .true.  ! at least one pair of elements needed swapping
          END IF
       enddo
       IF (.NOT. swapped) EXIT
    enddo
 end subroutine sort_eigenvalues
+
+
+subroutine sort_array_r(array_in)  ! bubble sorting algorithm for real 1d array
+   real(8), dimension(:), intent(inout) :: array_in
+   real(8) :: temp
+   integer N,i,j
+   logical :: swapped
+   N = size(array_in)
+   do j = N-1, 1, -1
+      swapped = .false. ! nothing swapped at the start
+      do i = 1, j
+         if (array_in(i) > array_in(i+1)) then ! swap elements
+            temp = array_in(i)
+            array_in(i) = array_in(i+1)
+            array_in(i+1) = temp
+            swapped = .true.  ! at least one pair of elements needed swapping
+         end if
+      enddo
+      if (.not. swapped) exit
+   enddo
+end subroutine sort_array_r
+
+subroutine sort_array_c(array_in)  ! bubble sorting algorithm for complex 1d array (sorted by real part)
+   complex, dimension(:), intent(inout) :: array_in
+   complex :: temp
+   integer N,i,j
+   logical :: swapped
+   N = size(array_in)
+   do j = N-1, 1, -1
+      swapped = .false. ! nothing swapped at the start
+      do i = 1, j
+         if (real(array_in(i)) > real(array_in(i+1))) then ! swap elements
+            temp = array_in(i)
+            array_in(i) = array_in(i+1)
+            array_in(i+1) = temp
+            swapped = .true.  ! at least one pair of elements needed swapping
+         end if
+      enddo
+      if (.not. swapped) exit
+   enddo
+end subroutine sort_array_c
 
 
 
@@ -575,6 +624,29 @@ subroutine check_Ha_r(Mat, Eigenvec, Eigenval) ! real matrix real eigenstates
       endif
    enddo
 end subroutine check_Ha_r
+
+
+
+subroutine get_eigenvalues_from_eigenvectors(Mat, Eigenvec, Eigenval) ! real matrix real eigenstates
+   real(8), dimension(:,:), intent(in) :: Mat   ! matrix
+   real(8), dimension(:,:), intent(in) :: Eigenvec ! eigenvectors of this matrix
+   real(8), dimension(:), intent(out) :: Eigenval  ! eigenvalues of this matrix
+   real(8) Evec(size(Eigenval))
+   integer i, k, Nsiz
+
+   Nsiz = size(Eigenval)   ! size of eigenvalues array
+
+   ! 1) Calculate all the eigenvalues from the eigenvectors of the matrix:
+   do i = 1,Nsiz
+      do k = 1,Nsiz
+          Evec(k) = SUM(Mat(:,k)*Eigenvec(:,i))
+      enddo
+      Eigenval(i) = SUM(Evec(:)*Eigenvec(:,i))
+   enddo
+
+   ! 2) Sort the eigenvalues array in increasing order:
+   call sort_array(Eigenval)  ! above
+end subroutine get_eigenvalues_from_eigenvectors
 
 
 

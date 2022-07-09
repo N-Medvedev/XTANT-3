@@ -1216,7 +1216,6 @@ subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update
       call Matrix_Vec_Prod(gg2,tempV,x0) ! module "Algebra_tools"
 
       Mass => matter%Atoms(Scell(NSC)%MDatoms(k)%KOA)%Ma ! atomic mass
-      !fctr = -1.0d0/matter%Atoms(Scell(NSC)%MDatoms(k)%KOA)%Ma*g_e*1d-10 ! to transfer forces into the proper units 
       fctr = -1.0d0/Mass*g_e*1d-10 ! to transfer forces into the proper units: -> [eV/A] -> acceleration
       Fors_s(:,k) = fctr * x0(:)	 ! make proper normalization
 
