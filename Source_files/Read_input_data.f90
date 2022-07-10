@@ -1153,6 +1153,12 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endif
                TB_Hamil(i,j)%Param = trim(adjustl(ch_temp))
 
+               if (matter%N_KAO > 2) then
+                  write(Error_descript,'(a,a,$)') '3TB-parametrization does not support more then binary compounds '
+                  call Save_error_details(Err, 4, Error_descript)
+                  print*, trim(adjustl(Error_descript))
+                  goto 3421
+               endif
             case ('BOP')
                if (.not.allocated(TB_Hamil)) then
                   allocate(TB_H_BOP::TB_Hamil(matter%N_KAO,matter%N_KAO)) ! make it for BOP parametrization
@@ -1391,7 +1397,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                goto 3421
             end select
 
-            ! Prior to use TB parameters, we now always have to find out which class the belong to:
+            ! Prior to use TB parameters, we now always have to find out which class they belong to:
             select type (TB_Repuls)
             type is (TB_Rep_Pettifor)
                Error_descript = ''
@@ -1680,6 +1686,24 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
 
       enddo do_second
    enddo do_first
+
+   ! For 3TB parameterization, compounds requires rewriting on-site terms:
+   select type (TB_Hamil)
+   type is (TB_H_3TB)
+      if (matter%N_KAO > 1) then
+!          print*, '3TB onsite s-s:'
+!          print*, '(1,1)', TB_Hamil(1,1)%Hhavg(1,:)/g_Ry, '(1,2):',  TB_Hamil(1,2)%Hhavg(1,:)/g_Ry
+!          print*, '(2,1)', TB_Hamil(2,1)%Hhavg(1,:)/g_Ry, '(2,2):',  TB_Hamil(2,2)%Hhavg(1,:)/g_Ry
+!          print*, '3TB onsite p-p:'
+!          print*, '(1,1)', TB_Hamil(1,1)%Hhavg(2,:)/g_Ry, '(1,2):',  TB_Hamil(1,2)%Hhavg(2,:)/g_Ry
+!          print*, '(2,1)', TB_Hamil(2,1)%Hhavg(2,:)/g_Ry, '(2,2):',  TB_Hamil(2,2)%Hhavg(2,:)/g_Ry
+!          pause 'read_TB_parameters'
+         TB_Hamil(1,1)%Hhavg = TB_Hamil(1,2)%Hhavg
+         TB_Hamil(1,1)%Hhcf = TB_Hamil(1,2)%Hhcf
+         TB_Hamil(2,2)%Hhavg = TB_Hamil(2,1)%Hhavg
+         TB_Hamil(2,2)%Hhcf = TB_Hamil(2,1)%Hhcf
+      endif
+   endselect
 
 
 3421 continue

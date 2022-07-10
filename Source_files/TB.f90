@@ -488,12 +488,12 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
       ! Restore the unpertorbed H_0 (non-SCC) part of the Hamiltonin:
       Scell(NSC)%H_non = H_scc_0
       ! Save eigenvalues of the total Hamiltonian:
-      Scell(NSC)%Ei_scc_part = Scell(NSC)%Ei
+      !Scell(NSC)%Ei_scc_part = Scell(NSC)%Ei
 
       ! Update the energy in the electronic system:
       ! 1) Update the band structure, using the wave-functions corrected after the SCC procidure:
-      !call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei_scc_part) ! module "Algebra_tools"
-      call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei) ! module "Algebra_tools"
+      call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei_scc_part) ! module "Algebra_tools"
+      !call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei) ! module "Algebra_tools"
 
       ! 2) Get the Coulomb contribution to energy from the charge redistribution:
       call get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, Scell(NSC)%nrg%E_coul_scc)   ! below
@@ -2222,7 +2222,11 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
    
       ! Get the energy associated with the electrons populating band structure:
-      call get_low_e_energy(Scell, matter) ! module "Electron_tools"
+      if (numpar%scc) then ! energy for SCC is defined by for H_0:
+         call get_low_e_energy(Scell, matter, numpar) ! module "Electron_tools"
+      else  ! no SCC, the usual expression then
+         call get_low_e_energy(Scell, matter) ! module "Electron_tools"
+      endif
 
       ! Calculations of the contribution of repulsive energies into potential energy of atoms,
       ! second term in Eq.(2.44) from H.Jeschke PhD Thesis, Page 41
@@ -2408,7 +2412,11 @@ subroutine get_new_energies(Scell, matter, numpar, t, Err)
    call get_pot_nrg(Scell, matter, numpar) ! see above
 
    ! Update electron energy according to updated distribution:
-   call get_low_e_energy(Scell, matter) ! module "Electron_tools"
+   if (numpar%scc) then ! energy for SCC is defined by for H_0:
+      call get_low_e_energy(Scell, matter, numpar) ! module "Electron_tools"
+   else  ! no SCC, the usual expression then
+      call get_low_e_energy(Scell, matter) ! module "Electron_tools"
+   endif
 
    ! Get kinetic energy of atoms and of the supercell (for Parrinello-Rahman):
    call get_Ekin(Scell, matter) ! module "Atomic_tools"
