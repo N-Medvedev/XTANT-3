@@ -551,8 +551,8 @@ subroutine get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, E_coulomb)   ! Cou
    !$omp end do
    !$omp end parallel
    ! Total Coulomb energy, excluding double-counting:
-   E_coulomb = sum_a * 0.5d0   ! [eV] ! [A 0]
-   !E_coulomb = -sum_a * 0.5d0   ! [eV] ! [A 1]
+   !E_coulomb = sum_a * 0.5d0   ! [eV] ! [A 0]
+   E_coulomb = -sum_a * 0.5d0   ! [eV] ! [A 1]
    !E_coulomb = 0.0d0   ! [eV] ! [A 2]
 
 !    print*, 'E_coulomb', E_coulomb

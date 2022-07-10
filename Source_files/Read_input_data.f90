@@ -1691,17 +1691,16 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
    select type (TB_Hamil)
    type is (TB_H_3TB)
       if (matter%N_KAO > 1) then
-!          print*, '3TB onsite s-s:'
-!          print*, '(1,1)', TB_Hamil(1,1)%Hhavg(1,:)/g_Ry, '(1,2):',  TB_Hamil(1,2)%Hhavg(1,:)/g_Ry
-!          print*, '(2,1)', TB_Hamil(2,1)%Hhavg(1,:)/g_Ry, '(2,2):',  TB_Hamil(2,2)%Hhavg(1,:)/g_Ry
-!          print*, '3TB onsite p-p:'
-!          print*, '(1,1)', TB_Hamil(1,1)%Hhavg(2,:)/g_Ry, '(1,2):',  TB_Hamil(1,2)%Hhavg(2,:)/g_Ry
-!          print*, '(2,1)', TB_Hamil(2,1)%Hhavg(2,:)/g_Ry, '(2,2):',  TB_Hamil(2,2)%Hhavg(2,:)/g_Ry
-!          pause 'read_TB_parameters'
+         ! [OS 0] :
          TB_Hamil(1,1)%Hhavg = TB_Hamil(1,2)%Hhavg
          TB_Hamil(1,1)%Hhcf = TB_Hamil(1,2)%Hhcf
          TB_Hamil(2,2)%Hhavg = TB_Hamil(2,1)%Hhavg
          TB_Hamil(2,2)%Hhcf = TB_Hamil(2,1)%Hhcf
+         ! [OS 1] :
+!          TB_Hamil(1,1)%Hhavg = TB_Hamil(2,1)%Hhavg
+!          TB_Hamil(1,1)%Hhcf = TB_Hamil(2,1)%Hhcf
+!          TB_Hamil(2,2)%Hhavg = TB_Hamil(1,2)%Hhavg
+!          TB_Hamil(2,2)%Hhcf = TB_Hamil(1,2)%Hhcf
       endif
    endselect
 

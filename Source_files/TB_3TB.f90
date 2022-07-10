@@ -99,8 +99,12 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
       AT2:do atom_2 = 1,m ! do only for atoms close to that one
          i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
          ! Kinds of atoms (elements indices):
+         ! [HB 0]
          KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! atom #1
          KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! atom #2
+         ! [HB 1]
+!          KOA2 => Scell(NSC)%MDatoms(j)%KOA   ! atom #1
+!          KOA1 => Scell(NSC)%MDatoms(i)%KOA   ! atom #2
 
          r = Scell(NSC)%Near_neighbor_dist(j,atom_2,4) ! at this distance, R [A]
 
@@ -263,7 +267,7 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    WNTSCC:if (do_scc == 0) then   ! no scc calculations, construct regular (zero-order) Hamiltonian:
 
       ! 1) Construct non-orthogonal Hamiltonian H and Overlap matrix S in 2 steps:
-!$omp parallel private(j, m, atom_2, i, KOA1, KOA2, j1, l, i1, k, Hij1, Sij1)
+!$omp parallel private(j, m, atom_2, i, j1, l, i1, k, Hij1, Sij1)
       if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
       if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
 !$omp do
@@ -279,8 +283,6 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
             endif
 
             IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
-               KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! atom #1
-               KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! atom #2
                ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
                ! Contruct a block-hamiltonian:
                call Hamilton_one_3TB(numpar%N_basis_size, Scell(NSC), j, i, TB_Hamil, Hij1, &
@@ -295,9 +297,12 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
                      k = (i-1)*n_orb+i1   ! atom #2 (i)
                      ! We fill the upper triangle here
                      ! (the order does not matter, just have to be consistent with the Slater-Koster functions):
+                     ! [HA 0]
                      Hij(l,k) = Hij1(j1,i1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
-                     Sij(l,k) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
-                     if (ABS(Sij(k,l)) <= epsylon) Sij(k,l) = 0.0d0
+                     Sij(l,k) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices|
+                     ! [HA 1]
+!                      Hij(l,k) = Hij1(i1,j1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
+!                      Sij(l,k) = Sij1(i1,j1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
                   enddo ! i1
                enddo ! j1
             endif IJ
@@ -775,7 +780,11 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
 !!!$omp do reduction( + : H_avg)
    do atom_2 = 1, m ! do only for atoms close to that one
       j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
-      KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 0]:
+!       KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 1] tested, correct:
+      KOA1 => Scell%MDatoms(j)%KOA
+      KOA2 => Scell%MDatoms(i)%KOA
 
       term_s = SUM( TB(KOA1,KOA2)%Hhavg(1,1:4) * M_Lag_exp(i,j,1:4) )  ! s orbitals
       H_avg(1,1) = H_avg(1,1) + term_s
@@ -793,20 +802,9 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
             enddo
          endif ! (basis_ind > 0)
       endif ! (basis_ind > 1)
-   enddo
-!!!$omp enddo
-!!!$omp end parallel
 
-
-! goto 5001   ! testing
-
-   !-----------------
-   ! 3) Crystal field:
-!!!$omp parallel private(atom_2, j, sh1, sh2, i1, matr_spd, H_cf_temp)
-!!!$omp do
-   do atom_2 = 1, m ! do only for atoms close to that one
-      j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
-      KOA2 => Scell%MDatoms(j)%KOA
+      !-----------------
+      ! 3) Crystal field:
 
       ! Radial parts:
       matr_spd(1,1) = SUM( TB(KOA1,KOA2)%Hhcf(1,1,1:4) * M_Lag_exp(i,j,1:4) )  ! s-s orbitals
@@ -1774,7 +1772,12 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
    ! 2,3) Average and crystal field terms (tested, correct):
    do atom_2 = 1, m ! do only for atoms close to that one
       j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
-      KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 0]
+!       KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 1]
+      KOA1 => Scell%MDatoms(j)%KOA
+      KOA2 => Scell%MDatoms(i)%KOA
+
 
       x1 => Scell%Near_neighbor_dist(i,atom_2,1)	! at this distance, X
       y1 => Scell%Near_neighbor_dist(i,atom_2,2)	! at this distance, Y
