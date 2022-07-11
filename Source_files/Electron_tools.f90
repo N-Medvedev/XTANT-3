@@ -112,26 +112,45 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
             endif
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+
          case (2) ! Fixed temperature:
-            call Electron_Fixed_Te(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! below
+!             if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
+!                call Electron_Fixed_Te(Scell(NSC)%Ei_scc_part, Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! below
+!             else
+               call Electron_Fixed_Te(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! below
+!             endif
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+
          case (3) ! Born-Oppenheimer:
             ! Do nothing with fe!
+
          case (4) ! Nonequilibrium distribution dynamics: Boltzmann electron-electron collision integral:
             if (t > -8.5d0) then ! testing, unfnishd
                call test_evolution_of_fe(Scell(NSC)%Ei, Scell(NSC)%fe, t) ! see below
             endif
+
          case default ! Decoupled electrons and ions:
             !call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%E_tot) ! get the total electron energy
-            if (.not.present(do_E_tot)) then ! if we do not have total energy given, get it from distribution:
-               call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low) ! get the total electron energy
-            endif
+!             if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
+!                ! get the total electron energy:
+!                call set_total_el_energy(Scell(NSC)%Ei_scc_part, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+!                ! thermalize the distribution function over the SCC-band levels:
+!                call Electron_Fixed_Etot(Scell(NSC)%Ei_scc_part, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
+!                                           Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
+!             else  ! non-SCC, reause the precalculated energy:
 
-            call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! (FAST)
+               if (.not.present(do_E_tot)) then ! if we do not have total energy given, get it from distribution:
+                  call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low) ! get the total electron energy
+               endif
+               call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
+                                          Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
+!             endif
+!
 
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+
          end select
 
          ! Update the number of CB electrons:
@@ -591,20 +610,39 @@ subroutine get_total_el_energy(Scell, matter, numpar, t, Err) ! get total electr
    real(8) nat
    integer NSC
    do NSC = 1, size(Scell)
-      nat = real(Scell(NSC)%Na) ! number of atoms
+      nat = dble(Scell(NSC)%Na) ! number of atoms
       select case (numpar%el_ion_scheme)
       case (1) ! Enforced energy conservation:
          Scell(NSC)%nrg%E_tot = Scell(NSC)%nrg%E_glob - Scell(NSC)%nrg%At_kin*nat - Scell(NSC)%nrg%E_rep - Scell(NSC)%nrg%E_supce*nat	! total electron energy
          Scell(NSC)%nrg%El_low = Scell(NSC)%nrg%E_tot - Scell(NSC)%nrg%El_high*nat ! energy of low-energy electrons [eV]
          ! Correspondingly update distribution function:
          call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
-         call get_low_e_energy(Scell, matter) ! get the total electron energy
-         Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall ! [eV/atom] initial total energy
+         !call get_low_e_energy(Scell, matter) ! get the total electron energy
+         ! Get the energy associated with the electrons populating band structure:
+         if (numpar%scc) then ! energy for SCC is defined by for H_0:
+            !call get_low_e_energy(Scell, matter, numpar) ! below
+            call get_low_e_energy(Scell, matter) ! below
+         else  ! no SCC, the usual expression then
+            call get_low_e_energy(Scell, matter) ! below
+         endif
+         Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + &
+               Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall + Scell(NSC)%nrg%E_coul_scc/nat ! [eV/atom] initial total energy
       case default   ! Separate electronic and atomic energies:
+
          call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
-         call get_low_e_energy(Scell, matter) ! get the total electron energy
+
+         !call get_low_e_energy(Scell, matter) ! get the total electron energy
+         ! Get the energy associated with the electrons populating band structure:
+         if (numpar%scc) then ! energy for SCC is defined by for H_0:
+            !call get_low_e_energy(Scell, matter, numpar) ! below
+            call get_low_e_energy(Scell, matter) ! below
+         else  ! no SCC, the usual expression then
+            call get_low_e_energy(Scell, matter) ! below
+         endif
+
          Scell(NSC)%nrg%E_tot = Scell(NSC)%nrg%El_low + Scell(NSC)%nrg%El_high*nat ! energy of all electrons (low + high energies)
-         Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall ! [eV/atom] initial total energy
+         Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + &
+               Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall + Scell(NSC)%nrg%E_coul_scc/nat ! [eV/atom] initial total energy
       end select
    enddo
 end subroutine get_total_el_energy
@@ -623,18 +661,29 @@ end subroutine get_glob_energy
 subroutine get_new_global_energy(Scell, nrg)
    type(Super_cell), intent(in) :: Scell  ! supercell with all the atoms as one object
    type(Energies), intent(inout) :: nrg	! energies in the material
-   nrg%Total = nrg%At_pot + nrg%At_kin + nrg%E_vdW + nrg%E_coul + nrg%E_expwall ! [eV/atom] initial total energy
-   nrg%E_glob = (nrg%Total + nrg%E_supce)*real(Scell%Na) ! [eV] total energy in the super-cell, save it
+   real(8) :: nat
+   nat = dble(Scell%Na)
+   nrg%Total = nrg%At_pot + nrg%At_kin + nrg%E_vdW + nrg%E_coul + nrg%E_expwall + nrg%E_coul_scc/nat ! [eV/atom] initial total energy
+   nrg%E_glob = (nrg%Total + nrg%E_supce)*nat ! [eV] total energy in the super-cell, save it
 end subroutine get_new_global_energy
 
 
 
-subroutine get_low_e_energy(Scell, matter)
+subroutine get_low_e_energy(Scell, matter, numpar)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Solid), intent(in) :: matter ! material parameters
+   type(Numerics_param), intent(in), optional :: numpar  ! numerical parameters
    integer NSC
    do NSC = 1, size(Scell)
-      call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+      if (present(numpar)) then  ! there may be SCC calculations involved
+         if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
+            call set_total_el_energy(Scell(NSC)%Ei_scc_part, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+         else ! non-SCC:
+            call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+         endif
+      else
+         call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+      endif
    enddo
 end subroutine get_low_e_energy
 
@@ -830,13 +879,19 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
    integer, intent(in) :: NSC ! number of supercell
    real(8), intent(out) :: Ce	! current electron heat capacity [eV]
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
-   real(8) :: Ntot	! number of electrons [eV]
+   real(8) :: Ntot	! number of electrons
+   real(8) :: nat   ! number of atoms
    real(8) :: Te	! current electron temperature [eV]
    real(8) :: mu	! current electron chemical potential [eV]
-   real(8) dmu, dTe, mu0	! electron differential chemical potential [eV], temperature [eV]
-   real(8) Dens	! atomic density
+   real(8) :: dmu, dTe, mu0	! electron differential chemical potential [eV], temperature [eV]
+   real(8) :: Dens	 ! atomic density
+   real(8) :: coef   ! conversion coefficients with units
+   real(8) :: C1, C2
    dTe = 10.0d0/g_kb	! [eV] -> [K]
-   Ntot = real(Scell(NSC)%Ne)
+   Ntot = dble(Scell(NSC)%Ne)
+   nat = dble(Scell(NSC)%Na) ! number of atoms
+
+   ! 1) Low-energy electrons populating TB-band structure:
    Te = Scell(NSC)%TeeV
    mu = Scell(NSC)%mu
    if (present(norm_fe)) then
@@ -850,8 +905,21 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
    else
       call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce)
    endif
-   Dens = Scell(NSC)%Ne_low/(Scell(NSC)%V)*1d24 ! [1/cm^3]
-   Ce = Ce/Scell(NSC)%Ne_low*Dens*1d6*g_e/g_kb	! [J/(m^3 K)]
+
+   !Dens = Scell(NSC)%Ne_low/(Scell(NSC)%V)*1d24 ! [1/cm^3]
+   !Dens = Dens*1d6   ! -> [1/m^3]
+   !Ce = Ce/Scell(NSC)%Ne_low * Dens*g_e/g_kb	! [J/(m^3 K)]
+
+   coef = 1.0d30*g_e/g_kb  ! [eV/A^3] -> [J/m^3/K]
+   Dens = 1.0d0/(Scell(NSC)%V) ! [1/A^3]
+   Ce = Ce * Dens*coef  ! [J/(m^3 K)]
+!    C1 = Ce
+
+   ! 2) High-energy electrons from MC:
+   C2 = Scell(NSC)%Ne_high * Dens*coef
+   Ce = Ce + C2
+!    print*, 'Ce:', C1, C2, Scell(NSC)%Ne_high
+
    if (isnan(Ce) .or. abs(Ce) >= 1d30) Ce = 0.0d0 ! if undefined or infinite
 end subroutine get_electron_heat_capacity
 
@@ -895,7 +963,6 @@ pure function Diff_Fermi_Te(Te, mu, dmu, E, norm_fe)
       buf = dexp((E - mu)/Te)
       if ( buf .gt. 1.0d30) then ! dealing with the problem of large and small numbers
          F = f_norm/(buf)
-!         Diff_Fermi_Te = 4.0d0*F*(E - mu + Te*dmu)/(Te*Te)
          Diff_Fermi_Te = F*(E - mu + Te*dmu)/(Te*Te)
       else	! in case everything is ok
          F = 1.0d0/(1.0d0 + buf)

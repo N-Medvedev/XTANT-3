@@ -23,7 +23,7 @@ real(8) :: starting_time, ending_time
 real(8), dimension(:,:,:), allocatable :: G_mean_part
 real(8), dimension(:,:), allocatable :: G_mean, mu_mean, Ce_mean
 real(8), dimension(:,:), allocatable :: P_mean, E_mean, Grun_mean
-real(8), dimension(:), allocatable :: Te_grid, T_ave, G_ave, G_err
+real(8), dimension(:), allocatable :: Te_grid, T_ave, G_ave, G_err, Ce_err
 real(8), dimension(:,:), allocatable :: G_part_ave
 real(8), dimension(:), allocatable :: mu_ave, Ce_ave, E_ave, P_ave, Grun_ave
 integer :: FN1, FN2, FN3, FN4, FN5
@@ -111,6 +111,7 @@ allocate(T_ave(Tsiz))
 allocate(G_ave(Tsiz), mu_ave(Tsiz), Ce_ave(Tsiz))
 allocate(E_ave(Tsiz), P_ave(Tsiz), Grun_ave(Tsiz))
 allocate(G_err(Tsiz))
+allocate(Ce_err(Tsiz))
 if (allocated(G_mean_part)) then
    allocate(G_part_ave( Tsiz, size(G_mean_part,3) ) )
 endif
@@ -126,8 +127,10 @@ do i = 1, Tsiz
 
    if (size(G_mean,1) > 1) then
       G_err(i) = sqrt(SUM( (G_mean(:,i) - G_ave(i))*(G_mean(:,i) - G_ave(i)) ) ) / (dble(size(G_mean,1))-1.0d0)
+      Ce_err(i) = sqrt(SUM( (Ce_mean(:,i) - Ce_ave(i))*(Ce_mean(:,i) - Ce_ave(i)) ) ) / (dble(size(Ce_mean,1))-1.0d0)
    else
       G_err(i) = sqrt(SUM( (G_mean(:,i) - G_ave(i))*(G_mean(:,i) - G_ave(i)) ) )
+      Ce_err(i) = sqrt(SUM( (Ce_mean(:,i) - Ce_ave(i))*(Ce_mean(:,i) - Ce_ave(i)) ) )
    endif
    if (allocated(G_mean_part)) then
       do j = 1, size(G_part_ave,2)
@@ -146,8 +149,8 @@ open (unit=FN_out4, file=trim(adjustl(File_name_out4)))
 write(FN_out,'(a)') 'Te    G    sigma(G)'
 write(FN_out,'(a)') 'K    W/(m^3K)    -'
 
-write(FN_out2,'(a)') 'Te    mu  Ce'
-write(FN_out2,'(a)') 'K    eV    J/(m^3K)'
+write(FN_out2,'(a)') 'Te    mu  Ce  sigma(Ce)'
+write(FN_out2,'(a)') 'K    eV    J/(m^3K) -'
 
 write(FN_out3,'(a)') 'Te    G_total    G_atoms-  G_shell_pairs-'
 write(FN_out3,'(a)') 'K    W/(m^3K) '
@@ -157,7 +160,7 @@ write(FN_out4,'(a)') 'K    eV/atom    GPa Pa/(J/atom)'
 
 do i =1,Tsiz
    write(FN_out,'(es,es,es)') T_ave(i), G_ave(i), G_err(i)
-   write(FN_out2,'(es,es,es)') T_ave(i), mu_ave(i), Ce_ave(i)
+   write(FN_out2,'(es,es,es,es)') T_ave(i), mu_ave(i), Ce_ave(i), Ce_err(i)
    if (allocated(G_mean_part)) then
       write(FN_out3,'(es)', advance='no') T_ave(i)
        do j = 1, size(G_part_ave,2)

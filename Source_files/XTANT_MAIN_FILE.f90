@@ -169,7 +169,8 @@ call get_DOS(g_numpar, g_matter, g_Scell, g_Err)	! module "TB"
 if (g_numpar%verbose) print*, 'DOS calculated succesfully'
 
 ! Get current Mulliken charges, if required:
-call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, g_Scell(1)%fe, g_Scell(1)%MDatoms, g_matter%Atoms(:)%mulliken_Ne) ! module "TB"
+call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
+                  g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne) ! module "TB"
 if (g_numpar%verbose) print*, 'Mulliken charges calculated succesfully'
       
 ! Get the pressure in the atomic system:
@@ -290,14 +291,14 @@ do while (g_time .LT. g_numpar%t_total)
          if (g_numpar%verbose) print*, 'Atomic Berendsen thermostat succesful'
       endif
    endif AT_MOVE_1
-   
+
    ! Monte-Carlo for photons, high-energy electrons, and core holes:
    call MC_Propagate(g_MC, g_numpar, g_matter, g_Scell, g_laser, g_time, g_Err) ! module "Monte_Carlo"
    if (g_numpar%verbose) print*, 'Monte Carlo model executed succesfully'
-   
+
    ! Update corresponding energies of the system:
    call update_nrg_after_change(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
-   
+
    !3333333333333333333333333333333333333333333333333333333333
    AT_MOVE_2:if (g_numpar%do_atoms) then ! atoms are allowed to be moving:
       ! Choose which MD propagator to use:
@@ -339,7 +340,7 @@ do while (g_time .LT. g_numpar%t_total)
       
       ! Get current Mulliken charges, if required:
       call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
-                            g_Scell(1)%fe, g_Scell(1)%MDatoms, g_matter%Atoms(:)%mulliken_Ne) ! module "TB"
+                            g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne) ! module "TB"
       
       ! Get current pressure in the system:
       call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
@@ -626,7 +627,8 @@ subroutine vary_size(do_forces, Err)
       ! Get initial DOS:
       call get_DOS(g_numpar, g_matter, g_Scell, g_Err)	! module "TB"
 
-!        print*, 'Test 4'
+      call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
+                            g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne) ! module "TB"
 
       ! Save initial step in output:
       call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"

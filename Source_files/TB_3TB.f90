@@ -99,8 +99,12 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
       AT2:do atom_2 = 1,m ! do only for atoms close to that one
          i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
          ! Kinds of atoms (elements indices):
+         ! [HB 0]
          KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! atom #1
          KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! atom #2
+         ! [HB 1]
+!          KOA2 => Scell(NSC)%MDatoms(j)%KOA   ! atom #1
+!          KOA1 => Scell(NSC)%MDatoms(i)%KOA   ! atom #2
 
          r = Scell(NSC)%Near_neighbor_dist(j,atom_2,4) ! at this distance, R [A]
 
@@ -174,9 +178,9 @@ end subroutine Construct_Vij_3TB
 
 
 ! Tight Binding Hamiltonian within 3TB parametrization:
-subroutine construct_TB_H_3TB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Scell, NSC, Err)
+subroutine construct_TB_H_3TB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Scell, NSC, Err, scc, H_scc_0, H_scc_1)
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
-   type(solid), intent(inout) :: matter	! materil parameters
+   type(solid), intent(inout) :: matter	! material parameters
    type(TB_H_3TB), dimension(:,:), intent(in) :: TB_Hamil	! parameters of the Hamiltonian of TB
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_SVij	! matrix of Overlap functions for all pairs of atoms, all orbitals
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij)
@@ -185,6 +189,8 @@ subroutine construct_TB_H_3TB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_Lag_exp
    type(Super_cell), dimension(:), intent(inout) :: Scell		! supercell with all the atoms as one object
    integer, intent(in) :: NSC		! number of supercell
    type(Error_handling), intent(inout) :: Err	! error save
+   integer, intent(in), optional :: scc   ! flag to do self-consistent charge calculations
+   real(8), dimension(:,:), intent(inout), optional :: H_scc_0, H_scc_1 ! zero and first order contributions to Hamiltonian
    character(200) :: Error_descript
    Error_descript = ''
 
@@ -195,7 +201,11 @@ subroutine construct_TB_H_3TB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_Lag_exp
 !$OMP END WORKSHARE
 
     ! Construct TB Hamiltonian (with DFTB parameters),  orthogonalize it,  and then solve generalized eigenvalue problem:
-   call Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Err)	! see below
+   if (present(scc) .and. present(H_scc_0) .and. present(H_scc_1)) then
+      call Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Err, scc, H_scc_0, H_scc_1) ! below
+   else
+      call Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Err)  ! below
+   endif
 
 !    ! Test (comment out for release):
 !    call test_nonorthogonal_solution(Scell(NSC)) ! module "TB_NRL"
@@ -206,7 +216,7 @@ end subroutine construct_TB_H_3TB
 
 
 
-subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Err)
+subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Err, scc, H_scc_0, H_scc_1)
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -216,12 +226,14 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines
    real(8), dimension(:,:,:), intent(in) :: Mjs ! matrix of overlaps with s-orbital
    type(Error_handling), intent(inout) :: Err	! error save
+   integer, intent(in), optional :: scc   ! flag to do self-consistent charge calculations
+   real(8), dimension(:,:), intent(inout), optional :: H_scc_0, H_scc_1 ! zero and first order contributions to Hamiltonian
    !-------------------------------------------
    real(8), dimension(:,:), allocatable :: Hij	 ! Hamiltonian
    real(8), dimension(:,:), allocatable :: Sij  ! Overlap
    real(8), dimension(size(Scell(NSC)%Ha,1)) :: Evec, EvecS
    real(8), dimension(:,:), allocatable :: Hij1, Sij1
-   integer :: nat, Nsiz, n_orb
+   integer :: nat, Nsiz, n_orb, do_scc
    integer, target :: j
    integer :: j1, i1, k, l, atom_2, FN, i
    real(8) :: temp, epsylon, Ev, SH_1
@@ -241,89 +253,108 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    Sij = 0.0d0
    Hij = 0.0d0
 
+   ! Identify flag for scc calcilations:
+   if (present(scc) .and. present(H_scc_0) .and. present(H_scc_1)) then
+      do_scc = scc   ! follow the flag that was passed into here
+   else
+      do_scc = 0  ! no scc required
+   endif
+
 !    print*, 'Hamil_tot_3TB test 0'
 
    !-----------------------------------
-   ! 1) Construct non-orthogonal Hamiltonian H and Overlap matrix S in 2 steps:
-!$omp parallel private(j, m, atom_2, i, KOA1, KOA2, j1, l, i1, k, Hij1, Sij1)
-if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
-if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
+
+   WNTSCC:if (do_scc == 0) then   ! no scc calculations, construct regular (zero-order) Hamiltonian:
+
+      ! 1) Construct non-orthogonal Hamiltonian H and Overlap matrix S in 2 steps:
+!$omp parallel private(j, m, atom_2, i, j1, l, i1, k, Hij1, Sij1)
+      if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
+      if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
 !$omp do
-   do j = 1,nat	! atom #1
-      m => Scell(NSC)%Near_neighbor_size(j)
+      do j = 1,nat	! atom #1
+         m => Scell(NSC)%Near_neighbor_size(j)
 
-      do atom_2 = 0,m ! do only for atoms close to that one
+         do atom_2 = 0,m ! do only for atoms close to that one
 
-         if (atom_2 == 0) then ! the same atom
-            i = j    ! atom #2 = atom #1, onsite
-         else  ! different atoms
-            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
-         endif
+            if (atom_2 == 0) then ! the same atom
+               i = j    ! atom #2 = atom #1, onsite
+            else  ! different atoms
+               i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
+            endif
 
-         IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
-            KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! atom #1
-            KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! atom #2
-            ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
-            ! Contruct a block-hamiltonian:
-            call Hamilton_one_3TB(numpar%N_basis_size, Scell(NSC), j, i, TB_Hamil, Hij1, &
+            IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
+               ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
+               ! Contruct a block-hamiltonian:
+               call Hamilton_one_3TB(numpar%N_basis_size, Scell(NSC), j, i, TB_Hamil, Hij1, &
                                     M_Vij, M_Lag_exp, M_lmn, Mjs)   ! below
 
-            ! Construct overlap matrix for this pair of atoms:
-            call Get_overlap_S_matrix_3TB(numpar%N_basis_size, j, i, Sij1, M_SVij, M_lmn)  ! below
+               ! Construct overlap matrix for this pair of atoms:
+               call Get_overlap_S_matrix_3TB(numpar%N_basis_size, j, i, Sij1, M_SVij, M_lmn)  ! below
 
-            do j1 = 1,n_orb ! all orbitals of atom #1
-               l = (j-1)*n_orb+j1   ! atom #1 (j)
-               do i1 = 1,n_orb ! all orbitals of atom #2
-                  k = (i-1)*n_orb+i1   ! atom #2 (i)
-                  ! We fill the upper triangle here
-                  ! (the order does not matter, just have to be consistent with the Slater-Koster functions):
-                  Hij(l,k) = Hij1(j1,i1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
-                  Sij(l,k) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
-                  if (ABS(Sij(k,l)) <= epsylon) Sij(k,l) = 0.0d0
-               enddo ! i1
-            enddo ! j1
-         endif IJ
-      enddo ! j
-   enddo ! i
+               do j1 = 1,n_orb ! all orbitals of atom #1
+                  l = (j-1)*n_orb+j1   ! atom #1 (j)
+                  do i1 = 1,n_orb ! all orbitals of atom #2
+                     k = (i-1)*n_orb+i1   ! atom #2 (i)
+                     ! We fill the upper triangle here
+                     ! (the order does not matter, just have to be consistent with the Slater-Koster functions):
+                     ! [HA 0]
+                     Hij(l,k) = Hij1(j1,i1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
+                     Sij(l,k) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices|
+                     ! [HA 1]
+!                      Hij(l,k) = Hij1(i1,j1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
+!                      Sij(l,k) = Sij1(i1,j1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
+                  enddo ! i1
+               enddo ! j1
+            endif IJ
+         enddo ! j
+      enddo ! i
 !$omp end do
-deallocate(Hij1, Sij1)
+      deallocate(Hij1, Sij1)
 !$omp end parallel
 
    ! b) Construct lower triangle - use symmetry:
 !$omp parallel
 !$omp do  private(j, m, atom_2, i, j1, l, i1, k)
-   do j = 1,nat	! all atoms
-      m => Scell(NSC)%Near_neighbor_size(j)
-      do atom_2 = 1,m ! do only for atoms close to that one
-         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-         if (i < j) then ! lower triangle
-            do j1 = 1,n_orb ! all orbitals of atom #1
-               l = (j-1)*n_orb+j1   ! atom #1
-               do i1 = 1,n_orb ! all orbitals of atom #2
-                  k = (i-1)*n_orb+i1   ! atom #2
-                  Hij(l,k) = Hij(k,l)
-                  Sij(l,k) = Sij(k,l)
-               enddo ! i1
-            enddo ! j1
-         endif
-      enddo ! j
-   enddo ! i
+      do j = 1,nat	! all atoms
+         m => Scell(NSC)%Near_neighbor_size(j)
+         do atom_2 = 1,m ! do only for atoms close to that one
+            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+            if (i < j) then ! lower triangle
+               do j1 = 1,n_orb ! all orbitals of atom #1
+                  l = (j-1)*n_orb+j1   ! atom #1
+                  do i1 = 1,n_orb ! all orbitals of atom #2
+                     k = (i-1)*n_orb+i1   ! atom #2
+                     Hij(l,k) = Hij(k,l)
+                     Sij(l,k) = Sij(k,l)
+                  enddo ! i1
+               enddo ! j1
+            endif
+         enddo ! j
+      enddo ! i
 !$omp end do
 !$omp end parallel
+      ! Check if Hamiltonian is symmetric (for testing purpuses):
+!     call check_symmetry(Hij) ! module "Algebra_tools"
 
-   ! Check if Hamiltonian is symmetric (for testing purpuses):
-!    call check_symmetry(Hij) ! module "Algebra_tools"
+      ! 2)    ! Save the non-orthogonalized Hamiltonian:
+!$OMP WORKSHARE
+      Scell(NSC)%H_non = Hij  ! nondiagonalized Hamiltonian
+      Scell(NSC)%Sij = Sij    ! save Overlap matrix
+!$OMP END WORKSHARE
 
-   ! 2)    ! Save the non-orthogonalized Hamiltonian:
-   !$OMP WORKSHARE
-   Scell(NSC)%H_non = Hij		! nondiagonalized Hamiltonian
-   Scell(NSC)%Sij = Sij		! save Overlap matrix
-   !$OMP END WORKSHARE
+   else WNTSCC ! scc cycle, construct only use second order scc correction:
+!$OMP WORKSHARE
+      Hij = H_scc_0 + H_scc_1 ! zero and second order scc contributions into Hamiltonian
+      Scell(NSC)%H_non = Hij  ! save new nondiagonalized Hamiltonian
+      Sij = Scell(NSC)%Sij
+!$OMP END WORKSHARE
+   endif WNTSCC
+
 
    !-----------------------------------
    ! 3) Orthogonalize the Hamiltonian using Lowedin procidure
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
-   call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err)	! module "TB_NRL"
+   call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, Scell(NSC)%eigen_S) ! module "TB_NRL"
 
    !$OMP WORKSHARE
    Scell(NSC)%Hij = Hij ! save orthogonalized but non-diagonalized Hamiltonian
@@ -749,7 +780,12 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
 !!!$omp do reduction( + : H_avg)
    do atom_2 = 1, m ! do only for atoms close to that one
       j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
-      KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 0]: divergent
+!       KOA1 => Scell%MDatoms(i)%KOA
+!       KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 1] tested, correct:
+      KOA1 => Scell%MDatoms(j)%KOA
+      KOA2 => Scell%MDatoms(i)%KOA
 
       term_s = SUM( TB(KOA1,KOA2)%Hhavg(1,1:4) * M_Lag_exp(i,j,1:4) )  ! s orbitals
       H_avg(1,1) = H_avg(1,1) + term_s
@@ -767,20 +803,15 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
             enddo
          endif ! (basis_ind > 0)
       endif ! (basis_ind > 1)
-   enddo
-!!!$omp enddo
-!!!$omp end parallel
 
-
-! goto 5001   ! testing
-
-   !-----------------
-   ! 3) Crystal field:
-!!!$omp parallel private(atom_2, j, sh1, sh2, i1, matr_spd, H_cf_temp)
-!!!$omp do
-   do atom_2 = 1, m ! do only for atoms close to that one
-      j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
-      KOA2 => Scell%MDatoms(j)%KOA
+      !-----------------
+      ! 3) Crystal field:
+      ! [OS 0]:
+!       KOA2 => Scell%MDatoms(j)%KOA
+!       KOA1 => Scell%MDatoms(i)%KOA
+      ! [OS 1] tested, correct:
+      KOA1 => Scell%MDatoms(j)%KOA
+      KOA2 => Scell%MDatoms(i)%KOA
 
       ! Radial parts:
       matr_spd(1,1) = SUM( TB(KOA1,KOA2)%Hhcf(1,1,1:4) * M_Lag_exp(i,j,1:4) )  ! s-s orbitals
@@ -1150,19 +1181,20 @@ subroutine Attract_TB_forces_3TB(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Eelectr_s, n
    real(8), dimension(:), intent(out)  :: Eelectr_s ! part of the forces
    integer, intent(in) :: n_orb ! number of orbitals in the used basis set
    !--------------------------------------
-   integer :: j, k, i, ste, n, norb_1, j_norb
+   integer :: j, k, i, ste, n, norb_1, j_norb, n_too
    integer, target :: i2
    integer, pointer :: m, j1
 
    n = size(Aij,1)	! total number of orbitals
    norb_1 = n_orb - 1
    Eelectr_s = 0.0d0
+   n_too = 0 ! to start with
 
    i2 = 0
    ste = 1
    do i = 1, n	! all orbitals
        if (i .GE. ste) then
-          i2 = i2 + 1	! number atom corresponding to these set of orbitals
+          i2 = i2 + 1	! number atom corresponding to this set of orbitals
           ste = ste + n_orb	! counter to switch to the next atom
        endif
        m => Scell(NSC)%Near_neighbor_size(i2)
@@ -1179,16 +1211,24 @@ subroutine Attract_TB_forces_3TB(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Eelectr_s, n
              Eelectr_s(2) = Eelectr_s(2) + SUM(dH(2,i,j:j_norb)*Aij(i,j:j_norb) - dS(2,i,j:j_norb)*Aij_x_Ei(i,j:j_norb))
              Eelectr_s(3) = Eelectr_s(3) + SUM(dH(3,i,j:j_norb)*Aij(i,j:j_norb) - dS(3,i,j:j_norb)*Aij_x_Ei(i,j:j_norb))
 
-             if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d5) then
-                write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_3TB, too large attractive force:'
-                write(*,*) i, j
-                write(*,*) dH(1,i,j:j_norb)
-                write(*,*) Aij(i,j:j_norb)
-                write(*,'(e25.16,e25.16,e25.16)') Eelectr_s(:)
-             endif
+             ! Mark if there is a potential trouble:
+             if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d6) n_too = n_too + 1
+!              if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d7) then
+!                 write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_NRL, too large attractive force:'
+!                 write(*,'(i12,i12)', advance='no') i, j
+!                 write(*,'(e25.16,$)') dH(1,i,j:j_norb), Aij(i,j:j_norb)
+!                 write(*,'(e25.16,e25.16,e25.16)') Eelectr_s(:)
+!              endif
+
           endif
        enddo
    enddo
+
+   if (n_too > 0) then
+      write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_3TB, too large attractive force'
+      write(*,'(a,i)') 'For elements: ', n_too
+   endif
+
    nullify(m, j1)
 end subroutine Attract_TB_forces_3TB
 
@@ -1226,16 +1266,10 @@ subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, TB, i, j, atom_2, dH, M_Vij, 
 
    if (i == j) then ! Onsite contributions (incl. 3-body parts etc.):
 
-!       print*, 'before d_Onsite_3TB', i
-
       call d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_exp, Mjs_in, dH) ! below
       dS = 0.0d0  ! Here are constants on-site, derivatives = 0
 
-!       print*, 'after d_Onsite_3TB', i
-
    else	! For pairs of atoms, fill the hamiltonain with Hopping Integrals:
-
-!       print*, 'before d_Hamilton_one_3TB', i, j
 
       ! Depending on the basis set:
       n_overlap = identify_DFTB_basis_size(basis_ind)   ! below
@@ -1345,8 +1379,6 @@ subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, TB, i, j, atom_2, dH, M_Vij, 
 
       deallocate(vec_M_Vij12, vec_M_Vij21, vec_M_SVij12, vec_M_SVij21, vec_M_dVij12, vec_M_dVij21, vec_M_dSVij12, &
                   vec_M_dSVij21, dH1, dS1)
-
-!       print*, 'test 1 d_Hamilton_one_3TB', i, j
 
       ! 2) 3-body contributions:
       KOA1 => Scell%MDatoms(k)%KOA  ! Kind of atom:
@@ -1734,12 +1766,17 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
    ! 1) Onsite energies of spin-unpolirized orbital values:
    E_onsite = 0.0d0     ! constants -> all derivatives = 0
 
-
    !-----------------
    ! 2,3) Average and crystal field terms (tested, correct):
    do atom_2 = 1, m ! do only for atoms close to that one
       j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
-      KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 0]
+!       KOA1 => Scell%MDatoms(i)%KOA
+!       KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 1]
+      KOA1 => Scell%MDatoms(j)%KOA
+      KOA2 => Scell%MDatoms(i)%KOA
+
 
       x1 => Scell%Near_neighbor_dist(i,atom_2,1)	! at this distance, X
       y1 => Scell%Near_neighbor_dist(i,atom_2,2)	! at this distance, Y
@@ -1771,12 +1808,15 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
          endif ! (basis_ind > 0)
       endif ! (basis_ind > 1)
 
-
-! goto 5003   ! testing
-
-
       !-----------------
       ! 3) Crystal field:
+      ! [OS 0]
+!       KOA1 => Scell%MDatoms(i)%KOA
+!       KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 1] tested, correct
+      KOA1 => Scell%MDatoms(j)%KOA
+      KOA2 => Scell%MDatoms(i)%KOA
+
 
       M_dlmn(1) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 1, drij_dsk(1))	! dl/dsx
       M_dlmn(2) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 2, drij_dsk(2))	! dl/dsy
@@ -1835,7 +1875,7 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
          dMjs(2,3) = -M_dlmn(8) ! pz-s / ds_y
          dMjs(3,3) = -M_dlmn(9) ! pz-s / ds_z
 
-         ! [E 2]
+         ! [E 2], tested
          Mjs(2) = Mjs_in(i,j,2)  ! px-s
          Mjs(3) = Mjs_in(i,j,3)  ! py-s
          Mjs(4) = Mjs_in(i,j,4)  ! pz-s
@@ -2453,7 +2493,7 @@ subroutine dHamil_tot_Press_3TB(Scell, NSC, TB, numpar, M_Vij, M_dVij, M_SVij, M
             call dHamilton_one_Press_3TB(i, atom_2, numpar%N_basis_size, Scell, NSC, TB, norb, n_overlap, &
                                           M_Vij, M_dVij, M_SVij, M_dSVij, &
                                           M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dHij1, dSij1)  ! below
-            ! Eqs. (2.41), (2.42), Page 40 in H.Jeschke PhD thesis.
+            ! Eqs. (2.41), (2.42), Page 40 in H.Jeschke PhD thesis
             do j1 = 1,norb	! all orbitals
                j2 = j4+j1
                do i1 = 1,norb	! all orbitals
@@ -2481,8 +2521,8 @@ subroutine dHamilton_one_Press_3TB(i, atom_2, basis_size, Scell, NSC, TB, norb, 
    integer, intent(in) :: basis_size, NSC ! number of supercell
    type(TB_H_3TB), dimension(:,:), intent(in) :: TB	  ! all tight binding parameters
    integer, intent(in) :: norb, n_overlap  ! number of orbitals per atom (depends on the basis set), and number of overlap functions
-   real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
-   real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
+   real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! Hopping for all pairs of atoms, all orbitals, and derivatives
+   real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! Overlap for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
    real(8), dimension(:,:,:), intent(in) :: Mjs_in
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij) * cutoff
@@ -2568,12 +2608,16 @@ subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SV
    ! 1) Onsite energies of spin-unpolirized orbital values:
    E_onsite = 0.0d0     ! constants -> all derivatives = 0
 
-
    !-----------------
    ! 2,3) Average and crystal field terms (tested, correct):
    do atom_2 = 1, m ! do only for atoms close to that one
       j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
-      KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 0]
+!       KOA1 => Scell%MDatoms(i)%KOA
+!       KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 1] tested, correct
+      KOA1 => Scell%MDatoms(j)%KOA
+      KOA2 => Scell%MDatoms(i)%KOA
 
       r1 => Scell%Near_neighbor_dist(i,atom_2,4)  ! at this distance, R
       rij(:) = Scell%Near_neighbor_dist(i,atom_2,1:3)  ! at this distance, X
@@ -2623,7 +2667,6 @@ subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SV
             k1 = (i1-1)*3 + j1
             ! all the components of the h_alpha_beta(3,3):
 
-
             drij_dh = drij_dhab(rij(j1), sij(i1), r1)	! dr_{ij}/dh_{gamma,delta}, module "TB_Koster_Slater"
             !drij_dh = drij_dhab(rij(i1), sij(j1), r1)	! dr_{ij}/dh_{gamma,delta}, module "TB_Koster_Slater"
 
@@ -2643,9 +2686,6 @@ subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SV
 
             !-----------------
             ! 3) Crystal field:
-
-!             goto 5004
-
             H_cf(k1,1,1) = H_cf(k1,1,1) + d_matr_spd(1,1) * drij_dh ! s-s * s-s / dh
 
             M_dlmn(1) = dda_dhgd(1, j1, rij(1), rij(j1), sij(i1), r1)	! dl/dh{gamma,delta}, module "TB_Koster_Slater"

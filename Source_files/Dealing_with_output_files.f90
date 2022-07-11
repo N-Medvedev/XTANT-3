@@ -52,11 +52,12 @@ character(15), parameter :: m_HELP_file = 'HELP.txt'  ! file with the helpful in
 
 
 subroutine write_output_files(numpar, time, matter, Scell)
-   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in):: Scell ! super-cell with all the atoms inside
    real(8), intent(in) :: time ! time instance [fs]
    type(Solid), intent(inout) :: matter ! parameters of the material
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
    !------------------------------------------------------
+   type(Energies) :: nrg   ! [eV] energies in the super-cell
    real(8) :: Pressure
    real(8), dimension(3,3) :: Stress
    integer NSC
@@ -64,14 +65,15 @@ subroutine write_output_files(numpar, time, matter, Scell)
    do NSC = 1, size(Scell)
       ! All subroutines for saving output data into files are within this file below:
       call update_save_files(time, Scell(NSC)%MDatoms, matter, numpar, Scell(NSC))
-!       call write_output_file_one(numpar%FN_temperatures, time, Scell(NSC)%Te, Scell(NSC)%Ta, g_Scell(NSC)%MSD)
-!       call write_output_file_one(numpar%FN_temperatures, time, Scell(NSC)%Te, Scell(NSC)%Ta, g_Scell(NSC)%Tconf,  g_Scell(NSC)%MSD)
       call write_temperatures_n_displacements(numpar%FN_temperatures, time, Scell(NSC)%Te, Scell(NSC)%Ta,  &
-                                                                    Scell(NSC)%Ta_sub, g_Scell(NSC)%MSD, g_Scell(NSC)%MSDP)
+                                                      Scell(NSC)%Ta_sub, g_Scell(NSC)%MSD, g_Scell(NSC)%MSDP)
+      ! Renormalization to printing units:
       Pressure = Scell(NSC)%Pressure * 1.0d-9
       Stress = Scell(NSC)%Stress * 1.0d-9
+      nrg = Scell(NSC)%nrg
+      nrg%E_coul_scc = nrg%E_coul_scc/dble(Scell(NSC)%Na)  ! -> per atom
       call write_pressure(numpar%FN_pressure, time, Pressure, Stress)
-      call write_energies(numpar%FN_energies, time, Scell(NSC)%nrg)
+      call write_energies(numpar%FN_energies, time, nrg)
       call write_numbers(numpar%FN_numbers, time, Scell(NSC))
       call write_holes(g_numpar%FN_deep_holes, time, matter, Scell(NSC))
       if (numpar%save_raw) call write_atomic_relatives(numpar%FN_atoms_S, Scell(NSC)%MDatoms)
@@ -79,7 +81,13 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter)
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter)
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time)
-      if (numpar%save_Ei) call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei)
+      if (numpar%save_Ei) then
+         if (numpar%scc) then ! Energy levels include SCC term:
+            call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei_scc_part)
+         else  ! non-SCC (uncorrected energy levels):
+            call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei)
+         endif
+      endif
       if (numpar%save_DOS) then
          select case (numpar%DOS_splitting)
          case (1) ! with partial DOS
@@ -578,10 +586,10 @@ subroutine write_energies(FN, time, nrg)
    integer, intent(in) :: FN	! file number to write to
    real(8), intent(in) :: time	! [fs]
    type(Energies), intent(in) :: nrg
-   !write(FN, '(.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, nrg%E_tot, nrg%Eh_tot, nrg%At_pot, nrg%At_kin, nrg%Total, & !+nrg%E_supce,
-   !nrg%Total+nrg%E_supce+nrg%El_high, nrg%Total+nrg%E_supce+nrg%El_high+nrg%Eh_tot + nrg%E_vdW, nrg%E_vdW
-   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, nrg%E_tot, nrg%Eh_tot, nrg%At_pot+nrg%E_vdW, nrg%At_kin, nrg%Total, & !+nrg%E_supce,
-   nrg%Total+nrg%E_supce+nrg%El_high, nrg%Total+nrg%E_supce+nrg%El_high+nrg%Eh_tot, nrg%E_vdW
+
+   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, nrg%E_tot, nrg%Eh_tot, nrg%At_pot+nrg%E_vdW+nrg%E_coul_scc, nrg%At_kin, nrg%Total, & !+nrg%E_supce,
+   nrg%Total+nrg%E_supce+nrg%El_high, &
+   nrg%Total+nrg%E_supce+nrg%El_high+nrg%Eh_tot, nrg%E_vdW
 end subroutine write_energies
 
 
@@ -1134,7 +1142,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          endif
       endif
    endif
-   write(FN, '(a)') 'echo "Gnuplot scripts are executed, see created eps-files."' 
+   write(FN, '(a)') 'echo Gnuplot scripts are executed, see created plots.'
    close(FN)
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
    else ! It is linux
@@ -3030,6 +3038,26 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
             enddo
          endselect
       END ASSOCIATE
+
+      if (numpar%scc) then
+         write(print_to,'(a)') ' Second-order TB: including self-consistent charge calculations:'
+         select case (numpar%scc_gam_ind)
+         case (-1)
+            text1 = ' Garrity-Choudhary'
+         case (1)
+            text1 = ' Klopman-Ohno'
+         case (2)
+            text1 = ' Mataga-Nishimoto'
+         case default
+            text1 = " Garrity-Choudhary with Wolf's Coulomb "
+         end select
+         write(print_to,'(a,a)') ' Model for gamma-function used: ', trim(adjustl(text1))
+         write(text1, '(f6.2)') numpar%scc_mix
+         write(print_to,'(a,a)') ' Mixing factor for SCC : ', trim(adjustl(text1))
+      else
+         write(print_to,'(a)') ' Zero-order TB: non-self-consistent-charge calculations'
+      endif
+
       
       if (allocated(Scell(1)%TB_Waals)) then ! if we have vdW potential defined
          write(print_to,'(a,a)') ' van der Waals energy: ', trim(adjustl(Scell(1)%TB_Waals(1,1)%Param))

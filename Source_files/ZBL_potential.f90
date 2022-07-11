@@ -27,7 +27,6 @@
 MODULE ZBL_potential
 use Universal_constants
 
-
 implicit none
 
 ! Modular parameters:

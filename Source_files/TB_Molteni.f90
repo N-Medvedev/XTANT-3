@@ -679,7 +679,7 @@ subroutine Attract_TB_H3_near_M(Aij, dHijx_s, dHijy_s, dHijz_s, Scell, NSC, Eele
 
              Eelectr_s(:) = Eelectr_s(:) + E_sum(:) ! sum for all 3 coordinates
 
-             if (minval(ABS(E_sum(:))) .GE. 1.0d3) then
+             if (minval(ABS(E_sum(:))) .GE. 1.0d6) then
                 write(*,'(a)') 'Trouble in subroutine Attract_TB_H3_near_M, too large attractive force:'
                 write(*,'(i12,i12,f25.16,f25.16,f25.16)') i, j, E_sum(:)
                 write(*,'(i12,i12,f25.16,f25.16,f25.16,e25.16)') i, j, dHijx_s(i,j), dHijy_s(i,j), dHijz_s(i,j), Aijij

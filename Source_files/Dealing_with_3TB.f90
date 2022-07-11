@@ -413,8 +413,10 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
          read(string_ind(current_block+block_start+1:current_block+block_end),*) ch_ind_atom1, ch_ind_sh1, ch_ind_atom2, ch_ind_sh2
 
          ! Find if the indices belong to this Hamiltonian parameter set:
-         AT1: if ( (trim(adjustl(Element1)) == trim(adjustl(ch_ind_atom1(2:))) ) .and. &
-              (trim(adjustl(Element2)) == trim(adjustl(ch_ind_atom2(2:))) ) ) then
+!          AT1: if ( (trim(adjustl(Element1)) == trim(adjustl(ch_ind_atom1(2:))) ) .and. &
+!               (trim(adjustl(Element2)) == trim(adjustl(ch_ind_atom2(2:))) ) ) then         ! [A 0]
+         AT1: if ( (trim(adjustl(Element2)) == trim(adjustl(ch_ind_atom1(2:))) ) .and. &
+              (trim(adjustl(Element1)) == trim(adjustl(ch_ind_atom2(2:))) ) ) then           ! [A 1]
 
             ! Read indices of the overlapping shells from the second block:
             if ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) then
@@ -489,8 +491,10 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
          read(string_ind(current_block+block_start+1:current_block+block_end),*) ch_ind_atom1, ch_ind_sh1, ch_ind_atom2, ch_ind_sh2
 
          ! Find if the indices belong to this Hamiltonian parameter set:
-         AT2: if ( (trim(adjustl(Element1)) == trim(adjustl(ch_ind_atom1(2:))) ) .and. &
-              (trim(adjustl(Element2)) == trim(adjustl(ch_ind_atom2(2:))) ) ) then
+!          AT2: if ( (trim(adjustl(Element1)) == trim(adjustl(ch_ind_atom1(2:))) ) .and. &
+!               (trim(adjustl(Element2)) == trim(adjustl(ch_ind_atom2(2:))) ) ) then           ! [B 0]
+         AT2: if ( (trim(adjustl(Element2)) == trim(adjustl(ch_ind_atom1(2:))) ) .and. &
+              (trim(adjustl(Element1)) == trim(adjustl(ch_ind_atom2(2:))) ) ) then            ! [B 1]
 
             ! Read indices of the overlapping shells from the second block:
             if ( (trim(adjustl(ch_ind_sh1(2:2))) == 's') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 's') ) then
@@ -627,6 +631,7 @@ subroutine sort_2bdy_parameters(TB_Hamil, Element1, Element2, Hdata, Sdata, stri
                   TB_Hamil%Hhcf(2,2,i) = Hdata( ind8(i+4) ) !/ 1.5d0
 !                   print*, 'p-p O:', ind8(i), TB_Hamil%Hhavg(2,i), TB_Hamil%Hhcf(2,2,i)
                enddo
+!                pause '3TB reading'
             endif
 
             if ( (trim(adjustl(ch_ind_sh1(2:2))) == 'd') .and. (trim(adjustl(ch_ind_sh2(2:2))) == 'd') ) then

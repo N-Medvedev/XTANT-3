@@ -58,6 +58,59 @@ parameter(m_sqrtPi = sqrt(g_Pi))    ! sqrt(Pi)
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Wolf's method of Coulomb trunkation:
 
+subroutine get_Coulomb_Wolf_s(Scell, NSC, matter, E_coulomb, gam_ij)   ! Coulomb energy
+! This subroutine calcualtes the full Coulomb energy following Wolf's truncation method
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in), target :: matter   ! material parameters
+   real(8), intent(out) :: E_coulomb  ! Total Coulomb energy of all atoms [eV]
+   real(8), dimension(:,:), intent(in), optional :: gam_ij  ! effective energy values [eV]
+   !=====================================================
+   real(8) :: alpha, sum_a, Coul_pot, r_cut, q1, q2
+   integer :: j, nat, atom_2, i
+   real(8), pointer :: r
+   integer, pointer :: m, KOA1, KOA2
+
+   nat = Scell(NSC)%Na ! number of atoms
+   ! Get the cut-off distance
+   r_cut = cut_off_distance(Scell(NSC)) ! below
+   sum_a = 0.0d0  ! to start with
+
+   !$omp PARALLEL private( j, KOA1, q1, m, atom_2, i, KOA2, q2, r, alpha, Coul_pot )
+   !$omp do reduction( + : sum_a)
+   do j = 1, nat  ! atom #1
+      KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! kind of atom #1
+      q1 = matter%Atoms(KOA1)%NVB - matter%Atoms(KOA1)%mulliken_Ne ! Mulliken charge of atom #1
+      m => Scell(NSC)%Near_neighbor_size(j)  ! number of nearest neighbors of atom #1
+      do atom_2 = 1, m  ! only for atoms close to #1
+         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
+         KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! kind of atom #2
+         q2 = matter%Atoms(KOA2)%NVB - matter%Atoms(KOA2)%mulliken_Ne ! Mulliken charge of atom #2
+
+         r => Scell(NSC)%Near_neighbor_dist(j,atom_2,4) ! distance between atoms #1 and #2, R [A]
+         alpha = 3.0d0/(4.0d0*r_cut) ! it's chosen according to optimal value from [4]
+
+         Coul_pot = Coulomb_Wolf_pot(q1, q2, r, r_cut, alpha)    ! function below
+         if (present(gam_ij)) then  ! Effective value according to Hubbard model:
+            ! Renormalize Coulomb potential to a.u., and then to the given Hubbard parameters:
+            sum_a = sum_a + Coul_pot * gam_ij(j,i) * g_ev2au
+         else  ! Bare Coulomb:
+            sum_a = sum_a + Coul_pot
+         endif
+      enddo ! atom_2
+      ! Add the Wolf's self-term:
+      sum_a = sum_a + Coulomb_Wolf_self_term(q1, r_cut, alpha) ! below
+   enddo ! j
+   !$omp end do
+   !$omp end parallel
+   ! Total Coulomb energy, excluding double-counting:
+   E_coulomb = sum_a * 0.5d0   ! [eV]
+
+   nullify(KOA1, KOA2, r)
+end subroutine get_Coulomb_Wolf_s
+
+
+
 pure function Coulomb_Wolf_pot(q1, q2, r, Rc, alpha) result(WPot) ! truncated Coulomb potential [4]
    real(8) :: WPot  ! [eV]
    real(8), intent(in) :: q1, q2    ! [e] charges
@@ -76,13 +129,13 @@ pure function Coulomb_Wolf_pot(q1, q2, r, Rc, alpha) result(WPot) ! truncated Co
 end function Coulomb_Wolf_pot
 
 
-pure function Coulomg_Wolf_self_term(q1, Rc, alpha) result(SelfPot)   ! Self-term, Eq.(5.13) [3]
+pure function Coulomb_Wolf_self_term(q1, Rc, alpha) result(SelfPot)   ! Self-term, Eq.(5.13) [3]
    real(8) :: SelfPot  ! [eV]
    real(8), intent(in) :: q1    ! [e] charges
    real(8), intent(in) :: Rc    ! [A] interatomic distance, truncation distance
    real(8), intent(in) :: alpha ! truncation parameter
    SelfPot = m_k*q1*q1*(erfc(alpha*Rc)/Rc + 2.0d0*alpha/m_sqrtPi)    ! [eV]
-end function Coulomg_Wolf_self_term
+end function Coulomb_Wolf_self_term
 
 
 pure function d_Coulomb_Wolf_pot(q1, q2, r, Rc, alpha) result(dWPot) ! derivative truncated Coulomb potential, Eq.(5.22) [3]
@@ -101,6 +154,48 @@ pure function d_Coulomb_Wolf_pot(q1, q2, r, Rc, alpha) result(dWPot) ! derivativ
       dWPot = 0.0d0
    endif
 end function d_Coulomb_Wolf_pot
+
+
+
+function cut_off_distance(Scell) result(d_cut)
+   real(8) d_cut  ! [A] cut off distance defined for the given TB Hamiltonian
+   type(Super_cell), intent(in) :: Scell  ! supercell with all the atoms as one object
+   real(8) :: r(1), Sup_Cell
+
+   ! Cut off of the potential/Hamiltonian:
+   ASSOCIATE (ARRAY => Scell%TB_Hamil(:,:)) ! attractive part
+      select type(ARRAY)
+      type is (TB_H_Pettifor)
+         r = maxval(ARRAY(:,:)%rm)
+         d_cut = r(1)
+      type is (TB_H_Fu)
+         r = maxval(ARRAY(:,:)%rm)
+         d_cut = r(1)
+      type is (TB_H_Molteni)
+         r = maxval(ARRAY(:,:)%rcut)
+         d_cut = r(1)
+      type is (TB_H_NRL)
+         r = maxval(ARRAY(:,:)%Rc)
+         d_cut = r(1)*g_au2A	! [a.u.] -> [A]
+      type is (TB_H_DFTB)
+         r = maxval(ARRAY(:,:)%rcut)
+         d_cut = r(1)
+      type is (TB_H_3TB)
+         r = maxval(ARRAY(:,:)%rcut)
+         d_cut = r(1)
+      type is (TB_H_BOP)
+         d_cut = maxval(ARRAY(:,:)%rcut + ARRAY(:,:)%dcut)
+      type is (TB_H_xTB)
+         r = maxval(ARRAY(:,:)%rcut)
+         d_cut = r(1)
+      end select
+   END ASSOCIATE
+
+   ! Make sure it is not larger than half of the supercell:
+   !Sup_Cell = min( sqrt( sum(Scell%supce(1,:)**2) ) , sqrt( sum(Scell%supce(2,:)**2) ), sqrt( sum(Scell%supce(3,:)**2) ) )
+   !d_cut = min( d_cut, Sup_Cell*0.5d0 )
+end function cut_off_distance
+
 
 
 

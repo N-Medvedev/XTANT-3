@@ -25,6 +25,10 @@ cd Source_files
    IF /I %arg1%==DB (
       SET arg1=DEBUGOMP
    )
+:: shorthand expressions for no-optimization and no debug options (fast compiling):
+   IF /I %arg1%==SLOW (
+      SET arg1=FAST
+   )
 
    
    SET "Starline=************************************************************************************"
@@ -59,19 +63,34 @@ cd Source_files
          :: Set name of the executable:
          SET "Name_of_exe=XTANT_DEBUG_OMP.exe"
      ) ELSE (
-         echo %Starline%
-         echo Compiling for release, OpenMP and optimizations are included
-         echo Started at: %date% %time%
-         echo %Starline%
+        IF /I %arg1%==FAST (
+            echo %Starline%
+            echo Compiling with FAST option, OpenMP, no optimizations, no debug
+            echo Started at: %date% %time%
+            echo %Starline%
 
-         :: List compiler options 
-         SET "Compile_options=  /Qopenmp /D OMP_inside /Qmkl=parallel /O3 /fpp /Qvec /Qipo /real-size:64 /standard-semantics /F9999999999 "
+            :: List compiler options
+            SET "Compile_options=/F9999999999 /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /Od /fpe:0 /fp:precise /Qvec /standard-semantics"
 
-         :: Set name of the executable:
-         SET "Name_of_exe=XTANT.exe"
+            :: Set name of the executable:
+            SET "Name_of_exe=XTANT_OMP.exe"
 
-         del *.pdb
-        )
+            del *.pdb
+        ) ELSE (
+            echo %Starline%
+            echo Compiling for release, OpenMP and optimizations are included
+            echo Started at: %date% %time%
+            echo %Starline%
+
+            :: List compiler options
+            SET "Compile_options= /Qopenmp /D OMP_inside /Qmkl=parallel /O3 /fpp /Qvec /Qipo /real-size:64 /standard-semantics /F9999999999 "
+
+            :: Set name of the executable:
+            SET "Name_of_exe=XTANT.exe"
+
+            del *.pdb
+         )
+       )
     )
 
 :: Compile modules

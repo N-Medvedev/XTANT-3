@@ -192,7 +192,6 @@ type, EXTENDS (TB_Hamiltonian) :: TB_H_DFTB ! hamiltonian coefficients:
    character(20) :: param_name  ! name of parameterization used
    real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-like cut-off [A]
    real(8) :: Ed, Ep, Es    ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom
-!    real(8) :: Ud, Up, Us    ! the Hubbard U values for the appropriate angular momenta (currently not used in XTANT)
    real(8), dimension(:), allocatable :: Rr ! Radial grid [A]
    real(8), dimension(:,:), allocatable :: Vr ! Hopping integrals [eV]
    real(8), dimension(:,:), allocatable :: Sr ! Overlaps
@@ -216,7 +215,6 @@ type, EXTENDS (TB_Hamiltonian) :: TB_H_3TB ! hamiltonian coefficients:
    real(8) :: rc       ! rescaling coefficient for the distance entering inside Laguerres
    logical :: include_3body   ! include or exclude 3-body parts
    logical :: nullify_diag_cf   ! exclude diagonal part of crystal field
-!    real(8) :: Ud, Up, Us    ! the Hubbard U values for the appropriate angular momenta (currently not used in XTANT)
    ! Onsite parameters:
    real(8) :: Ed, Ep, Es      ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom
    real(8), dimension(3,4)   :: Hhavg     ! coefficients before Leguerres in 2-body onsite, Eq.(19) in [1]
@@ -491,7 +489,7 @@ type Super_cell
    real(8), dimension(:), allocatable :: fe ! low-energy electron distribution
    real(8), dimension(:), allocatable :: Norm_WF ! Normalization of wave functions
    ! Atoms:
-   type(Atom), dimension(:), allocatable :: MDAtoms ! if more then one supercell
+   type(Atom), dimension(:), allocatable :: MDAtoms ! all atoms in MD
    type(Energies) :: nrg		! [eV] energies in the super-cell
    ! Hamiltonians, wave-functions and related parameters:
    real(8), dimension(:,:), allocatable :: Ha	! hamiltonian matrix
@@ -501,9 +499,11 @@ type Super_cell
 !    real(8), dimension(:,:), allocatable :: Vij	! Radial part of the hamiltonian matrix
    real(8), dimension(:,:), allocatable :: Sij	! Overlap matrix for non-orthogonal TB
    real(8), dimension(:,:), allocatable :: Hij	! Non-orthogonal TB Hamiltonian
-   real(8), dimension(:,:), allocatable :: Hij_sol	! Eigenvectors of non-orthogonal TB Hamiltonian
+   real(8), dimension(:,:), allocatable :: Hij_sol ! Eigenvectors of non-orthogonal TB Hamiltonian
+   real(8), dimension(:), allocatable :: eigen_S   ! eigenvalues of the hamiltonian overlap matrix
    real(8), dimension(:), allocatable :: Ei	! energy levels, eigenvalues of the hamiltonian matrix
    real(8), dimension(:), allocatable :: Ei0	! energy levels, eigenvalues of the hamiltonian matrix on the last step
+   real(8), dimension(:), allocatable :: Ei_scc_part  ! eigenvalues of the non-SCC part of the hamiltonian
    real(8), dimension(:,:), allocatable :: Aij	! coefficients used for forces in TB
    ! Complex Hamiltonian for multiple k-points:
    complex, dimension(:,:,:,:,:), allocatable :: CHa	! Complex hamiltonian matrix for each (kx, ky, kz) points
@@ -576,6 +576,7 @@ type At_data
    type(Basis_set), dimension(:), allocatable :: Cart_Basis  ! Cartesian GTO basis set functions for this element (if xTB is used)
    type(Basis_set), dimension(:), allocatable :: Spher_Basis  ! Spherical (pure) GTO basis set functions for this element (if xTB is used)
    real(8) :: mulliken_Ne   ! electron population according to Mulliken analysis
+   real(8) :: mulliken_q   ! charge according to Mulliken analysis
    integer, dimension(:), allocatable :: Shl_dsgnr  ! EADL shell designator
    integer, dimension(:), allocatable :: Shl_dsgnr_atomic  ! EADL shell designator for atomic shells without VB
    character(11), dimension(:), allocatable :: Shell_name   ! names of the shells
@@ -650,7 +651,9 @@ type Numerics_param
    real(8) :: dt_cooling  ! time-step how often to cool down the atoms [fs]
    logical :: p_const	  ! P=const, otherwise V=const for Parinello-Rahman MD simulations
    logical :: Nonadiabat  ! true=included / false=excluded
-   logical :: scc         ! include seclf-consistent charge corrections in TB?
+   logical :: scc         ! include self-consistent charge corrections in TB?
+   integer :: scc_gam_ind ! index for the model for gamma in scc term
+   real(8) :: scc_mix     ! mixin factor for scc calculations
    integer :: NA_kind     ! number of different kinds of atoms
    integer :: N_basis_size   ! index for the size of the basis set used in DFTB case: s=0; sp3=1; sp3d5=2
    logical :: Transport		 ! true=included / false=excluded ; for atoms

@@ -195,7 +195,7 @@ function d_DFTB_radial_function(r_given, r_grid, param_array, ind_array, ind_int
 
  
 ! Tight Binding Hamiltonian within DFTB parametrization:
-subroutine construct_TB_H_DFTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err)
+subroutine construct_TB_H_DFTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err, scc, H_scc_0, H_scc_1)
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(solid), intent(inout) :: matter	! materil parameters
    type(TB_H_DFTB), dimension(:,:), intent(in) :: TB_Hamil	! parameters of the Hamiltonian of TB
@@ -204,6 +204,8 @@ subroutine construct_TB_H_DFTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, S
    type(Super_cell), dimension(:), intent(inout) :: Scell		! supercell with all the atoms as one object
    integer, intent(in) :: NSC		! number of supercell
    type(Error_handling), intent(inout) :: Err	! error save
+   integer, intent(in), optional :: scc   ! flag to do self-consistent charge calculations
+   real(8), dimension(:,:), intent(inout), optional :: H_scc_0, H_scc_1 ! zero and first order contributions to Hamiltonian
    character(200) :: Error_descript
    Error_descript = ''
 
@@ -213,8 +215,13 @@ subroutine construct_TB_H_DFTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, S
    Scell(NSC)%H_non0 = Scell(NSC)%H_non	! save non-diagonalized Hamiltonian from last time-step
 !$OMP END WORKSHARE
 
-    ! Construct TB Hamiltonian (with DFTB parameters),  orthogonalize it,  and then solve generalized eigenvalue problem:
-   call Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err)	! see below
+   ! Construct TB Hamiltonian (with DFTB parameters),  orthogonalize it,  and then solve generalized eigenvalue problem:
+   if (present(scc) .and. present(H_scc_0) .and. present(H_scc_1)) then
+      call Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err, scc, H_scc_0, H_scc_1)  ! see below
+   else
+      call Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err)  ! see below
+   endif
+
 
 !    ! Test (comment out for release):
 !    call test_nonorthogonal_solution(Scell(NSC)) ! module "TB_NRL"
@@ -225,7 +232,7 @@ end subroutine construct_TB_H_DFTB
 
 
 
-subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err)
+subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err, scc, H_scc_0, H_scc_1)
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -233,12 +240,14 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_SVij	! matrix of Overlap functions for all pairs of atoms, all orbitals
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines
    type(Error_handling), intent(inout) :: Err	! error save
+   integer, intent(in), optional :: scc   ! flag to do self-consistent charge calculations
+   real(8), dimension(:,:), intent(inout), optional :: H_scc_0, H_scc_1 ! zero and first order contributions to Hamiltonian
    !-------------------------------------------
    real(8), dimension(:,:), allocatable :: Hij	 ! Hamiltonian
    real(8), dimension(:,:), allocatable :: Sij  ! Overlap
    real(8), dimension(size(Scell(NSC)%Ha,1)) :: Evec, EvecS
    real(8), dimension(:,:), allocatable :: Hij1, Sij1
-   integer :: nat, Nsiz, n_orb
+   integer :: nat, Nsiz, n_orb, do_scc
    integer, target :: j
    integer :: j1, i1, k, l, atom_2, FN, i
    real(8) :: temp, epsylon, Ev, SH_1
@@ -257,81 +266,100 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
    Sij = 0.0d0
    Hij = 0.0d0
 
-   !-----------------------------------
-   ! 1) Construct non-orthogonal Hamiltonian H and Overlap matrix S in 2 steps:
-!$omp parallel private(j, m, atom_2, i, KOA1, KOA2, j1, l, i1, k, Hij1, Sij1)
-if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb))
-if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb))
-!$omp do
-   do j = 1,nat	! all atoms
-      m => Scell(NSC)%Near_neighbor_size(j)
-      do atom_2 = 0,m ! do only for atoms close to that one  
-         if (atom_2 .EQ. 0) then
-            i = j
-         else
-            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-         endif
-         
-         IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
-            KOA1 => Scell(NSC)%MDatoms(j)%KOA
-            KOA2 => Scell(NSC)%MDatoms(i)%KOA
-            ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
-            ! Contruct a block-hamiltonian:
-            call Hamilton_one_DFTB(numpar%N_basis_size, j, i, TB_Hamil(KOA1,KOA2), Hij1, M_Vij, M_lmn)   ! below
-            
-            ! Construct overlap matrix for this pair of atoms:
-            call Get_overlap_S_matrix_DFTB(numpar%N_basis_size, j, i, Sij1, M_SVij, M_lmn)  ! below
+   ! Identify flag for scc calcilations:
+   if (present(scc) .and. present(H_scc_0) .and. present(H_scc_1)) then
+      do_scc = scc   ! follow the flag that was passed into here
+   else
+      do_scc = 0  ! no scc required
+   endif
 
-            do j1 = 1,n_orb ! all orbitals
-               l = (j-1)*n_orb+j1
-               do i1 = 1,n_orb ! all orbitals
-                  k = (i-1)*n_orb+i1
-                  Hij(k,l) = Hij1(i1,j1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40)
-                  Sij(k,l) = Sij1(i1,j1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
-!                   Hij(k,l) = Hij1(j1,i1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40)
-!                   Sij(k,l) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
-                  if (ABS(Sij(k,l)) <= epsylon) Sij(k,l) = 0.0d0
-               enddo ! i1
-            enddo ! j1
-         endif IJ
-      enddo ! j
-   enddo ! i
+   !-----------------------------------
+
+   WNTSCC:if (do_scc == 0) then   ! no scc calculations, construct regular (zero-order) Hamiltonian:
+
+      ! 1) Construct non-orthogonal Hamiltonian H and Overlap matrix S in 2 steps:
+!$omp parallel private(j, m, atom_2, i, KOA1, KOA2, j1, l, i1, k, Hij1, Sij1)
+      if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb))
+      if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb))
+!$omp do
+      do j = 1,nat	! all atoms
+         m => Scell(NSC)%Near_neighbor_size(j)
+         do atom_2 = 0,m ! do only for atoms close to that one
+            if (atom_2 .EQ. 0) then
+               i = j
+            else
+               i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+            endif
+         
+            IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
+               KOA1 => Scell(NSC)%MDatoms(j)%KOA
+               KOA2 => Scell(NSC)%MDatoms(i)%KOA
+               ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
+               ! Contruct a block-hamiltonian:
+               call Hamilton_one_DFTB(numpar%N_basis_size, j, i, TB_Hamil(KOA1,KOA2), Hij1, M_Vij, M_lmn)   ! below
+            
+               ! Construct overlap matrix for this pair of atoms:
+               call Get_overlap_S_matrix_DFTB(numpar%N_basis_size, j, i, Sij1, M_SVij, M_lmn)  ! below
+
+               do j1 = 1,n_orb ! all orbitals
+                  l = (j-1)*n_orb+j1
+                  do i1 = 1,n_orb ! all orbitals
+                     k = (i-1)*n_orb+i1
+                     Hij(k,l) = Hij1(i1,j1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40)
+                     Sij(k,l) = Sij1(i1,j1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
+!                    Hij(k,l) = Hij1(j1,i1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40)
+!                    Sij(k,l) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
+                     if (ABS(Sij(k,l)) <= epsylon) Sij(k,l) = 0.0d0
+                  enddo ! i1
+               enddo ! j1
+            endif IJ
+         enddo ! j
+      enddo ! i
 !$omp end do
-deallocate(Hij1, Sij1)
+      deallocate(Hij1, Sij1)
 !$omp end parallel
 
    ! b) Construct lower triangle - use symmetry:
 !$omp parallel
 !$omp do  private(j, m, atom_2, i, j1, l, i1, k)
-   do j = 1,nat	! all atoms
-      m => Scell(NSC)%Near_neighbor_size(j)
-      do atom_2 = 1,m ! do only for atoms close to that one  
-         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-         if (i < j) then ! it's a new pair of atoms, calculate everything
-            do j1 = 1,n_orb ! all orbitals
-               l = (j-1)*n_orb+j1
-               do i1 = 1,n_orb ! all orbitals
-                  k = (i-1)*n_orb+i1
-                  Hij(k,l) = Hij(l,k)
-                  Sij(k,l) = Sij(l,k)
-               enddo ! i1
-            enddo ! j1
-         endif
-      enddo ! j
-   enddo ! i
+      do j = 1,nat	! all atoms
+         m => Scell(NSC)%Near_neighbor_size(j)
+         do atom_2 = 1,m ! do only for atoms close to that one
+            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+            if (i < j) then ! it's a new pair of atoms, calculate everything
+               do j1 = 1,n_orb ! all orbitals
+                  l = (j-1)*n_orb+j1
+                  do i1 = 1,n_orb ! all orbitals
+                     k = (i-1)*n_orb+i1
+                     Hij(k,l) = Hij(l,k)
+                     Sij(k,l) = Sij(l,k)
+                  enddo ! i1
+               enddo ! j1
+            endif
+         enddo ! j
+      enddo ! i
 !$omp end do 
 !$omp end parallel
 
    ! 2)    ! Save the non-orthogonalized Hamiltonian:
-   !$OMP WORKSHARE
-   Scell(NSC)%H_non = Hij		! nondiagonalized Hamiltonian
-   Scell(NSC)%Sij = Sij		! save Overlap matrix
-   !$OMP END WORKSHARE
+!$OMP WORKSHARE
+      Scell(NSC)%H_non = Hij		! nondiagonalized Hamiltonian
+      Scell(NSC)%Sij = Sij		! save Overlap matrix
+!$OMP END WORKSHARE
+
+   else WNTSCC ! scc cycle, construct only use second order scc correction:
+!$OMP WORKSHARE
+      Hij = H_scc_0 + H_scc_1 ! zero and second order scc contributions into Hamiltonian
+      Scell(NSC)%H_non = Hij  ! save new nondiagonalized Hamiltonian
+      Sij = Scell(NSC)%Sij
+!$OMP END WORKSHARE
+   endif WNTSCC
+
 
    !-----------------------------------
    ! 3) Orthogonalize the Hamiltonian using Lowedin procidure
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
-   call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err)	! module "TB_NRL"
+   call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, Scell(NSC)%eigen_S)	! module "TB_NRL"
    
    !$OMP WORKSHARE
    Scell(NSC)%Hij = Hij ! save orthogonalized but non-diagonalized Hamiltonian
@@ -663,13 +691,14 @@ subroutine Attract_TB_forces_DFTB(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Eelectr_s, 
    real(8), dimension(:), intent(out)  :: Eelectr_s ! part of the forces
    integer, intent(in) :: n_orb ! number of orbitals in the used basis set
    !--------------------------------------
-   integer :: j, k, i, ste, n, norb_1, j_norb
+   integer :: j, k, i, ste, n, norb_1, j_norb, n_too
    integer, target :: i2
    integer, pointer :: m, j1
 
    n = size(Aij,1)	! total number of orbitals
    norb_1 = n_orb - 1
    Eelectr_s = 0.0d0
+   n_too = 0   ! to srtart with
 
    i2 = 0
    ste = 1
@@ -692,16 +721,23 @@ subroutine Attract_TB_forces_DFTB(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Eelectr_s, 
              Eelectr_s(2) = Eelectr_s(2) + SUM(dH(2,i,j:j_norb)*Aij(i,j:j_norb) - dS(2,i,j:j_norb)*Aij_x_Ei(i,j:j_norb))
              Eelectr_s(3) = Eelectr_s(3) + SUM(dH(3,i,j:j_norb)*Aij(i,j:j_norb) - dS(3,i,j:j_norb)*Aij_x_Ei(i,j:j_norb))
 
-             if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d5) then
-                write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_DFTB, too large attractive force:'
-                write(*,*) i, j
-                write(*,*) dH(1,i,j:j_norb)
-                write(*,*) Aij(i,j:j_norb)
-                write(*,'(e25.16,e25.16,e25.16)') Eelectr_s(:)
-             endif
+             if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d6) n_too = n_too + 1
+!              if (maxval(ABS(Eelectr_s(:))) .GE. 1.0d5) then
+!                 write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_DFTB, too large attractive force:'
+!                 write(*,*) i, j
+!                 write(*,*) dH(1,i,j:j_norb)
+!                 write(*,*) Aij(i,j:j_norb)
+!                 write(*,'(e25.16,e25.16,e25.16)') Eelectr_s(:)
+!              endif
           endif
        enddo
    enddo
+
+   if (n_too > 0) then
+      write(*,'(a)') 'Trouble in subroutine Attract_TB_forces_DFTB, too large attractive force'
+      write(*,'(a,i)') 'For elements: ', n_too
+   endif
+
    nullify(m, j1)
 end subroutine Attract_TB_forces_DFTB
 

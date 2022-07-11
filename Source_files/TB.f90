@@ -37,13 +37,15 @@ use TB_Pettifor
 use TB_Molteni
 use TB_NRL
 use TB_DFTB, only : Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_drij_DFTB, &
-                     Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB
+                     Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB, &
+                     identify_DFTB_orbitals_per_atom
 use TB_3TB, only : get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, Attract_TB_Forces_Press_3TB, &
                      Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors, get_dHij_drij_3TB
 use TB_BOP, only : Construct_Vij_BOP, construct_TB_H_BOP, get_Erep_s_BOP
 use TB_xTB, only : Construct_Vij_xTB, construct_TB_H_xTB, get_Erep_s_xTB, identify_xTB_orbitals_per_atom
 use Van_der_Waals
-use Coulomb
+use Coulomb, only: m_k, m_sqrtPi, Coulomb_Wolf_pot, get_Coulomb_Wolf_s, cut_off_distance, Construct_B_C, get_Coulomb_s, &
+                     Coulomb_Wolf_self_term, d_Coulomb_Wolf_pot
 use Exponential_wall
 
 implicit none
@@ -79,6 +81,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
    real(8), dimension(:,:), allocatable :: M_Aij_x_Ei		! matrix of multipliers for non-orthogonal forces calculation
    real(8), dimension(:,:,:), allocatable :: M_drij_dsk  ! matrix of derivatives of distances between atoms i and j
    real(8), dimension(:,:,:), allocatable :: M_dlmn   ! matrix of derivatives of directional cosines
+   real(8), dimension(:,:), allocatable :: HperS   ! H_1/S for SCC calculations
 
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
       ! Create and diaganalize Hamiltonain (in Pettifor form):
@@ -97,29 +100,33 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
             ! Create and diagonalize TB Hamiltonian:
             call create_and_diagonalize_H(Scell, NSC, numpar, matter, ARRAY, which_fe, t, &
                                     M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Mjs, M_Lag_exp, M_d_Lag_exp, &
-                                    M_E0ij, M_dE0ij, Err)   ! Below
+                                    M_E0ij, M_dE0ij, HperS, Err)   ! Below
 
             ! Get the matrix of coefficients used for calculation of forces:
             call Construct_Aij(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Aij) ! see below
 
+            ! Construct forces:
             if (numpar%do_atoms) then ! atoms are allowed to be moving:
-               ! Construct forces:
+               ! Attractive part:
                select type(ARRAY)
                type is (TB_H_Pettifor) ! TB parametrization according to Pettifor
                   ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
                   call dHij_s(ARRAY, Scell(NSC)%MDatoms, Scell, NSC, numpar, Scell(NSC)%Aij, M_x1, M_xrr) ! module "TB_Pettifor"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
                   call Attract_TB_Forces_Press(ARRAY, Scell(NSC)%MDatoms, Scell, NSC, numpar, Scell(NSC)%Aij) ! module "TB_Pettifor"
+
                type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni
                   ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
                   call dHij_s_M(ARRAY, Scell(NSC)%MDatoms, Scell, NSC, numpar, Scell(NSC)%Aij, M_x1, M_xrr) ! module "TB_Molteni"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
                   call Attract_TB_Forces_Press_M(ARRAY, Scell(NSC)%MDatoms, Scell, NSC, numpar, Scell(NSC)%Aij) ! module "TB_Molteni"
+
                type is (TB_H_Fu)
                   ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
                   call dHij_s_F(ARRAY, Scell(NSC)%MDatoms, Scell, NSC, numpar, Scell(NSC)%Aij, M_x1, M_xrr) ! module "TB_Fu"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
                   call Attract_TB_Forces_Press_F(ARRAY, Scell(NSC)%MDatoms, Scell, NSC, numpar, Scell(NSC)%Aij) ! module "TB_Fu"
+
                type is (TB_H_NRL)
                   ! Get the energy-weighted density matrix:
                   call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
@@ -127,22 +134,35 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                   call get_dHij_drij_NRL(ARRAY, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei)	! module "TB_NRL"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
                   call Attract_TB_Forces_Press_NRL(ARRAY, Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_NRL"
+
                type is (TB_H_DFTB)
                   ! Get the energy-weighted density matrix:
-                  call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+                  ! If we need SCC, get the charges:
+                  if (numpar%scc) then ! include SCC term
+                     call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei, HperS) ! see below
+                  else ! no SCC term
+                     call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+                  endif
                   ! Get the derivatives of the Hamiltonian:
-                  call get_dHij_drij_DFTB(numpar, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei)	! module "TB_DFTB"
+                  call get_dHij_drij_DFTB(numpar, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_DFTB"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
                   call Attract_TB_Forces_Press_DFTB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_DFTB"
+
                type is (TB_H_3TB)
                   ! Get the energy-weighted density matrix:
-                  call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+                  if (numpar%scc) then ! include SCC term
+                     call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei_scc_part, M_Aij_x_Ei, HperS) ! below [B 0]
+                     !call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei, HperS) ! below [B 1]
+                  else ! no SCC term
+                     call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+                  endif
                   ! Get the derivatives of the Hamiltonian:
                   call get_dHij_drij_3TB(numpar, Scell, NSC, ARRAY, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
-                        M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
+                        M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
                   call Attract_TB_Forces_Press_3TB(Scell, NSC, ARRAY, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
                         M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
+
                type is (TB_H_BOP)
                   ! Get the energy-weighted density matrix:
                   call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
@@ -150,6 +170,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                   !
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
                   !
+
                type is (TB_H_xTB)
                   ! Get the energy-weighted density matrix:
                   call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
@@ -210,6 +231,9 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
          END ASSOCIATE
          !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
 
+         ! SCC Coulomb contribution:
+         call Coulomb_force_from_SCC(numpar, matter, Scell, NSC) ! see below
+
          ! van der Waals part with TB Hamiltonian:
          call vdW_forces(Scell(NSC)%TB_Waals, Scell, NSC, numpar) ! get all the van der Waals forces, see below
 
@@ -237,7 +261,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
    endif DO_TB
    
    ! Get new energies of the system: potential, kinetic, global:
-   call get_new_energies(Scell, matter, numpar, t, Err) ! module "TB"
+   call get_new_energies(Scell, matter, numpar, t, Err) ! below
 
    ! Clean up a bit:
    if (allocated(M_x1)) deallocate(M_x1)
@@ -253,12 +277,13 @@ end subroutine get_Hamilonian_and_E
 
 
 
+
 subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_fe, t, &
                                     M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Mjs, M_Lag_exp, M_d_Lag_exp, &
-                                    M_E0ij, M_dE0ij, Err)
+                                    M_E0ij, M_dE0ij, HperS, Err)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC
-   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    type(Solid), intent(inout) :: matter ! material parameters
    class(TB_Hamiltonian), dimension(:,:), intent(in) :: TB_Hamil
    integer, intent(in) :: which_fe ! which method is used to get electron distribution
@@ -273,7 +298,14 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
    real(8), dimension(:,:,:), allocatable, intent(inout) :: M_d_Lag_exp ! derivatives of Laguerres (for 3TB)
    real(8), dimension(:,:,:), allocatable, intent(inout) :: M_lmn    ! directional cosines l, m, n
    real(8), dimension(:,:,:), allocatable, intent(inout) :: Mjs      ! K-S part of overlaps with s-orb. (for 3TB)
+   real(8), dimension(:,:), allocatable, intent(inout) :: HperS   ! H_1/S
    type(Error_handling), intent(inout) :: Err	! error save
+   !------------------------
+   real(8), dimension(:,:), allocatable :: H_scc_0, H_scc_1
+   real(8), dimension(:,:), allocatable :: gam_ij
+   real(8), dimension(size(matter%Atoms)) :: q, q0, q00, q1
+   real(8) :: eps, iteralpha, E_coul
+   integer :: i, Niter
 
 
    select type(TB_Hamil)
@@ -304,21 +336,720 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
       type is (TB_H_xTB)  ! TB parametrization accroding to xTB (NOT READY)
 !         call Construct_Vij_xTB(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_xTB"
 !         call construct_TB_H_xTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_xTB"
-      end select
+   end select
+   if (numpar%verbose) print*, 'Hamiltonian constructed and diagonalized succesfully'
 
-      ! Get the DOS weights for each energy level, if required:
+   ! Get the DOS weights for each energy level, if required:
+   if (allocated(Scell(NSC)%Sij)) then ! nonorthogonal Hamiltonian
+      call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha, &
+                           Sij=Scell(NSC)%Sij, eigen_S=Scell(NSC)%eigen_S) ! below
+   else ! orthogonal Hamiltonian
       call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha) ! below
+   endif
 
-      ! Fill corresponding energy levels + repulsive energy cotribution:
-      select case (which_fe)
+   ! Fill corresponding energy levels + repulsive energy cotribution:
+   select case (which_fe)
       case (1) ! distribution for given Te:
          call set_initial_fe(Scell, matter, Err) ! module "Electron_tools"
          call get_new_global_energy(Scell(NSC), Scell(NSC)%nrg) ! module "Electron_tools"
+         if (numpar%scc) call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
+                     Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne, matter%Atoms(:)%mulliken_q) ! below
       case (2) ! distribution for given Ee + repulsive energy:
          call get_new_energies(Scell, matter, numpar, t, Err) ! below
+   end select
+
+   ! If we need SCC, get the charges:
+   if (numpar%scc) then
+      ! Save Hamiltonian prior to scc cycles (H_0 term):
+      if (.not.allocated(H_scc_0)) allocate(H_scc_0(size(Scell(NSC)%Ha,1),size(Scell(NSC)%Ha,2)))
+      H_scc_0 = Scell(NSC)%H_non ! save the H_0 (non-SCC) part of the Hamiltonin
+      if (.not.allocated(H_scc_1)) allocate(H_scc_1(size(Scell(NSC)%Ha,1),size(Scell(NSC)%Ha,2)),source = 0.0d0)
+
+
+      iteralpha = numpar%scc_mix ! mixing coefficient in SCC
+      Niter = 250    ! maximal number of scc iterations
+      i = 0          ! to start counting iterations
+
+      ! Define deviations of Mulliken charges from atomic ones:
+      ! Define first Mulliken charges, if SCC is required:
+      !q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge of all elements [M 0]
+      q(:) = matter%Atoms(:)%mulliken_q ! Mulliken charge of all elements [M 0]
+
+      q0 = 0.0d0     ! to start with
+      q00 = 1.0d10    ! to start with
+      E_coul = 1.0d10 ! to start with
+      Scell(NSC)%nrg%E_coul_scc = 0.0d0   ! to start with
+      if (numpar%verbose) write(*,'(a,f10.5,f10.5)') ' Initial Mulliken charges calculated ', q(:)
+
+      ! Get the gamma parameters for each pair of atoms:
+      call get_all_gam_ij(Scell(NSC), matter, numpar, gam_ij) ! below
+      if (numpar%verbose) print*, 'SCC gamma parameter obtained succesfully'
+
+      ! SCC iterations:
+      eps = 1.0d-6   ! precision
+      SCC_ITER:do while ( abs(maxval(q(:) - q0(:))) > eps*abs(maxval(q(:))) )
+      !SCC_ITER:do while ( abs(E_coul - Scell(NSC)%nrg%E_coul_scc)/max(abs(E_coul),abs(Scell(NSC)%nrg%E_coul_scc)) > eps )
+
+         i = i + 1   ! count iterations
+         if (i > Niter) then
+            print*, ' Problem in SCC: number of iterations exceeds the limit: ', Niter
+            print*, ' Charges 2-before-last iteration:', q00(:)
+            print*, ' Charges before last iteration  :', q0(:)
+            print*, ' Charges on the last iteration  :', q(:)
+!             print*, ' Coulomb energy before last iteration:', E_coul
+!             print*, ' Coulomb energy at the last iteration:', Scell(NSC)%nrg%E_coul_scc
+            exit SCC_ITER  ! too many iterations
+         endif
+
+         ! Get the H_1_ij/S_ij:
+         call get_HperS(Scell(NSC), numpar, gam_ij, q, HperS)  ! below
+
+         ! Construct scc corrections (H_1 term):
+         call create_second_order_scc_term_H(Scell(NSC), matter, numpar, Scell(NSC)%Sij, HperS, H_scc_1) ! below
+
+         ! Get the second-order Hamiltonian, diagonalize it:
+         select type(TB_Hamil)
+            type is (TB_H_Pettifor) ! TB parametrization according to Pettifor
+               !call construct_TB_H_Pettifor(numpar, matter, TB_Hamil, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Pettifor"
+               numpar%scc = .false.
+               print*, 'SCC calculations are not supportd with this TB parameterization'
+               print*, 'Continue at zero-order non-SCC calculations'
+            type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni
+               !call construct_TB_H_Molteni(numpar, matter, TB_Hamil, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Molteni"
+               numpar%scc = .false.
+               print*, 'SCC calculations are not supportd with this TB parameterization'
+               print*, 'Continue at zero-order non-SCC calculations'
+            type is (TB_H_Fu)  ! TB parametrization accroding to Fu
+               !call construct_TB_H_Fu(numpar, matter, TB_Hamil, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Fu"
+               numpar%scc = .false.
+               print*, 'SCC calculations are not supportd with this TB parameterization'
+               print*, 'Continue at zero-order non-SCC calculations'
+            type is (TB_H_NRL)  ! TB parametrization accroding to NRL
+               !call construct_TB_H_NRL(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_NRL"
+               numpar%scc = .false.
+               print*, 'SCC calculations are not supportd with this TB parameterization'
+               print*, 'Continue at zero-order non-SCC calculations'
+            type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB
+               ! Construct the Hamiltonian, diagonalize it, get the energy:
+               call construct_TB_H_DFTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err, &
+                  scc=1, H_scc_0=H_scc_0, H_scc_1=H_scc_1) ! module "TB_DFTB"
+            type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
+               ! Construct the Hamiltonian, diagonalize it, get the energy:
+               call construct_TB_H_3TB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, &
+                  Scell, NSC, Err, scc=1, H_scc_0=H_scc_0, H_scc_1=H_scc_1) ! module "TB_3TB"
+            type is (TB_H_BOP)  ! TB parametrization accroding to BOP (incomplete)
+               !call construct_TB_H_BOP(numpar, TB_Hamil, matter, M_Vij, M_SVij, M_E0ij, M_lmn, Scell, NSC, Err)    ! module "TB_BOP"
+               numpar%scc = .false.
+               print*, 'SCC calculations are not supportd with this TB parameterization'
+               print*, 'Continue at zero-order non-SCC calculations'
+            type is (TB_H_xTB)  ! TB parametrization accroding to xTB (NOT READY)
+!              call Construct_Vij_xTB(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_xTB"
+!              call construct_TB_H_xTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_xTB"
+               numpar%scc = .false.
+               print*, 'SCC calculations are not supportd with this TB parameterization'
+               print*, 'Continue at zero-order non-SCC calculations'
+         end select
+
+         ! Get the DOS weights for each energy level, if required:
+         if (allocated(Scell(NSC)%Sij)) then
+            call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha, &
+                           Sij=Scell(NSC)%Sij, eigen_S=Scell(NSC)%eigen_S) ! below
+         else
+            call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha) ! below
+         endif
+
+         ! Update deviations of Mulliken charges from atomic ones:
+         call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
+                            Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne, q1) ! below
+         q00 = q0 ! save for the next step of scc cycle
+         q0 = q   ! save for the next step of scc cycle
+         ! Mixing of the fraction of old and new charges:
+         q(:) = q0(:)*(1.0d0 - iteralpha) + q1(:)*iteralpha
+
+
+         ! Get the Coulomb contribution to energy from the charge redistribution:
+         !E_coul = Scell(NSC)%nrg%E_coul_scc  ! save for the next iteration
+         !call get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, Scell(NSC)%nrg%E_coul_scc)   ! below
+         !Scell(NSC)%nrg%E_coul_scc = 0.0d0 ! [E 1]
+
+         ! Check if we are moving towards convergence, or away from it:
+         if ( ( abs(q(1) - q0(1)) > abs(q0(1) - q00(1)) ) .or. &
+              ( abs(q(1) - q00(1)) < abs(q(1) - q0(1)) ) ) then
+            iteralpha = max(0.01d0, iteralpha * 0.75d0)
+            if (numpar%verbose) print*, 'SCC convergence may not be reached, reducing mixing:', iteralpha
+         endif
+      enddo SCC_ITER
+
+      if (numpar%verbose) then
+         print*, 'SCC cycles completed with iteration #', i
+         print*, ' Charges before last iteration:', q0(:)
+         print*, ' Charges on the last iteration:', q(:)
+      endif
+
+      ! Save Mulliken charges for the next time-step:
+      matter%Atoms(:)%mulliken_q = q(:)
+
+      ! Restore the unpertorbed H_0 (non-SCC) part of the Hamiltonin:
+      Scell(NSC)%H_non = H_scc_0
+      ! Save eigenvalues of the total Hamiltonian:
+      Scell(NSC)%Ei_scc_part = Scell(NSC)%Ei
+
+      ! Update band gap:
+      call find_band_gap(Scell(NSC)%Ei_scc_part, Scell(NSC), matter, numpar) ! module "Electron_tools"
+
+      ! Update the energy in the electronic system:
+      ! 1) Update the band structure, using the wave-functions corrected after the SCC procidure:
+      !call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei_scc_part) ! module "Algebra_tools"
+      call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei) ! module "Algebra_tools"
+
+      ! 2) Get the Coulomb contribution to energy from the charge redistribution:
+      call get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, Scell(NSC)%nrg%E_coul_scc)   ! below
+
+      ! Fill corresponding energy levels + repulsive energy cotribution:
+      select case (which_fe)
+         case (1) ! distribution for given Te:
+            call set_initial_fe(Scell, matter, Err) ! module "Electron_tools"
+            call get_new_global_energy(Scell(NSC), Scell(NSC)%nrg) ! module "Electron_tools"
+         case (2) ! distribution for given Ee + repulsive energy:
+            call get_new_energies(Scell, matter, numpar, t, Err) ! below
       end select
 
+      ! Clear up:
+      deallocate(H_scc_0, H_scc_1)
+   else
+      Scell(NSC)%nrg%E_coul_scc = 0.0d0 ! no energy associated with charge redistribution
+      Scell(NSC)%Ei_scc_part = Scell(NSC)%Ei ! no difference between eigenstates and SCC-eigenstates
+   endif
 end subroutine create_and_diagonalize_H
+
+
+subroutine get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, E_coulomb)   ! Coulomb energy
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in), target :: matter   ! material parameters
+   real(8), dimension(:,:), intent(in) :: gam_ij  ! effective energy values [eV]
+   real(8), intent(out) :: E_coulomb  ! Total Coulomb energy of all atoms [eV]
+   !=====================================================
+   real(8) :: sum_a, Coul_pot, q(size(matter%Atoms))
+   integer :: j, nat, atom_2, i
+   integer, pointer :: m, KOA1, KOA2
+
+   nat = Scell(NSC)%Na  ! number of atoms
+   sum_a = 0.0d0        ! to start with
+   E_coulomb = 0.0d0    ! to start with
+
+   !q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charges of all elements [M 0]
+   q(:) = matter%Atoms(:)%mulliken_q
+!    q(:) = -q(:)
+
+   !$omp PARALLEL private( j, KOA1, m, atom_2, i, KOA2, Coul_pot )
+   !$omp do reduction( + : sum_a)
+   do j = 1, nat  ! atom #1
+      KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! kind of atom #1
+      m => Scell(NSC)%Near_neighbor_size(j)  ! number of nearest neighbors of atom #1
+      do atom_2 = 1, m  ! only for atoms close to #1
+         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
+         KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! kind of atom #2
+
+         ! Energy:
+         Coul_pot = gam_ij(j,i) * q(KOA1) * q(KOA2)
+
+         ! Add to total:
+         sum_a = sum_a + Coul_pot
+      enddo ! atom_2
+   enddo ! j
+   !$omp end do
+   !$omp end parallel
+   ! Total Coulomb energy, excluding double-counting:
+   !E_coulomb = sum_a * 0.5d0   ! [eV] ! [A 0]
+   E_coulomb = -sum_a * 0.25d0   ! [eV] ! [A 1]
+
+!    print*, 'E_coulomb', E_coulomb/dble(nat)
+   nullify(KOA1, KOA2, m)
+end subroutine get_Coulomb_scc_energy
+
+
+
+subroutine Coulomb_force_from_SCC(numpar, matter, Scell, NSC) ! see below
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC
+   type(Solid), intent(in) :: matter ! material parameters
+   !-------------------------
+   if (numpar%scc) then ! calculate SCC Coulomb contribution
+      ! Forces for all atoms:
+      call Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)   ! below
+      ! Forces for the super-cell:
+      call Coulomb_force_from_SCC_Pressure_s(Scell, NSC, matter, numpar)   ! below
+   endif
+end subroutine Coulomb_force_from_SCC
+
+
+
+
+subroutine Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC
+   type(Solid), intent(in) :: matter ! material parameters
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   !---------------------------------------
+   real(8), dimension(3) :: x1  ! for coordinates of all atoms (X,Y,Z)-for all atoms
+   real(8) dpsi(3), psi, a_r, r1, x0, y0, z0, a, b, ddlta, b_delta, q(size(matter%Atoms)), r_cut, alpha
+   integer i, j, k, ik, i1, ian, dik, djk, n, atom_2
+   integer, pointer :: KOA1, KOA2, m, j1
+   real(8), pointer ::  x, y, z
+   n = Scell(NSC)%Na ! number of atoms
+
+   ! Get the cot off distance
+   r_cut = cut_off_distance(Scell(NSC)) ! module "Coulomb"
+   alpha = 3.0d0/(4.0d0*r_cut) ! Wolf's parameter chosen according to optimal value from [4]
+
+   ! Get the charges for all different elements in the material:
+   !q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge [M 0]
+   q(:) = matter%Atoms(:)%mulliken_q
+
+!    q(:) = -q(:)
+
+   !$omp PARALLEL private(ian, m, KOA1, dpsi, atom_2, j1, KOA2, x, y, z, x1, a_r, b)
+   !$omp DO
+   do ian = 1, n  ! Forces for all atoms
+      m => Scell(NSC)%Near_neighbor_size(ian)
+      KOA1 => Scell(NSC)%MDatoms(ian)%KOA
+      dpsi = 0.0d0
+      do atom_2 = 1, m   ! contribution from neighboring atoms
+         j1 => Scell(NSC)%Near_neighbor_list(ian, atom_2)	! this is the list of such close atoms
+         KOA2 => Scell(NSC)%MDatoms(j1)%KOA
+
+         a_r = Scell(NSC)%Near_neighbor_dist(ian,atom_2,4) ! at this distance, R
+         x  => Scell(NSC)%Near_neighbor_dist(ian,atom_2,1) ! at this distance, X
+         y  => Scell(NSC)%Near_neighbor_dist(ian,atom_2,2) ! at this distance, Y
+         z  => Scell(NSC)%Near_neighbor_dist(ian,atom_2,3) ! at this distance, Z
+
+         x1(:) = x*Scell(NSC)%supce(:,1) + y*Scell(NSC)%supce(:,2) + z*Scell(NSC)%supce(:,3)
+
+         call d_get_gamma_scc(matter%Atoms(KOA1)%Hubbard_U, matter%Atoms(KOA2)%Hubbard_U, &
+                                 a_r, ian, j1, b, r_cut, alpha, numpar%scc_gam_ind)  ! below
+         ! include charges to construct the projections of the forces:
+         b = b*q(KOA1)*q(KOA2)
+         dpsi(:) = dpsi(:) + b*x1(:)/a_r
+      enddo ! atom_2
+
+      ! Add exponential wall force to already calculated other forces:
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + dpsi(:)  ! [F 0] ?
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + 10.0d0*dpsi(:)  ! [F 3] test
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) - dpsi(:)  ! [F 1] wrong
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + 0.0d0   ! [F 2]
+
+   enddo ! ian
+   !$omp end do
+   !$omp end parallel
+
+   nullify(j1, m, KOA1, KOA2, x, y, z)
+end subroutine Coulomb_force_from_SCC_s
+
+
+
+! Derivatives of the SCC-Coulomb by h:
+subroutine Coulomb_force_from_SCC_Pressure_s(Scell, NSC, matter, numpar)
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(Solid), intent(in) :: matter ! material parameters
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   !===============================================
+   real(8), dimension(3,3) :: Rep_Pr  ! for dErep/dr for (X,Y,Z) for all atoms
+   integer i, k, l, n, atom_2
+   integer, pointer :: KOA1, KOA2, m, j
+   real(8) r, rcur(3), scur(3), PForce(3,3)
+   real(8) df_psy, psi, dpsy, r_cut, alpha, q(size(matter%Atoms))
+
+   if (numpar%p_const) then ! calculate this for P=const Parrinello-Rahman MD
+      n = Scell(NSC)%Na ! number of atoms
+      r_cut = cut_off_distance(Scell(NSC)) ! module "Coulomb"
+      alpha = 3.0d0/(4.0d0*r_cut) ! Wolf's parameter chosen according to optimal value from [4]
+
+      ! Get the charges for all different elements in the material:
+      !q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge [M 0]
+      q(:) = matter%Atoms(:)%mulliken_q
+!       q(:) = -q(:)
+
+      PForce = 0.0d0 ! to start with
+      do i = 1, n ! Forces from all atoms
+         Rep_Pr = 0.0d0 ! to start
+         dpsy = 0.0d0
+         KOA1 => Scell(NSC)%MDatoms(i)%KOA
+         m => Scell(NSC)%Near_neighbor_size(i)
+         do atom_2 = 1,m		! do only for atoms close to that one
+            j => Scell(NSC)%Near_neighbor_list(i, atom_2)	! this is the list of such close atoms
+            if (j > 0) then
+               KOA2 => Scell(NSC)%MDatoms(j)%KOA
+               rcur(1) = Scell(NSC)%Near_neighbor_dist(i,atom_2,1) ! at this distance, X
+               rcur(2) = Scell(NSC)%Near_neighbor_dist(i,atom_2,2) ! at this distance, Y
+               rcur(3) = Scell(NSC)%Near_neighbor_dist(i,atom_2,3) ! at this distance, Z
+               scur(1) = Scell(NSC)%Near_neighbor_dist_s(i,atom_2,1) ! at this distance, SX
+               scur(2) = Scell(NSC)%Near_neighbor_dist_s(i,atom_2,2) ! at this distance, SY
+               scur(3) = Scell(NSC)%Near_neighbor_dist_s(i,atom_2,3) ! at this distance, SZ
+               r = Scell(NSC)%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
+               call d_get_gamma_scc(matter%Atoms(KOA1)%Hubbard_U, matter%Atoms(KOA2)%Hubbard_U, &
+                                 r, i, j, dpsy, r_cut, alpha, numpar%scc_gam_ind)  ! below
+               ! include the charges:
+               dpsy = dpsy*q(KOA1)*q(KOA2)
+
+               do k = 1,3 ! supce indices: a,b,c
+                  do l = 1,3  ! supce indices: x,y,z
+                     Rep_Pr(l,k) = Rep_Pr(l,k) + dpsy*rcur(k)*scur(l)/r
+                  enddo ! l
+               enddo ! k
+            endif ! (j > 0)
+         enddo ! atom_2
+
+         do k = 1,3 ! supce indices
+            do l = 1,3  ! supce indices
+               PForce(l,k) = PForce(l,k) + Rep_Pr(l,k)*0.5d0   ! factor 0.5 to compensate for double-counting
+            enddo ! l
+         enddo ! k
+      enddo ! i
+      Scell(NSC)%SCforce%rep = Scell(NSC)%SCforce%rep + PForce ! add "exponential wall" part to existing TB part
+   endif
+   nullify(KOA1, KOA2, m, j)
+end subroutine Coulomb_force_from_SCC_Pressure_s
+
+
+
+
+
+subroutine create_second_order_scc_term_H(Scell, matter, numpar, Sij, HperS, H_scc_1)
+   type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   type(Solid), intent(in) :: matter ! material parameters
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   real(8), dimension(:,:), intent(in) :: Sij, HperS  ! overlap materix, gamma parameteres
+   real(8), dimension(:,:), intent(inout) :: H_scc_1  ! second-order scc correction to Hamiltonian
+   !------------------
+   integer, pointer :: nat, m
+   integer :: j, atom_2, i, j1, l, i1, k, n_orb
+
+   nat => Scell%Na	! number of atoms in the supercell
+   n_orb = identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! module "TB_DFTB"
+
+!$omp parallel private(j, m, atom_2, i, j1, l, i1, k)
+!$omp do
+   do j = 1,nat	! atom #1
+      m => Scell%Near_neighbor_size(j)
+      do atom_2 = 0,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! for all atoms, no cut off
+
+         if (atom_2 == 0) then ! the same atom
+            i = j    ! atom #2 = atom #1, onsite
+         else  ! different atoms
+            i = Scell%Near_neighbor_list(j,atom_2) ! atom #2
+            !i = atom_2 ! atom #2 - no cut off
+         endif
+
+         IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
+            do j1 = 1,n_orb ! all orbitals of atom #1
+               l = (j-1)*n_orb+j1   ! atom #1 (j)
+               do i1 = 1,n_orb ! all orbitals of atom #2
+                  k = (i-1)*n_orb+i1   ! atom #2 (i)
+                  ! We fill the upper triangle here
+                  H_scc_1(l,k) = Sij(l,k) * HperS(l,k)
+               enddo ! i1
+            enddo ! j1
+         endif IJ
+      enddo ! j
+   enddo ! i
+!$omp end do
+!$omp end parallel
+
+   ! b) Construct lower triangle - use symmetry:
+!$omp parallel
+!$omp do  private(j, m, atom_2, i, j1, l, i1, k)
+   do j = 1,nat	! all atoms
+      m => Scell%Near_neighbor_size(j)
+      do atom_2 = 1,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! for all atoms, no cut off
+         i = Scell%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         !i = atom_2 ! this is the list of such close atoms - no cut off
+         if (i < j) then ! lower triangle
+            do j1 = 1,n_orb ! all orbitals of atom #1
+               l = (j-1)*n_orb+j1   ! atom #1
+               do i1 = 1,n_orb ! all orbitals of atom #2
+                  k = (i-1)*n_orb+i1   ! atom #2
+                  H_scc_1(l,k) = H_scc_1(k,l)
+               enddo ! i1
+            enddo ! j1
+         endif
+      enddo ! j
+   enddo ! i
+!$omp end do
+!$omp end parallel
+
+   nullify(nat, m)
+end subroutine create_second_order_scc_term_H
+
+
+
+subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
+   type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   real(8), dimension(:,:), intent(in) :: gam_ij   ! gamma parameters
+   real(8), dimension(:), intent(in) :: q   ! Mulliken charges (deviation from neutral)
+   real(8), dimension(:,:), allocatable, intent(inout) :: HperS
+   !------------------
+   integer, pointer :: nat, m, m2, KOA1, KOA2, KOA3
+   integer :: j, atom_2, i, j1, l, i1, k, atom_3, n_orb, n
+   real(8) :: H_ij, H_ij_1, H_ij_2
+
+   if (.not.allocated(HperS)) allocate(HperS(size(Scell%Ha,1),size(Scell%Ha,2)))
+   HperS = 0.0d0  ! to start with
+
+   nat => Scell%Na	! number of atoms in the supercell
+   n_orb = identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! module "TB_DFTB"
+
+!$omp parallel private(j, m, atom_2, i, KOA1, KOA2, KOA3, m2, j1, l, i1, k, n, atom_3, H_ij_1, H_ij_2)
+!$omp do
+   do j = 1,nat	! atom #1
+      KOA1 => Scell%MDatoms(j)%KOA   ! atom #1
+      m => Scell%Near_neighbor_size(j)
+
+      H_ij_1 = 0.0d0   ! to start with
+      do atom_3 = 0, m  ! sum up interactions between atom #1 and atom #3
+      !do atom_3 = 1, nat  ! sum up interactions between atom #1 and atom #3 - no cut off
+         if (atom_3 == 0) then ! the same atom
+            n = j    ! atom #3 = atom #1, onsite
+         else  ! different atoms
+            n = Scell%Near_neighbor_list(j,atom_3) ! index of atom #3
+            !n = atom_3 ! index of atom #3 - no cut off
+         endif
+         KOA3 => Scell%MDatoms(n)%KOA   ! type of atom #3
+         ! Construct a part of the second-order correction to the Hamiltonian:
+         H_ij_1 = H_ij_1 + gam_ij(j,n) * q(KOA3)  ! First half of the last term in Eq.(10) [1]
+      enddo ! atom_3
+
+      do atom_2 = 0,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
+         if (atom_2 == 0) then ! the same atom
+            i = j    ! atom #2 = atom #1, onsite
+         else  ! different atoms
+            i = Scell%Near_neighbor_list(j,atom_2) ! atom #2
+            !i = atom_2 ! atom #2 - no cut off
+         endif
+
+         IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
+            KOA2 => Scell%MDatoms(i)%KOA   ! atom #2
+
+            m2 => Scell%Near_neighbor_size(i)
+            H_ij_2 = 0.0d0 ! to start with
+            do atom_3 = 0, m2 ! sum up interactions between atom #2 and atom #3
+            !do atom_3 = 1, nat ! sum up interactions between atom #2 and atom #3 - no cut off
+               if (atom_3 == 0) then ! the same atom
+                  n = i    ! atom #3 = atom #2, onsite
+               else  ! different atoms
+                  n = Scell%Near_neighbor_list(i,atom_3) ! index of atom #3
+                  !n = atom_3 ! index of atom #3 - no cut off
+               endif
+               KOA3 => Scell%MDatoms(n)%KOA   ! type of atom #3
+               ! Construct a part of the second-order correction to the Hamiltonian:
+               H_ij_2 = H_ij_2 + gam_ij(i,n) * q(KOA3)  ! Second half of the last term in Eq.(10) [1]
+            enddo ! atom_3
+
+            ! Save it into all shells of the two atoms:
+            do j1 = 1,n_orb ! all orbitals of atom #1
+               l = (j-1)*n_orb+j1   ! atom #1 (j)
+               do i1 = 1,n_orb ! all orbitals of atom #2
+                  k = (i-1)*n_orb+i1   ! atom #2 (i)
+                  ! We fill the upper triangle here
+                  HperS(l,k) = 0.5d0*(H_ij_1+H_ij_2)
+               enddo ! i1
+            enddo ! j1
+
+         endif IJ
+      enddo ! j
+   enddo ! i
+!$omp end do
+!$omp end parallel
+
+   ! b) Construct lower triangle - use symmetry:
+!$omp parallel
+!$omp do  private(j, m, atom_2, i, j1, l, i1, k)
+   do j = 1,nat	! all atoms
+      m => Scell%Near_neighbor_size(j)
+      do atom_2 = 1,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
+         i = Scell%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         !i = atom_2 ! this is the list of such close atoms - no cut off
+         if (i < j) then ! lower triangle
+            do j1 = 1,n_orb ! all orbitals of atom #1
+               l = (j-1)*n_orb+j1   ! atom #1
+               do i1 = 1,n_orb ! all orbitals of atom #2
+                  k = (i-1)*n_orb+i1   ! atom #2
+                  HperS(l,k) = HperS(k,l)
+               enddo ! i1
+            enddo ! j1
+         endif
+      enddo ! j
+   enddo ! i
+!$omp end do
+!$omp end parallel
+
+   nullify(nat, m, KOA1, KOA2, KOA3)
+end subroutine get_HperS
+
+
+
+
+subroutine get_all_gam_ij(Scell, matter, numpar, gam_ij)
+   type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   type(Solid), intent(in) :: matter ! material parameters
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   real(8), dimension(:,:), allocatable, intent(inout) :: gam_ij
+   !------------------
+   integer, pointer :: nat, m, KOA1, KOA2
+   integer :: j, atom_2, i
+   real(8) :: r, r_cut, alpha
+
+   nat => Scell%Na	! number of atoms in the supercell
+   if(.not.allocated(gam_ij)) allocate(gam_ij(nat,nat))
+   gam_ij = 0.0d0 ! to start with
+
+   ! Get the cot off distance
+   r_cut = cut_off_distance(Scell) ! module "Coulomb"
+   alpha = 3.0d0/(4.0d0*r_cut) ! Wolf's parameter chosen according to optimal value from [4]
+
+
+!$omp parallel private(j, m, atom_2, i, KOA1, KOA2, r)
+!$omp do
+   do j = 1,nat	! atom #1
+      KOA1 => Scell%MDatoms(j)%KOA   ! atom #1
+      m => Scell%Near_neighbor_size(j)
+      do atom_2 = 0,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
+
+         if (atom_2 == 0) then ! the same atom
+            i = j    ! atom #2 = atom #1, onsite
+            r = 0.0d0   ! same atom, no distance
+         else  ! different atoms
+            i = Scell%Near_neighbor_list(j,atom_2) ! atom #2
+            !i = atom_2 ! atom #2 - no cut off
+            r = Scell%Near_neighbor_dist(j,atom_2,4) ! at this distance, R [A]
+            !call shortest_distance(Scell, j, i, r) ! at this distance, R [A] - no cut off
+         endif
+
+         IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
+            KOA2 => Scell%MDatoms(i)%KOA   ! atom #2
+
+            ! Get the gamma parameter for scc calculations:
+            call get_gamma_scc(matter%Atoms(KOA1)%Hubbard_U, matter%Atoms(KOA2)%Hubbard_U, &
+                                 r, j, i, gam_ij(j,i), r_cut, alpha, numpar%scc_gam_ind)  !  below
+
+         endif IJ
+      enddo ! j
+   enddo ! i
+!$omp end do
+!$omp end parallel
+
+   ! b) Construct lower triangle - use symmetry:
+!$omp parallel
+!$omp do  private(j, m, atom_2, i)
+      do j = 1,nat	! all atoms
+         m => Scell%Near_neighbor_size(j)
+         do atom_2 = 1,m ! do only for atoms close to that one
+         !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
+            i = Scell%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+            !i = atom_2 ! this is the list of such close atoms - no cut off
+            if (i < j) then ! lower triangle
+               gam_ij(j,i) = gam_ij(i,j)
+            endif
+         enddo ! j
+      enddo ! i
+!$omp end do
+!$omp end parallel
+
+   nullify(nat, m, KOA1, KOA2)
+end subroutine get_all_gam_ij
+
+
+subroutine get_gamma_scc(Ui, Uj, Rij, i, j, gam_ij, r_cut, alpha, ind_gam)
+! [1]  https://arxiv.org/pdf/2112.11585.pdf
+! [2]  DOI: 10.1021/jp071338j
+   integer, intent(in) :: i, j   ! indices of atoms #1 and #2
+   real(8), intent(in) :: Ui, Uj ! Hubbard parameteres for atoms i and j
+   real(8), intent(in) :: Rij    ! [A] distance between atoms i and j
+   real(8), intent(out) :: gam_ij   ! gamma_i,j
+   real(8), intent(in) :: r_cut, alpha ! [A] Wolf's method cot off distance and alpha parameter
+   integer, intent(in) :: ind_gam   ! which formula to use for gamma (use only option 0, others are not ready!)
+   real(8) :: Cij, R0, WCoul, SCoul
+   if (i == j) then  ! the same atom
+      gam_ij = Ui   ! Hubbard parameters
+   else  ! two different atoms
+      select case (ind_gam)
+      case default   ! Use Wolf method together with Eqs. (7) and (8) from [1]
+         Cij = sqrt( g_half_Pi / (1.0d0 / Ui**2 + 1.0d0/Uj**2) ) * g_ev2au ! [eV] -> [a.u.]
+         ! Get the Coulomb potential according to Wolf's method:
+         WCoul = Coulomb_Wolf_pot(1.0d0, 1.0d0, Rij, r_cut, alpha)  ! module "Coulomb"
+         SCoul = Coulomb_Wolf_self_term(1.0d0, r_cut, alpha)  ! module "Coulomb"
+         ! Collect the terms:
+         R0 = Rij/g_a0  ! dimensionless units
+         gam_ij = erf(Cij*R0) * (WCoul + SCoul) ! [eV]
+
+      case (-1)   ! [1] Eqs. (7) and (8)
+         Cij = sqrt( g_half_Pi/(1.0d0 / Ui**2 + 1.0d0/Uj**2) ) * g_ev2au ! [eV] -> [a.u.]
+         R0 = Rij/g_a0  ! dimensionless units
+         gam_ij = m_k * erf(Cij*R0) / Rij ! [eV]
+
+      case (1) ! Klopman-Ohno [2], Eq.(13)
+         R0 = Rij/g_a0
+         gam_ij = g_au2ev/sqrt(R0**2 + 0.25d0 *(g_au2ev/Ui + g_au2ev/Uj)**2 ) ! -> energy units [eV]
+
+      case (2) ! Mataga-Nishimoto [2], Eq.(20)
+         R0 = Rij/g_a0
+         gam_ij = g_au2ev/(R0 + 0.5d0 *(g_au2ev/Ui + g_au2ev/Uj) ) ! -> energy units [eV]
+
+      endselect
+   endif
+end subroutine get_gamma_scc
+
+
+
+subroutine d_get_gamma_scc(Ui, Uj, Rij, i, j, d_gam_ij, r_cut, alpha, ind_gam)  ! d_gamma/d_Rij
+! [1]  https://arxiv.org/pdf/2112.11585.pdf
+! [2]  DOI: 10.1021/jp071338j
+   integer, intent(in) :: i, j   ! indices of atoms #1 and #2
+   real(8), intent(in) :: Ui, Uj ! Hubbard parameteres for atoms i and j
+   real(8), intent(in) :: Rij    ! [A] distance between atoms i and j
+   real(8), intent(out) :: d_gam_ij   ! gamma_i,j
+   real(8), intent(in) :: r_cut, alpha ! [A] Wolf's method cot off distance and alpha parameter
+   integer, intent(in) :: ind_gam   ! which formula to use for gamma (use only option 0, others are not ready!)
+   real(8) :: Cij, R0, WCoul, dWCoul, SCoul, d_erf
+   if (i == j) then  ! the same atom
+      d_gam_ij = 0.0d0
+   else  ! two different atoms
+      select case (ind_gam)
+      case default   ! Use Wolf method together with Eqs. (7) and (8) from [1]
+         Cij = sqrt( g_half_Pi / (1.0d0 / Ui**2 + 1.0d0/Uj**2) ) * g_ev2au ! [eV] -> [a.u.]
+         ! Get the Coulomb potential according to Wolf's method:
+         WCoul = Coulomb_Wolf_pot(1.0d0, 1.0d0, Rij, r_cut, alpha)  ! module "Coulomb"
+         SCoul = Coulomb_Wolf_self_term(1.0d0, r_cut, alpha)  ! module "Coulomb"
+         dWCoul = d_Coulomb_Wolf_pot(1.0d0, 1.0d0, Rij, r_cut, alpha)  ! module "Coulomb"
+         R0 = Rij/g_a0  ! dimensionless units
+         d_erf = 2.0d0*Cij/(m_sqrtPi * g_a0) * exp(-(Cij*R0)**2)  ! [a.u./a.u.] -> [1/A]
+         ! Collect the terms:
+         d_gam_ij = erf(Cij*R0)*dWCoul + d_erf*(WCoul+SCoul) ! [eV/A]
+         !d_gam_ij = d_gam_ij * 100.0   ! test
+      case (-1)   ! [1] Eqs. (7) and (8)
+         Cij = sqrt( g_half_Pi/(1.0d0 / Ui**2 + 1.0d0/Uj**2) ) * g_ev2au ! [eV] -> [a.u.]
+         R0 = Rij/g_a0  ! dimensionless units
+         d_erf = 2.0d0*Cij/(m_sqrtPi*g_a0) * exp(-(Cij*R0)**2) ! [a.u./a.u.] -> [1/A]
+         d_gam_ij = m_k * (-erf(Cij*R0) / Rij**2 + d_erf/Rij) ! [eV/A]
+
+      case (1) ! Klopman-Ohno [2], Eq.(13)
+         R0 = Rij/g_a0
+         d_gam_ij = -g_au2ev*R0/(R0**2 + 0.25d0 *(g_au2ev/Ui + g_au2ev/Uj)**2)**(1.5d0) / g_a0 ! [eV/A]
+
+      case (2) ! Mataga-Nishimoto [2], Eq.(20)
+         R0 = Rij/g_a0
+         d_gam_ij = -g_au2ev/(R0 + 0.5d0 *(g_au2ev/Ui + g_au2ev/Uj) )**2 / g_a0 ! [eV/A]
+      endselect
+   endif
+end subroutine d_get_gamma_scc
 
 
 
@@ -332,8 +1063,6 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
    integer :: NSC, Nsiz, Ei_siz, i, n_types
    real(8) :: dE, Estart
    real(8), dimension(:), allocatable :: Ei_cur
-   
-!    print*, 'get_DOS test 0'
    
    do NSC = 1, size(Scell) ! for all super-cells
       if (numpar%save_DOS) then	! only calculate DOS if the user chose to do so:
@@ -632,7 +1361,7 @@ subroutine get_DOS_masks(Scell, matter, numpar, only_coupling, do_cartesian)
          numpar%mask_DOS = .false.    ! default starting point
    
          do i = 1, nat
-            KOA => Scell(NSC)%MDatoms(i)%KOA  ! Correct order, checked by cohesive energy minimum
+            KOA => Scell(NSC)%MDatoms(i)%KOA  ! atom #i
             select case (norb)   ! identify basis set
             case (1) ! s
                numpar%mask_DOS(KOA, 1, i) = .true.   ! s
@@ -681,58 +1410,106 @@ subroutine get_DOS_masks(Scell, matter, numpar, only_coupling, do_cartesian)
 end subroutine get_DOS_masks
 
 
- subroutine get_DOS_weights(ind, masks_DOS, DOS_weights, Hij, CHij)
+ subroutine get_DOS_weights(ind, masks_DOS, DOS_weights, Hij, CHij, Sij, eigen_S)
    integer, intent(in) :: ind   ! which model to use
    logical, dimension(:,:,:), intent(in) :: masks_DOS   ! partial DOS made of each orbital type, if required to be constructed
    real(8), dimension(:,:,:), allocatable, intent(inout) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
-   real(8), dimension(:,:), intent(in), optional :: Hij      ! real eigenvectors
-   complex, dimension(:,:), intent(in), optional :: CHij ! complex eigenvectors
+   real(8), dimension(:,:), intent(in), optional :: Hij     ! real eigenvectors
+   complex, dimension(:,:), intent(in), optional :: CHij    ! complex eigenvectors
+   real(8), dimension(:,:), intent(in), optional :: Sij     ! Overlap for nonorthogonal H
+   real(8), dimension(:), intent(in), optional :: eigen_S   ! eigenvalues of Sij (to control for linear-dependent raws)
    !-------------------------------
    real(8), dimension(size(masks_DOS,3)) :: temp_vec
    real(8) :: temp
-   integer :: j, Nsiz, N_at, N_types, i_at, i_types
+   integer :: j, Nsiz, N_at, N_types, i_at, i_types, k
+   logical :: include_Sij
+
+
    if (ind == 1) then ! get weighted DOS:
       N_at = size(masks_DOS,1)
       N_types = size(masks_DOS,2)
       Nsiz = size(masks_DOS,3)
       if (.not.allocated(DOS_weights)) allocate(DOS_weights(N_at,N_types,Nsiz))
 
-      !$omp PARALLEL private(j, temp_vec, temp, i_at, i_types)
-      !$omp do
-      do j = 1, Nsiz	! for all energy levels
-         if (present(Hij)) then ! real H
-            temp_vec(:) = Hij(:,j) * Hij(:,j)
-         elseif (present(CHij)) then    ! complex H
-            temp_vec(:) = dble(conjg(CHij(:,j)) * CHij(:,j))
-         else   ! undefined
-            temp_vec(:) = 0.0d0
-         endif
-         temp = SUM(temp_vec)
-         do i_at = 1, N_at
-            do i_types = 1, N_types
-               DOS_weights(i_at, i_types,j) = SUM(temp_vec(:), MASK = masks_DOS(i_at, i_types, :))/temp
-            enddo ! i_types
-        enddo ! i_at
-   !       write(*,'(i4,f,f,f)') j, DOS_weights(:,:,j)
-      enddo !  j = 1, Nsiz
-      !$omp end do
-      !$omp end parallel
+      ! Do we need to include overlap matrix:
+      include_Sij = .false.   ! to start with
+      ! Check #1: the overlap must be present to do that:
+      if (present(Sij)) include_Sij = .true.
+      ! Check #2: numerical consistency: Sij must have positive eigenvalues,
+      ! if it doesn't, something went wrong, that means,
+      ! it is worse to use a wrong Sij than not to use it at all:
+      if (present(eigen_S)) then
+         if (ANY(eigen_S(:) < 0.0d0)) include_Sij = .false.
+      endif
+!       print*, 'get_DOS_weights', include_Sij
+
+      ! Get the contributions of all shells and elements:
+      ORTH:if (include_Sij) then ! non-orthogonal, with overlap matrix Sij
+         !$omp PARALLEL private(j, k, temp_vec, temp, i_at, i_types)
+         !$omp do
+         do j = 1, Nsiz ! for all energy levels
+            if (present(Hij)) then ! real H
+               do k = 1, Nsiz ! for all energy levels
+                  temp_vec(k) = Hij(k,j) * SUM(Hij(:,j) * Sij(k,:))
+               enddo
+            elseif (present(CHij)) then    ! complex H
+               do k = 1, Nsiz ! for all energy levels
+                  temp_vec(k) = 0.5d0*dble( conjg(CHij(k,j)) * SUM(CHij(:,j) * Sij(k,:)) + &
+                                            CHij(k,j) * SUM(conjg(CHij(:,j)) * Sij(k,:)) )
+               enddo
+            else   ! undefined
+               temp_vec(:) = 0.0d0
+            endif
+            temp = SUM(temp_vec)
+            if (temp == 0.0d0) temp = 1.0d0 ! if it's undefined, avoid crushing
+            do i_at = 1, N_at
+               do i_types = 1, N_types
+                  DOS_weights(i_at, i_types, j) = SUM(temp_vec(:), MASK = masks_DOS(i_at, i_types, :))/temp
+               enddo ! i_types
+            enddo ! i_at
+         enddo !  j = 1, Nsiz
+         !$omp end do
+         !$omp end parallel
+      else ORTH  ! orthogonal (or inconsistent Sij)
+         !$omp PARALLEL private(j, temp_vec, temp, i_at, i_types)
+         !$omp do
+         do j = 1, Nsiz	! for all energy levels
+            if (present(Hij)) then ! real H
+               temp_vec(:) = Hij(:,j) * Hij(:,j)
+            elseif (present(CHij)) then    ! complex H
+               temp_vec(:) = dble(conjg(CHij(:,j)) * CHij(:,j))
+            else   ! undefined
+               temp_vec(:) = 0.0d0
+            endif
+            temp = SUM(temp_vec)
+            if (temp == 0.0d0) temp = 1.0d0  ! if it's undefined, avoid crushing
+            do i_at = 1, N_at
+               do i_types = 1, N_types
+                  DOS_weights(i_at, i_types, j) = SUM(temp_vec(:), MASK = masks_DOS(i_at, i_types, :))/temp
+               enddo ! i_types
+            enddo ! i_at
+         enddo !  j = 1, Nsiz
+         !$omp end do
+         !$omp end parallel
+      endif ORTH
    endif ! (ind == 1)
 end subroutine get_DOS_weights
 
 
-subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, MDatoms, mulliken_Ne)
+subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter, MDatoms, mulliken_Ne, mulliken_q)
    integer, intent(in) :: Mulliken_model   ! which model to use
    logical, dimension(:,:,:), intent(in) :: masks_DOS   ! partial DOS made of each orbital type, if required to be constructed
    real(8), dimension(:,:,:), intent(inout) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
    real(8), dimension(:,:), intent(in) :: Hij      ! real eigenvectors
    real(8), dimension(:), intent(in) :: fe    ! electron distribution
-   type(Atom), dimension(:), intent(in) :: MDAtoms
-   real(8), dimension(:), intent(out) :: mulliken_Ne   ! Mulliken charges
+   type(Solid), intent(in) :: matter     ! material parameters
+   type(Atom), dimension(:), intent(in) :: MDAtoms ! all MD atoms
+   real(8), dimension(:), intent(out) :: mulliken_Ne   ! Mulliken electron populations
+   real(8), dimension(:), intent(out), optional :: mulliken_q   ! Mulliken charges
    !-------------------------------
    real(8) :: temp
    integer :: j, Nsiz, N_at, N_types, i_at, i_types, Nat
-   if (Mulliken_model >= 1) then ! get Mulliken charges
+   if (Mulliken_model >= 1) then ! get Mulliken populations and charges
       N_at = size(masks_DOS,1)
       N_types = size(masks_DOS,2)
       ! Check atomic charges:
@@ -750,9 +1527,18 @@ subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, MDatoms
       do i_at = 1, N_at
          ! how many atoms of this kind are in the supercell:
          Nat = COUNT(MASK = (MDatoms(:)%KOA == i_at))
+         ! Mulliken electron populations:
          mulliken_Ne(i_at) = mulliken_Ne(i_at) / dble(Nat)
       enddo
-   endif ! (Mulliken_model >= 1) 
+      ! Mulliken charges:
+      if (present(mulliken_q)) mulliken_q(:) = matter%Atoms(:)%NVB - mulliken_Ne(:)
+      !if (present(mulliken_q)) mulliken_q(:) = mulliken_Ne(:) - matter%Atoms(:)%NVB
+   else  ! just atomic electrons
+      ! Mulliken electron populations:
+      mulliken_Ne(:) = matter%Atoms(:)%NVB
+      ! Mulliken charges:
+      if (present(mulliken_q)) mulliken_q(:) = 0.0d0
+   endif ! (Mulliken_model >= 1)
 end subroutine get_Mulliken
 
 
@@ -1458,7 +2244,13 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
    !call set_total_el_energy(Ei,fe,Eelectr) ! module "Electron_tools"
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
    
-      call get_low_e_energy(Scell, matter) ! module "Electron_tools"
+      ! Get the energy associated with the electrons populating band structure:
+      if (numpar%scc) then ! energy for SCC is defined by for H_0:
+!          call get_low_e_energy(Scell, matter, numpar) ! module "Electron_tools"
+         call get_low_e_energy(Scell, matter) ! module "Electron_tools"
+      else  ! no SCC, the usual expression then
+         call get_low_e_energy(Scell, matter) ! module "Electron_tools"
+      endif
 
       ! Calculations of the contribution of repulsive energies into potential energy of atoms,
       ! second term in Eq.(2.44) from H.Jeschke PhD Thesis, Page 41
@@ -1466,14 +2258,12 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
          ! Real number of atoms inversed:
          Na_inv = 1.0d0 / dble(Scell(NSC)%Na)
          
-         Erepuls = Erep_s(Scell(NSC)%TB_Repuls(:,:), Scell, NSC, numpar) ! sum over all atom pairs
+         Erepuls = Erep_s(Scell(NSC)%TB_Repuls(:,:), Scell, NSC, numpar) ! below
          
-         !Pot_phi = Scell(NSC)%nrg%El_tot + Erepuls + TB_Repuls%E0_TB*Scell(NSC)%Na ! [eV] potential energy, Eq.(2.44) in H.Jeschke Thesis, Page 41
          Pot_phi = Scell(NSC)%nrg%El_low + Erepuls ! [eV] potential energy, Eq.(2.44) in H.Jeschke Thesis, Page 41
          
          Scell(NSC)%nrg%At_pot = Pot_phi * Na_inv ! [eV/atom]
          
-         !Scell(NSC)%nrg%E_rep = Erepuls + TB_Repuls%E0_TB * Scell(NSC)%Na  ! [eV/atom]
          Scell(NSC)%nrg%E_rep = Erepuls ! [eV]
          
          ! van der Waals potential energy:
@@ -1627,8 +2417,8 @@ subroutine update_nrg_after_change(Scell, matter, numpar, time, Err)
          ! Add energy to atoms recieved from elastic scattering of high-energy electrons:
          call Rescale_atomic_velocities(Scell(NSC)%nrg%E_high_heating, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
          call get_kinetic_energy_abs(Scell, NSC, matter, Scell(NSC)%nrg) ! module "Atomic_tools"
-         call get_new_energies(Scell, matter, numpar, time, Err) ! module "TB"
       endif
+      call get_new_energies(Scell, matter, numpar, time, Err) ! module "TB"
    enddo
 end subroutine update_nrg_after_change
 
@@ -1641,23 +2431,21 @@ subroutine get_new_energies(Scell, matter, numpar, t, Err)
    real(8), intent(in) :: t ! current timestep [fs]
    type(Error_handling), intent(inout) :: Err ! error save
    !=========================================
-   !print*, 'get_new_energies 0'
-
-   ! Update electron energy according to updated distribution:
-   call get_low_e_energy(Scell, matter) ! module "Electron_tools"
-   !print*, 'get_new_energies 1'
-
    ! Get potential energy of the supercell (Repulsive part is defined inside):
    call get_pot_nrg(Scell, matter, numpar) ! see above
-   !print*, 'get_new_energies 2'
 
+   ! Update electron energy according to updated distribution:
+   if (numpar%scc) then ! energy for SCC is defined by for H_0:
+!       call get_low_e_energy(Scell, matter, numpar) ! module "Electron_tools"
+      call get_low_e_energy(Scell, matter) ! module "Electron_tools"
+   else  ! no SCC, the usual expression then
+      call get_low_e_energy(Scell, matter) ! module "Electron_tools"
+   endif
    ! Get kinetic energy of atoms and of the supercell (for Parrinello-Rahman):
    call get_Ekin(Scell, matter) ! module "Atomic_tools"
-   !print*, 'get_new_energies 3'
 
    ! And may be we want to update electron energy:
    call get_total_el_energy(Scell, matter, numpar, t, Err) ! module "Electron_tools"
-   !print*, 'get_new_energies 4'
 end subroutine get_new_energies
 
 
@@ -1846,24 +2634,39 @@ subroutine Construct_Aij(Ha, distre, Aij)
 end subroutine Construct_Aij
 
 
-subroutine Construct_Aij_x_En(Ha, distre, En, Aij)
+subroutine Construct_Aij_x_En(Ha, distre, En, Aij, H_ssc_1_per_S)
    REAL(8), DIMENSION(:,:), INTENT(in) :: Ha 	! diagonilized Hamiltonian/eigenvectors
    REAL(8), DIMENSION(:), INTENT(in) :: distre 	! electron distribution function
    REAL(8), DIMENSION(:), INTENT(in) :: En	! eigenstates [eV]
    REAL(8), DIMENSION(:,:), allocatable, INTENT(inout) :: Aij  ! Matrix Aij, Eq. (H.3), p.153 Jeschke's PhD thesis
+   REAL(8), DIMENSION(:,:), INTENT(in), optional :: H_ssc_1_per_S ! contribution from SCC perturbation, Eq.(23) [1]
+   ! [1] Elstner et al., PRB 58, 7260 (1998)
+   !----------------------------------------
    integer i, k, N
    real(8), dimension(:,:), allocatable :: Atemp
    N = size(distre)
    if (.not. allocated(Aij)) allocate(Aij(N,N))
    allocate(Atemp(N,N))
 
-   !$omp PARALLEL private(i)
-   !$omp do
-   do i = 1, N
-      Atemp(i,:) = distre(:)*En(:)*Ha(i,:)
-   enddo ! i
-   !$omp end do
-   !$omp end parallel
+   if (present(H_ssc_1_per_S)) then ! include SCC H_1 term:
+      !$omp PARALLEL private(i)
+      !$omp do
+      do i = 1, N
+         Atemp(i,:) = distre(:)*(En(:) - H_ssc_1_per_S(i,:))*Ha(i,:)   ! original [C 0]
+         !Atemp(i,:) = distre(:)*(En(:) + H_ssc_1_per_S(i,:))*Ha(i,:) ! test [C 1]
+         !Atemp(i,:) = distre(:)*(En(:))*Ha(i,:) ! test [C 2]
+      enddo ! i
+      !$omp end do
+      !$omp end parallel
+   else ! no SSC term:
+      !$omp PARALLEL private(i)
+      !$omp do
+      do i = 1, N
+         Atemp(i,:) = distre(:)*En(:)*Ha(i,:)
+      enddo ! i
+      !$omp end do
+      !$omp end parallel
+   endif
 
    call dgemm ('N','T', N, N, N, 1.0d0, Atemp, N, Ha, N, 0.0d0, Aij, N) ! mkl
    deallocate(Atemp)
@@ -2305,7 +3108,7 @@ subroutine Transfere_Temp_conditions(Scell, TEMP_Scell, Nat)
       end select
    END ASSOCIATE
    
-   ! Set Coulomb (with soft cut-off) parameters:
+   ! Set Coulomb (with soft cot off) parameters:
    ASSOCIATE (ARRAY2 => Scell(1)%TB_Coul(:,:))
       select type (ARRAY2)
          type is (TB_Coulomb_cut)
@@ -2314,7 +3117,7 @@ subroutine Transfere_Temp_conditions(Scell, TEMP_Scell, Nat)
          select type (TEMP_ARRAY)
             type is (TB_Coulomb_cut)
             TEMP_ARRAY = ARRAY2 ! copy from the main super-cell
-            ! Replace the Coulomb cut-off by the proper value:
+            ! Replace the Coulomb cot off by the proper value:
             TEMP_ARRAY(1,1)%dm = maxval(TEMP_Scell%MDatoms(:)%R(3)) - minval(TEMP_Scell%MDatoms(:)%R(3)) ! allow all atoms to interact with each other
          end select
          END ASSOCIATE
