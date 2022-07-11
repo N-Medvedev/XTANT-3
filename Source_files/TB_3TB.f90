@@ -780,7 +780,8 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
 !!!$omp do reduction( + : H_avg)
    do atom_2 = 1, m ! do only for atoms close to that one
       j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
-      ! [OS 0]:
+      ! [OS 0]: divergent
+!       KOA1 => Scell%MDatoms(i)%KOA
 !       KOA2 => Scell%MDatoms(j)%KOA
       ! [OS 1] tested, correct:
       KOA1 => Scell%MDatoms(j)%KOA
@@ -805,6 +806,12 @@ subroutine Onsite_3TB(basis_ind, i, Scell, TB, M_Lag_exp, Mjs, Hij)
 
       !-----------------
       ! 3) Crystal field:
+      ! [OS 0]:
+!       KOA2 => Scell%MDatoms(j)%KOA
+!       KOA1 => Scell%MDatoms(i)%KOA
+      ! [OS 1] tested, correct:
+      KOA1 => Scell%MDatoms(j)%KOA
+      KOA2 => Scell%MDatoms(i)%KOA
 
       ! Radial parts:
       matr_spd(1,1) = SUM( TB(KOA1,KOA2)%Hhcf(1,1,1:4) * M_Lag_exp(i,j,1:4) )  ! s-s orbitals
@@ -1259,16 +1266,10 @@ subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, TB, i, j, atom_2, dH, M_Vij, 
 
    if (i == j) then ! Onsite contributions (incl. 3-body parts etc.):
 
-!       print*, 'before d_Onsite_3TB', i
-
       call d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_exp, Mjs_in, dH) ! below
       dS = 0.0d0  ! Here are constants on-site, derivatives = 0
 
-!       print*, 'after d_Onsite_3TB', i
-
    else	! For pairs of atoms, fill the hamiltonain with Hopping Integrals:
-
-!       print*, 'before d_Hamilton_one_3TB', i, j
 
       ! Depending on the basis set:
       n_overlap = identify_DFTB_basis_size(basis_ind)   ! below
@@ -1378,8 +1379,6 @@ subroutine d_Hamilton_one_3TB(basis_ind, k, Scell, TB, i, j, atom_2, dH, M_Vij, 
 
       deallocate(vec_M_Vij12, vec_M_Vij21, vec_M_SVij12, vec_M_SVij21, vec_M_dVij12, vec_M_dVij21, vec_M_dSVij12, &
                   vec_M_dSVij21, dH1, dS1)
-
-!       print*, 'test 1 d_Hamilton_one_3TB', i, j
 
       ! 2) 3-body contributions:
       KOA1 => Scell%MDatoms(k)%KOA  ! Kind of atom:
@@ -1767,12 +1766,12 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
    ! 1) Onsite energies of spin-unpolirized orbital values:
    E_onsite = 0.0d0     ! constants -> all derivatives = 0
 
-
    !-----------------
    ! 2,3) Average and crystal field terms (tested, correct):
    do atom_2 = 1, m ! do only for atoms close to that one
       j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
       ! [OS 0]
+!       KOA1 => Scell%MDatoms(i)%KOA
 !       KOA2 => Scell%MDatoms(j)%KOA
       ! [OS 1]
       KOA1 => Scell%MDatoms(j)%KOA
@@ -1809,12 +1808,15 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
          endif ! (basis_ind > 0)
       endif ! (basis_ind > 1)
 
-
-! goto 5003   ! testing
-
-
       !-----------------
       ! 3) Crystal field:
+      ! [OS 0]
+!       KOA1 => Scell%MDatoms(i)%KOA
+!       KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 1] tested, correct
+      KOA1 => Scell%MDatoms(j)%KOA
+      KOA2 => Scell%MDatoms(i)%KOA
+
 
       M_dlmn(1) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 1, drij_dsk(1))	! dl/dsx
       M_dlmn(2) = ddija_dskb_kd(i, j, k, x1, y1, z1, r1, Scell%supce, 1, 2, drij_dsk(2))	! dl/dsy
@@ -1873,7 +1875,7 @@ subroutine d_Onsite_3TB(basis_ind, k, i, Scell, TB, M_lmn, M_Lag_exp, M_d_Lag_ex
          dMjs(2,3) = -M_dlmn(8) ! pz-s / ds_y
          dMjs(3,3) = -M_dlmn(9) ! pz-s / ds_z
 
-         ! [E 2]
+         ! [E 2], tested
          Mjs(2) = Mjs_in(i,j,2)  ! px-s
          Mjs(3) = Mjs_in(i,j,3)  ! py-s
          Mjs(4) = Mjs_in(i,j,4)  ! pz-s
@@ -2491,7 +2493,7 @@ subroutine dHamil_tot_Press_3TB(Scell, NSC, TB, numpar, M_Vij, M_dVij, M_SVij, M
             call dHamilton_one_Press_3TB(i, atom_2, numpar%N_basis_size, Scell, NSC, TB, norb, n_overlap, &
                                           M_Vij, M_dVij, M_SVij, M_dSVij, &
                                           M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dHij1, dSij1)  ! below
-            ! Eqs. (2.41), (2.42), Page 40 in H.Jeschke PhD thesis.
+            ! Eqs. (2.41), (2.42), Page 40 in H.Jeschke PhD thesis
             do j1 = 1,norb	! all orbitals
                j2 = j4+j1
                do i1 = 1,norb	! all orbitals
@@ -2519,8 +2521,8 @@ subroutine dHamilton_one_Press_3TB(i, atom_2, basis_size, Scell, NSC, TB, norb, 
    integer, intent(in) :: basis_size, NSC ! number of supercell
    type(TB_H_3TB), dimension(:,:), intent(in) :: TB	  ! all tight binding parameters
    integer, intent(in) :: norb, n_overlap  ! number of orbitals per atom (depends on the basis set), and number of overlap functions
-   real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
-   real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
+   real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! Hopping for all pairs of atoms, all orbitals, and derivatives
+   real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! Overlap for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
    real(8), dimension(:,:,:), intent(in) :: Mjs_in
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp   ! matrix of laguerre * exp(-a*r_ij) * cutoff
@@ -2606,12 +2608,16 @@ subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SV
    ! 1) Onsite energies of spin-unpolirized orbital values:
    E_onsite = 0.0d0     ! constants -> all derivatives = 0
 
-
    !-----------------
    ! 2,3) Average and crystal field terms (tested, correct):
    do atom_2 = 1, m ! do only for atoms close to that one
       j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
-      KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 0]
+!       KOA1 => Scell%MDatoms(i)%KOA
+!       KOA2 => Scell%MDatoms(j)%KOA
+      ! [OS 1] tested, correct
+      KOA1 => Scell%MDatoms(j)%KOA
+      KOA2 => Scell%MDatoms(i)%KOA
 
       r1 => Scell%Near_neighbor_dist(i,atom_2,4)  ! at this distance, R
       rij(:) = Scell%Near_neighbor_dist(i,atom_2,1:3)  ! at this distance, X
@@ -2661,7 +2667,6 @@ subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SV
             k1 = (i1-1)*3 + j1
             ! all the components of the h_alpha_beta(3,3):
 
-
             drij_dh = drij_dhab(rij(j1), sij(i1), r1)	! dr_{ij}/dh_{gamma,delta}, module "TB_Koster_Slater"
             !drij_dh = drij_dhab(rij(i1), sij(j1), r1)	! dr_{ij}/dh_{gamma,delta}, module "TB_Koster_Slater"
 
@@ -2681,9 +2686,6 @@ subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SV
 
             !-----------------
             ! 3) Crystal field:
-
-!             goto 5004
-
             H_cf(k1,1,1) = H_cf(k1,1,1) + d_matr_spd(1,1) * drij_dh ! s-s * s-s / dh
 
             M_dlmn(1) = dda_dhgd(1, j1, rij(1), rij(j1), sij(i1), r1)	! dl/dh{gamma,delta}, module "TB_Koster_Slater"

@@ -1591,6 +1591,7 @@ subroutine total_forces(atoms)
    integer i, j, N, M
    do i = 1, size(atoms)
       atoms(i)%forces%total(:) = atoms(i)%forces%rep(:) + atoms(i)%forces%att(:) ! total force
+      !print*, 'total_forces', i, atoms(i)%forces%rep(:)
    enddo
 end subroutine total_forces
 

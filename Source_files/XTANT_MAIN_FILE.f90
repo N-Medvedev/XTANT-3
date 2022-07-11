@@ -291,14 +291,14 @@ do while (g_time .LT. g_numpar%t_total)
          if (g_numpar%verbose) print*, 'Atomic Berendsen thermostat succesful'
       endif
    endif AT_MOVE_1
-   
+
    ! Monte-Carlo for photons, high-energy electrons, and core holes:
    call MC_Propagate(g_MC, g_numpar, g_matter, g_Scell, g_laser, g_time, g_Err) ! module "Monte_Carlo"
    if (g_numpar%verbose) print*, 'Monte Carlo model executed succesfully'
-   
+
    ! Update corresponding energies of the system:
    call update_nrg_after_change(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
-   
+
    !3333333333333333333333333333333333333333333333333333333333
    AT_MOVE_2:if (g_numpar%do_atoms) then ! atoms are allowed to be moving:
       ! Choose which MD propagator to use:

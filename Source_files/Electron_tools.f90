@@ -112,31 +112,45 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
             endif
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+
          case (2) ! Fixed temperature:
-            call Electron_Fixed_Te(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! below
+!             if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
+!                call Electron_Fixed_Te(Scell(NSC)%Ei_scc_part, Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! below
+!             else
+               call Electron_Fixed_Te(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! below
+!             endif
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+
          case (3) ! Born-Oppenheimer:
             ! Do nothing with fe!
+
          case (4) ! Nonequilibrium distribution dynamics: Boltzmann electron-electron collision integral:
             if (t > -8.5d0) then ! testing, unfnishd
                call test_evolution_of_fe(Scell(NSC)%Ei, Scell(NSC)%fe, t) ! see below
             endif
+
          case default ! Decoupled electrons and ions:
             !call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%E_tot) ! get the total electron energy
-            if (.not.present(do_E_tot)) then ! if we do not have total energy given, get it from distribution:
-               call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low) ! get the total electron energy
-!                if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
-!                   call set_total_el_energy(Scell(NSC)%Ei_scc_part, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
-!                else ! non-SCC:
-!                   call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
-!                endif
-            endif
+!             if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
+!                ! get the total electron energy:
+!                call set_total_el_energy(Scell(NSC)%Ei_scc_part, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+!                ! thermalize the distribution function over the SCC-band levels:
+!                call Electron_Fixed_Etot(Scell(NSC)%Ei_scc_part, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
+!                                           Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
+!             else  ! non-SCC, reause the precalculated energy:
 
-            call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! (FAST)
+               if (.not.present(do_E_tot)) then ! if we do not have total energy given, get it from distribution:
+                  call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low) ! get the total electron energy
+               endif
+               call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
+                                          Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
+!             endif
+!
 
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+
          end select
 
          ! Update the number of CB electrons:
@@ -606,21 +620,26 @@ subroutine get_total_el_energy(Scell, matter, numpar, t, Err) ! get total electr
          !call get_low_e_energy(Scell, matter) ! get the total electron energy
          ! Get the energy associated with the electrons populating band structure:
          if (numpar%scc) then ! energy for SCC is defined by for H_0:
-            call get_low_e_energy(Scell, matter, numpar) ! below
+            !call get_low_e_energy(Scell, matter, numpar) ! below
+            call get_low_e_energy(Scell, matter) ! below
          else  ! no SCC, the usual expression then
             call get_low_e_energy(Scell, matter) ! below
          endif
          Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + &
                Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall + Scell(NSC)%nrg%E_coul_scc/nat ! [eV/atom] initial total energy
       case default   ! Separate electronic and atomic energies:
+
          call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
+
          !call get_low_e_energy(Scell, matter) ! get the total electron energy
          ! Get the energy associated with the electrons populating band structure:
          if (numpar%scc) then ! energy for SCC is defined by for H_0:
-            call get_low_e_energy(Scell, matter, numpar) ! below
+            !call get_low_e_energy(Scell, matter, numpar) ! below
+            call get_low_e_energy(Scell, matter) ! below
          else  ! no SCC, the usual expression then
             call get_low_e_energy(Scell, matter) ! below
          endif
+
          Scell(NSC)%nrg%E_tot = Scell(NSC)%nrg%El_low + Scell(NSC)%nrg%El_high*nat ! energy of all electrons (low + high energies)
          Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + &
                Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall + Scell(NSC)%nrg%E_coul_scc/nat ! [eV/atom] initial total energy

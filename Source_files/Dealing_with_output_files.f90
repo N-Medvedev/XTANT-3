@@ -81,7 +81,13 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter)
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter)
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time)
-      if (numpar%save_Ei) call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei)
+      if (numpar%save_Ei) then
+         if (numpar%scc) then ! Energy levels include SCC term:
+            call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei_scc_part)
+         else  ! non-SCC (uncorrected energy levels):
+            call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei)
+         endif
+      endif
       if (numpar%save_DOS) then
          select case (numpar%DOS_splitting)
          case (1) ! with partial DOS

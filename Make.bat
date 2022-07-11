@@ -25,6 +25,10 @@ cd Source_files
    IF /I %arg1%==DB (
       SET arg1=DEBUGOMP
    )
+:: shorthand expressions for no-optimization and no debug options (fast compiling):
+   IF /I %arg1%==SLOW (
+      SET arg1=FAST
+   )
 
    
    SET "Starline=************************************************************************************"
@@ -70,6 +74,8 @@ cd Source_files
 
             :: Set name of the executable:
             SET "Name_of_exe=XTANT_OMP.exe"
+
+            del *.pdb
         ) ELSE (
             echo %Starline%
             echo Compiling for release, OpenMP and optimizations are included

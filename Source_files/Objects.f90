@@ -576,6 +576,7 @@ type At_data
    type(Basis_set), dimension(:), allocatable :: Cart_Basis  ! Cartesian GTO basis set functions for this element (if xTB is used)
    type(Basis_set), dimension(:), allocatable :: Spher_Basis  ! Spherical (pure) GTO basis set functions for this element (if xTB is used)
    real(8) :: mulliken_Ne   ! electron population according to Mulliken analysis
+   real(8) :: mulliken_q   ! charge according to Mulliken analysis
    integer, dimension(:), allocatable :: Shl_dsgnr  ! EADL shell designator
    integer, dimension(:), allocatable :: Shl_dsgnr_atomic  ! EADL shell designator for atomic shells without VB
    character(11), dimension(:), allocatable :: Shell_name   ! names of the shells

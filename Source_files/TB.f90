@@ -151,8 +151,8 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                type is (TB_H_3TB)
                   ! Get the energy-weighted density matrix:
                   if (numpar%scc) then ! include SCC term
-                     !call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei_scc_part, M_Aij_x_Ei, HperS) ! below [B 0]
-                     call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei, HperS) ! below [B 1]
+                     call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei_scc_part, M_Aij_x_Ei, HperS) ! below [B 0]
+                     !call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei, HperS) ! below [B 1]
                   else ! no SCC term
                      call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
                   endif
@@ -303,7 +303,7 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
    !------------------------
    real(8), dimension(:,:), allocatable :: H_scc_0, H_scc_1
    real(8), dimension(:,:), allocatable :: gam_ij
-   real(8), dimension(size(matter%Atoms)) :: q, q0, q00
+   real(8), dimension(size(matter%Atoms)) :: q, q0, q00, q1
    real(8) :: eps, iteralpha, E_coul
    integer :: i, Niter
 
@@ -353,11 +353,10 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
          call set_initial_fe(Scell, matter, Err) ! module "Electron_tools"
          call get_new_global_energy(Scell(NSC), Scell(NSC)%nrg) ! module "Electron_tools"
          if (numpar%scc) call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
-                            Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne) ! below
+                     Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne, matter%Atoms(:)%mulliken_q) ! below
       case (2) ! distribution for given Ee + repulsive energy:
          call get_new_energies(Scell, matter, numpar, t, Err) ! below
    end select
-
 
    ! If we need SCC, get the charges:
    if (numpar%scc) then
@@ -366,14 +365,15 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
       H_scc_0 = Scell(NSC)%H_non ! save the H_0 (non-SCC) part of the Hamiltonin
       if (.not.allocated(H_scc_1)) allocate(H_scc_1(size(Scell(NSC)%Ha,1),size(Scell(NSC)%Ha,2)),source = 0.0d0)
 
-      eps = 1.0d-4   ! precision
+
       iteralpha = numpar%scc_mix ! mixing coefficient in SCC
-      Niter = 150    ! maximal number of scc iterations
+      Niter = 250    ! maximal number of scc iterations
       i = 0          ! to start counting iterations
 
       ! Define deviations of Mulliken charges from atomic ones:
       ! Define first Mulliken charges, if SCC is required:
-      q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge of all elements [M 0]
+      !q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge of all elements [M 0]
+      q(:) = matter%Atoms(:)%mulliken_q ! Mulliken charge of all elements [M 0]
 
       q0 = 0.0d0     ! to start with
       q00 = 1.0d10    ! to start with
@@ -386,6 +386,7 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
       if (numpar%verbose) print*, 'SCC gamma parameter obtained succesfully'
 
       ! SCC iterations:
+      eps = 1.0d-6   ! precision
       SCC_ITER:do while ( abs(maxval(q(:) - q0(:))) > eps*abs(maxval(q(:))) )
       !SCC_ITER:do while ( abs(E_coul - Scell(NSC)%nrg%E_coul_scc)/max(abs(E_coul),abs(Scell(NSC)%nrg%E_coul_scc)) > eps )
 
@@ -459,11 +460,12 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
          ! Update deviations of Mulliken charges from atomic ones:
          call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
-                            Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne) ! below
+                            Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne, q1) ! below
          q00 = q0 ! save for the next step of scc cycle
          q0 = q   ! save for the next step of scc cycle
-         ! Mulliken charge of all elements, as mixing of the fraction of old and new charges:
-         q(:) = q(:)*(1.0d0 - iteralpha) + iteralpha*(matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne)   ! [M 0]
+         ! Mixing of the fraction of old and new charges:
+         q(:) = q0(:)*(1.0d0 - iteralpha) + q1(:)*iteralpha
+
 
          ! Get the Coulomb contribution to energy from the charge redistribution:
          !E_coul = Scell(NSC)%nrg%E_coul_scc  ! save for the next iteration
@@ -473,7 +475,7 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
          ! Check if we are moving towards convergence, or away from it:
          if ( ( abs(q(1) - q0(1)) > abs(q0(1) - q00(1)) ) .or. &
               ( abs(q(1) - q00(1)) < abs(q(1) - q0(1)) ) ) then
-            iteralpha = max(0.1d0, iteralpha * 0.75d0)
+            iteralpha = max(0.01d0, iteralpha * 0.75d0)
             if (numpar%verbose) print*, 'SCC convergence may not be reached, reducing mixing:', iteralpha
          endif
       enddo SCC_ITER
@@ -484,16 +486,21 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
          print*, ' Charges on the last iteration:', q(:)
       endif
 
+      ! Save Mulliken charges for the next time-step:
+      matter%Atoms(:)%mulliken_q = q(:)
 
       ! Restore the unpertorbed H_0 (non-SCC) part of the Hamiltonin:
       Scell(NSC)%H_non = H_scc_0
       ! Save eigenvalues of the total Hamiltonian:
-      !Scell(NSC)%Ei_scc_part = Scell(NSC)%Ei
+      Scell(NSC)%Ei_scc_part = Scell(NSC)%Ei
+
+      ! Update band gap:
+      call find_band_gap(Scell(NSC)%Ei_scc_part, Scell(NSC), matter, numpar) ! module "Electron_tools"
 
       ! Update the energy in the electronic system:
       ! 1) Update the band structure, using the wave-functions corrected after the SCC procidure:
-      call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei_scc_part) ! module "Algebra_tools"
-      !call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei) ! module "Algebra_tools"
+      !call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei_scc_part) ! module "Algebra_tools"
+      call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei) ! module "Algebra_tools"
 
       ! 2) Get the Coulomb contribution to energy from the charge redistribution:
       call get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, Scell(NSC)%nrg%E_coul_scc)   ! below
@@ -511,6 +518,7 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
       deallocate(H_scc_0, H_scc_1)
    else
       Scell(NSC)%nrg%E_coul_scc = 0.0d0 ! no energy associated with charge redistribution
+      Scell(NSC)%Ei_scc_part = Scell(NSC)%Ei ! no difference between eigenstates and SCC-eigenstates
    endif
 end subroutine create_and_diagonalize_H
 
@@ -526,11 +534,13 @@ subroutine get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, E_coulomb)   ! Cou
    integer :: j, nat, atom_2, i
    integer, pointer :: m, KOA1, KOA2
 
-   nat = Scell(NSC)%Na ! number of atoms
-   sum_a = 0.0d0  ! to start with
+   nat = Scell(NSC)%Na  ! number of atoms
+   sum_a = 0.0d0        ! to start with
+   E_coulomb = 0.0d0    ! to start with
 
-   q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charges of all elements [M 0]
-   !q(:) = -q(:)   ! test
+   !q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charges of all elements [M 0]
+   q(:) = matter%Atoms(:)%mulliken_q
+!    q(:) = -q(:)
 
    !$omp PARALLEL private( j, KOA1, m, atom_2, i, KOA2, Coul_pot )
    !$omp do reduction( + : sum_a)
@@ -552,10 +562,9 @@ subroutine get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, E_coulomb)   ! Cou
    !$omp end parallel
    ! Total Coulomb energy, excluding double-counting:
    !E_coulomb = sum_a * 0.5d0   ! [eV] ! [A 0]
-   E_coulomb = -sum_a * 0.5d0   ! [eV] ! [A 1]
-   !E_coulomb = 0.0d0   ! [eV] ! [A 2]
+   E_coulomb = -sum_a * 0.25d0   ! [eV] ! [A 1]
 
-!    print*, 'E_coulomb', E_coulomb
+!    print*, 'E_coulomb', E_coulomb/dble(nat)
    nullify(KOA1, KOA2, m)
 end subroutine get_Coulomb_scc_energy
 
@@ -596,7 +605,10 @@ subroutine Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)
    alpha = 3.0d0/(4.0d0*r_cut) ! Wolf's parameter chosen according to optimal value from [4]
 
    ! Get the charges for all different elements in the material:
-   q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge [M 0]
+   !q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge [M 0]
+   q(:) = matter%Atoms(:)%mulliken_q
+
+!    q(:) = -q(:)
 
    !$omp PARALLEL private(ian, m, KOA1, dpsi, atom_2, j1, KOA2, x, y, z, x1, a_r, b)
    !$omp DO
@@ -623,8 +635,9 @@ subroutine Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)
       enddo ! atom_2
 
       ! Add exponential wall force to already calculated other forces:
-      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + dpsi(:)  ! [F 0]
-      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) - dpsi(:)  ! [F 1]
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + dpsi(:)  ! [F 0] ?
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + 10.0d0*dpsi(:)  ! [F 3] test
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) - dpsi(:)  ! [F 1] wrong
       !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + 0.0d0   ! [F 2]
 
    enddo ! ian
@@ -655,7 +668,9 @@ subroutine Coulomb_force_from_SCC_Pressure_s(Scell, NSC, matter, numpar)
       alpha = 3.0d0/(4.0d0*r_cut) ! Wolf's parameter chosen according to optimal value from [4]
 
       ! Get the charges for all different elements in the material:
-      q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge [M 0]
+      !q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge [M 0]
+      q(:) = matter%Atoms(:)%mulliken_q
+!       q(:) = -q(:)
 
       PForce = 0.0d0 ! to start with
       do i = 1, n ! Forces from all atoms
@@ -1481,7 +1496,7 @@ end subroutine get_DOS_masks
 end subroutine get_DOS_weights
 
 
-subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter, MDatoms, mulliken_Ne)
+subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter, MDatoms, mulliken_Ne, mulliken_q)
    integer, intent(in) :: Mulliken_model   ! which model to use
    logical, dimension(:,:,:), intent(in) :: masks_DOS   ! partial DOS made of each orbital type, if required to be constructed
    real(8), dimension(:,:,:), intent(inout) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
@@ -1489,11 +1504,12 @@ subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter,
    real(8), dimension(:), intent(in) :: fe    ! electron distribution
    type(Solid), intent(in) :: matter     ! material parameters
    type(Atom), dimension(:), intent(in) :: MDAtoms ! all MD atoms
-   real(8), dimension(:), intent(out) :: mulliken_Ne   ! Mulliken charges
+   real(8), dimension(:), intent(out) :: mulliken_Ne   ! Mulliken electron populations
+   real(8), dimension(:), intent(out), optional :: mulliken_q   ! Mulliken charges
    !-------------------------------
    real(8) :: temp
    integer :: j, Nsiz, N_at, N_types, i_at, i_types, Nat
-   if (Mulliken_model >= 1) then ! get Mulliken charges
+   if (Mulliken_model >= 1) then ! get Mulliken populations and charges
       N_at = size(masks_DOS,1)
       N_types = size(masks_DOS,2)
       ! Check atomic charges:
@@ -1511,10 +1527,17 @@ subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter,
       do i_at = 1, N_at
          ! how many atoms of this kind are in the supercell:
          Nat = COUNT(MASK = (MDatoms(:)%KOA == i_at))
+         ! Mulliken electron populations:
          mulliken_Ne(i_at) = mulliken_Ne(i_at) / dble(Nat)
       enddo
+      ! Mulliken charges:
+      if (present(mulliken_q)) mulliken_q(:) = matter%Atoms(:)%NVB - mulliken_Ne(:)
+      !if (present(mulliken_q)) mulliken_q(:) = mulliken_Ne(:) - matter%Atoms(:)%NVB
    else  ! just atomic electrons
+      ! Mulliken electron populations:
       mulliken_Ne(:) = matter%Atoms(:)%NVB
+      ! Mulliken charges:
+      if (present(mulliken_q)) mulliken_q(:) = 0.0d0
    endif ! (Mulliken_model >= 1)
 end subroutine get_Mulliken
 
@@ -2223,7 +2246,8 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
    
       ! Get the energy associated with the electrons populating band structure:
       if (numpar%scc) then ! energy for SCC is defined by for H_0:
-         call get_low_e_energy(Scell, matter, numpar) ! module "Electron_tools"
+!          call get_low_e_energy(Scell, matter, numpar) ! module "Electron_tools"
+         call get_low_e_energy(Scell, matter) ! module "Electron_tools"
       else  ! no SCC, the usual expression then
          call get_low_e_energy(Scell, matter) ! module "Electron_tools"
       endif
@@ -2407,17 +2431,16 @@ subroutine get_new_energies(Scell, matter, numpar, t, Err)
    real(8), intent(in) :: t ! current timestep [fs]
    type(Error_handling), intent(inout) :: Err ! error save
    !=========================================
-
    ! Get potential energy of the supercell (Repulsive part is defined inside):
    call get_pot_nrg(Scell, matter, numpar) ! see above
 
    ! Update electron energy according to updated distribution:
    if (numpar%scc) then ! energy for SCC is defined by for H_0:
-      call get_low_e_energy(Scell, matter, numpar) ! module "Electron_tools"
+!       call get_low_e_energy(Scell, matter, numpar) ! module "Electron_tools"
+      call get_low_e_energy(Scell, matter) ! module "Electron_tools"
    else  ! no SCC, the usual expression then
       call get_low_e_energy(Scell, matter) ! module "Electron_tools"
    endif
-
    ! Get kinetic energy of atoms and of the supercell (for Parrinello-Rahman):
    call get_Ekin(Scell, matter) ! module "Atomic_tools"
 

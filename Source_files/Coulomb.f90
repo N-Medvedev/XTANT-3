@@ -58,7 +58,6 @@ parameter(m_sqrtPi = sqrt(g_Pi))    ! sqrt(Pi)
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Wolf's method of Coulomb trunkation:
 
-
 subroutine get_Coulomb_Wolf_s(Scell, NSC, matter, E_coulomb, gam_ij)   ! Coulomb energy
 ! This subroutine calcualtes the full Coulomb energy following Wolf's truncation method
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
