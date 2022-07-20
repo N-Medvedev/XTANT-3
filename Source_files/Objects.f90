@@ -192,6 +192,7 @@ type, EXTENDS (TB_Hamiltonian) :: TB_H_DFTB ! hamiltonian coefficients:
    character(20) :: param_name  ! name of parameterization used
    real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-like cut-off [A]
    real(8) :: Ed, Ep, Es    ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom
+   real(8) :: Ud, Up, Us    ! Hubbard U for the angular momenta d, p and s for the given atom
    real(8), dimension(:), allocatable :: Rr ! Radial grid [A]
    real(8), dimension(:,:), allocatable :: Vr ! Hopping integrals [eV]
    real(8), dimension(:,:), allocatable :: Sr ! Overlaps
@@ -623,6 +624,18 @@ type Pulse
    real(8) :: Fabs	! [eV] total absorbed energy per simulation box
    real(8) :: Nph	! number of absorbed photons
 end type Pulse
+
+
+! Atomic parameters provided by the user, to overwrite the default values
+type User_overwrite_data
+   logical :: do_overwrite
+   character(3), dimension(:), allocatable :: name ! element name
+   real(8), dimension(:), allocatable :: mass   ! [a.m.u.] atomic mass
+   real(8), dimension(:,:), allocatable :: Ip   ! [eV] ionization potentials for all shells
+   real(8), dimension(:,:), allocatable :: Ek   ! [eV] mean kinetic energy of all shells
+   real(8), dimension(:,:), allocatable :: Ne_shell   ! number of electron in each shell
+   real(8), dimension(:,:), allocatable :: auger   ! [fs] Auger decay times
+endtype User_overwrite_data
 
 
 type Numerics_param

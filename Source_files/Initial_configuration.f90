@@ -635,6 +635,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
    else
       matter%At_dens = matter%dens/(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3)   ! atomic density [1/cm^3]
    endif
+
    
 !     do i = 1, Scell(1)%Na
 !        write(6,'(i4,f,f,f,f,f,f)') i, Scell(1)%MDAtoms(i)%S0(:), Scell(1)%MDAtoms(i)%S(:)

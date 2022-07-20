@@ -72,16 +72,23 @@ subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message)
    
    ! Read on-site energies:
    if (ToA == 0) then   ! the same element, on-site energies:
-      read(FN,*,IOSTAT=Reason) TB_Hamil%Ed, TB_Hamil%Ep, TB_Hamil%Es  ! [a.u.] on-site energies; Hubbard coefficients
+      read(FN,*,IOSTAT=Reason) TB_Hamil%Ed, TB_Hamil%Ep, TB_Hamil%Es, temp_r, &
+                               TB_Hamil%Ud, TB_Hamil%Up, TB_Hamil%Us  ! [a.u.] on-site energies; Hubbard coefficients
       call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
       if (.not.read_well) goto 2012 ! exit
       TB_Hamil%Ed = TB_Hamil%Ed * g_au2ev  ! [Hartree] -> [eV]
       TB_Hamil%Ep = TB_Hamil%Ep * g_au2ev  ! [Hartree] -> [eV]
       TB_Hamil%Es = TB_Hamil%Es * g_au2ev  ! [Hartree] -> [eV]
+      TB_Hamil%Ud = TB_Hamil%Ud * g_au2ev  ! [Hartree] -> [eV]
+      TB_Hamil%Up = TB_Hamil%Up * g_au2ev  ! [Hartree] -> [eV]
+      TB_Hamil%Us = TB_Hamil%Us * g_au2ev  ! [Hartree] -> [eV]
    else ! no on-site energies for non-like elements
       TB_Hamil%Ed = 0.0d0
       TB_Hamil%Ep = 0.0d0
       TB_Hamil%Es = 0.0d0
+      TB_Hamil%Us = 0.0d0
+      TB_Hamil%Up = 0.0d0
+      TB_Hamil%Ud = 0.0d0
    endif
    
    ! Read parameters of repulsive potential in the polinomial form:

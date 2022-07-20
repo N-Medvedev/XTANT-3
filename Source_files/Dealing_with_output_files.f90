@@ -2276,6 +2276,10 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
          write(chtemp(2), '(f6.2)') matter%Atoms(i)%percentage
          write(FN, '(a,$)') 'Element #'//trim(adjustl(chtemp(1)))//' is '//trim(adjustl(matter%Atoms(i)%Name))//' contributing to the compound with '//trim(adjustl(chtemp(2)))
          write(FN, '(a)') ''
+         write(chtemp(1), '(i4)') INT(matter%Atoms(i)%Z)
+         write(chtemp(2), '(es25.5)') matter%Atoms(i)%Ma
+         write(FN, '(a,a,a,a,a)') 'Atomic number: ', trim(adjustl(chtemp(1))), ', mass: ', trim(adjustl(chtemp(2))), ' [kg]'
+
          write(FN, '(a)') 'Shell#	Designator	Ne	Ip [eV]	Ek [eV]	Auger [fs]	'
          Nshl = size(matter%Atoms(i)%Ip)
          do j = 1, Nshl
@@ -2287,9 +2291,11 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
             if (matter%Atoms(i)%Auger(j) .LT. 1d10) then
                write(chtemp(6), '(es14.3)') matter%Atoms(i)%Auger(j)
             else
-               write(chtemp(6),*) matter%Atoms(i)%Auger(j)
+               write(chtemp(6), '(es14.5)') matter%Atoms(i)%Auger(j)
             endif
-            write(FN, '(a,$)') trim(adjustl(chtemp(1)))//'	', trim(adjustl(chtemp(2)))//'	', trim(adjustl(chtemp(3)))//'	', trim(adjustl(chtemp(4)))//'	', trim(adjustl(chtemp(5)))//'	', trim(adjustl(chtemp(6)))
+            write(FN, '(a,$)') trim(adjustl(chtemp(1)))//'	', trim(adjustl(matter%Atoms(i)%Shell_name(j)))//' 	', &
+                                 trim(adjustl(chtemp(2)))//'	', trim(adjustl(chtemp(3)))//'	', &
+                                 trim(adjustl(chtemp(4)))//'	', trim(adjustl(chtemp(5)))//'	', trim(adjustl(chtemp(6)))
             write(FN, '(a)') ''
          enddo !j
       enddo !i
@@ -3097,8 +3103,13 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       endif
    endif
    write(print_to,'(a,a)') ' Electron cross sections used are from: ', trim(adjustl(numpar%At_base))
-   write(print_to,'(a,f10.3,a)') ' Density of the material (used in MC cross sections): ', matter%dens,' [g/cm^3]'
-   write(print_to,'(a,es12.3,a)') ' Which corresponds to the atomic density: ', matter%At_dens, ' [1/cm^3]'
+   if (matter%dens < 1e6) then   ! real density:
+      write(print_to,'(a,f10.3,a)') ' Density of the material: ', matter%dens,' [g/cm^3]'
+      write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
+   else  ! in artificial cases, the dnsity may be wild:
+      write(print_to,'(a,es25.3,a)') ' Density of the material: ', matter%dens,' [g/cm^3]'
+      write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
+   endif
    write(print_to,'(a)') ' The following numerical parameters are used:'
    write(print_to,'(a,i6)') ' Number of iterations in the MC module: ', numpar%NMC
    if (numpar%do_elastic_MC) then ! allow elastic scattering of electrons on atoms within MC module

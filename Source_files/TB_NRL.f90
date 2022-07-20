@@ -280,7 +280,7 @@ subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err
    !-----------------------------------
    ! 4) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
 !    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, check_M=.true.)
-   call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript)
+   call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript) ! module "Algebra_tools"
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Subroutine Hamil_tot_NRL: '//trim(adjustl(Error_descript))
       call Save_error_details(Err, 6, Error_descript)

@@ -2720,7 +2720,7 @@ subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SV
                H_cf(k1,4,1) = H_cf(k1,1,4)
 
                ! Diagonal part is excluded (no self-interaction of orbitals):
-               if (TB(KOA1,KOA1)%nullify_diag_cf) then
+               if (TB(KOA1,KOA2)%nullify_diag_cf) then
                   H_cf(k1,2,2) = 0.0d0
                   H_cf(k1,3,3) = 0.0d0
                   H_cf(k1,4,4) = 0.0d0
@@ -2771,7 +2771,7 @@ subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SV
 
 
                   ! Diagonal terms:
-                  if (TB(KOA1,KOA1)%nullify_diag_cf) then
+                  if (TB(KOA1,KOA2)%nullify_diag_cf) then
                      H_cf(k1,5,5) = 0.0d0  ! dxy-s * dxy-s
                      H_cf(k1,6,6) = 0.0d0  ! dxz-s * dxz-s
                      H_cf(k1,7,7) = 0.0d0  ! dyz-s * dyz-s

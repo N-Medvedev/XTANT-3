@@ -273,6 +273,13 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
    if (allocated(M_E0ij)) deallocate(M_E0ij)
    if (allocated(M_lmn)) deallocate(M_lmn)
    if (allocated(M_Aij_x_Ei)) deallocate(M_Aij_x_Ei)
+   if (allocated(M_dE0ij)) deallocate(M_dE0ij)
+   if (allocated(M_Lag_exp)) deallocate(M_Lag_exp)
+   if (allocated(M_d_Lag_exp)) deallocate(M_d_Lag_exp)
+   if (allocated(Mjs)) deallocate(Mjs)
+   if (allocated(M_drij_dsk)) deallocate(M_drij_dsk)
+   if (allocated(M_dlmn)) deallocate(M_dlmn)
+   if (allocated(HperS)) deallocate(HperS)
 end subroutine get_Hamilonian_and_E
 
 
@@ -1527,6 +1534,7 @@ subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter,
       do i_at = 1, N_at
          ! how many atoms of this kind are in the supercell:
          Nat = COUNT(MASK = (MDatoms(:)%KOA == i_at))
+         if (Nat <= 0) Nat = 1   ! in case there are no atoms of this kind
          ! Mulliken electron populations:
          mulliken_Ne(i_at) = mulliken_Ne(i_at) / dble(Nat)
       enddo

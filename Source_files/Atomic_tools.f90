@@ -1765,6 +1765,8 @@ subroutine get_kinetic_energy_abs(Scell, NSC, matter, nrg)
          Nat = COUNT(MASK = (Scell(NSC)%MDatoms(:)%KOA == i)) ! how many atoms of this kind
          if (Nat > 2) then
             Scell(NSC)%Ta_sub(i) = 2.0d0/(3.0d0*dble(Nat) - 6.0d0)*SUM(Scell(NSC)%MDatoms(:)%Ekin, MASK = (Scell(NSC)%MDatoms(:)%KOA == i))
+         elseif (Nat <= 0) then  ! no atoms, no temperature
+            Scell(NSC)%Ta_sub(i) = 0.0d0
          else	! use the eq. for nonperiodic boundaries:
             Scell(NSC)%Ta_sub(i) = 2.0d0/(3.0d0*dble(Nat))*SUM(Scell(NSC)%MDatoms(:)%Ekin, MASK = (Scell(NSC)%MDatoms(:)%KOA == i))
          endif

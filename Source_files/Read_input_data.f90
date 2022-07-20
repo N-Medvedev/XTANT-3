@@ -44,6 +44,7 @@ USE OMP_LIB
 
 implicit none
 
+
 ! Modular parameters:
 character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
 
@@ -247,7 +248,8 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
 !    class(TB_Hamiltonian), dimension(:), allocatable, intent(out) ::  TB_Hamil ! parameters of the Hamiltonian of TB
    type(Error_handling), intent(inout) :: Err	! error save
    integer, intent(in), optional :: Numb ! number of input files to use
-
+   !-----------------------------
+   type(User_overwrite_data) :: user_data
    real(8) temp
    integer FN, Reason, count_lines, N, i
    logical file_exist, file_opened, read_well
@@ -314,7 +316,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       endif
       inquire(file=trim(adjustl(File_name)),exist=file_exist)
       NUMERICAL_PARAMETERS:if (file_exist) then
-         call read_numerical_parameters(File_name, matter, numpar, laser, Scell, Err) ! see below
+         call read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err) ! see below
          if (g_Err%Err) goto 3416
       else
          write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
@@ -323,7 +325,6 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          goto 3416
       endif NUMERICAL_PARAMETERS
    endif NEW_FORMAT
-
 
    if (.not.allocated(Scell)) allocate(Scell(1)) ! for the moment, only one super-cell
 
@@ -340,8 +341,13 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
           ! Run it like XCASCADE
       endif
    enddo
-   !if (matter%dens < 0.0d0) matter%dens = ABS(matter%dens) ! just in case there was no better given density (no cdf file was used)
-   matter%At_dens = matter%dens/(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3)   ! atomic density [1/cm^3]
+
+   ! Check if the user provided atomic data to overwrite the default values:
+   call overwrite_atomic_data(user_data, matter)   ! below
+
+   ! Atomic density [1/cm^3] (may be overwritten in the module "Initial_configuration", if negative):
+   matter%At_dens = matter%dens/(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3)
+
 
    ! Check k-space grid file:
    call read_k_grid(matter, numpar, Err)	! below
@@ -423,7 +429,7 @@ subroutine read_SCC_Hubbard(File_name, matter, SCC)
          if ( trim(adjustl(El_name)) == trim(adjustl(matter%Atoms(i)%Name)) ) then
             found_el = .true.
             !matter%Atoms(i)%Hubbard_U = U_read * 0.5d0   ! alternative definition with 1/2
-            matter%Atoms(i)%Hubbard_U = U_read
+            matter%Atoms(i)%Hubbard_U = U_read  ! [eV]
 
             rewind(FN)  ! start the search for the next element
             exit SFE ! found element, go to the next one
@@ -844,8 +850,8 @@ subroutine get_EADL_data(matter, numpar, Err)
    do i = 1, matter%N_KAO ! for all sorts of atoms
       matter%Atoms(i)%Z = at_numbers(i)
       matter%Atoms(i)%Name = at_short_names(i)
-      !matter%Atoms(i)%Ma = at_masses(i)
-      matter%Atoms(i)%Ma = at_masses(i)*g_Mp ! [kg]
+      !matter%Atoms(i)%Ma = at_masses(i)*g_Mp ! [kg]
+      matter%Atoms(i)%Ma = at_masses(i)*g_amu ! [kg]
       matter%Atoms(i)%percentage = at_percentage(i)
       matter%Atoms(i)%NVB = at_NVE(i)
    enddo
@@ -1692,15 +1698,15 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
    type is (TB_H_3TB)
       if (matter%N_KAO > 1) then
          ! [OS 0] :
-         TB_Hamil(1,1)%Hhavg = TB_Hamil(1,2)%Hhavg
-         TB_Hamil(1,1)%Hhcf = TB_Hamil(1,2)%Hhcf
-         TB_Hamil(2,2)%Hhavg = TB_Hamil(2,1)%Hhavg
-         TB_Hamil(2,2)%Hhcf = TB_Hamil(2,1)%Hhcf
+!          TB_Hamil(1,1)%Hhavg = TB_Hamil(1,2)%Hhavg
+!          TB_Hamil(1,1)%Hhcf = TB_Hamil(1,2)%Hhcf
+!          TB_Hamil(2,2)%Hhavg = TB_Hamil(2,1)%Hhavg
+!          TB_Hamil(2,2)%Hhcf = TB_Hamil(2,1)%Hhcf
          ! [OS 1] :
-!          TB_Hamil(1,1)%Hhavg = TB_Hamil(2,1)%Hhavg
-!          TB_Hamil(1,1)%Hhcf = TB_Hamil(2,1)%Hhcf
-!          TB_Hamil(2,2)%Hhavg = TB_Hamil(1,2)%Hhavg
-!          TB_Hamil(2,2)%Hhcf = TB_Hamil(1,2)%Hhcf
+         TB_Hamil(1,1)%Hhavg = TB_Hamil(2,1)%Hhavg
+         TB_Hamil(1,1)%Hhcf = TB_Hamil(2,1)%Hhcf
+         TB_Hamil(2,2)%Hhavg = TB_Hamil(1,2)%Hhavg
+         TB_Hamil(2,2)%Hhcf = TB_Hamil(1,2)%Hhcf
       endif
    endselect
 
@@ -3810,12 +3816,13 @@ end subroutine read_xTB_Params
 
 
 
-subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Err)
+subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err)
    character(*), intent(in) :: File_name
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Pulse), dimension(:), allocatable, intent(inout) :: laser	! Laser pulse parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(User_overwrite_data), intent(inout) :: user_data   ! atomic data provided by the user
    type(Error_handling), intent(inout) :: Err	! error save
    !---------------------------------
    integer FN, N, Reason, count_lines, i, NSC, temp1, temp2, temp3
@@ -4284,7 +4291,6 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
       numpar%ind_fig_extention = 1
    end select
    
-   
 !    OPT_PARAM:if (numpar%optic_model .GT. 0) then ! if calculate optical coefficients:
       ! number of k-points in each direction (used only for Trani-k!):
       read(FN,*,IOSTAT=Reason) numpar%ixm, numpar%iym, numpar%izm
@@ -4329,10 +4335,206 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
       endif
 !    endif OPT_PARAM
 
+
+   ! Read optional atomic data, provided by the user to overwrite default atomic data:
+   call read_user_atomic_data(FN, count_lines, matter, user_data)   ! below
+
+
    ! Close this file, it has been read through:
 3418 if (file_opened) close(FN)
 end subroutine read_numerical_parameters
 
+
+
+subroutine read_user_atomic_data(FN, count_lines, matter, user_data)
+   integer, intent(in) :: FN  ! file to read from
+   integer, intent(inout) :: count_lines  ! line we are reading
+   type(Solid), intent(in) :: matter   ! all material parameters
+   type(User_overwrite_data), intent(inout) :: user_data ! data to be read
+   !--------------------------
+   logical :: read_well
+   integer :: Reason
+   character(100) :: text
+
+   user_data%do_overwrite = .false. ! to start with, no data to use
+
+   read_well = .true.   ! to start with
+   RD: do while (read_well)
+      read(FN,*,IOSTAT=Reason) text
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) exit RD  ! end of file, stop reading
+
+      call interpret_user_data(FN, count_lines, read_well, text, matter, user_data) ! below
+      if (.not. read_well) exit RD  ! end of file, stop reading
+   enddo RD
+
+end subroutine read_user_atomic_data
+
+
+subroutine interpret_user_data(FN, count_lines, read_well, text, matter, user_data)
+   integer, intent(in) :: FN  ! file to read from
+   integer, intent(inout) :: count_lines  ! line we are reading
+   logical, intent(inout) :: read_well ! marker if the line read well
+   character(*), intent(in) :: text ! what was read in the previous line
+   type(Solid), intent(in) :: matter	! all material parameters
+   type(User_overwrite_data), intent(inout) :: user_data ! data to be read
+   !-------------------------
+   real(8) :: temp
+   integer :: Nat, Nsh, i, temp_int(2), Reason
+   character(3) :: temp_ch
+
+   Nat = size(matter%Atoms)
+   ! Find the maximal number of shells:
+   Nsh = 0  ! to start with
+   do i = 1, Nat
+      Nsh = max(Nsh, size(matter%Atoms(i)%Ip))
+   enddo
+
+   select case (trim(adjustl(text)))
+   case ('NAME', 'Name', 'name')
+      read(FN,*,IOSTAT=Reason) temp_int(1), temp_ch
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%name)) then
+            allocate(user_data%name(Nat))
+            user_data%name = ''  ! to start with
+         endif
+         user_data%name(temp_int(1)) = temp_ch
+         user_data%do_overwrite = .true.
+      endif
+
+   case ('MASS', 'Mass', 'mass')
+      read(FN,*,IOSTAT=Reason) temp_int(1), temp
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%mass)) allocate(user_data%mass(Nat), source = -1.0d0)
+         user_data%mass(temp_int(1)) = temp
+         user_data%do_overwrite = .true.
+      endif
+
+   case ('NO_AUGER', 'No_Auger', 'no_auger', 'Exclude_Auger', 'exclude_auger', 'EXCLUDE_AUGER')
+      if (.not.allocated(user_data%auger)) allocate(user_data%auger(Nat,Nsh), source = 1.0d30)
+      user_data%auger = 1.0d30   ! exclude Auger by setting time to infinity
+      user_data%do_overwrite = .true.
+
+   case ('AUGER', 'Auger', 'auger')
+      read(FN,*,IOSTAT=Reason) temp_int(:), temp
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%auger)) allocate(user_data%auger(Nat,Nsh), source = -1.0d30)
+         user_data%auger(temp_int(1),temp_int(2)) = temp
+         user_data%do_overwrite = .true.
+      endif
+
+   case ('IP', 'Ip', 'ip', 'ionization_potential', 'Ionization_potential', 'IONIZATION_POTENTIAL')
+      read(FN,*,IOSTAT=Reason) temp_int(:), temp
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%Ip)) allocate(user_data%Ip(Nat,Nsh), source = -1.0d30)
+         user_data%Ip(temp_int(1),temp_int(2)) = temp
+         user_data%do_overwrite = .true.
+      endif
+
+   case ('Ne', 'ne', 'NE', 'NUMBER_OF_ELECTRONS', 'Number_of_electrons', 'Population')
+      read(FN,*,IOSTAT=Reason) temp_int(:), temp
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%Ne_shell)) allocate(user_data%Ne_shell(Nat,Nsh), source = -1.0d0)
+         user_data%Ne_shell(temp_int(1),temp_int(2)) = temp
+         user_data%do_overwrite = .true.
+      endif
+
+   case ('Ek', 'ek', 'EK', 'Kinetic_energy', 'KINETIC_ENERGY', 'kinetic_energy')
+      read(FN,*,IOSTAT=Reason) temp_int(:), temp
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%Ek)) allocate(user_data%Ek(Nat,Nsh), source = -1.0d30)
+         user_data%Ek(temp_int(1),temp_int(2)) = temp
+         user_data%do_overwrite = .true.
+      endif
+   end select
+
+end subroutine interpret_user_data
+
+
+subroutine overwrite_atomic_data(user_data, matter)
+   type(User_overwrite_data), intent(in) :: user_data ! data to be read
+   type(Solid), intent(inout) :: matter	! all material parameters
+   !----------------------------
+   integer :: i, Nat, j, Nsh
+
+   ! Check if the user overwrite atomic data:
+   if (user_data%do_overwrite) then
+      Nat = size(matter%Atoms) ! number of atoms
+
+      ! Element name:
+      if (allocated(user_data%Name)) then
+         do i = 1, Nat   ! check for all elements
+            if (LEN(trim(adjustl(user_data%Name(i)))) > 0) then ! overwrite the name
+               matter%Atoms(i)%Name = user_data%Name(i)
+            endif
+         enddo
+      endif
+
+      ! Mass:
+      if (allocated(user_data%mass)) then
+         do i = 1, Nat   ! check for all elements
+            if (user_data%mass(i) > 0.0d0) then ! overwrite the mass
+               matter%Atoms(i)%Ma = user_data%mass(i) * g_amu ! [kg]
+            endif
+         enddo
+      endif
+
+      ! Auger decay times:
+      if (allocated(user_data%auger)) then
+         do i = 1, Nat
+            Nsh = size(matter%Atoms(i)%Ip)   ! number of shells
+            do j = 1, Nsh
+               if (user_data%Auger(i,j) > 0.0d0) then ! overwrite the auger decay time
+                  matter%Atoms(i)%Auger(j) = user_data%auger(i,j) ! [fs]
+               endif
+            enddo ! j
+         enddo ! i
+      endif
+
+      ! Ionization potentials:
+      if (allocated(user_data%Ip)) then
+         do i = 1, Nat
+            Nsh = size(matter%Atoms(i)%Ip)   ! number of shells
+            do j = 1, Nsh
+               if (user_data%Ip(i,j) > 0.0d0) then ! overwrite the ionization potential
+                  matter%Atoms(i)%Ip(j) = user_data%Ip(i,j) ! [eV]
+               endif
+            enddo ! j
+         enddo ! i
+      endif
+
+      ! Kinetic energies of electronic in atomic shells:
+      if (allocated(user_data%Ip)) then
+         do i = 1, Nat
+            Nsh = size(matter%Atoms(i)%Ek)   ! number of shells
+            do j = 1, Nsh
+               if (user_data%Ek(i,j) > 0.0d0) then ! overwrite the kinetic energy
+                  matter%Atoms(i)%Ek(j) = user_data%Ek(i,j) ! [eV]
+               endif
+            enddo ! j
+         enddo ! i
+      endif
+
+      ! Number of electrons in the atomic shell:
+      if (allocated(user_data%Ip)) then
+         do i = 1, Nat
+            Nsh = size(matter%Atoms(i)%Ek)   ! number of shells
+            do j = 1, Nsh
+               if (user_data%Ne_shell(i,j) >= 0.0d0) then ! overwrite the electron population
+                  matter%Atoms(i)%Ne_shell(j) = user_data%Ne_shell(i,j)
+               endif
+            enddo ! j
+         enddo ! i
+      endif
+
+   endif ! (user_data%do_overwrite)
+end subroutine overwrite_atomic_data
 
 
 subroutine set_MD_step_grid(File_name, numpar, read_well_out, Error_descript)

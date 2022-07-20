@@ -28,7 +28,7 @@ MODULE Universal_constants
 
 ! Constants:
 real(8) :: g_Pi, g_2Pi, g_half_Pi, g_exp, g_e, g_me, g_cvel, g_Mp, g_h, g_kb, g_kb_EV, g_kb_J, g_e0, g_ke, g_mu0, &
-g_Ry, g_a0, g_v0, g_alpha, g_P_atm, g_e_m, g_h_MeVs, g_e_ESU, g_me_MeV, g_u_MeV, g_re, g_lambda_e, g_SIGMA_0, &
+g_Ry, g_a0, g_v0, g_alpha, g_P_atm, g_e_m, g_h_MeVs, g_e_ESU, g_me_MeV, g_u_MeV, g_amu, g_re, g_lambda_e, g_SIGMA_0, &
 g_MU_B_MeV_T, g_E_M_e, g_E_M_P, g_G, g_g_Earth, g_N_A, g_V_MOLAR, g_LAMBDAT, g_SIGMA_SB, g_G_F, g_M_W, g_M_Z0, &
 g_G_S, g_AUENERGY, g_AUACTION, g_AUTIME, g_AUFORCE, g_AUVELOCITY, g_AUMOMENTUM, g_AUEFIELD, g_AUEDIPOLE, &
 g_AUMFLUX, g_AUMDIPOLE, g_ASTRONOMICALUNIT, g_NA
@@ -50,6 +50,7 @@ parameter (g_e_ESU	= 4.8032068d-10)	! Electron charge magnitude	[esu]
 parameter (g_me	= 9.1093821545d-31)	! Electron mass	[kg]
 parameter (g_me_MeV	= 0.51099906d0)		! Electron mass	[MeV/c^2]
 parameter (g_u_MeV	= 931.49432d0)		! unified atomic mass unit	[MeV/c^2]
+parameter (g_amu  = 1.6605390666050e-27)    ! atomic mass unit (Dalton) [kg]
 parameter (g_cvel	= 299792458.0d0)	! Light velocity	[m/sec]
 parameter (g_Mp	= 1836.1526724780d0*g_me)	! Proton mass		[kg]
 parameter (g_h		= 1.05457162853d-34)	! Plank constant	[J*sec]
