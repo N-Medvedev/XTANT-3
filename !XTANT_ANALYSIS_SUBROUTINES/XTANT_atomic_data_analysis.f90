@@ -6,15 +6,22 @@ PROGRAM Atomic_data_analysis
 ! ifort.exe /F9999999999 /O3 /Qipo /Qvec-report1 /fpp /Qopenmp /heap-arrays XTANT_atomic_data_analysis.f90 -o XTANT_atomic_data_analysis.exe /link /stack:9999999999 
 !<===========================================
 
+! Open_MP related modules from external libraries:
+#ifdef OMP_inside
+   USE OMP_LIB
+#endif
+USE IFLPORT
+
 use Universal_constants
 
 implicit none
 
-character(200) :: File_name_coords, File_name_NRGs, File_name_T, File_name_supce, File_parameters, File_name_out, command, File_name
+character(200) :: File_name_coords, File_name_NRGs, File_name_T, File_name_P
+character(200) :: File_name_supce, File_parameters, File_name_out, command, File_name
 character(1) :: path_sep
 character(10) :: temp_ch
-integer :: FN, FN_out, FN_coord, FN_supce, FN_NRG, FN_T, FN_Param
-integer :: NOMP, Nat, Reason, open_status
+integer :: FN, FN_out, FN_coord, FN_supce, FN_NRG, FN_T, FN_P, FN_Param
+integer :: NOMP, Nat, Reason, open_status, iret
 real(8), dimension(:,:,:), allocatable :: R, V, SR, SV
 logical :: read_well, file_opened, do_PCF, do_autocorr, do_Cv
 
@@ -25,11 +32,13 @@ FN_supce = 9998
 FN_out = 9997
 FN_NRG = 9996
 FN_T = 9995
+FN_P = 9993
 FN_Param = 9994
 File_name_coords = 'OUTPUT_coordinates_and_velosities.dat'	! defaul name of XTANT out file with coordinates and velosities
 File_name_supce = 'OUTPUT_supercell.dat'	! defaul name of XTANT out file with supercell sizes
 File_name_NRGs = 'OUTPUT_energies.dat'
 File_name_T = 'OUTPUT_temperatures.dat'
+File_name_P = 'OUTPUT_pressure_and_stress.dat'
 
 call Path_separator(path_sep)
 ! Get the name of file with atomic parameters:
@@ -40,7 +49,8 @@ if (path_sep .EQ. '\') then	! if it is Windows
 else
    command = "ls -t | grep '.txt' > "//trim(adjustl(File_name)) ! "Temp.txt"
 endif
-call system(trim(adjustl(command))) ! execute the command to save file names in the temp file
+!call system(trim(adjustl(command))) ! execute the command to save file names in the temp file
+iret = system(trim(adjustl(command))) ! execute the command to save file names in the temp file
 FN = 1100
 open(UNIT=FN, file=trim(adjustl(File_name)), iostat=open_status, action='read')
 File_parameters = ''

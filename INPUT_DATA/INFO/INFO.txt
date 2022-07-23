@@ -5,7 +5,8 @@ The hybrid code XTANT is written by
 Dr. Nikita Medvedev
 as a part of research at
 CFEL at DESY, Hamburg, Germany 2011-2016,
-and in the Institute of Physics of CAS, Prague, Czechia 2016-2022
+Institute of Physics of CAS, Prague, Czechia 2016-2022
+(the amount of free time invested in it is uncountable...)
 
 Should you have any questions, contact the author: nikita.medvedev@fzu.cz
 Or by private email: n.a.medvedev@gmail.com

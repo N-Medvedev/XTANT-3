@@ -3,7 +3,7 @@ The following flags are supported in XTANT:
 
 1) Help -- this very help output
 2) Info -- basic information about XTANT
-3) Size -- conmputes cohesive energy of the material as a function of the nearest neighbour distance
+3) Size -- computes cohesive energy of the material as a function of the nearest neighbour distance
 4) Allow_rotation -- run MD simulation without removing total angular momentum
 5) Verbose -- prints out a lot of extra information useful for debugging
 
@@ -24,6 +24,7 @@ Type in the file "Communication.txt" (in the OUTPUT folder created) one of the f
 1) time "number" : to change total duration of the program (give new number in [fs])
 2) MDdt "number" : to change time-step of MD (give new number in [fs])
 3) SAVEdt "number" : to change how often outputs are saved (give new number in [fs])
+4) OMP "number" : to change the number of OpenMP threads (integer); a negative number sets it to the maximum number of threads on your machine
 
 *******************************************************
 Also, read the manual for details on how to run XTANT:
