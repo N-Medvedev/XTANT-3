@@ -2392,35 +2392,38 @@ subroutine communicate(FN, time, numpar, matter)
    real(8), intent(in) :: time ! current time [fs]
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
    type(Solid), intent(in) :: matter ! parameters of the material
-   integer Reason, i, MOD_TIM
+   integer :: Reason, i, MOD_TIM, sz
    character(200) :: readline, given_line, File_name
    real(8) given_num
    logical :: read_well, read_well_2, file_openeed
    
    File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt'
-   if (numpar%path_sep .EQ. '\') then	! if it is Windows
-      inquire(UNIT=FN,opened=file_opened)
-      if (file_opened) close(FN) ! for windows, we have to close the file to let the user write into it
-      ! Check if the file was modified since the last time:
-      call get_file_stat(trim(adjustl(File_name)), Last_modification_time=MOD_TIM) ! module 'Dealing_with_files'
+   inquire(UNIT=FN,opened=file_opened)
+   if (file_opened) close(FN) ! for windows, we have to close the file to let the user write into it
+   ! Check if the file was modified since the last time:
+   call get_file_stat(trim(adjustl(File_name)), Last_modification_time=MOD_TIM) ! module 'Dealing_with_files'
    
-      if (MOD_TIM /= numpar%MOD_TIME) then ! open file again only if it was modified by the user
-         numpar%MOD_TIME = MOD_TIM ! save new time of the last modification
-!          print*, MOD_TIM, numpar%MOD_TIME
-         open(UNIT=FN,FILE=trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt',ERR=7777)
+   if (MOD_TIM /= numpar%MOD_TIME) then ! open file again only if it was modified by the user
+      numpar%MOD_TIME = MOD_TIM ! save new time of the last modification
+      open(UNIT=FN,FILE=trim(adjustl(File_name)),ERR=7777)
 7777     continue ! in case if the program could not open the file
-      endif
-   else ! it is linux
-      inquire(UNIT=FN,opened=file_opened)
-      if (.not.file_opened) open(UNIT=FN,FILE=trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt',ERR=7778)
-7778     continue ! in case if the program could not open the file
    endif
    
    inquire(UNIT=FN,opened=file_opened)
+   readline = ''  ! to start with
+
    COM_OPEN:if (file_opened) then ! read it
+      rewind(FN)  ! to start reading from the start
       ! read the first line
-      read(FN,'(a)',IOSTAT=Reason) readline
+      read(FN,'(a)', IOSTAT=Reason, SIZE=sz, ADVANCE='no') readline
       call read_file(Reason, i, read_well)
+
+      if ( (.not.read_well) .and. (numpar%path_sep == '/') ) then ! if it is Linux
+         rewind(FN)  ! to start reading from the start
+         read(FN, '(a)', IOSTAT=Reason) readline(1:sz) ! read it again, now knowing the size
+         call read_file(Reason, i, read_well)
+      endif
+
       if (read_well) then
          call pars_comunications(trim(adjustl(readline)), given_line, given_num, read_well_2)
          call act_on_comunication(read_well_2, given_line, given_num, numpar, matter, time)
@@ -2437,13 +2440,13 @@ subroutine communicate(FN, time, numpar, matter)
          write(FN,'(a)') ''
          rewind(FN)
       endif
-      if (numpar%path_sep .EQ. '\') then	! if it is Windows
-         call get_file_stat(trim(adjustl(File_name)), Last_modification_time=MOD_TIM) ! module 'Dealing_with_files'
-         if (MOD_TIM /= numpar%MOD_TIME) then ! if it was modified by the user, then
-            numpar%MOD_TIME = MOD_TIM         ! save new time of the last modification
-         endif
-         close(FN) ! for windows, we have to close the file to let the user write into it
-      endif 
+
+      call get_file_stat(trim(adjustl(File_name)), Last_modification_time=MOD_TIM) ! module 'Dealing_with_files'
+      if (MOD_TIM /= numpar%MOD_TIME) then ! if it was modified by the user, then
+         numpar%MOD_TIME = MOD_TIM         ! save new time of the last modification
+      endif
+
+      close(FN) ! we have to close the file to let the user write into it
    endif COM_OPEN
 end subroutine communicate
 
@@ -2539,6 +2542,11 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
       endif
 
       select case(trim(adjustl(given_line_processed)))
+      case ('verbose', 'VERBOSE', 'Verbose')
+         print*, 'Verbose option on: XTANT will print a lot of markers for testing and debugging'
+         numpar%verbose = .true.
+         write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' verbose option was switched on'
+
       case ('time', 'TIME', 'Time', 'TIme', 'TIMe', 'tIme', 'emit', 'Vremya')
          numpar%t_total = given_num ! total duration of simulation [fs]
          print*, 'Duration of simulation is changed to', given_num
@@ -2627,8 +2635,35 @@ subroutine set_OMP_number(NOMP, prnt, FN, lin)
 end subroutine set_OMP_number
 
 
-
 subroutine pars_comunications(readline, out_line, out_num, read_well)
+   character(*), intent(in) :: readline
+   character(*), intent(out) :: out_line
+   real(8), intent(out) :: out_num
+   logical, intent(out) :: read_well
+   !---------------------------------
+   integer :: Reason, i
+   read_well = .false.
+   out_line = ''
+   out_num = 0.0d0
+
+   i = 1    ! to start with
+   read(readline, *, IOSTAT=Reason) out_line, out_num
+   call read_file(Reason, i, read_well)  ! module "Dealing_with_files"
+   if (Reason .LT. 0) then
+      print*, 'No descriptor or value found in the communication file'
+   else if (Reason .GT. 0) then
+      print*, 'Given number interpreted as', out_num, ', it does not match the variable type'
+   endif
+   if (.not.read_well) then
+      print*, 'Comunication format must be as follows:'
+      print*, 'Two columns: 1) descriptor; 2) value'
+      print*, 'Allowed descriptors: Time; dt; Save_dt; OMP'
+   endif
+end subroutine pars_comunications
+
+
+
+subroutine pars_comunications_old(readline, out_line, out_num, read_well)
    character(*), intent(in) :: readline
    character(*), intent(out) :: out_line
    real(8), intent(out) :: out_num
@@ -2732,7 +2767,7 @@ subroutine pars_comunications(readline, out_line, out_num, read_well)
       !print*, 'EMPTY FILE'
    endif
 1111 continue
-end subroutine pars_comunications
+end subroutine pars_comunications_old
 
 
 ! Reads additional data from the command line passed along with the XTANT:
