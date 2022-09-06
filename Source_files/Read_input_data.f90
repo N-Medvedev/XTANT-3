@@ -4291,53 +4291,19 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       numpar%ind_fig_extention = 1
    end select
    
-!    OPT_PARAM:if (numpar%optic_model .GT. 0) then ! if calculate optical coefficients:
-      ! number of k-points in each direction (used only for Trani-k!):
-      read(FN,*,IOSTAT=Reason) numpar%ixm, numpar%iym, numpar%izm
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
-      endif
-
-      ! initial n and k of unexcited material (used for DRUDE model only!):
-      read(FN,*,IOSTAT=Reason) Scell(NSC)%eps%n, Scell(NSC)%eps%k	! initial n and k coeffs
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
-      endif
-
-      ! [me] effective mass of CB electron and VB hole:
-      read(FN,*,IOSTAT=Reason) Scell(NSC)%eps%me_eff, Scell(NSC)%eps%mh_eff
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
-      endif
-      Scell(NSC)%eps%me_eff = Scell(NSC)%eps%me_eff*g_me	! [kg]
-      Scell(NSC)%eps%mh_eff = Scell(NSC)%eps%mh_eff*g_me	! [kg]
-
-      ! [fs] mean scattering times of electrons and holes:
-      read(FN,*,IOSTAT=Reason) Scell(NSC)%eps%tau_e, Scell(NSC)%eps%tau_h	
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
-      endif
-!    endif OPT_PARAM
+   ! number of k-points in each direction (used only for Trani-k!):
+   read(FN,*,IOSTAT=Reason) numpar%ixm, numpar%iym, numpar%izm
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 3418
+   endif
 
 
-   ! Read optional atomic data, provided by the user to overwrite default atomic data:
-   call read_user_atomic_data(FN, count_lines, matter, user_data)   ! below
+   ! Read optional data provided by the user (e.g., to overwrite default atomic data):
+   call read_user_atomic_data(FN, count_lines, matter, Scell, NSC, user_data)   ! below
 
 
    ! Close this file, it has been read through:
@@ -4346,10 +4312,12 @@ end subroutine read_numerical_parameters
 
 
 
-subroutine read_user_atomic_data(FN, count_lines, matter, user_data)
+subroutine read_user_atomic_data(FN, count_lines, matter, Scell, NSC, user_data)
    integer, intent(in) :: FN  ! file to read from
    integer, intent(inout) :: count_lines  ! line we are reading
    type(Solid), intent(in) :: matter   ! all material parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
    type(User_overwrite_data), intent(inout) :: user_data ! data to be read
    !--------------------------
    logical :: read_well
@@ -4364,24 +4332,27 @@ subroutine read_user_atomic_data(FN, count_lines, matter, user_data)
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) exit RD  ! end of file, stop reading
 
-      call interpret_user_data(FN, count_lines, read_well, text, matter, user_data) ! below
+      call interpret_user_data(FN, count_lines, read_well, text, matter, Scell, NSC, user_data) ! below
       if (.not. read_well) exit RD  ! end of file, stop reading
    enddo RD
 
 end subroutine read_user_atomic_data
 
 
-subroutine interpret_user_data(FN, count_lines, read_well, text, matter, user_data)
+subroutine interpret_user_data(FN, count_lines, read_well, text, matter, Scell, NSC, user_data)
    integer, intent(in) :: FN  ! file to read from
    integer, intent(inout) :: count_lines  ! line we are reading
    logical, intent(inout) :: read_well ! marker if the line read well
    character(*), intent(in) :: text ! what was read in the previous line
    type(Solid), intent(in) :: matter	! all material parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
    type(User_overwrite_data), intent(inout) :: user_data ! data to be read
    !-------------------------
    real(8) :: temp
    integer :: Nat, Nsh, i, temp_int(2), Reason
    character(3) :: temp_ch
+   character(150) :: Error_descript
 
    Nat = size(matter%Atoms)
    ! Find the maximal number of shells:
@@ -4391,6 +4362,36 @@ subroutine interpret_user_data(FN, count_lines, read_well, text, matter, user_da
    enddo
 
    select case (trim(adjustl(text)))
+   !--------------------------------
+   case ('DRUDE', 'Drude', 'drude')
+      ! initial n and k of unexcited material (used for DRUDE model only!):
+      read(FN,*,IOSTAT=Reason) Scell(NSC)%eps%n, Scell(NSC)%eps%k	! initial n and k coeffs
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         print*, 'Could not read line (#1)', count_lines, ' under "DRUDE" option'
+         print*, 'Default values are used: n,k=', Scell(1)%eps%n, Scell(1)%eps%k
+      endif
+
+      ! [me] effective mass of CB electron and VB hole:
+      read(FN,*,IOSTAT=Reason) Scell(NSC)%eps%me_eff, Scell(NSC)%eps%mh_eff
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         print*, 'Could not read line (#2)', count_lines, ' under "DRUDE" option'
+         print*, 'Default values are used: me,mh=', Scell(1)%eps%me_eff, Scell(1)%eps%mh_eff
+      else
+         Scell(NSC)%eps%me_eff = Scell(NSC)%eps%me_eff*g_me	! [kg]
+         Scell(NSC)%eps%mh_eff = Scell(NSC)%eps%mh_eff*g_me	! [kg]
+      endif
+
+      ! [fs] mean scattering times of electrons and holes:
+      read(FN,*,IOSTAT=Reason) Scell(NSC)%eps%tau_e, Scell(NSC)%eps%tau_h
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         print*, 'Could not read line (#3)', count_lines, ' under "DRUDE" option'
+         print*, 'Default values are used: te,th=', Scell(1)%eps%tau_e, Scell(1)%eps%tau_h
+      endif
+
+   !--------------------------------
    case ('NAME', 'Name', 'name')
       read(FN,*,IOSTAT=Reason) temp_int(1), temp_ch
       call read_file(Reason, count_lines, read_well)
@@ -4403,6 +4404,7 @@ subroutine interpret_user_data(FN, count_lines, read_well, text, matter, user_da
          user_data%do_overwrite = .true.
       endif
 
+   !--------------------------------
    case ('MASS', 'Mass', 'mass')
       read(FN,*,IOSTAT=Reason) temp_int(1), temp
       call read_file(Reason, count_lines, read_well)
@@ -4412,11 +4414,13 @@ subroutine interpret_user_data(FN, count_lines, read_well, text, matter, user_da
          user_data%do_overwrite = .true.
       endif
 
+   !--------------------------------
    case ('NO_AUGER', 'No_Auger', 'no_auger', 'Exclude_Auger', 'exclude_auger', 'EXCLUDE_AUGER')
       if (.not.allocated(user_data%auger)) allocate(user_data%auger(Nat,Nsh), source = 1.0d30)
       user_data%auger = 1.0d30   ! exclude Auger by setting time to infinity
       user_data%do_overwrite = .true.
 
+   !--------------------------------
    case ('AUGER', 'Auger', 'auger')
       read(FN,*,IOSTAT=Reason) temp_int(:), temp
       call read_file(Reason, count_lines, read_well)
@@ -4426,6 +4430,7 @@ subroutine interpret_user_data(FN, count_lines, read_well, text, matter, user_da
          user_data%do_overwrite = .true.
       endif
 
+   !--------------------------------
    case ('IP', 'Ip', 'ip', 'ionization_potential', 'Ionization_potential', 'IONIZATION_POTENTIAL')
       read(FN,*,IOSTAT=Reason) temp_int(:), temp
       call read_file(Reason, count_lines, read_well)
@@ -4435,6 +4440,7 @@ subroutine interpret_user_data(FN, count_lines, read_well, text, matter, user_da
          user_data%do_overwrite = .true.
       endif
 
+   !--------------------------------
    case ('Ne', 'ne', 'NE', 'NUMBER_OF_ELECTRONS', 'Number_of_electrons', 'Population')
       read(FN,*,IOSTAT=Reason) temp_int(:), temp
       call read_file(Reason, count_lines, read_well)
@@ -4444,6 +4450,7 @@ subroutine interpret_user_data(FN, count_lines, read_well, text, matter, user_da
          user_data%do_overwrite = .true.
       endif
 
+   !--------------------------------
    case ('Ek', 'ek', 'EK', 'Kinetic_energy', 'KINETIC_ENERGY', 'kinetic_energy')
       read(FN,*,IOSTAT=Reason) temp_int(:), temp
       call read_file(Reason, count_lines, read_well)
