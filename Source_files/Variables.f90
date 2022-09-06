@@ -65,6 +65,8 @@ subroutine deallocate_all()
    if (allocated(g_MC)) deallocate(g_MC)
    if (allocated(g_matter%Atoms)) deallocate(g_matter%Atoms)
    if (allocated(g_matter%PCF)) deallocate(g_matter%PCF)
+   if (allocated(g_numpar%mask_DOS)) deallocate(g_numpar%mask_DOS)
+   if (allocated(g_numpar%DOS_weights)) deallocate(g_numpar%DOS_weights)
 end subroutine deallocate_all
 
 

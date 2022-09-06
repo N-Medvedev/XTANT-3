@@ -182,7 +182,7 @@ pure subroutine Velocity_rescaling(Scell, i_at, ind, factr)
    Scell%MDAtoms(i_at)%SV0(ind) = Scell%MDAtoms(i_at)%SV(ind)
 end subroutine Velocity_rescaling
 
- 
+
 subroutine Get_random_velocity(T, Mass, Vx, Vy, Vz, ind)
    real(8), intent(in) :: T ! [eV] Temperature to set the velocities accordingly
    real(8), intent(in) :: Mass ! [kg] mass of the atom

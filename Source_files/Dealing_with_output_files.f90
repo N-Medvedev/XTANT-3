@@ -2518,16 +2518,13 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
    logical file_opened
    character(200) :: File_name, temp1, temp2, given_line_processed
    character(1) path_sep
+
    path_sep = trim(adjustl(numpar%path_sep))
-
-
    lngt = LEN(trim(adjustl(given_line)))    ! length of the line
-   !print*, trim(adjustl(given_line)), LEN(trim(adjustl(given_line)))
+
    ! Check if the last character is TAB:
    if (given_line(lngt:lngt) == char(9) ) then  ! remove the TAB from the line
-      !print*, 'It is a TAB character'
       given_line_processed = given_line(1:lngt-1)
-      !print*, trim(adjustl(given_line_processed)), LEN(trim(adjustl(given_line_processed))) , 'processed'
    else
       given_line_processed = given_line
    endif
@@ -2661,113 +2658,6 @@ subroutine pars_comunications(readline, out_line, out_num, read_well)
    endif
 end subroutine pars_comunications
 
-
-
-subroutine pars_comunications_old(readline, out_line, out_num, read_well)
-   character(*), intent(in) :: readline
-   character(*), intent(out) :: out_line
-   real(8), intent(out) :: out_num
-   logical, intent(out) :: read_well
-   character(LEN(readline)) partline, lastpart
-   real(8) :: newnum
-   integer :: i, leng, firstnum, coun, Reason
-   character(*), parameter :: numbers = '0123456789'
-   character(*), parameter :: plusminus = '-+'
-   logical :: allowpoint, allowminus, allowed
-   read_well = .false.
-   out_line = ''
-   out_num = 0.0d0
-   allowpoint = .true.
-   allowminus = .true.
-   allowed = .true.
-   leng = LEN(trim(adjustl(readline))) ! how many characters are in the line
-
-   !print*, readline, trim(adjustl(readline)), leng
-   if (leng .GT. 0) then
-      partline = ''
-      LENGT:do i = 1,leng ! compare all name character by character
-         if (verify(trim(adjustl(readline(i:i))),trim(adjustl(numbers))) == 0) then ! it's an integer number
-            firstnum = i
-            exit LENGT
-         endif
-      enddo LENGT
-      if (firstnum .LT. 2) goto 1111 !skip everything, there is no command to interpret
-      partline(1:firstnum-1) = readline(1:firstnum-1) ! part of line with text
-      if (firstnum .LT. leng) then ! there is some number, apparently
-         lastpart = ''
-         coun = 1
-         LENGT2:do i = firstnum-2,leng ! compare all name character by character
-            if (trim(adjustl(readline(i:i))) == ' ') goto 1112
-             if (verify(trim(adjustl(readline(i:i))),trim(adjustl(numbers))) == 0) then ! it's a number
-               lastpart(coun:coun) = readline(i:i) ! part of line with numbers
-               coun = coun + 1
-               if (.not.allowed) then
-                  allowpoint = .false. ! only one is allowed
-               endif
-               allowminus = .false. ! only one is allowed
-             else ! it's not a number, but may be a correct symbol:
-               select case(trim(adjustl(readline(i:i))))
-               case ('.') ! decimal point
-                  if (allowpoint) then
-                     lastpart(coun:coun) = readline(i:i) ! part of line with numbers
-                     coun = coun + 1
-                     allowpoint = .false. ! only one is allowed
-                     allowminus = .false. ! only one is allowed
-                  endif
-               case ('-', '+') ! exp format
-                  if (i .LT.leng) then ! after the minus/plus must be a number:
-                     if ((allowminus) .AND. ((verify(trim(adjustl(readline(i+1:i+1))),trim(adjustl(numbers))) == 0) .OR. (trim(adjustl(readline(i+1:i+1))) .EQ. '.'))) then
-                        lastpart(coun:coun) = readline(i:i) ! part of line with numbers
-                        coun = coun + 1
-                        allowminus = .false. ! only one is allowed
-                     endif
-                  endif
-               case ('e', 'd', 'E', 'D') ! exp format
-                  if ((i .LT. leng) .AND. (len(trim(adjustl(lastpart))) .GT. 0) ) then ! after the E must be a number, or a minus:
-                     if ((allowed) .AND. (verify(trim(adjustl(readline(i+1:i+1))),trim(adjustl(numbers))) == 0)) then
-                        lastpart(coun:coun) = '0' ! set 0 before any 'e' or 'd'
-                        lastpart(coun+1:coun+1) = readline(i:i) ! part of line with numbers
-                        coun = coun + 2
-                        allowed = .false. ! only one is allowed
-                     else if (i .LT. leng - 1) then ! may be first minus/plus, and then the number:
-                        if ((allowed) .AND. ((verify(trim(adjustl(readline(i+1:i+1))),trim(adjustl(plusminus))) == 0) .AND. (verify(trim(adjustl(readline(i+2:i+2))),trim(adjustl(numbers))) == 0) )) then
-                           lastpart(coun:coun) = '0' ! set 0 before any 'e' or 'd'
-                           lastpart(coun+1:coun+1) = readline(i:i) ! part of line with numbers
-                           coun = coun + 2
-                           allowed = .false. ! only one is allowed
-                           allowminus = .true. ! one more minus is allowed in the exponent 
-                        endif
-                     endif
-                  endif
-               end select
-             endif
-            1112 continue
-         enddo LENGT2
-      endif
-
-      if (LEN(trim(adjustl(lastpart))) <= 0) then ! no need to even try reading it
-         Reason = -1
-      else
-         read(lastpart,'(es25.16)',IOSTAT=Reason) newnum
-      endif
-      if (Reason .EQ. 0) then
-         read_well = .true. ! we read something meaningfull from the file
-         out_line = trim(adjustl(partline)) ! get the meaningful line out
-         if (ABS(newnum) <= 1.0d-10) then
-            read(lastpart,*) newnum
-         endif
-         out_num = newnum ! get the number out
-         !print*, 'The number read is', out_num
-      else if (Reason .LT. 0) then
-         print*, 'No number found in the comunication file'
-      else if (Reason .GT. 0) then
-         print*, 'Given number interpreted as', trim(adjustl(lastpart)), ', it does not match the variable type'
-      endif
-   else 
-      !print*, 'EMPTY FILE'
-   endif
-1111 continue
-end subroutine pars_comunications_old
 
 
 ! Reads additional data from the command line passed along with the XTANT:
