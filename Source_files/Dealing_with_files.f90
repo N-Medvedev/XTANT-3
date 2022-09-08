@@ -217,19 +217,27 @@ subroutine Count_lines_in_file(File_num, N, skip_lines)
 end subroutine Count_lines_in_file
 
 
-subroutine copy_file(file_to_copy, folder_copy_to, OS_ind)
+subroutine copy_file(file_to_copy, folder_copy_to, OS_ind, add_com)
    character(len=*), intent(in) :: file_to_copy, folder_copy_to
    integer, intent(in), optional :: OS_ind ! windows or linux
-   character(200) command
+   character(len=*), intent(in), optional :: add_com  ! additional options provided (such as /Y /F)
+   character(250) command, add_option
+
+   if (present(add_com)) then
+      add_option = add_com
+   else
+      add_option = ''   ! no additional options
+   endif
+
    if (present(OS_ind)) then
       select case (OS_ind)
       case (0) ! linux
-         command='cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))   
+         command='/cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))//trim(adjustl(add_option))
       case default ! assume windows
-         command='xcopy '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))
+         command='xcopy '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))//trim(adjustl(add_option))
       end select
    else ! assume linux
-      command='cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))
+      command='/cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))//trim(adjustl(add_option))
    endif
    CALL system(command)
 end subroutine copy_file

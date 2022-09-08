@@ -4707,13 +4707,31 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
     if (allocated(laser)) deallocate(laser)
     allocate(laser(N))  ! that's how many pulses
     do i = 1, N         ! read parameters for all pulses
-      read(FN,*,IOSTAT=Reason) laser(i)%F	  ! ABSORBED DOSE IN [eV/atom]
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
+      read_var = 0.0d0 ! to start with
+      read(FN,*,IOSTAT=Reason) read_var(:)
+      if (Reason == 0) then ! three numbers are given, set few inputs with varying dose:
+         call read_file(Reason, count_lines, read_well)  ! to keep proper counting of lines, do this
+         if (.not. read_well) then
+            write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3417
+         endif
+         ! For this simulation run, use the first value given:
+         laser(i)%F = read_var(1)   ! ABSORBED DOSE IN [eV/atom]
+         ! For other simulation runs, create the input files accordingly:
+         call prepare_multiple_inputs(numpar, File_name, read_var)  ! below
+
+      else ! probably, there weren't three parameters in the line, so read just the fluence
+         backspace(FN)  ! get back and try to read the line again:
+         read(FN,*,IOSTAT=Reason) laser(i)%F	  ! ABSORBED DOSE IN [eV/atom]
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3417
+         endif
       endif
 
       read(FN,*,IOSTAT=Reason) laser(i)%hw  ! PHOTON ENERGY IN [eV]
@@ -4811,6 +4829,98 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
    ! Close this file, it has been read through:
 3417  if (file_opened) close(FN)
 end subroutine read_input_material
+
+
+
+subroutine prepare_multiple_inputs(numpar, File_name, read_var)
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   character(*), intent(in) :: File_name  ! given filename
+   real(8), dimension(3), intent(in) :: read_var   ! fluence: starting, ending, step; all in [eV/atom]
+   !-----------------------------------
+   real(8) :: dose_cur
+   integer :: N, i, FN, FN2, file_len, count_lines, j, N_lines, Reason, sz
+   character(250) :: Save_file, Cur_file, Num_par_file
+   character(250), allocatable, dimension(:) :: File_content
+   character(5) :: chtest2
+   logical :: read_well
+
+   ! Get the total number of fluence points:
+   N = ceiling(abs(read_var(2) - read_var(1))/abs(read_var(3)))
+
+   ! Set the name of the numerical_parameters file:
+   Num_par_file = trim(adjustl(numpar%input_path))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+
+   ! Set temporary file name:
+   file_len = LEN(trim(adjustl(File_name)))  ! length of the string
+   Save_file = trim(adjustl(File_name(1:file_len-4)))//'_SAVE.txt'
+
+   ! Create the temporary save file
+   if (numpar%path_sep .EQ. '\') then	! if it is Windows
+      call copy_file(File_name, Save_file, 1, add_com='* /YQ') ! module "Dealing_with_files"
+   else
+      call copy_file(File_name, Save_file) ! module "Dealing_with_files"
+   endif
+
+   ! Open the file:
+   FN=4000
+   open(UNIT=FN, FILE = trim(adjustl(Save_file)), status = 'old', action='read')
+   call Count_lines_in_file(FN, N_lines)  ! module "Dealing_with_files"
+   ! Knowing the size, allocate the array:
+   allocate(File_content(N_lines))
+   ! Read the saved file:
+   count_lines = 0   ! to start with
+   do j = 1, N_lines
+      read(FN, '(a)', IOSTAT=Reason) File_content(j)   ! read the current line
+      call read_file(Reason, count_lines, read_well)   ! modlue "Dealing_with_files"
+      if ( (.not.read_well) .and. (numpar%path_sep == '/') ) then ! if it is Linux
+         backspace(FN)  ! to reread the line
+         count_lines = count_lines - 1 ! reread the same line, don't count it as the next one
+         read(FN, '(a)', IOSTAT=Reason) File_content(j)(1:sz) ! read it again, now knowing the size
+         call read_file(Reason, count_lines, read_well) ! modlue "Dealing_with_files"
+      endif
+      if (.not.read_well) then
+         print*, 'Problem in prepare_multiple_inputs: cannot read line ', count_lines, ' in file '//trim(adjustl(Cur_file))
+         goto 3440
+      endif
+   enddo
+   ! Close files:
+   call close_file('delete', FN=FN) ! module "Dealing_with_files"
+
+   ! Make a new copy of the input file with the changed fluence only:
+   do i = 1, N
+      ! Set the new dose:
+      dose_cur = read_var(1) + dble(i)*read_var(3)
+
+      ! Set the new file name:
+      FN2=FN+i
+      write(chtest2,'(i5)') i
+      Cur_file = trim(adjustl(File_name(1:file_len-4)))//'_'//trim(adjustl(chtest2))//'.txt'
+      open(UNIT=FN2, FILE = trim(adjustl(Cur_file)))
+
+      ! Copy data into this new file, accept for the fluence line:
+      do j = 1, N_lines
+         if (j == 8) then  ! dose is set in the line #8
+            write(FN2, '(f16.6,a)') dose_cur, '          ! absorbed dose [eV/atom]'
+         else  ! not the dose
+            write(FN2, '(a)') File_content(j)   ! just copy this line
+         endif
+      enddo
+
+      call close_file('close', FN=FN2) ! module "Dealing_with_files"
+
+      ! Also, make a copy of the numerical_parameters file:
+      Cur_file = trim(adjustl(numpar%input_path))//trim(adjustl(m_NUMERICAL_PARAMETERS))
+      write(Cur_file,'(a,a,a,a)') trim(adjustl(Cur_file)), '_', trim(adjustl(chtest2)), '.txt'
+      ! Create the temporary save file
+      if (numpar%path_sep .EQ. '\') then	! if it is Windows
+         call copy_file(Num_par_file, Cur_file, 1, add_com='* /YQ') ! module "Dealing_with_files"
+      else
+         call copy_file(Num_par_file, Cur_file) ! module "Dealing_with_files"
+      endif
+   enddo
+
+3440 continue
+end subroutine prepare_multiple_inputs
 
 
 
