@@ -4842,6 +4842,7 @@ subroutine prepare_multiple_inputs(numpar, File_name, read_var)
    character(250) :: Save_file, Cur_file, Num_par_file
    character(250), allocatable, dimension(:) :: File_content
    character(5) :: chtest2
+   character(25) :: chtest
    logical :: read_well
 
    ! Get the total number of fluence points:
@@ -4900,9 +4901,10 @@ subroutine prepare_multiple_inputs(numpar, File_name, read_var)
       ! Copy data into this new file, accept for the fluence line:
       do j = 1, N_lines
          if (j == 8) then  ! dose is set in the line #8
-            write(FN2, '(f16.6,a)') dose_cur, '          ! absorbed dose [eV/atom]'
+            write(chtest, '(f16.5)') dose_cur
+            write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! absorbed dose [eV/atom]'
          else  ! not the dose
-            write(FN2, '(a)') File_content(j)   ! just copy this line
+            write(FN2, '(a)') trim(adjustl(File_content(j)))   ! just copy this line
          endif
       enddo
 
