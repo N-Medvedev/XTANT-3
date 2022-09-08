@@ -232,12 +232,12 @@ subroutine copy_file(file_to_copy, folder_copy_to, OS_ind, add_com)
    if (present(OS_ind)) then
       select case (OS_ind)
       case (0) ! linux
-         command='/cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))//trim(adjustl(add_option))
+         command='cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))//trim(adjustl(add_option))
       case default ! assume windows
          command='xcopy '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))//trim(adjustl(add_option))
       end select
    else ! assume linux
-      command='/cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))//trim(adjustl(add_option))
+      command='cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))//trim(adjustl(add_option))
    endif
    CALL system(command)
 end subroutine copy_file
