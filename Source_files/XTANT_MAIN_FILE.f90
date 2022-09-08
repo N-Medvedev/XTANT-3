@@ -63,7 +63,7 @@ open(UNIT = g_Err%File_Num, FILE = 'OUTPUT_Error_log.dat')
 
 ! Check if the user needs any additional info (by setting the flags):
 call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_Err%Err, &
-                  allow_rotate=g_numpar%allow_rotate, verbose=g_numpar%verbose) ! module "Dealing_with_output_files"
+                  allow_rotate=g_numpar%allow_rotate, verbose=g_numpar%verbose) ! module "Read_input_data"
 if (g_numpar%verbose) call print_time_step('Verbose option is on, XTANT is going to be a chatterbox', msec=.true.)
 
 if (g_Err%Err) goto 2016     ! if the USER does not want to run the calculations

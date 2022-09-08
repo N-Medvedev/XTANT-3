@@ -48,6 +48,9 @@ implicit none
 ! Modular parameters:
 character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
 
+character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
+character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT info
+character(15), parameter :: m_HELP_file = 'HELP.txt'  ! file with the helpful info
 
 parameter (m_INPUT_directory = 'INPUT_DATA')
 parameter (m_INPUT_MATERIAL = 'INPUT_MATERIAL')
@@ -4615,7 +4618,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
    real(8) read_var(3) ! just to read variables from file
    integer FN, N, Reason, count_lines, i
    logical file_opened, read_well
-   character(100) Error_descript
+   character(100) Error_descript, text
 
    !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old')
    FN=109
@@ -4824,6 +4827,18 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
          goto 3417
       endif
       Scell(i)%eps%teta = Scell(i)%eps%teta*g_Pi/(180.0d0) !c [radians]
+
+      ! Check if there are additional options provided:
+      read_well = .true.   ! to start with
+      RDID: do while (read_well)
+         read(FN,*,IOSTAT=Reason) text
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) exit RDID  ! end of file, stop reading
+
+         call interpret_user_data_INPUT(FN, trim(adjustl(File_name)), count_lines, text, numpar, Err) ! below
+      enddo RDID
+      if (g_numpar%verbose) call print_time_step('Verbose option is on, XTANT is going to be a chatterbox', msec=.true.)
+
    enddo SCL
 
    ! Close this file, it has been read through:
@@ -4831,22 +4846,75 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
 end subroutine read_input_material
 
 
+subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, numpar, Err) ! below
+   integer, intent(in) :: FN  ! file to read from
+   character(*), intent(in) :: File_name
+   integer, intent(inout) :: count_lines  ! line we are reading
+   character(*), intent(in) :: string ! what was read in the previous line
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !--------------------------
+   real(8), dimension(3) :: read_var   ! fluence: starting, ending, step; all in [eV/atom]
+   integer :: Reason, num_phon
+   logical :: read_well
 
-subroutine prepare_multiple_inputs(numpar, File_name, read_var)
+   read_well = .true.   ! to start with
+   read_var = 0.0d0     ! unused variable in this case
+
+   select case (trim(adjustl(string)))
+   case ('el-ph', 'EL-PH', 'El-Ph', 'Coupling', 'COUPLING', 'coupling')
+      read(FN,*,IOSTAT=Reason) num_phon   ! number of simulations for average electron-phonon coupling parameter
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then ! pass the number of simulations
+         call prepare_multiple_inputs(numpar, File_name, read_var, .true., num_phon, string=trim(adjustl(string)))   ! below
+      else ! use default nuber of iterations
+         call prepare_multiple_inputs(numpar, File_name, read_var, .true., string=trim(adjustl(string))) ! below
+      endif
+
+   case default
+      ! Check if the user needs any additional info (by setting the flags):
+      call interprete_additional_data(string, numpar%path_sep, change_size=numpar%change_size, contin=Err%Err, &
+                  allow_rotate=numpar%allow_rotate, verbose=numpar%verbose) ! module "Read_input_data"
+
+   endselect
+end subroutine interpret_user_data_INPUT
+
+
+
+subroutine prepare_multiple_inputs(numpar, File_name, read_var, do_eph, num_phon, string)
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    character(*), intent(in) :: File_name  ! given filename
    real(8), dimension(3), intent(in) :: read_var   ! fluence: starting, ending, step; all in [eV/atom]
+   logical, intent(in), optional :: do_eph  ! for electron-phonon coupling, it requires special multiple input
+   integer, intent(in), optional :: num_phon ! how many simulation for average electron-phonon coupling
+   character(*), intent(in), optional :: string
    !-----------------------------------
-   real(8) :: dose_cur
+   real(8) :: dose_cur, RN, x_cur, x_0, pulse
    integer :: N, i, FN, FN2, file_len, count_lines, j, N_lines, Reason, sz
    character(250) :: Save_file, Cur_file, Num_par_file
    character(250), allocatable, dimension(:) :: File_content
    character(5) :: chtest2
    character(25) :: chtest
-   logical :: read_well
+   logical :: read_well, do_el_phon
 
-   ! Get the total number of fluence points:
-   N = ceiling(abs(read_var(2) - read_var(1))/abs(read_var(3)))
+   ! Check, if user requested average electron-phonon coupling calculations:
+   if (present(do_eph)) then
+      do_el_phon = do_eph
+   else  ! not average electron-phonon calculations
+      do_el_phon = .false.
+   endif
+
+   ! Check, if it is fluence grid, or electron-phonon grid:
+   if (do_el_phon) then
+      if (present(num_phon)) then   ! user provided number of points
+         N = num_phon-1
+      else  ! use default value:
+         N = 10
+      endif
+   else ! then must be the fluence points:
+      ! Get the total number of fluence points:
+      N = ceiling(abs(read_var(2) - read_var(1))/abs(read_var(3)))
+   endif
 
    ! Set the name of the numerical_parameters file:
    Num_par_file = trim(adjustl(numpar%input_path))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
@@ -4900,13 +4968,62 @@ subroutine prepare_multiple_inputs(numpar, File_name, read_var)
 
       ! Copy data into this new file, accept for the fluence line:
       do j = 1, N_lines
-         if (j == 8) then  ! dose is set in the line #8
-            write(chtest, '(f16.5)') dose_cur
-            write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! absorbed dose [eV/atom]'
-         else  ! not the dose
-            write(FN2, '(a)') trim(adjustl(File_content(j)))   ! just copy this line
-         endif
-      enddo
+
+         if (do_el_phon) then ! it is electron-phonon calculations, requires changing a few parameters:
+            select case (j)
+            case default
+               if (present(string)) then
+                  if (trim(adjustl(File_content(j))) /= string) then ! don't make extra copies of the file
+                     write(FN2, '(a)') trim(adjustl(File_content(j)))   ! just copy this line
+                  endif
+               else
+                  write(FN2, '(a)') trim(adjustl(File_content(j)))   ! just copy this line
+               endif
+            case (5) ! start of simulation [fs]
+               ! Get the user-provided simulation time:
+               read( File_content(j), *, IOSTAT=Reason) x_0
+               ! Sample randomly simulation starting time:
+               call random_number(RN)  ! [0:1]
+               x_cur = x_0 * (1.0d0 + 0.2d0*(RN-0.5d0))
+               write(chtest, '(f16.5)') x_cur
+               write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! start of simulation [fs]'
+            case (6) ! end of simulation [fs]
+               ! Get the user-provided simulation time:
+               read( File_content(j), *, IOSTAT=Reason) x_0
+               ! Sample randomly simulation starting time:
+               call random_number(RN)  ! [0:1]
+               x_cur = x_0 * (1.0d0 + 0.5d0*(RN-0.5d0))
+               pulse = x_cur  ! save it for later, to set pulse duration equal to this value
+               write(chtest, '(f16.5)') x_cur
+               write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! end of simulation time [fs]'
+            case (8) ! absorbed dose per this pulse [eV/atom] (min, max, step)
+               ! Get the user-provided simulation time:
+               read( File_content(j), *, IOSTAT=Reason) x_0
+               ! Sample randomly simulation starting time:
+               call random_number(RN)  ! [0:1]
+               x_cur = x_0 * (1.0d0 + 0.2d0*(RN-0.5d0))
+               write(chtest, '(f16.5)') x_cur
+               write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! absorbed dose per this pulse [eV/atom]'
+            case (10)   ! pulse FWHM-duration [fs]
+               write(chtest, '(f16.5)') pulse
+               write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! pulse FWHM-duration [fs]'
+            end select
+
+         else ! it is fluence grid:
+            if (j == 8) then  ! dose is set in the line #8
+               write(chtest, '(f16.5)') dose_cur
+               write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! absorbed dose [eV/atom]'
+            else  ! not the dose
+               if (present(string)) then
+                  if (trim(adjustl(File_content(j))) /= string) then ! don't make extra copies of the file
+                     write(FN2, '(a)') trim(adjustl(File_content(j)))   ! just copy this line
+                  endif
+               else
+                  write(FN2, '(a)') trim(adjustl(File_content(j)))   ! just copy this line
+               endif
+            endif
+         endif ! (do_el_phon)
+      enddo ! j = 1, N_lines
 
       call close_file('close', FN=FN2) ! module "Dealing_with_files"
 
@@ -4923,6 +5040,161 @@ subroutine prepare_multiple_inputs(numpar, File_name, read_var)
 
 3440 continue
 end subroutine prepare_multiple_inputs
+
+
+
+
+
+
+! Reads additional data from the command line passed along with the XTANT:
+subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose)
+   character(1), intent(inout) :: path_sep
+   logical, intent(inout) :: change_size
+   logical, intent(out) :: contin
+   logical, intent(out) :: allow_rotate
+   logical, intent(out) :: verbose
+   !---------------
+   character(1000) :: string
+   integer :: i_arg, count_args, N_arg
+   logical :: read_well
+
+   ! Default values:
+   change_size = .false. ! don't do changing size
+   verbose = .false.   ! don't print a lot of stuff
+
+   ! Identify the OS by the system-used path separator:
+   call Path_separator(path_sep) ! module "Dealing_with_files"
+
+   ! Count how many arguments the user provided:
+   N_arg = COMMAND_ARGUMENT_COUNT() ! Fortran intrinsic function
+
+   read_well = .true.   ! to start with
+   count_args = 0 ! to start with
+
+   ALLARG:do i_arg = 1, N_arg ! read all the arguments passed
+      ! Read the argument provided:
+      call GET_COMMAND_ARGUMENT(i_arg,string)  ! intrinsic
+
+      ! Act on the command passed:
+      call interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose)  ! below
+
+   enddo ALLARG
+end subroutine get_add_data
+
+
+subroutine interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose)
+   character(*), intent(in) :: string
+   character(1), intent(inout) :: path_sep
+   logical, intent(inout), optional :: change_size
+   logical, intent(out), optional :: contin
+   logical, intent(out), optional :: allow_rotate
+   logical, intent(out), optional :: verbose
+   !---------------
+   character(1000) :: read_string, printline, ch_temp
+   character(200) :: starline, file_name
+   integer :: FN, Reason, count_lines
+   logical :: file_opened, read_text_well, read_well
+
+   starline = '*******************************************************'
+
+   select case (trim(adjustl(string)))
+   case ('verbose', '-verbose', 'VERBOSE', '-VERBOSE', 'Verbose', '-Verbose')
+      print*, 'XTANT will print a lot of markers for testing and debugging'
+      if (present(verbose)) verbose = .true.
+      write(*,'(a)') trim(adjustl(starline))
+
+   case ('-allow_rotation', '-allow_rotate', '-no_ang_removal', 'allow_rotation', 'allow_rotate', 'no_ang_removal')
+      print*, 'The angular momenta of the sample will not be removed'
+      if (present(allow_rotate)) allow_rotate = .true. ! don't remove angular momentum from initial conditions
+      write(*,'(a)') trim(adjustl(starline))
+
+   case ('-size', '-Size', '-SIZE', 'size', 'Size', 'SIZE')
+      print*, 'Supercell size variation will be performed to plot potential energy curve'
+      if (present(change_size)) change_size = .true. ! do changing size
+      write(*,'(a)') trim(adjustl(starline))
+
+   case ('-test', 'test', 'TEST', 'Test')
+      print*, 'Wow, it really works!'
+      !if (present(contin)) contin = .false.
+      write(*,'(a)') trim(adjustl(starline))
+
+   case ('-help', '-HELP', '-Help', 'help', 'HELP', 'Help')
+      ! Filename with help:
+      file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_HELP_file))
+
+      inquire(file=trim(adjustl(file_name)),exist=file_exists)
+      if (.not.file_exists) then ! no file, cannot print help
+         write(*,'(a)') 'Could not find file ', trim(adjustl(file_name))
+         write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+      else ! (.not.file_exists)
+         FN=200
+         open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'old', action='READ')
+         inquire(file=trim(adjustl(file_name)),opened=file_opened)
+         if (.not.file_opened) then
+            write(*,'(a)') 'Could not open file ', trim(adjustl(file_name))
+            write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+         else ! (.not.file_opened)
+            read_text_well = .true. ! to start with
+            count_lines = 0   ! to start with
+            do while (read_text_well)
+               read(FN,'(a)',IOSTAT=Reason) printline
+               call read_file(Reason, count_lines, read_text_well)   ! module "Dealing_with_files"
+               if (Reason > 0) then   ! something wrong in the line
+                  write(*,'(a)') 'Problem reading file '//trim(adjustl(file_name))
+                  write(ch_temp, '(i)') count_lines
+                  write(*,'(a)') 'in line '//trim(adjustl(ch_temp))
+                  read_well = .false.
+               elseif (Reason < 0) then ! end of file reached ...
+                  close(FN)
+               else
+                  write(*,'(A)') trim(adjustl(printline))
+               endif
+            enddo
+         endif ! (.not.file_opened)
+      endif ! (.not.file_exists)
+
+      write(*,'(a)') trim(adjustl(starline))
+      if (present(contin)) contin = .true.  ! stop calculations, user only wanted some help
+   case ('-info', '-INFO', '-Info', 'info', 'INFO', 'Info')
+      ! Filename with help:
+      file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_INFO_file))
+
+      inquire(file=trim(adjustl(file_name)),exist=file_exists)
+      if (.not.file_exists) then ! no file, cannot print help
+         write(*,'(a)') 'Could not find file ', trim(adjustl(file_name))
+         write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+      else ! (.not.file_exists)
+         FN=201
+         open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'old', action='READ')
+         inquire(file=trim(adjustl(file_name)),opened=file_opened)
+         if (.not.file_opened) then
+            write(*,'(a)') 'Could not open file ', trim(adjustl(file_name))
+            write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+         else ! (.not.file_opened)
+            read_text_well = .true. ! to start with
+            count_lines = 0   ! to start with
+            do while (read_text_well)
+               read(FN,'(a)',IOSTAT=Reason) printline
+               call read_file(Reason, count_lines, read_text_well)   ! module "Dealing_with_files"
+               if (Reason > 0) then   ! something wrong in the line
+                  write(*,'(a)') 'Problem reading file '//trim(adjustl(file_name))
+                  write(ch_temp, '(i)') count_lines
+                  write(*,'(a)') 'in line '//trim(adjustl(ch_temp))
+                  read_well = .false.
+               elseif (Reason < 0) then ! end of file reached ...
+                  close(FN)
+               else
+                  write(*,'(A)') trim(adjustl(printline))
+               endif
+            enddo
+         endif ! (.not.file_opened)
+      endif ! (.not.file_exists)
+
+      write(*,'(a)') trim(adjustl(starline))
+      if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
+   case default
+   end select
+end subroutine interprete_additional_data
 
 
 
