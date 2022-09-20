@@ -27,7 +27,7 @@ MODULE TB_Fu
 use Universal_constants
 use TB_Koster_Slater
 use Objects
-use Variables
+!use Variables
 use Algebra_tools
 use Little_subroutines
 use Atomic_tools

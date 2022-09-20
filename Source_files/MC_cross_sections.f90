@@ -26,7 +26,7 @@
 MODULE MC_cross_sections
 use Objects
 use Universal_constants
-use Variables
+!use Variables
 use Little_subroutines, only : Find_in_array_monoton, linear_interpolation, print_progress, interpolate_data_on_grid
 use Dealing_with_files
 use Dealing_with_EADL, only : m_EPDL_file, READ_EPDL_TYPE_FILE_real, next_designator, Read_EPDL_data

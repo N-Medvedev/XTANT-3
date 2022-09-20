@@ -26,7 +26,7 @@
 MODULE Read_input_data
 use Objects
 use Universal_constants
-use Variables
+!use Variables
 use Little_subroutines
 use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
@@ -283,7 +283,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    
    NEW_FORMAT:if (file_exist) then ! read parameters from the new file format
       call read_input_txt(File_name, Scell, matter, numpar, laser, Err) ! see above
-      if (g_Err%Err) goto 3416
+      if (Err%Err) goto 3416
    else NEW_FORMAT ! Then use old format of two files
       ! First read material and pulse parameters:
       if (.not.present(Numb)) then ! first run, use default files:
@@ -298,7 +298,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       inquire(file=trim(adjustl(File_name)),exist=file_exist)
       INPUT_MATERIAL:if (file_exist) then
          call read_input_material(File_name, Scell, matter, numpar, laser, Err) ! see below
-         if (g_Err%Err) goto 3416
+         if (Err%Err) goto 3416
       else
          write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
          call Save_error_details(Err, 1, Error_descript)
@@ -320,7 +320,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       inquire(file=trim(adjustl(File_name)),exist=file_exist)
       NUMERICAL_PARAMETERS:if (file_exist) then
          call read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err) ! see below
-         if (g_Err%Err) goto 3416
+         if (Err%Err) goto 3416
       else
          write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
          call Save_error_details(Err, 1, Error_descript)
@@ -3517,7 +3517,7 @@ subroutine read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript
    character(100) :: Folder_name, File_name
    character(200) :: Filename_onsite, Filename_2body, Filename_3body
    integer count_lines, Reason, FN_onsite, FN_2bdy, FN_3bdy, N_basis_siz
-   logical file_exist, file_opened, read_well
+   logical file_exist, file_opened, read_well, file_exists
 
    ! To start with:
    INFO = 0
@@ -4837,7 +4837,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
 
          call interpret_user_data_INPUT(FN, trim(adjustl(File_name)), count_lines, text, numpar, Err) ! below
       enddo RDID
-      if (g_numpar%verbose) call print_time_step('Verbose option is on, XTANT is going to be a chatterbox', msec=.true.)
+      if (numpar%verbose) call print_time_step('Verbose option is on, XTANT is going to be a chatterbox', msec=.true.)
 
    enddo SCL
 
@@ -5093,7 +5093,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
    character(1000) :: read_string, printline, ch_temp
    character(200) :: starline, file_name
    integer :: FN, Reason, count_lines
-   logical :: file_opened, read_text_well, read_well
+   logical :: file_opened, read_text_well, read_well, file_exists
 
    starline = '*******************************************************'
 

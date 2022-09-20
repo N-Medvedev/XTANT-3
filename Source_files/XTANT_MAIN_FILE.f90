@@ -173,7 +173,7 @@ if (g_numpar%verbose) call print_time_step('DOS calculated succesfully:', msec=.
 call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
                   g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne) ! module "TB"
 if (g_numpar%verbose) call print_time_step('Mulliken charges calculated succesfully:', msec=.true.)
-      
+
 ! Get the pressure in the atomic system:
 call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure,  g_Scell(1)%Stress)	! module "TB"
 if (g_numpar%verbose) call print_time_step('Pressure calculated succesfully:', msec=.true.)
@@ -184,7 +184,7 @@ if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesf
 
 ! Calculate configurational temperature:
 ! call Get_configurational_temperature(g_Scell, g_numpar, g_Scell(1)%Tconf)	! module "TB"
-   
+
 ! Save initial step in output:
 call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
 if (g_numpar%verbose) call print_time_step('Initial output files set succesfully:', msec=.true.)

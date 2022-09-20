@@ -37,7 +37,7 @@
 MODULE Coulomb
 use Universal_constants
 use Objects
-use Variables
+!use Variables
 use Little_subroutines
 use Atomic_tools
 

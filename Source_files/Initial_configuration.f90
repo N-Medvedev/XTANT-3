@@ -27,7 +27,7 @@
 MODULE Initial_configuration
 use Universal_constants
 use Objects
-use Variables
+!use Variables
 use Algebra_tools
 use Dealing_with_files
 use Atomic_tools

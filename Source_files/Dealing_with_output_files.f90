@@ -61,7 +61,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
       ! All subroutines for saving output data into files are within this file below:
       call update_save_files(time, Scell(NSC)%MDatoms, matter, numpar, Scell(NSC))
       call write_temperatures_n_displacements(numpar%FN_temperatures, time, Scell(NSC)%Te, Scell(NSC)%Ta,  &
-                                                      Scell(NSC)%Ta_sub, g_Scell(NSC)%MSD, g_Scell(NSC)%MSDP)
+                                                      Scell(NSC)%Ta_sub, Scell(NSC)%MSD, Scell(NSC)%MSDP)
       ! Renormalization to printing units:
       Pressure = Scell(NSC)%Pressure * 1.0d-9
       Stress = Scell(NSC)%Stress * 1.0d-9
@@ -70,7 +70,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_pressure(numpar%FN_pressure, time, Pressure, Stress)
       call write_energies(numpar%FN_energies, time, nrg)
       call write_numbers(numpar%FN_numbers, time, Scell(NSC))
-      call write_holes(g_numpar%FN_deep_holes, time, matter, Scell(NSC))
+      call write_holes(numpar%FN_deep_holes, time, matter, Scell(NSC))
       if (numpar%save_raw) call write_atomic_relatives(numpar%FN_atoms_S, Scell(NSC)%MDatoms)
       call write_super_cell(numpar%FN_supercell, time, Scell(NSC))
       call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter)
@@ -1102,10 +1102,10 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') './OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
       endif
-      if (g_numpar%save_Ei) then
+      if (numpar%save_Ei) then
          write(FN, '(a)') './OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
       endif
-      if (g_numpar%save_fe) then
+      if (numpar%save_fe) then
          write(FN, '(a)') './OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (numpar%DOS_splitting >= 1) then   ! Mulliken charges
@@ -1148,65 +1148,65 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
 
    ! Energies:
    File_name  = trim(adjustl(file_path))//'OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_energies(File_name, file_energies, t0, t_last, 'OUTPUT_energies.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_energies(numpar, File_name, file_energies, t0, t_last, 'OUTPUT_energies.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Temepratures:
    File_name  = trim(adjustl(file_path))//'OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_temperatures(File_name, file_temperatures, t0, t_last, 'OUTPUT_temepratures.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_temperatures(numpar, File_name, file_temperatures, t0, t_last, 'OUTPUT_temepratures.'//trim(adjustl(numpar%fig_extention))) ! below
    
    ! Mean square displacement:
    File_name  = trim(adjustl(file_path))//'OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_MSD(File_name, file_temperatures, t0, t_last, 'OUTPUT_mean_displacement.'//trim(adjustl(g_numpar%fig_extention)), &
-                g_numpar%MSD_power) ! below
+   call gnu_MSD(File_name, file_temperatures, t0, t_last, 'OUTPUT_mean_displacement.'//trim(adjustl(numpar%fig_extention)), &
+                numpar%MSD_power) ! below
    
    ! Pressure:
    File_name  = trim(adjustl(file_path))//'OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_pressure(File_name, file_pressure, t0, t_last, 'OUTPUT_pressure.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_pressure(File_name, file_pressure, t0, t_last, 'OUTPUT_pressure.'//trim(adjustl(numpar%fig_extention))) ! below
    
    ! Stress tensor:
    File_name  = trim(adjustl(file_path))//'OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_stress(File_name, file_pressure, t0, t_last, 'OUTPUT_pressure_tensor.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_stress(File_name, file_pressure, t0, t_last, 'OUTPUT_pressure_tensor.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Numbers of particles:
    File_name  = trim(adjustl(file_path))//'OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_numbers(File_name, file_numbers, t0, t_last, 'OUTPUT_electrons_holes.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_numbers(File_name, file_numbers, t0, t_last, 'OUTPUT_electrons_holes.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Numbers of CB electrons:
    File_name  = trim(adjustl(file_path))//'OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_CB_electrons(File_name, file_numbers, t0, t_last, 'OUTPUT_CB_electrons.'//trim(adjustl(g_numpar%fig_extention)))
+   call gnu_CB_electrons(File_name, file_numbers, t0, t_last, 'OUTPUT_CB_electrons.'//trim(adjustl(numpar%fig_extention)))
 
    ! Numbers of deep-shell holes:
    File_name  = trim(adjustl(file_path))//'OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_holes(File_name, file_deep_holes, t0, t_last, matter, 'OUTPUT_deep_shell_holes.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_holes(File_name, file_deep_holes, t0, t_last, matter, 'OUTPUT_deep_shell_holes.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Chemical potential and band gap:
    File_name  = trim(adjustl(file_path))//'OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_Egap(File_name, file_electron_properties, t0, t_last, 'OUTPUT_mu_and_Egap.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_Egap(File_name, file_electron_properties, t0, t_last, 'OUTPUT_mu_and_Egap.'//trim(adjustl(numpar%fig_extention))) ! below
    
    ! Boundaries of the bands:
    File_name  = trim(adjustl(file_path))//'OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_Ebands(File_name, file_electron_properties, t0, t_last, 'OUTPUT_bands.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_Ebands(File_name, file_electron_properties, t0, t_last, 'OUTPUT_bands.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Electron heat capacity:
    File_name  = trim(adjustl(file_path))//'OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
-   call gnu_capacity(File_name, file_electron_properties, t0, t_last, 'OUTPUT_electron_Ce.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_capacity(File_name, file_electron_properties, t0, t_last, 'OUTPUT_electron_Ce.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Electron-ion coupling parameter:
    File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
-   call gnu_coupling(File_name, file_electron_properties, t0, t_last, 'OUTPUT_coupling.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_coupling(File_name, file_electron_properties, t0, t_last, 'OUTPUT_coupling.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Volume:
    File_name  = trim(adjustl(file_path))//'OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_volume(File_name, file_supercell, t0, t_last, 'OUTPUT_volume.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_volume(File_name, file_supercell, t0, t_last, 'OUTPUT_volume.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Energy levels:
-   if (g_numpar%save_Ei) then
+   if (numpar%save_Ei) then
       ! Find order of the number, and set number of tics as tenth of it:
       call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
       File_name  = trim(adjustl(file_path))//'OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-      call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 0.2d0, x_tics, 'Energy levels', 'Time (fs)', 'Energy levels (eV)', 'OUTPUT_energy_levels.'//trim(adjustl(g_numpar%fig_extention)), g_numpar%path_sep, setkey=4)
+      call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 0.2d0, x_tics, 'Energy levels', 'Time (fs)', 'Energy levels (eV)', 'OUTPUT_energy_levels.'//trim(adjustl(numpar%fig_extention)), numpar%path_sep, setkey=4)
       
       call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_energy_levels.dat')
       call write_gnuplot_script_ending(FN, File_name, 1)
@@ -1216,23 +1216,23 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    ! Mulliken charges:
    if (numpar%Mulliken_model >= 1) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
-      call gnu_Mulliken_charges(File_name, file_electron_properties, t0, t_last, 'OUTPUT_Mulliken_charges.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_Mulliken_charges(File_name, file_electron_properties, t0, t_last, 'OUTPUT_Mulliken_charges.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
    
    ! Nearest neighbors:
    if (numpar%save_NN) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
-      call gnu_nearest_neighbors(File_name, file_NN, t0, t_last, 'OUTPUT_nearest_neighbors.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_nearest_neighbors(File_name, file_NN, t0, t_last, 'OUTPUT_nearest_neighbors.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
    
    ! Distribution function of electrons:
-   if (g_numpar%save_fe) then
+   if (numpar%save_fe) then
       ! Find order of the number, and set number of tics as tenth of it:
       call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-      call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_electron_distribution.'//trim(adjustl(g_numpar%fig_extention)), g_numpar%path_sep, setkey=4)
+      call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_electron_distribution.'//trim(adjustl(numpar%fig_extention)), numpar%path_sep, setkey=4)
 
       call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
       call write_gnuplot_script_ending(FN, File_name, 1)
@@ -1242,10 +1242,10 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    ! Optical coefficients
    if (numpar%do_drude) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
-      call gnu_optical_coefficients(File_name, file_optics, t0, t_last, 'OUTPUT_optical_coefficients.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_optical_coefficients(File_name, file_optics, t0, t_last, 'OUTPUT_optical_coefficients.'//trim(adjustl(numpar%fig_extention))) ! below
       ! also n and k:
       File_name  = trim(adjustl(file_path))//'OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
-      call gnu_n_and_k(File_name, file_optics, t0, t_last, 'OUTPUT_optical_n_and_k.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_n_and_k(File_name, file_optics, t0, t_last, 'OUTPUT_optical_n_and_k.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
 
    !ccccccccccccccccccccccccccccc
@@ -1253,70 +1253,70 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    CONV:if (Scell(1)%eps%tau > 0.0d0) then ! convolved files too:
       ! Energies:
       File_name  = trim(adjustl(file_path))//'OUTPUT_energies_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_energies(File_name, trim(adjustl(file_energies(1:len(trim(adjustl(file_energies)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_energies_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_energies(numpar, File_name, trim(adjustl(file_energies(1:len(trim(adjustl(file_energies)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_energies_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Temepratures:
       File_name  = trim(adjustl(file_path))//'OUTPUT_temperatures_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_temperatures(File_name, trim(adjustl(file_temperatures(1:len(trim(adjustl(file_temperatures)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_temepratures_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_temperatures(numpar, File_name, trim(adjustl(file_temperatures(1:len(trim(adjustl(file_temperatures)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_temepratures_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       
       ! Mean displacement:
       File_name  = trim(adjustl(file_path))//'OUTPUT_mean_displacement_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
       call gnu_MSD(File_name, trim(adjustl(file_temperatures(1:len(trim(adjustl(file_temperatures)))-4)))//'_CONVOLVED.dat', t0, t_last, &
-            'OUTPUT_mean_displacement_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention)), g_numpar%MSD_power) ! below
+            'OUTPUT_mean_displacement_CONVOLVED.'//trim(adjustl(numpar%fig_extention)), numpar%MSD_power) ! below
       
       ! Pressure:
       File_name  = trim(adjustl(file_path))//'OUTPUT_pressure_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_pressure(File_name, trim(adjustl(file_pressure(1:len(trim(adjustl(file_pressure)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_pressure_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_pressure(File_name, trim(adjustl(file_pressure(1:len(trim(adjustl(file_pressure)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_pressure_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Stress tensor:
       File_name  = trim(adjustl(file_path))//'OUTPUT_stress_tensor_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_stress(File_name, trim(adjustl(file_pressure(1:len(trim(adjustl(file_pressure)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_pressure_tensor_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_stress(File_name, trim(adjustl(file_pressure(1:len(trim(adjustl(file_pressure)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_pressure_tensor_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       
       ! Numbers of particles:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electrons_and_holes_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_numbers(File_name, trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electrons_holes_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_numbers(File_name, trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electrons_holes_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Numbers of CB electrons:
       File_name  = trim(adjustl(file_path))//'OUTPUT_CB_electrons_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_CB_electrons(File_name, trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_CB_electrons_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention)))
+      call gnu_CB_electrons(File_name, trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_CB_electrons_CONVOLVED.'//trim(adjustl(numpar%fig_extention)))
 
       ! Numbers of deep-shell holes:
       File_name  = trim(adjustl(file_path))//'OUTPUT_deep_shell_holes_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_holes(File_name, trim(adjustl(file_deep_holes(1:len(trim(adjustl(file_deep_holes)))-4)))//'_CONVOLVED.dat', t0, t_last, matter, 'OUTPUT_deep_shell_holes_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_holes(File_name, trim(adjustl(file_deep_holes(1:len(trim(adjustl(file_deep_holes)))-4)))//'_CONVOLVED.dat', t0, t_last, matter, 'OUTPUT_deep_shell_holes_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Chemical potential and band gap:
       File_name  = trim(adjustl(file_path))//'OUTPUT_mu_and_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_Egap(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_mu_and_Egap_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_Egap(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_mu_and_Egap_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       
       ! Boundaries of the bands:
       File_name  = trim(adjustl(file_path))//'OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_Ebands(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_bands_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_Ebands(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_bands_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Electron heat capacity:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_capacity(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electron_Ce_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_capacity(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electron_Ce_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Electron-ion coupling parameter:
       File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_coupling(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_coupling_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_coupling(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_coupling_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Volume:
       File_name  = trim(adjustl(file_path))//'OUTPUT_volume_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_volume(File_name, trim(adjustl(file_supercell(1:len(trim(adjustl(file_supercell)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_volume_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_volume(File_name, trim(adjustl(file_supercell(1:len(trim(adjustl(file_supercell)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_volume_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       
       ! Mulliken charges:
       if (numpar%Mulliken_model >= 1) then
          File_name  = trim(adjustl(file_path))//'OUTPUT_Mulliken_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         call gnu_Mulliken_charges(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_Mulliken_charges_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+         call gnu_Mulliken_charges(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_Mulliken_charges_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       endif
       
       if (numpar%do_drude) then
          ! optical coefficients:
          File_name  = trim(adjustl(file_path))//'OUTPUT_optical_coefficients_CONVOLVED'//trim(adjustl(sh_cmd))
-         call gnu_optical_coefficients(File_name, trim(adjustl(file_optics(1:len(trim(adjustl(file_optics)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_optical_coefficients_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+         call gnu_optical_coefficients(File_name, trim(adjustl(file_optics(1:len(trim(adjustl(file_optics)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_optical_coefficients_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
          ! also n and k:
          File_name  = trim(adjustl(file_path))//'OUTPUT_optical_n_and_k_CONVOLVED'//trim(adjustl(sh_cmd))
-         call gnu_n_and_k(File_name, trim(adjustl(file_optics(1:len(trim(adjustl(file_optics)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_optical_n_and_k_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+         call gnu_n_and_k(File_name, trim(adjustl(file_optics(1:len(trim(adjustl(file_optics)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_optical_n_and_k_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       endif
    endif CONV
 end subroutine create_gnuplot_scripts
@@ -1338,7 +1338,8 @@ end subroutine call_vs_slash
 
 
 
-subroutine gnu_energies(File_name, file_energies, t0, t_last, eps_name)
+subroutine gnu_energies(numpar, File_name, file_energies, t0, t_last, eps_name)
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    character(*), intent(in) :: File_name   ! file to create
    character(*), intent(in) :: file_energies ! input file
    real(8), intent(in) :: t0, t_last	! time instance [fs]
@@ -1353,9 +1354,9 @@ subroutine gnu_energies(File_name, file_energies, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics,  'Energies', 'Time (fs)', 'Energy (eV/atom)',  trim(adjustl(eps_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics,  'Energies', 'Time (fs)', 'Energy (eV/atom)',  trim(adjustl(eps_name)), numpar%path_sep, 1)	! module "Gnuplotting"
    
-   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+   if (numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_energies)), ' "u 1:4 w l lw LW title "Potential energy" ,\'
       write(FN, '(a,a,a)') ' "', trim(adjustl(file_energies)), ' "u 1:6 w l lw LW title "Atomic energy" ,\'
       write(FN, '(a,a,a)') ' "', trim(adjustl(file_energies)), ' "u 1:7 w l lw LW title "Energy of atoms and electrons" ,\'
@@ -1371,7 +1372,8 @@ subroutine gnu_energies(File_name, file_energies, t0, t_last, eps_name)
 end subroutine gnu_energies
 
 
-subroutine gnu_temperatures(File_name, file_temperatures, t0, t_last, eps_name)
+subroutine gnu_temperatures(numpar, File_name, file_temperatures, t0, t_last, eps_name)
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    character(*), intent(in) :: File_name   ! file to create
    character(*), intent(in) :: file_temperatures ! input file
    real(8), intent(in) :: t0, t_last ! time instance [fs]
@@ -1386,7 +1388,7 @@ subroutine gnu_temperatures(File_name, file_temperatures, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3, 'Temperatures','Time (fs)', 'Temperatures (K)', trim(adjustl(file_path))//'OUTPUT_temepratures.'//trim(adjustl(g_numpar%fig_extention)))
+   !call write_gnuplot_script_header(FN, 1, 3, 'Temperatures','Time (fs)', 'Temperatures (K)', trim(adjustl(file_path))//'OUTPUT_temepratures.'//trim(adjustl(numpar%fig_extention)))
    !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Temperatures','Time (fs)', 'Temperatures (K)', trim(adjustl(eps_name)))
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Temperatures', 'Time (fs)', 'Temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
    

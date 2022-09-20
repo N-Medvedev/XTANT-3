@@ -24,7 +24,7 @@
 module Little_subroutines
 use Universal_constants
 use Objects
-use Variables
+!use Variables
 use Dealing_with_files
 implicit none
 

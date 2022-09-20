@@ -24,7 +24,7 @@
 MODULE Optical_parameters
 use Universal_constants
 use Objects
-use Variables
+!use Variables
 use Algebra_tools, only : sym_diagonalize
 use Electron_tools, only : get_number_of_CB_electrons, set_Fermi, set_Erf_distribution
 use TB_Fu, only : Complex_Hamil_tot_F

@@ -26,7 +26,7 @@
 MODULE Monte_carlo
 use Objects
 use Universal_constants
-use Variables
+!use Variables
 use Little_subroutines
 use Dealing_with_files
 use Dealing_with_EADL

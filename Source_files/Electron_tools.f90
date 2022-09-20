@@ -24,7 +24,7 @@
 MODULE Electron_tools
 use Universal_constants
 use Objects
-use Variables
+!use Variables
 use Algebra_tools
 use Atomic_tools
 use Little_subroutines
@@ -76,6 +76,8 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    end select
    
 !    print*, 'numpar%E_cut =', numpar%E_cut , Scell%E_gap , matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+!    print*, 'Ne:', Scell%Ne_low, Scell%Ne, Scell%Na
+!    print*, 'E :', Scell%E_gap, Scell%E_VB_top, Scell%E_bottom
 end subroutine find_band_gap
 
 

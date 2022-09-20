@@ -29,7 +29,7 @@ MODULE TB_NRL
 use Universal_constants
 use TB_Koster_Slater
 use Objects
-use Variables
+!use Variables
 ! use Algebra_tools
 use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_hermiticity
 use Little_subroutines

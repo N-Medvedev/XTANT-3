@@ -26,7 +26,7 @@
 MODULE Nonadiabatic
 use Universal_constants
 use Objects
-use Variables
+!use Variables
 use Algebra_tools
 use Electron_tools
 use Atomic_tools
