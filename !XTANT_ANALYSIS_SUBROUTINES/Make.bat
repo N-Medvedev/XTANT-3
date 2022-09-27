@@ -55,6 +55,11 @@ echo %Starline%
 echo The program %Name_of_exe% was created at %date% %time%
 echo %Starline%
 
+
+:: Remove files that are no longer needed
+del XTANT_atomic_data_analysis.obj
+
+
 :: *********************************************************
 
 echo Started compilation: %date% %time%
@@ -80,6 +85,10 @@ echo The program %Name_of_exe% was created at %date% %time%
 echo %Starline%
 
 
+:: Remove files that are no longer needed
+del XTANT_autocorrelators.obj
+
+
 :: *********************************************************
 
 echo Started compilation: %date% %time%
@@ -103,6 +112,10 @@ echo %Starline%
 ::   echo Completed: %date% %time%
 echo The program %Name_of_exe% was created at %date% %time%
 echo %Starline%
+
+
+:: Remove files that are no longer needed
+del XTANT_coupling_parameter.obj
 
 
 :: *********************************************************
@@ -131,6 +144,39 @@ echo %Starline%
 echo The program %Name_of_exe% was created at %date% %time%
 echo %Starline%
 
+:: Remove files that are no longer needed
+del XTANT_dielectric_function_analysis.obj
+
+:: *********************************************************
+
+echo Started compilation: %date% %time%
+
+:: Program files to be compiled
+SET "List_of_files= XTANT_fragmentation.f90"
+
+:: List compiler options and the name of the executable:
+IF /I %arg1%==DEBUG (
+   :: Set name of the executable:
+   SET "Name_of_exe=XTANT_fragmentation.exe"
+) ELSE (
+   :: Set name of the executable:
+   SET "Name_of_exe=XTANT_fragmentation.exe"
+)
+
+:: Compiling:
+ifort.exe -c %Compile_options% %List_of_files%
+
+:: Assemble the code from all created obj-files
+ifort.exe %Compile_options% *.obj /exe:%Name_of_exe%
+
+echo %Starline%
+::   echo Completed: %date% %time%
+echo The program %Name_of_exe% was created at %date% %time%
+echo %Starline%
+
+:: *********************************************************
 
 :: Remove files that are no longer needed
-del *.obj
+:: del *.obj
+
+
