@@ -11,13 +11,13 @@ It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matte
  
  d) random phase approximation (RPA) for calculation of the change of the optical properties of the material
 
-*Disclamer*
+## Disclamer
 
 Although we endeavour to ensure that the code XTANT and results delivered are correct, no warranty is given as to its accuracy. We assume no responsibility for possible errors or omissions. We shall not be liable for any damage arising from the use of this code or its parts or any results produced with it, or from any action or decision taken as a result of using this code or any related material.
 
 This code is distributed as is for non-commercial peaceful purposes only, such as research and education. It is explicitly prohibited to use the code, its parts, its results or any related material for military-related and other than peaceful purposes.
 
-*How to cite*
+## How to cite
 
 By using this code or its materials, you agree with these terms and conditions. The use of the code is at your own risk. Should you chose to use it, an appropriate citation is mandatory:
 
