@@ -591,6 +591,7 @@ type At_data
    real(8), dimension(:), allocatable :: Nh_shell	! current number of deep-shell holes in each shell
    type(MFP), dimension(:), allocatable :: El_MFP	! electron inelastic mean free paths for each shell (inversed [1/A])
    type(MFP), dimension(:), allocatable :: Ph_MFP	! photon mean free paths for each shell (inversed [1/A])
+   type(MFP), dimension(:), allocatable :: El_MFP_vs_T ! electron MFP for (inversed [1/A]) for different Te
    type(MFP) :: El_EMFP ! electron elastic mean free paths (inversed [1/A])
 end type At_data
 

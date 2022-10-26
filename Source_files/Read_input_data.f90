@@ -5668,7 +5668,7 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
          selectcase (trim(adjustl(read_next_line)))
          case ('CDF', 'cdf', 'Cdf')
             numpar%At_base = 'CDF' ! where to take atomic data from (EADL, CDF, XATOM...)
-         case ('eald', 'EADL', 'Eadl')
+         case ('eald', 'EADL', 'Eadl', 'BEB', 'Beb', 'beb')
             numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, XATOM...)
          case default
             write(*,'(a,i3,a)') 'Could not interpret ATOMIC_DATA from line ', count_lines, ' in file input file after line: '//read_line

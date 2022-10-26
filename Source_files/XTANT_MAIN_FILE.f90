@@ -111,7 +111,7 @@ if (g_Err%Err) goto 2012	! if there was an error in preparing the initial config
 if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true.)
 
 ! Read (or create) electronic mean free paths (both, inelastic and elastic):
-call get_MFPs(g_matter, g_laser, g_numpar, g_Err) ! module "MC_cross_sections"
+call get_MFPs(g_matter, g_laser, g_numpar, g_Scell(1)%TeeV, g_Err) ! module "MC_cross_sections"
 if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Electron mean free paths set succesfully:', msec=.true.)
 

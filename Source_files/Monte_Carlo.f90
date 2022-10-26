@@ -57,6 +57,10 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
       call total_photons(laser, numpar, tim, Nphot) ! estimate the total number of absorbed photons
       ! Do MC run only if we have particles to trace (photons, high-energy-electrons, or core-holes):
       IF_MC:if ( (Nphot .GT. 1d-10) .OR. ( (Scell(NSC)%Ne_high-Scell(NSC)%Ne_emit) .GT. 1d-10) .OR. (Scell(NSC)%Nh .GT. 1d-10) ) then
+
+         ! Update inelastic scattering cross section depending on Te:
+         call update_cross_section(Scell(NSC), matter)  ! module "MC_cross_sections"
+
          NMC_real = real(numpar%NMC)
          Eetot_stat = 0.0d0
          noeVB_stat = 0.0d0
@@ -211,7 +215,7 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
 
             ! how much energy it loses:
             !call Electron_energy_transfer_inelastic(matter, MC%electrons(j)%E, KOA, SHL, matter%Atoms(KOA)%El_MFP(shl), hw) ! module "Cross_sections"
-            call Electron_energy_transfer_inelastic(matter, Ekin, KOA, SHL, matter%Atoms(KOA)%El_MFP(shl), hw) ! module "Cross_sections"
+            call Electron_energy_transfer_inelastic(matter, Scell%TeeV, Ekin, KOA, SHL, matter%Atoms(KOA)%El_MFP(shl), hw) ! module "Cross_sections"
 
             ! new electron (and may be hole) is created:
             call New_born_electron_n_hole(MC, KOA, shl, numpar, Scell, matter, hw, MC%electrons(j)%ti, Eetot_cur, noeVB_cur)
