@@ -69,9 +69,12 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
    CHARACTER(*), PARAMETER :: UpCase  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
    logical :: file_exists, num_vs_char, found_atom, file_opened, devide
    INFO = 0 ! start with no error
-   !Folder_name = 'INPUT_DATA'//trim(adjustl(path_sep))//'EADL_parameters'  ! here we keep databases
    Folder_name = trim(adjustl(Path))
-   File_name = trim(adjustl(Folder_name))//trim(adjustl(path_sep))//'INPUT_atomic_data.dat' ! fixed name of the database
+   if (LEN(trim(adjustl(Folder_name))) > 0) then   ! it is in a folder
+      File_name = trim(adjustl(Folder_name))//trim(adjustl(path_sep))//'INPUT_atomic_data.dat' ! fixed name of the database
+   else ! it is in the same folder
+      File_name = 'INPUT_atomic_data.dat' ! fixed name of the database
+   endif
    inquire(file=trim(adjustl(File_name)),exist=file_exists) ! check if input file is there
    exists:if (file_exists) then   
       FN = 101

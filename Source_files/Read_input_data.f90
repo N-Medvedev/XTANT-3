@@ -625,7 +625,7 @@ subroutine get_CDF_data(matter, numpar, Err)
 
       !Folder_name2 = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))//'Atomic_parameters'
       Folder_name2 = trim(adjustl(numpar%input_path))//trim(adjustl(m_Atomic_parameters))  ! 'Atomic_parameters'
-      call Decompose_compound(Folder_name2, matter%Chem, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, at_percentage, at_short_names, at_names, at_masses, at_NVE) ! molude 'Dealing_with_EADL'
+      call Decompose_compound(Folder_name2, matter%Chem, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, at_percentage, at_short_names, at_names, at_masses, at_NVE) ! molude 'Periodic_table'
       if (INFO .NE. 0) then
          call Save_error_details(Err, INFO, error_message)
          print*, trim(adjustl(error_message))

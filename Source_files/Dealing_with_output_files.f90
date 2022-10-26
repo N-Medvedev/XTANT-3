@@ -73,7 +73,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_holes(numpar%FN_deep_holes, time, matter, Scell(NSC))
       if (numpar%save_raw) call write_atomic_relatives(numpar%FN_atoms_S, Scell(NSC)%MDatoms)
       call write_super_cell(numpar%FN_supercell, time, Scell(NSC))
-      call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter)
+      call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, numpar%FN_Ce)
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter)
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time)
       if (numpar%save_Ei) then
@@ -431,23 +431,47 @@ end subroutine write_atomic_cif
 
 
 
-subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter)
+subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, FN_Ce)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: time	! [fs]
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(in) :: Ei	! energy levels
    type(Solid), intent(in) :: matter	! Material parameters
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   integer, intent(in) :: FN_Ce  ! file number for band-resolved Ce
+   !------------------------
    real(8) Ce
-   integer i, Nat
-   call get_electron_heat_capacity(Scell, NSC, Ce) ! module "Electron_tools"
+   real(8), dimension(size(Scell(NSC)%G_ei_partial,1)) :: Ce_part
+   integer i, Nat, n_at, Nsiz, norb, N_types, i_at, i_types, i_G1
+
+   call get_electron_heat_capacity(Scell, NSC, Ce, numpar%DOS_weights, Ce_part) ! module "Electron_tools"
    
+   ! Write electron properties:
    write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, Scell(NSC)%Ne_low/real(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Ce, Scell(NSC)%G_ei, Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
-   Nat = size(matter%Atoms(:))
+   Nat = size(matter%Atoms(:)) ! number of elements
    do i = 1, Nat    ! index starting from 11
       write(FN,'(es25.16)', advance='no') (matter%Atoms(i)%NVB - matter%Atoms(i)%mulliken_Ne)
    enddo
    write(FN,'(a)') ''
+
+   ! Write band-resolved electron heat capacity:
+   n_at = size(Scell(NSC)%MDatoms) ! number of atoms
+   Nsiz = size(Scell(NSC)%Ha,1) ! total number of orbitals
+   norb =  Nsiz/n_at ! orbitals per atom
+   ! Find number of different orbital types:
+   N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+   ! Total Ce:
+   write(FN_Ce, '(es25.16,es25.16)', advance='no') time, Ce
+   ! All shells resolved:
+   do i_at = 1, Nat
+      do i_types = 1, N_types
+         i_G1 = (i_at-1) * N_types + i_types
+         write(FN_Ce,'(es25.16)',advance='no') Ce_part(i_G1)
+      enddo   ! i_types
+   enddo ! i_at
+   write(FN_Ce,'(a)') ''
+
 end subroutine write_electron_properties
 
 
@@ -500,6 +524,36 @@ subroutine write_coulping_header(FN, Scell, NSC, matter, numpar)
    enddo ! i_at
    write(FN,'(a)') ''
 end subroutine write_coulping_header
+
+
+subroutine write_Ce_header(FN, Scell, NSC, matter)
+   integer, intent(in) :: FN	! file number
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(Solid), intent(in) :: matter	! Material parameters
+   !--------------------------------
+   integer :: N_at, N_types, Nsiz, i_at, i_types, nat, norb
+   character(2) :: chtemp1
+
+   N_at = matter%N_KAO    ! number of kinds of atoms
+   ! Find number of orbitals per atom:
+   nat = size(Scell(NSC)%MDatoms) ! number of atoms
+   Nsiz = size(Scell(NSC)%Ha,1) ! total number of orbitals
+   norb =  Nsiz/nat ! orbitals per atom
+   ! Find number of different orbital types:
+   N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+
+   ! Total Ce:
+   write(FN, '(a)', advance='no') ' #Time   Total   '
+   ! All shells resolved:
+   do i_at = 1, N_at
+      do i_types = 1, N_types
+         chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+         write(FN,'(a)',advance='no') trim(adjustl(matter%Atoms(i_at)%Name))//'_'//trim(adjustl(chtemp1))//'   '
+      enddo   ! i_types
+   enddo ! i_at
+   write(FN,'(a)') ''
+end subroutine write_Ce_header
 
 
 subroutine write_coulping(FN, time, Scell, NSC, numpar)
@@ -821,6 +875,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    character(100) :: file_atoms_cif	! atomic coordinates in cif-format (standard for constructing diffraction patterns)
    character(100) :: file_supercell	! supercell vectors
    character(100) :: file_electron_properties	! electron properties
+   character(100) :: file_electron_heat_capacity	! band-resolved electron heat capacity
    character(100) :: file_numbers	! total numbers of electrons and holes
    character(100) :: file_deep_holes	! number of deep-shell holes in each shell
    character(100) :: file_Ei		! energy levels
@@ -863,6 +918,11 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    call create_file_header(numpar%FN_electron_properties, '#Time	Ne	mu	band_gap	Ce	Coupling_parameter	VB_bottom	VB_top	CB_bottom	CB_top Mullikens(:)')
    call create_file_header(numpar%FN_electron_properties, '#[fs]	[%]	[eV]	[eV]	[J/(m^3K)]	[W/(m^3K)]	[eV]	[eV]	[eV]	[eV]  [e](:)')
 
+   file_electron_heat_capacity = trim(adjustl(file_path))//'OUTPUT_electron_Ce.dat'
+   open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_capacity)))
+   numpar%FN_Ce = FN
+   call write_Ce_header(numpar%FN_Ce, Scell, 1, matter) ! below
+
    file_energies = trim(adjustl(file_path))//'OUTPUT_energies.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_energies)))
    numpar%FN_energies = FN
@@ -898,7 +958,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       file_coupling = trim(adjustl(file_path))//'OUTPUT_coupling.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_coupling)))
       numpar%FN_coupling = FN
-      call write_coulping_header(numpar%FN_coupling, Scell, 1, matter, numpar)
+      call write_coulping_header(numpar%FN_coupling, Scell, 1, matter, numpar) ! below
    endif
 
 

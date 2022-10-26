@@ -1959,7 +1959,7 @@ subroutine velocities_abs_to_rel(Scell, NSC, if_old)
    integer i, ik, N
    N = size(Scell(NSC)%MDatoms)
    !Relative velocities:
-   call Invers_3x3(Scell(NSC)%supce,dsupce, 'velocities_abs_to_rel') ! from module "Algebra_tools"
+   call Invers_3x3(Scell(NSC)%supce, dsupce, 'velocities_abs_to_rel') ! from module "Algebra_tools"
    do i = 1, N
       v = 0.0d0
       do ik = 1,3
@@ -1969,7 +1969,7 @@ subroutine velocities_abs_to_rel(Scell, NSC, if_old)
       Scell(NSC)%MDatoms(i)%SV(:) = v(:)
    enddo
    if (present(if_old)) then
-      call Invers_3x3(Scell(NSC)%supce0,dsupce, 'velocities_abs_to_rel (2)') ! from module "Algebra_tools"
+      call Invers_3x3(Scell(NSC)%supce0, dsupce, 'velocities_abs_to_rel (2)') ! from module "Algebra_tools"
       do i = 1, N
          v = 0.0d0
          do ik = 1,3

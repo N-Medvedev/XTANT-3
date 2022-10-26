@@ -34,48 +34,52 @@ PROGRAM Coupling_parameter
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-
+USE IFLPORT
 use Universal_constants
 
-character(200) :: File_electron, File_temperatures, File_coupling_partial, File_pressure, File_energies
-character(200) :: File_name1, File_name2, File_name3, File_name4, File_name5, char_var
-character(200) :: File_name_out, File_name_out2, File_name_out3, File_name_out4
+character(200) :: File_electron, File_temperatures, File_coupling_partial, File_pressure, File_energies, File_Ce_partial
+character(200) :: File_name1, File_name2, File_name3, File_name4, File_name5, File_name6, char_var
+character(200) :: File_name_out, File_name_out2, File_name_out3, File_name_out4, File_name_out5
 character(200), dimension(:), allocatable :: Folders_with_data
 character(1) :: path_sep
 real(8) :: starting_time, ending_time
-real(8), dimension(:,:,:), allocatable :: G_mean_part
+real(8), dimension(:,:,:), allocatable :: G_mean_part, Ce_mean_part
 real(8), dimension(:,:), allocatable :: G_mean, mu_mean, Ce_mean
 real(8), dimension(:,:), allocatable :: P_mean, E_mean, Grun_mean
 real(8), dimension(:), allocatable :: Te_grid, T_ave, G_ave, G_err, Ce_err
-real(8), dimension(:,:), allocatable :: G_part_ave
+real(8), dimension(:,:), allocatable :: G_part_ave, Ce_part_ave
 real(8), dimension(:), allocatable :: mu_ave, Ce_ave, E_ave, P_ave, Grun_ave
-integer :: FN1, FN2, FN3, FN4, FN5
-integer :: FN_out, FN_out2, FN_out3, FN_out4  ! file number
+integer :: FN1, FN2, FN3, FN4, FN5, FN6
+integer :: FN_out, FN_out2, FN_out3, FN_out4, FN_out5  ! file number
 integer :: Reason, i, j, siz, Tsiz
-logical :: read_well, file_exist
+logical :: read_well, file_exist, file_exist2
 
 call Path_separator(path_sep)  ! Objects_and_types
 
 ! Set defaults:
+FN_out5 = 9989
 FN_out4 = 9993
 FN_out3 = 9994
 FN_out2 = 9996
-FN_out = 9997
+FN_out  = 9997
 FN1 = 9999
 FN2 = 9998
 FN3 = 9995
 FN4 = 9992
 FN5 = 9991
+FN6 = 9990
 File_electron = 'OUTPUT_electron_properties.dat'
 File_temperatures = 'OUTPUT_temperatures.dat'
 File_coupling_partial = 'OUTPUT_coupling.dat'
 File_pressure = 'OUTPUT_pressure_and_stress.dat'
 File_energies = 'OUTPUT_energies.dat'
+File_Ce_partial = 'OUTPUT_electron_Ce.dat'
 
 File_name_out =  'OUT_average_coupling.dat'
 File_name_out2 = 'OUT_average_parameters.dat'
 File_name_out3 = 'OUT_average_partial_couplings.dat'
 File_name_out4 = 'OUT_average_pressure.dat'
+File_name_out5 = 'OUT_average_partial_Ce.dat'
 
 ! Get the starting time, if user defined it:
 if (IARGC() >= 1) then 	! there was at least 1 argument passes by the user:
@@ -107,19 +111,37 @@ do i = 1, siz	! for all output data files
    File_name3 = trim(adjustl(Folders_with_data(i)))//path_sep//trim(adjustl(File_coupling_partial))
    File_name4 = trim(adjustl(Folders_with_data(i)))//path_sep//trim(adjustl(File_pressure))
    File_name5 = trim(adjustl(Folders_with_data(i)))//path_sep//trim(adjustl(File_energies))
+   File_name6 = trim(adjustl(Folders_with_data(i)))//path_sep//trim(adjustl(File_Ce_partial))
    open (unit=FN1, file=trim(adjustl(File_name1)), status = 'old', readonly) ! electron properties
    open (unit=FN2, file=trim(adjustl(File_name2)), status = 'old', readonly) ! temperatures
    open (unit=FN4, file=trim(adjustl(File_name4)), status = 'old', readonly) ! pressure
    open (unit=FN5, file=trim(adjustl(File_name5)), status = 'old', readonly) ! energies
    inquire(file=trim(adjustl(File_name3)),exist=file_exist)
+   inquire(file=trim(adjustl(File_name6)),exist=file_exist2)
    if (file_exist) then ! also partial coupling data ! coupling
       open (unit=FN3, file=trim(adjustl(File_name3)), status = 'old', readonly)
-      call  read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid(:), G_mean(i,:), mu_mean(i,:), Ce_mean(i,:), &
-               E_mean(i,:), P_mean(i,:), Grun_mean(i,:), G_mean_part, i, siz)     ! below
+
+      if (file_exist2) then ! is there particla Ce
+         open (unit=FN6, file=trim(adjustl(File_name6)), status = 'old', readonly)
+         call  read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_grid(:), G_mean(i,:), mu_mean(i,:), Ce_mean(i,:), &
+               E_mean(i,:), P_mean(i,:), Grun_mean(i,:), G_mean_part=G_mean_part, &
+               Ce_mean_part=Ce_mean_part, i_fold=i, siz=siz)     ! below
+         close(FN6)
+      else ! no partial Ce
+         call  read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_grid(:), G_mean(i,:), mu_mean(i,:), Ce_mean(i,:), &
+               E_mean(i,:), P_mean(i,:), Grun_mean(i,:), G_mean_part=G_mean_part, i_fold=i, siz=siz)     ! below
+      endif
       close(FN3)
    else ! no partial coupling
-      call  read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid(:), G_mean(i,:), mu_mean(i,:), Ce_mean(i,:), &
+       if (file_exist2) then ! is there particla Ce
+         open (unit=FN6, file=trim(adjustl(File_name6)), status = 'old', readonly)
+         call  read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_grid(:), G_mean(i,:), mu_mean(i,:), Ce_mean(i,:), &
+               E_mean(i,:), P_mean(i,:), Grun_mean(i,:), Ce_mean_part=Ce_mean_part, i_fold=i, siz=siz)     ! below
+         close(FN6)
+      else ! no partial Ce
+         call  read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_grid(:), G_mean(i,:), mu_mean(i,:), Ce_mean(i,:), &
                E_mean(i,:), P_mean(i,:), Grun_mean(i,:))     ! below
+      endif
    endif
    
    close(FN1)
@@ -137,6 +159,9 @@ allocate(G_err(Tsiz))
 allocate(Ce_err(Tsiz))
 if (allocated(G_mean_part)) then
    allocate(G_part_ave( Tsiz, size(G_mean_part,3) ) )
+endif
+if (allocated(Ce_mean_part)) then
+   allocate(Ce_part_ave( Tsiz, size(Ce_mean_part,3) ) )
 endif
 
 do i = 1, Tsiz
@@ -160,12 +185,20 @@ do i = 1, Tsiz
          G_part_ave(i,j) = SUM(G_mean_part(:,i,j))/dble(siz)
       enddo
    endif
+   if (allocated(Ce_mean_part)) then
+      do j = 1, size(Ce_part_ave,2)
+         Ce_part_ave(i,j) = SUM(Ce_mean_part(:,i,j))/dble(siz)
+      enddo
+   endif
 enddo
 ! Check if all the datapoints are present and printout:
 open (unit=FN_out, file=trim(adjustl(File_name_out)))
 open (unit=FN_out2, file=trim(adjustl(File_name_out2)))
 if (allocated(G_mean_part)) then
    open (unit=FN_out3, file=trim(adjustl(File_name_out3)))
+endif
+if (allocated(Ce_mean_part)) then
+   open (unit=FN_out5, file=trim(adjustl(File_name_out5)))
 endif
 open (unit=FN_out4, file=trim(adjustl(File_name_out4)))
 
@@ -181,9 +214,14 @@ write(FN_out3,'(a)') 'K    W/(m^3K) '
 write(FN_out4,'(a)') 'Te    E  P Gruneisen'
 write(FN_out4,'(a)') 'K    eV/atom    GPa Pa/(J/atom)'
 
+!oooooooooooooooooooooooooooooooooo
+! OUT files:
 do i =1,Tsiz
+
    write(FN_out,'(es,es,es)') T_ave(i), G_ave(i), G_err(i)
+
    write(FN_out2,'(es,es,es,es)') T_ave(i), mu_ave(i), Ce_ave(i), Ce_err(i)
+
    if (allocated(G_mean_part)) then
       write(FN_out3,'(es)', advance='no') T_ave(i)
        do j = 1, size(G_part_ave,2)
@@ -191,30 +229,46 @@ do i =1,Tsiz
        enddo
       write(FN_out3,'(a)') ''
    endif
+
    write(FN_out4,'(es,es,es,es)') T_ave(i), E_ave(i), P_ave(i), Grun_ave(i)*(1d9/g_e)
+
+   if (allocated(Ce_mean_part)) then
+      write(FN_out5,'(es)', advance='no') T_ave(i)
+       do j = 1, size(Ce_part_ave,2)
+          write(FN_out5,'(es)', advance='no') Ce_part_ave(i,j)
+       enddo
+      write(FN_out5,'(a)') ''
+   endif
+
 enddo
+
 close (FN_out)
 close (FN_out2)
 close (FN_out4)
 if (allocated(G_mean_part)) close (FN_out3)
+if (allocated(Ce_mean_part)) close (FN_out5)
+
+print*, 'XTANT: analysis with Coupling_parameter is executed'
+
 
 !---------------------
  contains
 
  
 
-subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid, G_mean, mu_mean, Ce_mean, &
-            E_mean, P_mean, Grun_mean, G_mean_part, i_fold, siz)
+subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_grid, G_mean, mu_mean, Ce_mean, &
+            E_mean, P_mean, Grun_mean, G_mean_part, Ce_mean_part, i_fold, siz)
    ! file numbers (must be already opened):
    integer, intent(in) :: FN1 ! electron properties
    integer, intent(in) :: FN2 ! temperatures
    integer, intent(in) :: FN3 ! coupling
    integer, intent(in) :: FN4 ! pressure
    integer, intent(in) :: FN5 ! energies
+   integer, intent(in) :: FN6 ! electron Ce
    real(8), intent(in) :: starting_time	! to cut off the times that needs to be excluded (during thermalization)
    real(8), dimension(:), intent(inout) :: Te_grid, G_mean, mu_mean, Ce_mean
    real(8), dimension(:), intent(inout) :: E_mean, P_mean, Grun_mean
-   real(8), dimension(:,:,:), allocatable, intent(inout), optional :: G_mean_part
+   real(8), dimension(:,:,:), allocatable, intent(inout), optional :: G_mean_part, Ce_mean_part
    integer, intent(in), optional :: i_fold, siz
    !000000000000000000000000000
    integer :: i, Nsiz, i_num, j, j_low, j_high, j_l, j_h, Ncol, k
@@ -226,9 +280,10 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
    real(8) :: P_temp, P_low, P_high
    real(8) :: Grun_temp, Grun_low, Grun_high
    real(8), dimension(:), allocatable :: G_part_temp, G_part_low, G_part_high
+   real(8), dimension(:), allocatable :: Ce_part_temp, Ce_part_low, Ce_part_high
    real(8), dimension(:), allocatable :: Te_read, G_read, tim, mu_read, Ce_read
    real(8), dimension(:), allocatable :: E_read, P_read, Grun_read
-   real(8), dimension(:,:), allocatable :: G_part_read
+   real(8), dimension(:,:), allocatable :: G_part_read, Ce_part_read
    ! Read all the data:
    call Count_lines_in_file(FN1, Nsiz, skip_lines=2)
    allocate(Te_read(Nsiz), G_read(Nsiz), tim(Nsiz), mu_read(Nsiz), Ce_read(Nsiz))
@@ -240,6 +295,16 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
       allocate(G_part_low(Ncol))
       allocate(G_part_high(Ncol))
       if (.not.allocated(G_mean_part)) allocate( G_mean_part(siz, size(G_mean), Ncol-1) )
+      read(FN3,*,IOSTAT=Reason)
+   endif
+   if (present(Ce_mean_part)) then
+      call Count_columns_in_file(FN6, Ncol, skip_lines=1)
+      allocate(Ce_part_read(Nsiz+1, Ncol))
+      allocate(Ce_part_temp(Ncol))
+      allocate(Ce_part_low(Ncol))
+      allocate(Ce_part_high(Ncol))
+      if (.not.allocated(Ce_mean_part)) allocate( Ce_mean_part(siz, size(Ce_mean), Ncol-1) )
+      read(FN3,*,IOSTAT=Reason)
    endif
    
    ! Skip first lines with comments:
@@ -247,12 +312,10 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
    read(FN1,*,IOSTAT=Reason)
    read(FN2,*,IOSTAT=Reason)
    read(FN2,*,IOSTAT=Reason)
-   read(FN3,*,IOSTAT=Reason)
    read(FN4,*,IOSTAT=Reason)
    read(FN4,*,IOSTAT=Reason)
    read(FN5,*,IOSTAT=Reason)
    read(FN5,*,IOSTAT=Reason)
-
    
    do i = 1, Nsiz
       read(FN1,*,IOSTAT=Reason) G(:)	! coupling parameter
@@ -266,6 +329,11 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
       endif
       read(FN4,*,IOSTAT=Reason) P_file_read(:)	! pressures
       read(FN5,*,IOSTAT=Reason) E_file_read(:)	! energies
+      if (present(Ce_mean_part)) then
+         read(FN6,*,IOSTAT=Reason) Ce_part_read(i,:)
+         IF (Reason .LT. 0) exit
+!         print*, i, G_part_read(i,2:4)
+      endif
 
       ! Now extract the variables to be used:
       tim(i) = Te(1)	! time
@@ -291,9 +359,17 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
    
    ! Sort the data by electronic temperature:
    if (present(G_mean_part)) then
-      call sort_array(Te_read, G_read, mu_read, Ce_read, E_read, P_read, Grun_read, Ar2d=G_part_read)   ! below
+      if (present(Ce_mean_part)) then
+         call sort_array(Te_read, G_read, mu_read, Ce_read, E_read, P_read, Grun_read, Ar2d=G_part_read, Ar2d_2=Ce_part_read)   ! below
+      else
+         call sort_array(Te_read, G_read, mu_read, Ce_read, E_read, P_read, Grun_read, Ar2d=G_part_read)   ! below
+      endif
    else
-      call sort_array(Te_read, G_read, mu_read, Ce_read, E_read, P_read, Grun_read)   ! below
+      if (present(Ce_mean_part)) then
+         call sort_array(Te_read, G_read, mu_read, Ce_read, E_read, P_read, Grun_read, Ar2d_2=Ce_part_read)   ! below
+      else
+         call sort_array(Te_read, G_read, mu_read, Ce_read, E_read, P_read, Grun_read)   ! below
+      endif
    endif
    
    ! Average the data onto the grid:
@@ -306,6 +382,7 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
       P_temp = 0.0d0	! to start with
       Grun_temp = 0.0d0	! to start with
       if (present(G_mean_part)) G_part_temp = 0.0d0 ! to start with
+      if (present(Ce_mean_part)) Ce_part_temp = 0.0d0 ! to start with
       i_num = 0
       AV:do
          j = j + 1
@@ -322,6 +399,9 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
                Grun_temp = Grun_temp + Grun_read(j)
                if (present(G_mean_part)) then
                   G_part_temp(:) = G_part_temp(:) + G_part_read(j,:)
+               endif
+               if (present(Ce_mean_part)) then
+                  Ce_part_temp(:) = Ce_part_temp(:) + Ce_part_read(j,:)
                endif
 !                print*, j, G_read(j), G_part_read(j,1:4)
 !                pause
@@ -345,6 +425,11 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
                G_mean_part(i_fold,i,k) = G_part_temp(k+1)/dble(i_num) 
             enddo
          endif
+         if (present(Ce_mean_part)) then
+            do k = 1, size(Ce_mean_part,3)
+               Ce_mean_part(i_fold,i,k) = Ce_part_temp(k+1)/dble(i_num)
+            enddo
+         endif
       else
          G_low = 0.0d0
          mu_low = 0.0d0
@@ -353,6 +438,7 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
          P_low = 0.0d0
          Grun_low = 0.0d0
          if (present(G_mean_part)) G_part_low = 0.0d0 ! to start with
+         if (present(Ce_mean_part)) Ce_part_low = 0.0d0 ! to start with
          j_l = 1
          do j_low = min(j,size(Te_read)), 1, -1
             G_low = G_read(j_low)
@@ -362,6 +448,7 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
             P_low = P_read(j_low)
             Grun_low = Grun_read(j_low)
             if (present(G_mean_part)) G_part_low(:) = G_part_read(j_low,:)
+            if (present(Ce_mean_part)) Ce_part_low(:) = Ce_part_read(j_low,:)
             if (G_low > 0) then
                j_l = j_low
                exit
@@ -374,6 +461,7 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
          P_high = 0.0d0
          Grun_high = 0.0d0
          if (present(G_mean_part)) G_part_high = 0.0d0 ! to start with
+         if (present(Ce_mean_part)) Ce_part_high = 0.0d0 ! to start with
          j_h = size(Te_read)
          do j_high = j+1, size(Te_read)
             G_high = G_read(j_high)
@@ -383,6 +471,7 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
             P_high = P_read(j_high)
             Grun_high = Grun_read(j_high)
             if (present(G_mean_part)) G_part_high(:) = G_part_read(j_high,:)
+            if (present(Ce_mean_part)) Ce_part_high(:) = Ce_part_read(j_high,:)
             !if (G_low > 0) then
             if (G_high > 0) then
                j_h = j_high
@@ -403,6 +492,11 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
                      G_mean_part(i_fold,i,k) = G_part_read(j_h,k+1)
                   enddo
                endif
+               if (present(Ce_mean_part)) then
+                  do k = 1, size(Ce_mean_part,3)
+                     Ce_mean_part(i_fold,i,k) = Ce_part_read(j_h,k+1)
+                  enddo
+               endif
             else
                T_temp = (Te_grid(i) - Te_read(j_l)) / (Te_read(j_h) - Te_read(j_l))
                !G_mean(i) = G_low + (G_high - G_low)/(Te_read(j_h) - Te_read(j_l))*(Te_grid(i) - Te_read(j_l))
@@ -417,6 +511,11 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
                      G_mean_part(i_fold,i,k) = G_part_low(k+1) + (G_part_high(k+1) - G_part_low(k+1)) * T_temp
                   enddo
                endif
+               if (present(Ce_mean_part)) then
+                  do k = 1, size(Ce_mean_part,3)
+                     Ce_mean_part(i_fold,i,k) = Ce_part_low(k+1) + (Ce_part_high(k+1) - Ce_part_low(k+1)) * T_temp
+                  enddo
+               endif
             endif
          else
 !             print*, 'The value is excluded2:', j_l, tim(j_l), starting_time
@@ -428,14 +527,18 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, starting_time, Te_grid,
    if (present(G_mean_part)) then
       deallocate(G_part_low, G_part_temp, G_part_high, G_part_read)
    endif
+   if (present(Ce_mean_part)) then
+      deallocate(Ce_part_low, Ce_part_temp, Ce_part_high, Ce_part_read)
+   endif
 end subroutine read_and_set_on_grid
 
 
-subroutine sort_array(Ev, Ar2, Ar3, Ar4, Ar5, Ar6, Ar7, Ar2d)	! bubble method
+subroutine sort_array(Ev, Ar2, Ar3, Ar4, Ar5, Ar6, Ar7, Ar2d, Ar2d_2)	! bubble method
    real(8), dimension(:), intent(inout) :: Ev	! array to sort
    real(8), dimension(:), intent(inout) :: Ar2
    real(8), dimension(:), intent(inout), optional :: Ar3, Ar4, Ar5, Ar6, Ar7
    real(8), dimension(:,:), intent(inout), optional :: Ar2d
+   real(8), dimension(:,:), intent(inout), optional :: Ar2d_2
    real(8) :: temp_c, temp_c2, temp_c3, temp_c4, temp_c5, temp_c6, temp_c7
    integer N,i,j,k
    logical :: swapped
@@ -482,6 +585,13 @@ subroutine sort_array(Ev, Ar2, Ar3, Ar4, Ar5, Ar6, Ar7, Ar2d)	! bubble method
                   Ar2d(i+1,k) = temp_c5
                enddo
             endif
+            if (present(Ar2d_2)) then
+               do k = 1, size(Ar2d_2,2)
+                  temp_c5 = Ar2d_2(i,k)
+                  Ar2d_2(i,k) = Ar2d_2(i+1,k)
+                  Ar2d_2(i+1,k) = temp_c5
+               enddo
+            endif
 
             swapped = .TRUE.
          END IF
@@ -519,7 +629,7 @@ subroutine collect_all_output(Folders_with_data)
    character(200), dimension(:), allocatable, intent(inout) :: Folders_with_data
    character(1) :: path_sep
    character(500) :: File_name, command, read_line, temp_file
-   integer :: FN, open_status, leng, Reason, count_lines
+   integer :: FN, open_status, leng, Reason, count_lines, i
    FN = 1300
    ! Find out which OS it is:
    call Path_separator(path_sep)  ! Objects_and_types
@@ -534,7 +644,8 @@ subroutine collect_all_output(Folders_with_data)
    else
       command = "ls -t | grep 'OUTPUT_' >"//trim(adjustl(File_name))
    endif
-   call system(trim(adjustl(command))) ! execute the command
+   !call system(trim(adjustl(command))) ! execute the command
+   i = system(trim(adjustl(command))) ! execute the command
    
    ! Read file names:
    open(UNIT=FN, file=trim(adjustl(File_name)), iostat=open_status, action='read')

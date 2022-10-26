@@ -876,10 +876,12 @@ end subroutine set_Erf_distribution
 
 
 
-subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
+subroutine get_electron_heat_capacity(Scell, NSC, Ce, DOS_weights, Ce_partial, norm_fe)
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   real(8), intent(out) :: Ce	! current electron heat capacity [eV]
+   real(8), intent(out) :: Ce ! current electron heat capacity [J/(m^3 K)]
+   real(8), dimension(:,:,:), intent(in), optional :: DOS_weights ! weigths of the particular type of orbital on each energy level
+   real(8), dimension(:), intent(out), optional :: Ce_partial ! band-resolved Ce [J/(m^3 K)]
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
    real(8) :: Ntot	! number of electrons
    real(8) :: nat   ! number of atoms
@@ -889,6 +891,15 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
    real(8) :: Dens	 ! atomic density
    real(8) :: coef   ! conversion coefficients with units
    real(8) :: C1, C2
+   logical :: do_partial
+
+
+    if (present(DOS_weights) .and. present(Ce_partial)) then ! partial contributions required:
+       do_partial = .true.
+    else
+       do_partial = .false.
+    endif
+
    dTe = 10.0d0/g_kb	! [eV] -> [K]
    Ntot = dble(Scell(NSC)%Ne)
    nat = dble(Scell(NSC)%Na) ! number of atoms
@@ -902,10 +913,18 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
       call Electron_Fixed_Te(Scell(NSC)%Ei, Ntot, mu0, Te+dTe) ! in case if the electron temperature is given
    endif
    dmu = (mu0 - mu)/dTe
-   if (present(norm_fe)) then
-      call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, norm_fe)
-   else
-      call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce)
+   if (present(norm_fe)) then ! normalization of fe provided:
+      if (do_partial) then
+         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, DOS_weights, Ce_partial, norm_fe)
+      else  ! no partial contributions required:
+         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, norm_fe=norm_fe)
+      endif
+   else  ! default normalization of fe:
+      if (do_partial) then
+         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, DOS_weights, Ce_partial)
+      else  ! no partial contributions required:
+         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce)
+      endif
    endif
 
    !Dens = Scell(NSC)%Ne_low/(Scell(NSC)%V)*1d24 ! [1/cm^3]
@@ -915,33 +934,67 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
    coef = 1.0d30*g_e/g_kb  ! [eV/A^3] -> [J/m^3/K]
    Dens = 1.0d0/(Scell(NSC)%V) ! [1/A^3]
    Ce = Ce * Dens*coef  ! [J/(m^3 K)]
+   if (do_partial) then
+      Ce_partial = Ce_partial * Dens*coef  ! [J/(m^3 K)]
+   endif
+
 !    C1 = Ce
 
    ! 2) High-energy electrons from MC:
    C2 = Scell(NSC)%Ne_high * Dens*coef
    Ce = Ce + C2
+
+   if (do_partial) then ! For simplicity, distribute the high-energy electrons equally:
+      Ce_partial = Ce_partial + C2/dble(size(Ce_partial))
+!       print*, 'Ce=', Ce, SUM(Ce_partial), Ce_partial
+   endif
 !    print*, 'Ce:', C1, C2, Scell(NSC)%Ne_high
 
    if (isnan(Ce) .or. abs(Ce) >= 1d30) Ce = 0.0d0 ! if undefined or infinite
 end subroutine get_electron_heat_capacity
 
 
-subroutine Get_Ce(Ei, Te, mu, dmu, C, norm_fe)
+subroutine Get_Ce(Ei, Te, mu, dmu, C, DOS_weights, Ce_partial, norm_fe)
     real(8), dimension(:) :: Ei
-    real(8) Te, mu, dmu, C
+    real(8) Te, mu, dmu, C, C_temp
+    real(8), dimension(:,:,:), intent(in), optional :: DOS_weights ! weigths of the particular type of orbital on each energy level
+    real(8), dimension(:), intent(out), optional :: Ce_partial ! band-resolved Ce [J/(m^3 K)]
     real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
     real(8) dfdT, E
-    integer i, N
+    integer i, N, N_at, N_types, i_at, i_types, i_G1
+    logical :: do_partial
+
+    if (present(DOS_weights) .and. present(Ce_partial)) then ! partial contributions required:
+       do_partial = .true.
+       Ce_partial = 0.0d0 ! to start with
+    else
+       do_partial = .false.
+    endif
+
+    if (do_partial) then
+      N_at = size(DOS_weights,1)    ! number of kinds of atoms
+      N_types = size(DOS_weights,2) ! number of atomic shells (basis set size)
+    endif
     N = size(Ei)
     C = 0.0d0
-    do i = 1, N
+    do i = 1, N   ! all energy levels
         E = Ei(i)
         if (present(norm_fe)) then
            dfdT = Diff_Fermi_Te(Te, mu, dmu, E, norm_fe)
         else
            dfdT = Diff_Fermi_Te(Te, mu, dmu, E)
         endif
-        C = C + dfdT*(E-mu) ! correct definition from Cv = T*dS/dT; S=entropy
+        C_temp = dfdT*(E-mu)
+        C = C + C_temp ! correct definition from Cv = T*dS/dT; S=entropy
+
+        if (do_partial) then ! partial contributions required:
+           do i_at = 1, N_at ! all elements
+              do i_types = 1, N_types  ! all shells of each element
+                 i_G1 = (i_at-1) * N_types + i_types
+                 Ce_partial(i_G1) = Ce_partial(i_G1) + C_temp * DOS_weights(i_at, i_types, i)
+              enddo ! i_types
+           enddo ! i_at
+        endif ! do_partial
     enddo
 end subroutine
 
