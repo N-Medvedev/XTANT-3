@@ -50,6 +50,10 @@ use Exponential_wall
 
 implicit none
 
+! Module parameters (often used)
+!real(8), parameter :: m_two_third = 2.0d0/3.0d0   ! already present in module "TB_NRL"
+
+
  contains
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
@@ -1552,9 +1556,281 @@ end subroutine get_Mulliken
 
 
 
+subroutine get_electronic_thermal_parameters(numpar, Scell, NSC, matter, Err)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in) :: matter   ! materil parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !----------------------------
+   ! 1) Electron heat capacity:
+   call get_electronic_heat_capacity(Scell, NSC, Scell(NSC)%Ce, numpar%do_kappa, numpar%DOS_weights, Scell(NSC)%Ce_part) ! module "Electron_tools"
+
+   !----------------------------
+   ! 2) Electron heat conductivity:
+   call get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err) ! below
+
+end subroutine get_electronic_thermal_parameters
+
+
+
+
+subroutine get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in) :: matter	! materil parameters
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Error_handling), intent(inout) :: Err	! error save
+   !-------------------------
+   real(8), dimension(3,3) :: kappa_e, kappa_ei, L_EE, L_ET, L_TT, kappa_ee
+   real(8), dimension(:,:,:), allocatable :: kappa_e_part, L_EE_part, L_ET_part, L_TT_part
+   real(8), dimension(:,:), allocatable :: v_e
+   real(8), dimension(:), allocatable :: dfdE
+   real(8) :: coef, temp(3,3), tau, eps, Emu, Etemp(3,3), E2temp(3,3)
+   integer :: Nsiz, i, j, k, N_at, N_types, i_at, i_types, i_G1
+
+   if (numpar%do_kappa) then ! only if requested
+      if (Scell(NSC)%Te < 35.0d0) then ! effectively zero Te
+         Scell(NSC)%kappa_e = 0.0d0
+
+      else ! non-zero Te
+         eps = 1.0d-8   ! precision
+         Nsiz = size(Scell(NSC)%Ei)
+         if (.not.allocated(Scell(NSC)%kappa_e_part)) allocate(Scell(NSC)%kappa_e_part(size(Scell(NSC)%G_ei_partial,1)))
+         N_at = size(numpar%DOS_weights,1)    ! number of kinds of atoms
+         N_types = size(numpar%DOS_weights,2) ! number of atomic shells (basis set size)
+         ! Band resolved kappa calculations:
+         allocate(kappa_e_part(3,3,size(Scell(NSC)%kappa_e_part)), source=0.0d0)
+         allocate(   L_EE_part(3,3,size(Scell(NSC)%kappa_e_part)), source=0.0d0)
+         allocate(   L_ET_part(3,3,size(Scell(NSC)%kappa_e_part)), source=0.0d0)
+         allocate(   L_TT_part(3,3,size(Scell(NSC)%kappa_e_part)), source=0.0d0)
+
+
+!          call print_time_step('Start: get_electron_heat_conductivity:', 1.0, msec=.true.)   ! module "Little_subroutines"
+
+         !-------------------------
+         ! Electron-ion contribution, according to [https://doi.org/10.1002/aenm.202200657], Eqs.(1-5):
+         ! 1) Get the electron band velosities:
+         allocate(v_e(Nsiz,3))   ! v_x, v_y, v_z
+         call get_electron_band_velosities(numpar, Scell, NSC, v_e, Err) ! below
+
+         ! 2) Get the derivative of Fermi:
+         allocate(dfdE(Nsiz))
+         do i = 1, Nsiz
+            dfdE(i) = Diff_Fermi_E(Scell(NSC)%TeeV, Scell(NSC)%mu, Scell(NSC)%Ei(i)) ! module "Electron_tools"
+         enddo
+
+         ! 3) Collect the terms:
+         L_EE = 0.0d0   ! to start with
+         L_ET = 0.0d0   ! to start with
+         L_TT = 0.0d0   ! to start with
+         do i = 1, Nsiz
+
+            Emu = Scell(NSC)%Ei(i)-Scell(NSC)%mu
+
+            !if ( (abs(Scell(NSC)%Ei(i)) > eps) .and. (abs(Scell(NSC)%I_ij(i)) > eps) .and. (abs(dfdE(i)) > eps) ) then ! [O 1]
+            if ( (abs(Emu) > eps) .and. (abs(dfdE(i)) > eps) ) then  ! [O 2]
+               ! Scattering time:
+               !tau = (Scell(NSC)%Te-Scell(NSC)%Ta)/Scell(NSC)%Ei(i) * Scell(NSC)%Ce_i(i)/Scell(NSC)%I_ij(i) ! [O 1]
+               if (abs(Scell(NSC)%I_ij(i)) > eps) then
+                  tau = (Scell(NSC)%Te-Scell(NSC)%Ta)/Emu * Scell(NSC)%Ce_i(i)/Scell(NSC)%I_ij(i) ! [O 2]
+               else
+                  tau = 0.0d0
+               endif
+!                print*, 'tau', i, Scell(NSC)%Ei(i), Scell(NSC)%I_ij(i), tau
+               tau = abs(tau)
+
+               ! Velosities:
+               forall (j=1:3, k=1:3)
+                  !temp(j,k) = v_e(i,j)*v_e(i,k) * dfdE(i) * tau  ! [O 1]
+                  temp(j,k) = v_e(i,j)*v_e(i,k) * Scell(NSC)%Ce_i(i) * tau  ! [O 2]
+               end forall
+               Etemp(:,:) = Emu*temp(:,:)
+               E2temp(:,:) = Emu*Etemp(:,:)
+
+               ! L terms:
+               L_TT = L_TT + temp
+               L_ET = L_ET + Etemp
+               L_EE = L_EE + E2temp
+
+               do i_at = 1, N_at ! all elements
+                  do i_types = 1, N_types  ! all shells of each element
+                     i_G1 = (i_at-1) * N_types + i_types
+                     L_TT_part(:,:,i_G1) = L_TT_part(:,:,i_G1) + temp * numpar%DOS_weights(i_at, i_types, i)
+                     L_ET_part(:,:,i_G1) = L_ET_part(:,:,i_G1) + Etemp * numpar%DOS_weights(i_at, i_types, i)
+                     L_EE_part(:,:,i_G1) = L_EE_part(:,:,i_G1) + E2temp * numpar%DOS_weights(i_at, i_types, i)
+                  enddo ! i_types
+               enddo ! i_at
+
+            endif ! (abs(Scell(NSC)%Ei(i)) > eps)
+         enddo
+
+         ! Kappa e-i:
+         ! [O 1]:
+!          where (abs(L_TT(:,:)) > eps)
+!             kappa_ei = 1.0d0/(Scell(NSC)%V * Scell(NSC)%Te) * (L_EE - L_ET**2/L_TT) ! [eV*m^2/(A^3*K)]
+!          elsewhere
+!             kappa_ei = 1.0d0/(Scell(NSC)%V * Scell(NSC)%Te) * L_EE ! [eV*m^2/(A^3*K)]
+!          endwhere
+!          where (abs(L_TT_part(:,:,:)) > eps)
+!             kappa_e_part = 1.0d0/(Scell(NSC)%V * Scell(NSC)%Te) * (L_EE_part - L_ET_part**2/L_TT_part) ! [eV*m^2/(A^3*K)]
+!          elsewhere
+!             kappa_e_part = 1.0d0/(Scell(NSC)%V * Scell(NSC)%Te) * L_EE_part ! [eV*m^2/(A^3*K)]
+!          endwhere
+         ! [O 2]:
+         kappa_ei = L_TT/Scell(NSC)%V           ! [eV*m^2/(A^3*K*s)]
+         kappa_e_part = L_TT_part/Scell(NSC)%V  ! [eV*m^2/(A^3*K*s)]
+
+         ! Convert into SI units:
+         coef = 1.0d30*g_e ! [eV/A^3] -> [J/m^3]
+         kappa_ei = kappa_ei * coef ! [W/(m*K)]
+         kappa_e_part = kappa_e_part * coef ! [W/(m*K)]
+
+         !-------------------------
+         ! Electron-electron scattering, using CDF cross-sections:
+         kappa_ee = 1.0d30
+         do i = 1, 3 ! diagonal elements have non-zero contributions
+            kappa_ee(i,i) = 1.0d30
+         enddo
+
+         !-------------------------
+         ! Contributions from electron-ion and electron-electron scattering,
+         ! accordint to [10.1103/PhysRevD.74.043004], Eq.(2):
+         where (kappa_ei(:,:) > eps)
+            kappa_e = 1.0d0/(1.0d0/kappa_ei + 1.0d0/kappa_ee)  ! total electron conductivity
+         elsewhere
+            kappa_e = kappa_ei   ! total electron conductivity
+         endwhere
+         ! Save average electron conductivity:
+         Scell(NSC)%kappa_e = 1.0d0/3.0d0 * (kappa_e(1,1) + kappa_e(2,2) + kappa_e(3,3))  ! trace of the matrix
+         Scell(NSC)%kappa_e_part(:) = 1.0d0/3.0d0 * (kappa_e_part(1,1,:) + kappa_e_part(2,2,:) + kappa_e_part(3,3,:))
+
+         ! Clean up:
+         deallocate(v_e, dfdE)
+
+!          call print_time_step('End :  get_electron_heat_conductivity:', 2.0, msec=.true.)   ! module "Little_subroutines"
+      endif ! (Scell(NSC)%Te < 30.0d0)
+   endif ! (numpar%do_kappa)
+end subroutine get_electron_heat_conductivity
+
+
+subroutine get_electron_band_velosities(numpar, Scell, NSC, v_e, Err)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   real(8), dimension(:,:), intent(inout) :: v_e
+   type(Error_handling), intent(inout) :: Err	! error save
+   !--------------------------------------
+   complex, dimension(:,:), allocatable :: CHij, CSij	! eigenvectors of the hamiltonian
+   real(8), dimension(:), allocatable :: Ei	! [eV] current energy levels at the selected k point
+   real(8), dimension(:,:), allocatable :: E_c ! [eV]
+   real(8) :: k_shift, k_shift2, coef, A, B, C, k_add
+   integer :: Nsiz, i
+
+!    call print_time_step('get_electron_band_velosities:', 1.0, msec=.true.)   ! module "Little_subroutines"
+
+   k_shift = 0.05d0
+   k_shift2 = 2.0d0 * k_shift
+   k_add = k_shift + k_shift2
+   Nsiz = size(Scell(NSC)%Ei)
+
+   ! Get the energy levels:
+   allocate(E_c(Nsiz,6))
+
+   ! Get energy levels at given k-points (function below):
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, k_shift, 0.0d0, 0.0d0, Err)  ! below
+   E_c(:,1) = Ei  ! -kx
+!    call print_time_step('get_electron_band_velosities:', 2.0, msec=.true.)   ! module "Little_subroutines"
+!    print*, 'Ec 1:', E_c(1,1), Scell(NSC)%Ei(1)
+
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, k_shift2, 0.0d0, 0.0d0, Err)  ! below
+   E_c(:,2) = Ei  ! +kx
+!    call print_time_step('get_electron_band_velosities:', 3.0, msec=.true.)   ! module "Little_subroutines"
+!    print*, 'Ec 2:', E_c(1,2), Scell(NSC)%Ei(1)
+
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, 0.0d0, k_shift, 0.0d0, Err)  ! below
+   E_c(:,3) = Ei  ! -ky
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, 0.0d0, k_shift2, 0.0d0, Err)  ! below
+   E_c(:,4) = Ei  ! +ky
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, 0.0d0, 0.0d0, k_shift, Err)  ! below
+   E_c(:,5) = Ei  ! -kz
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, 0.0d0, 0.0d0, k_shift2, Err)  ! below
+   E_c(:,6) = Ei  ! +kz
+
+   ! Now get the derivetives dEi/dk:
+   do i = 1, Nsiz
+      call fit_parabola_to_3points(0.0d0, Scell(NSC)%Ei(i), k_shift, E_c(i,1), k_shift2, E_c(i,2), A, B, C)  ! module "Algebra_tools"
+      !v_e(i,1) = B   ! v_x
+      v_e(i,1) = m_two_third*(A * k_add) + B   ! v_x
+      call fit_parabola_to_3points(0.0d0, Scell(NSC)%Ei(i), k_shift, E_c(i,3), k_shift2, E_c(i,4), A, B, C)  ! module "Algebra_tools"
+      !v_e(i,2) = B   ! v_y
+      v_e(i,2) = m_two_third*(A * k_add) + B   ! v_y
+      call fit_parabola_to_3points(0.0d0, Scell(NSC)%Ei(i), k_shift, E_c(i,5), k_shift2, E_c(i,6), A, B, C)  ! module "Algebra_tools"
+      !v_e(i,3) = B   ! v_z
+      v_e(i,3) = m_two_third*(A * k_add) + B   ! v_z
+   enddo
+
+   ! Convert into SI units:
+   coef = (g_e*1.0d-10)/g_h ! [eV*A]/h -> [J*m]/h = [m/s]
+   v_e = v_e * coef
+   ! Check for consistency:
+   where(abs(v_e) > g_cvel)  ! cannot be bigger than the speed of light:
+      v_e = sign(g_cvel,v_e)
+   endwhere
+!    print*, 'Ve=', v_e
+!    pause 'get_electron_band_velosities'
+
+   ! Clean up:
+   deallocate(Ei, E_c)
+   call deallocate_array(CHij)   ! module "Little_sobroutine"
+   call deallocate_array(CSij)   ! module "Little_sobroutine"
+end subroutine get_electron_band_velosities
+
+
+
+
+subroutine get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   real(8), dimension(:), intent(inout), allocatable :: Ei	! [eV] current energy levels at the selected k point
+   complex, dimension(:,:), intent(inout), allocatable :: CHij	! eigenvectors of the hamiltonian
+   complex, dimension(:,:), intent(inout), allocatable :: CSij	! overlap matrix of the nonorthogonal hamiltonian
+   real(8), intent(in) :: kx, ky, kz	! k point
+   type(Error_handling), intent(inout) :: Err	! error save
+   !-------------------------------
+   ! Construct complex Hamiltonian from the real one for the given k-point:
+   if ((abs(kx) < 1.0d-14) .AND. (abs(ky) < 1.0d-14) .AND. (abs(kz) < 1.0d-14)) then ! Gamma point:
+      Ei = Scell(NSC)%Ei    !already known
+   else ! any other point:
+      ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
+         select type(ARRAY)
+         type is (TB_H_Pettifor)	! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err) ! below
+         type is (TB_H_Molteni)	! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err)  ! below
+         type is (TB_H_Fu)		! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err) ! below
+         type is (TB_H_NRL)	! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, &
+               Sij=Scell(NSC)%Sij, CSij=CSij) ! below
+         type is (TB_H_DFTB) 	! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, &
+               Sij=Scell(NSC)%Sij, CSij=CSij) ! below
+         type is (TB_H_3TB) 	! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, &
+               Sij=Scell(NSC)%Sij, CSij=CSij) ! below
+         type is (TB_H_xTB) 	! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, &
+               Sij=Scell(NSC)%Sij, CSij=CSij) ! below
+         end select
+      END ASSOCIATE
+   endif
+end subroutine get_complex_Hamiltonian_new
+
 
 subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function 
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(inout), allocatable :: Ei	! [eV] current energy levels at the selected k point
@@ -1581,7 +1857,7 @@ subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, 
             type is (TB_H_NRL)
                call Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_NRL"
             type is (TB_H_DFTB)
-               call Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_DFTB"   
+               call Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_DFTB"
             type is (TB_H_3TB)
                call Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_DFTB", the are the same
             type is (TB_H_xTB)
@@ -1590,6 +1866,8 @@ subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, 
       END ASSOCIATE
    endif
 end subroutine get_complex_Hamiltonian
+
+
 
 
 subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ksx, ksy, ksz, Err, cPRRx, cPRRy, cPRRz, Sij, CSij)   ! CHECKED
@@ -1802,6 +2080,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    if (allocated(CSij_save)) deallocate(CSij_save)
    nullify(x1, y1, z1)
 end subroutine construct_complex_Hamiltonian
+
+
 
 
 

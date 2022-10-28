@@ -73,7 +73,8 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_holes(numpar%FN_deep_holes, time, matter, Scell(NSC))
       if (numpar%save_raw) call write_atomic_relatives(numpar%FN_atoms_S, Scell(NSC)%MDatoms)
       call write_super_cell(numpar%FN_supercell, time, Scell(NSC))
-      call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, numpar%FN_Ce)
+      call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, &
+               numpar%FN_Ce, numpar%FN_kappa)
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter)
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time)
       if (numpar%save_Ei) then
@@ -431,7 +432,7 @@ end subroutine write_atomic_cif
 
 
 
-subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, FN_Ce)
+subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, FN_Ce, FN_kappa)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: time	! [fs]
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
@@ -439,16 +440,12 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    real(8), dimension(:), intent(in) :: Ei	! energy levels
    type(Solid), intent(in) :: matter	! Material parameters
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   integer, intent(in) :: FN_Ce  ! file number for band-resolved Ce
+   integer, intent(in) :: FN_Ce, FN_kappa  ! file number for band-resolved Ce and kappa
    !------------------------
-   real(8) Ce
-   real(8), dimension(size(Scell(NSC)%G_ei_partial,1)) :: Ce_part
    integer i, Nat, n_at, Nsiz, norb, N_types, i_at, i_types, i_G1
 
-   call get_electron_heat_capacity(Scell, NSC, Ce, numpar%DOS_weights, Ce_part) ! module "Electron_tools"
-   
    ! Write electron properties:
-   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, Scell(NSC)%Ne_low/real(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Ce, Scell(NSC)%G_ei, Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
+   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, Scell(NSC)%Ne_low/real(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
    Nat = size(matter%Atoms(:)) ! number of elements
    do i = 1, Nat    ! index starting from 11
       write(FN,'(es25.16)', advance='no') (matter%Atoms(i)%NVB - matter%Atoms(i)%mulliken_Ne)
@@ -462,15 +459,29 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    ! Find number of different orbital types:
    N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
    ! Total Ce:
-   write(FN_Ce, '(es25.16,es25.16)', advance='no') time, Ce
+   write(FN_Ce, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%Ce
    ! All shells resolved:
    do i_at = 1, Nat
       do i_types = 1, N_types
          i_G1 = (i_at-1) * N_types + i_types
-         write(FN_Ce,'(es25.16)',advance='no') Ce_part(i_G1)
+         write(FN_Ce,'(es25.16)',advance='no') Scell(NSC)%Ce_part(i_G1)
       enddo   ! i_types
    enddo ! i_at
    write(FN_Ce,'(a)') ''
+
+   ! Write electron heat conductivity if requesed:
+   if (numpar%do_kappa) then
+      ! Total kappa:
+      write(FN_kappa, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%kappa_e
+      ! All shells resolved:
+      do i_at = 1, Nat
+         do i_types = 1, N_types
+            i_G1 = (i_at-1) * N_types + i_types
+            write(FN_kappa,'(es25.16)',advance='no') Scell(NSC)%kappa_e_part(i_G1)
+         enddo   ! i_types
+      enddo ! i_at
+      write(FN_kappa,'(a)') ''
+   endif
 
 end subroutine write_electron_properties
 
@@ -554,6 +565,7 @@ subroutine write_Ce_header(FN, Scell, NSC, matter)
    enddo ! i_at
    write(FN,'(a)') ''
 end subroutine write_Ce_header
+
 
 
 subroutine write_coulping(FN, time, Scell, NSC, numpar)
@@ -841,11 +853,13 @@ subroutine close_output_files(Scell, numpar)
    close(numpar%FN_temperatures)
    close(numpar%FN_pressure)
    close(numpar%FN_electron_properties)
+   close(numpar%FN_Ce)
    close(numpar%FN_energies)
    close(numpar%FN_supercell)
-   if (numpar%save_raw) close(numpar%FN_atoms_S)
    close(numpar%FN_numbers)
    close(numpar%FN_deep_holes)
+   if (numpar%do_kappa) close(numpar%FN_kappa)
+   if (numpar%save_raw) close(numpar%FN_atoms_S)
    if (numpar%do_drude) close(numpar%FN_optics)
    if (numpar%save_XYZ) close(numpar%FN_atoms_R)
    if (numpar%save_CIF) close(numpar%FN_cif)
@@ -875,7 +889,8 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    character(100) :: file_atoms_cif	! atomic coordinates in cif-format (standard for constructing diffraction patterns)
    character(100) :: file_supercell	! supercell vectors
    character(100) :: file_electron_properties	! electron properties
-   character(100) :: file_electron_heat_capacity	! band-resolved electron heat capacity
+   character(200) :: file_electron_heat_capacity	! band-resolved electron heat capacity
+   character(200) :: file_electron_heat_conductivity  ! electron heat conductivity
    character(100) :: file_numbers	! total numbers of electrons and holes
    character(100) :: file_deep_holes	! number of deep-shell holes in each shell
    character(100) :: file_Ei		! energy levels
@@ -922,6 +937,14 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_capacity)))
    numpar%FN_Ce = FN
    call write_Ce_header(numpar%FN_Ce, Scell, 1, matter) ! below
+
+   if (numpar%do_kappa) then
+      file_electron_heat_conductivity = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_conductivity)))
+      numpar%FN_kappa = FN
+      ! We can use the same header here as for Ce:
+      call write_Ce_header(numpar%FN_kappa, Scell, 1, matter) ! below
+   endif
 
    file_energies = trim(adjustl(file_path))//'OUTPUT_energies.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_energies)))
@@ -3027,6 +3050,12 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       write(print_to,'(a, f7.1, a)') ' with the acceptance window: ', numpar%acc_window, ' [eV]'
       write(print_to,'(a, f8.5, a)') ' degeneracy tollerance: ', numpar%degeneracy_eV, ' [eV]'
       write(print_to,'(a, f8.5)') ' and scaling factor of: ', numpar%M2_scaling
+   endif
+
+   if (numpar%do_kappa) then
+      write(print_to,'(a)') ' Calculation of electronic heat conductivity is included'
+   else
+      write(print_to,'(a)') ' No calculation of electronic heat conductivity'
    endif
 
    if (numpar%do_cool) then

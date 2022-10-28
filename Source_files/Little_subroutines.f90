@@ -60,6 +60,8 @@ interface deallocate_array
    module procedure deallocate_array_r2
    module procedure deallocate_array_r3
    module procedure deallocate_array_ch1
+   module procedure deallocate_array_c1
+   module procedure deallocate_array_c2
 end interface deallocate_array   
 
 
@@ -103,6 +105,16 @@ subroutine deallocate_array_ch1(X)
    character(*), dimension(:), allocatable, intent(inout) :: X
    if (allocated(X)) deallocate(X)
 end subroutine deallocate_array_ch1
+
+ subroutine deallocate_array_c1(X)
+   complex, dimension(:), allocatable, intent(inout) :: X
+   if (allocated(X)) deallocate(X)
+end subroutine deallocate_array_c1
+
+subroutine deallocate_array_c2(X)
+   complex, dimension(:,:), allocatable, intent(inout) :: X
+   if (allocated(X)) deallocate(X)
+end subroutine deallocate_array_c2
 
  
  

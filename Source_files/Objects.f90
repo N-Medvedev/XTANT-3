@@ -488,7 +488,13 @@ type Super_cell
    real(8), dimension(:), allocatable :: MSDP	! [A^2] mean square displacements for atoms of different sorts
    real(8) :: mu	! [eV] electron chemical potential
    real(8), dimension(:), allocatable :: fe ! low-energy electron distribution
+   real(8), dimension(:), allocatable :: I_ij ! electron-ion collision integral [1/s]
    real(8), dimension(:), allocatable :: Norm_WF ! Normalization of wave functions
+   real(8) :: Ce  ! electron heat capacity [J/(m^3 K)]
+   real(8), dimension(:), allocatable :: Ce_part   ! band-resolved electron heat capacity [J/(m^3 K)]
+   real(8), dimension(:), allocatable :: Ce_i   ! energy level resolved electron heat capacity [J/(m^3 K)]
+   real(8) :: kappa_e  ! electron heat conductivity [W/(m K)]
+   real(8), dimension(:), allocatable :: kappa_e_part   ! band-resolved electron heat conductivity [W/(m K)]
    ! Atoms:
    type(Atom), dimension(:), allocatable :: MDAtoms ! all atoms in MD
    type(Energies) :: nrg		! [eV] energies in the super-cell
@@ -698,7 +704,7 @@ type Numerics_param
    ! numbers of files:
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
-   integer :: FN_coupling, FN_neighbors, FN_Ce
+   integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
    integer :: el_ion_scheme
@@ -706,7 +712,8 @@ type Numerics_param
    real(8), dimension(:,:), allocatable :: k_grid	! for the case of user-provided grid for k-space (for CDF and DOS calculations)
    logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
    ! Different output, what to save:
-   logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate, do_elastic_MC, do_path_coordinate
+   logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate
+   logical :: do_elastic_MC, do_path_coordinate, do_kappa
    logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN
    integer :: Mulliken_model
    integer :: ind_fig_extention

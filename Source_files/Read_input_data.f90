@@ -130,6 +130,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%scc_mix = 1.0d0  ! maximal mixing
    numpar%t_NA = 1.0d-3	! [fs] start of the nonadiabatic
    numpar%acc_window = 5.0d0	! [eV] acceptance window for nonadiabatic coupling:
+   numpar%do_kappa = .false.  ! electron heat conductivity calculation
    numpar%do_cool = .false.	! quenching excluded
    numpar%at_cool_start = 2500.0	! starting from when [fs]
    numpar%at_cool_dt = 40.0	! how often [fs]
@@ -695,7 +696,7 @@ subroutine get_CDF_data(matter, numpar, Err)
 
             call check_atomic_data(matter, numpar, Err, i, j, matter%Atoms(i)%sh) 
 
-            DOCDF:if (matter%Atoms(i)%N_CDF(j) .GT. 0) then ! do this shell with CDF
+            DOCDF:if (matter%Atoms(i)%N_CDF(j) .GT. 0) then ! do this shell with provided CDF coefficients
                matter%Atoms(i)%TOCS(j) = 1 ! CDF cross-section
                allocate(matter%Atoms(i)%CDF(j)%A(matter%Atoms(i)%N_CDF(j)))
                allocate(matter%Atoms(i)%CDF(j)%E0(matter%Atoms(i)%N_CDF(j)))
@@ -711,6 +712,7 @@ subroutine get_CDF_data(matter, numpar, Err)
                      goto 3420
                   endif
                enddo
+
             else DOCDF
                matter%Atoms(i)%TOCS(j) = 0 ! BEB cross-section
             endif DOCDF
@@ -4050,7 +4052,22 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       goto 3418
    endif
 
-   ! atoms super-cooling (0=no, 1=yes); starting from when [fs]; how often [fs]:
+   ! calculate electornic heat conductivity (0=no, 1=yes):
+   read(FN,*,IOSTAT=Reason) N
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 3418
+   endif
+   if (N .EQ. 1) then
+      numpar%do_kappa = .true.	! included
+   else
+      numpar%do_kappa = .false.	! excluded
+   endif
+
+   ! atoms quenching (0=no, 1=yes); starting from when [fs]; how often [fs]:
    read(FN,*,IOSTAT=Reason) N, numpar%at_cool_start, numpar%at_cool_dt ! include atomic cooling? When to start? How often?
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then

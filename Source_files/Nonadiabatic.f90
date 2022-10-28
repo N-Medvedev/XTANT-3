@@ -231,6 +231,12 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
    nrg%El_low = SUM(distre_temp(:)*wr(:)) ! new total electron energy [eV]
 !    dE_nonadiabat = -SUM(distre_temp(:)*wr(:)-distre(:)*wr(:))
    dE_nonadiabat = SUM( (distre(:) - distre_temp(:)) * wr(:) )    ! [eV] transfered energy
+
+   ! Save the collision integral, if needed:
+   if (numpar%do_kappa) then
+      Scell%I_ij(:) = (distre(:) - distre_temp(:))/(numpar%dt * 1d-15)  ! [1/s]
+   endif
+
    distre = distre_temp ! update electron distribution function after energy exchange with the atomic system
    
    ! Test partial G_ei contributions:

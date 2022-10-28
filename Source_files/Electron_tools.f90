@@ -33,6 +33,38 @@ implicit none
  contains
 
 
+subroutine update_cross_section(Scell, matter)
+   type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
+   type(solid), intent(inout) :: matter	! materil parameters
+   integer :: Nshl, i, N_Te
+   real(8) :: dT, T_left
+   ! Get the mean free paths vs Te:
+   Nshl = size(matter%Atoms(1)%Ip)
+   select case (matter%Atoms(1)%TOCS(Nshl)) ! Valence band and CDF only
+   case (1) ! CDF
+      if (Scell%Te > 100.0d0) then  ! recalculate:
+         ! Temperature (grid defined in subroutine get_MFPs as Te_temp = dble((i-1)*1000)):
+         dT = 1000.0d0 ! [K] grid step
+         T_left = FLOOR(Scell%Te/1000)*1000
+         N_Te = CEILING(Scell%Te/1000)
+         if (N_Te > size(matter%Atoms(1)%El_MFP_vs_T)) N_Te = size(matter%Atoms(1)%El_MFP_vs_T)   ! maximal energy set
+         ! Interpolate valence band MFP for the given temperature:
+         if (N_Te == 1) then
+            matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) + &
+          (matter%Atoms(1)%El_MFP_vs_T(N_Te+1)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:))/dT * (Scell%Te-T_left)
+         else
+            matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) + &
+          (matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te-1)%L(:))/dT * (Scell%Te-T_left)
+         endif
+      else ! no need to recalculate, the tempereature is too small:
+         N_Te = 1
+         matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:)
+      endif
+   endselect
+
+!    print*, 'Te=', Scell%Te, matter%Atoms(1)%El_MFP(Nshl)%L(1), matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(1)
+end subroutine update_cross_section
+
 
 subroutine find_band_gap(wr, Scell, matter, numpar)
    REAL(8), DIMENSION(:), INTENT(in) ::  wr	! [eV] energy levels
@@ -876,12 +908,13 @@ end subroutine set_Erf_distribution
 
 
 
-subroutine get_electron_heat_capacity(Scell, NSC, Ce, DOS_weights, Ce_partial, norm_fe)
-   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, Ce_partial, norm_fe)
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), intent(out) :: Ce ! current electron heat capacity [J/(m^3 K)]
+   logical, intent(in) :: do_kappa  ! if kappa calculations are requested
    real(8), dimension(:,:,:), intent(in), optional :: DOS_weights ! weigths of the particular type of orbital on each energy level
-   real(8), dimension(:), intent(out), optional :: Ce_partial ! band-resolved Ce [J/(m^3 K)]
+   real(8), dimension(:), intent(out), allocatable, optional :: Ce_partial ! band-resolved Ce [J/(m^3 K)]
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
    real(8) :: Ntot	! number of electrons
    real(8) :: nat   ! number of atoms
@@ -892,10 +925,11 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, DOS_weights, Ce_partial, n
    real(8) :: coef   ! conversion coefficients with units
    real(8) :: C1, C2
    logical :: do_partial
-
+   real(8), dimension(size(Scell(NSC)%Ei)) :: Ce_i
 
     if (present(DOS_weights) .and. present(Ce_partial)) then ! partial contributions required:
        do_partial = .true.
+       if (.not.allocated(Ce_partial)) allocate(Ce_partial(size(Scell(NSC)%G_ei_partial,1)))
     else
        do_partial = .false.
     endif
@@ -915,15 +949,15 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, DOS_weights, Ce_partial, n
    dmu = (mu0 - mu)/dTe
    if (present(norm_fe)) then ! normalization of fe provided:
       if (do_partial) then
-         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, DOS_weights, Ce_partial, norm_fe)
+         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, DOS_weights, Ce_partial, norm_fe)
       else  ! no partial contributions required:
-         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, norm_fe=norm_fe)
+         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, norm_fe=norm_fe)
       endif
    else  ! default normalization of fe:
       if (do_partial) then
-         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, DOS_weights, Ce_partial)
+         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, DOS_weights, Ce_partial)
       else  ! no partial contributions required:
-         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce)
+         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce)
       endif
    endif
 
@@ -938,7 +972,10 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, DOS_weights, Ce_partial, n
       Ce_partial = Ce_partial * Dens*coef  ! [J/(m^3 K)]
    endif
 
-!    C1 = Ce
+   ! Save energy-level-resolved heat capacities, if needed:
+   if (do_kappa) then
+      Scell(NSC)%Ce_i = Ce_i/g_kb   ! [eV/K]
+   endif
 
    ! 2) High-energy electrons from MC:
    C2 = Scell(NSC)%Ne_high * Dens*coef
@@ -946,22 +983,24 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, DOS_weights, Ce_partial, n
 
    if (do_partial) then ! For simplicity, distribute the high-energy electrons equally:
       Ce_partial = Ce_partial + C2/dble(size(Ce_partial))
-!       print*, 'Ce=', Ce, SUM(Ce_partial), Ce_partial
    endif
-!    print*, 'Ce:', C1, C2, Scell(NSC)%Ne_high
 
    if (isnan(Ce) .or. abs(Ce) >= 1d30) Ce = 0.0d0 ! if undefined or infinite
-end subroutine get_electron_heat_capacity
+
+end subroutine get_electronic_heat_capacity
 
 
-subroutine Get_Ce(Ei, Te, mu, dmu, C, DOS_weights, Ce_partial, norm_fe)
-    real(8), dimension(:) :: Ei
-    real(8) Te, mu, dmu, C, C_temp
+subroutine Get_Ce(Ce_i, Ei, Te, mu, dmu, C, DOS_weights, Ce_partial, norm_fe)
+    real(8), dimension(:), intent(out) :: Ce_i
+    real(8), dimension(:), intent(in) :: Ei
+    real(8), intent(in) :: Te, mu, dmu
+    real(8), intent(out) :: C ! heat capacity
     real(8), dimension(:,:,:), intent(in), optional :: DOS_weights ! weigths of the particular type of orbital on each energy level
     real(8), dimension(:), intent(out), optional :: Ce_partial ! band-resolved Ce [J/(m^3 K)]
     real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
-    real(8) dfdT, E
-    integer i, N, N_at, N_types, i_at, i_types, i_G1
+    !------------------------
+    real(8) :: dfdT, E, C_temp
+    integer :: i, N, N_at, N_types, i_at, i_types, i_G1
     logical :: do_partial
 
     if (present(DOS_weights) .and. present(Ce_partial)) then ! partial contributions required:
@@ -984,8 +1023,9 @@ subroutine Get_Ce(Ei, Te, mu, dmu, C, DOS_weights, Ce_partial, norm_fe)
         else
            dfdT = Diff_Fermi_Te(Te, mu, dmu, E)
         endif
-        C_temp = dfdT*(E-mu)
-        C = C + C_temp ! correct definition from Cv = T*dS/dT; S=entropy
+        C_temp = dfdT*(E-mu)  ! correct definition from Cv = T*dS/dT; S=entropy
+        C = C + C_temp     ! total
+        Ce_i(i) = C_temp   ! save for output
 
         if (do_partial) then ! partial contributions required:
            do i_at = 1, N_at ! all elements
@@ -1001,7 +1041,7 @@ end subroutine
 
 pure function Diff_Fermi_Te(Te, mu, dmu, E, norm_fe)
    real(8), intent(in) :: Te, mu, dmu, E   ! [eV], temperature, chem.potential, and energy
-   real(8) :: Diff_Fermi_Te   ! Derivative of the Fermi-function
+   real(8) :: Diff_Fermi_Te   ! Derivative of the Fermi-function by temperature Te
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
    real(8) F, buf
    real(8) :: f_norm
@@ -1025,6 +1065,34 @@ pure function Diff_Fermi_Te(Te, mu, dmu, E, norm_fe)
       endif
    endif
 end function Diff_Fermi_Te
+
+
+
+pure function Diff_Fermi_E(Te, mu, E, norm_fe) result(dfdE)
+   real(8), intent(in) :: Te, mu, E   ! [eV], temperature, chem.potential, and energy
+   real(8) :: dfdE   ! Derivative of the Fermi-function by energy
+   real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
+   real(8) F, buf
+   real(8) :: f_norm
+
+   if (present(norm_fe)) then    ! user provided
+      f_norm = norm_fe
+   else  ! by default, spin degenerate
+      f_norm = 2.0d0
+   endif
+
+   if (((E - mu)/Te) >= log(HUGE(mu))) then ! dealing with the problem of large and small numbers
+      dfdE = 0.0d0
+   else
+      buf = dexp((E - mu)/Te)
+      if ( buf > 1.0d30) then ! dealing with the problem of large and small numbers
+         dfdE = -f_norm/(buf*Te)
+      else  ! in case everything is ok
+         F = 1.0d0/(1.0d0 + buf)
+         dfdE = -f_norm*buf*F*F/Te
+      endif
+   endif
+end function Diff_Fermi_E
 
 
 

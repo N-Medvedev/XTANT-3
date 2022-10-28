@@ -111,7 +111,7 @@ if (g_Err%Err) goto 2012	! if there was an error in preparing the initial config
 if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true.)
 
 ! Read (or create) electronic mean free paths (both, inelastic and elastic):
-call get_MFPs(g_matter, g_laser, g_numpar, g_Scell(1)%TeeV, g_Err) ! module "MC_cross_sections"
+call get_MFPs(g_Scell, 1, g_matter, g_laser, g_numpar, g_Scell(1)%TeeV, g_Err) ! module "MC_cross_sections"
 if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Electron mean free paths set succesfully:', msec=.true.)
 
@@ -181,6 +181,9 @@ if (g_numpar%verbose) call print_time_step('Pressure calculated succesfully:', m
 ! Calculate the mean square displacement of all atoms:
 call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
 if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true.)
+
+! Calculate electron heat capacity:
+call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
 ! Calculate configurational temperature:
 ! call Get_configurational_temperature(g_Scell, g_numpar, g_Scell(1)%Tconf)	! module "TB"
@@ -348,6 +351,9 @@ do while (g_time .LT. g_numpar%t_total)
       call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
       ! Calculate the mean square displacement of all atoms:
       call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD, g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
+      ! Calculate electron heat capacity:
+      call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
+
       ! Calculate configurational temperature:
 !       call Get_configurational_temperature(g_Scell, g_numpar, g_Scell(1)%Tconf)	! module "TB"
       ! Save current output data:
@@ -526,6 +532,8 @@ subroutine coordinate_path( )
        
        call write_energies(6, g_time, g_Scell(1)%nrg)   ! module "Dealing_with_output_files"
        call write_energies(100, g_time, g_Scell(1)%nrg)   ! module "Dealing_with_output_files"
+       call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
+
        ! Save initial step in output:
        call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
        
@@ -631,6 +639,7 @@ subroutine vary_size(do_forces, Err)
 
       call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
                             g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne) ! module "TB"
+      call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
       ! Save initial step in output:
       call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"

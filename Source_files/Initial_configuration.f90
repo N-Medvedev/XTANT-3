@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2022 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -21,7 +21,6 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-! 1111111111111111111111111111111111111111111111111111111111111
 ! This module contains subroutines to set initial conditions:
 
 MODULE Initial_configuration
@@ -35,6 +34,7 @@ use TB, only : get_DOS_masks, get_Hamilonian_and_E, get_glob_energy
 use Dealing_with_BOP, only : m_repulsive, m_N_BOP_rep_grid
 use ZBL_potential, only : ZBL_pot
 use TB_xTB, only : identify_xTB_orbitals_per_atom
+use Little_subroutines
 
 implicit none
 
@@ -128,6 +128,10 @@ subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_n
    allocate(Scell(1)%Ei0(n1))  ! energy levels0, eigenvalues of the hamiltonian matrix
    allocate(Scell(1)%Aij(n1,n1))	! coefficients used for forces in TB
    allocate(Scell(1)%fe(size(Scell(1)%Ei))) ! electron distribution function (Fermi-function)
+   if (numpar%do_kappa) then
+      allocate(Scell(1)%I_ij(size(Scell(1)%Ei))) ! electron-ion collision integral
+      allocate(Scell(1)%Ce_i(size(Scell(1)%Ei))) ! electron-energy resolved heat capacity
+   endif
    Scell(1)%MDatoms(1)%KOA = i
    Scell(1)%MDatoms(2)%KOA = j
    Scell(1)%MDatoms(1)%S(:) = 0.1d0
@@ -162,7 +166,7 @@ subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_n
 
    ! Also define ZBL potential at the point of bond length - d:
    call Find_in_array_monoton(abs(Ref_Pot), abs(TB_d), icur) ! module "Little_subroutines"
-   call linear_interpolation(Ref_Pot, TB_Repuls(i,j)%R, TB_d, ZBL_length, icur) ! module "Little_subroutines"
+   call linear_interpolation(Ref_Pot, TB_Repuls(i,j)%R, TB_d, ZBL_length, icur) ! module "Algebra_tools"
 
 !    do k = 1, m_N_BOP_rep_grid
 !       print*, k, TB_Repuls(i,j)%R(k), Ref_Pot(k)
@@ -207,6 +211,11 @@ subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_n
    deallocate(Scell(1)%Aij)
    deallocate(Scell(1)%fe)
    deallocate(Scell(1)%G_ei_partial)
+   deallocate(Scell(1)%Ce_part)
+   call deallocate_array(Scell(1)%I_ij)      ! module "Little_subroutines"
+   call deallocate_array(Scell(1)%Norm_WF)   ! module "Little_subroutines"
+   call deallocate_array(Scell(1)%Ce_i)      ! module "Little_subroutines"
+   call deallocate_array(Scell(1)%kappa_e_part)   ! module "Little_subroutines"
    deallocate(numpar%mask_DOS)
 
 !    pause 'create_BOP_repulsive'
@@ -572,6 +581,10 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          if (allocated(Scell(i)%Sij) .and. .not.allocated(Scell(i)%eigen_S)) allocate(Scell(i)%eigen_S(n1)) ! eigenvalues of Sij
          
          if (.not. allocated(Scell(i)%fe)) allocate(Scell(i)%fe(size(Scell(i)%Ei))) ! electron distribution function (Fermi-function)
+         if (numpar%do_kappa) then
+            if (.not. allocated(Scell(i)%I_ij)) allocate(Scell(i)%I_ij(size(Scell(i)%Ei))) ! electron distribution function (Fermi-function)
+            if (.not. allocated(Scell(i)%Ce_i)) allocate(Scell(i)%Ce_i(size(Scell(i)%Ei))) ! electron distribution function (Fermi-function)
+         endif
 !          if (.not. allocated(Scell(i)%Norm_WF)) allocate(Scell(i)%Norm_WF(size(Scell(i)%Ei))) ! normalization coefficient of the wave function
 
          ! DOS masks if needed:

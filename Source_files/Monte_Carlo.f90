@@ -59,7 +59,7 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
       IF_MC:if ( (Nphot .GT. 1d-10) .OR. ( (Scell(NSC)%Ne_high-Scell(NSC)%Ne_emit) .GT. 1d-10) .OR. (Scell(NSC)%Nh .GT. 1d-10) ) then
 
          ! Update inelastic scattering cross section depending on Te:
-         call update_cross_section(Scell(NSC), matter)  ! module "MC_cross_sections"
+         call update_cross_section(Scell(NSC), matter)  ! module "Electron_tools"
 
          NMC_real = real(numpar%NMC)
          Eetot_stat = 0.0d0

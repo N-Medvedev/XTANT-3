@@ -175,7 +175,9 @@ end subroutine which_shell
 
 !EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
 ! Electrons
-subroutine get_MFPs(matter, laser, numpar, TeeV, Err)
+subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
+   type(Super_cell), dimension(:), intent(in) :: Scell ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! supercell index
    type(Solid), intent(inout) :: matter ! parameters of the material
    type(Pulse), dimension(:), intent(in) :: laser ! Laser pulse parameters
    type(Numerics_param), intent(in) :: numpar  ! all numerical parameters
@@ -224,6 +226,14 @@ subroutine get_MFPs(matter, laser, numpar, TeeV, Err)
       Nshl = size(matter%Atoms(i)%Ip)
       SHELLS:do j = 1, Nshl ! for all shells of this atom
          redo = .false. ! may be there is no need to recalculate MFPs
+
+
+         ! Check if CDF coefficients are set:
+         ! if not, use single-pole approximation
+         if (.not. allocated(matter%Atoms(i)%CDF(j)%A) ) then
+            call set_single_pole_CDF(Scell, NSC, matter, i, j)  ! below
+         endif
+
 
          if ((i .NE. 1) .or. (j .NE. 1)) then
             if (.not.allocated(matter%Atoms(i)%El_MFP(j)%E)) allocate(matter%Atoms(i)%El_MFP(j)%E(N_grid))
@@ -381,6 +391,46 @@ subroutine get_MFPs(matter, laser, numpar, TeeV, Err)
 end subroutine get_MFPs
 
 
+
+subroutine set_single_pole_CDF(Scell, NSC, matter, i, j)  ! only for VB/CB
+   type(Super_cell), dimension(:), intent(in) :: Scell ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! supercell index
+   type(Solid), intent(inout) :: matter ! parameters of the material
+   integer, intent(in) :: i, j   ! index of atom and shell
+   !----------------
+   real(8) :: Omega, NVB, ksum, fsum
+   integer :: Nshl
+
+   Nshl = size(matter%Atoms(1)%Ip)  ! index of the valence band
+   if ( (i == 1) .and. (j == Nshl) ) then ! do only for the valence band
+
+      if (.not.allocated(matter%Atoms(i)%CDF(j)%A)) then
+         matter%Atoms(i)%N_CDF(j) = 1  ! set single CDF, coefficients to be determined
+         allocate(matter%Atoms(i)%CDF(j)%A(matter%Atoms(i)%N_CDF(j)))
+         allocate(matter%Atoms(i)%CDF(j)%E0(matter%Atoms(i)%N_CDF(j)))
+         allocate(matter%Atoms(i)%CDF(j)%G(matter%Atoms(i)%N_CDF(j)))
+      endif
+
+      NVB = dble(Scell(NSC)%Ne) / dble(Scell(NSC)%Na) ! valence electrons per atom
+
+      ! Set them according to the single-pole approximation:
+      Omega = w_plasma(1d6*matter%At_dens*NVB) ! function below, plasma frequency [1/s]
+
+      matter%Atoms(i)%CDF(j)%E0(1) = sqrt((g_h/g_e)*(g_h/g_e) * Omega)  ! [eV]
+      ! Gamma set equal to E0 without effective mass (empirical approximation):
+      matter%Atoms(i)%CDF(j)%G(1) = matter%Atoms(i)%CDF(j)%E0(1)
+      ! A is set vie normalization (sum rule):
+      matter%Atoms(i)%CDF(j)%A(1) = 1.0d0   ! just to get sum rule to renormalize below
+      ! Get sum rule:
+      call sumrules(matter%Atoms(i)%CDF(j)%A, matter%Atoms(i)%CDF(j)%E0, matter%Atoms(i)%CDF(j)%G, ksum, fsum, Scell(NSC)%E_gap, Omega) ! below
+
+      matter%Atoms(i)%CDF(j)%A(1) = NVB/ksum
+
+   endif !( (i == 1) .and. (j == Nshl) )
+end subroutine set_single_pole_CDF
+
+
+
 subroutine IMFP_vs_Te_files(matter, laser, numpar, Te, N_Te)
    type(Solid), intent(inout) :: matter ! parameters of the material
    type(Pulse), dimension(:), intent(in) :: laser ! Laser pulse parameters
@@ -458,39 +508,6 @@ subroutine IMFP_vs_Te_files(matter, laser, numpar, Te, N_Te)
    matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) = 1.0d0/matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) ! [1/A] inverse MFP
 end subroutine IMFP_vs_Te_files
 
-
-
-subroutine update_cross_section(Scell, matter)
-   type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
-   type(solid), intent(inout) :: matter	! materil parameters
-   integer :: Nshl, i, N_Te
-   real(8) :: dT, T_left
-   ! Get the mean free paths vs Te:
-   Nshl = size(matter%Atoms(1)%Ip)
-   select case (matter%Atoms(1)%TOCS(Nshl)) ! Valence band and CDF only
-   case (1) ! CDF
-      if (Scell%Te > 100.0d0) then  ! recalculate:
-         ! Temperature (grid defined in subroutine get_MFPs as Te_temp = dble((i-1)*1000)):
-         dT = 1000.0d0 ! [K] grid step
-         T_left = FLOOR(Scell%Te/1000)*1000
-         N_Te = CEILING(Scell%Te/1000)
-         if (N_Te > size(matter%Atoms(1)%El_MFP_vs_T)) N_Te = size(matter%Atoms(1)%El_MFP_vs_T)   ! maximal energy set
-         ! Interpolate valence band MFP for the given temperature:
-         if (N_Te == 1) then
-            matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) + &
-          (matter%Atoms(1)%El_MFP_vs_T(N_Te+1)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:))/dT * (Scell%Te-T_left)
-         else
-            matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) + &
-          (matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te-1)%L(:))/dT * (Scell%Te-T_left)
-         endif
-      else ! no need to recalculate, the tempereature is too small:
-         N_Te = 1
-         matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:)
-      endif
-   endselect
-
-!    print*, 'Te=', Scell%Te, matter%Atoms(1)%El_MFP(Nshl)%L(1), matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(1)
-end subroutine update_cross_section
 
 
 subroutine Electron_energy_transfer_inelastic(matter, TeeV, Ele, Nat, Nshl, mfps, dE_out)
