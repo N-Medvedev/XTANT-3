@@ -5,7 +5,7 @@ CDF			! where to take material parameters from (EADL, CDF)
 100   		! number of MC iterations
 3		    ! number of threads for OPENMP
 2 	        ! MD algorithm: 0=Verlet (2d order); 1=Yoshida (4th order, slow); 2=Martyna (4th order, fast)
-1		    ! frozen atoms (=0), or moving normally (=1)
+0		    ! frozen atoms (=0), or moving normally (=1)
 25.5d0		! Parinello-Rahman super-cell mass coefficient
 1.0d0      dt_grid.txt	! time step for MD [fs] (or a file name with the variable time-grid)
 1.0d0		! printout data into files every 'dt_save_time' [fs]
@@ -16,15 +16,14 @@ F    0  0.35 ! include SCC (True, False), model of gamma (default 0); mixing fac
 -1			! -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule
 -1.0d+3    4.0d0	! [fs] when to switch on the nonadiabatic coupling; scaling factor (if needed)
 5.0d0   0.001d0		! [eV] acceptance window for nonadiabatic coupling; [eV] tollerance for quasidegenerate levels
-0                   ! calculate electornic heat conductivity (0=no, 1=yes)
 0	0.0	  3.0       ! quenching (0=no, 1=yes); starting from when [fs]; how often [fs]
 0	300.0	100.0	! Berendsen thermostat for atoms (0=no, 1=yes); bath temperature [K]; cooling time [fs]
 0	300.0	10.0	! Berendsen thermostat for electrons (0=no, 1=yes); bath temperature [K]; cooling time [fs]
 15.0d0		! [eV] cut-off energy in MC (<0 means Ecut=top of CB)
 1.0d30		! [eV] work function, for electron emission (>0 eV; <0 - number of collisions)
-1		    ! printout electron energy levels (1) or not (0)
-0	0.1	1   ! printout DOS (1) or not (0); smearing of gaussian; print PDOS yes (1) or no (0)
-0	        ! printout Mulliken charges for types of atoms
+0		    ! printout electron energy levels (1) or not (0)
+1	0.1	1   ! printout DOS (1) or not (0); smearing of gaussian; print PDOS yes (1) or no (0)
+1	        ! printout Mulliken charges for types of atoms
 0		! printout electron distribution (1) or not (0)
 0		! printout atomic pair correlation function (1) or not (0)
 1		! printout atomic positions in XYZ (1) or not (0)
@@ -33,7 +32,7 @@ F    0  0.35 ! include SCC (True, False), model of gamma (default 0); mixing fac
 1       ! power of mean displacement to print out (set integer N: <[R(t)-R(t=0)]^N>)
 -2.0e0  ! printout numbers of nearest neighbors within the given radius (<=0 NO, >0 = radius in [A])
 png     ! which format to use to plot figures: eps, jpeg, gif, png, pdf
-9	9	9    ! number of k-points in each direction (used only for Trani-k!)
+3	3	3    ! number of k-points in each direction (used only for Trani-k!)
 
 ! MASS
 2   1.0d30

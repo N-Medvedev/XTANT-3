@@ -532,17 +532,17 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
       partial_DOS_sum = 0.0d0
    endif
    
-!    print*, 'get_DOS_sort test 1', Ngridsiz
+!     print*, 'get_DOS_sort test 1', Ngridsiz
    
    !$omp PARALLEL private(i, j_center, j, Gaus, i_at, i_types, temp)
    !$omp do schedule(dynamic) reduction( + : DOS_sum, partial_DOS_sum)
    do i = 1, Ngridsiz	! for all grid points
       ! Do the summation in two parts:
-!       print*, 'get_DOS_sort test 1.5'
+!        print*, 'get_DOS_sort test 1.5'
       
       call Find_in_monotonous_1D_array(Ei, DOS(1,i), j_center)	! module "Little_subroutines"
       
-!       print*, 'get_DOS_sort test 2'
+!        print*, 'get_DOS_sort test 2'
       
       ! 1) Contribution from the levels above the chosen point:
       if (j_center <= Nsiz) then
@@ -557,23 +557,23 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
                      do i_at = 1, N_at
                         do i_types = 1, N_types
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j)/temp, MASK = masks_DOS(i_at, i_types, :))
-!                            print*, 'get_DOS_sort test 3a'
+!                             print*, 'get_DOS_sort test 3a'
                            partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
-!                            print*, 'get_DOS_sort test 4a'
+!                             print*, 'get_DOS_sort test 4a'
                         enddo
                      enddo
                   endif
                elseif (present(CHij)) then
-!                   temp = SUM( dconjg(CHij(:,j)) * CHij(:,j) )
+                   temp = SUM( dconjg(CHij(:,j)) * CHij(:,j) )
                   temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dconjg(CHij(:,j))*CHij(:,j)/temp, MASK = masks_DOS(i_at, i_types, :))
 !                            partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dconjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
-!                            print*, 'get_DOS_sort test 3b'
+!                             print*, 'get_DOS_sort test 3b'
                            partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
-!                            print*, 'get_DOS_sort test 4b'
+!                             print*, 'get_DOS_sort test 4b'
                         enddo
                      enddo
                   endif
@@ -581,7 +581,7 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
             endif
          enddo EL
       endif ! (j_center <= Nsiz)
-      ! 2) Contribution from the leves below the given point:
+      ! 2) Contribution from the levels below the given point:
       if (j_center > 1) then
          EL2:do j = (j_center-1), 1, -1	! for all energy levels below, down to the first one
             call Gaussian(Ei(j), sigma, DOS(1,i), Gaus)	! module "Little_subroutines"
@@ -622,14 +622,14 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
    !$omp end do
    !$omp end parallel
    
-!    print*, 'get_DOS_sort test 5'
+!     print*, 'get_DOS_sort test 5'
    
    DOS(2,:) = DOS_sum(:)
    if (do_partial) partial_DOS(:,:,:) = partial_DOS_sum(:,:,:)
    
    deallocate(DOS_sum)
    if (allocated(partial_DOS_sum)) deallocate(partial_DOS_sum)
-!    print*, 'get_DOS_sort test 6'
+!     print*, 'get_DOS_sort test 6'
 end subroutine get_DOS_sort
 
 

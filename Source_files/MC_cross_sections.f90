@@ -230,8 +230,11 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
 
          ! Check if CDF coefficients are set:
          ! if not, use single-pole approximation
-         if (.not. allocated(matter%Atoms(i)%CDF(j)%A) ) then
-            call set_single_pole_CDF(Scell, NSC, matter, i, j)  ! below
+         if (.not. allocated(matter%Atoms(i)%CDF)) then
+            allocate(matter%Atoms(i)%CDF(Nshl))
+            if (.not. allocated(matter%Atoms(i)%CDF(j)%A) ) then
+               call set_single_pole_CDF(Scell, NSC, matter, i, j)  ! below
+            endif
          endif
 
 

@@ -1072,17 +1072,18 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
    type(Error_handling), intent(inout) :: Err	! error save
    !=====================================
    integer :: NSC, Nsiz, Ei_siz, i, n_types
-   real(8) :: dE, Estart
+   real(8) :: dE, Estart, Emax
    real(8), dimension(:), allocatable :: Ei_cur
    
    do NSC = 1, size(Scell) ! for all super-cells
       if (numpar%save_DOS) then	! only calculate DOS if the user chose to do so:
-!          call print_time_step('Before DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
+!           call print_time_step('Before DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
          ! Set grid for DOS:
          if (.not.allocated(Scell(NSC)%DOS)) then	! it's the first time, set it:
             dE = 0.1d0	! [eV] uniform energy grid step for DOS
             Ei_siz = size(Scell(NSC)%Ei)	! the uppermost energy level at the start
-            Nsiz = CEILING( (Scell(NSC)%Ei(Ei_siz) - Scell(NSC)%Ei(1) + 20.0d0*numpar%Smear_DOS)/dE )
+            Emax = min(Scell(NSC)%Ei(Ei_siz),100.0)   ! no need to trace levels higher than 100 eV
+            Nsiz = CEILING( (Emax - Scell(NSC)%Ei(1) + 20.0d0*numpar%Smear_DOS)/dE )
             allocate(Scell(NSC)%DOS(2,Nsiz))
             Scell(NSC)%DOS = 0.0d0
             ! Partial DOS if needed:
@@ -1105,7 +1106,7 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
             !$omp end parallel
          endif
          
-!          print*, 'get_DOS test 1'
+!           print*, 'get_DOS test 1'
          
          ! Now calculate the DOS:
          select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma
@@ -1113,8 +1114,14 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
             ! Partial DOS if needed:
             select case (numpar%DOS_splitting)
             case (1)
+
+!                call print_time_step('DOSp:', 2.0, msec=.true.)   ! module "Little_subroutines"
+
                call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err, Scell(NSC)%partial_DOS, numpar%mask_DOS)	! see below
             case default    ! No need to sort DOS per orbitals
+
+!                call print_time_step('DOSc:', 2.0, msec=.true.)   ! module "Little_subroutines"
+
                call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err)	! see below
             endselect
          case default	! gamma point
@@ -1123,19 +1130,19 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
             
             select case (numpar%DOS_splitting)
             case (1)
-!                print*, 'get_DOS test 2a'
+!                 print*, 'get_DOS test 2a'
                call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS, Scell(NSC)%partial_DOS, numpar%mask_DOS, Hij = Scell(NSC)%Ha)	! module "Electron_tools"
-!                print*, 'get_DOS test 3a'
+!                 print*, 'get_DOS test 3a'
             case default    ! No need to sort DOS per orbitals
-!                print*, 'get_DOS test 2b'
+!                 print*, 'get_DOS test 2b'
                call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS)	! module "Electron_tools"
-!                print*, 'get_DOS test 3b'
+!                 print*, 'get_DOS test 3b'
             endselect
          end select
-!          call print_time_step('After DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
+!           call print_time_step('After DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
       endif	!  (numpar%save_DOS) 
    enddo	! NSC = 1, size(Scell) ! for all super-cells
-!    print*, 'get_DOS test end'
+!     print*, 'get_DOS test end'
 end subroutine get_DOS
 
 
