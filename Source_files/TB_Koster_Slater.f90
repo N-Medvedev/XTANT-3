@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2022 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -25,13 +25,14 @@
 
 MODULE TB_Koster_Slater
 
-use Algebra_tools, only: Kronecker_delta
+use Algebra_tools, only: Kronecker_delta, Heavyside_tau, get_factorial
 
 implicit none
 
 ! Modular parameters:
-real(8) :: m_sqrt3, m_sqrt3_half
+real(8) :: m_sqrt_inv_2, m_sqrt3, m_sqrt3_half
 
+parameter (m_sqrt_inv_2 = 1.0d0 / sqrt(2.0d0))
 parameter (m_sqrt3 = sqrt(3.0d0))
 parameter (m_sqrt3_half = m_sqrt3*0.5d0)
 
@@ -234,7 +235,118 @@ end function d2dija_drkb2
 
 
 !---------------------------------------------------------------------
-! All Koster-Slater hopping integrals as individual functions:
+! Koster-Slater rotational functions for arbitrary (n,l,m), following
+! [A.V. Podolskiy and P. Vogl, Phys. Rev. B. 69, 233101 (2004)]
+
+! Computes rotational matrix elements according to Eq.(7):
+pure function coefs_dlmm(N, l, m1, m2) result(dlmm)
+   real(8) :: dlmm
+   real(8), intent(in) :: N ! directional cosine relative to z-axis
+   integer, intent(in) :: l, m1, m2 ! orbital and magnetic quantum numbers
+   !---------------------
+   integer :: t
+   real(8) :: prefN, prefR, summ
+   real(8) :: fact_1, fact_2, fact_3, fact_4
+
+   ! Prefactors with factorials:
+   if (abs(N) < 1.0d0) then
+      prefN = (0.5d0 + 0.5d0*N)**l * ((1.0d0 - N)/(1.0d0 + N))**(0.5d0*(m1 - m2))
+
+      ! Get factorials:
+      fact_1 = get_factorial(l + m2)  ! module "Algebra_tools"
+      fact_2 = get_factorial(l - m2)  ! module "Algebra_tools"
+      fact_3 = get_factorial(l + m1)  ! module "Algebra_tools"
+      fact_4 = get_factorial(l - m1)  ! module "Algebra_tools"
+      prefR = sqrt(fact_1 * fact_2 * fact_3 * fact_4)
+
+      summ = 0.0d0   ! to start with
+      do t = 0, (2*l + 1)
+         if ((0 <= l + m2 - t) .and. (0 <= l - m1 - t) .and. (0 <= t + m1 - m2)) then
+            fact_1 = get_factorial(l + m2 - t)  ! module "Algebra_tools"
+            fact_2 = get_factorial(l - m1 - t)  ! module "Algebra_tools"
+            fact_3 = get_factorial(t)  ! module "Algebra_tools"
+            fact_4 = get_factorial(t + m1 - m2)  ! module "Algebra_tools"
+            summ = summ + (-1.0d0)**t*((1.0d0 - N)/(1.0d0 + N))**t / (fact_1*fact_2*fact_3*fact_4)
+         endif
+      enddo
+   else ! along Z, no contribution
+      prefN = 1.0d0
+      prefR = 1.0d0
+      summ = 0.0d0
+   endif
+
+   ! Collect the terms:
+   dlmm = prefR * prefN * summ
+end function coefs_dlmm
+
+
+! Coefficients of S and T from Eqs.(24,25):
+pure subroutine coefs_S_T()
+end subroutine coefs_S_T
+
+
+! Both Am abd Bm coefficients from Eq.(21):
+pure subroutine coefs_Am_Bm(m, gam, Am, Bm)
+   integer, intent(in) :: m
+   real(8), intent(in) :: gam
+   real(8), intent(out) :: Am, Bm  ! Eq.(21)
+   !----------------------
+   real(8) :: abs_m, tau_p, tau_m, prefac, sin_m, cos_m
+   if (m == 0) then
+      Am = m_sqrt_inv_2
+      Bm = 0.0d0  ! added for convenience of Eq.(23-25)
+   else
+      abs_m = abs(m)
+      tau_p = Heavyside_tau(m)   ! module "Algebra_tools"
+      tau_m = Heavyside_tau(-m)  ! module "Algebra_tools"
+      prefac = (-1.0d0)**abs_m
+      sin_m = sin(abs_m * gam)
+      cos_m = cos(abs_m * gam)
+      Am = prefac * (tau_p * cos_m - tau_m * sin_m)
+      Bm = prefac * (tau_p * sin_m + tau_m * cos_m)
+   endif
+end subroutine coefs_Am_Bm
+
+
+! Am and Bm as individual functions:
+pure function coef_Am(m, gam) result(Am)
+   real(8) Am  ! Eq.(21)
+   integer, intent(in) :: m
+   real(8), intent(in) :: gam
+   !---------------
+   real(8) :: abs_m, tau_p, tau_m
+   if (m == 0) then
+      Am = m_sqrt_inv_2
+   else
+      abs_m = abs(m)
+      tau_p = Heavyside_tau(m)  ! module "Algebra_tools"
+      tau_m = Heavyside_tau(-m)  ! module "Algebra_tools"
+      Am = (-1.0d0)**abs_m * (tau_p * cos(abs_m * gam) - tau_m * sin(abs_m * gam))
+   endif
+end function coef_Am
+
+
+pure function coef_Bm(m, gam) result(Bm)
+   real(8) Bm  ! Eq.(21), with added case Bm(m=0)
+   integer, intent(in) :: m
+   real(8), intent(in) :: gam
+   !---------------
+   real(8) :: abs_m, tau_p, tau_m
+   if (m == 0) then
+      Bm = 0.0d0  ! added for convenience of Eq.(23-25)
+   else
+      abs_m = abs(m)
+      tau_p = Heavyside_tau(m)  ! module "Algebra_tools"
+      tau_m = Heavyside_tau(-m)  ! module "Algebra_tools"
+      Bm = (-1.0d0)**abs_m * (tau_p * sin(abs_m * gam) + tau_m * cos(abs_m * gam))
+   endif
+end function coef_Bm
+
+
+!---------------------------------------------------------------------
+! Individual Koster-Slater hopping integrals as individual functions:
+! Following the original work [Slater and Koster, PRB 94, 1498 (1954)]
+
 ! 1) 
 pure function t_s_s(Vss_sigma) result (Ecc)
    real(8) :: Ecc

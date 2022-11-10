@@ -132,6 +132,87 @@ end subroutine d_Laguerre_up_to_6
 
 
 
+pure function Moivre_cos(m, gamm) result(cos_mg)
+   real(8) :: cos_mg
+   integer, intent(in) :: m   ! coefficient
+   real(8), intent(in) :: gamm ! variable
+   !-------------------
+   integer :: k, m2, k2
+   real(8) :: summ, bcoef, cos_gam, sin_gam
+
+   if (m == 0) then
+      cos_mg = 1.0d0
+   else
+      m2 = FLOOR(abs(m)/2.0d0)
+      cos_gam = cos(gamm)
+      sin_gam = sin(gamm)
+      summ = 0.0d0 ! to start with
+      do k = 0, m2
+         k2 = 2*k
+         bcoef = binomial_coef(m, k2)   ! below
+         summ = summ + (-1)**k * bcoef * cos_gam**(abs(m)-k2) * sin_gam**k2
+      enddo
+      cos_mg = summ
+   endif
+end function Moivre_cos
+
+
+
+pure function Moivre_sin(m, gamm) result(sin_mg)
+   real(8) :: sin_mg
+   integer, intent(in) :: m   ! coefficient
+   real(8), intent(in) :: gamm ! variable
+   !-------------------
+   integer :: k, m2, k2
+   real(8) :: summ, bcoef, cos_gam, sin_gam
+
+   if (m == 0) then
+      sin_mg = 0.0d0
+   else
+      m2 = FLOOR((abs(m)-1)/2.0d0)
+      cos_gam = cos(gamm)
+      sin_gam = sin(gamm)
+      summ = 0.0d0 ! to start with
+      do k = 0, m2
+         k2 = 2*k
+         bcoef = binomial_coef(m, k2+1)   ! below
+         summ = summ + (-1)**k * bcoef * cos_gam**(abs(m)-k2-1) * sin_gam**(k2+1)
+      enddo
+      sin_mg = summ
+   endif
+end function Moivre_sin
+
+
+
+pure function binomial_coef(n, k) result(bc)
+   real(8) :: bc  ! binomial coefficient
+   integer, intent(in) :: k, n
+   integer :: nk, i
+   real(8) :: nk_f, k_f, n_f
+
+   if ((n <= k) .or. (k <= 0))then
+      bc = 1
+   else
+      nk = n - k
+      k_f = 1.0d0    ! to start with
+      nk_f = 1.0d0   ! to start with
+      n_f = 1.0d0    ! to start with
+      do i = 2, n
+         n_f = n_f*dble(i) ! factorial
+         if (i == k) then ! save this factorial
+            k_f = n_f
+         endif
+         if (i == nk) then ! save this factorial
+            nk_f = n_f
+         endif
+      enddo
+      ! Collect the terms of the binomial coefficient:
+      bc = n_f/(k_f * nk_f)
+   endif
+end function binomial_coef
+
+
+
 pure function get_factorial(n, step) result(fact)   ! factorial of an integer number "n"
    real(8) :: fact
    integer, intent(in) :: n
@@ -212,6 +293,20 @@ pure function Kronecker_delta(i, j) result(delta)
       delta = 0.0d0
    endif
 end function Kronecker_delta
+
+
+pure function Heavyside_tau(m) result(tau)
+   real(8) :: tau
+   integer, intent(in) :: m
+   if (m >= 0) then
+      tau = 1.0d0
+   else
+      tau = 0.0d0
+   endif
+end function Heavyside_tau
+
+
+
 
 
 subroutine nonsym_diagonalize_r(M, Ev, Error_descript, print_Ei, check_M)
