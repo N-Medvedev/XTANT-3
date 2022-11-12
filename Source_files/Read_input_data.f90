@@ -156,8 +156,11 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%NN_radius = 0.0d0 ! radius of nearest neighbors defined by the user [A]
    numpar%MSD_power = 1     ! by default, print out mean displacement [A^1]
    numpar%save_NN = .false. ! do not print out nearest neighbors numbers
-   numpar%do_elastic_MC = .true.	! allow elastic scattering of electrons on atoms within MC module
-   numpar%r_periodic(:) = .true.	! use periodic boundaries along each direction of the simulation box
+   numpar%do_elastic_MC = .true. ! allow elastic scattering of electrons on atoms within MC module
+   numpar%r_periodic(:) = .true. ! use periodic boundaries along each direction of the simulation box
+   ! Setting supercell for biomolecules, embedding in water:
+   numpar%embed_water = .false.  ! no water added
+   numpar%N_water_mol = 100      ! default number of water molecules
    ! number of k-points in each direction (used only for Trani-k!):
    numpar%ixm = 1
    numpar%iym = 1
@@ -330,6 +333,11 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       endif NUMERICAL_PARAMETERS
    endif NEW_FORMAT
 
+   ! Check if the molecule needs to be embedded in water (as requested in input file):
+   if (numpar%embed_water) then
+      call add_water_to_chemical_formulae(matter, numpar)   ! below
+   endif
+
    if (.not.allocated(Scell)) allocate(Scell(1)) ! for the moment, only one super-cell
 
    ! Do TB and MD part only if we want (supercell is larger than 0):
@@ -380,6 +388,51 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
 
 3416 continue !exit in case if input files could not be read
 end subroutine Read_Input_Files
+
+
+
+subroutine add_water_to_chemical_formulae(matter, numpar)   ! below
+   type(Solid), intent(inout) :: matter   ! all material parameters
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   !-----------------------------
+   character(200) :: Folder_name, error_message
+   character(100) :: chem_form, temp
+   character(3) :: atom_elem
+   integer :: N_at, i_H, i_O, INFO, i, N_SC
+   integer, dimension(:), allocatable :: at_numbers
+   real(8), dimension(:), allocatable :: at_percentage
+   character(3), dimension(:), allocatable :: at_short_names ! name of the element
+
+!    print*, 'Chemical formula old: ', trim(adjustl(matter%Chem))
+
+   ! Check if the atoms from the water molecule are already present:
+   chem_form = trim(adjustl(matter%Chem)) ! save chemical formula
+   Folder_name = trim(adjustl(numpar%input_path))//trim(adjustl(m_Atomic_parameters))   !'Atomic_parameters'
+
+   call Decompose_compound(Folder_name, chem_form, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, at_percentage, at_short_names) ! molude 'Periodic_table'
+
+   if (INFO == 0) then
+      N_SC = INT(matter%cell_x*matter%cell_y*matter%cell_z) ! number of molecules in the supercell
+      matter%Chem = ''  ! to start with
+      do i = 1, size(at_short_names)
+         if (trim(adjustl(at_short_names(i))) == 'H') then
+            ! That's how many hyhdrogens there are in total (molecule + water):
+            write(temp,'(i6)') INT(at_percentage(i))*N_SC + numpar%N_water_mol*2
+            matter%Chem = trim(adjustl(matter%Chem))//'H'//trim(adjustl(temp))
+         elseif (trim(adjustl(at_short_names(i))) == 'O') then
+            ! That's how many oxygens there are in total (molecule + water):
+            write(temp,'(i6)') INT(at_percentage(i))*N_SC + numpar%N_water_mol
+            matter%Chem = trim(adjustl(matter%Chem))//'O'//trim(adjustl(temp))
+         else
+            write(temp,'(i6)') INT(at_percentage(i))*N_SC
+            matter%Chem = trim(adjustl(matter%Chem))//trim(adjustl(at_short_names(i)))//trim(adjustl(temp))
+         endif
+      enddo
+   endif ! (INFO .NE. 0)
+!    print*, 'Chemical formula new: ', trim(adjustl(matter%Chem))
+!    pause 'Chem done'
+end subroutine add_water_to_chemical_formulae
+
 
 
 subroutine read_SCC_Hubbard(File_name, matter, SCC)
@@ -1060,7 +1113,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
    type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
    integer FN, count_lines, Reason, INFO, i, j !, N
-   character(200) :: Error_descript, Folder_name, File_name, Path, ch_temp
+   character(500) :: Error_descript, Folder_name, File_name, Path, ch_temp
    logical file_exists, file_opened, read_well
    !Folder_name = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))
    Folder_name = trim(adjustl(numpar%input_path))
@@ -1110,7 +1163,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             endif
             if (j .GT. 1) then
                if (trim(adjustl(ch_temp)) .NE. trim(adjustl(TB_Hamil(1,1)%Param)) ) then
-                  write(Error_descript,'(a,$)') 'Format of TB-Hamiltonian parameters "', trim(adjustl(ch_temp)), '" does not coinside with parameters in the first file "'//trim(adjustl(TB_Hamil(1,1)%Param))//'" .Inconsistent parameterization is not allowed.'
+                  write(Error_descript,'(a)') 'Format of TB-Hamiltonian parameters "'//trim(adjustl(ch_temp))//'" does not coinside with parameters in the first file "'//trim(adjustl(TB_Hamil(1,1)%Param))//'". Inconsistent parameterization is not allowed.'
                   call Save_error_details(Err, 5, Error_descript)
                   print*, trim(adjustl(Error_descript))
                   goto 3421
@@ -4323,7 +4376,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 
 
    ! Read optional data provided by the user (e.g., to overwrite default atomic data):
-   call read_user_atomic_data(FN, count_lines, matter, Scell, NSC, user_data)   ! below
+   call read_user_additional_data(FN, count_lines, matter, Scell, NSC, user_data)   ! below
 
 
    ! Close this file, it has been read through:
@@ -4332,7 +4385,7 @@ end subroutine read_numerical_parameters
 
 
 
-subroutine read_user_atomic_data(FN, count_lines, matter, Scell, NSC, user_data)
+subroutine read_user_additional_data(FN, count_lines, matter, Scell, NSC, user_data)
    integer, intent(in) :: FN  ! file to read from
    integer, intent(inout) :: count_lines  ! line we are reading
    type(Solid), intent(in) :: matter   ! all material parameters
@@ -4356,7 +4409,7 @@ subroutine read_user_atomic_data(FN, count_lines, matter, Scell, NSC, user_data)
       if (.not. read_well) exit RD  ! end of file, stop reading
    enddo RD
 
-end subroutine read_user_atomic_data
+end subroutine read_user_additional_data
 
 
 subroutine interpret_user_data(FN, count_lines, read_well, text, matter, Scell, NSC, user_data)
@@ -4854,6 +4907,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
 
          call interpret_user_data_INPUT(FN, trim(adjustl(File_name)), count_lines, text, numpar, Err) ! below
       enddo RDID
+
       if (numpar%verbose) call print_time_step('Verbose option is on, XTANT is going to be a chatterbox', msec=.true.)
 
    enddo SCL
@@ -4886,6 +4940,17 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, numpar,
          call prepare_multiple_inputs(numpar, File_name, read_var, .true., num_phon, string=trim(adjustl(string)))   ! below
       else ! use default nuber of iterations
          call prepare_multiple_inputs(numpar, File_name, read_var, .true., string=trim(adjustl(string))) ! below
+      endif
+
+   case ('WATER', 'EMBED_WATER', 'EMBED_IN_WATER', 'Water', 'water', 'embed_water', 'Embed_Water', 'Embed_in_water')
+      numpar%embed_water = .true.   ! save the flag for water embedding
+      read(FN,*,IOSTAT=Reason) numpar%N_water_mol   ! number of water molecules to use
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         numpar%N_water_mol = 100 ! use default
+      elseif (numpar%N_water_mol < 0) then   ! don't use water
+         numpar%embed_water = .false.
+         numpar%N_water_mol = 0
       endif
 
    case default
@@ -4925,6 +4990,7 @@ subroutine prepare_multiple_inputs(numpar, File_name, read_var, do_eph, num_phon
    if (do_el_phon) then
       if (present(num_phon)) then   ! user provided number of points
          N = num_phon-1
+         if (N < 1) N = 0
       else  ! use default value:
          N = 10
       endif

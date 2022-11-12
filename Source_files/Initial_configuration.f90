@@ -38,6 +38,12 @@ use Little_subroutines
 
 implicit none
 
+
+real(8) :: m_H2O_dist, m_H2O_theta
+parameter (m_H2O_dist = 0.943d0)    ! [A] distance between H and O atoms in H2O molecule
+parameter (m_H2O_theta = 106.0d0 * g_Pi/180.0d0)   ! [deg] H-O-H angle in H2O molecule
+
+
  contains
 
 
@@ -367,7 +373,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                print*, trim(adjustl(Error_descript))
                goto 3416
             endif INPUT_SUPCELL
-         else SAVED_SUPCELL
+         else SAVED_SUPCELL   ! no supercell, create from unit cell
             write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), &
                                 trim(adjustl(matter%Name))//trim(adjustl(numpar%path_sep)), 'Unit_cell_equilibrium.txt'
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
@@ -486,6 +492,14 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          inquire(file=trim(adjustl(File_name2)),opened=file_opened)
          if (file_opened) close (FN2)
          
+
+         !---------------------------
+         ! Check embedding in water:
+         if (numpar%embed_water) then
+            call embed_molecule_in_water(Scell, matter, numpar)  ! below
+         endif
+
+
          !---------------------------
          ! Check periodicity:
          call Make_free_surfaces(Scell, numpar, matter)	! module "Atomic_tools"
@@ -655,6 +669,267 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 !     enddo ! j
 !    pause 'set_initial_configuration'
 end subroutine set_initial_configuration
+
+
+
+subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   type(Solid), intent(inout) :: matter	! all material parameters
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters
+   !---------------------------
+   integer :: i, j, i_mol, i_h2o, N_at, N_h2o, SCN, N_tot, j_h2o, iter, i_H, i_O
+   real(8) :: V_mol, V_tot, dV, s_center(3), RN(3), dS_min(3), dS(3), dS_min_abs
+   real(8) :: theta, phi, cos_phi, u0, v0, w0, u, v, w
+   logical :: redo_placement
+   type(Atom), dimension(:), allocatable :: MDAtoms ! all atoms in MD
+
+   !-----------------------
+   ! 0) Define initial parameters:
+   SCN = 1  ! so far, only one supercell
+   N_at = Scell(SCN)%Na ! number of atoms in bio/molecule
+   N_h2o = 3*numpar%N_water_mol  ! number of atoms from water molecules (2*H+1*O)
+   N_tot = N_at + N_h2o ! total number of atoms after adding water
+   allocate(MDAtoms(N_at))
+   MDAtoms = Scell(SCN)%MDAtoms  ! save initial for reuse
+   ! Increase the size of MDAtoms array:
+   deallocate(Scell(SCN)%MDAtoms)
+   allocate(Scell(SCN)%MDAtoms(N_tot))
+   ! Now find the indices of H and O atomic types:
+   i = 1
+   do while ( trim(adjustl(matter%Atoms(i)%Name)) /= 'H')
+      i = i + 1
+      i_H = i
+   enddo
+   i = 1
+   do while ( trim(adjustl(matter%Atoms(i)%Name)) /= 'O')
+      i = i + 1
+      i_O = i
+   enddo
+
+!    print*, i_H, i_O, matter%Atoms(i_H)%Name, matter%Atoms(i_O)%Name
+!    pause
+
+   !-----------------------
+   ! 1) Estimate size of the new box that will include water:
+   ! 1.a) estimated volume of the molecule (assuming the radius of each atom ~ 0.53 A):
+   V_mol = N_at * 4.0d0/3.0d0*g_Pi*g_a0**3   ! [A^3]
+   ! 1.b) estimated volume of water molecules (assuming water density of 1 g/cc):
+   !V_tot = V_mol + N_h2o*(1d3 / g_amu / 1d30 / 3.0d0) ! total volume [A^3]
+   ! 1.c) Volume coefficient to expand the supercell:
+   call Det_3x3(Scell(SCN)%supce,Scell(SCN)%V) ! module "Algebra_tools"
+   ! estimated volume of water molecules (assuming water density of 1 g/cc):
+   V_tot = Scell(SCN)%V + N_h2o*( (8.0d0*g_amu)/3.0d0 / 1d3 * 1d30) ! total volume [A^3]
+   dV = (V_tot/Scell(SCN)%V)**(1.0d0/3.0d0)
+   ! 1.d) Rescale the supercell:
+2023 continue
+   Scell(SCN)%supce(:,:) = Scell(SCN)%supce(:,:) * dV
+   Scell(SCN)%supce0(:,:) = Scell(SCN)%supce(:,:)
+
+   ! Renew the volume of the supercell:
+   call Det_3x3(Scell(SCN)%supce,Scell(SCN)%V) ! module "Algebra_tools"
+   ! Update relative coordinates:
+   Scell(SCN)%MDAtoms(1:N_at) = MDAtoms(1:N_at)
+   call Coordinates_abs_to_rel(Scell, SCN, .true.) ! module "Algebra_tools"
+
+   !-----------------------
+   ! 2) Place material (bio/molecule) centerred inside the box:
+   do i = 1,3  ! x,y,z
+      s_center(i) = 0.5d0 * ( maxval(Scell(SCN)%MDAtoms(:)%S(i)) + minval(Scell(SCN)%MDAtoms(:)%S(i)) )
+   enddo
+   ! Shift coordinates of all atoms:
+   do i = 1, Scell(SCN)%Na
+      Scell(SCN)%MDAtoms(i)%S(:) = 0.5d0 + (Scell(SCN)%MDAtoms(i)%S(:) - s_center(:))
+      Scell(SCN)%MDAtoms(i)%S0 = Scell(SCN)%MDAtoms(i)%S ! previous timestep reset
+   enddo
+   ! Update absolute coordinates:
+   call Coordinates_rel_to_abs(Scell, SCN, if_old=.true.)	! from the module "Atomic_tools"
+
+   ! Atoms cannot be closer than this:
+   dS_min(1) = g_a0 / sqrt( SUM(Scell(SCN)%supce(1,:)*Scell(SCN)%supce(1,:)) )   ! relative coordinates [units of the supercell]
+   dS_min(2) = g_a0 / sqrt( SUM(Scell(SCN)%supce(2,:)*Scell(SCN)%supce(2,:)) )   ! relative coordinates [units of the supercell]
+   dS_min(3) = g_a0 / sqrt( SUM(Scell(SCN)%supce(3,:)*Scell(SCN)%supce(3,:)) )   ! relative coordinates [units of the supercell]
+   dS_min_abs = sqrt( SUM(dS_min(:)*dS_min(:)) )
+
+   !-----------------------
+   ! 3) Place remaining water molecules around the bio/molecule:
+   N_tot = N_at   ! to start with
+   j_h2o = N_at   ! to start with
+   do i_h2o = 1, numpar%N_water_mol ! water molecules
+      ! first, place O atom:
+      j_h2o = j_h2o + 1 ! absolute number in the array of MDAtoms
+      redo_placement = .true.  ! to start with
+      iter = 1 ! count iteration of attempted placement
+      do while (redo_placement)
+         redo_placement = .false. ! assume we place it well, no need to redo it
+         ! Set random coordinates of the new water molecule:
+         call random_number(RN)  ! random numbers for relative coordinates along X,Y,Z
+         Scell(SCN)%MDAtoms(j_h2o)%S(:) = RN(:)
+         Scell(SCN)%MDAtoms(j_h2o)%S0(:) = Scell(SCN)%MDAtoms(j_h2o)%S(:)  ! previous timestep set
+         call Coordinates_rel_to_abs_single(Scell, SCN, j_h2o, .true.)     ! module "Atomic_tools"
+
+         ! Check that it is not overlapping with existing atoms:
+         CHKI:do i = 1, N_tot
+            ! Get the relative distance to this atom:
+            if (j_h2o /= i) then
+               dS(:) = abs(Scell(SCN)%MDAtoms(j_h2o)%S(:) - Scell(SCN)%MDAtoms(i)%S(:))
+               ! Check if it is not too short:
+               if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
+                  redo_placement = .true. ! assume we place it well, no need to redo it
+                  iter = iter + 1   ! next iteration
+                  exit CHKI
+               endif
+            endif
+         enddo CHKI
+         ! If it's not possible to place a molecule in such a small volume, increase the volume:
+!          print*, 'O  :', i_h2o, iter
+         if (iter >= 100) then
+            dV = 1.1d0  ! increase the supercell volume
+            goto 2023   ! try again placement in larger volume
+         endif
+      enddo
+      ! Set nesessary atomic parameters:
+      Scell(SCN)%MDatoms(j_h2o)%KOA = i_O
+
+      ! then, place first H atom:
+      j_h2o = j_h2o + 1
+      redo_placement = .true.  ! to start with
+      iter = 1 ! count iteration of attempted placement
+      do while (redo_placement)
+         redo_placement = .false. ! assume we place it well, no need to redo it
+         ! Set random coordinates of the new water molecule:
+         call random_number(RN)  ! random numbers for relative coordinates along X,Y,Z
+         theta = 2.0d0*g_Pi*RN(1) ! angle
+         phi = -g_half_Pi + g_Pi*RN(2)  ! second angle
+         cos_phi = cos(phi)
+         Scell(SCN)%MDAtoms(j_h2o)%R(1) = Scell(SCN)%MDAtoms(j_h2o-1)%R(1) + m_H2O_dist*cos_phi*cos(theta) ! [A]
+         Scell(SCN)%MDAtoms(j_h2o)%R(2) = Scell(SCN)%MDAtoms(j_h2o-1)%R(2) + m_H2O_dist*cos_phi*sin(theta) ! [A]
+         Scell(SCN)%MDAtoms(j_h2o)%R(3) = Scell(SCN)%MDAtoms(j_h2o-1)%R(3) + m_H2O_dist*sin(phi) ! [A]
+         Scell(SCN)%MDAtoms(j_h2o)%R0(:) = Scell(SCN)%MDAtoms(j_h2o)%R(:)  ! previous timestep set
+
+         call Coordinates_abs_to_rel_single(Scell, SCN, j_h2o, .true.)   ! module "Atomic_tools"
+         ! Save cosine directions of the first H-O for the O-(second H) below:
+         u0 = (Scell(SCN)%MDAtoms(j_h2o)%R(1) - Scell(SCN)%MDAtoms(j_h2o-1)%R(1))/m_H2O_dist
+         v0 = (Scell(SCN)%MDAtoms(j_h2o)%R(2) - Scell(SCN)%MDAtoms(j_h2o-1)%R(2))/m_H2O_dist
+         w0 = (Scell(SCN)%MDAtoms(j_h2o)%R(3) - Scell(SCN)%MDAtoms(j_h2o-1)%R(3))/m_H2O_dist
+
+         if (abs(w0) > 1.0d0) then
+            print*, 'ERROR in embed_molecule_in_water:'
+            print*, 'BIG:', w0, j_h2o, SUM(Scell(SCN)%supce(1,:)*Scell(SCN)%supce(1,:))
+            print*, 'N-1:', Scell(SCN)%MDAtoms(j_h2o-1)%R(:)
+            print*, 'N  :', Scell(SCN)%MDAtoms(j_h2o)%R(:)
+            print*, 'N1S:', Scell(SCN)%MDAtoms(j_h2o-1)%S(:)
+            print*, 'N S:', Scell(SCN)%MDAtoms(j_h2o)%S(:)
+         endif
+
+         ! put atoms back into the supercell, if needed:
+         call check_periodic_boundaries_single(matter, Scell, SCN, j_h2o)  ! module "Atomic_tools"
+
+         ! Check that it is not overlapping with existing atoms:
+         CHKI2:do i = 1, N_tot
+            ! Get the relative distance to this atom:
+            if (j_h2o /= i) then
+               dS(:) = abs(Scell(SCN)%MDAtoms(j_h2o)%S(:) - Scell(SCN)%MDAtoms(i)%S(:))
+            endif
+            ! Check if it is not too short:
+            if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
+               redo_placement = .true. ! assume we place it well, no need to redo it
+               iter = iter + 1   ! next iteration
+               exit CHKI2
+            endif
+         enddo CHKI2
+         ! If it's not possible to place a molecule in such a small volume, increase the volume:
+!          print*, 'H1 :', i_h2o, iter
+         if (iter >= 100) then
+            dV = 1.1d0  ! increase the supercell volume
+            goto 2023   ! try again placement in larger volume
+         endif
+      enddo
+      ! Set nesessary atomic parameters:
+      Scell(SCN)%MDatoms(j_h2o)%KOA = i_H
+
+      ! next, place second H atom:
+      j_h2o = j_h2o + 1
+      redo_placement = .true.  ! to start with
+      iter = 1 ! count iteration of attempted placement
+      do while (redo_placement)
+         redo_placement = .false. ! assume we place it well, no need to redo it
+         ! Set coordinates of the new water molecule:
+         call random_number(RN)  ! random numbers for relative coordinates along X,Y,Z
+         theta = m_H2O_theta     ! angle H-O-H is fixed
+         phi = -g_half_Pi + g_Pi*RN(2) ! second angle is random
+         ! Cosine directions to the O-(second H), randomly oriented but with fixed H-O-H angle:
+!          print*, 'v', u0, v0, w0
+         call deflect_velosity(u0, v0, w0, theta, phi, u, v, w)   ! module "Atomic_tools"
+         ! Coordinates of the second H atom:
+         Scell(SCN)%MDAtoms(j_h2o)%R(1) = Scell(SCN)%MDAtoms(j_h2o-2)%R(1) + m_H2O_dist*u ! [A]
+         Scell(SCN)%MDAtoms(j_h2o)%R(2) = Scell(SCN)%MDAtoms(j_h2o-2)%R(2) + m_H2O_dist*v ! [A]
+         Scell(SCN)%MDAtoms(j_h2o)%R(3) = Scell(SCN)%MDAtoms(j_h2o-2)%R(3) + m_H2O_dist*w ! [A]
+         Scell(SCN)%MDAtoms(j_h2o)%R0(:) = Scell(SCN)%MDAtoms(j_h2o)%R(:)  ! previous timestep set
+         call Coordinates_abs_to_rel_single(Scell, SCN, j_h2o, .true.)   ! module "Atomic_tools"
+         ! put atoms back into the supercell, if needed:
+         call check_periodic_boundaries_single(matter, Scell, SCN, j_h2o)  ! module "Atomic_tools"
+
+         ! Check that it is not overlapping with existing atoms:
+         CHKI3:do i = 1, N_tot
+            ! Get the relative distance to this atom:
+            if (j_h2o /= i) then
+               dS(:) = abs(Scell(SCN)%MDAtoms(j_h2o)%S(:) - Scell(SCN)%MDAtoms(i)%S(:))
+            endif
+            ! Check if it is not too short:
+            if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
+               redo_placement = .true. ! assume we place it well, no need to redo it
+               iter = iter + 1   ! next iteration
+               exit CHKI3
+            endif
+         enddo CHKI3
+         ! If it's not possible to place a molecule in such a small volume, increase the volume:
+!          print*, 'H2 :', i_h2o, iter
+         if (iter >= 100) then
+            dV = 1.1d0  ! increase the supercell volume
+            goto 2023   ! try again placement in larger volume
+         endif
+      enddo
+      ! Set nesessary atomic parameters:
+      Scell(SCN)%MDatoms(j_h2o)%KOA = i_H
+
+      N_tot = N_tot + 3 ! we added one water molecule (3 new atoms)
+   enddo
+
+   !-----------------------
+   ! 4) Redefine parameters of the supercell:
+   Scell(SCN)%Na = N_at + N_h2o  ! new number of atoms (bio/molecule + water)
+   Scell(SCN)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)/SUM(matter%Atoms(:)%percentage)*Scell(SCN)%Na
+   Scell(SCN)%Ne_low = Scell(SCN)%Ne ! at the start, all electrons are low-energy
+   Scell(SCN)%Ne_high = 0.0d0 ! no high-energy electrons at the start
+   Scell(SCN)%Ne_emit = 0.0d0 ! no emitted electrons at the start
+
+!     print*, 'Ne ', matter%Atoms(:)%NVB, Scell(SCN)%Na, Scell(SCN)%Ne
+!     print*, 'Per', matter%Atoms(:)%percentage, SUM(matter%Atoms(:)%percentage)
+!      pause 'embed_molecule_in_water'
+
+   ! Redefine velosities of all atoms:
+   call set_initial_velocities(matter, Scell, 1, Scell(1)%MDatoms, numpar, numpar%allow_rotate) ! below
+
+   ! save coords at equilibrium positions to ger mean square displacements later:
+   do j = 1, Scell(SCN)%Na
+      Scell(SCN)%MDatoms(j)%R_eq(:) = Scell(SCN)%MDatoms(j)%R0(:)
+      Scell(SCN)%MDatoms(j)%S_eq(:) = Scell(SCN)%MDatoms(j)%S0(:)
+   enddo ! j
+   ! For Martyna algorithm (only start from zeros for now...):
+   do i = 1, Scell(SCN)%Na
+      Scell(SCN)%MDAtoms(i)%A = 0.0d0
+      Scell(SCN)%MDAtoms(i)%A_tild(:) = 0.0d0
+      Scell(SCN)%MDAtoms(i)%v_F = 0.0d0
+      Scell(SCN)%MDAtoms(i)%v_J = 0.0d0
+      Scell(SCN)%MDAtoms(i)%A0 = 0.0d0
+      Scell(SCN)%MDAtoms(i)%A_tild0 = 0.0d0
+      Scell(SCN)%MDAtoms(i)%v_F0 = 0.0d0
+      Scell(SCN)%MDAtoms(i)%v_J0 = 0.0d0
+   enddo
+
+   deallocate(MDAtoms)
+end subroutine embed_molecule_in_water
+
 
 
 subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter, Err, ind)
@@ -907,6 +1182,7 @@ subroutine set_initial_velocities(matter, Scell, NSC, atoms, numpar, allow_rotat
 
    ! Set random velocities for all atoms:
    do i = 1,Scell(NSC)%Na ! velociteis of all atoms
+!       print*, 'Mass', i
       Mass = matter%Atoms(Scell(NSC)%MDatoms(i)%KOA)%Ma
       ! Get initial velocity
       call Get_random_velocity(Scell(NSC)%TaeV, Mass, atoms(i)%V(1), atoms(i)%V(2), atoms(i)%V(3), 2) ! module "Atomic_tools"
@@ -941,6 +1217,7 @@ subroutine set_initial_velocities(matter, Scell, NSC, atoms, numpar, allow_rotat
    
    ! Set relative velocities according to the new absolute ones:
    call velocities_abs_to_rel(Scell, NSC)
+!    print*, 'set_initial_velocities'
 end subroutine set_initial_velocities
 
 

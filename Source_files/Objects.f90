@@ -701,6 +701,9 @@ type Numerics_param
    character(200) :: output_path	! output folder address
    character(1) :: path_sep	! path separator
    character(5) :: At_base	! where to take atomic data from (EADL, CDF, XATOM...)
+   ! Setting supercell for biomolecules, embedding in water:
+   logical :: embed_water  ! flag for embedding in water
+   integer :: N_water_mol  ! how many water molecules to use
    ! numbers of files:
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS

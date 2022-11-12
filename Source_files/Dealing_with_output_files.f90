@@ -2392,9 +2392,16 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    integer i, iret
-   character(200) :: File_name, File_name2, command
+   character(200) :: File_name, File_name2, command, matter_name
    character(100) :: ch1, ch2, ch3, ch4
    logical :: file_exist
+
+   ! Check embedding in water:
+   if (numpar%embed_water) then ! if material embedded in water, add it to the name
+      matter_name = trim(adjustl(matter%Name))//'_in_water'
+   else  ! just material name
+      matter_name = trim(adjustl(matter%Name))
+   endif
 
    LAS:if (maxval(laser(:)%F) .GT. 0.0d0) then
       write(ch1,'(f7.1)') (laser(1)%hw)	! photon energy
@@ -2408,16 +2415,16 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
       if (numpar%path_sep .EQ. '\') then	! if it is Windows
          if (size(laser) .GT. 1) then
             write(ch4,'(i2)') size(laser)
-            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_hw_', trim(adjustl(ch1)), '_t_', trim(adjustl(ch2)), '_F_', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
+            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw_', trim(adjustl(ch1)), '_t_', trim(adjustl(ch2)), '_F_', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
          else ! singe pulse
-            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_hw_', trim(adjustl(ch1)), '_t_', trim(adjustl(ch2)), '_F_', trim(adjustl(ch3))
+            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw_', trim(adjustl(ch1)), '_t_', trim(adjustl(ch2)), '_F_', trim(adjustl(ch3))
          endif
       else ! it is linux
          if (size(laser) .GT. 1) then
             write(ch4,'(i2)') size(laser)
-            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_hw=', trim(adjustl(ch1)), '_t=', trim(adjustl(ch2)), '_F=', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
+            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw=', trim(adjustl(ch1)), '_t=', trim(adjustl(ch2)), '_F=', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
          else ! singe pulse
-            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_hw=', trim(adjustl(ch1)), '_t=', trim(adjustl(ch2)), '_F=', trim(adjustl(ch3))
+            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw=', trim(adjustl(ch1)), '_t=', trim(adjustl(ch2)), '_F=', trim(adjustl(ch3))
          endif
       endif 
    else LAS
@@ -2431,7 +2438,7 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
          else
             write(ch3,'(a)') 'no_coupling'
          endif
-         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_Te_', trim(adjustl(ch1)), '_Ta_', trim(adjustl(ch2)), '_', trim(adjustl(ch3))
+         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_Te_', trim(adjustl(ch1)), '_Ta_', trim(adjustl(ch2)), '_', trim(adjustl(ch3))
       else ! it is linux
          do i = 1,size(Scell)
             write(ch1,'(f8.1)') Scell(i)%Te ! electron temperature [K]
@@ -2442,7 +2449,7 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
          else
             write(ch3,'(a)') 'no_coupling'
          endif
-         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_Te=', trim(adjustl(ch1)), '_Ta=', trim(adjustl(ch2)), '_', trim(adjustl(ch3))
+         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_Te=', trim(adjustl(ch1)), '_Ta=', trim(adjustl(ch2)), '_', trim(adjustl(ch3))
       endif
    endif LAS
 
@@ -2770,6 +2777,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       write(text1,'(i3)') INT(matter%Atoms(i)%Z)
       write(print_to,'(a,a,a,a,a)') ' '//trim(adjustl(text)), ' of ', trim(adjustl(matter%Atoms(i)%Name)), ' (element #', trim(adjustl(text1))//')'
    enddo
+
+   if (numpar%embed_water) then
+      write(text1,'(i6)') numpar%N_water_mol
+      write(print_to,'(a)') ' (Note that the material was embedded in water with # of molecules: '//trim(adjustl(text1))//')'
+   endif
 
    write(print_to,'(a,a,a)') ' Calculations performed for the following parameters:'
    do i = 1, size(Scell)

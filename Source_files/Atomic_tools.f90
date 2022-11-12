@@ -21,6 +21,9 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
+! References used in the module:
+! [1]  F. Salvat, J. M. Fernandez-Varea, E. Acosta, J. Sempau
+!   "PENELOPE-2014 A Code System for Monte Carlo Simulation of Electron and Photon Transport", OECD (2014)
 ! This module includes some tools for performing vector algebra operations:
 MODULE Atomic_tools
 use Universal_constants
@@ -1648,7 +1651,7 @@ subroutine super_cell_forces(numpar, Scell, NSC, matter, supce_forces, Sigma_ten
       KPRES_VV = KPRES_VV/Scell(NSC)%V ! kinetic part, to be multiplied by sigma below
 
       ! Pressure calculation finishing:
-      call Det_3x3(Scell(NSC)%supce,Scell(NSC)%V) ! determinant of the super-cell is the volume, from "VectorAlgebra" module
+      call Det_3x3(Scell(NSC)%supce,Scell(NSC)%V) ! determinant of the super-cell is the volume, module "Algebra_tools"
       
       ! Construct full Sigma tensor:
       Sigma_tens = 0.0d0
@@ -1720,6 +1723,28 @@ pure subroutine check_periodic_boundaries(matter, Scell, NSC)
    enddo ! k
    call Coordinates_rel_to_abs(Scell, NSC)
 end subroutine check_periodic_boundaries
+
+
+pure subroutine check_periodic_boundaries_single(matter, Scell, NSC, k)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of super-cell
+   type(solid), intent(in) :: matter	! material parameters
+   integer, intent(in) :: k
+   if ( (Scell(NSC)%MDatoms(k)%S(1) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(1) .LT. -0.0d0) ) then
+      Scell(NSC)%MDatoms(k)%S(1) = Scell(NSC)%MDatoms(k)%S(1) - FLOOR(Scell(NSC)%MDatoms(k)%S(1))
+      Scell(NSC)%MDatoms(k)%S0(1) = Scell(NSC)%MDatoms(k)%S0(1) - FLOOR(Scell(NSC)%MDatoms(k)%S(1))
+   endif
+   if ( (Scell(NSC)%MDatoms(k)%S(2) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(2) .LT. -0.0d0) ) then
+      Scell(NSC)%MDatoms(k)%S(2) = Scell(NSC)%MDatoms(k)%S(2) - FLOOR(Scell(NSC)%MDatoms(k)%S(2))
+      Scell(NSC)%MDatoms(k)%S0(2) = Scell(NSC)%MDatoms(k)%S0(2) - FLOOR(Scell(NSC)%MDatoms(k)%S(2))
+   endif
+   if ( (Scell(NSC)%MDatoms(k)%S(3) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(3) .LT. -0.0d0) ) then
+      Scell(NSC)%MDatoms(k)%S(3) = Scell(NSC)%MDatoms(k)%S(3) - FLOOR(Scell(NSC)%MDatoms(k)%S(3))
+      Scell(NSC)%MDatoms(k)%S0(3) = Scell(NSC)%MDatoms(k)%S0(3) - FLOOR(Scell(NSC)%MDatoms(k)%S(3))
+   endif
+   call Coordinates_rel_to_abs_single(Scell, NSC, k, .true.)
+end subroutine check_periodic_boundaries_single
+
 
 
 subroutine get_Ekin(Scell, matter)
@@ -2026,6 +2051,102 @@ pure subroutine Coordinates_rel_to_abs(Scell, NSC, if_old)
 end subroutine Coordinates_rel_to_abs
 
 
+
+subroutine Coordinates_abs_to_rel(Scell, NSC, if_old)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of super-cell
+   logical, optional :: if_old ! then do it for the previous time-step too
+   real(8) S(3), dsupce(3,3)
+   integer i, ik, N
+   N = size(Scell(NSC)%MDatoms)
+   !Relative velocities:
+   call Invers_3x3(Scell(NSC)%supce, dsupce, 'Coordinates_abs_to_rel') ! from module "Algebra_tools"
+   do i = 1, N
+      S = 0.0d0
+      do ik = 1,3
+         S(:) = S(:) + Scell(NSC)%MDatoms(i)%R(ik)*dsupce(ik,:)
+      enddo ! ik
+      Scell(NSC)%MDatoms(i)%S(:) = S(:)
+   enddo
+   if (present(if_old)) then
+      call Invers_3x3(Scell(NSC)%supce0, dsupce, 'Coordinates_abs_to_rel (2)') ! from module "Algebra_tools"
+      do i = 1, N
+         S = 0.0d0
+         do ik = 1,3
+            S(:) = S(:) + Scell(NSC)%MDatoms(i)%R0(ik)*dsupce(ik,:)
+         enddo ! ik
+         Scell(NSC)%MDatoms(i)%S0(:) = S(:)
+      enddo
+   endif
+end subroutine Coordinates_abs_to_rel
+
+
+
+
+pure subroutine Coordinates_rel_to_abs_single(Scell, NSC, i_in, if_old)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of super-cell
+   integer, intent(in) :: i_in   ! single atom to do the coordinates
+   logical, intent(in), optional :: if_old ! then do it for the previous time-step too
+   real(8) :: x, y, z
+   integer :: ik
+   x = 0.0d0
+   y = 0.0d0
+   z = 0.0d0
+   do ik = 1,3
+      x = x + Scell(NSC)%MDatoms(i_in)%S(ik)*Scell(NSC)%supce(ik,1)
+      y = y + Scell(NSC)%MDatoms(i_in)%S(ik)*Scell(NSC)%supce(ik,2)
+      z = z + Scell(NSC)%MDatoms(i_in)%S(ik)*Scell(NSC)%supce(ik,3)
+   enddo ! ik
+   Scell(NSC)%MDatoms(i_in)%R(1) = x
+   Scell(NSC)%MDatoms(i_in)%R(2) = y
+   Scell(NSC)%MDatoms(i_in)%R(3) = z
+
+   if (present(if_old)) then
+      x = 0.0d0
+      y = 0.0d0
+      z = 0.0d0
+      do ik = 1,3
+         x = x + Scell(NSC)%MDatoms(i_in)%S0(ik)*Scell(NSC)%supce0(ik,1)
+         y = y + Scell(NSC)%MDatoms(i_in)%S0(ik)*Scell(NSC)%supce0(ik,2)
+         z = z + Scell(NSC)%MDatoms(i_in)%S0(ik)*Scell(NSC)%supce0(ik,3)
+      enddo ! ik
+      Scell(NSC)%MDatoms(i_in)%R0(1) = x
+      Scell(NSC)%MDatoms(i_in)%R0(2) = y
+      Scell(NSC)%MDatoms(i_in)%R0(3) = z
+   endif
+end subroutine Coordinates_rel_to_abs_single
+
+
+
+subroutine Coordinates_abs_to_rel_single(Scell, NSC, i_in, if_old)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of super-cell
+   integer, intent(in) :: i_in   ! single atom to do the coordinates
+   logical, optional :: if_old ! then do it for the previous time-step too
+   real(8) S(3), dsupce(3,3)
+   integer ik
+   !Relative velocities:
+   call Invers_3x3(Scell(NSC)%supce, dsupce, 'Coordinates_abs_to_rel_single') ! from module "Algebra_tools"
+   S = 0.0d0
+   do ik = 1,3
+      S(:) = S(:) + Scell(NSC)%MDatoms(i_in)%R(ik)*dsupce(ik,:)
+   enddo ! ik
+   Scell(NSC)%MDatoms(i_in)%S(:) = S(:)
+
+   if (present(if_old)) then
+      call Invers_3x3(Scell(NSC)%supce0, dsupce, 'Coordinates_abs_to_rel_single (2)') ! from module "Algebra_tools"
+      S = 0.0d0
+      do ik = 1,3
+         S(:) = S(:) + Scell(NSC)%MDatoms(i_in)%R0(ik)*dsupce(ik,:)
+      enddo ! ik
+      Scell(NSC)%MDatoms(i_in)%S0(:) = S(:)
+   endif
+end subroutine Coordinates_abs_to_rel_single
+
+
+
+
 subroutine Reciproc_rel_to_abs(ksx, ksy, ksz, Scell, NSC, kx, ky, kz)
    real(8), intent(in) :: ksx, ksy, ksz ! relative reciprocal vector
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
@@ -2048,6 +2169,40 @@ subroutine Convert_reciproc_rel_to_abs(ksx, ksy, ksz, k_supce, kx, ky, kz)
    ky = ksx*k_supce(1,2) + ksy*k_supce(2,2) + ksz*k_supce(3,2)
    kz = ksx*k_supce(1,3) + ksy*k_supce(2,3) + ksz*k_supce(3,3)
 end subroutine Convert_reciproc_rel_to_abs
+
+
+
+subroutine deflect_velosity(u0, v0, w0, theta, phi, u, v, w)    ! Eq.(1.131), p.37 [1]
+   real(8), intent(in) :: u0, v0, w0     ! cosine directions of the old velosity
+   real(8), intent(in) :: theta, phi     ! polar (0,Pi) and azimuthal (0,2Pi) angles
+   real(8), intent(out) :: u, v, w       ! new cosine directions
+   real(8) :: sin_theta, cos_theta, sin_phi, cos_phi, one_w, eps, sin_t_w, temp
+   eps = 1.0d-8 ! margin of acceptance of w being along Z
+   sin_theta = sin(theta)
+   cos_theta = cos(theta)
+   sin_phi = sin(phi)
+   cos_phi = cos(phi)
+   if ( abs(abs(w0)-1.0d0) < eps ) then   ! motion parallel to Z
+      u = w0*sin_theta*cos_phi
+      v = w0*sin_theta*sin_phi
+      w = w0*cos_theta
+   else ! any other direction of motion
+      one_w = sqrt(1.0d0 - w0*w0)
+      sin_t_w = sin_theta/one_w
+      u = u0*cos_theta + sin_t_w*(u0*w0*cos_phi - v0*sin_phi)
+      v = v0*cos_theta + sin_t_w*(v0*w0*cos_phi + u0*sin_phi)
+      w = w0*cos_theta - one_w*sin_theta*cos_phi
+   endif
+
+   temp = sqrt(u*u + v*v + w*w)
+   if (abs(temp-1.0d0) > eps) then  ! renormalize it:
+      u = u/temp
+      v = v/temp
+      w = w/temp
+   endif
+end subroutine deflect_velosity
+
+
 
 
 subroutine shortest_distance_NEW(Scell, i1, j1, a_r, x1, y1, z1, sx1, sy1, sz1, cell_x, cell_y, cell_z)
