@@ -696,11 +696,13 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    allocate(Scell(SCN)%MDAtoms(N_tot))
    ! Now find the indices of H and O atomic types:
    i = 1
+   i_H = i
    do while ( trim(adjustl(matter%Atoms(i)%Name)) /= 'H')
       i = i + 1
       i_H = i
    enddo
    i = 1
+   i_O = i
    do while ( trim(adjustl(matter%Atoms(i)%Name)) /= 'O')
       i = i + 1
       i_O = i
