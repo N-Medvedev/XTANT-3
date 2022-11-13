@@ -1303,7 +1303,7 @@ subroutine get_DOS_masks(Scell, matter, numpar, only_coupling, do_cartesian)
    nat = size(Scell(NSC)%MDatoms) ! number of atoms
    Nsiz = size(Scell(NSC)%Ha,1) ! total number of orbitals
 
-   BS:if (do_cart) then ! Cartesian basis set:
+   BS:if (do_cart) then ! Cartesian basis set (UNUSED FOR NOW):
       ! Find number of different orbital types:
       norb = identify_xTB_orbitals_per_atom(numpar%N_basis_size) ! module "TB_xTB"
       n_types = number_of_types_of_orbitals(norb, cartesian=.true.)  ! module "Little_subroutines"

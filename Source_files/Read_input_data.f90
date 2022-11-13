@@ -204,6 +204,7 @@ subroutine initialize_default_single_laser(laser, i) ! Must be already allocated
    integer, intent(in) :: i	! number of the pulse
    laser(i)%F = 0.0d0  ! ABSORBED DOSE IN [eV/atom]
    laser(i)%hw = 100.0d0  ! PHOTON ENERGY IN [eV]
+   laser(i)%FWHM_hw = 0.0d0  ! distribution of photon energies [eV]
    laser(i)%t = 10.0d0	  ! PULSE FWHM-DURATION IN
    laser(i)%KOP = 1  	  ! type of pulse: 0=rectangular, 1=Gaussian, 2=SASE
    !laser(i)%t = laser(i)%t/2.35482	! make a gaussian parameter out of it
@@ -4807,8 +4808,13 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
          endif
       endif
 
-      read(FN,*,IOSTAT=Reason) laser(i)%hw  ! PHOTON ENERGY IN [eV]
-      call read_file(Reason, count_lines, read_well)
+      read(FN,*,IOSTAT=Reason) laser(i)%hw, laser(i)%FWHM_hw  ! photon energy in [eV], and FWHM width of distribution [eV]
+      if (Reason /= 0) then ! probably only energy provided, not the distribution width, so assume FWHM_hw=0
+         laser(i)%FWHM_hw = 0.0d0
+         backspace(FN)  ! get back and try to read the line again:
+         read(FN,*,IOSTAT=Reason) laser(i)%hw  ! photon energy in [eV] only, no distribution
+         call read_file(Reason, count_lines, read_well)
+      endif
       if (.not. read_well) then
          write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)

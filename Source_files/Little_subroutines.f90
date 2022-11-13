@@ -585,6 +585,29 @@ pure subroutine Gaussian(mu, sigma, x, Gaus, normalized_max) ! at the time x acc
 end subroutine Gaussian
 
 
+function sample_gaussian(x0, sigma, if_FWHM) result(x_out)
+   real(8) x_out
+   real(8), intent(in) :: x0, sigma ! gaussian mean and sigma (by default, it's not FWHM)
+   logical, intent(in), optional :: if_FWHM   ! if given sigma is FWHM (instead of standard deviation)
+   !---------------------
+   real(8), parameter :: Pi = 3.1415926535897932384626433832795d0
+   real(8) :: rvt1, rvt2, t0, s0
+
+   s0 = sigma
+   if (present(if_FWHM)) then ! check if it is FWHM instead of sigma
+      if (if_FWHM) s0 = sigma/( 2.0d0*sqrt( 2.0d0*log(2.0d0) ) )
+   endif
+
+   t0 = -10.0d0 * s0 ! to start with
+   do while (abs(t0) > 3.0e0*s0) ! accept only within 3*sigma interval
+      call random_number(rvt1)   ! Random value 1 for generated time t0
+      call random_number(rvt2)   ! Random value 2 for generated time t0
+      t0 = s0 * COS(2.0d0*Pi*rvt2)*SQRT(-2.0d0*LOG(rvt1))    ! Gaussian distribution for t0 around 0
+      x_out = x0 + t0   ! around the given mean value x0
+   enddo
+end function sample_gaussian
+
+
 
 subroutine interpolate_data_on_grid(given_array_x, given_array_y, given_grid, array_to_fill)
    real(8), dimension(:), intent(in) :: given_array_x, given_array_y, given_grid

@@ -647,8 +647,8 @@ subroutine MC_for_photon(tim, MC, Nph, numpar, matter, laser, Scell, Eetot_cur, 
          call random_number(RN)
          MC%photons(j)%ti = tim + RN*numpar%dt ! [fs] time of photoabsorbtion within this timestep
          t_cur = MC%photons(j)%ti	! [fs] time of photoabsorbtion
-         ! find number of pulse to which this photon belongs:
-         call Find_in_1D_array(laser(:)%hw, MC%photons(j)%E, PN) ! module 'Little_subroutines'
+         !! find number of pulse to which this photon belongs:
+         !call Find_in_1D_array(laser(:)%hw, MC%photons(j)%E, PN) ! module 'Little_subroutines'
          !call Photon_which_shell(PN, matter, shl) ! finds shell from which electron is ionized
          ! Find by which shell this photon is absorbed:
          call which_shell(MC%photons(j)%E, matter%Atoms, matter, 0, KOA, SHL) ! module 'MC_cross_sections'
@@ -747,7 +747,14 @@ subroutine choose_photon_energy(numpar, laser, MC, tim) ! see below
          coun = coun + 1 ! next pulse
          sum_phot = sum_phot + Nphot_pulses(coun) ! total number of photons
       enddo
-      MC%photons(i)%E = laser(coun)%hw	! [eV] photon energy in this pulse #coun
+
+      ! Distribution of the photon energy:
+      if (laser(coun)%FWHM_hw > 0.0d0) then  ! if it is a distribution
+         MC%photons(i)%E = sample_gaussian(laser(coun)%hw, laser(coun)%FWHM_hw, .true.) ! module "Little_subroutine"
+      else  ! single photon energy
+         MC%photons(i)%E = laser(coun)%hw ! [eV] photon energy in this pulse #coun
+      endif
+!       print*, MC%photons(i)%E
    enddo
 end subroutine choose_photon_energy
 
