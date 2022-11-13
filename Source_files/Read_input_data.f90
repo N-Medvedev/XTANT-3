@@ -4213,7 +4213,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       numpar%save_Ei = .false.	! excluded
    endif
    
-   ! save DOS (1) or not (0):
+   ! save DOS (1=Gamma; 2=k-points) or not (0):
    read(FN,*,IOSTAT=Reason) N, numpar%Smear_DOS, numpar%DOS_splitting ! save DOS (1) or not (0), smearing width, do partial DOS or no
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
@@ -4222,11 +4222,22 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       print*, trim(adjustl(Error_descript))
       goto 3418
    endif
-   if (N .EQ. 1) then
-      numpar%save_DOS = .true.	! included
-   else
-      numpar%save_DOS = .false.	! excluded
+   if (abs(N) == 2) then
+      ! if the user wanted complex k-points, leave it be, otherwise, overwrite it with the option of complex k for DOS
+      ! * Note that it SWITCHES OFF the probe-pulse calculations in this case
+      ! which means it is currently not possible to get gamma-point probe pulse, and multiple-k-points for DOS.
+      ! They are connected: either both are calculated for multiple (and the same) k-points,
+      ! or DOS calculation takes precedence, and probe is switched off:
+      if (numpar%optic_model /= 2) then
+         numpar%optic_model = -2    ! complex, for given number of k-points for DOS calculations
+      endif
+      numpar%save_DOS = .true.   ! included
+   elseif (N == 1) then ! calculate with the same model used for the probe pulse (gamma-point or multiple k-points)
+      numpar%save_DOS = .true.   ! included
+   else ! no DOS output requested
+      numpar%save_DOS = .false.  ! excluded
    endif
+!    print*, 'DOS_in:', numpar%save_DOS, numpar%optic_model
    
    ! save Mulliken or not, and within which model: (0) no; (1) for atom types; 
    read(FN,*,IOSTAT=Reason) numpar%Mulliken_model
@@ -4375,7 +4386,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       goto 3418
    endif
 
-
+   !----------------------------------------
    ! Read optional data provided by the user (e.g., to overwrite default atomic data):
    call read_user_additional_data(FN, count_lines, matter, Scell, NSC, user_data)   ! below
 
@@ -4853,87 +4864,39 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
      enddo ! have read parameters for all pulses
    endif PULS
    
-   ! Calculate optical parameters, and with which model:
-   read(FN,*,IOSTAT=Reason) numpar%optic_model, N, read_var
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3417
-   endif
-   SCL:do i = 1, size(Scell) ! for all supercells
-      if (numpar%optic_model .GT. 0) then ! yes, calculate optical coefficients:
-         numpar%do_drude = .true.	! included
-         Scell(i)%eps%KK = .false.	! no K-K relations
-         if (N == 2) then	! use Kramers Kronig relations for spectrum
-            Scell(i)%eps%KK = .true.
-            Scell(i)%eps%all_w = .true.
-         elseif (N == 1) then	! calculate spectrum, but directly, without using Kramers Kronig relations
-            Scell(i)%eps%all_w = .true.
-         else
-            Scell(i)%eps%all_w = .false.
-         endif
-      else 
-         numpar%do_drude = .false.	! not included
-      endif
-      
-      Scell(i)%eps%E_min = read_var(1) ! starting point of the grid of energy [eV]
-      Scell(i)%eps%E_max = read_var(2) ! ending point of the grid of energy [eV]
-      Scell(i)%eps%dE = read_var(3)    ! grid step of energy [eV]
 
-      ! Absorbtion of how many rays (0=exclude, 1=1st ray, (>1)=sum all); probe-pulse wavelength [nm]; probe duration FWHM [fs]
-      read(FN,*,IOSTAT=Reason) numpar%drude_ray, Scell(i)%eps%l, Scell(i)%eps%tau
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
-      endif
-      !if (.not.numpar%do_drude) Scell(i)%eps%tau = -0.0d0 ! to exclude convolution if there is no probe pulse
-      Scell(i)%eps%ReEps0 = 0.0d0	! to start with
-      Scell(i)%eps%ImEps0 = 0.0d0	! to start with
-      Scell(i)%eps%w = 2.0d0*g_Pi*g_cvel/(Scell(i)%eps%l*1d-9) ! [1/sec] frequency
+   !------------------------------------------------
+   ! Check if there are additional options provided:
+   read_well = .true.   ! to start with
+   RDID: do while (read_well)
+      read(FN,*,IOSTAT=Reason) text
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) exit RDID  ! end of file, stop reading
 
-      ! Angle of prob-pulse with respect to normal [degrees]; material thickness [nm]:
-      read(FN,*,IOSTAT=Reason) Scell(i)%eps%teta, Scell(i)%eps%dd
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
-      endif
-      Scell(i)%eps%teta = Scell(i)%eps%teta*g_Pi/(180.0d0) !c [radians]
+      call interpret_user_data_INPUT(FN, trim(adjustl(File_name)), count_lines, text, Scell, numpar, Err) ! below
+      if (Err%Err) goto 3417
+   enddo RDID
 
-      ! Check if there are additional options provided:
-      read_well = .true.   ! to start with
-      RDID: do while (read_well)
-         read(FN,*,IOSTAT=Reason) text
-         call read_file(Reason, count_lines, read_well)
-         if (.not. read_well) exit RDID  ! end of file, stop reading
-
-         call interpret_user_data_INPUT(FN, trim(adjustl(File_name)), count_lines, text, numpar, Err) ! below
-      enddo RDID
-
-      if (numpar%verbose) call print_time_step('Verbose option is on, XTANT is going to be a chatterbox', msec=.true.)
-
-   enddo SCL
+   if (numpar%verbose) call print_time_step('Verbose option is on, XTANT is going to be a chatterbox', msec=.true.)
 
    ! Close this file, it has been read through:
 3417  if (file_opened) close(FN)
 end subroutine read_input_material
 
 
-subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, numpar, Err) ! below
+subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, numpar, Err) ! below
    integer, intent(in) :: FN  ! file to read from
    character(*), intent(in) :: File_name
    integer, intent(inout) :: count_lines  ! line we are reading
    character(*), intent(in) :: string ! what was read in the previous line
+   type(Super_cell), dimension(:), allocatable, intent(inout) :: Scell ! suoer-cell with all the atoms inside
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Error_handling), intent(inout) :: Err	! error save
    !--------------------------
    real(8), dimension(3) :: read_var   ! fluence: starting, ending, step; all in [eV/atom]
-   integer :: Reason, num_phon
+   integer :: Reason, num_phon, i, N
    logical :: read_well
+   character(200) :: Error_descript
 
    read_well = .true.   ! to start with
    read_var = 0.0d0     ! unused variable in this case
@@ -4958,6 +4921,60 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, numpar,
          numpar%embed_water = .false.
          numpar%N_water_mol = 0
       endif
+
+   case ('PROBE', 'Probe', 'probe')
+
+      ! Calculate optical parameters, and with which model:
+      read(FN,*,IOSTAT=Reason) numpar%optic_model, N, read_var
+      if (.not. read_well) then
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         return
+      endif
+      SCL:do i = 1, size(Scell) ! for all supercells
+         if (numpar%optic_model .GT. 0) then ! yes, calculate optical coefficients:
+            numpar%do_drude = .true.	! included
+            Scell(i)%eps%KK = .false.	! no K-K relations
+            if (N == 2) then	! use Kramers Kronig relations for spectrum
+               Scell(i)%eps%KK = .true.
+               Scell(i)%eps%all_w = .true.
+            elseif (N == 1) then	! calculate spectrum, but directly, without using Kramers Kronig relations
+               Scell(i)%eps%all_w = .true.
+            else
+               Scell(i)%eps%all_w = .false.
+            endif
+         else
+            numpar%do_drude = .false.	! not included
+         endif
+
+         Scell(i)%eps%E_min = read_var(1) ! starting point of the grid of energy [eV]
+         Scell(i)%eps%E_max = read_var(2) ! ending point of the grid of energy [eV]
+         Scell(i)%eps%dE = read_var(3)    ! grid step of energy [eV]
+
+         ! Absorbtion of how many rays (0=exclude, 1=1st ray, (>1)=sum all); probe-pulse wavelength [nm]; probe duration FWHM [fs]
+         read(FN,*,IOSTAT=Reason) numpar%drude_ray, Scell(i)%eps%l, Scell(i)%eps%tau
+         if (.not. read_well) then
+            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            return
+         endif
+         !if (.not.numpar%do_drude) Scell(i)%eps%tau = -0.0d0 ! to exclude convolution if there is no probe pulse
+         Scell(i)%eps%ReEps0 = 0.0d0	! to start with
+         Scell(i)%eps%ImEps0 = 0.0d0	! to start with
+         Scell(i)%eps%w = 2.0d0*g_Pi*g_cvel/(Scell(i)%eps%l*1d-9) ! [1/sec] frequency
+
+         ! Angle of prob-pulse with respect to normal [degrees]; material thickness [nm]:
+         read(FN,*,IOSTAT=Reason) Scell(i)%eps%teta, Scell(i)%eps%dd
+         if (.not. read_well) then
+            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            return
+         endif
+         Scell(i)%eps%teta = Scell(i)%eps%teta*g_Pi/(180.0d0) !c [radians]
+      enddo SCL
 
    case default
       ! Check if the user needs any additional info (by setting the flags):
