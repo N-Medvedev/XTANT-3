@@ -678,13 +678,14 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    type(Numerics_param), intent(in) :: numpar	! numerical parameters
    !---------------------------
    integer :: i, j, i_mol, i_h2o, N_at, N_h2o, SCN, N_tot, j_h2o, iter, i_H, i_O
-   real(8) :: V_mol, V_tot, dV, s_center(3), RN(3), dS_min(3), dS(3), dS_min_abs
+   real(8) :: V_mol, V_tot, dV, s_center(3), RN(3), dS_min(3), dS(3), dS_min_abs, dV_resc
    real(8) :: theta, phi, cos_phi, u0, v0, w0, u, v, w
    logical :: redo_placement
    type(Atom), dimension(:), allocatable :: MDAtoms ! all atoms in MD
 
    !-----------------------
    ! 0) Define initial parameters:
+   dV_resc = (1.1d0)*(1.0d0/3.0d0)  ! rescaling factor of increase of volume in case if needed (molecule overlap)
    SCN = 1  ! so far, only one supercell
    N_at = Scell(SCN)%Na ! number of atoms in bio/molecule
    N_h2o = 3*numpar%N_water_mol  ! number of atoms from water molecules (2*H+1*O)
@@ -747,9 +748,9 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    call Coordinates_rel_to_abs(Scell, SCN, if_old=.true.)	! from the module "Atomic_tools"
 
    ! Atoms cannot be closer than this:
-   dS_min(1) = g_a0 / sqrt( SUM(Scell(SCN)%supce(1,:)*Scell(SCN)%supce(1,:)) )   ! relative coordinates [units of the supercell]
-   dS_min(2) = g_a0 / sqrt( SUM(Scell(SCN)%supce(2,:)*Scell(SCN)%supce(2,:)) )   ! relative coordinates [units of the supercell]
-   dS_min(3) = g_a0 / sqrt( SUM(Scell(SCN)%supce(3,:)*Scell(SCN)%supce(3,:)) )   ! relative coordinates [units of the supercell]
+   dS_min(1) = 1.2d0*g_a0 / sqrt( SUM(Scell(SCN)%supce(1,:)*Scell(SCN)%supce(1,:)) )   ! relative coordinates [units of the supercell]
+   dS_min(2) = 1.2d0*g_a0 / sqrt( SUM(Scell(SCN)%supce(2,:)*Scell(SCN)%supce(2,:)) )   ! relative coordinates [units of the supercell]
+   dS_min(3) = 1.2d0*g_a0 / sqrt( SUM(Scell(SCN)%supce(3,:)*Scell(SCN)%supce(3,:)) )   ! relative coordinates [units of the supercell]
    dS_min_abs = sqrt( SUM(dS_min(:)*dS_min(:)) )
 
    !-----------------------
@@ -785,7 +786,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
          ! If it's not possible to place a molecule in such a small volume, increase the volume:
 !          print*, 'O  :', i_h2o, iter
          if (iter >= 100) then
-            dV = 1.1d0  ! increase the supercell volume
+            dV = dV_resc  ! increase the supercell volume
             goto 2023   ! try again placement in larger volume
          endif
       enddo
@@ -842,7 +843,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
          ! If it's not possible to place a molecule in such a small volume, increase the volume:
 !          print*, 'H1 :', i_h2o, iter
          if (iter >= 100) then
-            dV = 1.1d0  ! increase the supercell volume
+            dV = dV_resc  ! increase the supercell volume
             goto 2023   ! try again placement in larger volume
          endif
       enddo
@@ -887,7 +888,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
          ! If it's not possible to place a molecule in such a small volume, increase the volume:
 !          print*, 'H2 :', i_h2o, iter
          if (iter >= 100) then
-            dV = 1.1d0  ! increase the supercell volume
+            dV = dV_resc  ! increase the supercell volume
             goto 2023   ! try again placement in larger volume
          endif
       enddo

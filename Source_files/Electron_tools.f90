@@ -71,7 +71,7 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(solid), intent(inout) :: matter	! materil parameters
    type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
-   integer i, sumNe, siz
+   integer i, sumNe, siz, j
 
    siz = size(wr)
    
@@ -90,7 +90,12 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
 
    Scell%E_gap = ABS(wr(i+1) - wr(i))	! bandgap [eV]
    Scell%E_bottom = wr(i+1)	! bottom of the CB [eV]
-   Scell%E_top = wr(siz)		! [eV] current top of the conduction band
+   ! If top energy level is excluded (in parameterization, or just too high due to convergence issues)
+   j = siz  ! start from the last one
+   do while (wr(j)>=79.0d0)
+      j = j - 1
+      Scell%E_top = wr(j)		! [eV] current top of the (meaningful) conduction band
+   enddo
    Scell%E_VB_bottom = wr(1)	! [eV] current bottom of the valence band
    Scell%E_VB_top = wr(i)		! [eV] current top of the valence band
    

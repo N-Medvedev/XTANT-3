@@ -2290,25 +2290,28 @@ subroutine write_energy_levels_gnuplot(FN, Scell, file_Ei)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    character(*), intent(in) :: file_Ei  ! file with energy levels
    integer i, M, NSC
-   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-      do NSC = 1, size(Scell)
-         M = size(Scell(NSC)%Ei)
-         write(FN, '(a,a,a,i5,a)') 'p "', trim(adjustl(file_Ei)), '"u 1:', 2, ' pt 7 ps 0.2 ,\'
+   character(30) :: ch_temp
+
+   do NSC = 1, size(Scell)
+      M = size(Scell(NSC)%Ei)
+      ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
+      write(ch_temp,'(f)') 25.0d0      ! Scell(NSC)%E_top
+
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a,a,a,i5,a)') 'p [][:'//trim(adjustl(ch_temp))//'] "', trim(adjustl(file_Ei)), '"u 1:', 2, ' pt 7 ps 0.2 ,\'
          do i = 3, M
             write(FN, '(a,a,a,i5,a)') ' "', trim(adjustl(file_Ei)), '"u 1:', i, ' pt 7 ps 0.2 ,\'
          enddo
          write(FN, '(a,a,a,i5,a)') ' "', trim(adjustl(file_Ei)), '"u 1:', M+1, ' pt 7 ps 0.2'
-      enddo
-   else
-      do NSC = 1, size(Scell)
-         M = size(Scell(NSC)%Ei)
-         write(FN, '(a,a,a,i5,a)') 'p\"', trim(adjustl(file_Ei)), '\"u 1:', 2, ' pt 7 ps \"$LW\" ,\'
+      else
+         write(FN, '(a,a,a,i5,a)') 'p [][:'//trim(adjustl(ch_temp))//'] \"', trim(adjustl(file_Ei)), &
+                                       '\"u 1:', 2, ' pt 7 ps \"$LW\" ,\'
          do i = 3, M
             write(FN, '(a,a,a,i5,a)') '\"', trim(adjustl(file_Ei)), '\"u 1:', i, ' pt 7 ps \"$LW\" ,\'
          enddo
          write(FN, '(a,a,a,i5,a)') '\"', trim(adjustl(file_Ei)), '\"u 1:', M+1, ' pt 7 ps \"$LW\"'
-      enddo
-   endif
+      endif
+   enddo
 end subroutine write_energy_levels_gnuplot
 
 
