@@ -685,7 +685,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
 
    !-----------------------
    ! 0) Define initial parameters:
-   dV_resc = (1.1d0)*(1.0d0/3.0d0)  ! rescaling factor of increase of volume in case if needed (molecule overlap)
+   dV_resc = (1.1d0)**(1.0d0/3.0d0)  ! rescaling factor of increase of volume in case if needed (molecule overlap)
    SCN = 1  ! so far, only one supercell
    N_at = Scell(SCN)%Na ! number of atoms in bio/molecule
    N_h2o = 3*numpar%N_water_mol  ! number of atoms from water molecules (2*H+1*O)
@@ -730,6 +730,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
 
    ! Renew the volume of the supercell:
    call Det_3x3(Scell(SCN)%supce,Scell(SCN)%V) ! module "Algebra_tools"
+
    ! Update relative coordinates:
    Scell(SCN)%MDAtoms(1:N_at) = MDAtoms(1:N_at)
    call Coordinates_abs_to_rel(Scell, SCN, .true.) ! module "Algebra_tools"

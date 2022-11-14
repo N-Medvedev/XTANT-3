@@ -1810,6 +1810,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
    character(11) :: chtemp11
    real(8) :: x_tics
    character(8) :: temp, time_order
+   logical :: first_line
    
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
    
@@ -1820,7 +1821,8 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
    !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Holes','Time (fs)', 'Particles per atoms (arb.units)', trim(adjustl(eps_name)))
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Holes','Time (fs)', 'Particles (per atoms)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
    
-   counter = 0
+   counter = 0 ! to start with
+   first_line = .true.  ! to start from the first line
    W_vs_L:if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
      ATOMS0:do i = 1, size(matter%Atoms) ! for all atoms
          Na = size(matter%Atoms)
@@ -1832,7 +1834,9 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                write(chtemp,'(a,a,a)') trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(chtemp11))
                select case(size(matter%Atoms))
                case (1)
-                  if ((i == 1) .and. (j == 1)) then
+                  !if ((i == 1) .and. (j == 1)) then
+                  if (first_line) then
+                     first_line = .false. ! first line is done, don't repeat it
                      write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), ' "u 1:', 1+j ,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
                   else
                      write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), ' "u 1:', 1+j ,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
@@ -1843,7 +1847,9 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                      write(FN, '(a)') ''
                   endif
                case default
-                  if ((i == 1) .and. (j == 1)) then
+                  !if ((i == 1) .and. (j == 1)) then
+                  if (first_line) then
+                     first_line = .false. ! first line is done, don't repeat it
                      write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), ' "u 1:', 1+counter,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
                   else
                      write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), ' "u 1:', 1+counter,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'

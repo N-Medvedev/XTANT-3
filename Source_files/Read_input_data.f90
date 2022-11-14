@@ -403,8 +403,9 @@ subroutine add_water_to_chemical_formulae(matter, numpar)   ! below
    integer, dimension(:), allocatable :: at_numbers
    real(8), dimension(:), allocatable :: at_percentage
    character(3), dimension(:), allocatable :: at_short_names ! name of the element
+   logical :: H_exists, O_exists
 
-!    print*, 'Chemical formula old: ', trim(adjustl(matter%Chem))
+!     print*, 'Chemical formula old: ', trim(adjustl(matter%Chem))
 
    ! Check if the atoms from the water molecule are already present:
    chem_form = trim(adjustl(matter%Chem)) ! save chemical formula
@@ -413,6 +414,9 @@ subroutine add_water_to_chemical_formulae(matter, numpar)   ! below
    call Decompose_compound(Folder_name, chem_form, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, at_percentage, at_short_names) ! molude 'Periodic_table'
 
    if (INFO == 0) then
+      H_exists = .false.   ! to start with
+      O_exists = .false.   ! to start with
+
       N_SC = INT(matter%cell_x*matter%cell_y*matter%cell_z) ! number of molecules in the supercell
       matter%Chem = ''  ! to start with
       do i = 1, size(at_short_names)
@@ -420,18 +424,29 @@ subroutine add_water_to_chemical_formulae(matter, numpar)   ! below
             ! That's how many hyhdrogens there are in total (molecule + water):
             write(temp,'(i6)') INT(at_percentage(i))*N_SC + numpar%N_water_mol*2
             matter%Chem = trim(adjustl(matter%Chem))//'H'//trim(adjustl(temp))
+            H_exists = .true. ! found it, added into the chemical formula
          elseif (trim(adjustl(at_short_names(i))) == 'O') then
             ! That's how many oxygens there are in total (molecule + water):
             write(temp,'(i6)') INT(at_percentage(i))*N_SC + numpar%N_water_mol
             matter%Chem = trim(adjustl(matter%Chem))//'O'//trim(adjustl(temp))
-         else
+            O_exists = .true. ! found it, added into the chemical formula
+         else  ! all other elements just write back as they are (x number of unit cells)
             write(temp,'(i6)') INT(at_percentage(i))*N_SC
             matter%Chem = trim(adjustl(matter%Chem))//trim(adjustl(at_short_names(i)))//trim(adjustl(temp))
          endif
       enddo
+      ! Add at the end H or O, if they were not in the formula:
+      if (.not.H_exists) then
+         write(temp,'(i6)') numpar%N_water_mol*2
+         matter%Chem = trim(adjustl(matter%Chem))//'H'//trim(adjustl(temp))
+      endif
+      if (.not.O_exists) then
+         write(temp,'(i6)') numpar%N_water_mol
+         matter%Chem = trim(adjustl(matter%Chem))//'O'//trim(adjustl(temp))
+      endif
    endif ! (INFO .NE. 0)
-!    print*, 'Chemical formula new: ', trim(adjustl(matter%Chem))
-!    pause 'Chem done'
+!     print*, 'Chemical formula new: ', trim(adjustl(matter%Chem))
+!     pause 'Chem done'
 end subroutine add_water_to_chemical_formulae
 
 
