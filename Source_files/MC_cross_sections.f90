@@ -407,6 +407,8 @@ subroutine set_single_pole_CDF(Scell, NSC, matter, i, j)  ! only for VB/CB
    Nshl = size(matter%Atoms(1)%Ip)  ! index of the valence band
    if ( (i == 1) .and. (j == Nshl) ) then ! do only for the valence band
 
+      if (.not. allocated(matter%Atoms(i)%N_CDF)) allocate(matter%Atoms(i)%N_CDF(matter%Atoms(i)%sh)) ! allocate number of electrons
+
       if (.not.allocated(matter%Atoms(i)%CDF(j)%A)) then
          matter%Atoms(i)%N_CDF(j) = 1  ! set single CDF, coefficients to be determined
          allocate(matter%Atoms(i)%CDF(j)%A(matter%Atoms(i)%N_CDF(j)))

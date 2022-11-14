@@ -720,7 +720,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    ! 1.c) Volume coefficient to expand the supercell:
    call Det_3x3(Scell(SCN)%supce,Scell(SCN)%V) ! module "Algebra_tools"
    ! estimated volume of water molecules (assuming water density of 1 g/cc):
-   V_tot = Scell(SCN)%V + N_h2o*( (8.0d0*g_amu)/3.0d0 / 1d3 * 1d30) ! total volume [A^3]
+   V_tot = Scell(SCN)%V + N_h2o*( ((2.0d0*1.0d0 + 16.0d0)*g_amu)/3.0d0 / 1d3 * 1d30) ! total volume [A^3]
    dV = (V_tot/Scell(SCN)%V)**(1.0d0/3.0d0)
    ! 1.d) Rescale the supercell:
 2023 continue
