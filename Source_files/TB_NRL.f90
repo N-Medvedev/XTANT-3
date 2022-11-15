@@ -912,7 +912,7 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
                   k = (i-1)*norb+i1
                   if (i == j) then ! contribution of the same atom, according to Trani:
 
-                     write(*,'(a,i5,i5,i5,i5)') 'SH_1: ', k, l, i, j
+                     !write(*,'(a,i5,i5,i5,i5)') 'SH_1: ', k, l, i, j
 
                      if (j1 == i1) then
                         ! Skip the same orbital, no overlap
@@ -923,7 +923,7 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
                         SH_1 = DCMPLX(1.1d0,0.0d0) * CHij_orth(k,l)
                         ! Testing orthogonal expression (Trani):
                         !SH_1 = DCMPLX(temp*0.270d0,0.0d0)*CHij_non(k,l)
-                        print*, k, l, SH_1
+                        !print*, k, l, SH_1
 
                         Scell(NSC)%cPRRx(k,l) = SH_1
                         Scell(NSC)%cPRRy(k,l) = SH_1

@@ -949,6 +949,7 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
    character(200) Error_descript
    logical read_well
    type(Atom), dimension(:), allocatable :: MDAtoms ! if more then one supercell
+   real(8), dimension(size(matter%Atoms)) :: perc
 
    select case (which_one)
    case (1) ! saved all atomic coordinates
@@ -1026,6 +1027,22 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
          goto 3417
       endif
    end select
+
+
+!    print*, 'NVB_1 = ', Scell(SCN)%Ne
+   ! Check for consistency of valence electrons in chemical formula and actual atoms in the supercell:
+   do j = 1, size(perc)
+      perc(j) = COUNT( Scell(SCN)%MDatoms(:)%KOA == j )
+!       print*, j, matter%Atoms(j)%percentage, perc(j)
+      if (perc(j) /= matter%Atoms(j)%percentage) then ! assume supercell gives the right number
+!          print*, 'Overwriting the number of VB electrons with the consistent number from supercell data'
+         matter%Atoms(j)%percentage = perc(j)
+      endif
+   enddo
+   Scell(SCN)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)/SUM(matter%Atoms(:)%percentage)*Scell(SCN)%Na
+   Scell(SCN)%Ne_low = Scell(SCN)%Ne ! at the start, all electrons are low-energy
+!    print*, 'NVB_2 = ', Scell(SCN)%Ne
+!    pause
    
    ! Save atomic coordinates at their equilibrium positions:
    if (present(ind)) then
