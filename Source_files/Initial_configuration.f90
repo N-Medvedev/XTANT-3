@@ -677,14 +677,16 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters
    !---------------------------
-   integer :: i, j, i_mol, i_h2o, N_at, N_h2o, SCN, N_tot, j_h2o, iter, i_H, i_O
-   real(8) :: V_mol, V_tot, dV, s_center(3), RN(3), dS_min(3), dS(3), dS_min_abs, dV_resc
-   real(8) :: theta, phi, cos_phi, u0, v0, w0, u, v, w
+   integer :: i, j, i_mol, i_h2o, N_at, N_h2o, SCN, N_tot, j_h2o, iter, i_H, i_O, iter_max
+   real(8) :: V_mol, V_tot, dV, s_center(3), RN(3), dS_min(3), dS(3), dS_min_abs, dV_resc, dR_min
+   real(8) :: theta, phi, cos_phi, u0, v0, w0, u, v, w, a_r
    logical :: redo_placement
    type(Atom), dimension(:), allocatable :: MDAtoms ! all atoms in MD
 
    !-----------------------
    ! 0) Define initial parameters:
+   iter_max = 1000
+   dR_min = 3.0d0*g_a0  ! [A] atoms no closer than this distance
    dV_resc = (1.1d0)**(1.0d0/3.0d0)  ! rescaling factor of increase of volume in case if needed (molecule overlap)
    SCN = 1  ! so far, only one supercell
    N_at = Scell(SCN)%Na ! number of atoms in bio/molecule
@@ -725,6 +727,9 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    dV = (V_tot/Scell(SCN)%V)**(1.0d0/3.0d0)
    ! 1.d) Rescale the supercell:
 2023 continue
+
+!    print*, 'dV=', dV, Scell(SCN)%supce(3,3)
+
    Scell(SCN)%supce(:,:) = Scell(SCN)%supce(:,:) * dV
    Scell(SCN)%supce0(:,:) = Scell(SCN)%supce(:,:)
 
@@ -748,12 +753,6 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    ! Update absolute coordinates:
    call Coordinates_rel_to_abs(Scell, SCN, if_old=.true.)	! from the module "Atomic_tools"
 
-   ! Atoms cannot be closer than this:
-   dS_min(1) = 1.2d0*g_a0 / sqrt( SUM(Scell(SCN)%supce(1,:)*Scell(SCN)%supce(1,:)) )   ! relative coordinates [units of the supercell]
-   dS_min(2) = 1.2d0*g_a0 / sqrt( SUM(Scell(SCN)%supce(2,:)*Scell(SCN)%supce(2,:)) )   ! relative coordinates [units of the supercell]
-   dS_min(3) = 1.2d0*g_a0 / sqrt( SUM(Scell(SCN)%supce(3,:)*Scell(SCN)%supce(3,:)) )   ! relative coordinates [units of the supercell]
-   dS_min_abs = sqrt( SUM(dS_min(:)*dS_min(:)) )
-
    !-----------------------
    ! 3) Place remaining water molecules around the bio/molecule:
    N_tot = N_at   ! to start with
@@ -775,9 +774,11 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
          CHKI:do i = 1, N_tot
             ! Get the relative distance to this atom:
             if (j_h2o /= i) then
-               dS(:) = abs(Scell(SCN)%MDAtoms(j_h2o)%S(:) - Scell(SCN)%MDAtoms(i)%S(:))
+               !dS(:) = abs(Scell(SCN)%MDAtoms(j_h2o)%S(:) - Scell(SCN)%MDAtoms(i)%S(:))
+               call shortest_distance(Scell(SCN), j_h2o, i, a_r) ! module "Atomic_tools"
+
                ! Check if it is not too short:
-               if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
+               if (a_r < dR_min) then ! overlapping atoms, place a molecule in a new place:
                   redo_placement = .true. ! assume we place it well, no need to redo it
                   iter = iter + 1   ! next iteration
 !                   print*, 'CHKI', j_h2o, i, sqrt(SUM(dS(:)*dS(:)))
@@ -787,7 +788,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
          enddo CHKI
          ! If it's not possible to place a molecule in such a small volume, increase the volume:
 !          print*, 'O  :', i_h2o, iter
-         if (iter >= 100) then
+         if (iter >= iter_max) then
             dV = dV_resc  ! increase the supercell volume
             goto 2023   ! try again placement in larger volume
          endif
@@ -834,9 +835,15 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
          CHKI2:do i = 1, N_tot
             ! Get the relative distance to this atom:
             if (j_h2o /= i) then
-               dS(:) = abs(Scell(SCN)%MDAtoms(j_h2o)%S(:) - Scell(SCN)%MDAtoms(i)%S(:))
+!                dS(:) = abs(Scell(SCN)%MDAtoms(j_h2o)%S(:) - Scell(SCN)%MDAtoms(i)%S(:))
+!                ! Check if it is not too short:
+!                if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
+
+               call shortest_distance(Scell(SCN), j_h2o, i, a_r) ! module "Atomic_tools"
+
                ! Check if it is not too short:
-               if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
+               if (a_r < dR_min) then ! overlapping atoms, place a molecule in a new place:
+
                   redo_placement = .true. ! assume we place it well, no need to redo it
                   iter = iter + 1   ! next iteration
 !                   print*, 'CHKI2', j_h2o, i, sqrt(SUM(dS(:)*dS(:))), dS_min_abs
@@ -847,7 +854,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
          enddo CHKI2
          ! If it's not possible to place a molecule in such a small volume, increase the volume:
 !          print*, 'H1 :', i_h2o, iter
-         if (iter >= 100) then
+         if (iter >= iter_max) then
             dV = dV_resc  ! increase the supercell volume
             goto 2023   ! try again placement in larger volume
          endif
@@ -881,9 +888,11 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
          CHKI3:do i = 1, N_tot
             ! Get the relative distance to this atom:
             if (j_h2o /= i) then
-               dS(:) = abs(Scell(SCN)%MDAtoms(j_h2o)%S(:) - Scell(SCN)%MDAtoms(i)%S(:))
+!                dS(:) = abs(Scell(SCN)%MDAtoms(j_h2o)%S(:) - Scell(SCN)%MDAtoms(i)%S(:))
+               call shortest_distance(Scell(SCN), j_h2o, i, a_r) ! module "Atomic_tools"
                ! Check if it is not too short:
-               if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
+               !if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
+               if (a_r < dR_min) then ! overlapping atoms, place a molecule in a new place:
                   redo_placement = .true. ! assume we place it well, no need to redo it
                   iter = iter + 1   ! next iteration
 !                   print*, 'CHKI3', j_h2o, i, sqrt(SUM(dS(:)*dS(:)))
@@ -893,7 +902,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
          enddo CHKI3
          ! If it's not possible to place a molecule in such a small volume, increase the volume:
 !          print*, 'H2 :', i_h2o, iter
-         if (iter >= 100) then
+         if (iter >= iter_max) then
             dV = dV_resc  ! increase the supercell volume
             goto 2023   ! try again placement in larger volume
          endif

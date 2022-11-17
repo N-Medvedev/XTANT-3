@@ -668,7 +668,7 @@ subroutine vary_size(do_forces, Err)
       else
          print*, 'Supercell size:', i_test, &
          trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
-         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)) , g_time, &
+         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)), at1, at2, g_time, &
          g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW !<-
          !write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%nrg%E_vdW, g_Scell(1)%supce(3,3)*0.25d0 !<-
          write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, E_vdW_interplane, g_Scell(1)%supce(3,3) !<-
