@@ -685,10 +685,11 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
 
    !-----------------------
    ! 0) Define initial parameters:
-   iter_max = 1000
+   iter_max = 10000
    dR_min = 3.0d0*g_a0  ! [A] atoms no closer than this distance
    dV_resc = (1.1d0)**(1.0d0/3.0d0)  ! rescaling factor of increase of volume in case if needed (molecule overlap)
    SCN = 1  ! so far, only one supercell
+   iter = 1 ! to start with
    N_at = Scell(SCN)%Na ! number of atoms in bio/molecule
    N_h2o = 3*numpar%N_water_mol  ! number of atoms from water molecules (2*H+1*O)
    N_tot = N_at + N_h2o ! total number of atoms after adding water
@@ -728,7 +729,10 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    ! 1.d) Rescale the supercell:
 2023 continue
 
-!    print*, 'dV=', dV, Scell(SCN)%supce(3,3)
+   if (iter >= iter_max) then ! were unable to fit all molecules into the box, increasing the box side (lowering density)
+      print*, 'All water molecules did not fit in the box, incrasing box size:'
+      print*, 'dV=', dV, Scell(SCN)%supce(3,3)
+   endif
 
    Scell(SCN)%supce(:,:) = Scell(SCN)%supce(:,:) * dV
    Scell(SCN)%supce0(:,:) = Scell(SCN)%supce(:,:)
