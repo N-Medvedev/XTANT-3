@@ -2510,36 +2510,21 @@ subroutine communicate(FN, time, numpar, matter)
    endif
    
    inquire(UNIT=FN,opened=file_opened)
-   readline = ''  ! to start with
+
+!    prinT*, 'communicate', MOD_TIM, numpar%MOD_TIME, file_opened
 
    COM_OPEN:if (file_opened) then ! read it
       rewind(FN)  ! to start reading from the start
-      ! read the first line
-      read(FN,'(a)', IOSTAT=Reason, SIZE=sz, ADVANCE='no') readline
-      call read_file(Reason, i, read_well)
-
-      if ( (.not.read_well) .and. (numpar%path_sep == '/') ) then ! if it is Linux
-         rewind(FN)  ! to start reading from the start
-         read(FN, '(a)', IOSTAT=Reason) readline(1:sz) ! read it again, now knowing the size
-         call read_file(Reason, i, read_well)
-      endif
-
-      if (read_well) then
-         call pars_comunications(trim(adjustl(readline)), given_line, given_num, read_well_2)
-         call act_on_comunication(read_well_2, given_line, given_num, numpar, matter, time)
-         i = 1
-         do while (Reason .EQ. 0) ! read all lines if there is more than one
-            i = i + 1
-            read(FN,'(a)',IOSTAT=Reason) readline
-            call read_file(Reason, i, read_well)
-            if (Reason .NE. 0) exit
-            call pars_comunications(trim(adjustl(readline)), given_line, given_num, read_well_2)
-            call act_on_comunication(read_well_2, given_line, given_num, numpar, matter, time)
-         enddo
-         rewind(FN)
-         write(FN,'(a)') ''
-         rewind(FN)
-      endif
+      i = 1 ! to start with
+      read_well = .true.   ! to start with
+      Reason = 1  ! to start with
+      do while (Reason >= 0) ! read all lines if there is more than one
+         call pars_comunications_file(FN, i, given_line, given_num, Reason) ! below
+         if (Reason == 0) call act_on_comunication(read_well_2, given_line, given_num, numpar, matter, time)   ! below
+      enddo
+      rewind(FN)
+      write(FN,'(a)') ''
+      rewind(FN)
 
       call get_file_stat(trim(adjustl(File_name)), Last_modification_time=MOD_TIM) ! module 'Dealing_with_files'
       if (MOD_TIM /= numpar%MOD_TIME) then ! if it was modified by the user, then
@@ -2757,6 +2742,32 @@ subroutine pars_comunications(readline, out_line, out_num, read_well)
       print*, 'Allowed descriptors: Time; dt; Save_dt; OMP'
    endif
 end subroutine pars_comunications
+
+
+subroutine pars_comunications_file(FN, i, out_line, out_num, Reason)
+   integer, intent(in) :: FN
+   integer, intent(inout) :: i
+   character(*), intent(out) :: out_line
+   real(8), intent(out) :: out_num
+   integer, intent(out) :: Reason
+   !---------------------------------
+   logical :: read_well
+   read_well = .false.
+   out_line = ''
+   out_num = 0.0d0
+
+   read(FN, *, IOSTAT=Reason) out_line, out_num
+   call read_file(Reason, i, read_well)  ! module "Dealing_with_files"
+   if (Reason .LT. 0) then
+      !print*, 'No descriptor or value found in the communication file'
+   else if (Reason .GT. 0) then
+      !print*, 'Given number interpreted as', out_num, ', it does not match the variable type'
+      print*, 'Wrong format of input, could not interpret.'
+      print*, 'Comunication format must be as follows:'
+      print*, 'Two columns: 1) descriptor; 2) value'
+      print*, 'Allowed descriptors: Time; dt; Save_dt; OMP'
+   endif
+end subroutine pars_comunications_file
 
 
 
