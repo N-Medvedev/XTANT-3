@@ -1876,7 +1876,9 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                write(chtemp,'(a,a,a)') trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(chtemp11))
                select case(size(matter%Atoms))
                case (1)
-                  if ((i == 1) .and. (j == 1)) then
+!                   if ((i == 1) .and. (j == 1)) then
+                  if (first_line) then
+                     first_line = .false. ! first line is done, don't repeat it
                      write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), '\"u 1:', 1+j ,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
                   else
                      write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+j ,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
@@ -1887,7 +1889,9 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                      write(FN, '(a)') ''
                   endif
                case default
-                  if ((i == 1) .and. (j == 1)) then
+!                   if ((i == 1) .and. (j == 1)) then
+                  if (first_line) then
+                     first_line = .false. ! first line is done, don't repeat it
                      write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
                   else
                      write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
