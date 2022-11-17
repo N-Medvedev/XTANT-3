@@ -182,10 +182,12 @@ subroutine read_DFTB_spline(FN, count_lines, TB_Rep, error_message)
       endif
       call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
       if (.not. read_well) goto 2013 ! exit
+      !print*, i, TB_Rep%R(i), TB_Rep%R(i)*g_au2A, dble(INT(TB_Rep%R(i)*1.0d6))*1.0d-6
    enddo
    
    ! Convert into units used in the code:
-   TB_Rep%R = TB_Rep%R * g_au2A  ! [Bohr] -> [A]
+   ! TB_Rep%R = TB_Rep%R * g_au2A  ! [Bohr] -> [A] ORIGINAL
+   TB_Rep%R = dble(INT(TB_Rep%R(:)*1.0d6))*1.0d-6 * g_au2A  ! [Bohr] -> [A] Rounded up to 6th digit
    TB_Rep%V_rep = TB_Rep%V_rep * g_au2ev  ! [Hartree] -> [eV]
    TB_Rep%V_rep(:,2) = TB_Rep%V_rep(:,2) * g_A2au   ! [eV/Bohr] -> [eV/A]
    temp2 = g_A2au * g_A2au
@@ -195,6 +197,7 @@ subroutine read_DFTB_spline(FN, count_lines, TB_Rep, error_message)
    TB_Rep%V_rep(:,5) = TB_Rep%V_rep(:,5) * temp2 * temp2    ! [eV/Bohr^4] -> [eV/A^4]
    TB_Rep%V_rep(:,6) = TB_Rep%V_rep(:,6) * temp3 * temp3    ! [eV/Bohr^5] -> [eV/A^5]
 
+!    pause 'read_DFTB_spline'
 2013 continue
 end subroutine read_DFTB_spline
 

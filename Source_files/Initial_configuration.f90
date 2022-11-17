@@ -780,6 +780,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
                if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
                   redo_placement = .true. ! assume we place it well, no need to redo it
                   iter = iter + 1   ! next iteration
+!                   print*, 'CHKI', j_h2o, i, sqrt(SUM(dS(:)*dS(:)))
                   exit CHKI
                endif
             endif
@@ -811,6 +812,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
          Scell(SCN)%MDAtoms(j_h2o)%R0(:) = Scell(SCN)%MDAtoms(j_h2o)%R(:)  ! previous timestep set
 
          call Coordinates_abs_to_rel_single(Scell, SCN, j_h2o, .true.)   ! module "Atomic_tools"
+
          ! Save cosine directions of the first H-O for the O-(second H) below:
          u0 = (Scell(SCN)%MDAtoms(j_h2o)%R(1) - Scell(SCN)%MDAtoms(j_h2o-1)%R(1))/m_H2O_dist
          v0 = (Scell(SCN)%MDAtoms(j_h2o)%R(2) - Scell(SCN)%MDAtoms(j_h2o-1)%R(2))/m_H2O_dist
@@ -833,12 +835,14 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
             ! Get the relative distance to this atom:
             if (j_h2o /= i) then
                dS(:) = abs(Scell(SCN)%MDAtoms(j_h2o)%S(:) - Scell(SCN)%MDAtoms(i)%S(:))
-            endif
-            ! Check if it is not too short:
-            if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
-               redo_placement = .true. ! assume we place it well, no need to redo it
-               iter = iter + 1   ! next iteration
-               exit CHKI2
+               ! Check if it is not too short:
+               if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
+                  redo_placement = .true. ! assume we place it well, no need to redo it
+                  iter = iter + 1   ! next iteration
+!                   print*, 'CHKI2', j_h2o, i, sqrt(SUM(dS(:)*dS(:))), dS_min_abs
+!                   pause
+                  exit CHKI2
+               endif
             endif
          enddo CHKI2
          ! If it's not possible to place a molecule in such a small volume, increase the volume:
@@ -878,12 +882,13 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
             ! Get the relative distance to this atom:
             if (j_h2o /= i) then
                dS(:) = abs(Scell(SCN)%MDAtoms(j_h2o)%S(:) - Scell(SCN)%MDAtoms(i)%S(:))
-            endif
-            ! Check if it is not too short:
-            if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
-               redo_placement = .true. ! assume we place it well, no need to redo it
-               iter = iter + 1   ! next iteration
-               exit CHKI3
+               ! Check if it is not too short:
+               if ( sqrt( SUM(dS(:)*dS(:)) ) < dS_min_abs ) then ! overlapping atoms, place a molecule in a new place:
+                  redo_placement = .true. ! assume we place it well, no need to redo it
+                  iter = iter + 1   ! next iteration
+!                   print*, 'CHKI3', j_h2o, i, sqrt(SUM(dS(:)*dS(:)))
+                  exit CHKI3
+               endif
             endif
          enddo CHKI3
          ! If it's not possible to place a molecule in such a small volume, increase the volume:

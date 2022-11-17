@@ -555,7 +555,7 @@ subroutine vary_size(do_forces, Err)
    integer, optional, intent(in) :: do_forces
    logical, intent(out), optional :: Err
    real(8) :: r_sh, x, y, z, E_vdW_interplane, g_time_save, z_sh, z_sh0, temp
-   integer i
+   integer i, j, at1, at2
    character(13) :: char1
    logical yesno
    open(UNIT = 100, FILE = 'OUTPUT_Energy.dat') !<-
@@ -613,11 +613,19 @@ subroutine vary_size(do_forces, Err)
       
 !        print*, 'Test 1'
       
-      g_time = 1d9
-      r_sh = 1d10
-      do i = 2,size(g_Scell(1)%MDatoms) ! find the nearest neighbour
-         call shortest_distance(g_Scell, 1, g_Scell(1)%MDatoms, 1, i, r_sh) ! module 'Atomic_tools'
-         if (g_time > r_sh) g_time = r_sh ! [A] nearest neighbor distance
+      g_time = 1d9   ! to start with
+      r_sh = 1d10    ! to start with
+      at1 = 1  ! to start with
+      at2 = 2  ! to start with
+      do j = 1,size(g_Scell(1)%MDatoms)-1 ! find the nearest neighbour
+         do i = j+1,size(g_Scell(1)%MDatoms) ! find the nearest neighbour
+            call shortest_distance(g_Scell, 1, g_Scell(1)%MDatoms, j, i, r_sh) ! module 'Atomic_tools'
+            if (g_time > r_sh) then
+               g_time = r_sh ! [A] nearest neighbor distance
+               at1 = j
+               at2 = i
+            endif
+         enddo
       enddo
       !call change_r_cut_TB_Hamiltonian(1.70d0*(g_Scell(1)%supce(3,3)*0.25d0)/1.3d0, TB_Waals=g_Scell(1)%TB_Waals) !<-
 !       print*, 'Test 2'
@@ -651,13 +659,19 @@ subroutine vary_size(do_forces, Err)
 
       if (present(do_forces)) then
          !print*, 'Supercell size:', i_test, g_Scell(1)%supce(1,1)/real(g_matter%cell_x), g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot !<-
-         print*, 'Supercell size:', i_test, g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW !<-
+         print*, 'Supercell size:', i_test, &
+         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
+         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)) , g_time, &
+         g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW !<-
          !write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_Scell(1)%supce(1,1)/real(g_matter%cell_x), g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%MDatoms(do_forces)%forces%rep(:), g_Scell(1)%MDatoms(do_forces)%forces%att(:) !<-
          write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%MDatoms(do_forces)%forces%rep(:), g_Scell(1)%MDatoms(do_forces)%forces%att(:) !<-
       else
-         print*, 'Supercell size:', i_test, g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW !<-
+         print*, 'Supercell size:', i_test, &
+         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
+         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)) , g_time, &
+         g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW !<-
          !write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%nrg%E_vdW, g_Scell(1)%supce(3,3)*0.25d0 !<-
-         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, E_vdW_interplane, g_Scell(1)%supce(3,3)*0.25d0 !<-
+         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, E_vdW_interplane, g_Scell(1)%supce(3,3) !<-
       endif
       
 !        print*, 'Test 6'

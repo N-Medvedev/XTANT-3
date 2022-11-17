@@ -1419,7 +1419,7 @@ end function DFTB_polinomial
       rr03 = rr02 * rr0
       F = c(Nsiz,1) + c(Nsiz,2)*rr0 + c(Nsiz,3)*rr02 + c(Nsiz,4)*rr03 + c(Nsiz,5)*rr02*rr02 + c(Nsiz,6)*rr03*rr02
    elseif (r_dist <= R(1)) then  ! "exponential wall"
-      F = exp(-a(1)*r_dist + a(2)) + a(3)    ! [eV]
+      F = exp(-a(1)*r_dist + a(2))*g_au2ev + a(3)    ! [eV]
    else ! spline
       ! This works only for equidistant arrays:
       !i_array = CEILING((r_dist-R(1))/(R(2)-R(1)))   ! index of the nearest radial grid point for the equally-spaced grid
