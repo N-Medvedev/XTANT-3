@@ -92,6 +92,7 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    Scell%E_bottom = wr(i+1)	! bottom of the CB [eV]
    ! If top energy level is excluded (in parameterization, or just too high due to convergence issues)
    j = siz  ! start from the last one
+   Scell%E_top = wr(j)		! [eV] current top of the (meaningful) conduction band
    do while (wr(j)>=79.0d0)
       j = j - 1
       Scell%E_top = wr(j)		! [eV] current top of the (meaningful) conduction band
