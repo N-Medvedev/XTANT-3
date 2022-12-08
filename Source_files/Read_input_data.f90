@@ -5079,7 +5079,7 @@ subroutine prepare_multiple_inputs(numpar, File_name, read_var, do_eph, num_phon
    ! Make a new copy of the input file with the changed fluence only:
    do i = 1, N
       ! Set the new dose:
-      dose_cur = read_var(1) + dble(i)*read_var(3)
+      dose_cur = min(read_var(1),read_var(2)) + dble(i)*abs(read_var(3))
 
       ! Set the new file name:
       FN2=FN+i
