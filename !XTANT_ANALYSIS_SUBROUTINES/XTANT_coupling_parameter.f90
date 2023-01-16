@@ -39,24 +39,28 @@ use Universal_constants
 
 character(200) :: File_electron, File_temperatures, File_coupling_partial, File_pressure, File_energies, File_Ce_partial
 character(200) :: File_name1, File_name2, File_name3, File_name4, File_name5, File_name6, char_var
-character(200) :: File_name_out, File_name_out2, File_name_out3, File_name_out4, File_name_out5
+character(200) :: File_name_out, File_name_out2, File_name_out3, File_name_out4, File_name_out5, File_name_out6
+character(200) :: File_numpar, File_matter, Matter_name
 character(200), dimension(:), allocatable :: Folders_with_data
+character(200) :: gnu_script, gnu_fig
+character(10) :: call_slash, sh_cmd
 character(1) :: path_sep
-real(8) :: starting_time, ending_time
+real(8) :: starting_time, ending_time, scaling_G
 real(8), dimension(:,:,:), allocatable :: G_mean_part, Ce_mean_part
 real(8), dimension(:,:), allocatable :: G_mean, mu_mean, Ce_mean
 real(8), dimension(:,:), allocatable :: P_mean, E_mean, Grun_mean
 real(8), dimension(:), allocatable :: Te_grid, T_ave, G_ave, G_err, Ce_err
 real(8), dimension(:,:), allocatable :: G_part_ave, Ce_part_ave
 real(8), dimension(:), allocatable :: mu_ave, Ce_ave, E_ave, P_ave, Grun_ave
-integer :: FN1, FN2, FN3, FN4, FN5, FN6
-integer :: FN_out, FN_out2, FN_out3, FN_out4, FN_out5  ! file number
+integer :: FN1, FN2, FN3, FN4, FN5, FN6, FN7, FN8
+integer :: FN_out, FN_out2, FN_out3, FN_out4, FN_out5, FN_out6  ! file number
 integer :: Reason, i, j, siz, Tsiz
 logical :: read_well, file_exist, file_exist2
 
 call Path_separator(path_sep)  ! Objects_and_types
 
 ! Set defaults:
+FN_out6 = 9987
 FN_out5 = 9989
 FN_out4 = 9993
 FN_out3 = 9994
@@ -68,12 +72,16 @@ FN3 = 9995
 FN4 = 9992
 FN5 = 9991
 FN6 = 9990
+FN7 = 9988
+FN8 = 9986
 File_electron = 'OUTPUT_electron_properties.dat'
 File_temperatures = 'OUTPUT_temperatures.dat'
 File_coupling_partial = 'OUTPUT_coupling.dat'
 File_pressure = 'OUTPUT_pressure_and_stress.dat'
 File_energies = 'OUTPUT_energies.dat'
 File_Ce_partial = 'OUTPUT_electron_Ce.dat'
+File_numpar = 'NUMERICAL_PARAMETERS'
+File_matter = 'INPUT_MATERIAL'
 
 File_name_out =  'OUT_average_coupling.dat'
 File_name_out2 = 'OUT_average_parameters.dat'
@@ -94,6 +102,11 @@ endif
 
 ! Get all the output folders names:
 call collect_all_output(Folders_with_data)	! below
+
+! Read the factor for G rescaling set by the user:
+call read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, scaling_G, Matter_name)  ! below
+File_name_out6 = 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce_G.dat'
+
 
 ! Create the electron temeprature grid:
 call create_grid(Te_grid, G_mean, size(Folders_with_data))
@@ -201,6 +214,7 @@ if (allocated(Ce_mean_part)) then
    open (unit=FN_out5, file=trim(adjustl(File_name_out5)))
 endif
 open (unit=FN_out4, file=trim(adjustl(File_name_out4)))
+open (unit=FN_out6, file=trim(adjustl(File_name_out6)))
 
 write(FN_out,'(a)') 'Te    G    sigma(G)'
 write(FN_out,'(a)') 'K    W/(m^3K)    -'
@@ -213,6 +227,9 @@ write(FN_out3,'(a)') 'K    W/(m^3K) '
 
 write(FN_out4,'(a)') 'Te    E  P Gruneisen'
 write(FN_out4,'(a)') 'K    eV/atom    GPa Pa/(J/atom)'
+
+write(FN_out6,'(a)') '# Te    Ce_total Ce_s  Ce_p  Ce_d   G_total G_s-s G_s-p G_s-d G_p-p G_p-d G_d-d'
+write(FN_out6,'(a)') '# K    J/(m^3K)  -- W/(m^3K) --'
 
 !oooooooooooooooooooooooooooooooooo
 ! OUT files:
@@ -240,7 +257,50 @@ do i =1,Tsiz
       write(FN_out5,'(a)') ''
    endif
 
+   ! The output for partial Ce and G (rescaled!) in one file:
+   if (allocated(Ce_mean_part)) then
+      write(FN_out6,'(es)', advance='no') T_ave(i)
+      do j = 1, size(Ce_part_ave,2)
+         write(FN_out6,'(es)', advance='no') Ce_part_ave(i,j)
+      enddo
+      ! Depending on the basis size, we have different number of columns:
+      ! UNFINISHED: only a single atom and a few common basis sets are accounted for!!!
+      if (size(G_part_ave,2) == 3) then ! s: total, atom-atom, s-s
+         write(FN_out6,'(es)', advance='no') G_part_ave(i,1) * scaling_G   ! total
+      elseif (size(G_part_ave,2) == 6) then ! sp3: total, atom-atom, s-s, s-p, p-s, pp
+         write(FN_out6,'(es)', advance='no') G_part_ave(i,1) * scaling_G  ! total
+         write(FN_out6,'(es)', advance='no') G_part_ave(i,3) * scaling_G  ! s-s
+         write(FN_out6,'(es)', advance='no') (G_part_ave(i,4)+G_part_ave(i,5)) * scaling_G   ! s-p + p-s
+         write(FN_out6,'(es)', advance='no') G_part_ave(i,6) * scaling_G  ! p-p
+      elseif (size(G_part_ave,2) == 11 ) then ! sp3d5: total, atom-atom, s-s, s-p, s-d, p-s, p-p, p-d, d-s, d-p, d-d
+                                                      !  1        2       3    4    5    6    7    8    9    10   11
+         write(FN_out6,'(es)', advance='no') G_part_ave(i,1) * scaling_G  ! total
+         write(FN_out6,'(es)', advance='no') G_part_ave(i,3) * scaling_G  ! s-s
+         write(FN_out6,'(es)', advance='no') (G_part_ave(i,4)+G_part_ave(i,6)) * scaling_G  ! s-p + p-s
+         write(FN_out6,'(es)', advance='no') (G_part_ave(i,5)+G_part_ave(i,9)) * scaling_G  ! s-d + p-d
+         write(FN_out6,'(es)', advance='no') G_part_ave(i,7) * scaling_G  ! p-p
+         write(FN_out6,'(es)', advance='no') (G_part_ave(i,8)+G_part_ave(i,10)) * scaling_G ! p-d + d-p
+         write(FN_out6,'(es)', advance='no') G_part_ave(i,11) * scaling_G ! d-d
+      endif
+      write(FN_out6,'(a)') ''
+   endif
+
 enddo
+
+
+! Gnuplot of Ce and G:
+if (path_sep .EQ. '\') then	! if it is Windows
+   call_slash = 'call '
+   sh_cmd = '.cmd'
+else ! It is linux
+   call_slash = './'
+   sh_cmd = '.sh'
+endif
+
+
+
+call gnu_plot(File_name_out6, sh_cmd, 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_G.gif', G_part_ave, Ce_part_ave)  ! below
+
 
 close (FN_out)
 close (FN_out2)
@@ -254,7 +314,177 @@ print*, 'XTANT: analysis with Coupling_parameter is executed'
 !---------------------
  contains
 
- 
+
+subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, Ce_part_ave)
+   character(*), intent(in) :: File_name_out, sh_cmd, File_Ce_gif, File_G_gif
+   real(8), dimension(:,:), intent(in) :: G_part_ave, Ce_part_ave
+   !-------------------
+   character(300) :: File_name, File_name2, command
+   integer :: FN, iret
+   real(8) :: x_tics
+
+   x_tics = 5000.0d0  ! [K]
+
+   ! Script for Ce:
+   File_name  = 'OUT_gnuplot_Ce'//trim(adjustl(sh_cmd))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   call write_gnuplot_script_header_new(FN, 3, 3.0d0, x_tics,  'Ce', 'Electron temperature (K)', 'Electron heat capacity (J/(m^3K))',  trim(adjustl(File_Ce_gif)), path_sep, 2)
+
+   if (path_sep .EQ. '\') then	! if it is Windows
+      if (size(Ce_part_ave,2) < 3) then ! s
+         write(FN, '(a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), ' "u 1:2 w l lw LW title "Total" '
+      else ! more than one line
+         write(FN, '(a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), ' "u 1:2 w l lw LW title "Total" ,\'
+      endif
+
+!       print*, 'Ce:', size(Ce_part_ave,2)
+
+      if (size(Ce_part_ave,2) == 3) then ! sp3
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:3 w l lw LW title "s" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:4 w l lw LW title "p"'
+      elseif (size(Ce_part_ave,2) == 4) then ! sp3d5
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:3 w l lw LW title "s" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:4 w l lw LW title "p" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:5 w l lw LW title "d" '
+      endif
+   else
+      if (size(Ce_part_ave,2) < 3) then ! s
+         write(FN, '(a,a,a)') 'p [0.0:25000.0][] \"' , trim(adjustl(File_name_out)), '\"u 1:4 w l lw \"$LW\" title \"Total\" '
+      else
+         write(FN, '(a,a,a)') 'p [0.0:25000.0][] \"' , trim(adjustl(File_name_out)), '\"u 1:4 w l lw \"$LW\" title \"Total\" ,\'
+      endif
+
+      if (size(Ce_part_ave,2) == 3) then ! sp3
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:3 w l lw \"$LW\" title "s" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:4 w l lw \"$LW\" title "p"'
+      elseif (size(Ce_part_ave,2) == 4) then ! sp3d5
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:3 w l lw \"$LW\" title "s" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:4 w l lw \"$LW\" title "p" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:5 w l lw \"$LW\" title "d" '
+      endif
+   endif
+   call write_gnuplot_script_ending_new(FN, File_name, path_sep)
+   close(FN)
+
+
+   ! Coupling parameter:
+   File_name2  = 'OUT_gnuplot_G'//trim(adjustl(sh_cmd))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name2)), action="write", status="replace")
+
+   call write_gnuplot_script_header_new(FN, 3, 3.0d0, x_tics,  'G', 'Electron temperature (K)', 'Electron-phonon coupling (W/(m^3K))',  trim(adjustl(File_G_gif)), path_sep, 0)
+
+   if (path_sep .EQ. '\') then	! if it is Windows
+      if (size(G_part_ave,2) < 4) then ! s
+         write(FN, '(a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), ' "u 1:3 w l lw LW title "Total" '
+      elseif (size(G_part_ave,2) == 6) then ! sp3
+         write(FN, '(a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), ' "u 1:5 w l lw LW title "Total" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:6 w l lw LW title "s-s" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:7 w l lw LW title "s-p" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:8 w l lw LW title "p-p"'
+      elseif (size(G_part_ave,2) > 6) then ! sp3d5
+         write(FN, '(a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), ' "u 1:6 w l lw LW title "Total" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:7 w l lw LW title "s-s" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:8 w l lw LW title "s-p" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:9 w l lw LW title "s-d" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:10 w l lw LW title "p-p" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:11 w l lw LW title "p-d" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:12 w l lw LW title "d-d" '
+      endif
+   else
+      if (size(G_part_ave,2) < 4) then ! s
+         write(FN, '(a,es25.16,a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), '\"u 1:3 w l lw \"$LW\" title \"Total\" '
+      elseif (size(G_part_ave,2) == 6) then ! sp3
+         write(FN, '(a,es25.16,a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), '\"u 1:5 w l lw \"$LW\" title \"Total\" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:6 w l lw \"$LW\" title "s-s" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:7 w l lw \"$LW\" title "s-p" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:8 w l lw \"$LW\" title "p-p"'
+      elseif (size(G_part_ave,2) > 6) then ! sp3d5
+         write(FN, '(a,es25.16,a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), '\"u 1:6 w l lw \"$LW\" title \"Total\" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:7 w l lw \"$LW\" title "s-s" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:8 w l lw \"$LW\" title "s-p" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:9 w l lw \"$LW\" title "s-d" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:10 w l lw \"$LW\" title "p-p" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:11 w l lw \"$LW\" title "p-d" ,\'
+         write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:12 w l lw \"$LW\" title "d-d" '
+      endif
+   endif
+   call write_gnuplot_script_ending_new(FN, File_name2, path_sep)
+   close(FN)
+
+   ! Execute gnuplot scripts to make figures:
+   command = "."//trim(adjustl(path_sep))//trim(adjustl(File_name))
+   iret = system(command)
+   command = "."//trim(adjustl(path_sep))//trim(adjustl(File_name2))
+   iret = system(command)
+end subroutine gnu_plot
+
+
+
+subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, scaling_G, Matter_name)
+   character(*), dimension(:), intent(in) :: Folders_with_data
+   character(1), intent(in) :: path_sep
+   integer, intent(in) :: FN7, FN8
+   character(*), intent(inout) :: File_numpar, File_matter
+   real(8), intent(out) :: scaling_G
+   character(*), intent(out) :: Matter_name
+   !------------------
+   character(300) :: File_name, File_name2
+   character(10) :: temp, temp2
+   logical :: file_exists
+   integer :: open_status, v, i
+   real(8) :: r_temp
+
+   ! Find filename for NUMPAR:
+   file_exists = .false.
+   v = 0
+   do while (.not.file_exists)
+      if (v > 0) then
+         write(temp2, '(i6)') v
+         write(temp, '(a)') '_'//trim(adjustl(temp2))//'.txt'
+      else
+         write(temp, '(a)') '.txt'
+      endif
+      File_name = trim(adjustl(Folders_with_data(1)))//path_sep//trim(adjustl(File_numpar))//trim(adjustl(temp))
+      inquire(file=trim(adjustl(File_name)),exist=file_exists)
+
+      File_name2 = trim(adjustl(Folders_with_data(1)))//path_sep//trim(adjustl(File_matter))//trim(adjustl(temp))
+
+      !print*, v, trim(adjustl(File_name)), file_exists
+
+      ! If not:
+      v = v + 1   ! to check the next number
+      if (v > 100) then
+         print*, 'Could not find file ', trim(adjustl(File_name)), ', cannot use scaling factor!'
+         exit
+      endif
+   enddo
+   ! Once correct file found, save the name:
+   File_numpar = trim(adjustl(File_name))
+   ! Open file:
+   open(UNIT=FN7, file=trim(adjustl(File_numpar)), iostat=open_status, action='read')
+
+   File_matter = trim(adjustl(File_name2))
+   inquire(file=trim(adjustl(File_matter)),exist=file_exists)
+   open(UNIT=FN8, file=trim(adjustl(File_matter)), iostat=open_status, action='read')
+   !print*, 'Matter:', trim(adjustl(File_matter)), file_exists, open_status
+
+
+   ! Read the file with numpar to find the sacling factor:
+   do i = 1, 16
+      read(FN7,*) ! skip first 16 lines
+   enddo
+   ! read line with scaling factor:
+   read(FN7,*) r_temp, scaling_G
+   ! Read material name:
+   read(FN8,*) Matter_name
+   !print*, scaling_G, trim(adjustl(Matter_name))
+
+   ! Use the default value to renormalize it:
+   scaling_G = 4.0d0/scaling_G ! to multiply G with this factor
+end subroutine read_NUMPAR_file
+
+
 
 subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_grid, G_mean, mu_mean, Ce_mean, &
             E_mean, P_mean, Grun_mean, G_mean_part, Ce_mean_part, i_fold, siz)
@@ -785,6 +1015,171 @@ subroutine Path_separator(path_sep)
        print*, 'Path separator is not defined'    !Unknown OS
    endif 
 end subroutine Path_separator
+
+
+
+
+subroutine write_gnuplot_script_header_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, path_sep, setkey)
+   integer, intent(in) :: FN, ind
+   real(8), intent(in) :: LW, x_tics
+   character(1), intent(in) :: path_sep ! path separator defines which system it is
+   character(*), intent(in) :: labl, xlabl, ylabl, Out_file
+   integer, intent(in), optional :: setkey
+
+   if (present(setkey)) then
+      if (path_sep .EQ. '\') then	! if it is Windows
+         call write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey)
+      else ! it is linux
+         call write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey)
+      endif
+   else
+      if (path_sep .EQ. '\') then	! if it is Windows
+         call write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file)
+      else ! it is linux
+         call write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file)
+      endif
+   endif
+end subroutine write_gnuplot_script_header_new
+
+
+subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey)
+   integer, intent(in) :: FN, ind
+   real(8), intent(in) :: LW, x_tics
+   integer, intent(in), optional :: setkey
+   character(*), intent(in) :: labl, xlabl, ylabl, Out_file
+   character(20) :: temp
+   select case (ind)
+   case(1:)	! eps
+      write(FN, '(a)') '#!/bin/bash'
+      write(FN, '(a)') ''
+      write(FN, '(a)') 'NAME='//trim(adjustl(Out_file))
+   end select
+   write(FN, '(a,f3.1)') 'LW=', LW
+   write(FN, '(a)') 'LABL="'//trim(adjustl(labl))//'"'
+   write(temp, '(f12.2)') x_tics
+   write(FN, '(a)') 'TICSIZ='//trim(adjustl(temp))
+   write(FN, '(a)') 'echo " '
+   select case (ind)
+      case (1)  ! eps
+         write(FN, '(a)') 'set terminal postscript enhanced \"Helvetica\" 16 color '
+         write(FN, '(a)') 'set output \"$NAME\"'
+      case (2)  ! gpeg
+         write(FN, '(a)') 'set terminal jpeg large font arial '
+         write(FN, '(a)') 'set output \"$NAME\"'
+      case (3)  ! gif
+         write(FN, '(a)') 'set terminal gif large font arial'
+         write(FN, '(a)') 'set output \"$NAME\"'
+      case (4)  ! png
+         write(FN, '(a)') 'set terminal png font arial '
+         write(FN, '(a)') 'set output \"$NAME\"'
+      case (5)  ! pdf
+         write(FN, '(a)') 'set terminal pdf color '
+         write(FN, '(a)') 'set output \"$NAME\"'
+      case (0)
+         write(FN, '(a)') 'set terminal x11 persist'
+         write(FN, '(a)') 'unset label'
+   endselect
+!    write(FN, '(a)') 'set xlabel \"'//trim(adjustl(xlabl))//' \"        font \"Helvetica,20\" '
+!    write(FN, '(a)') 'set ylabel \"'//trim(adjustl(ylabl))//' \"      font \"Helvetica,20\" '
+   write(FN, '(a)') 'set xlabel \"'//trim(adjustl(xlabl))//' \" '
+   write(FN, '(a)') 'set ylabel \"'//trim(adjustl(ylabl))//' \" '
+
+   !write(FN, '(a)') 'set label \"$LABL\" at 150,-8 font \"Helvetica,22\" '
+   if (present(setkey)) then
+      select case(setkey)
+      case (1)
+         write(FN, '(a)') 'set key right bottom '
+      case (2)
+         write(FN, '(a)') 'set key left top '
+      case (3)
+         write(FN, '(a)') 'set key left bottom '
+      case (4)
+         write(FN, '(a)') 'unset key '
+      case default
+         write(FN, '(a)') 'set key right top '
+      endselect
+   else
+      write(FN, '(a)') 'set key right top '
+   endif
+   write(FN, '(a)') 'set xtics \"$TICSIZ\" '
+end subroutine write_gnuplot_script_header_linux_new
+
+
+
+subroutine write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey)
+   integer, intent(in) :: FN, ind
+   real(8), intent(in) :: LW, x_tics
+   integer, intent(in), optional :: setkey
+   character(*), intent(in) :: labl, xlabl, ylabl, Out_file
+   character(20) :: temp
+   select case (ind)
+   case(1:)	! eps
+      write(FN, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
+   end select
+   write(FN, '(a,f3.1)') 'LW=', LW
+
+    select case (ind)
+      case (1)  ! eps
+         write(FN, '(a)') 'set terminal postscript enhanced "Helvetica" 16 color '
+         write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
+      case (2)  ! gpeg
+         write(FN, '(a)') 'set terminal jpeg large font "arial,16" '
+         write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
+      case (3)  ! gif
+         write(FN, '(a)') 'set terminal gif large font "arial,16" '
+         write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
+      case (4)  ! png
+         write(FN, '(a)') 'set terminal png font "arial,16" '
+         write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
+      case (5)  ! pdf
+         write(FN, '(a)') 'set terminal pdf color font "arial,16" '
+         write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
+      case (0)
+         write(FN, '(a)') 'set terminal x11 persist'
+         write(FN, '(a)') 'unset label'
+   endselect
+   write(FN, '(a)') 'set xlabel "'//trim(adjustl(xlabl))//' " '
+   write(FN, '(a)') 'set ylabel "'//trim(adjustl(ylabl))//' " '
+
+   !write(FN, '(a)') 'set label \"$LABL\" at 150,-8 font \"Helvetica,22\" '
+   if (present(setkey)) then
+      select case(setkey)
+      case (1)
+         write(FN, '(a)') 'set key right bottom '
+      case (2)
+         write(FN, '(a)') 'set key left top '
+      case (3)
+         write(FN, '(a)') 'set key left bottom '
+      case (4)
+         write(FN, '(a)') 'unset key '
+      case default
+         write(FN, '(a)') 'set key right top '
+      endselect
+   else
+      write(FN, '(a)') 'set key right top '
+   endif
+   !write(FN, '(a,f6.2)') 'set xtics ', x_tics
+   write(temp, '(f12.2)') x_tics
+   write(FN, '(a,a)') 'set xtics ', trim(adjustl(temp))//' font "arial,14"'
+   write(FN, '(a)') 'set ytics font "arial,14"'
+end subroutine write_gnuplot_script_header_windows_new
+
+
+subroutine write_gnuplot_script_ending_new(FN, File_name, path_sep)
+   integer, intent(in) :: FN
+   character(*), intent(in) :: File_name
+   character(1), intent(in) :: path_sep ! path separator defines which system it is
+   integer :: i
+
+   if (path_sep .EQ. '\') then	! if it is Windows
+      ! no need to add anything here
+   else ! it is linux
+      write(FN, '(a)') 'reset'
+      write(FN, '(a)') '" | gnuplot '
+      !call system('chmod +x '//trim(adjustl(File_name))) ! make the output-script executable
+      i = system('chmod +x '//trim(adjustl(File_name))) ! make the output-script executable
+   endif
+end subroutine write_gnuplot_script_ending_new
 
 
 
