@@ -73,6 +73,8 @@ call date_and_time(values=g_c1) ! standard FORTRAN time and date
 g_ctim=g_c1	! save the timestamp
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 
+call print_time('Attempting to start XTANT at', ind=0) ! prints out the current time, module "Little_subroutines"
+
 ! Set all the initial data, read and create files:
 ! Read input files:
 if (g_numpar%which_input > 0) then ! it's not the first run
@@ -100,15 +102,20 @@ call set_starting_time(g_laser, g_time, g_numpar%t_start, g_numpar%t_NA, g_numpa
 ! And check if user wants to reset it:
 call reset_dt(g_numpar, 0.0d0)   ! module "Dealing_with_output_files"
 
-
 ! Print the title of the program and used parameters on the screen:
-call Print_title(6,g_Scell,g_matter,g_laser,g_numpar) ! module "Dealing_with_output_files"
-call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
+!call Print_title(6,g_Scell,g_matter,g_laser,g_numpar) ! module "Dealing_with_output_files"
+! call print_time('Attempting to start at', ind=0) ! prints out the current time, module "Little_subroutines"
 
 ! Prepare initial conditions (read supercell and atomic positions from the files):
 call set_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err) ! module "Initial_configuration"
 if (g_Err%Err) goto 2012	! if there was an error in preparing the initial configuration, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true.)
+
+
+! Print the title of the program and used parameters on the screen:
+call Print_title(6,g_Scell,g_matter,g_laser,g_numpar) ! module "Dealing_with_output_files"
+call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
+
 
 ! Read (or create) electronic mean free paths (both, inelastic and elastic):
 call get_MFPs(g_Scell, 1, g_matter, g_laser, g_numpar, g_Scell(1)%TeeV, g_Err) ! module "MC_cross_sections"

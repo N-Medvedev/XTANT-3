@@ -2988,10 +2988,20 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       else !For this material exponential wall class is undefined
          write(print_to,'(a,a)') ' No exponential wall potential was defined for close interatomic distances'
       endif
-      write(text1, '(i10)') matter%cell_x
-      write(text2, '(i10)') matter%cell_y
-      write(text3, '(i10)') matter%cell_z 
-      write(print_to,'(a,a,a,a,a,a)') ' Super-cell size in unit-cells: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+
+      ! What kind of supercell is used:
+      select case (numpar%save_files_used)
+      case default ! constructed from unit cells
+         write(text1, '(i10)') matter%cell_x
+         write(text2, '(i10)') matter%cell_y
+         write(text3, '(i10)') matter%cell_z
+         write(print_to,'(a,a,a,a,a,a)') ' Super-cell size in unit-cells: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+      case (1)  ! save files are used
+         write(print_to,'(a)') ' Super-cell parameters are set in SAVE files'
+      case (2)  ! path coordinate
+         write(print_to,'(a)') ' Coordinate path calculations are performed, defined by PATH files'
+      endselect
+
       write(text1, '(i10)') Scell(1)%Na
       write(print_to,'(a,a)') ' Number of atoms in the supercell: ', trim(adjustl(text1))
       if (numpar%r_periodic(1)) then		! periodic (not free surface) along X

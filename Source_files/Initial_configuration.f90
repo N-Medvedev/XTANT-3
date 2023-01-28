@@ -417,6 +417,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          ! Select among different possibilities to set the atomic cell:
          SAVED_ATOMS:if (numpar%do_path_coordinate) then ! read from the files with initial and final configurations to do the path coordinate plots
 
+            ! Save the flag for output:
+            numpar%save_files_used = 2  ! path coordinate
+
             inquire(file=trim(adjustl(File_name_S1)),opened=file_opened)
             if (file_opened) close (FN3)
             inquire(file=trim(adjustl(File_name_S2)),opened=file_opened)
@@ -446,9 +449,12 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             endif
          
          elseif (file_exist) then SAVED_ATOMS    ! read from this file with transient Super cell:
+            ! Save the flag for output:
+            numpar%save_files_used = 1  ! Save files read
+
             open(UNIT=FN2, FILE = trim(adjustl(File_name2)), status = 'old', action='read')
             call get_initial_atomic_coord(FN2, File_name2, Scell, i, 1, matter, Err) ! below
-            
+
             ! Get atomic temperature set by the velocities given in the SAVE file:
             Natoms = size(Scell(i)%MDatoms)	! number of atoms
             Ta = 0.0d0 ! atomic temperature
@@ -465,6 +471,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate)  ! below
             endif
          else SAVED_ATOMS
+            ! Save the flag for output:
+            numpar%save_files_used = 0  ! Save files read
+
             ! c) if user set to construct supercell from unit cells:
             write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'Unit_cell_atom_relative_coordinates.txt'
             inquire(file=trim(adjustl(File_name)),exist=file_exist)

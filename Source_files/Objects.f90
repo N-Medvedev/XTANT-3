@@ -726,6 +726,8 @@ type Numerics_param
    logical :: create_BOP_repulse
    character(200) :: BOP_Folder_name
    real(8) :: BOP_bond_length   ! [A]
+   ! General flags:
+   integer :: save_files_used ! to mark for the output printing out, whether SAVE-files are used or unit cell
 end type Numerics_param
 !==============================================
 

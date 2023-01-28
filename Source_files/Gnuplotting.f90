@@ -142,16 +142,16 @@ subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlab
          write(FN, '(a)') 'set terminal postscript enhanced \"Helvetica\" 16 color '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (2)  ! gpeg
-         write(FN, '(a)') 'set terminal jpeg large font arial '
+         write(FN, '(a)') 'set terminal jpeg font \"arial,14\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (3)  ! gif
-         write(FN, '(a)') 'set terminal gif large font arial'
+         write(FN, '(a)') 'set terminal gif font \"arial,14\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (4)  ! png
-         write(FN, '(a)') 'set terminal png font arial '
+         write(FN, '(a)') 'set terminal png font \"arial,14\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (5)  ! pdf
-         write(FN, '(a)') 'set terminal pdf color '
+         write(FN, '(a)') 'set terminal pdf color font \"arial,14\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (0)
          write(FN, '(a)') 'set terminal x11 persist'
@@ -198,19 +198,19 @@ subroutine write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xl
 
     select case (ind)
       case (1)  ! eps
-         write(FN, '(a)') 'set terminal postscript enhanced "Helvetica" 16 color '
+         write(FN, '(a)') 'set terminal postscript enhanced "Helvetica,14" color '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (2)  ! gpeg
-         write(FN, '(a)') 'set terminal jpeg large font arial '
+         write(FN, '(a)') 'set terminal jpeg large font "arial,14" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (3)  ! gif
-         write(FN, '(a)') 'set terminal gif large font arial'
+         write(FN, '(a)') 'set terminal gif large font "arial,14" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (4)  ! png
-         write(FN, '(a)') 'set terminal png font arial '
+         write(FN, '(a)') 'set terminal png font "arial,14" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (5)  ! pdf
-         write(FN, '(a)') 'set terminal pdf color '
+         write(FN, '(a)') 'set terminal pdf color font "arial,14" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (0)
          write(FN, '(a)') 'set terminal x11 persist'
