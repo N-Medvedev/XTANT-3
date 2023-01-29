@@ -1784,16 +1784,16 @@ subroutine gnu_CB_electrons(File_name, file_numbers, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3, 'CB_electrons','Time (fs)', 'Electrons (%)', trim(adjustl(file_path))//'OUTPUT_CB_electrons.'//trim(adjustl(g_numpar%fig_extention)))
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'CB_electrons','Time (fs)', 'Electrons (%)', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'CB_electrons','Time (fs)', 'Electrons (%)', trim(adjustl(eps_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'CB_electrons','Time (fs)', 'Electrons (per atom)', trim(adjustl(eps_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_numbers)), ' "u 1:($3/4*100) w l lw LW title "CB electrons" ,\'
-      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_numbers)), ' "u 1:($7*1e3) w l lw LW title "Photons"'
+      !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_numbers)), ' "u 1:($3/4*100) w l lw LW title "CB electrons" ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_numbers)), ' "u 1:3 w l lw LW title "CB electrons" ,\'
+      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_numbers)), ' "u 1:($7*1e3) w l lw LW title "Photons (x 1e3)"'
    else
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_numbers)), '\"u 1:(\$3/4*100) w l lw \"$LW\" title \"CB electrons\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_numbers)), '\"u 1:(\$7*1e3) w l lw \"$LW\" title \"Photons\"'
+      !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_numbers)), '\"u 1:(\$3/4*100) w l lw \"$LW\" title \"CB electrons\" ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_numbers)), '\"u 1:3 w l lw \"$LW\" title \"CB electrons\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_numbers)), '\"u 1:(\$7*1e3) w l lw \"$LW\" title \"Photons (x 1e3)\"'
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -1820,7 +1820,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
 
    !call write_gnuplot_script_header(FN, 1, 3, 'Holes','Time (fs)', 'Particles per atoms (arb.units)', trim(adjustl(file_path))//'OUTPUT_deep_shell_holes.'//trim(adjustl(g_numpar%fig_extention)))
    !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Holes','Time (fs)', 'Particles per atoms (arb.units)', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Holes','Time (fs)', 'Particles (per atoms)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Holes','Time (fs)', 'Particles (per atom)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
    
    counter = 0 ! to start with
    first_line = .true.  ! to start from the first line
@@ -2123,114 +2123,6 @@ end subroutine gnu_n_and_k
 
 
 
-subroutine write_gnuplot_script_header(FN, ind, LW, labl, xlabl, ylabl, Out_file, setkey)
-   integer, intent(in) :: FN, ind
-   real(8), intent(in) :: LW
-   integer, intent(in), optional :: setkey
-   character(*), intent(in) :: labl, xlabl, ylabl, Out_file
-   if (present(setkey)) then
-      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-         call write_gnuplot_script_header_windows(FN, ind, LW, labl, xlabl, ylabl, Out_file, setkey)
-      else ! it is linux
-         call write_gnuplot_script_header_linux(FN, ind, LW, labl, xlabl, ylabl, Out_file, setkey)
-      endif
-   else
-      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-         call write_gnuplot_script_header_windows(FN, ind, LW, labl, xlabl, ylabl, Out_file)
-      else ! it is linux
-         call write_gnuplot_script_header_linux(FN, ind, LW, labl, xlabl, ylabl, Out_file)
-      endif
-   endif
-end subroutine write_gnuplot_script_header
-
-
-subroutine write_gnuplot_script_header_linux(FN, ind, LW, labl, xlabl, ylabl, Out_file, setkey)
-   integer, intent(in) :: FN, ind
-   real(8), intent(in) :: LW
-   integer, intent(in), optional :: setkey
-   character(*), intent(in) :: labl, xlabl, ylabl, Out_file
-   select case (ind)
-   case(:1)	! eps
-      write(FN, '(a)') '#!/bin/bash'
-      write(FN, '(a)') ''
-      write(FN, '(a)') 'NAME='//trim(adjustl(Out_file))
-   end select
-   write(FN, '(a,f3.1)') 'LW=', LW
-   write(FN, '(a)') 'LABL="'//trim(adjustl(labl))//'"'
-   write(FN, '(a)') 'TICSIZ=50'
-   write(FN, '(a)') 'echo " '
-   select case (ind)
-      case (:1)
-      write(FN, '(a)') 'set terminal postscript enhanced \"Helvetica\" 16 color '
-      write(FN, '(a)') 'set output \"$NAME\"'
-      case (2:)
-      write(FN, '(a)') 'set terminal x11 persist'
-      write(FN, '(a)') 'unset label'
-   endselect
-   write(FN, '(a)') 'set xlabel \"'//trim(adjustl(xlabl))//' \"        font \"Helvetica,20\" '
-   write(FN, '(a)') 'set ylabel \"'//trim(adjustl(ylabl))//' \"      font \"Helvetica,20\" '
-   !write(FN, '(a)') 'set label \"$LABL\" at 150,-8 font \"Helvetica,22\" '
-   if (present(setkey)) then
-      select case(setkey)
-      case (1)
-         write(FN, '(a)') 'set key right bottom '
-      case (2)
-         write(FN, '(a)') 'set key left top '
-      case (3)
-         write(FN, '(a)') 'set key left bottom '
-      case (4)
-         write(FN, '(a)') 'unset key '
-      case default
-         write(FN, '(a)') 'set key right top '
-      endselect
-   else
-      write(FN, '(a)') 'set key right top '
-   endif
-   write(FN, '(a)') 'set xtics \"$TICSIZ\" '
-end subroutine write_gnuplot_script_header_linux
-
-
-
-subroutine write_gnuplot_script_header_windows(FN, ind, LW, labl, xlabl, ylabl, Out_file, setkey)
-   integer, intent(in) :: FN, ind
-   real(8), intent(in) :: LW
-   integer, intent(in), optional :: setkey
-   character(*), intent(in) :: labl, xlabl, ylabl, Out_file
-   select case (ind)
-   case(:1)	! eps
-      write(FN, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
-   end select
-   write(FN, '(a,f3.1)') 'LW=', LW
-
-   select case (ind)
-      case (:1)
-      write(FN, '(a)') 'set terminal postscript enhanced "Helvetica" 16 color '
-      write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
-      case (2:)
-      write(FN, '(a)') 'set terminal x11 persist'
-      write(FN, '(a)') 'unset label'
-   endselect
-   write(FN, '(a)') 'set xlabel "'//trim(adjustl(xlabl))//' "        font "Helvetica,20" '
-   write(FN, '(a)') 'set ylabel "'//trim(adjustl(ylabl))//' "      font "Helvetica,20" '
-   !write(FN, '(a)') 'set label \"$LABL\" at 150,-8 font \"Helvetica,22\" '
-   if (present(setkey)) then
-      select case(setkey)
-      case (1)
-         write(FN, '(a)') 'set key right bottom '
-      case (2)
-         write(FN, '(a)') 'set key left top '
-      case (3)
-         write(FN, '(a)') 'set key left bottom '
-      case (4)
-         write(FN, '(a)') 'unset key '
-      case default
-         write(FN, '(a)') 'set key right top '
-      endselect
-   else
-      write(FN, '(a)') 'set key right top '
-   endif
-   write(FN, '(a)') 'set xtics 50'
-end subroutine write_gnuplot_script_header_windows
 
 
 subroutine write_gnuplot_script_ending(FN, File_name, ind)
@@ -2238,7 +2130,7 @@ subroutine write_gnuplot_script_ending(FN, File_name, ind)
    character(*), intent(in) :: File_name
    character(100) :: command
    integer :: iret
-   
+
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       ! no need to add anything here
    else ! it is linux
@@ -2249,7 +2141,7 @@ subroutine write_gnuplot_script_ending(FN, File_name, ind)
          !call system('chmod +x '//trim(adjustl(File_name))) ! make the output-script executable
          command = 'chmod +x '//trim(adjustl(File_name))
          iret = system(command)
-      
+
          !call system(trim(adjustl(File_name))) ! execute the prepared script
       case (2:)
          write(FN, '(a)') 'reset'
