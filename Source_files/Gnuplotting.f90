@@ -127,7 +127,7 @@ subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlab
    character(*), intent(in) :: labl, xlabl, ylabl, Out_file
    character(20) :: temp
    select case (ind)
-   case(1:)	! eps
+   case(1:) ! any file format
       write(FN, '(a)') '#!/bin/bash'
       write(FN, '(a)') ''
       write(FN, '(a)') 'NAME='//trim(adjustl(Out_file))
@@ -152,6 +152,9 @@ subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlab
          write(FN, '(a)') 'set output \"$NAME\"'
       case (5)  ! pdf
          write(FN, '(a)') 'set terminal pdf color font \"arial,14\" '
+         write(FN, '(a)') 'set output \"$NAME\"'
+      case (6)  ! animated gif
+         write(FN, '(a)') 'set terminal gif animate delay 10 font \"arial,14\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (0)
          write(FN, '(a)') 'set terminal x11 persist'
@@ -211,6 +214,9 @@ subroutine write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xl
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (5)  ! pdf
          write(FN, '(a)') 'set terminal pdf color font "arial,14" '
+         write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
+      case (6)  ! animated gif
+         write(FN, '(a)') 'set terminal gif animate delay 10 font "arial,14" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (0)
          write(FN, '(a)') 'set terminal x11 persist'

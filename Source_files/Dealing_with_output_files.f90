@@ -1310,14 +1310,15 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    
    ! Distribution function of electrons:
    if (numpar%save_fe) then
-      ! Find order of the number, and set number of tics as tenth of it:
-      call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+      !! Find order of the number, and set number of tics as tenth of it:
+      !call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
+      ! Distribution function can only be plotted as animated gif:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-      call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_electron_distribution.'//trim(adjustl(numpar%fig_extention)), numpar%path_sep, setkey=4)
-
-      call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 5.0d0, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_electron_distribution.gif', numpar%path_sep, setkey=4)
+      !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
+      call write_distribution_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
    endif
@@ -2325,7 +2326,31 @@ subroutine write_energy_levels_gnuplot(FN, Scell, file_Ei)
 end subroutine write_energy_levels_gnuplot
 
 
+subroutine write_distribution_gnuplot(FN, Scell, file_fe)
+   integer, intent(in) :: FN            ! file to write into
+   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   character(*), intent(in) :: file_fe  ! file with electronic distribution function
+   integer i, M, NSC
+   character(30) :: ch_temp
 
+   do NSC = 1, size(Scell)
+      ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
+      write(ch_temp,'(f)') 25.0d0      ! Scell(NSC)%E_top
+
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+         write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
+                     '" index (i-1) u 1:2 pt 7 ps 0.2 title sprintf("Timestep #%i",i)'
+      else
+         write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+         write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:2 pt 7 ps 0.2 title sprintf(\"Timestep #%i\",i)'
+      endif
+      write(FN, '(a)') '}'
+   enddo
+end subroutine write_distribution_gnuplot
 
 
 subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err)
