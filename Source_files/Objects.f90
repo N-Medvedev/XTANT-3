@@ -435,7 +435,7 @@ type :: MC_atoms ! to treat holes in each shell of each atom
 end type MC_atoms
 
 !==============================================
-! Subcells for linear scaling TB:
+! Subcells for linear scaling TB (NOT READY):
 type Sub_cell
    real(8), dimension(:), allocatable :: fe ! low-energy electron distribution
    real(8) :: mu	! [eV] electron chemical potential
@@ -654,6 +654,10 @@ type Numerics_param
    ! Other parameters:
    integer :: which_input ! number of input file used (for using more then one sequentially)
    logical :: verbose
+   ! Electronic distribution function parameters:
+   logical :: fe_input_exists ! flag to use the distribution from a file
+   character(100) :: fe_filename ! file name with user-provided initial electronic distribution
+   real(8), dimension(:), allocatable :: fe_input  ! initial distribution function
    ! MD:
    real(8) :: dt	      ! [fs] time-step for MD
    real(8) :: halfdt      ! dt/2, often used

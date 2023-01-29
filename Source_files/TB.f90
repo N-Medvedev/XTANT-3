@@ -360,11 +360,17 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
    ! Fill corresponding energy levels + repulsive energy cotribution:
    select case (which_fe)
-      case (1) ! distribution for given Te:
-         call set_initial_fe(Scell, matter, Err) ! module "Electron_tools"
-         call get_new_global_energy(Scell(NSC), Scell(NSC)%nrg) ! module "Electron_tools"
-         if (numpar%scc) call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
+      case (1) ! distribution for given Te (or provided in the file):
+         if (numpar%fe_input_exists) then ! distribution provieded by the user:
+            Scell(NSC)%fe = 0.0d0 ! to start with
+            Scell(NSC)%fe(1 : min( size(numpar%fe_input),size(Scell(NSC)%fe) ) ) = &
+                 numpar%fe_input(1 : min( size(numpar%fe_input),size(Scell(NSC)%fe) ) )
+         else ! given temperature, assuming Fermi distribution:
+            call set_initial_fe(Scell, matter, Err) ! module "Electron_tools"
+            call get_new_global_energy(Scell(NSC), Scell(NSC)%nrg) ! module "Electron_tools"
+            if (numpar%scc) call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
                      Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne, matter%Atoms(:)%mulliken_q) ! below
+         endif
       case (2) ! distribution for given Ee + repulsive energy:
          call get_new_energies(Scell, matter, numpar, t, Err) ! below
    end select

@@ -2726,7 +2726,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
 
    write(print_to,'(a,a,a)') ' Calculations performed for the following parameters:'
    do i = 1, size(Scell)
-      write(print_to,'(a,f12.3,a)') ' Initial electron temperature	' , Scell(i)%Te, ' [K]'
+      if (numpar%fe_input_exists) then
+         write(print_to,'(a,a)') ' Initial electron distribution read from file: ', trim(adjustl(numpar%fe_filename))
+      else
+         write(print_to,'(a,f12.3,a)') ' Initial electron temperature	' , Scell(i)%Te, ' [K]'
+      endif
       write(print_to,'(a,f12.3,a)') ' Initial atomic temperature	' , Scell(i)%Ta, ' [K]'
    enddo
    if ((size(laser) == 0) .or. (maxval(laser(:)%t) <= 0.0d0) .or. (maxval(laser(:)%hw) <= 0.0d0) .or. (maxval(laser(:)%F) <= 0.0d0)) then

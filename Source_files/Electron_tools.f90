@@ -165,8 +165,12 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
          case (3) ! Born-Oppenheimer:
             ! Do nothing with fe!
 
-         case (4) ! Nonequilibrium distribution dynamics: Boltzmann electron-electron collision integral:
-            if (t > -8.5d0) then ! testing, unfnishd
+         case (4) ! Relaxation-time approximation (NOT READY):
+            ! Relaxing electrons as a rate with given characteristic time:
+
+
+         case (5) ! Nonequilibrium distribution dynamics: Boltzmann electron-electron collision integral (NOT READY):
+            if (t > -8.5d0) then ! testing, unfnished
                call test_evolution_of_fe(Scell(NSC)%Ei, Scell(NSC)%fe, t) ! see below
             endif
 

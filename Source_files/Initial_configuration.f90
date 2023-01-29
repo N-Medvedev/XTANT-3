@@ -265,7 +265,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
    Nsc = 1 !in the present version of the code, there is always only one super-cell
 
-   ! If file with BOP repulsive potential does not exist, crete it:
+   ! If file with BOP repulsive potential does not exist, create it:
    if (numpar%create_BOP_repulse) then
       do i = 1, size(Scell(NSC)%TB_Repuls,1)
          do j = 1, size(Scell(NSC)%TB_Repuls,2)
@@ -476,7 +476,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
             ! c) if user set to construct supercell from unit cells:
             write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'Unit_cell_atom_relative_coordinates.txt'
-            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            inquire(file=trim(adjustl(File_name2)),exist=file_exist)
             INPUT_ATOMS:if (file_exist) then
                open(UNIT=FN2, FILE = trim(adjustl(File_name2)), status = 'old', action='read')
                inquire(file=trim(adjustl(File_name2)),opened=file_opened)
@@ -603,10 +603,36 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          endif
          if (allocated(Scell(i)%Sij) .and. .not.allocated(Scell(i)%eigen_S)) allocate(Scell(i)%eigen_S(n1)) ! eigenvalues of Sij
          
+         ! Electron distribution function:
          if (.not. allocated(Scell(i)%fe)) allocate(Scell(i)%fe(size(Scell(i)%Ei))) ! electron distribution function (Fermi-function)
+         ! Check if there is a file with the initial distribution:
+         write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(numpar%fe_filename)) ! user-provided filename
+         inquire(file=trim(adjustl(File_name2)),exist=file_exist)
+         INPUT_DISTR:if (file_exist) then
+            numpar%fe_input_exists = .true.  ! distribution was provided
+            open(UNIT=FN2, FILE = trim(adjustl(File_name2)), status = 'old', action='read')
+            inquire(file=trim(adjustl(File_name2)),opened=file_opened)
+            if (.not.file_opened) then
+               numpar%fe_input_exists = .false.  ! no distribution given, use Fermi from the start
+            endif
+            ! Read distribution from the file:
+            call read_electron_distribution(FN2, numpar%fe_input, numpar%fe_input_exists)   ! below
+         else INPUT_DISTR
+            numpar%fe_input_exists = .false.  ! no distribution given, use Fermi from the start
+         endif INPUT_DISTR
+
+         ! If for any reason the distribution could not be read from the file, use Fermi distribution:
+         if (.not.numpar%fe_input_exists) then
+            ! Assume electronic temperature equal to the atomic one:
+            Scell(i)%Te = Scell(i)%Ta  ! [K]
+            Scell(i)%TeeV = Scell(i)%Te/g_kb ! [eV] electron temperature
+            print*, 'File '//trim(adjustl(File_name2))//' could not be opened, use electron temperature: ', Scell(i)%Te
+         endif
+
+
          if (numpar%do_kappa) then
-            if (.not. allocated(Scell(i)%I_ij)) allocate(Scell(i)%I_ij(size(Scell(i)%Ei))) ! electron distribution function (Fermi-function)
-            if (.not. allocated(Scell(i)%Ce_i)) allocate(Scell(i)%Ce_i(size(Scell(i)%Ei))) ! electron distribution function (Fermi-function)
+            if (.not. allocated(Scell(i)%I_ij)) allocate(Scell(i)%I_ij(size(Scell(i)%Ei))) ! scattering integral
+            if (.not. allocated(Scell(i)%Ce_i)) allocate(Scell(i)%Ce_i(size(Scell(i)%Ei))) ! electron heat capacity
          endif
 !          if (.not. allocated(Scell(i)%Norm_WF)) allocate(Scell(i)%Norm_WF(size(Scell(i)%Ei))) ! normalization coefficient of the wave function
 
@@ -678,6 +704,47 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 !     enddo ! j
 !    pause 'set_initial_configuration'
 end subroutine set_initial_configuration
+
+
+subroutine read_electron_distribution(FN2, fe_input, fe_input_exists)
+   integer, intent(in) :: FN2 ! file with distribution
+   real(8), dimension(:), allocatable, intent(inout) :: fe_input  ! initial distribution function
+   logical, intent(inout) :: fe_input_exists ! flag to use the distribution from a file
+   !--------------------
+   integer :: N_cols, N_lines, i, Reason, count_lines
+   real(8), dimension(:), allocatable :: temp_fe
+   logical :: read_well
+
+   ! Count how many grid points are there:
+   call Count_columns_in_file(FN2, N_cols, skip_lines=1) ! module "Dealing_with_files"
+   ! Count how many columns are in the file (assume the last one is the distriution):
+   call Count_lines_in_file(FN2, N_lines, skip_lines=1)   ! module "Dealing_with_files"
+
+   ! Knowing the size, allocate the arrays:
+   allocate(fe_input(N_lines), source=0.0d0)
+   allocate(temp_fe(N_cols))
+
+   ! Read the data from the file:
+   read(FN2,*,IOSTAT=Reason) ! skip the first comment line
+   count_lines = 1
+   ! Read the rest as distribution:
+   READ_DISTR:do i = 1, N_lines
+      read(FN2,*,IOSTAT=Reason) temp_fe
+      call read_file(Reason, count_lines, read_well) ! module "Dealing_with_files"
+      if (.not. read_well) then
+         fe_input_exists = .false.  ! could not read distribution
+         exit READ_DISTR
+      else  ! save distribution function:
+         fe_input(i) = temp_fe(N_cols)
+         !print*, 'read_electron_distribution:', i, fe_input(i)
+      endif
+   enddo READ_DISTR
+!    pause 'read_electron_distribution DONE'
+
+   ! Clean up:
+   deallocate(temp_fe)
+   call close_file('close', FN=FN2) ! module "Dealing_with_files"
+end subroutine read_electron_distribution
 
 
 

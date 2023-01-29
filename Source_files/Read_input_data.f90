@@ -4750,14 +4750,27 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
 
    if (.not.allocated(Scell)) allocate(Scell(1)) ! just for start, 1 supercell
    do i = 1, size(Scell) ! for all supercells
-      ! initial electron temperature [K]:
+
+      ! initial electron temperature [K] or filename with the distribution function:
       read(FN,*,IOSTAT=Reason) Scell(i)%Te
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
+      if (Reason == 0) then ! there was a number, interpret it as electronic temperature
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3417
+         endif
+      else ! maybe there was a name of the file with electronic distribution:
+         Scell(i)%Te = -1.0d0 ! Just to indicate nonequilibrium distribution
+         backspace(FN)  ! get back and try to read the line again:
+         read(FN,*,IOSTAT=Reason) numpar%fe_filename  ! read filename
+         if (.not. read_well) then
+            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3417
+         endif
       endif
       Scell(i)%TeeV = Scell(i)%Te/g_kb ! [eV] electron temperature
 
