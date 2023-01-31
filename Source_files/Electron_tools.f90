@@ -164,15 +164,29 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
 
          case (3) ! Born-Oppenheimer:
             ! Do nothing with fe!
+            ! Only get the kinetic temperature of electrons (out-of-equilibrium):
+            call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
+                                          Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
+            Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
 
          case (4) ! Relaxation-time approximation (NOT READY):
             ! Relaxing electrons as a rate with given characteristic time:
+
+            ! Only get the kinetic temperature of electrons (out-of-equilibrium):
+            call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
+                                          Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
+            Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
 
 
          case (5) ! Nonequilibrium distribution dynamics: Boltzmann electron-electron collision integral (NOT READY):
             if (t > -8.5d0) then ! testing, unfnished
                call test_evolution_of_fe(Scell(NSC)%Ei, Scell(NSC)%fe, t) ! see below
             endif
+
+            ! Only get the kinetic temperature of electrons (out-of-equilibrium):
+            call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
+                                          Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
+            Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
 
          case default ! Decoupled electrons and ions:
             !call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%E_tot) ! get the total electron energy

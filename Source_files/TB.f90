@@ -365,6 +365,7 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
             Scell(NSC)%fe = 0.0d0 ! to start with
             Scell(NSC)%fe(1 : min( size(numpar%fe_input),size(Scell(NSC)%fe) ) ) = &
                  numpar%fe_input(1 : min( size(numpar%fe_input),size(Scell(NSC)%fe) ) )
+            deallocate(numpar%fe_input)   ! no longer needed
          else ! given temperature, assuming Fermi distribution:
             call set_initial_fe(Scell, matter, Err) ! module "Electron_tools"
             call get_new_global_energy(Scell(NSC), Scell(NSC)%nrg) ! module "Electron_tools"
@@ -2853,7 +2854,7 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
                      
                      
                      !sssssssssssssssssssssss
-                     ! Project specific subroutine:
+                     ! Project-specific subroutine:
                      ! Test SAKUREI'S EXPRESSION:
 !                     call Landau_vs_Sakurei_test(Mij, Scell(NSC)%Ha, Scell(NSC)%Ha0, Ha_non=Scell(NSC)%H_non, Ha_non0=Scell(NSC)%H_non0, wr=Scell(NSC)%Ei, wr0=Scell(NSC)%Ei0) ! module "Nonadiabatic"
                      !sssssssssssssssssssssss
@@ -2862,14 +2863,15 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
 !                      print*, 'Electron_ion_coupling 4', numpar%DOS_splitting
 !                      E0 = Scell(NSC)%nrg%El_low
 !                      print*, 'before', E0
-                     select case (numpar%DOS_splitting) ! include analysis of partial coupling (contribution of atomic shells) or not:
-                     case (1)
-                         call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
-                            dE_nonadiabat, numpar%NA_kind, numpar%DOS_weights, Scell(NSC)%G_ei_partial) ! module "Nonadiabatic"
-                     case default    ! No need to sort per orbitals
-                        call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
-                            dE_nonadiabat, numpar%NA_kind) ! module "Nonadiabatic"
-                     endselect
+!                      select case (numpar%DOS_splitting) ! include analysis of partial coupling (contribution of atomic shells) or not:
+!                      case (1)
+                         call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, &
+                                 Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
+                                 dE_nonadiabat, numpar%NA_kind, numpar%DOS_weights, Scell(NSC)%G_ei_partial) ! module "Nonadiabatic"
+!                      case default    ! No need to sort per orbitals
+!                         call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
+!                             dE_nonadiabat, numpar%NA_kind) ! module "Nonadiabatic"
+!                      endselect
 !                      print*, 'Electron_ion_coupling 5'
                   enddo ! iz
                enddo ! iy

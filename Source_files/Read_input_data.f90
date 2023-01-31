@@ -4761,6 +4761,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
             print*, trim(adjustl(Error_descript))
             goto 3417
          endif
+         numpar%fe_filename = '' ! user provided no filename for distribution (use Fermi with given tempreature instead)
       else ! maybe there was a name of the file with electronic distribution:
          Scell(i)%Te = -1.0d0 ! Just to indicate nonequilibrium distribution
          backspace(FN)  ! get back and try to read the line again:

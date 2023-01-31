@@ -606,27 +606,31 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          ! Electron distribution function:
          if (.not. allocated(Scell(i)%fe)) allocate(Scell(i)%fe(size(Scell(i)%Ei))) ! electron distribution function (Fermi-function)
          ! Check if there is a file with the initial distribution:
-         write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(numpar%fe_filename)) ! user-provided filename
-         inquire(file=trim(adjustl(File_name2)),exist=file_exist)
-         INPUT_DISTR:if (file_exist) then
-            numpar%fe_input_exists = .true.  ! distribution was provided
-            open(UNIT=FN2, FILE = trim(adjustl(File_name2)), status = 'old', action='read')
-            inquire(file=trim(adjustl(File_name2)),opened=file_opened)
-            if (.not.file_opened) then
+         if (Scell(i)%Te < 0.0d0) then ! distribution must be provided in the file
+            write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(numpar%fe_filename)) ! user-provided filename
+            inquire(file=trim(adjustl(File_name2)),exist=file_exist)
+            INPUT_DISTR:if (file_exist) then
+               numpar%fe_input_exists = .true.  ! distribution was provided
+               open(UNIT=FN2, FILE = trim(adjustl(File_name2)), status = 'old', action='read')
+               inquire(file=trim(adjustl(File_name2)),opened=file_opened)
+               if (.not.file_opened) then
+                  numpar%fe_input_exists = .false.  ! no distribution given, use Fermi from the start
+               endif
+               ! Read distribution from the file:
+               call read_electron_distribution(FN2, numpar%fe_input, numpar%fe_input_exists)   ! below
+            else INPUT_DISTR
                numpar%fe_input_exists = .false.  ! no distribution given, use Fermi from the start
-            endif
-            ! Read distribution from the file:
-            call read_electron_distribution(FN2, numpar%fe_input, numpar%fe_input_exists)   ! below
-         else INPUT_DISTR
-            numpar%fe_input_exists = .false.  ! no distribution given, use Fermi from the start
-         endif INPUT_DISTR
+            endif INPUT_DISTR
 
-         ! If for any reason the distribution could not be read from the file, use Fermi distribution:
-         if (.not.numpar%fe_input_exists) then
-            ! Assume electronic temperature equal to the atomic one:
-            Scell(i)%Te = Scell(i)%Ta  ! [K]
-            Scell(i)%TeeV = Scell(i)%Te/g_kb ! [eV] electron temperature
-            print*, 'File '//trim(adjustl(File_name2))//' could not be opened, use electron temperature: ', Scell(i)%Te
+            ! If for any reason the distribution could not be read from the file, use Fermi distribution:
+            if (.not.numpar%fe_input_exists) then
+               ! Assume electronic temperature equal to the atomic one:
+               Scell(i)%Te = Scell(i)%Ta  ! [K]
+               Scell(i)%TeeV = Scell(i)%Te/g_kb ! [eV] electron temperature
+               print*, 'File '//trim(adjustl(File_name2))//' could not be opened, use electron temperature: ', Scell(i)%Te
+            endif
+         else
+            ! No distribution file provided by the user, use Fermi with given tempreature instead
          endif
 
 
