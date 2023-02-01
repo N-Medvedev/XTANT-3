@@ -488,6 +488,7 @@ type Super_cell
    real(8), dimension(:), allocatable :: MSDP	! [A^2] mean square displacements for atoms of different sorts
    real(8) :: mu	! [eV] electron chemical potential
    real(8), dimension(:), allocatable :: fe ! low-energy electron distribution
+   real(8), dimension(:), allocatable :: fe_eq ! equivalent Fermi electron distribution
    real(8), dimension(:), allocatable :: I_ij ! electron-ion collision integral [1/s]
    real(8), dimension(:), allocatable :: Norm_WF ! Normalization of wave functions
    real(8) :: Ce  ! electron heat capacity [J/(m^3 K)]
@@ -658,6 +659,7 @@ type Numerics_param
    logical :: fe_input_exists ! flag to use the distribution from a file
    character(100) :: fe_filename ! file name with user-provided initial electronic distribution
    real(8), dimension(:), allocatable :: fe_input  ! initial distribution function
+   real(8) :: tau_fe ! [fs] characteristic time (used for the relaxation time approximation)
    ! MD:
    real(8) :: dt	      ! [fs] time-step for MD
    real(8) :: halfdt      ! dt/2, often used

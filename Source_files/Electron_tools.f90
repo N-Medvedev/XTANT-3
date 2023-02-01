@@ -137,13 +137,13 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
    logical, intent(in), optional :: do_E_tot  ! total energy is given or temperature?
    !=========================================
    real(8) :: E_tot, mu_cur, Te_cur
-   integer NSC
+   integer :: NSC, i_fe
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
       do NSC = 1, size(Scell)
          ! Which scheme to use:
          ! 0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO
          select case (numpar%el_ion_scheme)
-         case (1) ! Enforced energy conservation:
+         case (1) ! Enforced energy conservation (Etot = Ee + Eat = const):
             if (t .GT. numpar%t_Te_Ee) then ! Total energy is fixed:
                !call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! (SLOW) below
                call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! (FAST) below
@@ -153,7 +153,7 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
 
-         case (2) ! Fixed temperature:
+         case (2) ! Fixed temperature (Te=const):
 !             if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
 !                call Electron_Fixed_Te(Scell(NSC)%Ei_scc_part, Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! below
 !             else
@@ -169,16 +169,16 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
                                           Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
 
-         case (4) ! Relaxation-time approximation (NOT READY):
-            ! Relaxing electrons as a rate with given characteristic time:
+            ! Construct Fermi function with the given transient parameters (equivalent Te and mu):
+            i_fe = size(Scell(NSC)%fe)   ! number of grid points in distribution function
+            if (.not.allocated(Scell(NSC)%fe_eq)) allocate(Scell(NSC)%fe_eq(i_fe))
+            call set_Fermi(Scell(NSC)%Ei, Scell(NSC)%TeeV, Scell(NSC)%mu, Scell(NSC)%fe_eq)   ! below
 
-            ! Only get the kinetic temperature of electrons (out-of-equilibrium):
-            call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
-                                          Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
-            Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
+         case (4) ! Relaxation-time approximation [ df/dt=(f-f0)/tau ]:
+            ! Relaxing electrons via rate equation with given characteristic time:
+            call Do_relaxation_time(Scell(NSC), numpar)  ! below
 
-
-         case (5) ! Nonequilibrium distribution dynamics: Boltzmann electron-electron collision integral (NOT READY):
+         case (50) ! Boltzmann electron-electron collision integral (NOT READY, DO NOT USE!):
             if (t > -8.5d0) then ! testing, unfnished
                call test_evolution_of_fe(Scell(NSC)%Ei, Scell(NSC)%fe, t) ! see below
             endif
@@ -188,7 +188,13 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
                                           Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
 
-         case default ! Decoupled electrons and ions:
+            ! Construct Fermi function with the given transient parameters (equivalent Te and mu):
+            i_fe = size(Scell(NSC)%fe)   ! number of grid points in distribution function
+            if (.not.allocated(Scell(NSC)%fe_eq)) allocate(Scell(NSC)%fe_eq(i_fe))
+            call set_Fermi(Scell(NSC)%Ei, Scell(NSC)%TeeV, Scell(NSC)%mu, Scell(NSC)%fe_eq)   ! below
+
+
+         case default ! Decoupled electrons and ions (Ee = const; instant thermalization of electrons):
             !call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%E_tot) ! get the total electron energy
 !             if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
 !                ! get the total electron energy:
@@ -219,7 +225,35 @@ end subroutine update_fe
 
 
 !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-! Nonequilibrium electron kinetics (UNFINISHED DUE TO PROBLEMS WITH ENERGY CONSERVATION):
+! Nonequilibrium electron kinetics
+
+! Relaxation time approximation:
+subroutine Do_relaxation_time(Scell, numpar)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
+   !----------------------
+   real(8) :: exp_dttau
+   integer :: i_fe, i
+
+   ! Get the equivalent (kinetic) temperature and chemical potential:
+   call Electron_Fixed_Etot(Scell%Ei, Scell%Ne_low, Scell%nrg%El_low, Scell%mu, Scell%TeeV, .true.) ! below (FAST)
+   Scell%Te = Scell%TeeV*g_kb ! save also in [K]
+
+   ! Construct Fermi function with the given transient parameters:
+   i_fe = size(Scell%fe)   ! number of grid points in distribution function
+   if (.not.allocated(Scell%fe_eq)) allocate(Scell%fe_eq(i_fe))
+   call set_Fermi(Scell%Ei, Scell%TeeV, Scell%mu, Scell%fe_eq)   ! below
+
+   ! Solve rate equation:
+   exp_dttau = dexp(-numpar%dt / numpar%tau_fe)
+   do i = 1, i_fe ! for all grid points (MO energy levels)
+      Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
+   enddo
+end subroutine Do_relaxation_time
+
+
+
+! Electron-electron collision integral (UNFINISHED DUE TO PROBLEMS WITH ENERGY CONSERVATION):
 subroutine Boltzmann_e_e_IN(Ev, fe, M_ee, dt) ! calculates change of distribution function via Boltzmann collision integral
 ! See examples of Boltzmann equation in energy space e.g. in 
 ! [B. Rethfeld, A. Kaiser, M. Vicanek and G. Simon, Phys.Rev.B 65, 214303, (2002)]

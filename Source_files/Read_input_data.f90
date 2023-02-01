@@ -125,6 +125,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%t_Te_Ee = 1.0d-3	! when to start coupling
    numpar%NA_kind = 1	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
    numpar%Nonadiabat = .true.  ! included
+   numpar%tau_fe = 1.0d0   ! Characteristic electron relaxation time [fs]
    numpar%scc = .true.  ! included
    numpar%scc_gam_ind = 0  ! Wolf's Coulomb model
    numpar%scc_mix = 1.0d0  ! maximal mixing
@@ -4076,15 +4077,28 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
 
-   ! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO); when to start coupling
-   read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee
+   ! 3 numbers:
+   ! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO; 4=relaxation time);
+   ! when to start coupling [fs];
+   ! Characteristic relaxation time [fs];
+   read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee, numpar%tau_fe
    call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
+   if (Reason /= 0) then   ! probably only two number are given (legacy format)
+      numpar%tau_fe = 1.0d0   ! [fs]
+      print*, 'Relaxation time is not provided, assuming default value:', numpar%tau_fe, '[fs]'
+      ! Trying to read the first 2 numbers from the same line:
+      backspace(FN)  ! back one line
+      count_lines = count_lines - 1 ! renumber it to continue from the same line
+      read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee  ! try reading it again
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3418
+      endif
    endif
+
 
    ! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
    read(FN,*,IOSTAT=Reason) numpar%NA_kind
@@ -4765,7 +4779,9 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
       else ! maybe there was a name of the file with electronic distribution:
          Scell(i)%Te = -1.0d0 ! Just to indicate nonequilibrium distribution
          backspace(FN)  ! get back and try to read the line again:
+         count_lines = count_lines - 1
          read(FN,*,IOSTAT=Reason) numpar%fe_filename  ! read filename
+         call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
             write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
             call Save_error_details(Err, 3, Error_descript)
@@ -4838,6 +4854,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
 
       else ! probably, there weren't three parameters in the line, so read just the fluence
          backspace(FN)  ! get back and try to read the line again:
+         count_lines = count_lines - 1
          read(FN,*,IOSTAT=Reason) laser(i)%F	  ! ABSORBED DOSE IN [eV/atom]
          call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
@@ -4852,6 +4869,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
       if (Reason /= 0) then ! probably only energy provided, not the distribution width, so assume FWHM_hw=0
          laser(i)%FWHM_hw = 0.0d0
          backspace(FN)  ! get back and try to read the line again:
+         count_lines = count_lines - 1
          read(FN,*,IOSTAT=Reason) laser(i)%hw  ! photon energy in [eV] only, no distribution
          call read_file(Reason, count_lines, read_well)
       endif

@@ -1,24 +1,23 @@
-PMMA                ! material name
-C5O2H8              ! chemical formula of the compound
-300.0               ! initial electron temperature [K]
-300.0               ! initial atomic temperature [K]
-0.0                 ! start of simulation [fs]
-1000.0              ! end of simulation [fs]
+C2H4n                 ! material name
+C2H4
+OUTPUT_electron_distribution.dat               ! initial electron temperature [K]
+250.0               ! initial atomic temperature [K]
+-100.0                 ! start of simulation [fs]
+500.0               ! end of simulation [fs]
 1                   ! number of FEL-pulses
-1.0d0               ! 1.0d0   0.1e0	! absorbed dose per this pulse [eV/atom] (min, max, step)
-1000.0  100.0       ! hw, mean photon energy [eV], FWHM of the distirbution of hw [eV]
+0.0d0       !1.0d0   0.5e0	! absorbed dose per this pulse [eV/atom] (min, max, step)
+10.0  1.0          ! hw, mean photon energy [eV], FWHM of the distirbution of hw [eV]
 10.0d0              ! pulse FWHM-duration [fs]
 1                   ! type of pulse to be analysed: 0 = rectangular, 1 = Gaussian, 2 = SASE
 0.0d0               ! position of the maximum of the laser pulse [fs]
 
+!size
 
 ! coupling
 5
 
-
-! water
-100
-
+!water
+63
 
 ! probe
 0   1   1.0d-1  25.0d0  1.0d-1  ! optic coef: 0=no, 1=Drude, 2=Trani-k, 3=gamma; spectr (1) w/ KK (2), or no (0); min, max, d_hw (eV)

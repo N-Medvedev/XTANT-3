@@ -96,7 +96,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
          case (1) ! with partial DOS
          call write_coulping(numpar%FN_coupling, time, Scell, NSC, numpar)
       end select
-      if (numpar%save_fe) call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe)
+      if (numpar%save_fe) call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq)
       if (numpar%save_PCF) call write_PCF(numpar%FN_PCF, Scell(1)%MDatoms, matter, Scell, 1)
       if (numpar%do_drude) call write_optical_coefs(numpar%FN_optics, time, Scell(1)%eps)
       if (Scell(1)%eps%all_w) call write_optical_all_hw(numpar%FN_all_w, time, Scell(1)%eps)
@@ -289,16 +289,23 @@ subroutine write_PCF(FN, atoms, matter, Scell, NSC)
 end subroutine write_PCF
 
 
-subroutine save_distribution(FN, tim, wr, fe)
+subroutine save_distribution(FN, tim, wr, fe, fe_eq)
    integer, intent(in) :: FN
    real(8), intent(in) :: tim
    real(8), dimension(:), intent(in) :: wr
    real(8), dimension(:), intent(in) :: fe
+   real(8), dimension(:), allocatable, intent(in) :: fe_eq
    integer i
    write(FN,'(a,f25.16)') '#', tim
-   do i = 1, size(fe)
-      write(FN,'(f25.16,f25.16)') wr(i), fe(i)
-   enddo
+   if (allocated(fe_eq)) then ! there is equivalent-temperature Fermi distribution
+      do i = 1, size(fe)
+         write(FN,'(f25.16,f25.16,f25.16)') wr(i), fe(i), fe_eq(i)
+      enddo
+   else  ! fe is Fermi, no equivalent distribution needed
+      do i = 1, size(fe)
+         write(FN,'(f25.16,f25.16)') wr(i), fe(i)
+      enddo
+   endif
    write(FN,*) ''
    write(FN,*) ''
 end subroutine save_distribution
@@ -1316,9 +1323,9 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       ! Distribution function can only be plotted as animated gif:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 5.0d0, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_electron_distribution.gif', numpar%path_sep, setkey=4)
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 5.0d0, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_electron_distribution.gif', numpar%path_sep, setkey=0)
       !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
-      call write_distribution_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')   ! below
+      call write_distribution_gnuplot(FN, Scell, numpar, 'OUTPUT_electron_distribution.dat')   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
    endif
@@ -2218,27 +2225,63 @@ subroutine write_energy_levels_gnuplot(FN, Scell, file_Ei)
 end subroutine write_energy_levels_gnuplot
 
 
-subroutine write_distribution_gnuplot(FN, Scell, file_fe)
+subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
    integer, intent(in) :: FN            ! file to write into
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    character(*), intent(in) :: file_fe  ! file with electronic distribution function
-   integer i, M, NSC
-   character(30) :: ch_temp
+   !-----------------------
+   integer :: i, M, NSC
+   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
+   logical :: do_fe_eq
 
    do NSC = 1, size(Scell)
       ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
       write(ch_temp,'(f)') 25.0d0      ! Scell(NSC)%E_top
+      write(ch_temp2,'(f)') numpar%t_start
+      write(ch_temp3,'(f)') numpar%dt_save
+
+      select case (numpar%el_ion_scheme)
+         case (3:4)
+            do_fe_eq = .true.
+         case default
+            do_fe_eq = .false.
+      endselect
+      if (do_fe_eq) then
+         write(ch_temp4,'(a)') ' ,\'
+      else
+         write(ch_temp4,'(a)') ''
+      endif
 
       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
          write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
-         write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
-                     '" index (i-1) u 1:2 pt 7 ps 0.2 title sprintf("Timestep #%i",i)'
-      else
+         if (do_fe_eq) then  ! plot also equivalent Fermi distribution
+
+            write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:3 w l lw 2 lt rgb "grey" title "Equivalent Fermi" ,\'
+            write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+         else
+            write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '//trim(adjustl(ch_temp4))
+         endif
+      else  ! Linux
          write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
-         write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
-                  '\" index (i-1) u 1:2 pt 7 ps 0.2 title sprintf(\"Timestep #%i\",i)'
+         if (do_fe_eq) then ! plot also equivalent Fermi distribution
+            write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:3 w l lw 2 lt rgb \"grey\" title \"Equivalent Fermi\" '
+            write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '//trim(adjustl(ch_temp4))
+         else
+            write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '//trim(adjustl(ch_temp4))
+         endif
       endif
       write(FN, '(a)') '}'
    enddo
@@ -2987,13 +3030,17 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       write(print_to,'(a)') ' Scheme used for electron modelling: '
       select case (numpar%el_ion_scheme)
       case (0)
-         write(print_to,'(a)') ' Decoupling electrons from atoms (separate energy conservation)'
+         write(print_to,'(a)') ' Decoupled electrons and atoms (instant electron thermalization)'
       case (1)
          write(print_to,'(a)') ' Enforced total energy conservation'
       case (2)
          write(print_to,'(a)') ' Enforced constant temperature of electrons'
       case (3)
          write(print_to,'(a)') ' True Born-Oppenheimer (constant electron populations)'
+      case (4)
+         write(text1, '(f12.6)') numpar%tau_fe
+         write(print_to,'(a)') ' Relaxation-time approximation for electron thermalization'
+         write(print_to,'(a)') ' with the characteristic time '//trim(adjustl(text1))//' [fs]'
       end select
    else AT_MOVE
       write(print_to,'(a)') ' Atoms were FROZEN instead of moving in MD!'
