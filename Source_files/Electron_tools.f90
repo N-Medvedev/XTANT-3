@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -176,7 +176,8 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
 
          case (4) ! Relaxation-time approximation [ df/dt=(f-f0)/tau ]:
             ! Relaxing electrons via rate equation with given characteristic time:
-            call Do_relaxation_time(Scell(NSC), numpar)  ! below
+            !call Do_relaxation_time(Scell(NSC), numpar)  ! below
+            ! We only update it once per simulation step, not every time this subroutine called!
 
          case (50) ! Boltzmann electron-electron collision integral (NOT READY, DO NOT USE!):
             if (t > -8.5d0) then ! testing, unfnished
@@ -227,13 +228,38 @@ end subroutine update_fe
 !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 ! Nonequilibrium electron kinetics
 
+subroutine Electron_thermalization(Scell, numpar, skip_thermalization)
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
+   logical, intent(in), optional :: skip_thermalization
+   !----------------------
+   select case (numpar%el_ion_scheme)
+   case (4)    ! relaxation-time approximation
+      if (present(skip_thermalization)) then
+         call Do_relaxation_time(Scell(1), numpar, skip_thermalization)  ! below
+      else
+         call Do_relaxation_time(Scell(1), numpar)  ! below
+      endif
+   endselect
+end subroutine Electron_thermalization
+
+
+
 ! Relaxation time approximation:
-subroutine Do_relaxation_time(Scell, numpar)
+subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
+   logical, intent(in), optional :: skip_thermalization
    !----------------------
    real(8) :: exp_dttau
    integer :: i_fe, i
+   logical :: skip_step
+
+   if (present(skip_thermalization)) then
+      skip_step = skip_thermalization
+   else
+      skip_step = .false.
+   endif
 
    ! Get the equivalent (kinetic) temperature and chemical potential:
    call Electron_Fixed_Etot(Scell%Ei, Scell%Ne_low, Scell%nrg%El_low, Scell%mu, Scell%TeeV, .true.) ! below (FAST)
@@ -245,10 +271,16 @@ subroutine Do_relaxation_time(Scell, numpar)
    call set_Fermi(Scell%Ei, Scell%TeeV, Scell%mu, Scell%fe_eq)   ! below
 
    ! Solve rate equation:
-   exp_dttau = dexp(-numpar%dt / numpar%tau_fe)
-   do i = 1, i_fe ! for all grid points (MO energy levels)
-      Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
-   enddo
+   if (.not.skip_step) then ! do the thermalization step:
+      if (numpar%tau_fe < numpar%dt/30.0d0) then ! it's basically instantaneous
+         exp_dttau = 0.0d0
+      else  ! finite time relaxation
+         exp_dttau = dexp(-numpar%dt / numpar%tau_fe)
+      endif
+      do i = 1, i_fe ! for all grid points (MO energy levels)
+         Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
+      enddo
+   endif
 end subroutine Do_relaxation_time
 
 

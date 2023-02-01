@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -3038,7 +3038,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       case (3)
          write(print_to,'(a)') ' True Born-Oppenheimer (constant electron populations)'
       case (4)
-         write(text1, '(f12.6)') numpar%tau_fe
+         if (numpar%tau_fe < 1e6) then
+            write(text1, '(f13.6)') numpar%tau_fe
+         else
+            write(text1, '(es16.6)') numpar%tau_fe
+         endif
          write(print_to,'(a)') ' Relaxation-time approximation for electron thermalization'
          write(print_to,'(a)') ' with the characteristic time '//trim(adjustl(text1))//' [fs]'
       end select

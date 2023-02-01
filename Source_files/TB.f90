@@ -2707,7 +2707,7 @@ subroutine update_nrg_after_change(Scell, matter, numpar, time, Err)
    !=========================================
    integer NSC
    
-    ! Update correspondingly the electron distribution for the new given total energy:
+   ! Update correspondingly the electron distribution for the new given total energy:
    call update_fe(Scell, matter, numpar, time, Err, do_E_tot=.true.) ! module "Electron_tools"
       
    do NSC = 1, size(Scell)

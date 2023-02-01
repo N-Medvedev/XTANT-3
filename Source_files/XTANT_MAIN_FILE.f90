@@ -164,6 +164,9 @@ endif
 call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 1, g_Err, g_time) ! module "TB"
 if (g_numpar%verbose) call print_time_step('Initial Hamiltonian prepared succesfully:', msec=.true.)
 
+! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
+call Electron_thermalization(g_Scell, g_numpar, skip_thermalization=.true.) ! module "Electron_tools"
+
 ! Get global energy of the system at the beginning:
 call get_glob_energy(g_Scell, g_matter) ! module "Electron_tools"
 if (g_numpar%verbose) call print_time_step('Initial energy prepared succesfully:', msec=.true.)
@@ -307,6 +310,9 @@ do while (g_time .LT. g_numpar%t_total)
    ! Monte-Carlo for photons, high-energy electrons, and core holes:
    call MC_Propagate(g_MC, g_numpar, g_matter, g_Scell, g_laser, g_time, g_Err) ! module "Monte_Carlo"
    if (g_numpar%verbose) call print_time_step('Monte Carlo model executed succesfully:', g_time, msec=.true.) ! module "Little_subroutines"
+
+   ! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
+   call Electron_thermalization(g_Scell, g_numpar) ! module "Electron_tools"
 
    ! Update corresponding energies of the system:
    call update_nrg_after_change(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
