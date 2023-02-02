@@ -205,11 +205,11 @@ subroutine set_starting_time(laser, tim, t_start, t_NA, t_Te_Ee)
    real(8), intent(inout), optional :: t_Te_Ee ! time when we switch from Te=const, to Ee=const [fs] / negative value, when not using it
    real(8), intent(inout), optional :: t_NA ! time when we switch on nonadiabatic terms [fs]
    if (maxval(laser(:)%F) .GT. 0.0d0) then
-      tim = -50.0d0 + dble(CEILING(min(minval(laser(:)%t0-laser(:)%t*2.35d0), 0.0d0)))  ! [fs]
+      tim = t_start !-50.0d0 + dble(CEILING(min(minval(laser(:)%t0-laser(:)%t*2.35d0), 0.0d0)))  ! [fs]
       if (present(t_NA)) t_NA = tim + t_NA + 1d-3           ! [fs]
       if (present(t_Te_Ee)) t_Te_Ee = tim + t_Te_Ee         ! [fs]
    else
-      tim = 0.0d0 ! [fs]
+      tim = t_start !0.0d0 ! [fs]
       if (present(t_NA)) t_NA = t_NA + 1d-3 ! [fs]
       if (present(t_Te_Ee)) t_Te_Ee = tim + t_Te_Ee ! [fs]
    endif

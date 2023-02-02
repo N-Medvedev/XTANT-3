@@ -101,8 +101,15 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    Scell%E_VB_top = wr(i)		! [eV] current top of the valence band
    
    ! Set MC high-energy electron cut-off energy equal to the uppermost level of CB:
-   if (numpar%E_cut_dynamic) numpar%E_cut = wr(siz) - Scell%E_bottom ! [eV]
-   
+   !if (numpar%E_cut_dynamic) numpar%E_cut = wr(siz) - Scell%E_bottom ! [eV]
+   if (numpar%E_cut_dynamic) numpar%E_cut = Scell%E_top - Scell%E_bottom ! [eV]
+   ! For noneuqilibrium distributions (BO or relaxation time), threshold cannot be higher than
+   ! the topmost level of CB, otherwise, there is no way to place an incomming electron:
+   select case (numpar%el_ion_scheme)
+   case (3:4)
+      numpar%E_cut = min(numpar%E_cut, Scell%E_top-Scell%E_bottom) ! [eV]
+   endselect
+
    ! In case we have a very wide gap material, cut-off cannot be smaller than the gap:
    if (numpar%E_cut < Scell%E_gap) numpar%E_cut = Scell%E_gap
 
@@ -110,7 +117,8 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
       case (1) ! CDF cross section
          matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) = Scell%E_gap ! [eV] ionization potential of the valence band
       case default  ! BEB:
-         if (numpar%E_cut < matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) ) numpar%E_cut = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+         ! Renormalization is optional:
+         !if (numpar%E_cut < matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) ) numpar%E_cut = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
    end select
    
 !    print*, 'numpar%E_cut =', numpar%E_cut , Scell%E_gap , matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
@@ -251,9 +259,9 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
    logical, intent(in), optional :: skip_thermalization
    !----------------------
-   real(8) :: exp_dttau
+   real(8) :: exp_dttau, extra_dt
    integer :: i_fe, i
-   logical :: skip_step
+   logical :: skip_step, extra_cycle
 
    if (present(skip_thermalization)) then
       skip_step = skip_thermalization
@@ -280,7 +288,35 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
       do i = 1, i_fe ! for all grid points (MO energy levels)
          Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
       enddo
-   endif
+
+      ! Extra check for smoothening unphysical artefacts that may be present after MC:
+      extra_cycle = .false.   ! by default, assume no artifact
+      do i = 1, i_fe ! for all grid points (MO energy levels)
+         if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
+            extra_cycle = .true.   ! some artefacts present, do extra thermalization to get rid of them
+            print*, 'Extra thermalization step needed:', i, Scell%fe(i)
+            exit
+         endif
+      enddo
+      if (extra_cycle) then   ! do extra thermalization
+         extra_dt = numpar%dt*0.1d0 ! use this small step to minimize the effect of extra smoothing
+         do while (extra_cycle)
+            extra_cycle = .false.   ! assume the problem is solved
+            if (numpar%tau_fe < extra_dt/30.0d0) then ! it's basically instantaneous
+               exp_dttau = 0.0d0
+            else  ! finite time relaxation
+               exp_dttau = dexp(-extra_dt / numpar%tau_fe)
+            endif
+            do i = 1, i_fe ! for all grid points (MO energy levels)
+               Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
+               if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
+                  print*, 'Step:', i, Scell%fe(i)
+                  extra_cycle = .true.   ! artefacts still present, do another cycle of extra thermalization
+               endif
+            enddo ! i = 1, i_fe
+         enddo ! while (extra_cycle)
+      endif ! (extra_cycle)
+   endif ! (.not.skip_step)
 end subroutine Do_relaxation_time
 
 

@@ -1795,12 +1795,12 @@ subroutine gnu_CB_electrons(File_name, file_numbers, t0, t_last, eps_name)
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_numbers)), ' "u 1:($3/4*100) w l lw LW title "CB electrons" ,\'
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_numbers)), ' "u 1:3 w l lw LW title "CB electrons" ,\'
-      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_numbers)), ' "u 1:($7*1e3) w l lw LW title "Photons (x 1e3)"'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_numbers)), ' "u 1:($3) w l lw LW title "CB electrons" ,\'
+      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_numbers)), ' "u 1:($7) w l lw LW title "Photons"'
    else
       !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_numbers)), '\"u 1:(\$3/4*100) w l lw \"$LW\" title \"CB electrons\" ,\'
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_numbers)), '\"u 1:3 w l lw \"$LW\" title \"CB electrons\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_numbers)), '\"u 1:(\$7*1e3) w l lw \"$LW\" title \"Photons (x 1e3)\"'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_numbers)), '\"u 1:(\$3) w l lw \"$LW\" title \"CB electrons\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_numbers)), '\"u 1:(\$7) w l lw \"$LW\" title \"Photons\"'
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -3027,7 +3027,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       else ! V=const
          write(print_to,'(a)') ' Constant volume simulation (NVE)'
       endif
-      write(print_to,'(a)') ' Scheme used for electron modelling: '
+      write(print_to,'(a)') ' Scheme used for low-energy electrons modelling: '
       select case (numpar%el_ion_scheme)
       case (0)
          write(print_to,'(a)') ' Decoupled electrons and atoms (instant electron thermalization)'
@@ -3101,6 +3101,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
    endif
 
    write(print_to,'(a, f7.1, a)') ' Electron energy cut-off, separating high-energy- from low-energy-electrons: ', numpar%E_cut, ' [eV]'
+   select case (numpar%el_ion_scheme)
+   case (3:4)
+      write(print_to,'(a)') 'But it maybe dynamically adjusted to the top of CB (nonequilibrium simulation)'
+   endselect
+
    if (numpar%E_work >= 1.0d25) then
       write(print_to,'(a)') ' No electron emission is allowed in the calculation'
    else if (numpar%E_work >= 0.0d0) then

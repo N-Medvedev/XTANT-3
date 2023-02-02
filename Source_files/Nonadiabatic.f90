@@ -149,8 +149,10 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
             ! Reducing time-steps if needed:
             if ((distre_temp2(i) > 2.0d0) .OR. (distre_temp2(i) < 0.0d0)) then
                N_steps = INT(N_steps*2.0d0)  ! decrease time step in Boltzmann equation and recalculate
-               !print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (1)'
-               !write(*,'(i5, e25.16, e25.16, e25.16, e25.16, e25.16, e25.16)') i, dt_small, coef, coef_inv, distre_temp2(i), dfdt_e(i), dfdt_e(i)*dt_small
+               if (N_steps > 1000) then
+                  print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (1)'
+                  write(*,'(i5, e25.16, e25.16, e25.16, e25.16, e25.16, e25.16)') i, dt_small, coef, coef_inv, distre_temp2(i), dfdt_e(i), dfdt_e(i)*dt_small
+               endif
                ! Recalculate with smaller time steps:
                goto 110
             endif

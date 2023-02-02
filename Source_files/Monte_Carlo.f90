@@ -47,12 +47,13 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
    type(Error_handling), intent(inout) :: Err     ! errors to save
    !==============================================================
    real(8) Nphot, NMC_real, Eetot_stat, noeVB_stat, Eetot_cur, noeVB_cur, Ee_HE, Ne_high, Ne_emit, Ne_holes, N_ph, Eh
-   real(8) :: E_atoms_heating, E_atoms_cur
+   real(8) :: E_atoms_heating, E_atoms_cur, min_df
    integer NSC, stat, i, j, N, Nph
    real(8), dimension(:,:), allocatable :: MChole
+   real(8), dimension(size(Scell(1)%fe)) :: d_fe, d_fe_cur
    
    NSC = 1 ! for the moment, we have only one supercell
-   
+
    if (numpar%NMC > 0) then ! if there are MC iterations at all
       call total_photons(laser, numpar, tim, Nphot) ! estimate the total number of absorbed photons
       ! Do MC run only if we have particles to trace (photons, high-energy-electrons, or core-holes):
@@ -61,9 +62,11 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
          ! Update inelastic scattering cross section depending on Te:
          call update_cross_section(Scell(NSC), matter)  ! module "Electron_tools"
 
-         NMC_real = real(numpar%NMC)
-         Eetot_stat = 0.0d0
-         noeVB_stat = 0.0d0
+         NMC_real = dble(numpar%NMC)
+         min_df = 1.0d0 / NMC_real  ! minimal allowed change of the distribution function
+         Eetot_stat = 0.0d0   ! Total energy of low-energy electrons
+         noeVB_stat = 0.0d0   ! Total number of low-energy electrons
+         d_fe(:) = 0.0d0   ! the same as the distribution function itself
          if (.not.allocated(MChole)) then
             N = maxval(matter%Atoms(:)%sh)
             allocate(MChole(size(matter%Atoms),N)) ! different kinds of atoms
@@ -78,21 +81,26 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
          E_atoms_heating = 0.0d0
          ! The iteration in MC are largely independent, so they can be parallelized with openmp:
 !$omp parallel &
-!$omp private (stat, Eetot_cur, noeVB_cur, Nph, E_atoms_cur)
-!$omp do schedule(dynamic) reduction( + : Eetot_stat, noeVB_stat, Ee_HE, Ne_high, Ne_emit, Eh, Ne_holes, MChole, N_ph, E_atoms_heating)
+!$omp private (stat, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, d_fe_cur, i)
+!$omp do schedule(dynamic) reduction( + : Eetot_stat, noeVB_stat, Ee_HE, Ne_high, Ne_emit, &
+!$omp                                     Eh, Ne_holes, MChole, N_ph, E_atoms_heating, d_fe)
          DO_STAT:do stat = 1,numpar%NMC ! Statistics in MC, iterate the same thing and average
             ! Set initial data:
             Eetot_cur = Scell(NSC)%nrg%El_low	! [eV] starting total energy of low-energy electrons
             noeVB_cur = Scell(NSC)%Ne_low		! number of low-energy electrons
+            d_fe_cur = 0.0d0  ! change of the distribution in each iteration
+
             ! Perform the MC run:
-            call MC_run(tim, MC(stat), Scell(NSC), laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur)
+            call MC_run(tim, MC(stat), Scell(NSC), laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, d_fe_cur, min_df)
             ! Add up the data from this run to total data:
             Eetot_stat = Eetot_stat + Eetot_cur  ! [eV] VB-electrons
             noeVB_stat = noeVB_stat + noeVB_cur  ! number VB-electrons
+            d_fe = d_fe + d_fe_cur  ! change in distribution of low-energy electrons
             E_atoms_heating = E_atoms_heating + E_atoms_cur ! [eV] heating of atoms by electron elastic scattering
             call sort_out_electrons(MC(stat), MC(stat)%electrons, Ne_high, Ne_emit, Ee_HE) ! below
             call sort_out_holes(MC(stat), MC(stat)%holes, MChole, Ne_holes, Eh)   ! below
             N_ph = N_ph + Nph  ! number absorbed photons
+
          enddo DO_STAT
 !$omp end do
 !$omp end parallel
@@ -112,6 +120,23 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
             enddo
          enddo
          Scell(NSC)%Nph = N_ph/NMC_real
+         ! Update the distribution function, if required:
+         Scell(NSC)%fe(:) = Scell(NSC)%fe(:) + d_fe(:)/NMC_real
+         ! Consistency checks:
+!          This problem is patched by extra thermalization step (subroutine Electron_thermalization, modlue "Electron_tools")
+!          do i = 1, size(Scell(NSC)%fe) ! check that there is no problem in distribution function change
+!             if ((Scell(NSC)%fe(i) > 2.0d0) .or. (Scell(NSC)%fe(i) < 0.0d0)) then
+!                print*, 'Error in MC f:', i, Scell(NSC)%fe(i), Scell(NSC)%Ei(i)
+!                if (i>1 )print*, Scell(NSC)%fe(i-1), Scell(NSC)%Ei(i-1)
+!             endif
+!          enddo
+         if ( abs(Scell(NSC)%Ne_low - SUM(Scell(NSC)%fe(:))) > 1.0d-6*Scell(NSC)%Ne_low ) then
+            print*, 'Error in MC_E1:', Scell(NSC)%Ne_low, SUM(Scell(NSC)%fe(:))
+         endif
+         if ( abs(Scell(NSC)%nrg%El_low - SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:))) > 1.0d-6*abs(Scell(NSC)%nrg%El_low) ) then
+            print*, 'Error in MC_E2:', Scell(NSC)%nrg%El_low, SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:))
+         endif
+
       else IF_MC ! if there is no more particles in MC, don't do MC at all:
          Scell(NSC)%Nph = 0.0d0 ! no photons here
          Scell(NSC)%Ne_high = Scell(NSC)%Ne_emit ! no high-energy electrons
@@ -122,17 +147,20 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
             enddo
          enddo
          Scell(NSC)%nrg%E_high_heating = 0.0d0 ! no energy transfer to atoms
+         ! No changes in the electron distribution function
       endif IF_MC
       Scell(NSC)%Q = Scell(NSC)%Ne_emit/Scell(NSC)%Na ! mean unballanced charge
    else ! No MC iteratins, no changes in the system:
       Scell(NSC)%Q = 0.0d0  ! mean unballanced charge
       Scell(NSC)%nrg%E_high_heating = 0.0d0 ! no energy transfer to atoms
+      ! No changes in the electron distribution function
    endif
+
 !    print*, 'Charge:', Scell(NSC)%Q
 end subroutine MC_Propagate
 
 
-subroutine MC_run(tim, MC, Scell, laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur)
+subroutine MC_run(tim, MC, Scell, laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, d_fe, min_df)
    real(8), intent(in) :: tim	! [fs] current time
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
@@ -142,8 +170,12 @@ subroutine MC_run(tim, MC, Scell, laser, matter, numpar, Eetot_cur, noeVB_cur, N
    real(8), intent(inout) :: Eetot_cur, noeVB_cur	! [eV] CB electrons energy; and number
    integer, intent(out) :: Nph	! number of absorbed photons
    real(8), intent(out) :: E_atoms_cur ! [eV] heating of atoms by electrons via elastic scattering
+   real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
+   real(8), intent(in) :: min_df ! minimal allowed change in the distribution function
    !========================================================
    real(8) :: RN
+   integer :: i
+
    Nph = 0 ! just to start
    ! How many photons are absorbed in this run over time-step dt:
    call absorbed_photons_dt(laser, numpar, tim, Nph)
@@ -156,13 +188,13 @@ subroutine MC_run(tim, MC, Scell, laser, matter, numpar, Eetot_cur, noeVB_cur, N
       ! If we have more then one pulse, select from which we have this photon:
       call choose_photon_energy(numpar, laser, MC, tim) ! see below
       ! MC modeling of photoabsorbtion:
-      call MC_for_photon(tim, MC, Nph, numpar, matter, laser, Scell, Eetot_cur, noeVB_cur) ! below
-      
+      call MC_for_photon(tim, MC, Nph, numpar, matter, laser, Scell, Eetot_cur, noeVB_cur, d_fe, min_df) ! below
+
       ! MC modeling of electron propagation:
-      call MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur, E_atoms_cur) ! below
+      call MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur, E_atoms_cur, d_fe, min_df) ! below
       
       ! MC modeling of hole decay:
-      call MC_for_hole(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur) ! below
+      call MC_for_hole(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur, d_fe, min_df) ! below
       
       ! At the end, clean up:
       deallocate(MC%photons)	! free it for the next time-step
@@ -174,7 +206,7 @@ end subroutine MC_run
 
 !EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
 ! For electrons:
-subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur, E_atoms_cur)
+subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur, E_atoms_cur, d_fe, min_df)
    real(8), intent(in) :: tim	! [fs] current time
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    type(solid), intent(in) :: matter	! materil parameters
@@ -182,6 +214,8 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
    real(8), intent(inout) :: Eetot_cur, noeVB_cur	! [eV] CB electrons energy; and number
    real(8), intent(out) :: E_atoms_cur ! [eV] heating of atoms by electrons via elastic scattering
+   real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
+   real(8), intent(in) :: min_df
    !=============================================
    real(8) hw	! transferred energy [eV]
    real(8) kind_of_coll ! elasctic vs inelastic
@@ -218,7 +252,8 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
             call Electron_energy_transfer_inelastic(matter, Scell%TeeV, Ekin, KOA, SHL, matter%Atoms(KOA)%El_MFP(shl), hw) ! module "Cross_sections"
 
             ! new electron (and may be hole) is created:
-            call New_born_electron_n_hole(MC, KOA, shl, numpar, Scell, matter, hw, MC%electrons(j)%ti, Eetot_cur, noeVB_cur)
+            call New_born_electron_n_hole(MC, KOA, shl, numpar, Scell, matter, hw, MC%electrons(j)%ti, &
+                                          Eetot_cur, noeVB_cur, d_fe, min_df)
          else  elast_vs_inelast ! it is elastic scattering
             call which_atom(Ekin, matter%Atoms, EMFP, KOA) ! get which kind of atoms we scatter on, module "MC_cross_sections"
             call NRG_transfer_elastic_atomic(matter%Atoms(KOA)%Ma, matter%Atoms(KOA)%Z, Ekin, hw) ! module "MC_cross_sections"
@@ -226,7 +261,7 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
          endif elast_vs_inelast
 
          ! new parameters for the incident electrons:
-         call update_electron_data(MC, Scell, matter, numpar, j, hw, Eetot_cur, noeVB_cur)
+         call update_electron_data(MC, Scell, matter, numpar, j, hw, Eetot_cur, noeVB_cur, d_fe, min_df) ! below
       enddo ! time
       j = j + 1 ! next electron
    enddo ! number 
@@ -234,7 +269,7 @@ end subroutine MC_for_electron
 
 
 
-subroutine update_electron_data(MC, Scell, matter, numpar, j, hw, Eetot_cur, noeVB_cur)
+subroutine update_electron_data(MC, Scell, matter, numpar, j, hw, Eetot_cur, noeVB_cur, d_fe, min_df)
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
    type(solid), intent(in) :: matter	! materil parameters
@@ -243,6 +278,8 @@ subroutine update_electron_data(MC, Scell, matter, numpar, j, hw, Eetot_cur, noe
    integer, intent(in) :: j	! number of electron in the aray
    real(8), intent(in) :: hw	! energy transferred to the electron
    real(8), intent(inout) :: Eetot_cur, noeVB_cur ! [eV] CB electrons energy; and number
+   real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
+   real(8), intent(in) :: min_df ! minimal allowed change in the distribution function (from MC)
    !-----------------------------------------------
    logical :: emitted
    emitted = .false.
@@ -269,6 +306,8 @@ subroutine update_electron_data(MC, Scell, matter, numpar, j, hw, Eetot_cur, noe
    if (.not.emitted) then
       ! Find where this electron goes: high-energy part or low-energy part:
       if (MC%electrons(j)%E .LT. (Scell%E_bottom + numpar%E_cut)) then ! Electron joins VB:
+         ! Corresponding change in the distribution function:
+         call d_distribution_between_levels(d_fe, Scell%Ei, MC%electrons(j)%E, Scell%E_bottom, Scell, min_df)  ! below
          Eetot_cur = Eetot_cur + MC%electrons(j)%E
          noeVB_cur = noeVB_cur + 1
          call electron_disappears(MC, j) ! one electron less
@@ -303,7 +342,7 @@ subroutine electron_disappears(MC, j)
 end subroutine electron_disappears
 
 
-subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur)
+subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur, d_fe, min_df)
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    integer, INTENT(in) ::  KOA, SHL   ! number of atom and its shell that is being ionized
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
@@ -312,6 +351,9 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
    real(8), intent(in) :: hw	! energy transferred to the electron
    real(8), intent(in) :: t_cur ! [fs] time of electron creation
    real(8), intent(inout) :: Eetot_cur, noeVB_cur	! [eV] CB electrons energy; and number
+   real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
+   real(8), intent(in) :: min_df ! minimal allowed change in the distribution function
+   !--------------------------------------
    REAL(8) Ee ! electron energy after ionization [eV]
    real(8) RN, norm_sum, t_dec
    integer i, IONIZ ! which level is ionized
@@ -319,11 +361,18 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
    ! Find from which shell an electron is excited:
    if ((KOA .EQ. 1) .and. (SHL .EQ. matter%Atoms(KOA)%sh)) then ! VB:
       !call sample_VB_level(Scell%Ne_low, Scell%fe, i) ! OLD
-      call sample_VB_level(Scell%Ne_low, Scell%fe, i, wr=Scell%Ei, Ee=hw) ! NEW
+      call sample_VB_level(Scell%Ne_low, Scell%fe, i, wr=Scell%Ei, Ee=hw, min_df=min_df) ! NEW
       Ee = hw + Scell%Ei(i) ! [eV] electron energy
       IONIZ = i ! from this level
       noeVB_cur = noeVB_cur - 1 ! one electron has left VB going up
       Eetot_cur = Eetot_cur - Scell%Ei(i) ! and brought energy with it
+      d_fe(i) = d_fe(i) - 1.0d0  ! change in the electron distribution
+      if ((Scell%fe(i)+d_fe(i)*min_df) < 0.0d0) then
+         print*, 'Error New_born_electron_n_hole:', i, Scell%fe(i), d_fe(i)*min_df
+      endif
+!       if (i > 129) then ! testing
+!          print*, 'Potential New_born_electron_n_hole:', i, Scell%fe(i), d_fe(i)*min_df
+!       endif
    else ! deep shell:
       Ee = hw - matter%Atoms(KOA)%Ip(SHL) ! [eV] electron energy
       IONIZ = 0	! deep shell, which one is determined by "SHL"
@@ -355,8 +404,57 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
    else	! Electron joins VB:
       Eetot_cur = Eetot_cur + Ee
       noeVB_cur = noeVB_cur + 1
+!       print*, 'New_born_electron_n_hole:', Ee, (Scell%E_bottom + numpar%E_cut)
+      call d_distribution_between_levels(d_fe, Scell%Ei, Ee, Scell%E_bottom, Scell, min_df)  ! below
    endif
 end subroutine New_born_electron_n_hole
+
+
+subroutine d_distribution_between_levels(d_fe, Ei, Ee, E_bottom, Scell, min_df)
+   real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
+   real(8), dimension(:), intent(in) :: Ei ! energy levels [eV]
+   real(8), intent(in) :: Ee  ! [eV] incoming electron's energy
+   real(8), intent(in) :: E_bottom  ! [eV] bottom of conduction band, where Ee is counted from
+   type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
+   real(8), intent(in) :: min_df ! minimal allowed change in the distribution function
+   !--------------
+   integer :: j
+   real(8) :: eps, E_abs, dE
+
+   eps = 1.0d-8  ! precision
+   !E_abs = E_bottom + Ee  ! [eV] electron energy counted from bottom of CB
+
+   ! Find the level, closest to where electron is incomming into:
+   call Find_in_array_monoton(Ei, Ee, j) ! module "Little_subroutine"
+   j = j - 1   ! one level below
+
+   if (j >= size(Ei)) print*, 'd_distribution_between_levels trouble', j, Ee, Ei(size(Ei))
+
+   dE = Ei(j+1)-Ei(j)   ! energy levels difference
+
+   ! change in the electron distribution:
+   if (dE < eps) then   ! degenerate levels
+      d_fe(j) = d_fe(j) + 1.0d0
+   else  ! different levels
+      ! Fractions of electron distributed between two closest levels,
+      ! ensuring conservation of particles and energy:
+      d_fe(j)   = d_fe(j) + (Ei(j+1) - Ee)/dE
+      d_fe(j+1) = d_fe(j+1) + (Ee - Ei(j))/dE
+   endif
+
+   if ( ((Scell%fe(j)+d_fe(j)*min_df) > 2.0d0) .or. (Scell%fe(j+1)+d_fe(j+1)*min_df) > 2.0d0 ) then
+      print*, 'Possible trouble d_distribution_between_levels:', j, Scell%fe(j), d_fe(j)*min_df, Scell%Ei(j), Scell%fe(j+1), d_fe(j+1)*min_df, Scell%Ei(j+1)
+   endif
+
+!    if (j > 129) then
+!       print*, 'Potential d_distribution_between_levels:', j, d_fe(j), d_fe(j+1), Ee, Ei(j-1), Ei(j), Ei(j+1)
+!       pause
+!    endif
+
+   !print*, 'd_distribution_between_levels check:', d_fe(j)*Ei(j)+d_fe(j+1)*Ei(j+1), Ee
+end subroutine d_distribution_between_levels
+
+
 
 
 subroutine get_electron_MFP(MC, Imfps, Emfps, j, Ekin) ! calculate total electron mean free path and scattering time
@@ -381,17 +479,26 @@ end subroutine get_electron_MFP
 
 
 
-subroutine sample_VB_level(Ne_low, fe, i, wr, Ee)
+subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
    real(8), intent(in) :: Ne_low ! number of low-energy electrons
    real(8), dimension(:), INTENT(in) :: fe  ! electron distribution function [eV, number]
-   integer, intent(out) :: i
+   integer, intent(out) :: i  ! sampled VB level, from where electron is emitted
    REAL(8), DIMENSION(:), INTENT(in), optional ::  wr	! [eV] energy levels
    real(8), intent(in), optional :: Ee ! energy transfer [eV]
+   real(8), intent(in), optional :: min_df   ! minimal allowed change in the distribution function
    !===================================
-   real(8) RN, norm_sum, cur_sum, sampled_sum
+   real(8) RN, norm_sum, cur_sum, sampled_sum, min_df_used
    real(8), dimension(size(fe)) :: E_weight
    real(8), dimension(size(fe)) :: fe_final ! construct an array of final states populations
    integer j, N_levels, j_fin
+
+   ! Set the minimal allowed change in the distribution function:
+   if (present(min_df)) then
+      min_df_used = min_df ! only the change defined by MC iterations that does not make unphysical values in fe
+   else
+      min_df_used = 0.0d0  ! assume any change is allowed
+   endif
+
    call random_number(RN) ! sample random number
    norm_sum = 0.0d0
    PART_VB:if ((present(Ee)) .and. (present(wr))) then
@@ -404,23 +511,27 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee)
          else ! final state is within low-energy domain, find it:
             ! SIDENOTE: it is the closest level existing, but it is not exactly equal to (wr(j)+Ee)!
             call Find_in_array_monoton(wr, wr(j)+Ee, j_fin) ! module "Little_subroutine"
-            fe_final(j) = fe(j_fin) ! that's the transient population on the final level
+            j_fin = j_fin - 1 ! one level below
+            !fe_final(j) = fe(j_fin) ! that's the transient population on the final level
+            fe_final(j) = max(fe(j_fin),fe(j_fin+1)) ! that's the transient population on the final level
          endif
          
-         ! Weight is calculated according to the probability of ionization of a level,
-         ! assumming 1/E dependence of the ionization cross section:
-         if (abs(wr(j)) <= 1d-2) then
-            E_weight(j) = 1d2
-         else
-            E_weight(j) = abs(1.0d0/wr(j))
-         endif
-         !E_weight(j) = 1.0d0 ! TEST
+!          ! Weight is calculated according to the probability of ionization of a level,
+!          ! assumming 1/E dependence of the ionization cross section:
+!          if (abs(wr(j)) <= 1d-2) then
+!             E_weight(j) = 1d2
+!          else
+!             E_weight(j) = abs(1.0d0/wr(j))
+!          endif
+         E_weight(j) = 1.0d0 ! Exclude weights
          
          ! that is the relative probability of the scattering event, accounting for 
          ! number of electrons in the inital level an electron can scatter off, and
          ! the number of free places in the final state an electron can come to:
-         norm_sum = norm_sum + fe(j)*(2.0d0 - fe_final(j))*E_weight(j)
-!          write(*,'(i4,f,f,f,f,f)') j, Ee, wr(j), fe(j), fe_final(j), norm_sum
+         if ( (fe(j) > min_df_used) .and. (2.0d0-fe_final(j) > min_df_used) ) then ! only where allowed
+            norm_sum = norm_sum + fe(j)*(2.0d0 - fe_final(j))*E_weight(j)
+         endif
+         !write(*,'(i4,f,f,f,f,f)') j, Ee, wr(j), fe(j), fe_final(j), norm_sum
       enddo
 
       if (norm_sum <= 0.0d0) then ! no ionization of VB is possible for some reason...
@@ -429,15 +540,18 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee)
          cur_sum = 0.0d0
          i = 0 ! start from bottom of VB
          sampled_sum = RN*norm_sum ! this is the sampled value of the probability we need to reach
-         do while ((cur_sum - sampled_sum) <= 0.0d0) ! find which scattering even it is
+         do while ((cur_sum - sampled_sum) <= 0.0d0) ! find which scattering event it is
             i = i+1 ! next level
             if (i > N_levels) exit ! the final state is reached
-            cur_sum = cur_sum + fe(i)*(2.0d0 - fe_final(i))*E_weight(i) ! go through the probabilities until reach the given value
-!             write(*,'(i4,f,f,f,f,f)') i, wr(i), fe(i), fe_final(i), sampled_sum, cur_sum
+            if ( (fe(i) > min_df_used) .and. (2.0d0-fe_final(i) > min_df_used) ) then ! only where allowed
+               cur_sum = cur_sum + fe(i)*(2.0d0 - fe_final(i))*E_weight(i) ! go through the probabilities until reach the given value
+            endif
+!             if (fe(i) < min_df_used) then  ! testing
+!                write(*,'(a,i4,f,f,f,f,f)') 'sample_VB_level', i, wr(i), fe(i), fe_final(i), sampled_sum, cur_sum, RN
+!             endif
          enddo ! while
+
       endif
-      
-!       print*, 'ionization level:', i, wr(i)
       
    else PART_VB ! Full VB is possible to ionize:
       i = 0
@@ -495,13 +609,15 @@ end subroutine sample_VB_level_OLD
 !HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH
 ! MC for Holes:
 !subroutine hole_decay(stat, MC, matter, numpar, mfps, tim, fe, Ei, Eetot_cur, noeVB_cur)
-subroutine MC_for_hole(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur)
+subroutine MC_for_hole(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur, d_fe, min_df)
    real(8), intent(in) :: tim	! current timestep
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    type(solid), intent(in) :: matter	! materil parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
    real(8), intent(inout) :: Eetot_cur, noeVB_cur	! [eV] CB electrons energy; and number
+   real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
+   real(8), intent(in) :: min_df
    !=============================================
    real(8) t_cur, hw, cur
    integer i, j, KOA, shl, Nsh1, Nsh2, N_val1, KOA1, KOA2
@@ -512,14 +628,14 @@ subroutine MC_for_hole(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur)
       ! Trace until time of this hole becomes larger than the current timestep (a few decays may be possible):
       do while (MC%holes(j)%ti .LT. tim)
          ! Find to which shell the first hole pops after Auger:
-         call which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw)
+         call which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw, min_df)   ! below
          t_cur = MC%holes(j)%ti	! [fs] time of hole deacy, save for future
          ! First (old) hole:
-         call update_this_hole(KOA1, Nsh1, N_val1, Scell%Ei, matter, MC, j, Eetot_cur, noeVB_cur)
+         call update_this_hole(KOA1, Nsh1, N_val1, Scell%Ei, matter, MC, j, Eetot_cur, noeVB_cur, d_fe)   ! below
          ! Second hole -- for simplicity, assume it occurs via virtual photon:
          call which_shell(hw, matter%Atoms, matter, 0, KOA2, Nsh2) ! module 'MC_cross_sections'
          ! Second (new) electron and hole:
-         call New_born_electron_n_hole(MC, KOA2, Nsh2, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur)
+         call New_born_electron_n_hole(MC, KOA2, Nsh2, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur, d_fe, min_df)  ! below
          KOA = MC%holes(j)%KOA     ! this atom has a hole here now
          shl = MC%holes(j)%Sh      ! this hole is in this shell now
       enddo	! time
@@ -529,20 +645,23 @@ end subroutine MC_for_hole
 
 
 
-subroutine update_this_hole(KOA, Nsh, N_val, Ei, matter, MC, j, Eetot_cur, noeVB_cur)
+subroutine update_this_hole(KOA, Nsh, N_val, Ei, matter, MC, j, Eetot_cur, noeVB_cur, d_fe)
    integer, intent(in) :: KOA, Nsh, N_val ! shells that participate in Auger-decay (final states), states in VB if it's VB
    real(8), dimension(:), intent(in) :: Ei	! [eV] energy level, eigenvalues of H_TB
    type(solid), intent(in) :: matter	! materil parameters
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    integer, intent(in) :: j	! number of hole
    real(8), intent(inout) :: Eetot_cur, noeVB_cur	! [eV] CB electrons energy; and number
+   real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
+   !-----------------------
    real(8) t_dec
 
    if ((KOA == 1) .and. (Nsh == matter%Atoms(1)%sh)) then ! VB:
-      Eetot_cur = Eetot_cur - Ei(N_val)	! the hole is in VB now, at this level
-      noeVB_cur = noeVB_cur - 1
+      Eetot_cur = Eetot_cur - Ei(N_val)   ! the hole is in VB now, at this level
+      noeVB_cur = noeVB_cur - 1           ! meaning, an electron from here disappeared
       call hole_disappears(MC, j) ! VB holes are considered in other domain, not MC
-   else
+      d_fe(N_val) = d_fe(N_val) - 1.0d0   ! corresponding change in the electron distribution
+   else  ! core shell
       MC%holes(j)%E = matter%Atoms(KOA)%Ip(Nsh)	! the hole is in this shell now
       call Hole_decay_time_sampled(matter%Atoms, KOA, Nsh, t_dec) ! below
       MC%holes(j)%ti = MC%holes(j)%ti + t_dec ! [fs] next decay time
@@ -570,7 +689,7 @@ subroutine hole_disappears(MC, j)
 end subroutine hole_disappears
 
 
-subroutine which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw)
+subroutine which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw, min_df)
    type(solid), intent(in) :: matter	! materil parameters
    type(MC_data), intent(in) :: MC	! all MC arrays for photons, electrons and holes
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
@@ -578,6 +697,8 @@ subroutine which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw
    integer, intent(out) :: KOA1, Nsh1 ! first atom and shell participating in Auger (final state of the hole)
    integer, intent(out) :: N_val1 ! states in VB if it's VB
    real(8), intent(out) :: hw	! energy given to the ionized electron in this Auger [eV]
+   real(8), intent(in) :: min_df
+   !----------------
    real(8) RN, Ecur
    integer i, Ne
    N_val1 = 0
@@ -585,7 +706,8 @@ subroutine which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw
    if (((KOA == 1) .and. (shl == matter%Atoms(1)%sh-1)) .or. (shl == matter%Atoms(KOA)%sh)) then ! Next is VB:
       KOA1 = 1
       Nsh1 = matter%Atoms(1)%sh
-      call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1)
+      call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df)  ! above
+
       hw = matter%Atoms(KOA)%Ip(shl) + Scell%Ei(N_val1)
    else ! it can be atomic shell, not only VB:
       KOA1 = KOA     ! assume the same atom for simplicity
@@ -596,13 +718,13 @@ subroutine which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw
          Nsh1 = Nsh1 + 1 ! try next shell
          if ((KOA1 == 1) .and. (Nsh1 >= size(matter%Atoms(KOA1)%Ip))) then ! it's VB:
             Nsh1 = matter%Atoms(1)%sh
-            call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1)
+            call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df)  ! above
             hw = matter%Atoms(KOA)%Ip(shl) + Scell%Ei(N_val1)
             exit SHL_CHECK
          elseif (Nsh1 > size(matter%Atoms(KOA1)%Ip)) then ! other atoms don't have VB in this description, so make it:
             KOA1 = 1
             Nsh1 = matter%Atoms(1)%sh
-            call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1)
+            call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df)  ! above
             hw = matter%Atoms(KOA)%Ip(shl) + Scell%Ei(N_val1)
             exit SHL_CHECK
          else ! it is still within the array:
@@ -629,7 +751,7 @@ end subroutine Hole_decay_time_sampled
 !PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP
 ! MC for photons:
 ! Photon absorption and corresponding creation of electron and hole:
-subroutine MC_for_photon(tim, MC, Nph, numpar, matter, laser, Scell, Eetot_cur, noeVB_cur)
+subroutine MC_for_photon(tim, MC, Nph, numpar, matter, laser, Scell, Eetot_cur, noeVB_cur, d_fe, min_df)
    real(8), intent(in) :: tim	! [fs] current timestep
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    integer, intent(in) :: Nph	! number of absorbed photons
@@ -638,6 +760,8 @@ subroutine MC_for_photon(tim, MC, Nph, numpar, matter, laser, Scell, Eetot_cur, 
    type(Pulse), dimension(:), intent(in) :: laser	! Laser pulse parameters
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
    real(8), intent(inout) :: Eetot_cur, noeVB_cur	! [eV] CB electrons energy; and number
+   real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
+   real(8), intent(in) :: min_df ! minimal allowed change in the distribution function
    !=============================================
    real(8) RN, t_cur
    integer KOA, SHL, j, PN
@@ -653,7 +777,8 @@ subroutine MC_for_photon(tim, MC, Nph, numpar, matter, laser, Scell, Eetot_cur, 
          ! Find by which shell this photon is absorbed:
          call which_shell(MC%photons(j)%E, matter%Atoms, matter, 0, KOA, SHL) ! module 'MC_cross_sections'
          ! Photon is absorbed, electron-hole pair is created:
-         call New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, MC%photons(j)%E, t_cur, Eetot_cur, noeVB_cur) ! above
+         call New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, MC%photons(j)%E, t_cur, &
+                                       Eetot_cur, noeVB_cur, d_fe, min_df) ! above
        enddo ! j
    endif
 end subroutine MC_for_photon
