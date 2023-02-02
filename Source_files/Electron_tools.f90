@@ -260,7 +260,7 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
    logical, intent(in), optional :: skip_thermalization
    !----------------------
    real(8) :: exp_dttau, extra_dt
-   integer :: i_fe, i
+   integer :: i_fe, i, i_cycle, N_cycle
    logical :: skip_step, extra_cycle
 
    if (present(skip_thermalization)) then
@@ -300,7 +300,10 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
       enddo
       if (extra_cycle) then   ! do extra thermalization
          extra_dt = numpar%dt*0.1d0 ! use this small step to minimize the effect of extra smoothing
+         N_cycle = 1000 ! limit for the cycles
+         i_cycle = 0 ! to start
          do while (extra_cycle)
+            i_cycle = i_cycle + 1
             extra_cycle = .false.   ! assume the problem is solved
             if (numpar%tau_fe < extra_dt/30.0d0) then ! it's basically instantaneous
                exp_dttau = 0.0d0
@@ -310,8 +313,8 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
             do i = 1, i_fe ! for all grid points (MO energy levels)
                Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
                if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
-                  print*, 'Step:', i, Scell%fe(i)
-                  extra_cycle = .true.   ! artefacts still present, do another cycle of extra thermalization
+                  !print*, 'Step:', i, Scell%fe(i)
+                  if (i_cycle < N_cycle) extra_cycle = .true.   ! artefacts still present, do another cycle of extra thermalization
                endif
             enddo ! i = 1, i_fe
          enddo ! while (extra_cycle)
