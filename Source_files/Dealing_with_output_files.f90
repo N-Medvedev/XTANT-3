@@ -2266,21 +2266,21 @@ subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
          else
             write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
                   '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
-                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '//trim(adjustl(ch_temp4))
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
          endif
       else  ! Linux
          write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
          if (do_fe_eq) then ! plot also equivalent Fermi distribution
             write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
-                  '\" index (i-1) u 1:3 w l lw 2 lt rgb \"grey\" title \"Equivalent Fermi\" '
+                  '\" index (i-1) u 1:3 w l lw 2 lt rgb \"grey\" title \"Equivalent Fermi\" ,\'
             write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
-                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '//trim(adjustl(ch_temp4))
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
          else
             write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
-                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '//trim(adjustl(ch_temp4))
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
          endif
       endif
       write(FN, '(a)') '}'
