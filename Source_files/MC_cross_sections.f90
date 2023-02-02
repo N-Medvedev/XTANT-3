@@ -357,14 +357,14 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
    Nshl = size(matter%Atoms(1)%Ip)
    select case (matter%Atoms(1)%TOCS(Nshl)) ! Valence band and CDF only
    case (1) ! CDF
-      !$omp PARALLEL private(i, Te_temp)
-      !$omp do schedule(dynamic)
+      !!$omp PARALLEL private(i, Te_temp)
+      !!$omp do schedule(dynamic)
       do i = 1, N_Te_points   ! for all electronic temperature points
          Te_temp = dble((i-1)*1000)*g_kb_EV ! electronic temperature [eV]
          call IMFP_vs_Te_files(matter, laser, numpar, Te_temp, i) ! below
       enddo ! i = 1, N_Te_points
-      !$omp end do
-      !$omp end parallel
+      !!$omp end do
+      !!$omp end parallel
    endselect
 
    !iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii

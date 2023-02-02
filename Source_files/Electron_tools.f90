@@ -693,7 +693,7 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
                      enddo
                   endif
                elseif (present(CHij)) then
-                   temp = SUM( dconjg(CHij(:,j)) * CHij(:,j) )
+                  !temp = SUM( dconjg(CHij(:,j)) * CHij(:,j) )
                   temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at

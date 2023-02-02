@@ -3103,7 +3103,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
    write(print_to,'(a, f7.1, a)') ' Electron energy cut-off, separating high-energy- from low-energy-electrons: ', numpar%E_cut, ' [eV]'
    select case (numpar%el_ion_scheme)
    case (3:4)
-      write(print_to,'(a)') 'But it maybe dynamically adjusted to the top of CB (nonequilibrium simulation)'
+      write(print_to,'(a)') ' But it maybe dynamically adjusted to the top of CB (nonequilibrium simulation)'
    endselect
 
    if (numpar%E_work >= 1.0d25) then
