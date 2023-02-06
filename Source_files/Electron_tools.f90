@@ -1254,6 +1254,54 @@ end subroutine Electron_Fixed_Te
 
 
 
+function get_N_partial(fe, i_start, i_end) result(Ne)
+   real(8) Ne  ! number of electrons in the given inteval according to distribution function
+   real(8), dimension(:), intent(in) :: fe   ! given distribution function
+   integer, intent(in) :: i_start, i_end  ! starting and ending levels to include
+   !----------------------
+   Ne = SUM(fe(i_start:i_end))   ! total number of electrons in the givel interval
+end function get_N_partial
+
+function get_E_partial(wr, fe, i_start, i_end) result(Ee)
+   real(8) Ee  ! energy of electrons in the given inteval according to distribution function
+   real(8), dimension(:), intent(in) :: wr, fe   ! given energy levels and distribution function
+   integer, intent(in) :: i_start, i_end  ! starting and ending levels to include
+   !----------------------
+   Ee = SUM(wr(i_start:i_end) * fe(i_start:i_end))   ! total energy of electrons in the givel interval
+end function get_E_partial
+
+
+function get_N_partial_Fermi(wr, mu, Te, i_start, i_end) result(Ne)
+   real(8) Ne  ! number of electrons in the given inteval according to Fermi distribution
+   real(8), dimension(:), intent(in) :: wr   ! given energy levels
+   real(8), intent(in) :: Te ! electron temperature [eV]
+   real(8), intent(in) ::  mu ! chem.potential [eV]
+   integer, intent(in) :: i_start, i_end  ! starting and ending levels to include
+   !----------------------
+   if (Te > 1.0d-6) then
+      Ne = 2.0d0 * SUM(1.0d0/(1.0d0 + dexp((wr(:) - mu)/Te))) ! Fermi-function
+   else
+      Ne = 2.0d0 * dble(COUNT(wr(i_start:i_end) <= mu)) ! Fermi-function at T=0
+   endif
+end function get_N_partial_Fermi
+
+function get_E_partial_Fermi(wr, mu, Te, i_start, i_end) result(Ee)
+   real(8) Ee  ! energy of electrons in the given inteval according to Fermi distribution
+   real(8), dimension(:), intent(in) :: wr   ! given energy levels
+   real(8), intent(in) :: Te ! electron temperature [eV]
+   real(8), intent(in) ::  mu ! chem.potential [eV]
+   integer, intent(in) :: i_start, i_end  ! starting and ending levels to include
+   !----------------------
+   if (Te > 1.0d-6) then
+      Ee = 2.0d0 * SUM(wr(i_start:i_end)/(1.0d0 + dexp((wr(i_start:i_end) - mu)/Te))) ! Fermi-function
+   else
+      Ee = 2.0d0 * SUM(wr(i_start:i_end)) ! Fermi-function at T=0
+   endif
+end function get_E_partial_Fermi
+
+
+
+
 function get_N_tot(wrD, mu, Te, norm_fe)
    REAL(8), DIMENSION(:), INTENT(in) ::  wrD  ! eigenvalues of TB-Hamiltonian for electrons
    REAL(8), INTENT(in) :: Te ! electron temperature [eV]

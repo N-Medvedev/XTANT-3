@@ -2768,10 +2768,10 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
       SC:do NSC = 1, size(Scell) ! for all supercells
          dE_nonadiabat = 0.0d0
+         !print*, 'NA:', numpar%Nonadiabat, t, numpar%t_NA
          if ((numpar%Nonadiabat) .AND. (t .GT. numpar%t_NA)) then ! electron-coupling included
             ! Ensure Fermi distribution:
             call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
-            
 !             print*, 'Electron_ion_coupling 1'
             
             !--------------------------------

@@ -122,17 +122,15 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
          Scell(NSC)%Nph = N_ph/NMC_real
          ! Update the distribution function, if required:
          Scell(NSC)%fe(:) = Scell(NSC)%fe(:) + d_fe(:)/NMC_real
+
          ! Consistency checks:
-!          This problem is patched by extra thermalization step (subroutine Electron_thermalization, modlue "Electron_tools")
-!          do i = 1, size(Scell(NSC)%fe) ! check that there is no problem in distribution function change
-!             if ((Scell(NSC)%fe(i) > 2.0d0) .or. (Scell(NSC)%fe(i) < 0.0d0)) then
-!                print*, 'Error in MC f:', i, Scell(NSC)%fe(i), Scell(NSC)%Ei(i)
-!                if (i>1 )print*, Scell(NSC)%fe(i-1), Scell(NSC)%Ei(i-1)
-!             endif
-!          enddo
+         ! Make sure there are no unphysical values (fe<0 or fe>2):
+         call patch_distribution(Scell(NSC)%fe, Scell(NSC)%Ei) ! below
+         ! Also check that the total number of particles is conserved:
          if ( abs(Scell(NSC)%Ne_low - SUM(Scell(NSC)%fe(:))) > 1.0d-6*Scell(NSC)%Ne_low ) then
             print*, 'Error in MC_E1:', Scell(NSC)%Ne_low, SUM(Scell(NSC)%fe(:))
          endif
+         ! And the total energy is conserved:
          if ( abs(Scell(NSC)%nrg%El_low - SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:))) > 1.0d-6*abs(Scell(NSC)%nrg%El_low) ) then
             print*, 'Error in MC_E2:', Scell(NSC)%nrg%El_low, SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:))
          endif
@@ -360,13 +358,15 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
 
    ! Find from which shell an electron is excited:
    if ((KOA .EQ. 1) .and. (SHL .EQ. matter%Atoms(KOA)%sh)) then ! VB:
-      !call sample_VB_level(Scell%Ne_low, Scell%fe, i) ! OLD
-      call sample_VB_level(Scell%Ne_low, Scell%fe, i, wr=Scell%Ei, Ee=hw, min_df=min_df) ! NEW
+      !call sample_VB_level(Scell%Ne_low, Scell%fe, i, wr=Scell%Ei, Ee=hw, min_df=min_df) ! NEW
+      ! Include the influence of dynamically changing distribution:
+      call sample_VB_level(Scell%Ne_low, (Scell%fe+d_fe*min_df), i, wr=Scell%Ei, Ee=hw, min_df=min_df) ! NEW
       Ee = hw + Scell%Ei(i) ! [eV] electron energy
       IONIZ = i ! from this level
       noeVB_cur = noeVB_cur - 1 ! one electron has left VB going up
       Eetot_cur = Eetot_cur - Scell%Ei(i) ! and brought energy with it
       d_fe(i) = d_fe(i) - 1.0d0  ! change in the electron distribution
+      !if ((Scell%fe(i)+d_fe(i)*min_df) < 0.0d0) then
       if ((Scell%fe(i)+d_fe(i)*min_df) < 0.0d0) then
          print*, 'Error New_born_electron_n_hole:', i, Scell%fe(i), d_fe(i)*min_df
       endif
@@ -410,49 +410,117 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
 end subroutine New_born_electron_n_hole
 
 
-subroutine d_distribution_between_levels(d_fe, Ei, Ee, E_bottom, Scell, min_df)
+subroutine d_distribution_between_levels(d_fe, Ei, Ee, E_bottom, Scell, min_df, delta_f)
    real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
    real(8), dimension(:), intent(in) :: Ei ! energy levels [eV]
    real(8), intent(in) :: Ee  ! [eV] incoming electron's energy
    real(8), intent(in) :: E_bottom  ! [eV] bottom of conduction band, where Ee is counted from
    type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
    real(8), intent(in) :: min_df ! minimal allowed change in the distribution function
+   real(8), intent(in), optional :: delta_f  ! given change of the distribution (number of particle)
    !--------------
    integer :: j
-   real(8) :: eps, E_abs, dE
+   real(8) :: eps, E_abs, dE, df
+
+   if (present(delta_f)) then ! given change in the number of electrons
+      df = delta_f
+   else  ! assume one electron
+      df = 1.0d0
+   endif
 
    eps = 1.0d-8  ! precision
-   !E_abs = E_bottom + Ee  ! [eV] electron energy counted from bottom of CB
 
    ! Find the level, closest to where electron is incomming into:
    call Find_in_array_monoton(Ei, Ee, j) ! module "Little_subroutine"
    j = j - 1   ! one level below
 
-   if (j >= size(Ei)) print*, 'd_distribution_between_levels trouble', j, Ee, Ei(size(Ei))
+   if (j >= size(Ei) .or. (j <= 1)) print*, 'd_distribution_between_levels trouble', j, Ee, Ei(size(Ei))
 
    dE = Ei(j+1)-Ei(j)   ! energy levels difference
 
    ! change in the electron distribution:
    if (dE < eps) then   ! degenerate levels
-      d_fe(j) = d_fe(j) + 1.0d0
+      d_fe(j) = d_fe(j) + df  !1.0d0
    else  ! different levels
       ! Fractions of electron distributed between two closest levels,
       ! ensuring conservation of particles and energy:
-      d_fe(j)   = d_fe(j) + (Ei(j+1) - Ee)/dE
-      d_fe(j+1) = d_fe(j+1) + (Ee - Ei(j))/dE
+      d_fe(j)   = d_fe(j) + (Ei(j+1) - Ee)/dE * df
+      d_fe(j+1) = d_fe(j+1) + (Ee - Ei(j))/dE * df
    endif
 
    if ( ((Scell%fe(j)+d_fe(j)*min_df) > 2.0d0) .or. (Scell%fe(j+1)+d_fe(j+1)*min_df) > 2.0d0 ) then
       print*, 'Possible trouble d_distribution_between_levels:', j, Scell%fe(j), d_fe(j)*min_df, Scell%Ei(j), Scell%fe(j+1), d_fe(j+1)*min_df, Scell%Ei(j+1)
    endif
 
-!    if (j > 129) then
-!       print*, 'Potential d_distribution_between_levels:', j, d_fe(j), d_fe(j+1), Ee, Ei(j-1), Ei(j), Ei(j+1)
-!       pause
-!    endif
-
-   !print*, 'd_distribution_between_levels check:', d_fe(j)*Ei(j)+d_fe(j+1)*Ei(j+1), Ee
 end subroutine d_distribution_between_levels
+
+
+
+subroutine patch_distribution(fe, Ei)
+   real(8), dimension(:),intent(in) :: Ei ! energy levels
+   real(8), dimension(:),intent(inout) :: fe ! distribution
+   !-----------------------------
+   integer :: i, N_siz, i_below, i_above, counter, j
+   real(8) :: eps, df, dE, Ee
+   logical :: trouble_present, trouble_in_this_point
+
+   eps = 1.0d-10     ! how close energy levels are allowed to be
+   N_siz = size(fe)  ! number of energy levels
+   trouble_present = .true.   ! just to start
+   counter = 0 ! to start with
+
+   TP:do while (trouble_present) ! do until trouble is solved
+      trouble_present = .false.   ! assume no problem remains
+      counter = counter + 1   ! count iterations
+      ! Now, check if there is a problem:
+      do i = 1, N_siz ! check that there is no problem in distribution function change
+         trouble_in_this_point = .false.   ! assume no problem at this point "i"
+         if (fe(i) > 2.0d0+eps) then
+            trouble_present = .true.   ! there is an unphysical value, correct it and check again
+            trouble_in_this_point = .true.   ! there is an unphysical value, correct it and check again
+            df = fe(i) - 2.0d0   ! excessive part to be removed
+            fe(i) = 2.0d0        ! distribution adjusted to accceptable
+         elseif (fe(i) > 2.0d0) then   ! it's within [2; 2+eps]
+            fe(i) = 2.0d0        ! distribution adjusted to accceptable
+         elseif (fe(i) < 0.0d0-eps) then
+            trouble_present = .true.   ! there is an unphysical value, correct it and check again
+            trouble_in_this_point = .true.   ! there is an unphysical value, correct it and check again
+            df = fe(i)      ! missing part to be added
+            fe(i) = 0.0d0   ! distribution adjusted to accceptable
+         elseif (fe(i) < 0.0d0) then  ! it's within [0-eps;0]
+            fe(i) = 0.0d0        ! distribution adjusted to accceptable
+         endif
+
+         if (trouble_in_this_point) then ! try to solve it:
+            !print*, 'Error in patch_distribution:', counter, 'i=', i, fe(i)+df, Ei(i)
+            !if (i>1)print*, fe(i-1), Ei(i-1)
+            !if (i<size(fe)) print*, fe(i+1), Ei(i+1)
+
+            if (i >= N_siz .or. (i <= 1)) print*, 'Problem in patch_distribution #1:', i, fe(i), Ei(i), N_siz
+            if (counter > 1000) then
+               print*, 'Too many iterations patch_distribution:', counter, i, fe(i), Ei(i), N_siz
+               exit TP
+            endif
+
+            Ee = Ei(i)  ! this energy level contains problematic distribution point
+
+            ! Try the nearest levels:
+            j = 1
+            i_below = i - j
+            i_above = i + j
+            dE = Ei(i_above)-Ei(i_below)   ! energy levels difference
+            if (i + j >= N_siz .or. (i - j <= 1)) print*, 'Problem in patch_distribution #2:', i, j, fe(i), Ei(i)
+
+            ! Fractions of electron distributed between two closest levels,
+            ! ensuring conservation of particles and energy:
+            fe(i_below) = fe(i_below) + (Ei(i_above) - Ee)/dE * df
+            fe(i_above) = fe(i_above) + (Ee - Ei(i_below))/dE * df
+
+         endif
+      enddo ! i = 1, N_siz
+   enddo TP ! trouble_present
+
+end subroutine patch_distribution
 
 
 
@@ -487,10 +555,12 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
    real(8), intent(in), optional :: Ee ! energy transfer [eV]
    real(8), intent(in), optional :: min_df   ! minimal allowed change in the distribution function
    !===================================
-   real(8) RN, norm_sum, cur_sum, sampled_sum, min_df_used
+   real(8) :: RN, norm_sum, cur_sum, sampled_sum, min_df_used, eps
    real(8), dimension(size(fe)) :: E_weight
    real(8), dimension(size(fe)) :: fe_final ! construct an array of final states populations
    integer j, N_levels, j_fin
+
+   eps = 1.0d0 ! [eV] acceptence interval, an electron can come into in between the levels
 
    ! Set the minimal allowed change in the distribution function:
    if (present(min_df)) then
@@ -528,7 +598,7 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
          ! that is the relative probability of the scattering event, accounting for 
          ! number of electrons in the inital level an electron can scatter off, and
          ! the number of free places in the final state an electron can come to:
-         if ( (fe(j) > min_df_used) .and. (2.0d0-fe_final(j) > min_df_used) ) then ! only where allowed
+         if ( (fe(j) > min_df_used) .and. (2.0d0-fe_final(j) > min_df_used) .and. ((wr(j+1)-wr(j)) < eps)) then ! only if allowed
             norm_sum = norm_sum + fe(j)*(2.0d0 - fe_final(j))*E_weight(j)
          endif
          !write(*,'(i4,f,f,f,f,f)') j, Ee, wr(j), fe(j), fe_final(j), norm_sum
@@ -540,10 +610,10 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
          cur_sum = 0.0d0
          i = 0 ! start from bottom of VB
          sampled_sum = RN*norm_sum ! this is the sampled value of the probability we need to reach
-         do while ((cur_sum - sampled_sum) <= 0.0d0) ! find which scattering event it is
+         do while ((cur_sum - sampled_sum) < 0.0d0) ! find which scattering event it is
             i = i+1 ! next level
             if (i > N_levels) exit ! the final state is reached
-            if ( (fe(i) > min_df_used) .and. (2.0d0-fe_final(i) > min_df_used) ) then ! only where allowed
+            if ( (fe(i) > min_df_used) .and. (2.0d0-fe_final(i) > min_df_used) .and. ((wr(i+1)-wr(i)) < eps)) then ! only if allowed
                cur_sum = cur_sum + fe(i)*(2.0d0 - fe_final(i))*E_weight(i) ! go through the probabilities until reach the given value
             endif
 !             if (fe(i) < min_df_used) then  ! testing

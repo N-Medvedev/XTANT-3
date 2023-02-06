@@ -202,20 +202,14 @@ subroutine set_starting_time(laser, tim, t_start, t_NA, t_Te_Ee)
    type(Pulse), dimension(:), intent(in) :: laser ! Laser pulse parameters
    real(8), intent(in) :: t_start   ! user-provided value for the starting time [fs]
    real(8), intent(inout) :: tim    ! defined starting time step [fs]
-   real(8), intent(inout), optional :: t_Te_Ee ! time when we switch from Te=const, to Ee=const [fs] / negative value, when not using it
+   real(8), intent(inout), optional :: t_Te_Ee ! time when we switch from Te=const, to Ee=const [fs] (<0 if unused)
    real(8), intent(inout), optional :: t_NA ! time when we switch on nonadiabatic terms [fs]
-   if (maxval(laser(:)%F) .GT. 0.0d0) then
-      tim = t_start !-50.0d0 + dble(CEILING(min(minval(laser(:)%t0-laser(:)%t*2.35d0), 0.0d0)))  ! [fs]
-      if (present(t_NA)) t_NA = tim + t_NA + 1d-3           ! [fs]
-      if (present(t_Te_Ee)) t_Te_Ee = tim + t_Te_Ee         ! [fs]
-   else
-      tim = t_start !0.0d0 ! [fs]
-      if (present(t_NA)) t_NA = t_NA + 1d-3 ! [fs]
-      if (present(t_Te_Ee)) t_Te_Ee = tim + t_Te_Ee ! [fs]
-   endif
+   tim = t_start !-50.0d0 + dble(CEILING(min(minval(laser(:)%t0-laser(:)%t*2.35d0), 0.0d0)))  ! [fs]
+   if (present(t_NA)) t_NA = tim + t_NA + 1d-6           ! [fs]
+   if (present(t_Te_Ee)) t_Te_Ee = tim + t_Te_Ee         ! [fs]
    tim = min(tim,t_start)    ! check what user set
 end subroutine set_starting_time
- 
+
  
 pure function Fermi_function(rcut, d, r) result(F)
    real(8) F
