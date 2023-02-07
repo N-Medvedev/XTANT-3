@@ -259,7 +259,7 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
    logical, intent(in), optional :: skip_thermalization
    !----------------------
-   real(8) :: exp_dttau, extra_dt
+   real(8) :: exp_dttau, extra_dt, extra_tau
    integer :: i_fe, i, i_cycle, N_cycle
    logical :: skip_step, extra_cycle
 
@@ -301,6 +301,7 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
       enddo
       if (extra_cycle) then   ! do extra thermalization
          extra_dt = numpar%dt*0.1d0 ! use this small step to minimize the effect of extra smoothing
+         extra_tau = min(numpar%tau_fe, 10.0d0) ! artificial thermalization steps
          N_cycle = 10000 ! limit for the cycles
          i_cycle = 0 ! to start
          do while (extra_cycle)
@@ -309,7 +310,7 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
             if (numpar%tau_fe < extra_dt/30.0d0) then ! it's basically instantaneous
                exp_dttau = 0.0d0
             else  ! finite time relaxation
-               exp_dttau = dexp(-extra_dt / numpar%tau_fe)
+               exp_dttau = dexp(-extra_dt / extra_tau)
             endif
             do i = 1, i_fe ! for all grid points (MO energy levels)
                Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau

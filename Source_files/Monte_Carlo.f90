@@ -481,14 +481,14 @@ subroutine patch_distribution(fe, Ei, Scell, numpar)
             trouble_present = .true.   ! there is an unphysical value, correct it and check again
             trouble_in_this_point = .true.   ! there is an unphysical value, correct it and check again
             df = fe(i) - 2.0d0   ! excessive part to be removed
-            fe(i) = 2.0d0        ! distribution adjusted to accceptable
+            !fe(i) = 2.0d0        ! distribution adjusted to accceptable
          elseif (fe(i) > 2.0d0) then   ! it's within [2; 2+eps]
             fe(i) = 2.0d0        ! distribution adjusted to accceptable
          elseif (fe(i) < 0.0d0-eps) then
             trouble_present = .true.   ! there is an unphysical value, correct it and check again
             trouble_in_this_point = .true.   ! there is an unphysical value, correct it and check again
             df = fe(i)      ! missing part to be added
-            fe(i) = 0.0d0   ! distribution adjusted to accceptable
+            !fe(i) = 0.0d0   ! distribution adjusted to accceptable
          elseif (fe(i) < 0.0d0) then  ! it's within [0-eps;0]
             fe(i) = 0.0d0        ! distribution adjusted to accceptable
          endif
@@ -529,6 +529,7 @@ subroutine patch_distribution(fe, Ei, Scell, numpar)
                dE = Ei(i_above)-Ei(i_below)   ! energy levels difference
                fe(i_below) = fe(i_below) + (Ei(i_above) - Ee)/dE * df
                fe(i_above) = fe(i_above) + (Ee - Ei(i_below))/dE * df
+               fe(i) = fe(i) - df   ! distribution changed
             endif
 
             !print*, 'i=', i, i_above, i_below, df, fe(i_above), fe(i_above) - (Ee - Ei(i_below))/dE * df , fe(i_below), fe(i_below) - (Ei(i_above) - Ee)/dE * df
