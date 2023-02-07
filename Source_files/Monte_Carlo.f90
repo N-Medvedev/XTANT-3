@@ -497,24 +497,35 @@ subroutine patch_distribution(fe, Ei)
             !if (i<size(fe)) print*, fe(i+1), Ei(i+1)
 
             if (i >= N_siz .or. (i <= 1)) print*, 'Problem in patch_distribution #1:', i, fe(i), Ei(i), N_siz
-            if (counter > 1000) then
+            if (counter > 2000) then
                print*, 'Too many iterations patch_distribution:', counter, i, fe(i), Ei(i), N_siz
+               ! Just try to cut out the problematic points:
+               do j = 1, N_siz
+                  if (fe(j) > 2.0d0) then
+                     fe(j) = 2.0d0
+                  elseif (fe(j) < 0.0d0) then
+                     fe(j) = 0.0d0
+                  endif
+               enddo
+               ! And we are done here:
                exit TP
             endif
 
             Ee = Ei(i)  ! this energy level contains problematic distribution point
 
-            ! Try the nearest levels:
-            j = 1
-            i_below = i - j
-            i_above = i + j
-            dE = Ei(i_above)-Ei(i_below)   ! energy levels difference
-            if (i + j >= N_siz .or. (i - j <= 1)) print*, 'Problem in patch_distribution #2:', i, j, fe(i), Ei(i)
+            ! Find the levels to redistribute electrons to:
+            call choose_level(Ei, fe, df, i, i_below, i_above)   ! below
 
-            ! Fractions of electron distributed between two closest levels,
+            if (i_above > N_siz .or. (i_above < 1)) print*, 'Problem in patch_distribution #2a:', i, i_above, fe(i), Ei(i)
+            if (i_below > N_siz .or. (i_below < 1)) print*, 'Problem in patch_distribution #2b:', i, i_below, fe(i), Ei(i)
+
+            ! Fractions of electron distributed between two levels,
             ! ensuring conservation of particles and energy:
+            dE = Ei(i_above)-Ei(i_below)   ! energy levels difference
             fe(i_below) = fe(i_below) + (Ei(i_above) - Ee)/dE * df
             fe(i_above) = fe(i_above) + (Ee - Ei(i_below))/dE * df
+
+            !print*, 'i=', i, i_above, i_below, df, fe(i_above), fe(i_above) - (Ee - Ei(i_below))/dE * df , fe(i_below), fe(i_below) - (Ei(i_above) - Ee)/dE * df
 
          endif
       enddo ! i = 1, N_siz
@@ -522,6 +533,96 @@ subroutine patch_distribution(fe, Ei)
 
 end subroutine patch_distribution
 
+
+
+subroutine choose_level(Ei, fe, df, i, i_below, i_above)
+   real(8), dimension(:),intent(in) :: Ei, fe ! distribution
+   real(8), intent(in) :: df  ! change of fe
+   integer, intent(in) :: i   ! the level given
+   integer, intent(out) :: i_below, i_above  ! two levels chosen
+   !--------------------
+   integer :: j, k, N_siz
+   real(8) :: dE, eps, fe1, fe2
+   logical :: found_it
+
+   eps = 1.0d-10
+   N_siz = size(fe)
+   found_it = .false.   ! to start with
+   ! Check below the level i:
+   FV:do j = i-1, 1, -1
+      do k = j, N_siz
+         if (k /= i) then
+            dE = Ei(k) - Ei(j)   ! energy levels difference
+            if (dE > eps) then
+               fe1 = fe(j) + (Ei(k) - Ei(i))/dE * df
+               fe2 = fe(k) + (Ei(i) - Ei(j))/dE * df
+               ! Check if we found an acceptable pair of levels to redistribute electrons into:
+               if ( ((fe1 >= 0.0d0) .and. (fe1 <= 2.0d0)) .and. ((fe2 >= 0.0d0) .and. (fe2 <= 2.0d0)) ) then
+                  found_it = .true.
+                  exit FV
+               endif
+            endif
+         endif ! k/=i
+      enddo ! k
+   enddo FV ! j
+   ! Check above the level i:
+   if (.not. found_it) then
+      FV2:do j = i+1, N_siz-1
+         do k = j, N_siz
+            if (k /= i) then
+               dE = Ei(k) - Ei(j)   ! energy levels difference
+               if (dE > eps) then
+                  fe1 = fe(j) + (Ei(k) - Ei(i))/dE * df
+                  fe2 = fe(k) + (Ei(i) - Ei(j))/dE * df
+                  ! Check if we found an acceptable pair of levels to redistribute electrons into:
+                  if ( ((fe1 >= 0.0d0) .and. (fe1 <= 2.0d0)) .and. ((fe2 >= 0.0d0) .and. (fe2 <= 2.0d0)) ) then
+                     found_it = .true.
+                     exit FV2
+                  endif
+               endif
+            endif ! k/=i
+         enddo ! k
+      enddo FV2 ! j
+   endif
+   ! Get the output values:
+   i_below = j
+   i_above = k
+end subroutine choose_level
+
+
+
+subroutine choose_level_OLD(Ei, fe, df, i, i_below, i_above)
+   real(8), dimension(:),intent(in) :: Ei, fe ! distribution
+   real(8), intent(in) :: df  ! change of fe
+   integer, intent(in) :: i   ! the level given
+   integer, intent(out) :: i_below, i_above  ! two levels chosen
+   !--------------------
+   integer :: j, k, N_siz
+   real(8) :: dE, eps, fe1, fe2
+   logical :: found_it
+
+   eps = 1.0d-10
+   N_siz = size(fe)
+   found_it = .false.   ! to start with
+
+   FV:do j = 1, N_siz-1
+      do k = j, N_siz
+         dE = Ei(k) - Ei(j)   ! energy levels difference
+         if (dE > eps) then
+            fe1 = fe(j) + (Ei(k) - Ei(i))/dE * df
+            fe2 = fe(k) + (Ei(i) - Ei(j))/dE * df
+            ! Check if we found an acceptable pair of levels to redistribute electrons into:
+            if ( ((fe1 >= 0.0d0) .and. (fe1 <= 2.0d0)) .and. ((fe2 >= 0.0d0) .and. (fe2 <= 2.0d0)) ) then
+               found_it = .true.
+               exit FV
+            endif
+         endif
+      enddo ! k
+   enddo FV ! j
+   ! Get the output values:
+   i_below = j
+   i_above = k
+end subroutine choose_level_OLD
 
 
 
@@ -606,6 +707,7 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
 
       if (norm_sum <= 0.0d0) then ! no ionization of VB is possible for some reason...
          i = 0
+         print*, 'Error sample_VB_level #1:', i, norm_sum, Ee
       else ! something is possible:
          cur_sum = 0.0d0
          i = 0 ! start from bottom of VB
@@ -620,6 +722,7 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
 !                write(*,'(a,i4,f,f,f,f,f)') 'sample_VB_level', i, wr(i), fe(i), fe_final(i), sampled_sum, cur_sum, RN
 !             endif
          enddo ! while
+         if (i == 0) print*, 'Error sample_VB_level #2:', i, norm_sum, cur_sum
 
       endif
       
@@ -630,6 +733,7 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
          i = i+1
          norm_sum = norm_sum + fe(i)
       enddo ! while
+      if (i == 0) print*, 'Error sample_VB_level #3:', i, norm_sum, sampled_sum
    endif PART_VB
 end subroutine sample_VB_level
 
