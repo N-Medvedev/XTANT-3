@@ -498,7 +498,7 @@ subroutine patch_distribution(fe, Ei, Scell, numpar)
             !if (i>1)print*, fe(i-1), Ei(i-1)
             !if (i<size(fe)) print*, fe(i+1), Ei(i+1)
 
-            if (i >= N_siz .or. (i <= 1)) print*, 'Problem in patch_distribution #1:', i, fe(i), Ei(i), N_siz
+            if (i >= N_siz .or. (i <= 1)) print*, 'Potential problem in patch_distribution #1:', i, fe(i), Ei(i), N_siz
             if (counter > 2000) then
                print*, 'Too many iterations patch_distribution:', counter, i, fe(i), Ei(i), N_siz
                ! Just try to cut out the problematic points:
@@ -519,8 +519,8 @@ subroutine patch_distribution(fe, Ei, Scell, numpar)
             call choose_level(Ei, fe, df, i, i_below, i_above)   ! below
 
             if ( (i_above > N_siz .or. (i_above < 1)) .or. (i_below > N_siz .or. (i_below < 1)) ) then
-               if (i_above > N_siz .or. (i_above < 1)) print*, 'Problem in patch_distribution #2a:', i, i_above, fe(i), Ei(i)
-               if (i_below > N_siz .or. (i_below < 1)) print*, 'Problem in patch_distribution #2b:', i, i_below, fe(i), Ei(i)
+               if (i_above > N_siz .or. (i_above < 1)) print*, 'Potential problem in patch_distribution #2a:', i, i_above, fe(i), Ei(i)
+               if (i_below > N_siz .or. (i_below < 1)) print*, 'Potential problem in patch_distribution #2b:', i, i_below, fe(i), Ei(i)
                trouble_present = .true.
                exit TP
             else
@@ -541,18 +541,26 @@ subroutine patch_distribution(fe, Ei, Scell, numpar)
    ! Check if there was a situation that electrons could not be redistributed:
    if (trouble_present) then  ! Do thermalization instead, adjust all levels:
       call Do_relaxation_time(Scell, numpar) ! module "Electron_tools"
+      trouble_present = .false.
       ! And the final check:
       do i = 1, N_siz ! check that there is no problem in distribution function change
          if (fe(i) > 2.0d0) then   ! it's within [2; 2+eps]
             print*, 'Problem in patch_distribution #3a:', i, fe(i)
             fe(i) = 2.0d0
+            trouble_present = .true.   ! there still is a problem
          elseif (fe(i) < 0.0d0) then  ! it's within [0-eps;0]
             print*, 'Problem in patch_distribution #3b:', i, fe(i)
             fe(i) = 0.0d0        ! distribution adjusted to accceptable
+            trouble_present = .true.   ! there still is a problem
          endif
       enddo
-   endif
 
+      if (trouble_present) then  ! Oh well, I am out of ideas...
+         print*, 'Problem persists, we may have lost some particles and energy...'
+      else  ! Yey, it worked!
+         print*, 'Problem avoided, nothing to worry about.'
+      endif
+   endif
 end subroutine patch_distribution
 
 
@@ -611,10 +619,10 @@ subroutine choose_level(Ei, fe, df, i, i_below, i_above)
    i_above = k
 
    ! Check if there is a situation when it's impossible to find the levels:
-   if (.not. found_it) then
-      print*, 'Problem in choose_level:', i, i_below, i_above
-      print*, 'fe=', fe(i), df, 'Ee=', Ei(i)
-   endif
+!   if (.not. found_it) then
+!      print*, 'Problem in choose_level:', i, i_below, i_above
+!      print*, 'fe=', fe(i), df, 'Ee=', Ei(i)
+!   endif
 
 end subroutine choose_level
 
