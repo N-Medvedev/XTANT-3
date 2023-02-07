@@ -125,7 +125,7 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
 
          ! Consistency checks:
          ! Make sure there are no unphysical values (fe<0 or fe>2):
-         call patch_distribution(Scell(NSC)%fe, Scell(NSC)%Ei) ! below
+         call patch_distribution(Scell(NSC)%fe, Scell(NSC)%Ei, Scell(NSC), numpar) ! below
          ! Also check that the total number of particles is conserved:
          if ( abs(Scell(NSC)%Ne_low - SUM(Scell(NSC)%fe(:))) > 1.0d-6*Scell(NSC)%Ne_low ) then
             print*, 'Error in MC_E1:', Scell(NSC)%Ne_low, SUM(Scell(NSC)%fe(:))
@@ -456,9 +456,11 @@ end subroutine d_distribution_between_levels
 
 
 
-subroutine patch_distribution(fe, Ei)
+subroutine patch_distribution(fe, Ei, Scell, numpar)
    real(8), dimension(:),intent(in) :: Ei ! energy levels
    real(8), dimension(:),intent(inout) :: fe ! distribution
+   type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    !-----------------------------
    integer :: i, N_siz, i_below, i_above, counter, j
    real(8) :: eps, df, dE, Ee
@@ -516,20 +518,39 @@ subroutine patch_distribution(fe, Ei)
             ! Find the levels to redistribute electrons to:
             call choose_level(Ei, fe, df, i, i_below, i_above)   ! below
 
-            if (i_above > N_siz .or. (i_above < 1)) print*, 'Problem in patch_distribution #2a:', i, i_above, fe(i), Ei(i)
-            if (i_below > N_siz .or. (i_below < 1)) print*, 'Problem in patch_distribution #2b:', i, i_below, fe(i), Ei(i)
-
-            ! Fractions of electron distributed between two levels,
-            ! ensuring conservation of particles and energy:
-            dE = Ei(i_above)-Ei(i_below)   ! energy levels difference
-            fe(i_below) = fe(i_below) + (Ei(i_above) - Ee)/dE * df
-            fe(i_above) = fe(i_above) + (Ee - Ei(i_below))/dE * df
+            if ( (i_above > N_siz .or. (i_above < 1)) .or. (i_below > N_siz .or. (i_below < 1)) ) then
+               if (i_above > N_siz .or. (i_above < 1)) print*, 'Problem in patch_distribution #2a:', i, i_above, fe(i), Ei(i)
+               if (i_below > N_siz .or. (i_below < 1)) print*, 'Problem in patch_distribution #2b:', i, i_below, fe(i), Ei(i)
+               trouble_present = .true.
+               exit TP
+            else
+               ! Fractions of electron distributed between two levels,
+               ! ensuring conservation of particles and energy:
+               dE = Ei(i_above)-Ei(i_below)   ! energy levels difference
+               fe(i_below) = fe(i_below) + (Ei(i_above) - Ee)/dE * df
+               fe(i_above) = fe(i_above) + (Ee - Ei(i_below))/dE * df
+            endif
 
             !print*, 'i=', i, i_above, i_below, df, fe(i_above), fe(i_above) - (Ee - Ei(i_below))/dE * df , fe(i_below), fe(i_below) - (Ei(i_above) - Ee)/dE * df
 
          endif
       enddo ! i = 1, N_siz
    enddo TP ! trouble_present
+
+   ! Check if there was a situation that electrons could not be redistributed:
+   if (trouble_present) then  ! Do thermalization instead, adjust all levels:
+      call Do_relaxation_time(Scell, numpar) ! module "Electron_tools"
+      ! And the final check:
+      do i = 1, N_siz ! check that there is no problem in distribution function change
+         if (fe(i) > 2.0d0) then   ! it's within [2; 2+eps]
+            print*, 'Problem in patch_distribution #3a:', i, fe(i)
+            fe(i) = 2.0d0
+         elseif (fe(i) < 0.0d0) then  ! it's within [0-eps;0]
+            print*, 'Problem in patch_distribution #3b:', i, fe(i)
+            fe(i) = 0.0d0        ! distribution adjusted to accceptable
+         endif
+      enddo
+   endif
 
 end subroutine patch_distribution
 
@@ -587,6 +608,13 @@ subroutine choose_level(Ei, fe, df, i, i_below, i_above)
    ! Get the output values:
    i_below = j
    i_above = k
+
+   ! Check if there is a situation when it's impossible to find the levels:
+   if (.not. found_it) then
+      print*, 'Problem in choose_level:', i, i_below, i_above
+      print*, 'fe=', fe(i), df, 'Ee=', Ei(i)
+   endif
+
 end subroutine choose_level
 
 

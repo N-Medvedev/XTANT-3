@@ -289,6 +289,7 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
          Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
       enddo
 
+      !--------------------------
       ! Extra check for smoothening unphysical artefacts that may be present after MC:
       extra_cycle = .false.   ! by default, assume no artifact
       do i = 1, i_fe ! for all grid points (MO energy levels)
@@ -300,7 +301,7 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
       enddo
       if (extra_cycle) then   ! do extra thermalization
          extra_dt = numpar%dt*0.1d0 ! use this small step to minimize the effect of extra smoothing
-         N_cycle = 1000 ! limit for the cycles
+         N_cycle = 10000 ! limit for the cycles
          i_cycle = 0 ! to start
          do while (extra_cycle)
             i_cycle = i_cycle + 1
