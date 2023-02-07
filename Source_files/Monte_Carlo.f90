@@ -361,6 +361,7 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
       !call sample_VB_level(Scell%Ne_low, Scell%fe, i, wr=Scell%Ei, Ee=hw, min_df=min_df) ! NEW
       ! Include the influence of dynamically changing distribution:
       call sample_VB_level(Scell%Ne_low, (Scell%fe+d_fe*min_df), i, wr=Scell%Ei, Ee=hw, min_df=min_df) ! NEW
+      if (i == 0) i = Scell%N_Egap ! very top of VB
       Ee = hw + Scell%Ei(i) ! [eV] electron energy
       IONIZ = i ! from this level
       noeVB_cur = noeVB_cur - 1 ! one electron has left VB going up
@@ -368,7 +369,7 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
       d_fe(i) = d_fe(i) - 1.0d0  ! change in the electron distribution
       !if ((Scell%fe(i)+d_fe(i)*min_df) < 0.0d0) then
       if ((Scell%fe(i)+d_fe(i)*min_df) < 0.0d0) then
-         print*, 'Error New_born_electron_n_hole:', i, Scell%fe(i), d_fe(i)*min_df
+         print*, 'Error New_born_electron_n_hole:', i, Scell%fe(i), d_fe(i)*min_df, Ee, Scell%E_gap, numpar%E_cut
       endif
 !       if (i > 129) then ! testing
 !          print*, 'Potential New_born_electron_n_hole:', i, Scell%fe(i), d_fe(i)*min_df
@@ -544,14 +545,18 @@ subroutine patch_distribution(fe, Ei, Scell, numpar)
       trouble_present = .false.
       ! And the final check:
       do i = 1, N_siz ! check that there is no problem in distribution function change
-         if (fe(i) > 2.0d0) then   ! it's within [2; 2+eps]
+         if (fe(i) > 2.0d0+eps) then   ! it's within [2; 2+eps]
             print*, 'Problem in patch_distribution #3a:', i, fe(i)
             fe(i) = 2.0d0
             trouble_present = .true.   ! there still is a problem
-         elseif (fe(i) < 0.0d0) then  ! it's within [0-eps;0]
+         elseif (fe(i) > 2.0d0) then   ! it's within [2; 2+eps]
+            fe(i) = 2.0d0        ! distribution adjusted to accceptable
+         elseif (fe(i) < -eps) then  ! it's within [0-eps;0]
             print*, 'Problem in patch_distribution #3b:', i, fe(i)
             fe(i) = 0.0d0        ! distribution adjusted to accceptable
             trouble_present = .true.   ! there still is a problem
+         elseif (fe(i) < 0.0d0) then  ! it's within [0-eps;0]
+            fe(i) = 0.0d0        ! distribution adjusted to accceptable
          endif
       enddo
 
@@ -722,6 +727,7 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
             j_fin = j_fin - 1 ! one level below
             !fe_final(j) = fe(j_fin) ! that's the transient population on the final level
             fe_final(j) = max(fe(j_fin),fe(j_fin+1)) ! that's the transient population on the final level
+            !if (Ee < 6.5) print*, 'sample_VB_level', Ee, wr(j)+Ee, fe(j_fin), fe(j_fin+1), wr(j_fin), wr(j_fin+1) ! test
          endif
          
 !          ! Weight is calculated according to the probability of ionization of a level,
@@ -739,12 +745,14 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
          if ( (fe(j) > min_df_used) .and. (2.0d0-fe_final(j) > min_df_used) .and. ((wr(j+1)-wr(j)) < eps)) then ! only if allowed
             norm_sum = norm_sum + fe(j)*(2.0d0 - fe_final(j))*E_weight(j)
          endif
+         !if (Ee < 6.5) print*, 'sample_VB_level #0:', Ee, j, fe(j), fe_final(j), wr(j), wr(j+1), norm_sum
          !write(*,'(i4,f,f,f,f,f)') j, Ee, wr(j), fe(j), fe_final(j), norm_sum
       enddo
 
       if (norm_sum <= 0.0d0) then ! no ionization of VB is possible for some reason...
          i = 0
-         print*, 'Error sample_VB_level #1:', i, norm_sum, Ee
+         !print*, 'Error sample_VB_level #1:', i, norm_sum, Ee
+         !print*, 'sample_VB_level', Ee, j_fin, fe(j_fin), fe(j_fin+1), wr(j_fin), wr(j_fin+1)
       else ! something is possible:
          cur_sum = 0.0d0
          i = 0 ! start from bottom of VB
@@ -759,7 +767,7 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
 !                write(*,'(a,i4,f,f,f,f,f)') 'sample_VB_level', i, wr(i), fe(i), fe_final(i), sampled_sum, cur_sum, RN
 !             endif
          enddo ! while
-         if (i == 0) print*, 'Error sample_VB_level #2:', i, norm_sum, cur_sum
+         !if (i == 0) print*, 'Error sample_VB_level #2:', i, norm_sum, cur_sum
 
       endif
       
@@ -918,7 +926,7 @@ subroutine which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw
       KOA1 = 1
       Nsh1 = matter%Atoms(1)%sh
       call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df)  ! above
-
+      if (N_val1 == 0) N_val1 = Scell%N_Egap ! very top of VB
       hw = matter%Atoms(KOA)%Ip(shl) + Scell%Ei(N_val1)
    else ! it can be atomic shell, not only VB:
       KOA1 = KOA     ! assume the same atom for simplicity
@@ -930,12 +938,14 @@ subroutine which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw
          if ((KOA1 == 1) .and. (Nsh1 >= size(matter%Atoms(KOA1)%Ip))) then ! it's VB:
             Nsh1 = matter%Atoms(1)%sh
             call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df)  ! above
+            if (N_val1 == 0) N_val1 = Scell%N_Egap ! very top of VB
             hw = matter%Atoms(KOA)%Ip(shl) + Scell%Ei(N_val1)
             exit SHL_CHECK
          elseif (Nsh1 > size(matter%Atoms(KOA1)%Ip)) then ! other atoms don't have VB in this description, so make it:
             KOA1 = 1
             Nsh1 = matter%Atoms(1)%sh
             call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df)  ! above
+            if (N_val1 == 0) N_val1 = Scell%N_Egap ! very top of VB
             hw = matter%Atoms(KOA)%Ip(shl) + Scell%Ei(N_val1)
             exit SHL_CHECK
          else ! it is still within the array:
