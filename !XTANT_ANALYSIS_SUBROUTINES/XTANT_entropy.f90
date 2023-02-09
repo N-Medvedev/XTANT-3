@@ -48,7 +48,7 @@ real(8), dimension(:), allocatable :: distr_eq
 real(8) :: S, S_eq, tim, g_kb
 integer :: FN_distr, FN_out, FN_out1
 integer :: INFO, Reason, i, Te, Nsiz
-logical :: read_well
+logical :: read_well, equilibr
 character(100) :: File_distr, File_out, File_fig, Gnu_file, Gnu_script
 character(1) :: path_sep, temp_ch
 
@@ -75,7 +75,7 @@ print*, '***********************************************************************
 ! Get the time grid from the file:
 open (unit=FN_distr, file=trim(adjustl(File_distr)), status = 'old', readonly)
 ! Get the size of the array for the distribution and allocate arrays:
-call get_size_of_distribution(FN_distr, Ei, distr, distr_eq)  ! below
+call get_size_of_distribution(FN_distr, Ei, distr, distr_eq, equilibr)  ! below
 allocate(flnf(size(Ei)))
 
 ! Output file:
@@ -97,7 +97,7 @@ do while (read_well)
    end if
 
    ! Read the distributions at this timestep:
-   call read_distributions(FN_distr, Ei, distr, distr_eq, read_well)  ! below
+   call read_distributions(FN_distr, Ei, distr, distr_eq, read_well, equilibr)  ! below
    if (.not. read_well) exit
 
    ! Demarcation between blocks:
@@ -186,44 +186,57 @@ STOP
  contains
 
 
-subroutine read_distributions(FN_distr, Ei, distr, distr_eq, read_well)  ! below
+subroutine read_distributions(FN_distr, Ei, distr, distr_eq, read_well, equilibr)  ! below
    integer, intent(in) :: FN_distr ! file number of the file with electronic distribution
    real(8), dimension(:), allocatable, intent(inout) :: Ei
    real(8), dimension(:), allocatable, intent(inout) :: distr
    real(8), dimension(:), allocatable, intent(inout) :: distr_eq
    logical, intent(inout) :: read_well
+   logical, intent(in) :: equilibr  ! flag
    !-------------
    integer :: i, Reason
 
+   Ei = 0.0d0  ! to start with
+   distr = 0.0d0  ! to start with
+   distr_eq = 0.0d0  ! to start with
    read_well = .true. ! to start with
    do i = 1, size(Ei)
       ! Read the file with distribution block by block:
-      read(FN_distr,*,IOSTAT=Reason) Ei(i), distr(i), distr_eq(i)
-      if (Reason /= 0) then ! wrong format: probably new block
-         ! try to read equilibium only:
-         backspace(FN_distr)
+      !read(FN_distr,*,IOSTAT=Reason) Ei(i), distr(i), distr_eq(i)
+      if (equilibr) then
          read(FN_distr,*,IOSTAT=Reason) Ei(i), distr(i)
-         if (Reason /= 0) then ! wrong format: probably new block
-            read_well = .false.
-            exit
-         else
-            distr_eq(i) = distr(i)
-         endif
+         distr_eq(i) = distr(i)
+      else
+         read(FN_distr,'(e,e,e)',IOSTAT=Reason) Ei(i), distr(i), distr_eq(i)
+      endif
+
+      if (Reason < 0) then ! end of file
+         read_well = .false.
+         exit
       endif
    enddo
 end subroutine read_distributions
 
 
 
-subroutine get_size_of_distribution(FN_distr, Ei, distr, distr_eq)  ! below
+subroutine get_size_of_distribution(FN_distr, Ei, distr, distr_eq, equilibr)  ! below
    integer, intent(in) :: FN_distr ! file number of the file with electronic distribution
    real(8), dimension(:), allocatable, intent(inout) :: Ei
    real(8), dimension(:), allocatable, intent(inout) :: distr
    real(8), dimension(:), allocatable, intent(inout) :: distr_eq
+   logical, intent(inout) :: equilibr  ! flag
    !-------------
    real(8) :: temp
-   integer :: i, Reason
+   integer :: i, Reason, Ncol
    logical :: read_well
+
+   ! Find if there is nonequilibrium distribution or not:
+   call Count_columns_in_file(FN_distr, Ncol, skip_lines=1)   ! below
+   if (Ncol == 2) then
+      equilibr = .true. ! only equilibrium distribution is given
+   else
+      equilibr = .false.   ! both, non- and equilibrium distributions are there
+   endif
 
    ! Skip first line:
    read(FN_distr,*,IOSTAT=Reason)
@@ -248,6 +261,54 @@ subroutine get_size_of_distribution(FN_distr, Ei, distr, distr_eq)  ! below
    rewind(FN_distr) ! to restart reading into the arrays from the start
    !pause 'get_size_of_distribution'
 end subroutine get_size_of_distribution
+
+
+
+subroutine Count_columns_in_file(File_num, N, skip_lines)
+    integer, INTENT(in) :: File_num     ! number of file to be opened
+    integer, INTENT(out) :: N           ! number of columns in this file
+    integer, intent(in), optional :: skip_lines ! if you want to start not from the first line
+    real(8) temp
+    character(1000) temp_ch
+    integer i, Reason
+    integer :: temp_i
+    if (present(skip_lines)) then
+       do i=1,skip_lines
+          read(File_num,*, end=605)
+       enddo
+       605 continue
+    endif
+
+    read(File_num,'(a)', IOSTAT=Reason) temp_ch ! count columns in this line
+    N = number_of_columns(trim(adjustl(temp_ch))) ! see below
+
+    rewind (File_num) ! to read next time from the beginning, not continue from the line we ended now.
+end subroutine Count_columns_in_file
+
+
+
+pure function number_of_columns(line)
+   integer :: number_of_columns
+   character(*), intent(in) :: line
+   integer i, n
+   logical :: same_space
+   same_space = .false.
+   i = 0
+   n = len(line)
+   number_of_columns = 0
+   do while(i < n) ! scan through all the line
+      i = i + 1
+      selectcase (line(i:I))
+      case (' ', '	') ! space or tab can be a separator between the columns
+         if (.not.same_space) number_of_columns = number_of_columns + 1
+         same_space = .true. ! in case columns are separated by more than one space or tab
+      case default ! column data themselves, not a space inbetween
+         same_space = .false.
+      endselect
+   enddo
+   number_of_columns = number_of_columns + 1	! number of columns is by 1 more than number of spaces inbetween
+end function number_of_columns
+
 
 
 ! Find out which OS it is:
