@@ -7,7 +7,7 @@ It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matte
  
  b) tight binding molecular dynamics (TBMD) for tracing atomic responce to modification of the interatomic potential due to electronic excitation
  
- c) Boltzmann collision integrals (BCI) for evaluation of the nonadiabatic electron-ion (electron-phonon) coupling
+ c) Boltzmann equation for low-energy electrons: relaxation-time approximation (RTA) for electron-electron scattering; Boltzmann collision integrals (BCI) for nonadiabatic electron-ion (electron-phonon) coupling
  
  d) random phase approximation (RPA) for calculation of the change of the optical properties of the material
 
