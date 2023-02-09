@@ -126,7 +126,7 @@ Tsiz = size(Step)   ! time grid size
 close(FN1)
 close(FN2)
 
-print*, 'Output imesteps to be analyzed: ', Tsiz
+print*, 'Output timesteps to be analyzed: ', Tsiz
 
 !-----------------------------------
 ! Construct chemical formula of the compound:
@@ -234,6 +234,13 @@ if (path_sep .EQ. '\') then	! if it is Windows
    write(FN_out1, '(a)') 'set ylabel "Mass spectrum (a.m.u.)"'
    write(FN_out1, '(a)') 'set autoscale xfix'
    write(FN_out1, '(a)') 'set autoscale cbfix'
+   write(FN_out1, '(a)') 'set palette defined (0 "white",\'
+   write(FN_out1, '(a)') '0.01 "blue",\'
+   write(FN_out1, '(a)') '0.4 "purple",\'
+   write(FN_out1, '(a)') '0.6 "red",\'
+   write(FN_out1, '(a)') '0.8 "yellow",\'
+   write(FN_out1, '(a)') '1.0 "light-green",\'
+   write(FN_out1, '(a)') '1.2 "green")'
    write(FN_out1, '(a)') "plot[][0:50] 'OUT_fragments_spectrum.dat' matrix nonuniform with image"//' title"Fragments mass spectrum"'
 else ! it is linux
    open (unit=FN_out1, file=trim(adjustl(Gnu_script))//'.sh')
@@ -248,6 +255,13 @@ else ! it is linux
    write(FN_out1, '(a)') 'set ylabel \"Mass spectrum (a.m.u.) \" '
    write(FN_out1, '(a)') 'set autoscale xfix'
    write(FN_out1, '(a)') 'set autoscale cbfix'
+   write(FN_out1, '(a)') 'set palette defined (0 "white",\'
+   write(FN_out1, '(a)') '0.01 "blue",\'
+   write(FN_out1, '(a)') '0.4 "purple",\'
+   write(FN_out1, '(a)') '0.6 "red",\'
+   write(FN_out1, '(a)') '0.8 "yellow",\'
+   write(FN_out1, '(a)') '1.0 "light-green",\'
+   write(FN_out1, '(a)') '1.2 "green")'
    write(FN_out1, '(a)') "plot[][0:50] 'OUT_fragments_spectrum.dat' matrix nonuniform with image title"//'\"Fragments mass spectrum\"'
    write(FN_out1, '(a)') 'reset'
    write(FN_out1, '(a)') '" | gnuplot '

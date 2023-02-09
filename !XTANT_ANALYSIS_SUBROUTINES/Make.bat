@@ -15,6 +15,8 @@ IF "%1"=="" (
    SET arg1=ALL
 )
 
+::del *.obj
+
 SET "Starline=************************************************************************************"
 echo %Starline%
 echo Started compilation: %date% %time%
@@ -174,9 +176,36 @@ echo %Starline%
 echo The program %Name_of_exe% was created at %date% %time%
 echo %Starline%
 
+:: Remove files that are no longer needed
+del XTANT_fragmentation.obj
+
 :: *********************************************************
+echo Started compilation: %date% %time%
+
+:: Program files to be compiled
+SET "List_of_files= XTANT_entropy.f90"
+
+:: List compiler options and the name of the executable:
+IF /I %arg1%==DEBUG (
+   :: Set name of the executable:
+   SET "Name_of_exe=XTANT_entropy.exe"
+) ELSE (
+   :: Set name of the executable:
+   SET "Name_of_exe=XTANT_entropy.exe"
+)
+
+:: Compiling:
+ifort.exe -c %Compile_options% %List_of_files%
+
+:: Assemble the code from all created obj-files
+ifort.exe %Compile_options% *.obj /exe:%Name_of_exe%
+
+echo %Starline%
+::   echo Completed: %date% %time%
+echo The program %Name_of_exe% was created at %date% %time%
+echo %Starline%
 
 :: Remove files that are no longer needed
-:: del *.obj
+del XTANT_entropy.obj
 
 
