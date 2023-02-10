@@ -192,7 +192,7 @@ if (g_numpar%verbose) call print_time_step('Pressure calculated succesfully:', m
 call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
 if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true.)
 
-! Calculate electron heat capacity:
+! Calculate electron heat capacity, entropy:
 call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
 ! Calculate configurational temperature:
@@ -364,7 +364,7 @@ do while (g_time .LT. g_numpar%t_total)
       call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
       ! Calculate the mean square displacement of all atoms:
       call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD, g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
-      ! Calculate electron heat capacity:
+      ! Calculate electron heat capacity, entropy:
       call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
       ! Calculate configurational temperature:

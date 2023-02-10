@@ -520,8 +520,8 @@ subroutine patch_distribution(fe, Ei, Scell, numpar)
             call choose_level(Ei, fe, df, i, i_below, i_above)   ! below
 
             if ( (i_above > N_siz .or. (i_above < 1)) .or. (i_below > N_siz .or. (i_below < 1)) ) then
-               if (i_above > N_siz .or. (i_above < 1)) print*, 'Potential problem in patch_distribution #2a:', i, i_above, fe(i), Ei(i)
-               if (i_below > N_siz .or. (i_below < 1)) print*, 'Potential problem in patch_distribution #2b:', i, i_below, fe(i), Ei(i)
+               !if (i_above > N_siz .or. (i_above < 1)) print*, 'Potential problem in patch_distribution #2a:', i, i_above, fe(i), Ei(i)
+               !if (i_below > N_siz .or. (i_below < 1)) print*, 'Potential problem in patch_distribution #2b:', i, i_below, fe(i), Ei(i)
                trouble_present = .true.
                exit TP
             else
@@ -585,7 +585,7 @@ subroutine choose_level(Ei, fe, df, i, i_below, i_above)
    found_it = .false.   ! to start with
    ! Check below the level i:
    FV:do j = i-1, 1, -1
-      do k = j, N_siz
+      do k = j+1, N_siz
          if (k /= i) then
             dE = Ei(k) - Ei(j)   ! energy levels difference
             if (dE > eps) then
@@ -603,7 +603,7 @@ subroutine choose_level(Ei, fe, df, i, i_below, i_above)
    ! Check above the level i:
    if (.not. found_it) then
       FV2:do j = i+1, N_siz-1
-         do k = j, N_siz
+         do k = j+1, N_siz
             if (k /= i) then
                dE = Ei(k) - Ei(j)   ! energy levels difference
                if (dE > eps) then
@@ -702,6 +702,7 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
    real(8), dimension(size(fe)) :: E_weight
    real(8), dimension(size(fe)) :: fe_final ! construct an array of final states populations
    integer j, N_levels, j_fin
+   logical :: close_levels
 
    eps = 1.0d0 ! [eV] acceptence interval, an electron can come into in between the levels
 
@@ -724,10 +725,13 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
          else ! final state is within low-energy domain, find it:
             ! SIDENOTE: it is the closest level existing, but it is not exactly equal to (wr(j)+Ee)!
             call Find_in_array_monoton(wr, wr(j)+Ee, j_fin) ! module "Little_subroutine"
+            !print*, 'Test:', wr(j)+Ee, wr(j_fin-1), wr(j_fin)
             j_fin = j_fin - 1 ! one level below
-            !fe_final(j) = fe(j_fin) ! that's the transient population on the final level
             fe_final(j) = max(fe(j_fin),fe(j_fin+1)) ! that's the transient population on the final level
-            !if (Ee < 6.5) print*, 'sample_VB_level', Ee, wr(j)+Ee, fe(j_fin), fe(j_fin+1), wr(j_fin), wr(j_fin+1) ! test
+            ! Check that levels are not >too far apart:
+            if ((wr(j_fin+1)-wr(j_fin)) > eps) then
+               fe_final(j) = 2.0d0  ! exclude levels that are too far apart
+            endif
          endif
          
 !          ! Weight is calculated according to the probability of ionization of a level,
@@ -742,7 +746,7 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
          ! that is the relative probability of the scattering event, accounting for 
          ! number of electrons in the inital level an electron can scatter off, and
          ! the number of free places in the final state an electron can come to:
-         if ( (fe(j) > min_df_used) .and. (2.0d0-fe_final(j) > min_df_used) .and. ((wr(j+1)-wr(j)) < eps)) then ! only if allowed
+         if ( (fe(j) > min_df_used) .and. (2.0d0-fe_final(j) > min_df_used) ) then ! only if allowed
             norm_sum = norm_sum + fe(j)*(2.0d0 - fe_final(j))*E_weight(j)
          endif
          !if (Ee < 6.5) print*, 'sample_VB_level #0:', Ee, j, fe(j), fe_final(j), wr(j), wr(j+1), norm_sum
@@ -760,7 +764,8 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
          do while ((cur_sum - sampled_sum) < 0.0d0) ! find which scattering event it is
             i = i+1 ! next level
             if (i > N_levels) exit ! the final state is reached
-            if ( (fe(i) > min_df_used) .and. (2.0d0-fe_final(i) > min_df_used) .and. ((wr(i+1)-wr(i)) < eps)) then ! only if allowed
+            !if ( (fe(i) > min_df_used) .and. (2.0d0-fe_final(i) > min_df_used) .and. ((wr(i+1)-wr(i)) < eps)) then ! only if allowed
+            if ( (fe(i) > min_df_used) .and. (2.0d0-fe_final(i) > min_df_used) ) then ! only if allowed
                cur_sum = cur_sum + fe(i)*(2.0d0 - fe_final(i))*E_weight(i) ! go through the probabilities until reach the given value
             endif
 !             if (fe(i) < min_df_used) then  ! testing

@@ -74,7 +74,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
       if (numpar%save_raw) call write_atomic_relatives(numpar%FN_atoms_S, Scell(NSC)%MDatoms)
       call write_super_cell(numpar%FN_supercell, time, Scell(NSC))
       call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, &
-               numpar%FN_Ce, numpar%FN_kappa)
+               numpar%FN_Ce, numpar%FN_kappa, numpar%FN_Se)
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter)
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time)
       if (numpar%save_Ei) then
@@ -138,6 +138,14 @@ subroutine convolve_output(Scell, numpar)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))  
             call convolution(FN, Scell(i)%eps%tau) ! electron properties
+            close(FN)
+         endif
+
+         File_name = trim(adjustl(file_path))//'OUTPUT_electron_entropy.dat'
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         if (file_exist) then
+            open(UNIT=FN, FILE = trim(adjustl(File_name)))
+            call convolution(FN, Scell(i)%eps%tau) ! electron entropy
             close(FN)
          endif
 
@@ -439,7 +447,7 @@ end subroutine write_atomic_cif
 
 
 
-subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, FN_Ce, FN_kappa)
+subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, FN_Ce, FN_kappa, FN_Se)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: time	! [fs]
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
@@ -447,7 +455,7 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    real(8), dimension(:), intent(in) :: Ei	! energy levels
    type(Solid), intent(in) :: matter	! Material parameters
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   integer, intent(in) :: FN_Ce, FN_kappa  ! file number for band-resolved Ce and kappa
+   integer, intent(in) :: FN_Ce, FN_kappa, FN_Se  ! file number for band-resolved Ce and kappa, and electron entropy
    !------------------------
    integer i, Nat, n_at, Nsiz, norb, N_types, i_at, i_types, i_G1
 
@@ -489,6 +497,9 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
       enddo ! i_at
       write(FN_kappa,'(a)') ''
    endif
+
+   ! Write electron entropy:
+   write(FN_Se, '(es25.16, es25.16, es25.16)') time, Scell(NSC)%Se, Scell(NSC)%Se_eq
 
 end subroutine write_electron_properties
 
@@ -898,6 +909,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    character(100) :: file_electron_properties	! electron properties
    character(200) :: file_electron_heat_capacity	! band-resolved electron heat capacity
    character(200) :: file_electron_heat_conductivity  ! electron heat conductivity
+   character(100) :: file_electron_entropy	! electron entropy
    character(100) :: file_numbers	! total numbers of electrons and holes
    character(100) :: file_deep_holes	! number of deep-shell holes in each shell
    character(100) :: file_Ei		! energy levels
@@ -944,6 +956,12 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_capacity)))
    numpar%FN_Ce = FN
    call write_Ce_header(numpar%FN_Ce, Scell, 1, matter) ! below
+
+   file_electron_entropy = trim(adjustl(file_path))//'OUTPUT_electron_entropy.dat'
+   open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_entropy)))
+   numpar%FN_Se = FN
+   call create_file_header(numpar%FN_Se, '#Time Se  Se_eq')
+   call create_file_header(numpar%FN_electron_properties, '#[fs]  [K/eV]   [K/eV]')
 
    if (numpar%do_kappa) then
       file_electron_heat_conductivity = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity.dat'
@@ -1065,7 +1083,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       endif
    enddo
 
-   call create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, 'OUTPUT_temperatures.dat',  'OUTPUT_pressure_and_stress.dat', 'OUTPUT_energies.dat', file_atoms_R, file_atoms_S, 'OUTPUT_supercell.dat', 'OUTPUT_electron_properties.dat', 'OUTPUT_electron_hole_numbers.dat', 'OUTPUT_deep_shell_holes.dat', 'OUTPUT_optical_coefficients.dat', file_Ei, file_PCF, 'OUTPUT_nearest_neighbors.dat')
+   call create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, 'OUTPUT_temperatures.dat',  'OUTPUT_pressure_and_stress.dat', 'OUTPUT_energies.dat', file_atoms_R, file_atoms_S, 'OUTPUT_supercell.dat', 'OUTPUT_electron_properties.dat', 'OUTPUT_electron_hole_numbers.dat', 'OUTPUT_deep_shell_holes.dat', 'OUTPUT_optical_coefficients.dat', file_Ei, file_PCF, 'OUTPUT_nearest_neighbors.dat', 'OUTPUT_electron_entropy.dat')  ! below
    !call create_gnuplot_scripts(matter,numpar,laser, file_path, file_temperatures, file_energies, file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_numbers, file_deep_holes, file_Ei, file_PCF)
 end subroutine create_output_files
 
@@ -1077,7 +1095,7 @@ subroutine create_file_header(FN, text)
 end subroutine create_file_header
 
 
-subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN)
+subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -1096,6 +1114,8 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    character(*) :: file_Ei		! energy levels
    character(*) :: file_PCF		! pair correlation function
    character(*) :: file_NN      ! nearest neighbors
+   character(*) :: file_electron_entropy  ! electron netropy
+   !----------------
    character(200) :: File_name, File_name2
    real(8) :: t0, t_last, x_tics
    integer FN, i, j, Nshl, counter, iret
@@ -1134,6 +1154,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       write(FN, '(a)') 'call OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
+      write(FN, '(a)') 'call OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
       if (numpar%do_drude) then 
          write(FN, '(a)') 'call OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
@@ -1168,6 +1189,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') 'call OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') 'call OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
          if (numpar%Mulliken_model >= 1) then
             write(FN, '(a)') 'call OUTPUT_Mulliken_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          endif
@@ -1188,6 +1210,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       write(FN, '(a)') './OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
+      write(FN, '(a)') './OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
       if (numpar%do_drude) then 
          write(FN, '(a)') './OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
@@ -1222,6 +1245,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') './OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') './OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
          if (numpar%Mulliken_model >= 1) then
             write(FN, '(a)') './OUTPUT_Mulliken_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          endif
@@ -1280,6 +1304,10 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    ! Electron heat capacity:
    File_name  = trim(adjustl(file_path))//'OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
    call gnu_capacity(File_name, file_electron_properties, t0, t_last, 'OUTPUT_electron_Ce.'//trim(adjustl(numpar%fig_extention))) ! below
+
+   ! Electron entropy:
+   File_name  = trim(adjustl(file_path))//'OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
+   call gnu_entropy(File_name, file_electron_entropy, t0, t_last, 'OUTPUT_electron_entropy.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Electron-ion coupling parameter:
    File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
@@ -1386,6 +1414,10 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       ! Electron heat capacity:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
       call gnu_capacity(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electron_Ce_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+      ! Electron entropy:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
+      call gnu_entropy(File_name,      trim(adjustl(file_electron_entropy(1:len(trim(adjustl(file_electron_entropy)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electron_entropy_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Electron-ion coupling parameter:
       File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -1827,7 +1859,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
 
    !call write_gnuplot_script_header(FN, 1, 3, 'Holes','Time (fs)', 'Particles per atoms (arb.units)', trim(adjustl(file_path))//'OUTPUT_deep_shell_holes.'//trim(adjustl(g_numpar%fig_extention)))
    !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Holes','Time (fs)', 'Particles per atoms (arb.units)', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Holes','Time (fs)', 'Particles (per atom)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Holes','Time (fs)', 'Particles (total)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
    
    counter = 0 ! to start with
    first_line = .true.  ! to start from the first line
@@ -2012,6 +2044,34 @@ subroutine gnu_capacity(File_name, file_electron_properties, t0, t_last, eps_nam
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
 end subroutine gnu_capacity
+
+
+subroutine gnu_entropy(File_name, file_electron_entropy, t0, t_last, eps_name)
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_electron_entropy ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron entropy','Time (fs)', 'Electron entropy (K/eV)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
+
+   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_entropy)), ' "u 1:2 w l lw LW title "Nonequilibrium" ,\'
+      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_electron_entropy)), ' "u 1:3 w l lw LW title "Equilibrium" '
+   else ! It is linux
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_entropy)), '\" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" ,\'
+      write(FN, '(a,a,a,i12,a)') ' \"', trim(adjustl(file_electron_entropy)), ' \" u 1:3 w l lw LW title \"Equilibrium\" '
+   endif
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_entropy
 
 
 subroutine gnu_coupling(File_name, file_electron_properties, t0, t_last, eps_name)

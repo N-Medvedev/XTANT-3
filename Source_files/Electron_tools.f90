@@ -604,14 +604,18 @@ end subroutine share_energy
 ! General subroutines that are often used:
 
 subroutine electronic_entropy(fe, Se, norm_fe)
-   real(8), dimension(:), intent(inout) :: fe ! electron distribution function
+   real(8), dimension(:), intent(in) :: fe ! electron distribution function
    real(8), intent(out) :: Se ! self-expanatory
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
    ! Se = -kB * int [ DOS*( f * ln(f) + (1-f) * ln(1-f) ) ]
    ! E.G. [https://doi.org/10.1103/PhysRevB.50.14686]
    !----------------------------
    real(8), dimension(size(fe)) :: f_lnf
-   real(8) :: f_norm
+   real(8) :: f_norm, eps
+   integer :: i
+
+   eps = 1.0d-12  ! precision
+
    if (present(norm_fe)) then   ! user provided
       f_norm = norm_fe
    else ! by default, not spin resolved
@@ -620,11 +624,18 @@ subroutine electronic_entropy(fe, Se, norm_fe)
    Se = 0.0d0
    f_lnf = 0.0d0
    ! First term of the total entropy:
-   where (fe(:) > 0.0d0) f_lnf(:) = fe(:)*log(fe(:)/f_norm) ! our f is normalized to f_norm, which means it includes DOS in it, so divide by f_norm where needed
+   where (fe(:) > eps) f_lnf(:) = fe(:)*log(fe(:)/f_norm) ! our f is normalized to f_norm, which means it includes DOS in it, so divide by f_norm where needed
+!    do i = 1, size(fe)
+!       if (fe(i) > 0.0d0) then
+!          if (fe(i)/f_norm < 1.0d-10) print*, i, fe(i), f_norm
+!          f_lnf(i) = fe(i)*log(fe(i)/f_norm)
+!          if (fe(i)/f_norm < 1.0d-10) print*, i, 'done'
+!       endif
+!    enddo
    Se = SUM(f_lnf(:))
    f_lnf = 0.0d0
    ! Second term of the total entropy:
-   where (fe(:) < f_norm) f_lnf(:) = (f_norm - fe(:))*log((f_norm - fe(:))/f_norm)
+   where (fe(:) < f_norm-eps) f_lnf(:) = (f_norm - fe(:))*log((f_norm - fe(:))/f_norm)
    Se = Se + SUM(f_lnf(:))
    Se = -g_kb*Se
 end subroutine  electronic_entropy

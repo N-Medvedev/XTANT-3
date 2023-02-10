@@ -1581,7 +1581,16 @@ subroutine get_electronic_thermal_parameters(numpar, Scell, NSC, matter, Err)
    call get_electronic_heat_capacity(Scell, NSC, Scell(NSC)%Ce, numpar%do_kappa, numpar%DOS_weights, Scell(NSC)%Ce_part) ! module "Electron_tools"
 
    !----------------------------
-   ! 2) Electron heat conductivity:
+   ! 2) Electronic entropy:
+   !print*, 'Before Se'
+   call electronic_entropy(Scell(NSC)%fe, Scell(NSC)%Se) ! module "Electron_tools"
+   ! and equivalent equilibrium entropy:
+   !print*, 'Before Se_eq'
+   call electronic_entropy(Scell(NSC)%fe_eq, Scell(NSC)%Se_eq) ! module "Electron_tools"
+   !print*, 'After  Se_eq'
+
+   !----------------------------
+   ! 3) Electron heat conductivity, if required (does not work well...):
    call get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err) ! below
 
 end subroutine get_electronic_thermal_parameters
