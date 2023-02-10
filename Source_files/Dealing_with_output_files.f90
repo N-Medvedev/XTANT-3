@@ -1141,39 +1141,75 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a)') '@echo off'
+
+      write(FN, '(a)') 'echo Executing OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
+
       if (numpar%do_drude) then 
+         write(FN, '(a)') 'echo Executing OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') 'echo Executing OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
       endif
       if (numpar%save_Ei) then
+         write(FN, '(a)') 'echo Executing OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (numpar%save_fe) then
+         write(FN, '(a)') 'echo Executing OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (numpar%DOS_splitting >= 1) then   ! Mulliken charges
          if (numpar%Mulliken_model >= 1) then
+            write(FN, '(a)') 'echo Executing OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
             write(FN, '(a)') 'call OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
          endif
       endif
       if (numpar%save_NN) then
+         write(FN, '(a)') 'echo Executing OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (Scell(1)%eps%tau > 0.0d0) then ! convolved files too:
+         write(FN, '(a)') 'call Executing convolved files...'
          write(FN, '(a)') 'call OUTPUT_optical_coefficients_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_optical_n_and_k_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_energies_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
