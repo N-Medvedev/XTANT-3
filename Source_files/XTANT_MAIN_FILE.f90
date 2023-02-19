@@ -100,7 +100,7 @@ if (g_numpar%verbose) call print_time_step('Input files read succesfully:', msec
 ! Starting time, to give enough time for system to thermalize before the pulse:
 call set_starting_time(g_laser, g_time, g_numpar%t_start, g_numpar%t_NA, g_numpar%t_Te_Ee) ! module "Little_subroutines"
 ! And check if user wants to reset it:
-call reset_dt(g_numpar, 0.0d0)   ! module "Dealing_with_output_files"
+call reset_dt(g_numpar, g_matter, g_time)   ! module "Dealing_with_output_files"
 
 ! Print the title of the program and used parameters on the screen:
 !call Print_title(6,g_Scell,g_matter,g_laser,g_numpar) ! module "Dealing_with_output_files"
@@ -212,7 +212,7 @@ g_dt_save = 0.0d0
 do while (g_time .LT. g_numpar%t_total)
    i_test = i_test + 1
    ! If there is a grid for changing time-step, change it:
-   call reset_dt(g_numpar, g_time)  ! module "Dealing_with_output_files"
+   call reset_dt(g_numpar, g_matter, g_time)  ! module "Dealing_with_output_files"
 
    AT_MOVE_1:if (g_numpar%do_atoms) then ! atoms are allowed to be moving:
       !1111111111111111111111111111111111111111111111111111111111

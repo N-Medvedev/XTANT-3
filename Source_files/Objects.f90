@@ -672,6 +672,18 @@ type Numerics_param
    real(8), dimension(:), allocatable :: dt_MD_grid         ! grid, which MD timestep to use
    integer :: i_dt        ! which timestep from the array "dt_MD_grid" to use now
    character(100) :: MD_step_grid_file   ! filename with MD time step grid
+   !-----------------
+   real(8), dimension(:), allocatable :: At_bath_reset_grid   ! grid, when to change the Atomic bath parameters
+   real(8), dimension(:), allocatable :: At_bath_grid_Ta         ! Atomic bath temperatures array [K]
+   real(8), dimension(:), allocatable :: At_bath_grid_tau        ! Atomic bath characteristic times array [fs]
+   integer :: i_At_bath_dt        ! which timestep from the array to use now
+   character(100) :: At_bath_step_grid_file   ! filename with Atomic bath parameters
+   real(8), dimension(:), allocatable :: El_bath_reset_grid   ! grid, when to change the Electronic bath parameters
+   real(8), dimension(:), allocatable :: El_bath_grid_Ta         ! Electronic bath temperatures array [K]
+   real(8), dimension(:), allocatable :: El_bath_grid_tau        ! Electronic bath characteristic times array [fs]
+   integer :: i_El_bath_dt        ! which timestep from the array to use now
+   character(100) :: El_bath_step_grid_file   ! filename with Electronic bath parameters
+   !-----------------
    real(8) :: t_start	  ! [fs] starting time of simulation
    real(8) :: t_total	  ! [fs] total time of simulation
    real(8) :: t_Te_Ee	  ! time when we switch from Te=const, to Ee=const [fs] / negative value, when not using it

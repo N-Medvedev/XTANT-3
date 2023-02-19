@@ -52,6 +52,7 @@ subroutine Electron_transport(trans_mod, time, Scell, numpar, matter, dt, tau, E
       print*, 'No electron transport out of the simulation box is included'
    case default ! simple rate equation (Berendsen thermostat)
       do NSC = 1, size(Scell) ! for all supercells
+         !print*, 'Electron_transport', matter%T_bath_e, dt, tau
          call rate_equation(Scell(NSC)%TeeV, matter%T_bath_e, dt, tau, 2) ! below
          call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution, module "Electron_tools"
          call get_new_energies(Scell, matter, numpar, time, Err) ! module "TB"

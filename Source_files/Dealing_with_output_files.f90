@@ -715,7 +715,7 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
    type(TB_Hamiltonian), intent(in) ::  TB_Hamil ! parameters of the Hamiltonian of TB
    type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
-   character(200) :: File_name, Error_descript, chtest, chtest1, chtest_MDgrid
+   character(200) :: File_name, Error_descript, chtest, chtest1, chtest_MDgrid, chtest_AtBathgrid, chtest_ElBathgrid
    character(3) :: chtest2
    integer INFO
    integer :: MOD_TIM ! time when the communication.txt file was last modified
@@ -743,6 +743,14 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
          if (allocated(numpar%dt_MD_reset_grid)) then
             chtest_MDgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%MD_step_grid_file))
          endif
+         ! File with electronic thermostat parameters:
+         if (allocated(numpar%El_bath_reset_grid)) then
+            chtest_ElBathgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%El_bath_step_grid_file))
+         endif
+         ! File with atomic thermostat parameters:
+         if (allocated(numpar%At_bath_reset_grid)) then
+            chtest_AtBathgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%At_bath_step_grid_file))
+         endif
       endif
    else
       ! Check if new format of input file exists:
@@ -756,6 +764,14 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
          if (allocated(numpar%dt_MD_reset_grid)) then
             chtest_MDgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%MD_step_grid_file))
          endif
+         ! File with electronic thermostat parameters:
+         if (allocated(numpar%El_bath_reset_grid)) then
+            chtest_ElBathgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%El_bath_step_grid_file))
+         endif
+         ! File with atomic thermostat parameters:
+         if (allocated(numpar%At_bath_reset_grid)) then
+            chtest_AtBathgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%At_bath_step_grid_file))
+         endif
       endif
    endif
 
@@ -768,6 +784,12 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
       if (allocated(numpar%dt_MD_reset_grid)) then
          call copy_file(trim(adjustl(chtest_MDgrid)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
       endif
+      if (allocated(numpar%El_bath_reset_grid)) then
+         call copy_file(trim(adjustl(chtest_ElBathgrid)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
+      endif
+      if (allocated(numpar%At_bath_reset_grid)) then
+         call copy_file(trim(adjustl(chtest_AtBathgrid)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
+      endif
    else ! it is linux
       !call copy_file('INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL.txt',trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
       call copy_file(trim(adjustl(chtest)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
@@ -776,6 +798,12 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
       ! And file with MD grid, if user provided:
       if (allocated(numpar%dt_MD_reset_grid)) then
          call copy_file(trim(adjustl(chtest_MDgrid)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
+      endif
+      if (allocated(numpar%El_bath_reset_grid)) then
+         call copy_file(trim(adjustl(chtest_ElBathgrid)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
+      endif
+      if (allocated(numpar%At_bath_reset_grid)) then
+         call copy_file(trim(adjustl(chtest_AtBathgrid)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
       endif
    endif
 
@@ -2099,11 +2127,11 @@ subroutine gnu_entropy(File_name, file_electron_entropy, t0, t_last, eps_name)
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron entropy','Time (fs)', 'Electron entropy (K/eV)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_entropy)), ' "u 1:2 w l lw LW title "Nonequilibrium" ,\'
-      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_electron_entropy)), ' "u 1:3 w l lw LW title "Equilibrium" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_entropy)), ' " u 1:2 w l lw LW title "Nonequilibrium" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), ' " u 1:3 w l lw LW title "Equilibrium" '
    else ! It is linux
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_entropy)), '\" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" ,\'
-      write(FN, '(a,a,a,i12,a)') ' \"', trim(adjustl(file_electron_entropy)), ' \" u 1:3 w l lw LW title \"Equilibrium\" '
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), ' \" u 1:3 w l lw \"$LW\" title \"Equilibrium\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -2618,11 +2646,14 @@ end subroutine save_duration
 
 
 
-subroutine reset_dt(numpar, tim_cur)
-   real(8), intent(in) :: tim_cur        ! current time step of the simulation
+subroutine reset_dt(numpar, matter, tim_cur)
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
+   type(Solid), intent(inout) :: matter ! parameters of the material
+   real(8), intent(in) :: tim_cur        ! current time step of the simulation
    real(8) :: est
    est = 1.0d-6 ! precision
+
+   ! Simulation time step:
    if ((numpar%i_dt > 0) .and. (numpar%i_dt <= size(numpar%dt_MD_grid))) then   ! only if there is an option to change dt
       if (tim_cur >= numpar%dt_MD_reset_grid(numpar%i_dt)-est) then ! time to change dt
          numpar%dt = numpar%dt_MD_grid(numpar%i_dt)              ! to this value
@@ -2635,6 +2666,48 @@ subroutine reset_dt(numpar, tim_cur)
       !numpar%t_start = numpar%dt_MD_reset_grid(1)   ! to start from
       numpar%dt = numpar%dt_MD_grid(1)           ! to start from
       call reset_support_times(numpar)   ! below
+   endif
+
+   ! Atomic thermostat parameters:
+   if (allocated(numpar%At_bath_reset_grid) .and. (numpar%i_At_bath_dt <= size(numpar%At_bath_grid_Ta)) ) then
+      if (tim_cur >= numpar%At_bath_reset_grid(numpar%i_At_bath_dt)-est) then ! time to change dt
+
+         matter%T_bath = numpar%At_bath_grid_Ta(numpar%i_At_bath_dt) ! new bath temperature [K]
+         matter%T_bath = matter%T_bath/g_kb  ! [eV] thermostat temperature for atoms
+
+         matter%tau_bath = numpar%At_bath_grid_tau(numpar%i_At_bath_dt) ! new characteristic time [fs]
+         if (matter%tau_bath > 1.0d14) then  ! there is no bath, too slow to couple
+            numpar%Transport = .false. ! excluded
+            print*, 'Atomic thermostat is off'
+         else
+            numpar%Transport = .true.	 ! included
+            print*, 'Atomic thermostat parameters are changed to', &
+                  matter%T_bath*g_kb, matter%tau_bath
+         endif
+
+         numpar%i_At_bath_dt = numpar%i_At_bath_dt + 1 ! next step to read from
+      endif
+   endif
+
+   ! Electronic thermostat  parameters:
+   if (allocated(numpar%El_bath_reset_grid) .and. (numpar%i_El_bath_dt <= size(numpar%El_bath_grid_Ta)) ) then
+      if (tim_cur >= numpar%El_bath_reset_grid(numpar%i_El_bath_dt)-est) then ! time to change dt
+
+         matter%T_bath_e = numpar%El_bath_grid_Ta(numpar%i_El_bath_dt) ! new bath temperature [K]
+         matter%T_bath_e = matter%T_bath_e/g_kb  ! [eV] thermostat temperature for atoms
+
+         matter%tau_bath_e = numpar%El_bath_grid_tau(numpar%i_El_bath_dt) ! new characteristic time [fs]
+         if (matter%tau_bath_e > 1.0d14) then  ! there is no bath, too slow to couple
+            numpar%Transport_e = .false. ! excluded
+            print*, 'Electronic thermostat is off'
+         else
+            numpar%Transport_e = .true.	 ! included
+            print*, 'Electronic thermostat parameters are changed to', &
+                  matter%T_bath_e*g_kb, matter%tau_bath_e
+         endif
+
+         numpar%i_El_bath_dt = numpar%i_El_bath_dt + 1 ! next step to read from
+      endif
    endif
 end subroutine reset_dt
 
@@ -3179,7 +3252,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       write(print_to,'(a)') ' No quenching of atoms for resolidification'
    endif
 
-   if (g_numpar%Transport_e) then ! for electrons
+
+   if (allocated(numpar%El_bath_reset_grid)) then
+      write(print_to,'(a)') ' Berendsen thermostat is used for electnros'
+      write(print_to,'(a)') ' with parameters set in the file: '//trim(adjustl(numpar%El_bath_step_grid_file))
+   elseif (g_numpar%Transport_e) then ! for electrons
       write(text,'(f10.1)') matter%T_bath_e*g_kb
       write(text1,'(f10.1)') matter%tau_bath_e
       write(print_to,'(a)') ' Berendsen thermostat is used for electnros'
@@ -3187,7 +3264,12 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
    else
       write(print_to,'(a)') ' No electronic thermostat is used'
    endif
-   if (g_numpar%Transport) then ! for atoms
+
+
+   if (allocated(numpar%At_bath_reset_grid)) then
+      write(print_to,'(a)') ' Berendsen thermostat is used for atoms'
+      write(print_to,'(a)') ' with parameters set in the file: '//trim(adjustl(numpar%At_bath_step_grid_file))
+   elseif (g_numpar%Transport) then ! for atoms
       write(text,'(f10.1)') matter%T_bath*g_kb
       write(text1,'(f10.1)') matter%tau_bath
       write(print_to,'(a)') ' Berendsen thermostat is used for atoms'
