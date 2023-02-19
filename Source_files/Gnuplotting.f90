@@ -148,7 +148,8 @@ subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlab
          write(FN, '(a)') 'set terminal gif font \"arial,14\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (4)  ! png
-         write(FN, '(a)') 'set terminal png font \"arial,14\" '
+         !write(FN, '(a)') 'set terminal png font \"arial,14\" '
+         write(FN, '(a)') 'set terminal pngcairo font \"arial,14\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (5)  ! pdf
          write(FN, '(a)') 'set terminal pdf color font \"arial,14\" '
@@ -162,8 +163,8 @@ subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlab
    endselect
 !    write(FN, '(a)') 'set xlabel \"'//trim(adjustl(xlabl))//' \"        font \"Helvetica,20\" '
 !    write(FN, '(a)') 'set ylabel \"'//trim(adjustl(ylabl))//' \"      font \"Helvetica,20\" '
-   write(FN, '(a)') 'set xlabel \"'//trim(adjustl(xlabl))//' \" '
-   write(FN, '(a)') 'set ylabel \"'//trim(adjustl(ylabl))//' \" '
+   write(FN, '(a)') 'set xlabel \"'//trim(adjustl(xlabl))//'\" font \"arial,18\" '
+   write(FN, '(a)') 'set ylabel \"'//trim(adjustl(ylabl))//'\" font \"arial,18\" '
    
    !write(FN, '(a)') 'set label \"$LABL\" at 150,-8 font \"Helvetica,22\" '
    if (present(setkey)) then
@@ -210,7 +211,8 @@ subroutine write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xl
          write(FN, '(a)') 'set terminal gif large font "arial,14" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (4)  ! png
-         write(FN, '(a)') 'set terminal png font "arial,14" '
+         !write(FN, '(a)') 'set terminal png font "arial,14" '
+         write(FN, '(a)') 'set terminal pngcairo font "arial,14" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (5)  ! pdf
          write(FN, '(a)') 'set terminal pdf color font "arial,14" '
@@ -222,8 +224,8 @@ subroutine write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xl
          write(FN, '(a)') 'set terminal x11 persist'
          write(FN, '(a)') 'unset label'
    endselect
-   write(FN, '(a)') 'set xlabel "'//trim(adjustl(xlabl))//' " '
-   write(FN, '(a)') 'set ylabel "'//trim(adjustl(ylabl))//' " '
+   write(FN, '(a)') 'set xlabel "'//trim(adjustl(xlabl))//'" font "arial,18"'
+   write(FN, '(a)') 'set ylabel "'//trim(adjustl(ylabl))//'" font "arial,18"'
    
    !write(FN, '(a)') 'set label \"$LABL\" at 150,-8 font \"Helvetica,22\" '
    if (present(setkey)) then

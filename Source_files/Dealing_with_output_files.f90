@@ -2127,11 +2127,11 @@ subroutine gnu_entropy(File_name, file_electron_entropy, t0, t_last, eps_name)
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron entropy','Time (fs)', 'Electron entropy (K/eV)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_entropy)), ' " u 1:2 w l lw LW title "Nonequilibrium" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), ' " u 1:3 w l lw LW title "Equilibrium" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_entropy)), ' " u 1:3 w l lw LW title "Equilibrium" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), ' " u 1:2 w l lw LW title "Nonequilibrium" '
    else ! It is linux
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_entropy)), '\" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), ' \" u 1:3 w l lw \"$LW\" title \"Equilibrium\" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_entropy)), '\" u 1:3 w l lw \"$LW\" title \"Equilibrium\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), ' \" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -2371,41 +2371,38 @@ subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
          case default
             do_fe_eq = .false.
       endselect
-      if (do_fe_eq) then
-         write(ch_temp4,'(a)') ' ,\'
-      else
-         write(ch_temp4,'(a)') ''
-      endif
+      ! minimal energy grid:
+      write(ch_temp4,'(f)') -25.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
 
       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
          write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
-         if (do_fe_eq) then  ! plot also equivalent Fermi distribution
+         !if (do_fe_eq) then  ! plot also equivalent Fermi distribution
 
-            write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
                   '" index (i-1) u 1:3 w l lw 2 lt rgb "grey" title "Equivalent Fermi" ,\'
             write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
                   '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
                   trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
-         else
-            write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
-                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
-                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
-         endif
+         !else
+         !   write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
+         !         '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
+         !         trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+         !endif
       else  ! Linux
          write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
-         if (do_fe_eq) then ! plot also equivalent Fermi distribution
-            write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
+         !if (do_fe_eq) then ! plot also equivalent Fermi distribution
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:3 w l lw 2 lt rgb \"grey\" title \"Equivalent Fermi\" ,\'
             write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
                   trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
-         else
-            write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
-                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
-                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
-         endif
+         !else
+         !   write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
+         !         '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
+         !         trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+         !endif
       endif
       write(FN, '(a)') '}'
    enddo

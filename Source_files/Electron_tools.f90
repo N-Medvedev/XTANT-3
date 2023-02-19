@@ -160,6 +160,7 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
             endif
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+            Scell(NSC)%fe_eq = Scell(NSC)%fe ! instanteneous thermalization means both functions are the same
 
          case (2) ! Fixed temperature (Te=const):
 !             if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
@@ -169,6 +170,7 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
 !             endif
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+            Scell(NSC)%fe_eq = Scell(NSC)%fe ! instanteneous thermalization means both functions are the same
 
          case (3) ! Born-Oppenheimer:
             ! Do nothing with fe!
@@ -223,6 +225,8 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
 
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+            if (.not.allocated(Scell(NSC)%fe_eq)) allocate(Scell(NSC)%fe_eq(i_fe))
+            Scell(NSC)%fe_eq = Scell(NSC)%fe ! instanteneous thermalization means both functions are the same
 
          end select
 
