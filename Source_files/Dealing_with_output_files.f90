@@ -1941,9 +1941,9 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                   !if ((i == 1) .and. (j == 1)) then
                   if (first_line) then
                      first_line = .false. ! first line is done, don't repeat it
-                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), ' "u 1:', 1+j ,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
+                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), '" u 1:', 1+j ,' w l lw LW title "', trim(adjustl(chtemp))  ,'"'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), ' "u 1:', 1+j ,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), '" u 1:', 1+j ,' w l lw LW title "', trim(adjustl(chtemp))  ,'"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl-1)) then
                      write(FN, '(a)') ',\'
@@ -1956,7 +1956,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                      first_line = .false. ! first line is done, don't repeat it
                      write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), ' "u 1:', 1+counter,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), ' "u 1:', 1+counter,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), '" u 1:', 1+counter,' w l lw LW title "', trim(adjustl(chtemp))  ,'"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl)) then
                      write(FN, '(a)') ',\'
@@ -1983,9 +1983,9 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
 !                   if ((i == 1) .and. (j == 1)) then
                   if (first_line) then
                      first_line = .false. ! first line is done, don't repeat it
-                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), '\"u 1:', 1+j ,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
+                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), '\"u 1:', 1+j ,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,'\"'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+j ,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+j ,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,'\"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl-1)) then
                      write(FN, '(a)') ',\'
@@ -1996,9 +1996,9 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
 !                   if ((i == 1) .and. (j == 1)) then
                   if (first_line) then
                      first_line = .false. ! first line is done, don't repeat it
-                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
+                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,'\"'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,'\"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl)) then
                      write(FN, '(a)') ',\'
@@ -2127,11 +2127,11 @@ subroutine gnu_entropy(File_name, file_electron_entropy, t0, t_last, eps_name)
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron entropy','Time (fs)', 'Electron entropy (K/eV)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_entropy)), ' " u 1:3 w l lw LW title "Equilibrium" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), ' " u 1:2 w l lw LW title "Nonequilibrium" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_entropy)), '" u 1:3 w l lw LW title "Equilibrium" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), '" u 1:2 w l lw LW title "Nonequilibrium" '
    else ! It is linux
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_entropy)), '\" u 1:3 w l lw \"$LW\" title \"Equilibrium\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), ' \" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" '
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), '\" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
