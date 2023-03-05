@@ -609,7 +609,7 @@ end subroutine share_energy
 
 subroutine electronic_entropy(fe, Se, norm_fe)
    real(8), dimension(:), intent(in) :: fe ! electron distribution function
-   real(8), intent(out) :: Se ! self-expanatory
+   real(8), intent(out) :: Se ! self-explanatory
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
    ! Se = -kB * int [ DOS*( f * ln(f) + (1-f) * ln(1-f) ) ]
    ! E.G. [https://doi.org/10.1103/PhysRevB.50.14686]
@@ -641,7 +641,8 @@ subroutine electronic_entropy(fe, Se, norm_fe)
    ! Second term of the total entropy:
    where (fe(:) < f_norm-eps) f_lnf(:) = (f_norm - fe(:))*log((f_norm - fe(:))/f_norm)
    Se = Se + SUM(f_lnf(:))
-   Se = -g_kb*Se
+   !Se = -g_kb*Se
+   Se = -g_kb_EV*Se  ! [eV/K]
 end subroutine  electronic_entropy
 
 

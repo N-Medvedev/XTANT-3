@@ -255,8 +255,10 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
                case(0)
                   Mij2 = 0.0d0 ! no coupling
                case(2)  ! Fermi's golden rule:
+                  dtij = coef_inv !/ wij
                   ViVj = (wr(i)+wr0(i) - (wr(j)+wr0(j)))/2.0d0 ! for matrix element:
-                  Mij2 = Mij(i,j)*Mij(i,j)*ViVj*ViVj*g_Pi*coef
+                  !Mij2 = Mij(i,j)*Mij(i,j)*ViVj*ViVj*g_Pi*coef   ! OLD
+                  Mij2 = Mij(i,j)*Mij(i,j)*ViVj*ViVj*g_Pi*coef * (dtij/dt_small)**2 ! trying...
                case(3)  ! incomplete Fermi golden rule:
                   ViVj = (wr(i)+wr0(i) - (wr(j)+wr0(j)))/2.0d0 ! for matrix element:
                   Mij2 = Mij(i,j)*Mij(i,j)*ViVj*sin(ViVj*g_e/g_h*dt_small)*coef
