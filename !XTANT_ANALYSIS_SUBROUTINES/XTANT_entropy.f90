@@ -81,7 +81,7 @@ allocate(flnf(size(Ei)))
 ! Output file:
 open (unit=FN_out, file=trim(adjustl(File_out)))
 write(FN_out,'(a)') '# Time  Entropy  Equilibrium_entropy'
-write(FN_out,'(a)') '# [fs]  [K/eV]   [K/eV]'
+write(FN_out,'(a)') '# [fs]  [eV/K]   [eV/K]'
 
 i = 0 ! block counter
 read_well = .true. ! to start with
@@ -125,7 +125,8 @@ do while (read_well)
    flnf(:) = 0.0d0   ! to restart
    where(distr(:) < 2.0d0) flnf(:) = (2.0d0 - distr(:))*log((2.0d0-distr(:))/2.0d0)
    S = S + SUM(flnf) ! second part
-   S = -g_kb * S  ! normalization factor
+   !S = -g_kb * S  ! normalization factor
+   S = -g_kb_EV * S  ! normalization factor [eV/K]
 
    S_eq = 0.0d0   ! to start with
    flnf(:) = 0.0d0 ! to start with
@@ -134,7 +135,8 @@ do while (read_well)
    flnf(:) = 0.0d0   ! to restart
    where(distr_eq(:) < 2.0d0) flnf(:) = (2.0d0 - distr_eq(:))*log((2.0d0-distr_eq(:))/2.0d0)
    S_eq = S_eq + SUM(flnf) ! second part
-   S_eq = -g_kb * S_eq  ! normalization factor
+   !S_eq = -g_kb * S_eq  ! normalization factor
+   S_eq = -g_kb_EV * S_eq  ! normalization factor [eV/K]
 
    write(FN_out,'(es,es,es)') tim, S, S_eq
 enddo
@@ -153,7 +155,7 @@ if (path_sep .EQ. '\') then	! if it is Windows
    write(FN_out1, '(a)') 'set terminal png font arial'
    write(FN_out1, '(a)') 'set output "'//trim(adjustl(Gnu_file))//'"'
    write(FN_out1, '(a)') 'set xlabel "Time (fs)"'
-   write(FN_out1, '(a)') 'set ylabel "Electron entropy"'
+   write(FN_out1, '(a)') 'set ylabel "Electron entropy (eV/K)"'
    write(FN_out1, '(a,a,a)') 'plot[][] "', trim(adjustl(File_out)), '" u 1:2 w l lw 3 title "Nonequilibrium" ,\'
    write(FN_out1, '(a,a,a)') '"', trim(adjustl(File_out)), '" u 1:3 w l lw 3 title "Equilibrium"'
 else ! it is linux

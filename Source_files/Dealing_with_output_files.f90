@@ -989,7 +989,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_entropy)))
    numpar%FN_Se = FN
    call create_file_header(numpar%FN_Se, '#Time Se  Se_eq')
-   call create_file_header(numpar%FN_electron_properties, '#[fs]  [K/eV]   [K/eV]')
+   call create_file_header(numpar%FN_electron_properties, '#[fs]  [eV/K]   [eV/K]')
 
    if (numpar%do_kappa) then
       file_electron_heat_conductivity = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity.dat'
