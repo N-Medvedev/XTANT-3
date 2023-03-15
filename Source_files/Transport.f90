@@ -54,11 +54,57 @@ subroutine Electron_transport(trans_mod, time, Scell, numpar, matter, dt, tau, E
       do NSC = 1, size(Scell) ! for all supercells
          !print*, 'Electron_transport', matter%T_bath_e, dt, tau
          call rate_equation(Scell(NSC)%TeeV, matter%T_bath_e, dt, tau, 2) ! below
-         call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution, module "Electron_tools"
+         select case (numpar%el_ion_scheme)
+         case (4)    ! relaxation-time approximation
+            call rate_equation_for_fe(Scell(NSC), matter%T_bath_e, dt, tau)   ! below
+         case default
+            call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution, module "Electron_tools"
+         endselect
          call get_new_energies(Scell, matter, numpar, time, Err) ! module "TB"
       enddo
    endselect
 end subroutine Electron_transport
+
+
+
+subroutine rate_equation_for_fe(Scell, T_bath_e, dt, tau)   ! below
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   real(8), intent(in) :: T_bath_e  ! [eV] electronic temperature of the bath
+   real(8), intent(in) :: dt, tau   ! MD timestep [fs], and characteristic cooling time [fs]
+   !-----------------------------
+   real(8), dimension(size(Scell%Ei)) :: fe_eq  ! distribution function of electronic bath
+   real(8) :: Ntot, mu, exp_dttau
+   integer :: i_fe, i
+
+   ! 1) Find the chemical potential of the bath (corresponding to the constant number of electrons):
+   !Ntot = dble(Scell%Ne)   ! number of electrons to be conserved
+   Ntot = Scell%Ne_low  ! transient number of low-energy electrons (excluding high-energy ones!)
+   call find_mu_from_N_T(Scell%Ei, Ntot, mu, T_bath_e) ! module "Electron_tools"
+
+   ! 2) Set the disitrbution function of the electornic bath:
+   call set_Fermi(Scell%Ei, T_bath_e, mu, fe_eq)   ! module "Electron_tools"
+   !print*, 'rate_equation_for_fe 1:', Ntot, SUM(fe_eq(:))
+
+   ! 3) Do the rate equation for the electron distribution:
+   i_fe = size(Scell%fe)   ! number of grid points in distribution function
+   exp_dttau = dexp(-dt / tau)   ! finite-time relaxation
+   do i = 1, i_fe ! for all grid points (MO energy levels)
+      Scell%fe(i) = fe_eq(i) + (Scell%fe(i) - fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
+   enddo
+
+   ! 4) Update the equivalent distribution:
+   ! Update the electronic band energy:
+   call set_total_el_energy(Scell%Ei, Scell%fe, Scell%nrg%El_low) ! module "Electron_tools"
+   ! Get the equivalent (kinetic) temperature and chemical potential:
+   call Electron_Fixed_Etot(Scell%Ei, Scell%Ne_low, Scell%nrg%El_low, Scell%mu, Scell%TeeV, .true.) ! module "Electron_tools"
+   Scell%Te = Scell%TeeV*g_kb ! save also in [K]
+   ! Construct Fermi function with the given transient parameters:
+   if (.not.allocated(Scell%fe_eq)) allocate(Scell%fe_eq(i_fe))
+   call set_Fermi(Scell%Ei, Scell%TeeV, Scell%mu, Scell%fe_eq)   ! below
+
+   !print*, 'rate_equation_for_fe 2:', Ntot, Scell%Ne_low, SUM(fe_eq(:)), SUM(Scell%fe(:))
+end subroutine rate_equation_for_fe
+
 
 
 subroutine rate_equation(X, X0, dt, tau, ind) ! solving dX/dt = -(X - X0)/tau

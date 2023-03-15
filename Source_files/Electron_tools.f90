@@ -858,12 +858,12 @@ subroutine get_low_e_energy(Scell, matter, numpar)
    do NSC = 1, size(Scell)
       if (present(numpar)) then  ! there may be SCC calculations involved
          if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
-            call set_total_el_energy(Scell(NSC)%Ei_scc_part, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+            call set_total_el_energy(Scell(NSC)%Ei_scc_part, Scell(NSC)%fe, Scell(NSC)%nrg%El_low) ! below
          else ! non-SCC:
-            call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+            call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low) ! below
          endif
       else
-         call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+         call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low) ! below
       endif
    enddo
 end subroutine get_low_e_energy
