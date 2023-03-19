@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -32,6 +32,7 @@ use Dealing_with_files, only : read_file, close_file
 
 
 implicit none
+PRIVATE
 
 ! Modular parameters:
 character(10), parameter :: m_BOP_directory = 'BOP_data'
@@ -46,6 +47,11 @@ character(30), parameter :: m_dimer_bond_length = 'INPUT_dimer_bond_lengths.dat'
 character(14), parameter :: m_repulsive = '_repulsive.txt'
 
 integer, parameter :: m_N_BOP_rep_grid = 400  ! number of grid points for BOP potential
+
+
+public :: m_BOP_directory, m_BOP_file, read_BOP_parameters, idnetify_basis_size_BOP, &
+          read_BOP_repulsive, check_if_repulsion_exists, m_repulsive, m_N_BOP_rep_grid
+
 
  contains
 

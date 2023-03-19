@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2022 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -25,6 +25,7 @@
 MODULE Periodic_table
 
 implicit none
+PRIVATE
 
 !==============================================
 ! For reading atomic data from our periodic table:
@@ -38,6 +39,8 @@ type Atomic_data    ! our internal atomic database "INPUT_atomic_data.dat"
    real(8) :: EN    ! electronegativity
 endtype Atomic_data
 !==============================================
+
+public :: Atomic_data, Decompose_compound
 
  contains
 

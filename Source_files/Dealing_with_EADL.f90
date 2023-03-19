@@ -1,3 +1,25 @@
+! 000000000000000000000000000000000000000000000000000000000000
+! This file is part of XTANT
+!
+! Copyright (C) 2016-2023 Nikita Medvedev
+!
+! XTANT is free software: you can redistribute it and/or modify it under
+! the terms of the GNU Lesser General Public License as published by
+! the Free Software Foundation, either version 3 of the License, or
+! (at your option) any later version.
+!
+! Although we endeavour to ensure that the code XTANT and results delivered are correct,
+! no warranty is given as to its accuracy. We assume no responsibility for possible errors or omissions.
+! We shall not be liable for any damage arising from the use of this code or its parts
+! or any results produced with it, or from any action or decision taken
+! as a result of using this code or any related material.
+!
+! This code is distributed as is for non-commercial peaceful purposes only,
+! such as research and education. It is explicitly prohibited to use the code,
+! its parts, its results or any related material for military-related and other than peaceful purposes.
+!
+! By using this code or its materials, you agree with these terms and conditions.
+!
 ! 1111111111111111111111111111111111111111111111111111111111111
 ! This module contains subroutines for dealing with EADL and EPDL97 databases
 MODULE Dealing_with_EADL
@@ -7,7 +29,7 @@ use Dealing_with_files ! count lines in file etc.
 use Little_subroutines, only : Find_monotonous_LE
 
 implicit none
-
+PRIVATE
 
  character(12) :: m_EADL_file, m_EPDL_file
  ! Outdated databases:
@@ -17,7 +39,8 @@ implicit none
  parameter(m_EADL_file = 'EADL2017.all')
  parameter(m_EPDL_file = 'EPDL2017.all')
 
- 
+public :: m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax, &
+         READ_EPDL_TYPE_FILE_real, next_designator, Read_EPDL_data, define_PQN
 
  contains
 

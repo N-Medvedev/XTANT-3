@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -38,6 +38,12 @@ use Atomic_tools, only : Reciproc_rel_to_abs
 
 
 implicit none
+PRIVATE
+
+public :: Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_drij_DFTB, &
+          Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB, &
+          identify_DFTB_orbitals_per_atom, identify_DFTB_basis_size, Get_overlap_S_matrix_DFTB, &
+          Hopping_DFTB
 
  contains
  

@@ -3,7 +3,7 @@
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! This file is part of XTANT
 !
-! Copyright (C) 2012-2022 Nikita Medvedev
+! Copyright (C) 2012-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -79,10 +79,10 @@ call print_time('Attempting to start XTANT at', ind=0) ! prints out the current 
 ! Read input files:
 if (g_numpar%which_input > 0) then ! it's not the first run
    print*, '# It is run for input files number:', g_numpar%which_input
-   call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err, g_numpar%which_input) ! module "Read_input"
+   call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err, g_numpar%which_input) ! module "Read_input_data"
 else ! it is the first run:
    print*, '# It is the first run'
-   call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err) ! module "Read_input"
+   call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err) ! module "Read_input_data"
 endif
 if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
 ! Printout additional info, if requested:
@@ -618,7 +618,7 @@ subroutine vary_size(do_forces, Err)
 !       !----------------------------------------------
 
 !        print*, 'Test 0'
-      call Det_3x3(g_Scell(1)%supce,g_Scell(1)%V) !<-
+      call Det_3x3(g_Scell(1)%supce,g_Scell(1)%V) !<- modlue "Algebra_tools"
       !g_time = g_Scell(1)%supce(3,3)/real(g_matter%cell_x)*0.25d0*sqrt(3.0d0)  !<- ZnS
       !g_time = g_Scell(1)%supce(2,2)/real(g_matter%cell_x)*(r_sh)
       

@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -35,6 +35,10 @@ use Electron_tools
 use Nonadiabatic
 
 implicit none
+PRIVATE
+
+public :: Construct_M_Vs, Complex_Hamil_tot, dHij_s, Attract_TB_Forces_Press, dErdr_s, dErdr_Pressure_s, &
+         construct_TB_H_Pettifor, get_Erep_s, dHij_r, dE2rep_dr2
 
  contains
 

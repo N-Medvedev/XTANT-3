@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2022 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -28,6 +28,7 @@ MODULE TB_Koster_Slater
 use Algebra_tools, only: Kronecker_delta, Heavyside_tau, get_factorial
 
 implicit none
+PRIVATE
 
 ! Modular parameters:
 real(8) :: m_sqrt_inv_2, m_sqrt3, m_sqrt3_half
@@ -35,6 +36,14 @@ real(8) :: m_sqrt_inv_2, m_sqrt3, m_sqrt3_half
 parameter (m_sqrt_inv_2 = 1.0d0 / sqrt(2.0d0))
 parameter (m_sqrt3 = sqrt(3.0d0))
 parameter (m_sqrt3_half = m_sqrt3*0.5d0)
+
+
+public :: KS_s, KS_ss_hetero, KS_sp3_hetero, KS_sp3d5_hetero, drij_dska, ddija_dskb_kd, &
+         d_KS_s, d_KS_sp3_hetero, d_KS_sp3d5_hetero, dda_dhgd, drij_dhab, drij_drka, &
+         ddija_drkb, d2dija_drkb2, m_sqrt3, t_s_dab, t_s_dx2_y2, t_s_dz2_r2, t_s_s, t_pa_pa, &
+         t_dab_dab, t_dx2_y2_dx2_y2, t_d3z2_r2_d3z2_r2, KS_sp3_hetero_TEST, KS_sp3d5_hetero_TEST, &
+         KS_sp3d5, d_KS_sp3d5, d_KS_sp3d5_TEST
+
 
  contains
 

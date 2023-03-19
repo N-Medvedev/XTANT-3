@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2022 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -30,7 +30,8 @@ use Objects
 use Algebra_tools
 use Dealing_with_files
 use Atomic_tools
-use TB, only : get_DOS_masks, get_Hamilonian_and_E, get_glob_energy
+use TB, only : get_DOS_masks, get_Hamilonian_and_E
+use Electron_tools, only : get_glob_energy
 use Dealing_with_BOP, only : m_repulsive, m_N_BOP_rep_grid
 use ZBL_potential, only : ZBL_pot
 use TB_xTB, only : identify_xTB_orbitals_per_atom
@@ -40,6 +41,7 @@ use Periodic_table, only : Decompose_compound
 use Read_input_data, only : m_Atomic_parameters
 
 implicit none
+PRIVATE
 
 
 real(8) :: m_H2O_dist, m_H2O_theta, m_one_third
@@ -48,8 +50,11 @@ parameter (m_H2O_theta = 106.0d0 * g_Pi/180.0d0)   ! [deg] H-O-H angle in H2O mo
 parameter (m_one_third = 1.0d0/3.0d0)
 
 
- contains
 
+public :: create_BOP_repulsive, set_initial_configuration
+
+
+ contains
 
 
 

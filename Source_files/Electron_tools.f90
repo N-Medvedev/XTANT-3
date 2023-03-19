@@ -30,6 +30,13 @@ use Atomic_tools
 use Little_subroutines
 
 implicit none
+PRIVATE
+
+public :: get_low_e_energy, find_band_gap, get_DOS_sort, Diff_Fermi_E, get_number_of_CB_electrons, set_Fermi
+public :: set_Erf_distribution, update_fe, Electron_thermalization, get_glob_energy, update_cross_section
+public :: Do_relaxation_time, set_initial_fe, find_mu_from_N_T, set_total_el_energy, Electron_Fixed_Etot
+public :: get_new_global_energy, get_electronic_heat_capacity, get_total_el_energy, electronic_entropy
+
  contains
 
 

@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -33,6 +33,9 @@ use Atomic_tools
 
 
 implicit none
+PRIVATE
+
+public :: Electron_ion_collision_int, get_G_ei, Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex
 
  contains
 

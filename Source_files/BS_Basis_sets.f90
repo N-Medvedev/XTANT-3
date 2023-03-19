@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -38,11 +38,14 @@ USE OMP_LIB
 
 
 implicit none
+PRIVATE
 
 character(50) :: m_basis_sets_folder
 
 ! Where do we keep all the basis sets:
 parameter(m_basis_sets_folder = 'BASIS_SETS')
+
+public :: set_xTB_AO
 
  
  contains

@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -28,11 +28,15 @@
 
 MODULE Transport
 use Universal_constants
-use Electron_tools
-use Atomic_tools
-use TB
+use Objects
+use Electron_tools, only : set_initial_fe, find_mu_from_N_T, set_total_el_energy, set_Fermi, Electron_Fixed_Etot
+use Atomic_tools, only : get_energy_from_temperature, Rescale_atomic_velocities, get_kinetic_energy_abs, save_last_timestep
+use TB, only : get_new_energies
 
 implicit none
+PRIVATE
+
+public :: Electron_transport, Atomic_heat_transport, Change_affected_layer
  
  contains
 

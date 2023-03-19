@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -28,6 +28,7 @@ MODULE ZBL_potential
 use Universal_constants
 
 implicit none
+PRIVATE
 
 ! Modular parameters:
 real(8), parameter :: m_a_u = 0.8854d0
@@ -40,6 +41,8 @@ real(8), parameter :: m_exp2 = -0.9423d0
 real(8), parameter :: m_exp3 = -0.4028d0
 real(8), parameter :: m_exp4 = -0.2016d0
 real(8), parameter :: m_k = 1.0d0/(4.0d0 * g_Pi * g_e0)
+
+public :: ZBL_pot, d_ZBL_pot
 
 
  contains

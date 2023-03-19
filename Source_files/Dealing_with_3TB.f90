@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2022 Nikita Medvedev
+! Copyright (C) 2022-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -31,6 +31,7 @@ use Dealing_with_files, only : read_file, Count_lines_in_file
 use Dealing_with_DFTB, only: same_or_different_atom_types
 
 implicit none
+PRIVATE
 
 
 interface find_3bdy_ind
@@ -51,7 +52,8 @@ parameter (m_3TB_elements_data = 'els')
 parameter (m_3TB_binary_data = 'binary')
 
 
-public :: find_3bdy_ind
+public :: find_3bdy_ind,  m_3TB_directory, m_3TB_onsite_data, read_3TB_onsite_file, construct_3TB_filenames, &
+                            read_3TB_2bdy_file, read_3TB_3bdy_file
 
 
  contains

@@ -24,11 +24,12 @@
 ! This module contains subroutines for dealing with the extended XYZ format
 
 MODULE Dealing_with_eXYZ
-use Universal_Constants   ! let it use universal constants
-use Objects   ! since it uses derived types, it must know about them from module 'Objects'
 use Dealing_with_files, only : read_file, Count_lines_in_file
 
 implicit none
+PRIVATE
+
+public :: interpret_XYZ_comment_line
 
  contains
 

@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -36,6 +36,11 @@ use TB, only : k_point_choice, construct_complex_Hamiltonian
 use Little_subroutines, only : deallocate_array
 
 implicit none
+PRIVATE
+
+public :: get_optical_parameters
+
+
  contains
 
 

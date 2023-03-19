@@ -31,6 +31,7 @@ MODULE Dealing_with_output_files
 USE IFLPORT
 
 use Objects
+use Atomic_tools, only : pair_correlation_function
 use Universal_constants
 use Variables
 use Little_subroutines
@@ -41,7 +42,10 @@ use Gnuplotting
 use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file
 
 implicit none
+PRIVATE
 
+public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
+public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
 
  contains
 

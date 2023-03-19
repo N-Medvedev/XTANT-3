@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -43,6 +43,7 @@ use Periodic_table, only : Decompose_compound
 USE OMP_LIB
 
 implicit none
+PRIVATE
 
 
 ! Modular parameters:
@@ -58,6 +59,11 @@ parameter (m_NUMERICAL_PARAMETERS = 'NUMERICAL_PARAMETERS')
 parameter (m_Atomic_parameters = 'Atomic_parameters')
 parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat')
 
+
+public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
+public :: m_INFO_directory, m_INFO_file, m_HELP_file
+
+public :: Read_Input_Files, get_add_data
 
  contains
 

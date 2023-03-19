@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2022 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -26,6 +26,7 @@ MODULE Algebra_tools
 use Universal_constants
 
 implicit none
+!PRIVATE
 
 ! Interface to automatically chose from the bubble array-sorting subroutines
 interface sort_array

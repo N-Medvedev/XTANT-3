@@ -1,35 +1,23 @@
 use Universal_constants
 use Objects
 use Variables
-use Little_subroutines
-use BS_Cartesian_Gaussians
-use BS_Basis_sets
-use Dealing_with_files
-use Dealing_with_EADL
-use Dealing_with_DFTB
-use Dealing_with_3TB
-use Dealing_with_xTB
-use Algebra_tools
-use Read_input_data
-use Dealing_with_output_files
-use MC_cross_sections
-use Initial_configuration
-use Atomic_tools
-use Electron_tools
-use Transport
-use TB_Koster_Slater
-use TB_Fu
-use TB_Pettifor
-use TB_Molteni
-use TB_NRL
-use TB_DFTB
-use TB_3TB
-use Van_der_Waals
-use Coulomb
-use Exponential_wall
-use TB
-use Optical_parameters
-use Monte_carlo
+use Algebra_tools, only : DET_3X3
+use Little_subroutines, only : print_time, parse_yes_no, set_starting_time, print_time_step, parse_time
+use Dealing_with_files, only : close_file
+use Read_input_data, only : get_add_data, Read_Input_Files
+use Dealing_with_output_files, only : reset_dt, Print_title, prepare_output_files, write_output_files, convolve_output, &
+                    communicate, close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
+use Initial_configuration, only : set_initial_configuration
+use Atomic_tools, only : get_mean_square_displacement, save_last_timestep, make_time_step_atoms, make_time_step_supercell, &
+                    make_time_step_atoms_Y4, make_time_step_supercell_Y4, make_time_step_atoms_M, Cooling_atoms, &
+                    Coordinates_rel_to_abs, velocities_abs_to_rel, shortest_distance
+use Electron_tools, only : Electron_thermalization, get_glob_energy
+use Transport, only : Electron_transport, Atomic_heat_transport, Change_affected_layer
+use TB, only : get_new_energies, get_DOS, get_Mulliken, Get_pressure, get_electronic_thermal_parameters, get_Hamilonian_and_E, &
+                vdW_interplane, Electron_ion_coupling, update_nrg_after_change
+use Optical_parameters, only : get_optical_parameters
+use MC_cross_sections, only : get_mfps, get_photon_attenuation
+use Monte_carlo, only : MC_Propagate
 
 USE IFLPORT
 USE OMP_LIB

@@ -31,9 +31,13 @@ use Little_subroutines
 use Dealing_with_files
 use Dealing_with_EADL
 use MC_cross_sections
-use Electron_tools
+use Electron_tools, only : update_cross_section, Do_relaxation_time
 
 implicit none
+PRIVATE
+
+public :: MC_Propagate
+
 
  contains
 

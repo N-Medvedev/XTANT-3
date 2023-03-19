@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -38,7 +38,7 @@ use Electron_tools
 use Nonadiabatic
 
 implicit none
-
+PRIVATE
 
 ! ! this interface finds by itself which of the two subroutine to use depending on the array passed:
 ! interface test_orthogonalization
@@ -46,15 +46,18 @@ implicit none
 !    module procedure test_orthogonalization_c	! complex version
 ! end interface test_orthogonalization
 
-
-! public :: test_orthogonalization
-
 ! Modular parameters:
 real(8) :: m_one_third, m_two_third, m_four_third
 
 parameter (m_one_third = 1.0d0/3.0d0)
 parameter (m_two_third = 2.0d0/3.0d0)
 parameter (m_four_third = 2.0d0*m_two_third)
+
+!public :: test_orthogonalization
+public :: construct_TB_H_NRL, get_dHij_drij_NRL, dErdr_s_NRL, Construct_Vij_NRL, Complex_Hamil_NRL, get_Erep_s_NRL, &
+         dErdr_Pressure_s_NRL, Loewdin_Orthogonalization, Loewdin_Orthogonalization_c, Attract_TB_Forces_Press_NRL, &
+         test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c
+public :: m_one_third, m_two_third, m_four_third
 
  contains
 

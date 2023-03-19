@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -28,9 +28,13 @@ use Universal_constants
 use Objects
 !use Variables
 use Little_subroutines
-use Atomic_tools
+use Atomic_tools, only : get_interplane_indices, shortest_distance, get_near_neighbours, get_number_of_image_cells, &
+            distance_to_given_cell
 
 implicit none
+PRIVATE
+
+public :: Construct_B, get_vdW_s, get_vdW_s_D, get_vdW_interlayer
 
  contains
 

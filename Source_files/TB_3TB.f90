@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2022 Nikita Medvedev
+! Copyright (C) 2022-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -42,11 +42,12 @@ use Dealing_with_3TB, only: find_3bdy_ind
 
 
 implicit none
-
+PRIVATE
 
 real(8), parameter :: m_a = 2.0d0   ! exponential decay parameter according to [1]
 
-
+public :: get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, Attract_TB_Forces_Press_3TB, &
+          Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors, get_dHij_drij_3TB
 
  contains
 
