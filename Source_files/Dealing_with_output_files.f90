@@ -857,7 +857,8 @@ subroutine make_save_files(path)
    file_name = trim(adjustl(path))//'SAVE_supercell.dat'
    open(UNIT=FN2, FILE = trim(adjustl(file_name)))
    FN3 = 702
-   file_name = trim(adjustl(path))//'SAVE_parameters.dat'
+   !file_name = trim(adjustl(path))//'SAVE_parameters.dat'
+   file_name = trim(adjustl(path))//'SAVE_el_distribution.dat'
    open(UNIT=FN3, FILE = trim(adjustl(file_name)))
 end subroutine make_save_files
 
@@ -870,12 +871,14 @@ subroutine update_save_files(time, atoms, matter, numpar, Scell)
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
    integer i
-   rewind(702)	! overwrite the old state
-   write(702,'(es25.16,es25.16,es25.16,es25.16,es25.16)') time, Scell%Te, Scell%mu, Scell%Ne_low, Scell%Ta
+
+   ! SAVE_atoms.dat :
    rewind(700)	! overwrite the old state
    do i = 1,size(atoms)
       write(700, '(i3,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') atoms(i)%KOA, atoms(i)%S(:), atoms(i)%S0(:), atoms(i)%SV(:), atoms(i)%SV0(:)
    enddo
+
+   ! SAVE_supercell.dat :
    rewind(701)	! overwrite the old state
    write(701,*) Scell%supce(:,:)
    write(701,'(a)') ''
@@ -885,6 +888,14 @@ subroutine update_save_files(time, atoms, matter, numpar, Scell)
    write(701,'(a)') ''
    write(701,*) Scell%Vsupce0(:,:)
    write(701,'(a)') ''
+
+   ! SAVE_el_distribution.dat :
+   rewind(702)	! overwrite the old state
+   !write(702,'(es25.16,es25.16,es25.16,es25.16,es25.16)') time, Scell%Te, Scell%mu, Scell%Ne_low, Scell%Ta
+   write(702,'(a)') '# Electron distribution'
+   do i = 1, size(Scell%fe)
+      write(702,'(f25.16, f25.16)') Scell%Ei(i), Scell%fe(i)
+   enddo
 end subroutine update_save_files
 
 

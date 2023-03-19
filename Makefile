@@ -4,6 +4,9 @@
 # in 2021-2022
 #----------------------------------------------------- 
 
+# To pass variables into the next make-file:
+export
+
 # Call makefile within the Source_files directory:
 subsystem:
 	cd Source_files && $(MAKE)
@@ -16,7 +19,7 @@ subsystem:
 
 
 clean:
-	cd Source_files &&$(MAKE clean)
+	cd Source_files && $(MAKE clean)
 	rm -f *.o
 	rm -f *.mod
 	rm -f XTANT.x

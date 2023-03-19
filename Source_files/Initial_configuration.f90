@@ -35,13 +35,17 @@ use Dealing_with_BOP, only : m_repulsive, m_N_BOP_rep_grid
 use ZBL_potential, only : ZBL_pot
 use TB_xTB, only : identify_xTB_orbitals_per_atom
 use Little_subroutines
+use Dealing_with_eXYZ
+use Periodic_table, only : Decompose_compound
+use Read_input_data, only : m_Atomic_parameters
 
 implicit none
 
 
-real(8) :: m_H2O_dist, m_H2O_theta
+real(8) :: m_H2O_dist, m_H2O_theta, m_one_third
 parameter (m_H2O_dist = 0.943d0)    ! [A] distance between H and O atoms in H2O molecule
 parameter (m_H2O_theta = 106.0d0 * g_Pi/180.0d0)   ! [deg] H-O-H angle in H2O molecule
+parameter (m_one_third = 1.0d0/3.0d0)
 
 
  contains
@@ -258,9 +262,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
    type(MC_data), dimension(:), allocatable, intent(inout) :: MC ! all MC parameters
    type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
-   integer i, Nsc, Natoms, FN, FN2, Reason, count_lines, N, j, k, n1, FN3, FN4
-   character(200) :: File_name, File_name2, Error_descript, File_name_S1, File_name_S2
-   logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2
+   integer i, Nsc, Natoms, FN, FN2, Reason, count_lines, N, j, k, n1, FN3, FN4, FN_XYZ
+   character(200) :: File_name, File_name2, Error_descript, File_name_S1, File_name_S2, File_name_XYZ
+   logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2, XYZ_file_exists
    real(8) RN, temp, Mass, V2, Ta
 
    Nsc = 1 !in the present version of the code, there is always only one super-cell
@@ -288,15 +292,23 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          numpar%do_path_coordinate = .false. ! to check files with phase 1 and 2
          
          ! Supercell vectors:
+
+         ! Check if there is extended XYZ-format with the unit/super-cell:
+         XYZ_file_exists = .false.  ! to start with
+         FN_XYZ = 9004
+         write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'Cell.xyz'
+         inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
+
+         ! Check if user set to calculate along path coordinate:
          FN3 = 9002
          FN4 = 9003
          write(File_name_S1, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'PHASE_1_supercell.dat'
          inquire(file=trim(adjustl(File_name_S1)),exist=file_exist_1)
          write(File_name_S2, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'PHASE_2_supercell.dat'
          inquire(file=trim(adjustl(File_name_S2)),exist=file_exist_2)
-         ! Check if user set to calculate along path coordinate:
          numpar%do_path_coordinate = (file_exist_1 .and. file_exist_2)
          
+         ! Check if there is file with Supercell vectors:
          FN = 9000
          write(File_name, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'SAVE_supercell.dat'
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
@@ -353,6 +365,11 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             inquire(file=trim(adjustl(File_name_S2)),opened=file_opened)
             if (file_opened) close (FN4)
          
+         !----------------------------
+         elseif (XYZ_file_exists) then SAVED_SUPCELL  ! read from XYZ file:
+            ! Will read it together with atomic coordinates from the same file below
+
+         !----------------------------
          elseif (file_exist) then SAVED_SUPCELL  ! read from this file with transient Super cell:
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             INPUT_SUPCELL:if (file_exist) then
@@ -373,6 +390,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                print*, trim(adjustl(Error_descript))
                goto 3416
             endif INPUT_SUPCELL
+         !----------------------------
          else SAVED_SUPCELL   ! no supercell, create from unit cell
             write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), &
                                 trim(adjustl(matter%Name))//trim(adjustl(numpar%path_sep)), 'Unit_cell_equilibrium.txt'
@@ -448,6 +466,35 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! module "Atomic_tools"
             endif
          
+         !----------------------------
+         elseif (XYZ_file_exists) then SAVED_ATOMS ! XYZ file contains atomic coordinates
+            open(UNIT=FN_XYZ, FILE = trim(adjustl(File_name_XYZ)), status = 'old', action='read')
+            inquire(file=trim(adjustl(File_name_XYZ)),opened=file_opened)
+            if (.not.file_opened) then
+               Error_descript = 'File '//trim(adjustl(File_name_XYZ))//' could not be opened, the program terminates'
+               call Save_error_details(Err, 2, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               goto 3416
+            endif
+
+            ! 1) Read the unit cell:
+            call read_XYZ(FN_XYZ, File_name_XYZ, Scell, i, matter, numpar, Err) ! see below
+            if ( trim(adjustl(Err%Err_descript)) /= '' ) then
+               goto 3416
+            endif
+
+            ! 2) Make the supercell, if required:
+            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 3, matter, Err) ! below
+            if ( trim(adjustl(Err%Err_descript)) /= '' ) then
+               goto 3416
+            endif
+
+            ! 3) Set initial velocities:
+            call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
+
+            inquire(file=trim(adjustl(File_name_XYZ)),opened=file_opened)
+            if (file_opened) close (FN_XYZ)
+         !----------------------------
          elseif (file_exist) then SAVED_ATOMS    ! read from this file with transient Super cell:
             ! Save the flag for output:
             numpar%save_files_used = 1  ! Save files read
@@ -470,6 +517,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                ! Set initial velocities according to the given input temperature:
                call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate)  ! below
             endif
+         !----------------------------
          else SAVED_ATOMS
             ! Save the flag for output:
             numpar%save_files_used = 0  ! Save files read
@@ -606,9 +654,19 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          ! Electron distribution function:
          if (.not. allocated(Scell(i)%fe)) allocate(Scell(i)%fe(size(Scell(i)%Ei))) ! electron distribution function (Fermi-function)
          ! Check if there is a file with the initial distribution:
-         if (Scell(i)%Te < 0.0d0) then ! distribution must be provided in the file
-            write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(numpar%fe_filename)) ! user-provided filename
-            inquire(file=trim(adjustl(File_name2)),exist=file_exist)
+         write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'SAVE_el_distribution.dat' ! default filename
+         inquire(file=trim(adjustl(File_name2)),exist=file_exist_1)  ! check if default file exists
+
+         if ((Scell(i)%Te < 0.0d0) .or. file_exist_1) then ! distribution must be provided in the file
+            if (.not.file_exist_1) then ! no default file, must be provided by the user then
+               write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(numpar%fe_filename)) ! user-provided filename
+               inquire(file=trim(adjustl(File_name2)),exist=file_exist)
+            else ! default file
+               numpar%fe_filename = 'SAVE_el_distribution.dat'
+               file_exist = file_exist_1
+               Scell(i)%Te = -1.0e0
+            endif
+
             INPUT_DISTR:if (file_exist) then
                numpar%fe_input_exists = .true.  ! distribution was provided
                open(UNIT=FN2, FILE = trim(adjustl(File_name2)), status = 'old', action='read')
@@ -630,7 +688,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                print*, 'File '//trim(adjustl(File_name2))//' could not be opened, use electron temperature: ', Scell(i)%Te
             endif
          else
-            ! No distribution file provided by the user, use Fermi with given tempreature instead
+            ! No distribution file provided by the user, use Fermi with given temperature instead
          endif
 
 
@@ -640,16 +698,11 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          endif
 !          if (.not. allocated(Scell(i)%Norm_WF)) allocate(Scell(i)%Norm_WF(size(Scell(i)%Ei))) ! normalization coefficient of the wave function
 
-         ! DOS masks if needed:
-!          select case (numpar%DOS_splitting)
-!          case (1)
-            call get_DOS_masks(Scell, matter, numpar)  ! module "TB"
-!          case default ! No need to sort DOS per orbitals:
-!             call get_DOS_masks(Scell, matter, numpar, only_coupling=.true.)  ! module "TB" 
-!          endselect
+         ! DOS masks:
+         call get_DOS_masks(Scell, matter, numpar)  ! module "TB"
          
          do j = 1,size(laser) ! for each pulse:
-            laser(j)%Fabs = laser(j)%F*real(Scell(i)%Na) ! total absorbed energy by supercell [eV]
+            laser(j)%Fabs = laser(j)%F*dble(Scell(i)%Na) ! total absorbed energy by supercell [eV]
             laser(j)%Nph = laser(j)%Fabs/laser(i)%hw     ! number of photons absorbed in supercell
          enddo
 
@@ -661,7 +714,6 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
       enddo ALL_SC
    endif MD
-3416 continue
 
    ! Initialize MC data:
    do Nsc = 1, size(Scell)
@@ -702,12 +754,369 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
       matter%At_dens = matter%dens/(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3)   ! atomic density [1/cm^3]
    endif
 
-   
+3416 continue
 !     do i = 1, Scell(1)%Na
 !        write(6,'(i4,f,f,f,f,f,f)') i, Scell(1)%MDAtoms(i)%S0(:), Scell(1)%MDAtoms(i)%S(:)
 !     enddo ! j
 !    pause 'set_initial_configuration'
 end subroutine set_initial_configuration
+
+
+
+subroutine read_XYZ(FN_XYZ, File_name_XYZ, Scell, SCN, matter, numpar, Err) ! extended XYZ format
+   integer, intent(in) :: FN_XYZ ! extended XYZ file number (must be already open)
+   character(*), intent(in) :: File_name_XYZ ! extended XYZ file name
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   integer, intent(in) :: SCN ! number of the supercell (always =1)
+   type(Solid), intent(inout) :: matter	! all material parameters
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !-------------------
+
+   integer :: count_lines, Reason
+   logical :: read_well
+   character(1000) :: line_2, Error_descript
+
+   count_lines = 0   ! to start with
+
+   ! First line in XYZ, number of atoms:
+   read(FN_XYZ,*,IOSTAT=Reason) Scell(SCN)%Na
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_XYZ))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 3418
+   endif
+
+   ! Second line, in extended XYZ format contains important information:
+   line_2 = ''
+   read(FN_XYZ,'(a)',IOSTAT=Reason) line_2  ! read the full line, then interpret it
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_XYZ))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 3418
+   endif
+
+   ! Having read this line, act accordingly:
+   call interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Scell, SCN, matter, numpar, Err)   ! below
+
+   ! Get the volume of the now-defined supercell:
+   call Det_3x3(Scell(SCN)%supce,Scell(SCN)%V) ! module "Algebra_tools"
+
+   3418 continue
+end subroutine read_XYZ
+
+
+subroutine interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Scell, SCN, matter, numpar, Err)
+   integer, intent(in) :: FN_XYZ, SCN
+   integer, intent(inout) :: count_lines
+   character(*), intent(in) :: File_name_XYZ ! extended XYZ file name
+   character(*), intent(in) :: line_2  ! line #2 from extended XYZ file
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   type(Solid), intent(inout) :: matter	! all material parameters
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !--------------------
+   integer :: ind_S, ind_R, ind_V, ind_atoms
+   real(8) :: SC_X, SC_Y
+   character(200) :: Error_descript
+
+   call interpret_XYZ_comment_line(line_2, Scell(SCN)%Supce, ind_S, ind_R, ind_V, ind_atoms, SC_X, SC_Y, Error_descript)     ! module "Dealing_with_eXYZ"
+   if (trim(adjustl(Error_descript)) /= '') then
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 3420
+   endif
+
+   if (numpar%verbose) print*, 'In interpret_XYZ_comment, the ind_atoms=', ind_atoms
+
+   ! If atomic coordinates are provided:
+   select case (ind_atoms)
+   case (1) ! there are data for atomic species and coordinates
+      Scell(SCN)%Supce0 = Scell(SCN)%Supce   ! initial
+      call read_XYZ_coords(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, ind_S, ind_R, ind_V, Err) ! below
+   case (0) ! to be set randomly
+      call read_XYZ_random(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, SC_X, SC_Y, numpar, Err) ! below
+   case default
+      Error_descript = 'Could not interpret the data in file '//trim(adjustl(File_name_XYZ))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+   endselect
+
+3420 continue
+end subroutine interpret_XYZ_comment
+
+
+subroutine read_XYZ_random(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, SC_X_in, SC_Y_in, numpar, Err)
+   integer, intent(in) :: FN_XYZ, SCN
+   integer, intent(inout) :: count_lines
+   character(*), intent(in) :: File_name_XYZ ! extended XYZ file name
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   type(Solid), intent(inout) :: matter	! all material parameters
+   real(8), intent(in) :: SC_X_in, SC_Y_in   ! [A] supercell size along X and Y
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !------------------------
+   real(8) :: SC_x, SC_y, eps, V_at, RN(3), lower_Z, upper_Z, a_r, dR_min, iter_max
+   real(8), dimension(:), allocatable :: SC_z, rho
+   integer, dimension(:), allocatable :: NOA, KOA
+   character(3), dimension(:), allocatable :: El_name
+   real(8), dimension(:), allocatable :: at_r_cov, at_mass
+   real(8), dimension(:), allocatable :: at_r_cov_read, at_mass_read
+   integer :: i, j, N_at, INFO, N_temp, Reason, i_counter, at_counter, iter
+   character(300) :: Error_descript, Folder_name
+   logical :: read_well, redo_placement
+
+   ! Folder with the periodic table:
+   Folder_name = trim(adjustl(numpar%input_path))//trim(adjustl(m_Atomic_parameters))
+
+   ! Get the number of various elements in the target:
+   call Count_lines_in_file(FN_XYZ, N_at)  ! module "Dealing_with_files"
+   ! Get back to the same line in the file:
+   rewind(FN_XYZ)
+   read(FN_XYZ,*)
+   read(FN_XYZ,*)
+
+   ! Knowing number of different elements, allocate arrays:
+   allocate(SC_z(N_at))
+   allocate(rho(N_at))
+   allocate(NOA(N_at))
+   allocate(KOA(N_at))
+   allocate(El_name(N_at))
+   allocate(at_r_cov(N_at))
+   allocate(at_mass(N_at))
+
+   ! Read the data for each element:
+   ELS:do i = 1, N_at
+      read(FN_XYZ,*,IOSTAT=Reason) El_name(i), rho(i), NOA(i)
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_XYZ))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3421
+      endif
+
+      call Decompose_compound(Folder_name, El_name(i), numpar%path_sep, INFO, Error_descript, N_temp, &
+                              at_masses=at_mass_read, at_r_cov=at_r_cov_read) ! molude 'Periodic_table'
+      if (INFO /= 0) then ! problem in Periodic table reading
+         Error_descript = trim(adjustl(Error_descript))//' Called from the file '//trim(adjustl(File_name_XYZ))
+         call Save_error_details(Err, 4, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3421
+      endif
+
+      ! Save the data for reuse below:
+      at_r_cov(i) = at_r_cov_read(1)
+      at_mass(i) = at_mass_read(1)
+
+      ! Find the index from the element name:
+      call get_KOA_from_element(El_name(i), matter, KOA(i)) ! below
+      if (KOA(i) <= 0) then
+         write(Error_descript,'(a,a,a)') 'Inconsistency: in the target, there is no element ', &
+                                          trim(adjustl(El_name(i))), ' from file '//trim(adjustl(File_name_XYZ))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, '---------------------------'
+         print*, trim(adjustl(Error_descript))
+         goto 3421
+      endif
+      !Scell(SCN)%MDAtoms(i)%KOA = KOA
+   enddo ELS
+
+   dR_min = minval(at_r_cov(:))*0.99d0  ! minimum allowed distance between atoms
+
+   ! Knowing the data we want to set, we can set it:
+   Scell(SCN)%Na = SUM(NOA)
+   allocate(Scell(SCN)%MDAtoms(Scell(SCN)%Na))
+   ! Supercell:
+   eps = 1.0d-10
+   if ((SC_X_in > eps) .and. (SC_Y_in > eps)) then
+      SC_x = SC_X_in
+      SC_y = SC_Y_in
+   endif
+   ! The supercell size is defined from the density and number of atoms:
+   do i = 1, N_at ! for each layer
+      V_at = NOA(i) * g_amu * at_mass(i) / rho(i) * 1.0d27   ! Volume of the part of the supercell [A^3]
+      if ((SC_X_in > eps) .and. (SC_Y_in > eps)) then ! X and Y are fixed, find Z-dimension of the supercell:
+         SC_z(i) = (V_at)**m_one_third / (SC_x*SC_y)  ! [A]
+      else  ! cubic supercell:
+         SC_z(i) = (V_at)**m_one_third ! [A]
+         SC_x = SC_z(1)
+         SC_y = SC_z(1)
+      endif
+   enddo
+   ! Now we have the total supercell size:
+   Scell(SCN)%supce(:,:) = 0.0d0 ! off-diagonals
+   Scell(SCN)%supce(1,1) = SC_x
+   Scell(SCN)%supce(2,2) = SC_y
+   Scell(SCN)%supce(3,3) = SUM(SC_z)
+   Scell(SCN)%supce0 = Scell(SCN)%supce
+
+
+   ! Now, place atoms randomly, according to the conditions specified:
+   iter_max = 10000
+   at_counter = 1
+   i_counter = NOA(at_counter)
+   lower_Z = 0.0d0   ! to start with
+   upper_Z = SC_z(1) ! to start with
+   do i = 1, Scell(SCN)%Na ! define all atoms
+      ! Which type of atom is this one:
+      if (numpar%verbose) print*, 'Random setting of atom #', i, Scell(SCN)%Na, i_counter
+      if (i > i_counter) then
+         at_counter = at_counter + 1   ! next type of atoms
+         i_counter = i_counter + NOA(at_counter)   ! next number of atoms to start the new set
+         lower_Z = upper_Z   ! next layer
+         upper_Z = upper_Z + SC_z(at_counter) ! next layer
+      endif
+      ! Specify atomic parameters:
+      Scell(SCN)%MDAtoms(i)%KOA = KOA(at_counter)
+
+      redo_placement = .true.  ! to start with
+      iter = 0 ! count iteration of attempted placement
+      do while (redo_placement)
+         redo_placement = .false. ! assume we place it well, no need to redo it
+         ! Set random coordinates of the new water molecule:
+         call random_number(RN)  ! random numbers for relative coordinates along X,Y,Z
+         Scell(SCN)%MDAtoms(i)%R(1) = Scell(SCN)%supce(1,1)*RN(1)
+         Scell(SCN)%MDAtoms(i)%R(2) = Scell(SCN)%supce(2,2)*RN(2)
+         Scell(SCN)%MDAtoms(i)%R(3) = lower_Z + (upper_Z - lower_Z)*RN(3)
+         Scell(SCN)%MDAtoms(i)%R0(:) = Scell(SCN)%MDAtoms(i)%R(:)
+         ! Get the relative coordinates from the absolute ones provided:
+         !call Coordinates_abs_to_rel(Scell, SCN, if_old=.true.) ! module "Atomic_tools"
+         call Coordinates_abs_to_rel_single(Scell, SCN, i, if_old = .true.) ! module "Atomic_tools"
+         ! Check that it is not overlapping with existing atoms:
+         CHKI:do j = 1, i-1
+            ! Get the relative distance to this atom:
+            call shortest_distance(Scell(SCN), i, j, a_r) ! module "Atomic_tools"
+            ! Check if it is not too short:
+            if (a_r < dR_min) then ! overlapping atoms, place a molecule in a new place:
+               redo_placement = .true. ! assume we place it well, no need to redo it
+               iter = iter + 1   ! next iteration
+               exit CHKI
+            endif
+         enddo CHKI
+         ! If there is no place to place the atoms, maybe the supercell must be a little larger:
+         if (iter > iter_max) then
+            print*, 'Increasing supercell size:', Scell(SCN)%supce(1,1), '->', Scell(SCN)%supce(1,1)*1.01d0
+            iter = 0 ! restart
+            Scell(SCN)%supce(1,1) = Scell(SCN)%supce(1,1)*1.01d0
+            Scell(SCN)%supce(2,2) = Scell(SCN)%supce(2,2)*1.01d0
+            Scell(SCN)%supce0 = Scell(SCN)%supce
+            ! Absolute coordinate change since Supercell changed:
+            call Coordinates_rel_to_abs(Scell, SCN, if_old=.true.)   ! from the module "Atomic_tools"
+         endif
+      enddo ! do while (redo_placement)
+   enddo ! i = 1, Scell(SCN)%Na
+
+   ! Clean up:
+   deallocate(SC_z, rho, NOA, KOA, El_name, at_r_cov, at_mass)
+3421 continue
+end subroutine read_XYZ_random
+
+
+
+
+subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, ind_S, ind_R, ind_V, Err)
+   integer, intent(in) :: FN, SCN, ind_S, ind_R, ind_V
+   integer, intent(inout) :: count_lines
+   character(*), intent(in) :: File_name_XYZ ! extended XYZ file name
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   type(Solid), intent(inout) :: matter	! all material parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !------------------------
+   integer :: i, Reason, KOA
+   real(8), dimension(3) :: coord, vel
+   logical :: read_well
+   character(3) :: El_name
+   character(200) :: Error_descript
+
+   allocate(Scell(SCN)%MDAtoms(Scell(SCN)%Na))
+
+   ! Next lines contain at least the atomic type and coordinates:
+   do i = 1, Scell(SCN)%Na
+      if (ind_S == 0) then ! KOA is set in the file
+         if (ind_V == 1) then ! with velocities:
+            read(FN,*,IOSTAT=Reason) Scell(SCN)%MDAtoms(i)%KOA, coord(:), vel(:)
+         else  ! no velocities, only coordinates:
+            read(FN,*,IOSTAT=Reason) Scell(SCN)%MDAtoms(i)%KOA, coord(:)
+         endif
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_XYZ))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3419
+         endif
+
+      else  ! element name is set
+         if (ind_V == 1) then ! with velocities:
+            read(FN,*,IOSTAT=Reason) El_name, coord(:), vel(:)
+         else  ! no velocities, only coordinates:
+            read(FN,*,IOSTAT=Reason) El_name, coord(:)
+         endif
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_XYZ))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3419
+         endif
+
+         ! Find the index from the element name:
+         call get_KOA_from_element(El_name, matter, KOA) ! below
+         if (KOA <= 0) then
+            write(Error_descript,'(a,i3,a,$)') 'In the target, there is no element ', trim(adjustl(El_name)), ' from file '//trim(adjustl(File_name_XYZ))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3419
+         endif
+         Scell(SCN)%MDAtoms(i)%KOA = KOA
+      endif ! (ind_S == 0)
+
+      ! Sort the atomic coordinates that were read:
+      if (ind_R == 1) then
+         Scell(SCN)%MDAtoms(i)%R(:) = coord(:)
+         Scell(SCN)%MDAtoms(i)%R0(:) = Scell(SCN)%MDAtoms(i)%R(:)
+         ! Get the relative coordinates from the absolute ones provided:
+         call Coordinates_abs_to_rel(Scell, SCN, if_old=.true.) ! module "Atomic_tools"
+      else
+         Scell(SCN)%MDAtoms(i)%S(:) = coord(:)
+         Scell(SCN)%MDAtoms(i)%S0(:) = Scell(SCN)%MDAtoms(i)%S(:)
+      endif
+
+      ! Sort the atomic velocities that were read:
+      if (ind_V == 1) then
+         Scell(SCN)%MDAtoms(i)%V(:) = vel(:)
+         Scell(SCN)%MDAtoms(i)%V0(:) = Scell(SCN)%MDAtoms(i)%V(:)
+         ! Get the relative velocities from the absolute ones provided:
+         call velocities_abs_to_rel(Scell, SCN, if_old=.true.) ! module "Atomic_tools"
+      elseif (ind_V == 2) then
+         Scell(SCN)%MDAtoms(i)%SV(:) = vel(:)
+         Scell(SCN)%MDAtoms(i)%SV0(:) = Scell(SCN)%MDAtoms(i)%SV(:)
+      endif
+   enddo ! i = 1, Scell(SCN)%Na
+   3419 continue
+end subroutine read_XYZ_coords
+
+
+
+subroutine get_KOA_from_element(El_name, matter, KOA)
+   character(3), intent(in) :: El_name ! name of the element
+   type(Solid), intent(inout) :: matter   ! all material parameters
+   integer ,intent(out) :: KOA   ! number of element from the given array
+   !--------------------------
+   integer :: i
+   KOA = 0  ! to start with
+   do i = 1, size(matter%Atoms)
+      if ( trim(adjustl(matter%Atoms(i)%Name)) == trim(adjustl(El_name)) ) then
+         KOA = i  ! that's the element in our array
+         exit
+      endif
+   enddo
+end subroutine get_KOA_from_element
 
 
 subroutine read_electron_distribution(FN2, fe_input, fe_input_exists)
@@ -1117,13 +1526,21 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
       endif
       
       if (.not.allocated(MDAtoms)) deallocate(MDAtoms)
-   case default ! coordinates in the unit cell
 
-      call set_initial_coords(matter, Scell, SCN, FN, File_name, INFO=INFO,Error_descript=Error_descript)
+   case (3) ! coordinates in the XYZ file
+      call set_initial_coords(matter, Scell, SCN, FN, File_name, Nat=Scell(SCN)%Na, INFO=INFO, Error_descript=Error_descript, XYZ=1)
       if (INFO .NE. 0) then
          call Save_error_details(Err, INFO, Error_descript)
          goto 3417
       endif
+
+   case default ! coordinates in the unit cell
+      call set_initial_coords(matter, Scell, SCN, FN, File_name, INFO=INFO, Error_descript=Error_descript)
+      if (INFO .NE. 0) then
+         call Save_error_details(Err, INFO, Error_descript)
+         goto 3417
+      endif
+
    end select
 
 
@@ -1186,26 +1603,43 @@ end subroutine get_initial_atomic_coord
 
 
 
-subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descript)
+subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descript,XYZ)
    type(solid), intent(inout) :: matter	! materil parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
    integer, intent(in) :: SCN ! number of supercell
    integer, intent(in) :: FN	! file number for reading initial coordinates inside the unit-cell
    character(*), intent(in) :: File_name ! file name where to read from
-   integer, optional :: Nat ! number of atoms in the unit cell
+   integer, intent(inout), optional :: Nat ! number of atoms in the unit cell
    integer, intent(out) :: INFO ! did we read well from the file
+   character(200), intent(inout) :: Error_descript
+   integer, intent(in), optional :: XYZ   ! if XYZ file was given and read from
+   !-----------------------------
    real(8) a, b, l2, x, y, z, RN, epsylon, coord_shift
    integer i, j, k, ik, nx, ny, nz, ncellx, ncelly, ncellz, Na
    !real(8), dimension(3,8) :: Relcoat
    real(8), dimension(:,:), allocatable :: Relcoat
    integer Reason, count_lines
-   character(200) Error_descript
-   logical read_well
+   logical read_well, to_read
 
    epsylon = 1.0d-10    ! for tiny shift of coords
+
+   if (present(XYZ)) then
+      select case (XYZ)
+      case (1)
+         to_read = .false. ! no need to read, data were already provided in XYZ file
+      case default
+         to_read = .true.  ! coordinates to be read from unit-cell file
+      end select
+   else  ! default: read from file
+      to_read = .true.  ! coordinates to be read from unit-cell file
+   endif
    
    INFO = 0 ! at the start there is no errors
-   call Count_lines_in_file(FN, Na) ! that's how many atoms we have
+   if (present(Nat)) then
+      Na = Nat ! given number of atoms
+   else
+      call Count_lines_in_file(FN, Na) ! that's how many atoms we have
+   endif
    allocate(Relcoat(3,Na))
 
    Scell(SCN)%Na = Na*matter%cell_x*matter%cell_y*matter%cell_z ! Number of atoms is defined this way
@@ -1215,18 +1649,25 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
    
    if (.not.allocated(Scell(SCN)%MDatoms)) allocate(Scell(SCN)%MDatoms(Scell(SCN)%Na))
 
-   count_lines = 0
-   do i = 1,Na
-      read(FN,*,IOSTAT=Reason) Scell(SCN)%MDatoms(i)%KOA, Relcoat(:,i)	! relative coordinates of atoms in the unit-cell
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         INFO = 3
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         print*, trim(adjustl(Error_descript))
-         goto 3417
-      endif
-      !matter%Atoms(Scell(NSC)%MDatoms(i)%KOA)%Ma
-   enddo
+   if (to_read) then
+      count_lines = 0
+      do i = 1,Na
+         read(FN,*,IOSTAT=Reason) Scell(SCN)%MDatoms(i)%KOA, Relcoat(:,i)	! relative coordinates of atoms in the unit-cell
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            INFO = 3
+            write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            print*, trim(adjustl(Error_descript))
+            goto 3417
+         endif
+         !matter%Atoms(Scell(NSC)%MDatoms(i)%KOA)%Ma
+      enddo
+   else  ! No need to read from unit-cell file
+      ! Unit-cell coordinates were already read from XYZ file:
+      do j = 1, Na
+         Relcoat(:,j) = Scell(SCN)%MDatoms(j)%S(:)
+      enddo
+   endif
 
    ! All atoms distribution (in the super-cell):
    j = 0 ! for the beginning

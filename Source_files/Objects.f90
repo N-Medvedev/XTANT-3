@@ -789,7 +789,7 @@ type Error_handling
    LOGICAL Err		! indicates that an error occured
    integer Err_Num	! assign a number to an error
    integer File_Num		! number of the file with error log
-   character(200) Err_descript	! describes more details about the error
+   character(300) Err_descript	! describes more details about the error
 end type
 !==============================================
 

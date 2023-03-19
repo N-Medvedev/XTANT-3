@@ -245,7 +245,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
          if (present(at_names)) at_names(i) = Full_Name  ! full name of the element
          if (present(at_masses)) at_masses(i) = M  ! mass of the element in the proton-mass units
          if (present(at_NVB)) at_NVB(i) = NVB      ! number of valence electrons
-         if (present(at_r_cov)) at_r_cov = R_cov   ! covalent radius [A]
+         if (present(at_r_cov)) at_r_cov(i) = R_cov   ! covalent radius [A]
          if (present(at_EN)) at_EN = EN            ! electronegativity
       enddo
 
