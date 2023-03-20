@@ -1913,7 +1913,11 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
    do i = 1, matter%N_KAO
       ! how many atoms of this kind are in the supercell:
       Nat = COUNT(MASK = (Scell(1)%MDatoms(:)%KOA == i))
-      MSDP(i) = MSDP(i) / dble(Nat)
+      if (Nat > 0) then
+         MSDP(i) = MSDP(i) / dble(Nat)
+      else
+         MSDP(i) = 0.0d0
+      endif
    enddo
    
    nullify(S,S0,KOA)
