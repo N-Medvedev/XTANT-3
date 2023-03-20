@@ -31,11 +31,11 @@ use TB_Koster_Slater
 use Objects
 !use Variables
 ! use Algebra_tools
+!use Nonadiabatic
+use Little_subroutines, only : print_time_step
 use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_hermiticity
-use Little_subroutines
-use Atomic_tools
-use Electron_tools
-use Nonadiabatic
+use Atomic_tools, only : get_near_neighbours, get_number_of_image_cells, distance_to_given_cell, shortest_distance, Reciproc_rel_to_abs
+use Electron_tools, only : find_band_gap
 
 implicit none
 PRIVATE
@@ -804,7 +804,7 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
    CHij_orth = dcmplx(0.0d0,0.0d0)	! to start with
    
    call Reciproc(Scell(NSC)%supce, Scell(NSC)%k_supce) ! create reciprocal super-cell, module "Algebra_tools"
-   call Reciproc_rel_to_abs(ksx, ksy, ksz, Scell, NSC, kx, ky, kz) ! get absolute k-values
+   call Reciproc_rel_to_abs(ksx, ksy, ksz, Scell, NSC, kx, ky, kz) ! get absolute k-values, module "Atomic_tools"
 
    ! 1) Construct complex Hamiltonian and overlap:
    !$omp parallel

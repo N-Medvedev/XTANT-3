@@ -28,10 +28,11 @@
 MODULE TB_BOP
 
 use Universal_constants
-use TB_Koster_Slater
 use Objects
+use TB_Koster_Slater, only : t_s_s, t_pa_pa, t_dab_dab, t_dx2_y2_dx2_y2, t_d3z2_r2_d3z2_r2, KS_s, KS_sp3_hetero, KS_sp3d5_hetero
 use Electron_tools, only : find_band_gap
-use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization, Loewdin_Orthogonalization_c
+use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization, &
+                  Loewdin_Orthogonalization_c
 use TB_DFTB, only : identify_DFTB_basis_size, identify_DFTB_orbitals_per_atom, Hopping_DFTB, Get_overlap_S_matrix_DFTB
 use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_hermiticity
 use Atomic_tools, only : Reciproc_rel_to_abs

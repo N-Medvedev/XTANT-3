@@ -21,7 +21,7 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-! This module contains subroutines for dealing with the xTB input files
+! This module contains subroutines for dealing with the xTB input files (UNFINISHED!)
 ! Available from https://github.com/grimme-lab/xtb
 ! PArameters pAlpha1 are copied from xTB file "slater.f90"
 

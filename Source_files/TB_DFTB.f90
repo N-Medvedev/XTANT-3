@@ -28,11 +28,12 @@
 MODULE TB_DFTB
 
 use Universal_constants
-use TB_Koster_Slater
 use Objects
+use TB_Koster_Slater
 use Little_subroutines, only : linear_interpolation, Fermi_function, d_Fermi_function, Find_in_array_monoton
 use Electron_tools, only : find_band_gap
-use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization, Loewdin_Orthogonalization_c
+use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization, &
+                     Loewdin_Orthogonalization_c
 use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_hermiticity
 use Atomic_tools, only : Reciproc_rel_to_abs
 

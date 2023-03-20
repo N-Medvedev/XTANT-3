@@ -27,10 +27,11 @@ MODULE Monte_carlo
 use Objects
 use Universal_constants
 !use Variables
-use Little_subroutines
-use Dealing_with_files
-use Dealing_with_EADL
-use MC_cross_sections
+use Little_subroutines, only : sample_gaussian, Find_in_array_monoton
+!use Dealing_with_files
+!use Dealing_with_EADL
+use MC_cross_sections, only : which_shell, which_atom, NRG_transfer_elastic_atomic, Electron_energy_transfer_inelastic, &
+                        Mean_free_path
 use Electron_tools, only : update_cross_section, Do_relaxation_time
 
 implicit none

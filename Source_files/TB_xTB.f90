@@ -32,7 +32,8 @@ use TB_Koster_Slater
 use Objects
 use Little_subroutines, only : linear_interpolation, Fermi_function, d_Fermi_function
 use Electron_tools, only : find_band_gap
-use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization, Loewdin_Orthogonalization_c
+use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization, &
+                  Loewdin_Orthogonalization_c
 use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_hermiticity
 use Atomic_tools, only : Reciproc_rel_to_abs
 

@@ -25,14 +25,13 @@
 
 MODULE TB_Pettifor
 use Universal_constants
-use TB_Koster_Slater
 use Objects
 !use Variables
-use Algebra_tools
-use Little_subroutines
-use Atomic_tools
-use Electron_tools
-use Nonadiabatic
+!use Little_subroutines
+use TB_Koster_Slater
+use Algebra_tools, only : Kronecker_delta, sym_diagonalize, Reciproc
+use Atomic_tools, only : get_fraction_of_given_sort, shortest_distance, Reciproc_rel_to_abs
+use Electron_tools, only : find_band_gap
 
 implicit none
 PRIVATE

@@ -30,14 +30,14 @@ MODULE Dealing_with_output_files
 #endif
 USE IFLPORT
 
+use Universal_constants
 use Objects
 use Atomic_tools, only : pair_correlation_function
-use Universal_constants
-use Variables
-use Little_subroutines
-use Dealing_with_files
-use Electron_tools
-use Dealing_with_EADL
+use Variables, only : g_numpar, g_matter
+use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution
+use Dealing_with_files, only : get_file_stat, copy_file, read_file
+!use Electron_tools
+use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
 use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file
 
@@ -1559,7 +1559,7 @@ subroutine gnu_energies(numpar, File_name, file_energies, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics,  'Energies', 'Time (fs)', 'Energy (eV/atom)',  trim(adjustl(eps_name)), numpar%path_sep, 1)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics,  'Energies', 'Time (fs)', 'Energy (eV/atom)',  trim(adjustl(eps_name)), numpar%path_sep, 1)	! module "Gnuplotting"
    
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_energies)), ' "u 1:4 w l lw LW title "Potential energy" ,\'
@@ -1595,10 +1595,10 @@ subroutine gnu_temperatures(numpar, File_name, file_temperatures, t0, t_last, ep
 
    !call write_gnuplot_script_header(FN, 1, 3, 'Temperatures','Time (fs)', 'Temperatures (K)', trim(adjustl(file_path))//'OUTPUT_temepratures.'//trim(adjustl(numpar%fig_extention)))
    !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Temperatures','Time (fs)', 'Temperatures (K)', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Temperatures', 'Time (fs)', 'Temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics, 'Temperatures', 'Time (fs)', 'Temperature (K)', trim(adjustl(eps_name)), numpar%path_sep, 0)	! module "Gnuplotting"
    
    if (g_matter%N_KAO == 1) then
-      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      if (numpar%path_sep .EQ. '\') then	! if it is Windows
          write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_temperatures)), ' "u 1:2 w l lw LW title "Electrons" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(file_temperatures)), ' "u 1:3 w l lw LW title "Atoms" '
 !          write(FN, '(a,a,a)') ' "', trim(adjustl(file_temperatures)), ' "u 1:3 w l lw LW title "Atoms (Tkin)" ,\'
@@ -1610,7 +1610,7 @@ subroutine gnu_temperatures(numpar, File_name, file_temperatures, t0, t_last, ep
 !          write(FN, '(a,a,a)') '\"', trim(adjustl(file_temperatures)), '\"u 1:4 w l lt rgb \"#0000FF\" lw  \"$LW\" title \"Atoms (Tconfig)\" '
       endif
    else ! more than one element:
-       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+       if (numpar%path_sep .EQ. '\') then	! if it is Windows
          write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_temperatures)), ' "u 1:2 w l lw LW title "Electrons" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(file_temperatures)), ' "u 1:3 w l lw LW title "Atoms average" ,\'
          do i = 1, g_matter%N_KAO - 1
@@ -2594,7 +2594,7 @@ subroutine communicate(FN, time, numpar, matter)
    integer :: Reason, i, MOD_TIM, sz
    character(200) :: readline, given_line, File_name
    real(8) given_num
-   logical :: read_well, read_well_2, file_openeed
+   logical :: read_well, read_well_2, file_opened
    
    File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt'
    inquire(UNIT=FN,opened=file_opened)

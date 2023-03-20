@@ -26,7 +26,7 @@ MODULE Algebra_tools
 use Universal_constants
 
 implicit none
-!PRIVATE
+PRIVATE
 
 ! Interface to automatically chose from the bubble array-sorting subroutines
 interface sort_array
@@ -61,7 +61,10 @@ interface check_Ha
 end interface check_Ha
 
 !private  ! hides items not listed on public statement
-public :: sym_diagonalize, nonsym_diagonalize, check_Ha, Kronecker_delta, sort_array
+public :: sym_diagonalize, nonsym_diagonalize, check_Ha, Kronecker_delta, sort_array, Invers_3x3, Transpose_M
+public :: double_factorial, Heavyside_tau, get_factorial, Two_Vect_Matr, Det_3x3, Cross_Prod, Matrix_Vec_Prod
+public :: mkl_matrix_mult, Reciproc, check_hermiticity, Laguerre_up_to_6, d_Laguerre_up_to_6, check_symmetry
+public :: d_detH_d_h_a_b, Two_Matr_mult, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points
 
  contains
  

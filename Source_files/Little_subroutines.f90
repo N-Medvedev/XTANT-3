@@ -25,7 +25,7 @@ module Little_subroutines
 use Universal_constants
 use Objects
 !use Variables
-use Dealing_with_files
+use Dealing_with_files, only : Count_columns_in_file, Count_lines_in_file
 implicit none
 
 ! this interface finds by itself which of the two subroutine to use depending on the parameters passed:
@@ -367,8 +367,8 @@ subroutine convolution(FN, Gaus_conv)
    exists:if (file_opened .and. file_named) then
       ! Input file:
       rewind(FN) ! start reading file from the first line
-      call Count_columns_in_file(FN, M, 2)
-      call Count_lines_in_file(FN, N)
+      call Count_columns_in_file(FN, M, 2)   ! module "Dealing_with_files"
+      call Count_lines_in_file(FN, N)  ! module "Dealing_with_files"
       N = N - 2
       allocate(Spectr(N,M))
       allocate(Conv_Spectr(N,M))

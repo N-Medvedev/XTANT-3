@@ -27,11 +27,11 @@ MODULE TB_Molteni
 use Universal_constants
 use Objects
 ! use Variables
-use Algebra_tools
-use Little_subroutines
-use Atomic_tools
-use Electron_tools
-use Nonadiabatic
+!use Little_subroutines
+!use Nonadiabatic
+use Atomic_tools, only : shortest_distance, Reciproc_rel_to_abs
+use Electron_tools, only : find_band_gap
+use Algebra_tools, only : Reciproc, sym_diagonalize
 
 implicit none
 PRIVATE
@@ -68,7 +68,7 @@ subroutine construct_TB_H_Molteni(numpar, matter, TB_Hamil, Scell, NSC, Ha, Err)
    !call check_symmetry(Ha) ! just for testing, must be hermitian Hamiltonian
 
    ! Diagonalize symmetric Hamiltonian to get electron energy levels:
-   call sym_diagonalize(Ha, Scell(NSC)%Ei, Error_descript, check_M=.true.)
+   call sym_diagonalize(Ha, Scell(NSC)%Ei, Error_descript, check_M=.true.) ! module "Algebra_tools"
 
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Subroutine construct_TB_H_Molteni: '//trim(adjustl(Error_descript))
@@ -118,7 +118,7 @@ subroutine Complex_Hamil_tot_Molteni(numpar, Scell, NSC, atoms, TB, Hij, CHij, k
    endif
 
    call Reciproc(Scell(NSC)%supce, Scell(NSC)%k_supce) ! create reciprocal super-cell, module "Algebra_tools"
-   call Reciproc_rel_to_abs(ksx, ksy, ksz, Scell, NSC, kx, ky, kz) ! get absolute k-values
+   call Reciproc_rel_to_abs(ksx, ksy, ksz, Scell, NSC, kx, ky, kz) ! get absolute k-values, module "Atomic_tools"
 
    if (.not.present(Hij) .AND. .not.present(CHij)) then
       print*, 'Neither real, nor complex Hamiltonian is present,'

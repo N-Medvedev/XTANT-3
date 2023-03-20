@@ -29,8 +29,8 @@ MODULE Atomic_tools
 use Universal_constants
 use Objects
 !use Variables
-use Algebra_tools
-use Little_subroutines
+use Algebra_tools, only : Cross_Prod, Invers_3x3, Matrix_Vec_Prod, Transpose_M, d_detH_d_h_a_b, Two_Matr_mult, Det_3x3
+use Little_subroutines, only : Find_in_array_monoton
 implicit none
 
 ! this interface finds by itself which of the two subroutine to use depending on the array passed:
@@ -528,7 +528,7 @@ subroutine remove_angular_momentum(NSC, Scell, matter, atoms, indices, print_out
    BigI(3,1) = BigI(1,3)                         ! zx
    BigI(3,2) = BigI(2,3)                         ! zy
 
-   call Det_3x3(BigI,detB) ! find determinant of A, see above
+   call Det_3x3(BigI,detB) ! find determinant of A, module "Algebra_tools"
    if (detB > 0.0d0) then	! only if there is angular momentum
       call Invers_3x3(BigI, BigIinv, 'remove_angular_momentum') ! calculate inverse tensor of inertia ! from MODULE "Algebra_tools"
 
@@ -624,7 +624,7 @@ subroutine remove_plane_angular_momenta(Scell, NSC, matter, atoms, indices, prin
       BigI(3,1) = BigI(1,3)                         ! zx
       BigI(3,2) = BigI(2,3)                         ! zy
 
-      call Det_3x3(BigI,detB) ! find determinant of A, see above
+      call Det_3x3(BigI,detB) ! find determinant of A, module "Algebra_tools"
       if (detB > 0.0d0) then	! only if there is angular momentum
          call Invers_3x3(BigI,BigIinv, 'remove_plane_angular_momenta') ! calculate inverse tensor of inertia ! from MODULE "Algebra_tools"
 

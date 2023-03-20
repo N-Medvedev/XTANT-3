@@ -26,17 +26,19 @@
 MODULE Initial_configuration
 use Universal_constants
 use Objects
-!use Variables
-use Algebra_tools
-use Dealing_with_files
-use Atomic_tools
+use Algebra_tools, only : Det_3x3, Reciproc
+use Dealing_with_files, only : Count_lines_in_file, Count_columns_in_file, close_file, read_file
+use Atomic_tools, only : Coordinates_abs_to_rel, remove_angular_momentum, get_fragments_indices, remove_momentum, &
+                  Get_random_velocity, check_periodic_boundaries, Make_free_surfaces, Coordinates_abs_to_rel_single, &
+                  shortest_distance, velocities_rel_to_abs, velocities_abs_to_rel, Coordinates_rel_to_abs, &
+                  check_periodic_boundaries_single, Coordinates_rel_to_abs_single, deflect_velosity
 use TB, only : get_DOS_masks, get_Hamilonian_and_E
 use Electron_tools, only : get_glob_energy
 use Dealing_with_BOP, only : m_repulsive, m_N_BOP_rep_grid
 use ZBL_potential, only : ZBL_pot
 use TB_xTB, only : identify_xTB_orbitals_per_atom
-use Little_subroutines
-use Dealing_with_eXYZ
+use Little_subroutines, only : linear_interpolation, Find_in_array_monoton, deallocate_array
+use Dealing_with_eXYZ, only : interpret_XYZ_comment_line
 use Periodic_table, only : Decompose_compound
 use Read_input_data, only : m_Atomic_parameters
 
@@ -181,7 +183,7 @@ subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_n
 
    ! Also define ZBL potential at the point of bond length - d:
    call Find_in_array_monoton(abs(Ref_Pot), abs(TB_d), icur) ! module "Little_subroutines"
-   call linear_interpolation(Ref_Pot, TB_Repuls(i,j)%R, TB_d, ZBL_length, icur) ! module "Algebra_tools"
+   call linear_interpolation(Ref_Pot, TB_Repuls(i,j)%R, TB_d, ZBL_length, icur) ! module "Little_subroutines"
 
 !    do k = 1, m_N_BOP_rep_grid
 !       print*, k, TB_Repuls(i,j)%R(k), Ref_Pot(k)
@@ -468,7 +470,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
             if (max(Ta,Scell(i)%Ta)/min(Ta+1d-6,Scell(i)%Ta+1d-6) > 1.5d0) then ! if given temperature is too different from the initial one
                ! Set initial velocities according to the given input temperature:
-               call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! module "Atomic_tools"
+               call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
             endif
          
          !----------------------------

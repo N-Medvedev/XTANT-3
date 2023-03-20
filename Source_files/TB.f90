@@ -27,14 +27,22 @@ MODULE TB
 use Universal_constants
 use Objects
 !use Variables
-use Algebra_tools
-use Little_subroutines
-use Atomic_tools
-use Electron_tools
-use Nonadiabatic
-use TB_Fu
-use TB_Pettifor
-use TB_Molteni
+use Algebra_tools, only : Det_3x3, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points, sym_diagonalize, Reciproc, &
+                        mkl_matrix_mult, Invers_3x3
+use Little_subroutines, only : number_of_types_of_orbitals, count_3d, deallocate_array
+use Atomic_tools, only : get_near_neighbours, total_forces, Potential_super_cell_forces, super_cell_forces, &
+                        Convert_reciproc_rel_to_abs, Rescale_atomic_velocities, get_kinetic_energy_abs, &
+                        get_Ekin, save_last_timestep, Potential_super_cell_forces
+use Electron_tools, only : set_initial_fe, update_fe, get_new_global_energy, find_band_gap, get_DOS_sort, &
+                     get_electronic_heat_capacity, electronic_entropy, Diff_Fermi_E, get_low_e_energy, get_total_el_energy
+use Nonadiabatic, only : Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, Electron_ion_collision_int, get_G_ei
+use TB_Fu, only : dHij_s_F, Attract_TB_Forces_Press_F, dErdr_s_F, dErdr_Pressure_s_F, construct_TB_H_Fu, &
+                     Complex_Hamil_tot_F, Attract_TB_Forces_Press_F, get_Erep_s_F, dErdr_Pressure_s_F
+use TB_Pettifor, only : dHij_s, Attract_TB_Forces_Press, dErdr_s, dErdr_Pressure_s, construct_TB_H_Pettifor, &
+                     Complex_Hamil_tot, Attract_TB_Forces_Press, get_Erep_s, dErdr_Pressure_s, Construct_M_Vs, &
+                     dHij_r, dE2rep_dr2
+use TB_Molteni, only : dHij_s_M, Attract_TB_Forces_Press_M, dErdr_s_M, dErdr_Pressure_s_M, construct_TB_H_Molteni, &
+                     Complex_Hamil_tot_Molteni, Attract_TB_Forces_Press_M, get_Erep_s_M, dErdr_Pressure_s_M
 use TB_NRL, only : get_dHij_drij_NRL, dErdr_s_NRL, Construct_Vij_NRL, construct_TB_H_NRL, Complex_Hamil_NRL, &
                      get_Erep_s_NRL, dErdr_Pressure_s_NRL, Loewdin_Orthogonalization_c, m_two_third, &
                      Attract_TB_Forces_Press_NRL
@@ -48,7 +56,7 @@ use TB_xTB, only : Construct_Vij_xTB, construct_TB_H_xTB, get_Erep_s_xTB, identi
 use Van_der_Waals, only : Construct_B, get_vdW_s, get_vdW_s_D, get_vdW_interlayer
 use Coulomb, only: m_k, m_sqrtPi, Coulomb_Wolf_pot, get_Coulomb_Wolf_s, cut_off_distance, Construct_B_C, get_Coulomb_s, &
                      Coulomb_Wolf_self_term, d_Coulomb_Wolf_pot
-use Exponential_wall
+use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s
 
 implicit none
 PRIVATE
