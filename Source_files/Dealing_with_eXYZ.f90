@@ -41,7 +41,7 @@ subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_at
    character(*), intent(inout) :: Error_descript   ! error message, if any
    !----------------------
    integer :: block_start, block_end, block2_end, colon_pos, colon_pos2, current_block, str_len, eq_pos
-   integer :: Reason, count_lines, i
+   integer :: Reason, count_lines, i, block_max, block_min
    character(50) :: text_read, text_read2
    logical :: read_well
 
@@ -74,12 +74,16 @@ subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_at
       block_start = INDEX(line_2(current_block+1:str_len), '"')  ! intrinsic
       block_end   = INDEX(line_2(current_block+block_start+1:str_len), '"')    ! intrinsic
 
+      !print*, 'interpret_XYZ_comment_line 1:', trim(adjustl(text_read)), block_start, block_end, eq_pos
+      !print*, 'interpret_XYZ_comment_line 2:', line_2(current_block+1:str_len)
+      !print*, 'interpret_XYZ_comment_line 3:', line_2(current_block+block_start+1:current_block+block_start+block_end-1)
+
       ! Interprete the block with the data:
       select case (trim(adjustl(text_read)))
       !-----------------
       case ('Lattice', 'lattice', 'Supercell', 'supercell')
          ! Supercell vectors:
-         read(line_2(current_block+block_start+1:current_block+block_end),*,IOSTAT=Reason) Supce(:,:)
+         read(line_2(current_block+block_start+1:current_block+block_start+block_end-1),*,IOSTAT=Reason) Supce(:,:)
          call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
             write(Error_descript,'(a,i3,a)') 'Could not read block ', count_lines, ' in line #2 in XYZ file'
@@ -91,8 +95,9 @@ subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_at
       case ('Properties', 'properties')
          ind_atoms = 1  ! atoms are set in this file
          ! Read properties, if given:
-         call interprete_properties_line( line_2(current_block+block_start+1:current_block+block_start+block_end-1) , &
-                 ind_S, ind_R, ind_V ) ! below
+         block_min = max(current_block+eq_pos+1, current_block+block_start+1)
+         block_max = max(current_block+block_start+block_end-1 , str_len)
+         call interprete_properties_line( line_2(block_min:block_max), ind_S, ind_R, ind_V ) ! below
 
       !-----------------
       case ('Random', 'random')
@@ -174,10 +179,14 @@ subroutine interprete_properties_line(prop_block, ind_S, ind_R, ind_V)
    colon_pos = INDEX(prop_block, ':') ! intrinsic
    block_len = LEN(prop_block)
 
+   !print*, 'interprete_properties_line:', colon_pos, prop_block
+
    do while (colon_pos > 0)
       ! Read the marker:
       text_read2 = prop_block(current_block:current_block+colon_pos-2)
       read_char = prop_block(current_block+colon_pos:current_block+colon_pos)
+
+      !print*, 'interprete_properties_line:', colon_pos, text_read2, read_char
 
       ! Interpret it:
       select case (trim(adjustl(text_read2)))
@@ -208,6 +217,7 @@ subroutine interprete_properties_line(prop_block, ind_S, ind_R, ind_V)
       current_block = current_block + colon_pos  ! next part
       colon_pos = INDEX(prop_block(current_block:block_len), ':') ! intrinsi
    enddo
+   !print*, ind_S, ind_R, ind_V
 end subroutine interprete_properties_line
 
 

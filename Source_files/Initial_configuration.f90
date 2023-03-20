@@ -1043,6 +1043,13 @@ subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, i
 
    allocate(Scell(SCN)%MDAtoms(Scell(SCN)%Na))
 
+   if (ind_S < 0) then
+      write(Error_descript,'(a,i3,a,$)') 'Could not interprete line #', count_lines, ' in file '//trim(adjustl(File_name_XYZ))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 3419
+   endif
+
    ! Next lines contain at least the atomic type and coordinates:
    do i = 1, Scell(SCN)%Na
       if (ind_S == 0) then ! KOA is set in the file
