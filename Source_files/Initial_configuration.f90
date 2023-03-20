@@ -946,7 +946,7 @@ subroutine read_XYZ_random(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matte
    do i = 1, N_at ! for each layer
       V_at = NOA(i) * g_amu * at_mass(i) / rho(i) * 1.0d27   ! Volume of the part of the supercell [A^3]
       if ((SC_X_in > eps) .and. (SC_Y_in > eps)) then ! X and Y are fixed, find Z-dimension of the supercell:
-         SC_z(i) = (V_at)**m_one_third / (SC_x*SC_y)  ! [A]
+         SC_z(i) = V_at / (SC_x*SC_y)  ! [A]
       else  ! cubic supercell:
          SC_z(i) = (V_at)**m_one_third ! [A]
          SC_x = SC_z(1)
@@ -978,6 +978,7 @@ subroutine read_XYZ_random(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matte
       endif
       ! Specify atomic parameters:
       Scell(SCN)%MDAtoms(i)%KOA = KOA(at_counter)
+      !print*, 'Atom', i, Scell(SCN)%MDAtoms(i)%KOA, at_counter
 
       redo_placement = .true.  ! to start with
       iter = 0 ! count iteration of attempted placement
@@ -1005,7 +1006,7 @@ subroutine read_XYZ_random(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matte
          enddo CHKI
          ! If there is no place to place the atoms, maybe the supercell must be a little larger:
          if (iter > iter_max) then
-            print*, 'Increasing supercell size:', Scell(SCN)%supce(1,1), '->', Scell(SCN)%supce(1,1)*1.01d0
+            print*, 'Increasing supercell size:', Scell(SCN)%supce(1,1), '->', Scell(SCN)%supce(1,1)*1.01d0, Scell(SCN)%supce(3,3)
             iter = 0 ! restart
             Scell(SCN)%supce(1,1) = Scell(SCN)%supce(1,1)*1.01d0
             Scell(SCN)%supce(2,2) = Scell(SCN)%supce(2,2)*1.01d0
@@ -1623,6 +1624,7 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
    integer i, j, k, ik, nx, ny, nz, ncellx, ncelly, ncellz, Na
    !real(8), dimension(3,8) :: Relcoat
    real(8), dimension(:,:), allocatable :: Relcoat
+   integer, dimension(:), allocatable :: KOA
    integer Reason, count_lines
    logical read_well, to_read
 
@@ -1641,11 +1643,12 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
    
    INFO = 0 ! at the start there is no errors
    if (present(Nat)) then
-      Na = Nat ! given number of atoms
+      Na = Nat ! given number of atoms in the unit cell
    else
       call Count_lines_in_file(FN, Na) ! that's how many atoms we have
    endif
    allocate(Relcoat(3,Na))
+   allocate(KOA(Na))
 
    Scell(SCN)%Na = Na*matter%cell_x*matter%cell_y*matter%cell_z ! Number of atoms is defined this way
    !Scell(SCN)%Ne = matter%Atoms(1)%Ne_shell(matter%Atoms(1)%sh)*Scell(SCN)%Na	! number of valence electrons
@@ -1656,8 +1659,9 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
 
    if (to_read) then
       count_lines = 0
-      do i = 1,Na
-         read(FN,*,IOSTAT=Reason) Scell(SCN)%MDatoms(i)%KOA, Relcoat(:,i)	! relative coordinates of atoms in the unit-cell
+      do i = 1, Na
+         !read(FN,*,IOSTAT=Reason) Scell(SCN)%MDatoms(i)%KOA, Relcoat(:,i)	! relative coordinates of atoms in the unit-cell
+         read(FN,*,IOSTAT=Reason) KOA(i), Relcoat(:,i)	! relative coordinates of atoms in the unit-cell
          call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
             INFO = 3
@@ -1671,7 +1675,14 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
       ! Unit-cell coordinates were already read from XYZ file:
       do j = 1, Na
          Relcoat(:,j) = Scell(SCN)%MDatoms(j)%S(:)
+         KOA(j) = Scell(SCN)%MDatoms(j)%KOA
+         !print*, 'KOA', j, KOA(j), Scell(SCN)%MDatoms(j)%KOA
       enddo
+      ! Update the size of the supercell from the unit cell:
+      if (size(Scell(SCN)%MDatoms) /= Scell(SCN)%Na) then
+         deallocate(Scell(SCN)%MDatoms)
+         allocate(Scell(SCN)%MDatoms(Scell(SCN)%Na))
+      endif
    endif
 
    ! All atoms distribution (in the super-cell):
@@ -1707,13 +1718,14 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
                   endif
                   
                   Scell(SCN)%MDatoms(j)%S(i) = (Relcoat(i,k) + a + coord_shift)/l2  ! relative coordinates of an atom
-                  Scell(SCN)%MDatoms(j)%KOA = Scell(SCN)%MDatoms(k)%KOA ! kind of atom
+                  !Scell(SCN)%MDatoms(j)%KOA = Scell(SCN)%MDatoms(k)%KOA ! kind of atom
+                  Scell(SCN)%MDatoms(j)%KOA = KOA(k) ! kind of atom
                enddo ! i
             enddo ! k
          enddo ! nz
       enddo ! ny
    enddo ! nx
-   deallocate(Relcoat)
+   deallocate(Relcoat, KOA)
 
    call check_periodic_boundaries(matter, Scell, SCN)   ! module "Atomic_tools"
 !    call Coordinates_rel_to_abs(Scell, SCN)	! from the module "Atomic_tools"
@@ -1747,7 +1759,7 @@ subroutine set_initial_velocities(matter, Scell, NSC, atoms, numpar, allow_rotat
 
    ! Set random velocities for all atoms:
    do i = 1,Scell(NSC)%Na ! velociteis of all atoms
-!       print*, 'Mass', i
+      !print*, 'Mass', i, Scell(NSC)%MDatoms(i)%KOA
       Mass = matter%Atoms(Scell(NSC)%MDatoms(i)%KOA)%Ma
       ! Get initial velocity
       call Get_random_velocity(Scell(NSC)%TaeV, Mass, atoms(i)%V(1), atoms(i)%V(2), atoms(i)%V(3), 2) ! module "Atomic_tools"
