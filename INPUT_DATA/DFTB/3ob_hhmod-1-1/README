@@ -1,0 +1,43 @@
+==============================
+SPECIFIC PURPOSE PARAMETER SET
+==============================
+
+(c) 2017, Marcus Elstner, Karlsruher Institut für Technologie
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+Description
+===========
+
+name          requires    elements
+3obmod:hh     3ob         H-H
+
+short description
+modified H-H for 3ob (for H2)
+
+detailed description:
+Necessary to describe the absolute energy of the covalent H-H bond. 
+For details see [JCTC2012].
+
+RELEVANT PUBLICATIONS
+[JCTC2012]   J. Chem. Theory Comput., 2013, 9 (1), pp 338–354.
+             DOI: http://dx.doi.org/10.1021/ct300849w
+
+REQUIRED REFERENCES
+[JCTC2012]   J. Chem. Theory Comput., 2013, 9 (1), pp 338–354.
+             DOI: http://dx.doi.org/10.1021/ct300849w
+
+Required set:
+3ob
+
+

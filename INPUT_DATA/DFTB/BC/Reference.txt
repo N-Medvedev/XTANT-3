@@ -1,0 +1,3 @@
+https://github.com/tlyoon/BC_SKfiles
+
+DFTB SK files generated in Ph.D thesis by Lian Ming Huei, School of Physics, Universiti Sains Malaysia, 2018.

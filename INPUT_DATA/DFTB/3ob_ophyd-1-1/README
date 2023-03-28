@@ -1,0 +1,55 @@
+==============================
+SPECIFIC PURPOSE PARAMETER SET
+==============================
+
+(c) 2017, Marcus Elstner, Karlsruher Institut für Technologie
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+Description
+===========
+
+name          requires    elements
+3obhyd:op     3ob         O-P
+
+short description
+modified O-P for 3ob (improves description of pentavalent Phosphorus 
+species)
+
+detailed description:
+Improves the description of pentavalent Phosphorus species which is 
+relevant for example for hydrolysis reactions. 
+
+The standard O-P parameters are well suited for non-isodesmic 
+reactions. However, errors appear for reactions where P changes its 
+Oxygen-coordination from 4 to 5. The modified O-P parameters improves
+for that specific type of reaction. The difference to the standard 
+O-P parameters is a shift of the repulsive potential by about 
+-10 kcal/mol. As consequence energetics for non-isodesmic reactions 
+where the Oxygen-coordination number of P is changed differently than 
+from 4 to 5 become less accurate for the modified version. Note 
+however, that the performance on geometries for all species is of 
+similar quality than using the standard O-P parameters.
+
+
+RELEVANT PUBLICATIONS
+[tobepublished]  Gaus,Michael;Lu,Xiya;Elstner,Marcus;Cui,Qiang
+             to be published.
+
+REQUIRED CITATIONS
+[tobepublished]  Gaus,Michael;Lu,Xiya;Elstner,Marcus;Cui,Qiang
+             to be published.
+
+Required set:
+3ob
+

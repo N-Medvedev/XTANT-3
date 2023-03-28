@@ -1,0 +1,128 @@
+(c) 2017, Stanislav Markov, The University of Hong Kong
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+========================================
+SKF for Si, O, and H
+========================================
+
+The SKFs here contain the electronic parameterisation of DFTB for Si and O
+and H. They are verified for electronic structure and permittivity of bulk
+Si and SiO2 and of extremely thin Si films (oxidised and hydrogenated),
+both for amorphous SiO2 and for alpha-quartz SiO2.
+
+The set is intended to accurately describe electronic and dielectric
+properties of natively oxidised Si nanostructures, and for calculations of
+electron current in atomistic models of field-effect transistors.
+The key aspects of that are: low pressure diamond Si crystal and 
+low pressure thermally grown, amorphous SiO2.
+
+The set is unlikely to perform well for high-pressure phases of Si or SiO2,
+or at least -- it has not been verified for that.
+
+The following publications report results obtained with these files; 
+Required references are [1] and [2]:
+
+   [1] Stanislav Markov, Balint Aradi, Chi-Yung Yam, Hang Xie, 
+       Thomas Frauenheim, Guanhua Chen,
+       "Atomic Level Modeling of Extremely Thin Silicon-on-Insulator
+       MOSFETs Including the Silicon Dioxide: Electronic Structure,"
+       IEEE Trans. Elec. Dev., vol. 62/3, pp.696-704, 2015, 
+       DOI: 10.1109/TED.2014.2387288.
+   [2] Stanislav Markov, Gabriele Penazzi, YanHo Kwok, Alessando Pecchia, 
+       Bálint Aradi, Thomas Frauenheim, GuanHua Chen,
+       "Permittivity of oxidized ultra-thin silicon films from atomistic 
+       simulations," 
+       IEEE Elec. Dev. Lett., vol. 36/10, pp.1076-1078, 2015,
+       DOI: 10.1109/LED.2015.2465850.
+   [3] Stanislav Markov, Balint Aradi, Gabriele Penazzi, ChiYoung Yam, 
+       Thomas Frauenheim, and GuanHua Chen, 
+       "Towards Atomic Level Simulation of Electron Devices Including 
+       the Semiconductor-Oxide Interface"
+       SISPAD 2014, 9-11 Sept. 2014, Yokohama, Japan 
+       DOI: 10.1109/SISPAD.2014.6931564.
+
+Parameterisation details are reported in [1] above.
+SKOPT, SKGEN, slateratom, twocnt, and DFTB+ (1.2.2) were used throughout the parametrisation.
+
+DFTB calculations:
+=======================================
+
+The following maximum angular momenta must be used:
+
+  Si: d, O: p, H: s
+
+For calculations including spin-orbit coupling, the dftb_in.hsd
+must have the following part added to the Hamiltonian section:
+
+  SpinPolarisation = {}
+  SpinOrbit = { Si [eV] = {0.0 +0.037 0.0} }
+
+The parameters are obtained without orbital resolved Hubbard U values.
+Therefore, in the Hamiltonian section of dftb_in.hsd:
+
+  OrbitalResolvedSCC = No
+
+SKF optimisation of electronic parameters
+=======================================
+
+Definitions for Si were optimised with SKOPT.
+https://bitbucket.org/stanmarkov/skopt.
+
+Definitions for H and O were adapted from Wahiduzzaman et al JCTC 9 
+(2013 4006--4017), accounting for the integer-only potential-powers of skgen,
+and adapting the basis for O and H to reproduce the energy levels 
+reported in the paper.
+
+Although optimisation of O was performed, it did not yield substantial 
+improvement in the description of crystalline or amorphous SiO2.
+
+
+Repulsive energy:
+========================================
+
+NOTABENE: NO REPULSIVE potential is provided; there is a dummy spline only. 
+          The SKFs CANNOT be used to do structural relaxation.
+
+
+Additional remarks:
+========================================
+
+Si-Si interaction:
+    Reproduces the band-structure of bulk Si with reasonable accuracy,
+    but the direct gap and CB min at L are underestimated largely.
+    The effective masses at VB maximum and CB minimum (along Delta-line)
+    are close to experimental too.  For the relevant errors consult 
+    S. Markov et al, IEEE TED-62(3), 696, 2015 -- [1] above.
+
+Si-O interaction:
+    Reproduces the valence band-structure of bulk alpha quartz 
+    SiO2 with reasonable accuracy, and yields a large band-gap (overestimates
+    experimental values by ~20%). But the conduction band is poorly 
+    expressed. Specifically, there is only a very shallow CB minimum at Gamma,
+    compared to DFT calculations, and that is why BG is overestimated.
+    Works well in confining Si by SiO2 (quartz or amorphous), and this is
+    its main purpose: to enable exploration of oxidised nano-sized Si 
+    films, wires, particles in terms of electronic, dielectric and 
+    transport properties.
+
+Si-H interaction:
+    Reproduces electronic/deielectric properties of 
+    H-passivated Si(100) with reasonable accuracy, compared to DFT.
+
+O-H interaction:
+    This is fictitious, and have not been a target of optimisation.
+    It is here to only help in cases where outer SiO2 surface of the
+    nanostructure must be passivated and it may have O-H bonds.
+    If the SiO2 is thick enough (e.g. 1nm), the O-H interaction will
+    not affect the properties of the Si channel.

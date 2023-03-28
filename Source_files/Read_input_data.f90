@@ -39,8 +39,11 @@ use Dealing_with_3TB, only : m_3TB_directory, m_3TB_onsite_data, read_3TB_onsite
 use Dealing_with_xTB, only : m_xTB_directory, read_xTB_parameters, identify_basis_size_xTB, identify_AOs_xTB
 use Periodic_table, only : Decompose_compound
 
-! For OpenMP
-USE OMP_LIB
+! Open_MP related modules from external libraries:
+#ifdef OMP_inside
+   USE IFLPORT, only : system
+   USE OMP_LIB
+#endif
 
 implicit none
 PRIVATE
@@ -52,6 +55,7 @@ character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_
 character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
 character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT info
 character(15), parameter :: m_HELP_file = 'HELP.txt'  ! file with the helpful info
+character(25), parameter :: m_List_ofmaterials = 'List_of_materials.txt'  ! list of materials existing
 
 parameter (m_INPUT_directory = 'INPUT_DATA')
 parameter (m_INPUT_MATERIAL = 'INPUT_MATERIAL')
@@ -5373,35 +5377,50 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
    logical, intent(out), optional :: allow_rotate
    logical, intent(out), optional :: verbose
    !---------------
-   character(1000) :: read_string, printline, ch_temp
+   character(1000) :: read_string, printline, ch_temp, string_read
    character(200) :: starline, file_name
    integer :: FN, Reason, count_lines
    logical :: file_opened, read_text_well, read_well, file_exists
 
    starline = '*******************************************************'
 
-   select case (trim(adjustl(string)))
-   case ('verbose', '-verbose', 'VERBOSE', '-VERBOSE', 'Verbose', '-Verbose')
+   string_read = trim(adjustl(string))
+   ! Trim minus signs if present (for legacy reasons):
+   do while (string_read(1:1) == '-')
+      string_read = string_read(2:)
+   enddo
+
+   ! Interpret the command:
+   select case (trim(adjustl(string_read)))
+   case ('verbose', 'VERBOSE', 'Verbose')
       print*, 'XTANT will print a lot of markers for testing and debugging'
       if (present(verbose)) verbose = .true.
       write(*,'(a)') trim(adjustl(starline))
 
-   case ('-allow_rotation', '-allow_rotate', '-no_ang_removal', 'allow_rotation', 'allow_rotate', 'no_ang_removal')
+   case ('allow_rotation', 'allow_rotate', 'no_ang_removal')
       print*, 'The angular momenta of the sample will not be removed'
       if (present(allow_rotate)) allow_rotate = .true. ! don't remove angular momentum from initial conditions
       write(*,'(a)') trim(adjustl(starline))
 
-   case ('-size', '-Size', '-SIZE', 'size', 'Size', 'SIZE')
+   case ('size', 'Size', 'SIZE')
       print*, 'Supercell size variation will be performed to plot potential energy curve'
       if (present(change_size)) change_size = .true. ! do changing size
       write(*,'(a)') trim(adjustl(starline))
 
-   case ('-test', 'test', 'TEST', 'Test')
+   case ('test', 'TEST', 'Test')
       print*, 'Wow, it really works!'
       !if (present(contin)) contin = .false.
       write(*,'(a)') trim(adjustl(starline))
 
-   case ('-help', '-HELP', '-Help', 'help', 'HELP', 'Help')
+   case ('Matter', 'matter', 'MATTER', 'Materials', 'materials', 'list', 'LIST', 'List')
+      write(*,'(a)') trim(adjustl(starline))
+      ! Create file with list of available materials:
+      call Get_list_of_materials(path_sep)  ! below
+
+      write(*,'(a)') trim(adjustl(starline))
+      if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
+
+   case ('help', 'HELP', 'Help')
       ! Filename with help:
       file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_HELP_file))
 
@@ -5438,7 +5457,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
 
       write(*,'(a)') trim(adjustl(starline))
       if (present(contin)) contin = .true.  ! stop calculations, user only wanted some help
-   case ('-info', '-INFO', '-Info', 'info', 'INFO', 'Info')
+   case ('info', 'INFO', 'Info')
       ! Filename with help:
       file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_INFO_file))
 
@@ -5479,6 +5498,79 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
    end select
 end subroutine interprete_additional_data
 
+
+subroutine Get_list_of_materials(path_sep)
+   character(*), intent(in) :: path_sep ! file name
+   !--------------------
+   integer :: FN_temp, FN, count_lines, Reason, i, open_status, iret
+   character(200) :: Error_descript, File_name, read_line, command, File_scratch
+   logical :: file_opened, file_exist
+
+   File_scratch = trim(adjustl(m_INPUT_directory))//path_sep//'Scratch.txt'
+   File_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_List_ofmaterials))
+
+   ! Make a list of the materials available:
+   if (path_sep == '\') then	! if it is Windows
+      command = 'dir '//trim(adjustl(m_INPUT_directory))//' /b > '//trim(adjustl(File_scratch))
+   else ! linux:
+      command = "ls -t "//trim(adjustl(m_INPUT_directory))//" > "//trim(adjustl(File_scratch))
+   endif
+#ifdef OMP_inside
+   iret = system(trim(adjustl(command)))   ! execute the command to save file names in the temp file
+#else
+   call system(trim(adjustl(command))) ! execute the command to save file names in the temp file
+#endif
+
+   FN=200
+   open(UNIT=FN, FILE = trim(adjustl(File_name)))
+   inquire(file=trim(adjustl(File_name)),opened=file_opened)
+   if (.not.file_opened) then
+      write(*,'(a)') 'Could not open file ', trim(adjustl(File_name))
+      write(*,'(a)') 'Cannot help, sorry. Check materials manually.'
+      goto 9992
+   endif
+
+   ! Open the files with directory names:
+   open(NEWUNIT=FN_temp, file=trim(adjustl(File_scratch)), iostat=open_status, action='read')
+   if ( open_status /= 0 ) then
+      print *, 'Could not open ',trim(adjustl(File_scratch)),' for listing.', ' Unit = ', FN_temp
+      write(*,'(a)') 'Cannot help, sorry. Check materials manually.'
+      goto 9992
+   endif
+
+   ! Printout the list of materials:
+   write(*,'(a)') ' Materials already available in XTANT:'
+   count_lines = 0   ! to start with
+   RDLST:do
+      read(FN_temp,'(a)',IOSTAT=Reason) read_line
+      count_lines = count_lines + 1
+      if (Reason < 0) then ! end of file
+         exit RDLST
+      else  ! line in the fil
+         ! Check if the line is commented out:
+         if (trim(adjustl(read_line(1:1))) == '!') then ! iit is a comment
+            ! ignor this folder / file
+         else ! don't ignore this name
+            ! Check if it is a directory:
+            inquire(DIRECTORY=trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(read_line)), exist=file_exist)
+            if (file_exist) then ! if it is a directory, it means it can be a material:
+               select case ( trim(adjustl(read_line)) )  ! check if it is material or just forled
+               case (m_Atomic_parameters, m_INFO_directory, m_HELP_file, m_DFTB_directory, &
+                  m_3TB_directory, m_BOP_directory, m_xTB_directory) ! work directory, not a material
+                  ! skip this line
+               case default   ! material name
+                  write(FN,'(a)') trim(adjustl(read_line))  ! save in the file
+                  write(*,'(a)') trim(adjustl(read_line))   ! print on the screen
+               endselect
+            endif ! (file_exist)
+         endif ! (trim(adjustl(read_line)) == '!')
+      endif ! (Reason < 0)
+   enddo RDLST
+
+9992 continue
+   call close_file('delete', trim(adjustl(File_scratch)))   ! module "Dealing_with_files"
+   call close_file('close', FN=FN)  ! module "Dealing_with_files"
+end subroutine Get_list_of_materials
 
 
 !---------------------------------------------

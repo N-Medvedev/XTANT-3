@@ -1,111 +1,123 @@
-03-Aug-22  08:31    <DIR>          Al
-25-Feb-21  10:51    <DIR>          Al2O3
-09-Mar-19  00:33    <DIR>          AlAs
-17-Jul-22  11:22    <DIR>          AlCu
-09-Mar-19  00:35    <DIR>          AlP
-03-May-21  06:59    <DIR>          Aluminum
-03-Aug-22  13:15    <DIR>          Al_on_Si
-17-Jun-18  09:34    <DIR>          Amorphous_Carbon
-08-Oct-22  10:09    <DIR>          aSi
-18-Jul-22  11:45    <DIR>          Au
-18-Jul-22  17:23    <DIR>          AuAu
-18-Nov-21  19:40    <DIR>          AuH
-08-Jan-22  09:15    <DIR>          Au_NP
-29-Jul-22  11:44    <DIR>          Au_on_C
-08-Mar-19  16:48    <DIR>          B4C
-05-Feb-20  21:32    <DIR>          Ba
-18-Jun-22  16:55    <DIR>          Bi
-23-May-21  13:12    <DIR>          Biphenylene
-12-Jun-22  13:15    <DIR>          C
-11-Jun-21  11:25    <DIR>          C2H4n
-19-Mar-18  14:00    <DIR>          C60
-21-Aug-17  18:10    <DIR>          C60_2
-21-Aug-17  17:13    <DIR>          C60_3
-02-Sep-17  22:53    <DIR>          C60_Pa3_2
-01-Feb-20  14:46    <DIR>          Ca
-03-Feb-22  10:58    <DIR>          CaF2
-24-Jan-20  12:20    <DIR>          Cd
-24-Jan-20  18:08    <DIR>          Co
-13-Nov-20  06:59    <DIR>          Copper
-13-Dec-19  16:02    <DIR>          Cr
-01-May-20  14:08    <DIR>          Cr_Pm3n
-09-Mar-19  00:40    <DIR>          Cu2O
-03-Aug-22  13:13    <DIR>          Cu_on_Si
-08-Jun-22  08:50    <DIR>          C_dimer
-09-Sep-22  09:25    <DIR>          C_layer
-26-May-22  06:58    <DIR>          C_mobius
-08-Jun-22  16:03    <DIR>          Diamond
-05-Feb-20  16:35    <DIR>          Fe
-30-Apr-22  08:10    <DIR>          Fe2O3
-05-Feb-20  21:20    <DIR>          Ga
-09-Mar-19  00:41    <DIR>          GaAs
-09-Mar-19  00:42    <DIR>          GaP
-09-Mar-19  00:43    <DIR>          GaSb
-24-Jan-20  17:15    <DIR>          Ge
-11-Jun-22  19:09    <DIR>          Gold
-19-Feb-20  10:11    <DIR>          Graphene
-07-Oct-19  16:25    <DIR>          Graphene_on_SiC
-05-Feb-20  17:07    <DIR>          Graphite
-08-Jun-22  11:02    <DIR>          H
-30-Apr-19  12:21    <DIR>          H2O
-17-Jan-19  17:29    <DIR>          HAl
-24-Jan-20  14:48    <DIR>          Hf
-06-Feb-20  15:37    <DIR>          In
-24-Jan-20  16:57    <DIR>          Ir
-01-Feb-19  17:34    <DIR>          k-Al2O3
-03-Jul-22  16:45    <DIR>          LiF
-31-Aug-19  12:52    <DIR>          Mg
-09-Mar-19  00:46    <DIR>          Mg2SiO4
-10-Jul-22  08:56    <DIR>          MgO
-24-Jan-20  21:03    <DIR>          Mn
-31-Dec-19  14:11    <DIR>          Mo
-18-Oct-20  06:52    <DIR>          Mo_dimer
-03-Jul-22  16:39    <DIR>          NaCl
-24-Jan-20  16:27    <DIR>          Nb
-09-Mar-19  00:48    <DIR>          NC
-21-Feb-20  18:55    <DIR>          Nickel
-24-Jan-20  16:44    <DIR>          Os
-14-Dec-18  22:31    <DIR>          Overdence_aC
-11-Jun-22  09:07    <DIR>          Pb
-24-Jan-20  16:07    <DIR>          Pd
-01-Jun-21  08:20    <DIR>          Pentaheptite
-23-Mar-21  06:29    <DIR>          PMMA
-22-Sep-22  19:26    <DIR>          PMMA_layer
-28-Jun-22  18:15    <DIR>          Polybutylene
-19-Sep-22  18:23    <DIR>          Polypropylene
-18-May-21  10:39    <DIR>          Polystyrene
-31-Dec-19  13:15    <DIR>          Pt
-24-May-22  12:27    <DIR>          Quartz
-25-Jan-20  12:26    <DIR>          Re
-09-Jun-22  08:34    <DIR>          Rh
-22-Mar-22  19:08    <DIR>          Ruthenium
-11-May-22  08:51    <DIR>          Ru_bcc
-27-Mar-22  08:40    <DIR>          Ru_NP
-02-Jul-21  10:45    <DIR>          SarsCov2_spike_protein
-25-Jan-20  11:17    <DIR>          Sc
-04-Feb-20  14:00    <DIR>          Se
-18-Jul-22  11:44    <DIR>          Si
-14-Mar-19  20:23    <DIR>          Si3N4
-05-Nov-21  09:59    <DIR>          SiAl
-18-Jul-22  17:01    <DIR>          SiAu3
-18-Jun-22  10:37    <DIR>          SiC
-18-Jun-22  11:13    <DIR>          SiC_3
-17-Jun-18  09:36    <DIR>          SiC_mol
-08-Nov-21  10:44    <DIR>          Silicon
-31-Dec-19  10:28    <DIR>          Silver
-08-Nov-21  07:28    <DIR>          Si_dimer
-24-Jan-20  13:46    <DIR>          Sn
-01-Feb-20  14:47    <DIR>          Sr
-24-Jan-20  18:37    <DIR>          Ta
-25-Jan-20  11:33    <DIR>          Tc
-04-Feb-20  13:58    <DIR>          Te
-12-Aug-21  08:53    <DIR>          TiO2
-12-Jul-20  10:08    <DIR>          TiO2_beta
-09-Mar-19  00:53    <DIR>          Titanium
-24-Jan-20  20:33    <DIR>          V
-14-Mar-22  08:15    <DIR>          W
-24-Jan-20  18:59    <DIR>          Y
-07-Nov-21  07:34    <DIR>          Zn
-13-Mar-19  14:22    <DIR>          ZnO
-09-Jun-22  09:04    <DIR>          ZnSe
-24-Jan-20  11:44    <DIR>          Zr
+Al
+Al2O3
+AlAs
+AlCu
+AlP
+Aluminum
+Al_on_Si
+Amorphous_Carbon
+Angiotensin_II
+aSi
+Au
+Au2O3
+AuAu
+AuH
+Au_NP
+Au_on_C
+B4C
+Ba
+Bi
+Biphenylene
+C
+C2H4n
+C60
+C60_2
+C60_3
+C60_Pa3_2
+Ca
+CaF2
+Cd
+Co
+Copper
+Cr
+Cr_Pm3n
+Cu2O
+Cu_on_Si
+C_dimer
+C_layer
+C_mobius
+Diamond
+Fe
+Fe2O3
+Ga
+GaAs
+GaAs_3
+GaP
+GaSb
+Ge
+Gold
+Graphene
+Graphene_on_SiC
+Graphite
+H
+H2O
+HAl
+Hf
+In
+Ir
+k-Al2O3
+LiF
+Mg
+Mg2SiO4
+MgO
+MgO_3
+Mn
+Mo
+Mo_dimer
+Multilayer_AlCu
+Multilayer_AlSi
+Multilayer_AuC
+NaCl
+NaCl_3
+Nb
+NC
+Nickel
+O
+Os
+Overdence_aC
+Pb
+Pd
+Pentaheptite
+PMMA
+PMMA_layer
+PMMA_OLD
+Polybutylene
+Polypropylene
+Polystyrene
+Pt
+Quartz
+Re
+Rh
+Ruthenium
+Ru_bcc
+Ru_NP
+SarsCov2_spike_protein
+Sc
+Se
+Si
+Si3N4
+SiAl
+SiAu3
+SiC
+SiC_3
+SiC_mol
+Silicon
+Silver
+Si_beta
+Si_dimer
+Sn
+Sr
+Ta
+Tc
+Te
+Test
+TiO2
+TiO2_beta
+Titanium
+V
+W
+Y
+Zn
+ZnO
+ZnSe
+Zr

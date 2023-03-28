@@ -43,7 +43,7 @@ PRIVATE
 character(50) :: m_basis_sets_folder
 
 ! Where do we keep all the basis sets:
-parameter(m_basis_sets_folder = 'BASIS_SETS')
+parameter(m_basis_sets_folder = '!BASIS_SETS')
 
 public :: set_xTB_AO
 

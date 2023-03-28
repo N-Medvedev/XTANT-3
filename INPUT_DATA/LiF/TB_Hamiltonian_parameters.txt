@@ -1,0 +1,5 @@
+3TB
+30.0	0.1				! cut off [A], smoothing [A]
+1.1					! rc, rescaling coefficient
+F					! include 3-body terms or not (true, false)
+F					! exclude diagonal part of crystal field (default = T)

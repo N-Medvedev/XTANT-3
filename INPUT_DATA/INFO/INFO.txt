@@ -1,11 +1,11 @@
 *******************************************************
-XTANT: X-ray-induced Thermal And Nonthermal Transitions
+XTANT-3: X-ray-induced Thermal And Nonthermal Transitions
 *******************************************************
 The hybrid code XTANT is written by
 Dr. Nikita Medvedev
 as a part of research at
 CFEL at DESY, Hamburg, Germany 2011-2016,
-Institute of Physics of CAS, Prague, Czechia 2016-2022
+Institute of Physics of CAS, Prague, Czechia 2016-2023
 (the amount of free time invested in it is uncountable...)
 
 Should you have any questions, contact the author: nikita.medvedev@fzu.cz
@@ -14,8 +14,10 @@ Or by private email: n.a.medvedev@gmail.com
 It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matter. The code combines the following methods into one model with feed-backs:
  a) Monte Carlo (MC) method for modeling X-ray-induced electron kinetics
  b) tight binding molecular dynamics (TBMD) for tracing atomic responce to modification of the interatomic potential due to electronic excitation
- c) Boltzmann collision integrals (BCI) for evaluation of the nonadiabatic electron-ion (electron-phonon) coupling
- d) random phase approximation (RPA) for calculation of the change of the optical properties of the material
+ c) Boltzmann collision integrals (BCI):
+ - relaxation-time approximation for electron-electron scattering
+ - dynamical coupling for nonadiabatic electron-ion (electron-phonon) coupling
+ d) random phase approximation (RPA) for calculation of the optical properties of the material
 
 *******************************************************
 DISCLAIMER

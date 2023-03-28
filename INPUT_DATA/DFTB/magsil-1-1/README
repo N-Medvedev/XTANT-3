@@ -1,0 +1,62 @@
+(c) 2017, Helio A Duarte, Universidade Federal de Minas Gerais
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+#########################################################################
+#                                                                       #
+# Semi-relativistic, self-consistent  charge Slater-Koster tables for   #
+# density-functional based tight-binding (DFTB) for materials science   #
+# simulations." GPQIT, UNIVERSIDADE FEDERAL DE MINAS GERAIS,  2009-2013 #
+#                                                                       #
+#  Maicon P. Lourenco    (maiconpl01@gmail.com, maicon_pl@yahoo.com.br) #
+#  Augusto F. Oliveira   (augustof.chem@gmail.com)                      #
+#  Helio A. Duarte       (duarteh@ufmg.br, helioaduarte@gmail.com)      #
+#                                                                       #
+#########################################################################
+
+Required references
+-------------------
+
+Complete set: 
+[1] 
+   J. Frenzel, A. F. Oliveira N. Jardillier, T.Heine & G Seifert
+   "Semi-relativistic, self-consistent charge Slater-Koster tables for
+   density-functional based tight-binding (DFTB) for materials
+   science simulations."  TU-Dresden 2004-2009.
+
+Mg-O-Si-H: 
+[2]
+  Lourenco, M. P.; de Oliveira, C.; Oliveira, A. F.; Guimarães, L.;
+  Duarte, H. A.; Structural, Electronic, and Mechanical Properties
+  of Single-Walled Chrysotile Nanotube Models.
+  Phys. Chem. C, 2012, 116 (17). DOI: 10.1021/jp301048p
+  Guimaraes, L., Enyashin, A. N., Frenzel, J., Heine, T., Duarte, H. A.
+  & Seifert, G., "Imogolite Nanotubes: Stability, electronic and
+  mechanical properties", Nano, 2007, 1, 362-368.
+  http://dx.doi.org/10.1021/nn700184k
+
+Details of the atomic calculations:
+-----------------------------------
+
+DFT, semi-relativistic, V_xc=Ceperly-Alder, potential super-position,
+STO basis-functions with 5 values for xi and i=0,1,2,3
+(Seifert,Phys.Chem.A,111(26),5609-5613,2007)
+additional harmonic potential (r/r0)^n0 with n0=2 and r0(H)=1.3,
+r0(O)=2.7, r0(Mg)=5.1 and r0(Si)=4.2 for s,p functions
+and r0(Si)=2.1 for d-functions (r0 in atomic units).
+
+Repulsive potentials are fitted to work with the following systems:
+------------------------------------------------------------------
+
+1)  Mg-O-Si-H (Ref. [2])
+      Chrysotile nanotubes

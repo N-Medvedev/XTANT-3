@@ -1,0 +1,17 @@
+Girifalco:exclude
+48.562176			! C12 [eV*A^12] Lenard-Jones C12
+0.02100362722			! C6 [eV*A^6] Lenard-Jones C6
+2.0d0		! dm [A] radius where to switch to polinomial
+3.5d0		! d_cut [A] cut-off radius
+-0.2434712469e-1		! a, fitting polinomial coefficients: a*x^3+b*x^2+c*x+d
+.2242475970			! b 
+-.6749763467		! c
+.6592671212			! d
+0.1d0		! dsm [A] radius where to switch to polinomial at small distances
+0.01d0		! ds_cut [A] cut-off radius on small distances
+-1.381384381d5		! as, fitting polinomial coefficients: a*x^5+b*x^4+c*x^3+d*x^2+e*x+f
+5.815523230d5		! bs 
+-8.699559943d5		! cs
+6.052790547d5		! ds
+-2.427604354d5		! es
+49527.18030		! fs

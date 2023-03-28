@@ -1,0 +1,39 @@
+(c) 2017, Thomas Frauenheim, Universität Bremen
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+SVN repository information:
+---------------------------
+$Id: README 2555 2007-06-12 12:56:32Z niehaus $
+$URL: svn+ssh://svn@login.bccms.uni-bremen.de/slako/tags/skful/hyb-0-2/README $
+
+
+This special parameterization was used to investigate Sulfur
+passivated GaAs surface reconstructions. It was also used to study
+the adsorption of PTCDA on GaAs, Silver and Silicon surfaces.
+
+The files have been updated to allow for TD-DFTB calculations.
+
+ Relevant Publications
+----------------------
+
+- B. Szuecs, Z. Hajnal, T. Frauenheim, C. Gonzales, J. Ortega,
+R. Perez, and F. Flores, Appl.Surf.Sci., vol. 212, p. 861, 2003.
+
+- B. Szuecs, Z. Hajnal, R. Scholz, S. Sanna, and T. Frauenheim
+Appl.Surf.Sci., vol. 234, pp. 173-177, 2004.
+
+
+Required references
+-------------------
+None
