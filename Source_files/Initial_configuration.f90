@@ -844,8 +844,10 @@ subroutine interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Sce
    select case (ind_atoms)
    case (1) ! there are data for atomic species and coordinates
       Scell(SCN)%Supce0 = Scell(SCN)%Supce   ! initial
+      if (numpar%verbose) print*, 'Reading defined atomic coordinates from Cell.xyz'
       call read_XYZ_coords(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, ind_S, ind_R, ind_V, Err) ! below
    case (0) ! to be set randomly
+      if (numpar%verbose) print*, 'Setting random atomic coordinates defined in Cell.xyz'
       call read_XYZ_random(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, SC_X, SC_Y, numpar, Err) ! below
    case default
       Error_descript = 'Could not interpret the data in file '//trim(adjustl(File_name_XYZ))
@@ -961,6 +963,8 @@ subroutine read_XYZ_random(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matte
    Scell(SCN)%supce(2,2) = SC_y
    Scell(SCN)%supce(3,3) = SUM(SC_z)
    Scell(SCN)%supce0 = Scell(SCN)%supce
+
+   if (numpar%verbose) print*, 'Supercell sizes defined:', Scell(SCN)%supce(1,1), Scell(SCN)%supce(2,2), Scell(SCN)%supce(3,3)
 
 
    ! Now, place atoms randomly, according to the conditions specified:
