@@ -339,7 +339,7 @@ subroutine nonsym_diagonalize_r(M, Ev, Error_descript, print_Ei, check_M)
    M_save = M ! save matrix before diagonalization just in case
    !$OMP END WORKSHARE
 
-   call DGEEV('N','V', N, M, N, Ev, Im_Ev, VL, 1, VR, N, WORK, LWORK, INFO)
+   call DGEEV('N','V', N, M, N, Ev, Im_Ev, VL, 1, VR, N, WORK, LWORK, INFO) ! library MKL (or LAPACK)
 
    !$OMP WORKSHARE
    M = VR ! save eigenvectors in the former matrix (Hamiltonian) assuming real values

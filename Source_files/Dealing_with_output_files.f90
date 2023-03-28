@@ -26,9 +26,9 @@
 MODULE Dealing_with_output_files
 ! Open_MP related modules from external libraries:
 #ifdef OMP_inside
-   USE OMP_LIB
+   USE OMP_LIB, only : OMP_GET_MAX_THREADS
 #endif
-USE IFLPORT
+USE IFLPORT, only : system, chdir
 
 use Universal_constants
 use Objects

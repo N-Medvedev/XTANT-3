@@ -42,7 +42,7 @@ use Periodic_table, only : Decompose_compound
 ! Open_MP related modules from external libraries:
 #ifdef OMP_inside
    USE IFLPORT, only : system
-   USE OMP_LIB
+   USE OMP_LIB, only : omp_get_max_threads
 #endif
 
 implicit none
@@ -1751,7 +1751,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                write(Error_descript,'(a,a,a,$)') 'Unknown exponential wall parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
 !                call Save_error_details(Err, 4, Error_descript)
                print*, trim(adjustl(Error_descript))
-               print*, 'Proceeding without exponential wall  forces from unballanced charge'
+               print*, 'Proceeding without exponential wall forces at short distances'
                close(FN) ! close file
                goto 3425
             end select
