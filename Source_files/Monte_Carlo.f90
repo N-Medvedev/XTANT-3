@@ -189,7 +189,8 @@ subroutine get_high_energy_distribution(Scell, MC, numpar)
             call Find_in_array_monoton(Scell%E_fe_grid, MC(stat)%electrons(i_el)%E, j) ! module "Little_subroutine"
             j = j - 1   ! one level below
             ! Add electron to this energy grid point:
-            Scell%fe_high_on_grid(j) = Scell%fe_high_on_grid(j) + NMC / numpar%high_DOS(j) ! electron per iteration per DOS
+            !Scell%fe_high_on_grid(j) = Scell%fe_high_on_grid(j) + NMC / numpar%high_DOS(j) ! electron per iteration per DOS
+            Scell%fe_high_on_grid(j) = Scell%fe_high_on_grid(j) + NMC ! density of electrons per iteration (without DOS)
          enddo ! i_el
       enddo ! stat
 
