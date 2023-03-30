@@ -145,7 +145,7 @@ subroutine save_distribution_on_grid(FN, tim, wr, fe)
    integer i
    write(FN,'(a,f25.16)') '#', tim
    do i = 1, size(fe)
-      write(FN,'(f25.16,es25.16)') wr(i), fe(i)
+      write(FN,'(f25.16,es25.16E4)') wr(i), fe(i)
    enddo
    write(FN,*) ''
    write(FN,*) ''

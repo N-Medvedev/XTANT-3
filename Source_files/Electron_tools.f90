@@ -62,6 +62,7 @@ subroutine get_low_energy_distribution(Scell, numpar) ! On the grid, if requeste
          SRTL:do j = 1, Nsiz ! all energy intervals
             do while (Scell%Ei(i) < Scell%E_fe_grid(j)) ! all energy levels below the given one in this step
                Scell%fe_on_grid(j) = Scell%fe_on_grid(j) + Scell%fe(i)
+               !print*, j, i, Scell%E_fe_grid(j), Scell%fe_on_grid(j), Scell%fe(i)
                i = i + 1
                if (i > Nei) exit SRTL
             enddo
