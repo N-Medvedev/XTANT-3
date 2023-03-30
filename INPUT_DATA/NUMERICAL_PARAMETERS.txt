@@ -12,19 +12,19 @@ dt_grid.txt     ! time step for MD [fs] (or a file name with the variable time-g
 0		    ! it's = 1 if P=const, or = 0 if V=const
 0.0d0		    ! external pressure [Pa]
 F   0   0.35        ! include SCC (True, False), model of gamma (default 0); mixing factor (default 0.35)
-4   1d-3    0.0d0    ! scheme el. (0=decoupled; 1=E=const; 2=T=const; 3=BO; 4=Relaxation time); switch E to T [fs]; relaxation tau [fs]
+4   1d-3    100.0d0    ! scheme el. (0=decoupled; 1=E=const; 2=T=const; 3=BO; 4=Relaxation time); switch E to T [fs]; relaxation tau [fs]
 0               ! coupling: -1=nonperturbative (default), 0=off, 1=dynamical, 2=Fermi golden rule;
 -1.0d+3    4.0d0    ! [fs] when to switch on the nonadiabatic coupling; scaling factor (if needed)
 5.0d0   0.001d0     ! [eV] acceptance window for nonadiabatic coupling; [eV] tollerance for quasidegenerate levels
-1	0.0	  2.0       ! quenching (0=no, 1=yes); starting from when [fs]; how often [fs]
+0	0.0	  2.0       ! quenching (0=no, 1=yes); starting from when [fs]; how often [fs]
 0	300.0	100.0   ! Berendsen thermostat for atoms (0=no, 1=yes); bath Ta [K]; cooling time [fs] | Atomic_bath_grid.txt
-1	300.0	10.0    ! Berendsen thermostat for electrons (0=no, 1=yes); bath Te [K]; time [fs] | Electronic_bath_grid.txt
+0	300.0	10.0    ! Berendsen thermostat for electrons (0=no, 1=yes); bath Te [K]; time [fs] | Electronic_bath_grid.txt
 8.0d0       ! [eV] cut-off energy in MC (<0 means Ecut=top of CB)
 1.0d30      ! [eV] work function, for electron emission (>0 eV; <0 - number of collisions)
 0           ! printout electron energy levels (1) or not (0)
 0	0.1   1 ! printout DOS (0=no,1=Gamma,2=k-points); smearing of gaussian; print PDOS yes (1) or no (0)
 0	        ! printout Mulliken charges for types of atoms
-0           ! printout electron distribution (1) or not (0)
+2   1.0   100.0  ! printout fe (1), not (0), on grid (2), only on grid (-2); energy step for the grid [eV]; grid end [eV]
 0           ! printout atomic pair correlation function (1) or not (0)
 1           ! printout atomic positions in XYZ (1) or not (0)
 0           ! printout atomic positions in CIF (1) or not (0)

@@ -195,6 +195,11 @@ if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesf
 ! Calculate electron heat capacity, entropy:
 call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
+! And save the (low-energy part of the) distribution on the grid, if required
+! (its high-energy part is inside of MC_Propagate subroutine):
+call get_low_energy_distribution(g_Scell(1), g_numpar) ! module "Electron_tools"
+
+
 ! Calculate configurational temperature:
 ! call Get_configurational_temperature(g_Scell, g_numpar, g_Scell(1)%Tconf)	! module "TB"
 
@@ -218,69 +223,8 @@ do while (g_time .LT. g_numpar%t_total)
       !1111111111111111111111111111111111111111111111111111111111
       ! Update atomic data on previous timestep and move further:
       call save_last_timestep(g_Scell) ! module "Atomic_tools"
-      ! Choose which MD propagator to use:
-      select case(g_numpar%MD_algo)
-      !00000000000000000000000000000000000000000
-      case default  ! velocity Verlet (2d order):
-         ! Atomic Verlet step:
-         call make_time_step_atoms(g_Scell, g_matter, g_numpar, 2)    ! module "Atomic_tools"
-         ! Supercell Verlet step:
-         call make_time_step_supercell(g_Scell, g_matter, g_numpar, 2) ! supercall Verlet step, module "Atomic_tools"
-         ! Update Hamiltonian after the atomic and supercell motion:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-      !11111111111111111111111111111111111111111
-      case (1)  ! Yoshida (4th order)
-         ! First step of Yoshida for atomic coordinates and for supercell vectors:
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 1, 1)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 1, 1) ! supercall Verlet step, module "Atomic_tools"
-         ! Update forces/accelerations after the first coordinates step:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-         ! First step of Yoshida for velosities:
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 1, 2)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 1, 2) ! supercall Verlet step, module "Atomic_tools"
-         
-         ! Second step of Yoshida
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 2, 1)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 2, 1) ! supercall Verlet step, module "Atomic_tools"
-         ! Update forces/accelerations after the first coordinates step:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-         ! Second step of Yoshida for velosities:
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 2, 2)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 2, 2) ! supercall Verlet step, module "Atomic_tools"
-         
-         ! Third step of Yoshida
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 3, 1)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 3, 1) ! supercall Verlet step, module "Atomic_tools"
-         ! Update forces/accelerations after the first coordinates step:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-         ! Third step of Yoshida for velosities:
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 3, 2)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 3, 2) ! supercall Verlet step, module "Atomic_tools"
-         
-         ! Fourth step of Yoshida
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 4, 1)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 4, 1) ! supercall Verlet step, module "Atomic_tools"
-         ! Update forces/accelerations after the first coordinates step:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-         ! Fourth step of Yoshida for velosities is absent, V4=V3.
-      !22222222222222222222222222222222222222222
-      case (2)  ! Martyna algorithm (4th order):
-         ! a) New coordinate:
-         call make_time_step_atoms_M(g_Scell, g_matter, g_numpar, 1)    ! module "Atomic_tools"
-         ! b) New potential:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-         ! c) New velocity:
-         call make_time_step_atoms_M(g_Scell, g_matter, g_numpar, 2)    ! module "Atomic_tools"
-         ! d) New effective force:
-         call make_time_step_atoms_M(g_Scell, g_matter, g_numpar, 3)    ! module "Atomic_tools"
-         ! e) New effective force velocity:
-         call make_time_step_atoms_M(g_Scell, g_matter, g_numpar, 4)    ! module "Atomic_tools"
-         ! f) New effective force acceleration:
-         call make_time_step_atoms_M(g_Scell, g_matter, g_numpar, 5)    ! module "Atomic_tools"
-         
-         ! For Supercell, use Verlet:
-         call make_time_step_supercell(g_Scell, g_matter, g_numpar, 2) ! supercall Verlet step, module "Atomic_tools"
-      endselect
+      ! Make the MD timestep (first part, in the case of Verlet):
+      call MD_step(g_Scell, g_matter, g_numpar, g_time, g_Err)  ! module "TB"
       if (g_numpar%verbose) call print_time_step('First step of MD step succesful:', g_time, msec=.true.)
       
       !2222222222222222222222222222222222222222222222222222222
@@ -313,6 +257,10 @@ do while (g_time .LT. g_numpar%t_total)
 
    ! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
    call Electron_thermalization(g_Scell, g_numpar) ! module "Electron_tools"
+
+   ! And save the (low-energy part of the) distribution on the grid, if required
+   ! (its high-energy part is inside of MC_Propagate subroutine):
+   call get_low_energy_distribution(g_Scell(1), g_numpar) ! module "Electron_tools"
 
    ! Update corresponding energies of the system:
    call update_nrg_after_change(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"

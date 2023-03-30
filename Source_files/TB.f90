@@ -26,13 +26,14 @@
 MODULE TB
 use Universal_constants
 use Objects
-!use Variables
 use Algebra_tools, only : Det_3x3, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points, sym_diagonalize, Reciproc, &
                         mkl_matrix_mult, Invers_3x3
 use Little_subroutines, only : number_of_types_of_orbitals, count_3d, deallocate_array
 use Atomic_tools, only : get_near_neighbours, total_forces, Potential_super_cell_forces, super_cell_forces, &
                         Convert_reciproc_rel_to_abs, Rescale_atomic_velocities, get_kinetic_energy_abs, &
-                        get_Ekin, save_last_timestep, Potential_super_cell_forces
+                        get_Ekin, save_last_timestep, Potential_super_cell_forces, &
+                        make_time_step_atoms, make_time_step_supercell, make_time_step_atoms_Y4, make_time_step_supercell_Y4, &
+                        make_time_step_atoms_M
 use Electron_tools, only : set_initial_fe, update_fe, get_new_global_energy, find_band_gap, get_DOS_sort, &
                      get_electronic_heat_capacity, electronic_entropy, Diff_Fermi_E, get_low_e_energy, get_total_el_energy
 use Nonadiabatic, only : Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, Electron_ion_collision_int, get_G_ei
@@ -61,14 +62,89 @@ use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressu
 implicit none
 PRIVATE
 
-public :: get_new_energies, get_DOS, get_Mulliken, Get_pressure, get_electronic_thermal_parameters, get_Hamilonian_and_E, &
+public :: get_new_energies, get_DOS, get_Mulliken, Get_pressure, get_electronic_thermal_parameters, &
          vdW_interplane, Electron_ion_coupling, update_nrg_after_change, get_DOS_masks, k_point_choice, &
-         construct_complex_Hamiltonian
+         construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step
 
  contains
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 !Common TB tools:
+
+
+subroutine MD_step(Scell, matter, numpar, time, Err)
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Solid), intent(inout) :: matter ! material parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   real(8), intent(in) :: time ! [fs] timestep
+   !------------------------------------------
+
+   ! Choose which MD propagator to use:
+   select case(numpar%MD_algo)
+   !00000000000000000000000000000000000000000
+   case default  ! velocity Verlet (2d order):
+      ! Atomic Verlet step:
+      call make_time_step_atoms(Scell, matter, numpar, 2)    ! module "Atomic_tools"
+      ! Supercell Verlet step:
+      call make_time_step_supercell(Scell, matter, numpar, 2) ! supercall Verlet step, module "Atomic_tools"
+      ! Update Hamiltonian after the atomic and supercell motion:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! below
+   !11111111111111111111111111111111111111111
+   case (1)  ! Yoshida (4th order)
+      ! First step of Yoshida for atomic coordinates and for supercell vectors:
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 1, 1)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 1, 1) ! supercall Verlet step, module "Atomic_tools"
+      ! Update forces/accelerations after the first coordinates step:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! module "TB"
+      ! First step of Yoshida for velosities:
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 1, 2)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 1, 2) ! supercall Verlet step, module "Atomic_tools"
+
+      ! Second step of Yoshida
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 2, 1)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 2, 1) ! supercall Verlet step, module "Atomic_tools"
+      ! Update forces/accelerations after the first coordinates step:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! module "TB"
+      ! Second step of Yoshida for velosities:
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 2, 2)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 2, 2) ! supercall Verlet step, module "Atomic_tools"
+
+      ! Third step of Yoshida
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 3, 1)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 3, 1) ! supercall Verlet step, module "Atomic_tools"
+      ! Update forces/accelerations after the first coordinates step:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! module "TB"
+      ! Third step of Yoshida for velosities:
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 3, 2)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 3, 2) ! supercall Verlet step, module "Atomic_tools"
+
+      ! Fourth step of Yoshida
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 4, 1)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 4, 1) ! supercall Verlet step, module "Atomic_tools"
+      ! Update forces/accelerations after the first coordinates step:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! module "TB"
+      ! Fourth step of Yoshida for velosities is absent, V4=V3.
+   !22222222222222222222222222222222222222222
+   case (2)  ! Martyna algorithm (4th order):
+      ! a) New coordinate:
+      call make_time_step_atoms_M(Scell, matter, numpar, 1)    ! module "Atomic_tools"
+      ! b) New potential:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! module "TB"
+      ! c) New velocity:
+      call make_time_step_atoms_M(Scell, matter, numpar, 2)    ! module "Atomic_tools"
+      ! d) New effective force:
+      call make_time_step_atoms_M(Scell, matter, numpar, 3)    ! module "Atomic_tools"
+      ! e) New effective force velocity:
+      call make_time_step_atoms_M(Scell, matter, numpar, 4)    ! module "Atomic_tools"
+      ! f) New effective force acceleration:
+      call make_time_step_atoms_M(Scell, matter, numpar, 5)    ! module "Atomic_tools"
+
+      ! For Supercell, use Verlet:
+      call make_time_step_supercell(Scell, matter, numpar, 2) ! supercall Verlet step, module "Atomic_tools"
+   endselect
+
+end subroutine MD_step
 
 
 ! Attractive part:
@@ -1596,12 +1672,11 @@ subroutine get_electronic_thermal_parameters(numpar, Scell, NSC, matter, Err)
    !print*, 'Before Se'
    call electronic_entropy(Scell(NSC)%fe, Scell(NSC)%Se) ! module "Electron_tools"
    ! and equivalent equilibrium entropy:
-   !print*, 'Before Se_eq'
    call electronic_entropy(Scell(NSC)%fe_eq, Scell(NSC)%Se_eq) ! module "Electron_tools"
-   !print*, 'After  Se_eq'
+
 
    !----------------------------
-   ! 3) Electron heat conductivity, if required (does not work well...):
+   ! Electron heat conductivity, if required (does not work well...):
    call get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err) ! below
 
 end subroutine get_electronic_thermal_parameters

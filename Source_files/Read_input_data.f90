@@ -160,6 +160,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%save_DOS = .false.	! excluded calculation and printout of DOS
    numpar%Smear_DOS = 0.05d0	! [eV] default smearing for DOS calculations
    numpar%save_fe = .false.	! excluded printout distribution function
+   numpar%save_fe_grid = .false.	! excluded printout distribution function on the grid
    numpar%save_PCF = .false.	! excluded printout pair correlation function
    numpar%save_XYZ = .true.	! included printout atomic coordinates in XYZ format
    numpar%save_CIF = .true.	! included printout atomic coordinates in CIF format
@@ -4320,7 +4321,8 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
    ! save electron electron distribution (1) or not (0):
-   read(FN,*,IOSTAT=Reason) N  ! save electron distribution function (1) or not (0)
+   !read(FN,*,IOSTAT=Reason) N  ! save electron distribution function (1) or not (0)
+   read(FN,'(a)',IOSTAT=Reason) temp_ch   ! read parameters to interpret them in a subroutine
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
       write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
@@ -4328,10 +4330,12 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       print*, trim(adjustl(Error_descript))
       goto 3418
    endif
-   if (N .EQ. 1) then
-      numpar%save_fe = .true.	! included
-   else
-      numpar%save_fe = .false.	! excluded
+   call interprete_distribution_input(temp_ch, numpar, Scell(1), read_well) ! below
+   if (.not. read_well) then
+      write(Error_descript,'(a,i5,a,$)') 'Could not interprete line ', count_lines, ' in file '//trim(adjustl(File_name))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 3418
    endif
 
    ! save atomic pair correlation function (1) or not (0):
@@ -4467,9 +4471,72 @@ end subroutine read_numerical_parameters
 
 
 
+subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
+   character(*), intent(in) :: temp_ch ! line read from the input file
+   type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   logical, intent(inout) :: read_well
+   !--------------------
+   integer :: count_lines, Reason, N, Nsiz, i
+   real(8) :: dE, Emax, Emin, dE_min
+
+   count_lines = 0
+   read_well = .true.   ! to start with
+   ! Default values:
+   numpar%save_fe = .false.
+   numpar%save_fe_grid = .false.
+   dE_min = 1.0d-4   ! [eV] minimal allowed grid step
+   dE = 0.1d0  ! [eV] energy grid step
+   Emin = -30.0d0 ! [eV] energy grid start
+   Emax = 100.0d0 ! [eV] energy grid end
+
+   read(temp_ch,*,IOSTAT=Reason) N, dE, Emax
+   call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
+   if (.not. read_well) then ! something wrong with the user-defined grid
+      ! try reading just the first flag, no grid parameters
+      read(temp_ch,*,IOSTAT=Reason) N
+      call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
+      if (.not. read_well) then ! something wrong with the user-defined grid
+         print*, 'Trouble reading the line with electronic distribution parameters, fe will not be printed out!'
+         N = 0 ! by default, no printing out
+      endif
+   else
+      if ((dE < dE_min) .and. (abs(N) == 2)) then
+         dE = dE_min
+         print*, 'Energy grid step for fe is too small, using the default value:', dE_min
+      endif
+   endif
+
+   select case (N)
+   case (1) ! printout distribution on TB energy levels
+      numpar%save_fe = .true.
+   case (2) ! printout distribution on TB energy levels and on the user-defined grid
+      numpar%save_fe = .true.
+      numpar%save_fe_grid = .true.
+   case (-2) ! printout distribution on the user-defined grid, but not on TB energy levels
+      numpar%save_fe_grid = .true.
+   end select
+
+   if (numpar%save_fe_grid) then
+      ! Now we know the grid parameters:
+      Nsiz = INT((Emax-Emin)/dE)
+      ! Set the default grids:
+      allocate(Scell%E_fe_grid(Nsiz), source=0.0d0)
+      allocate(Scell%fe_on_grid(Nsiz), source=0.0d0)
+      allocate(Scell%fe_high_on_grid(Nsiz), source=0.0d0)
+      allocate(numpar%high_DOS(Nsiz), source=0.0d0)
+      ! Create the grid:
+      Scell%E_fe_grid(1) = Emin
+      do i = 2, Nsiz
+         Scell%E_fe_grid(i) = Scell%E_fe_grid(i-1) + dE
+      enddo
+   endif
+end subroutine interprete_distribution_input
+
+
 
 subroutine set_Bath_grid_electrons(numpar, read_well_out, Error_descript)
-   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
    logical, intent(inout) :: read_well_out
    character(*), intent(inout) :: Error_descript
    !-----------------------------------------

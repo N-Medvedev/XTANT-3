@@ -490,6 +490,8 @@ type Super_cell
    real(8), dimension(:), allocatable :: fe ! low-energy electron distribution
    real(8), dimension(:), allocatable :: fe_eq ! equivalent Fermi electron distribution
    real(8) :: Se, Se_eq  ! electron entropy [K/eV], and equivalent equilibrium entropy
+   ! grid for electron distribution; distribution on this grid; high-energy electrons distribution on grid:
+   real(8), dimension(:), allocatable :: E_fe_grid, fe_on_grid, fe_high_on_grid
    real(8), dimension(:), allocatable :: I_ij ! electron-ion collision integral [1/s]
    real(8), dimension(:), allocatable :: Norm_WF ! Normalization of wave functions
    real(8) :: Ce  ! electron heat capacity [J/(m^3 K)]
@@ -660,6 +662,8 @@ type Numerics_param
    logical :: fe_input_exists ! flag to use the distribution from a file
    character(100) :: fe_filename ! file name with user-provided initial electronic distribution
    real(8), dimension(:), allocatable :: fe_input  ! initial distribution function
+   real(8), dimension(:), allocatable :: high_DOS  ! DOS for high-energy electron distribution, if required
+   integer :: fe_aver_num  ! number of time-steps over which to average the distribution on the grid
    real(8) :: tau_fe ! [fs] characteristic time (used for the relaxation time approximation)
    ! MD:
    real(8) :: dt	      ! [fs] time-step for MD
@@ -727,7 +731,7 @@ type Numerics_param
    ! numbers of files:
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
-   integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_Se
+   integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_Se, FN_fe_on_grid
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
    integer :: el_ion_scheme
@@ -735,7 +739,7 @@ type Numerics_param
    real(8), dimension(:,:), allocatable :: k_grid	! for the case of user-provided grid for k-space (for CDF and DOS calculations)
    logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
    ! Different output, what to save:
-   logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate
+   logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate, save_fe_grid
    logical :: do_elastic_MC, do_path_coordinate, do_kappa
    logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN
    integer :: Mulliken_model

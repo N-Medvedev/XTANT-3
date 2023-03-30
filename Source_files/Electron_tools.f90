@@ -37,8 +37,61 @@ public :: get_low_e_energy, find_band_gap, get_DOS_sort, Diff_Fermi_E, get_numbe
 public :: set_Erf_distribution, update_fe, Electron_thermalization, get_glob_energy, update_cross_section
 public :: Do_relaxation_time, set_initial_fe, find_mu_from_N_T, set_total_el_energy, Electron_Fixed_Etot
 public :: get_new_global_energy, get_electronic_heat_capacity, get_total_el_energy, electronic_entropy
+public :: get_low_energy_distribution, set_high_DOS
 
  contains
+
+
+
+subroutine get_low_energy_distribution(Scell, numpar) ! On the grid, if requested
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar   ! numerical parameters, including lists of earest neighbors
+   !--------------------
+   integer :: Nsiz, Nei, i, j
+
+   if (numpar%save_fe_grid) then  ! only user requested
+      ! Count number of steps, over which the distribution is averaged:
+      numpar%fe_aver_num = numpar%fe_aver_num + 1
+
+      ! Recalculate the low-energy part of the distribution:
+      if (numpar%save_fe_grid) then  ! only user requested
+         Nsiz = size(Scell%E_fe_grid)
+         Nei = size(Scell%Ei)
+         ! Fill in the distribution function:
+         i = 1 ! to start with
+         SRTL:do j = 1, Nsiz ! all energy intervals
+            do while (Scell%Ei(i) < Scell%E_fe_grid(j)) ! all energy levels below the given one in this step
+               Scell%fe_on_grid(j) = Scell%fe_on_grid(j) + Scell%fe(i)
+               i = i + 1
+               if (i > Nei) exit SRTL
+            enddo
+         enddo SRTL
+      endif
+   endif
+end subroutine get_low_energy_distribution
+
+
+subroutine set_high_DOS(Scell, numpar)
+   type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
+   !-----------------------
+   integer :: Nsiz, i
+   real(8) :: eps, k, coef, prefac
+
+   eps = 1.0d-12
+   Nsiz = size(numpar%high_DOS)
+
+   if (numpar%high_DOS(Nsiz) <= eps) then ! DOS is not set, so set it:
+      k = 2.0d0*g_me/g_h**2
+      coef = g_e*sqrt(g_e)/(1.0d30*2.0d0*g_Pi**2)
+      prefac = coef * k**(1.5d0) * Scell%V
+      do i = 1, Nsiz
+         numpar%high_DOS(i) = prefac * sqrt( abs(Scell%E_fe_grid(i)) )  ! Free-electron DOS [1/(A^3 * eV)]
+         !print*, i, Scell%E_fe_grid(i), numpar%high_DOS(i)
+      enddo
+   endif
+end subroutine set_high_DOS
+
 
 
 subroutine update_cross_section(Scell, matter)

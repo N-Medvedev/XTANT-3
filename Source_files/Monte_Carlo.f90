@@ -32,7 +32,7 @@ use Little_subroutines, only : sample_gaussian, Find_in_array_monoton
 !use Dealing_with_EADL
 use MC_cross_sections, only : which_shell, which_atom, NRG_transfer_elastic_atomic, Electron_energy_transfer_inelastic, &
                         Mean_free_path
-use Electron_tools, only : update_cross_section, Do_relaxation_time
+use Electron_tools, only : update_cross_section, Do_relaxation_time, set_high_DOS
 
 implicit none
 PRIVATE
@@ -44,7 +44,7 @@ public :: MC_Propagate
 
 subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire MC procidure is here:
    type(MC_data), dimension(:), allocatable, intent(inout) :: MC    ! all MC arrays for photons, electrons and holes
-   type(Numerics_param), intent(in) :: numpar     ! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar     ! all numerical parameters
    type(Solid), intent(inout) :: matter           ! all material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! supercell with all the atoms as one object
    type(Pulse), dimension(:), intent(in) :: laser ! laser pulse parameters
@@ -125,8 +125,11 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
             enddo
          enddo
          Scell(NSC)%Nph = N_ph/NMC_real
-         ! Update the distribution function, if required:
+         ! Update the distribution function:
          Scell(NSC)%fe(:) = Scell(NSC)%fe(:) + d_fe(:)/NMC_real
+
+         ! And the distribution on the grid:
+         call get_high_energy_distribution(Scell(NSC), MC, numpar)  ! below
 
          ! Consistency checks:
          ! Make sure there are no unphysical values (fe<0 or fe>2):
@@ -161,6 +164,39 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
 
 !    print*, 'Charge:', Scell(NSC)%Q
 end subroutine MC_Propagate
+
+
+
+subroutine get_high_energy_distribution(Scell, MC, numpar)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(MC_data), dimension(:), intent(in) :: MC   ! all MC arrays for photons, electrons and holes
+   type(Numerics_param), intent(inout) :: numpar   ! numerical parameters, including lists of earest neighbors
+   !--------------------
+   integer :: stat, i_el, j
+   real(8) :: NMC
+
+   if (numpar%save_fe_grid) then  ! only user requested
+      ! Check if high-energy DOS is set, and set it if not:
+      call set_high_DOS(Scell, numpar)  ! module "Electron_tools"
+
+      ! Number of MC iterations to normalize to:
+      NMC = 1.0d0/dble(numpar%NMC)
+
+      ! Sort electrons from each iteration onto the given grid for distribution:
+      do stat = 1,numpar%NMC ! Statistics in MC, iterate the same thing and average
+         do i_el = 1, MC(stat)%noe  ! all active electrons
+            ! Find the level, closest to where electron is incomming into:
+            call Find_in_array_monoton(Scell%E_fe_grid, MC(stat)%electrons(i_el)%E, j) ! module "Little_subroutine"
+            j = j - 1   ! one level below
+            ! Add electron to this energy grid point:
+            Scell%fe_high_on_grid(j) = Scell%fe_high_on_grid(j) + NMC / numpar%high_DOS(j) ! electron per iteration per DOS
+         enddo ! i_el
+      enddo ! stat
+
+   endif
+end subroutine get_high_energy_distribution
+
+
 
 
 subroutine MC_run(tim, MC, Scell, laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, d_fe, min_df)
@@ -1019,7 +1055,7 @@ end subroutine MC_for_photon
 !OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
 subroutine sort_out_electrons(MC, electrons, Ne_high, Ne_emit, Ee_HE)
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
-   type(Electron), dimension(:), intent(in) :: electrons ! all holes in MC
+   type(Electron), dimension(:), intent(in) :: electrons ! all electrons in MC
    real(8), intent(inout) :: Ee_HE, Ne_high, Ne_emit ! number and energy of high-energy electrons, and number of emitted electrons
    integer i
 !    do i = 1, MC%noe

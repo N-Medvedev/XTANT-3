@@ -51,7 +51,7 @@ public :: close_save_files, close_output_files, save_duration, execute_all_gnupl
 
 
 subroutine write_output_files(numpar, time, matter, Scell)
-   type(Super_cell), dimension(:), intent(in):: Scell ! super-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(inout):: Scell ! super-cell with all the atoms inside
    real(8), intent(in) :: time ! time instance [fs]
    type(Solid), intent(inout) :: matter ! parameters of the material
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
@@ -101,6 +101,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
          call write_coulping(numpar%FN_coupling, time, Scell, NSC, numpar)
       end select
       if (numpar%save_fe) call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq)
+      if (numpar%save_fe_grid) call electronic_distribution_on_grid(Scell(1), numpar, time)  ! below
       if (numpar%save_PCF) call write_PCF(numpar%FN_PCF, Scell(1)%MDatoms, matter, Scell, 1)
       if (numpar%do_drude) call write_optical_coefs(numpar%FN_optics, time, Scell(1)%eps)
       if (Scell(1)%eps%all_w) call write_optical_all_hw(numpar%FN_all_w, time, Scell(1)%eps)
@@ -108,6 +109,49 @@ subroutine write_output_files(numpar, time, matter, Scell)
       
    enddo
 end subroutine write_output_files
+
+
+
+subroutine electronic_distribution_on_grid(Scell, numpar, tim)
+   type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: tim ! [fs] timestep
+   !----------------
+   integer :: i, j, Nsiz, Nei
+   real(8) :: N_steps
+
+   ! Add the high-energy part of the distribution (obtained from MC):
+   Scell%fe_on_grid = Scell%fe_on_grid + Scell%fe_high_on_grid
+
+   ! Average over the number of time-steps it was collected over:
+   N_steps = max( 1.0d0, dble(numpar%fe_aver_num) )   ! at least one step, to not change anything if nothing happened
+   Scell%fe_on_grid = Scell%fe_on_grid / N_steps
+
+   ! Now save the distribution in the file:
+   call save_distribution_on_grid(numpar%FN_fe_on_grid, tim, Scell%E_fe_grid, Scell%fe_on_grid)  ! below
+
+   ! Reset the high-energy electron part for the next step:
+   Scell%fe_on_grid = 0.0d0
+   Scell%fe_high_on_grid = 0.0d0
+   numpar%fe_aver_num = 0   ! to restart counting time-steps
+end subroutine electronic_distribution_on_grid
+
+
+subroutine save_distribution_on_grid(FN, tim, wr, fe)
+   integer, intent(in) :: FN
+   real(8), intent(in) :: tim
+   real(8), dimension(:), intent(in) :: wr
+   real(8), dimension(:), intent(in) :: fe
+   integer i
+   write(FN,'(a,f25.16)') '#', tim
+   do i = 1, size(fe)
+      write(FN,'(f25.16,es25.16)') wr(i), fe(i)
+   enddo
+   write(FN,*) ''
+   write(FN,*) ''
+end subroutine save_distribution_on_grid
+
+
 
 
 subroutine convolve_output(Scell, numpar)
@@ -931,6 +975,7 @@ subroutine close_output_files(Scell, numpar)
    if (numpar%save_DOS)  close(numpar%FN_DOS)
    if (numpar%DOS_splitting == 1) close(numpar%FN_coupling)
    if (numpar%save_fe)  close(numpar%FN_fe)
+   if (numpar%save_fe_grid)  close(numpar%FN_fe_on_grid)
    if (numpar%save_PCF) close(numpar%FN_PCF)
    if (Scell(1)%eps%all_w) close(numpar%FN_all_w)
    if (numpar%save_NN) close(numpar%FN_neighbors)
@@ -962,6 +1007,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    character(100) :: file_DOS	! DOS
    character(100) :: file_coupling  ! partial coupling parameter
    character(100) :: file_fe		! electron distribution (low-energy part)
+   character(100) :: file_fe_on_grid   ! electron distribution (full: low- + high-energy)
    character(100) :: file_PCF		! pair correlation function
    character(100) :: file_optics	! optical coefficients
    character(100) :: file_all_w		! optical coeffs for all hw
@@ -1108,6 +1154,12 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       numpar%FN_fe = FN
    endif
 
+   if (numpar%save_fe_grid) then
+      file_fe_on_grid = trim(adjustl(file_path))//'OUTPUT_electron_distribution_on_grid.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_fe_on_grid)))
+      numpar%FN_fe_on_grid = FN
+   endif
+
    if (numpar%save_PCF) then
       file_PCF = trim(adjustl(file_path))//'OUTPUT_pair_correlation_function.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_PCF)))
@@ -1244,6 +1296,10 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') 'echo Executing OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
       endif
+      if (numpar%save_fe_grid) then
+         write(FN, '(a)') 'echo Executing OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') 'call OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
+      endif
       if (numpar%DOS_splitting >= 1) then   ! Mulliken charges
          if (numpar%Mulliken_model >= 1) then
             write(FN, '(a)') 'echo Executing OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
@@ -1302,6 +1358,9 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       endif
       if (numpar%save_fe) then
          write(FN, '(a)') './OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
+      endif
+      if (numpar%save_fe_grid) then
+         write(FN, '(a)') './OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (numpar%DOS_splitting >= 1) then   ! Mulliken charges
          if (numpar%Mulliken_model >= 1) then
@@ -1436,6 +1495,18 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       call write_gnuplot_script_header_new(FN, 6, 1.0d0, 5.0d0, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_electron_distribution.gif', numpar%path_sep, setkey=0)
       !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
       call write_distribution_gnuplot(FN, Scell, numpar, 'OUTPUT_electron_distribution.dat')   ! below
+      call write_gnuplot_script_ending(FN, File_name, 1)
+      close(FN)
+   endif
+
+   ! Distribution function of all electrons on the grid:
+   if (numpar%save_fe_grid) then
+      ! Distribution function can only be plotted as animated gif:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 10.0d0, 'Distribution', 'Energy (eV)', 'Electron density (1/(V*E))', 'OUTPUT_electron_distribution_on_grid.gif', numpar%path_sep, setkey=0)
+      !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
+      call write_distribution_on_grid_gnuplot(FN, Scell, numpar, 'OUTPUT_electron_distribution_on_grid.dat')   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
    endif
@@ -2427,6 +2498,50 @@ subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
 end subroutine write_distribution_gnuplot
 
 
+subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
+   integer, intent(in) :: FN            ! file to write into
+   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   character(*), intent(in) :: file_fe  ! file with electronic distribution function
+   !-----------------------
+   integer :: i, M, NSC
+   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
+   logical :: do_fe_eq
+
+   do NSC = 1, size(Scell)
+      ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
+      write(ch_temp,'(f)') 100.0d0      ! Scell(NSC)%E_top
+      write(ch_temp2,'(f)') numpar%t_start
+      write(ch_temp3,'(f)') numpar%dt_save
+
+      select case (numpar%el_ion_scheme)
+         case (3:4)
+            do_fe_eq = .true.
+         case default
+            do_fe_eq = .false.
+      endselect
+      ! minimal energy grid:
+      write(ch_temp4,'(f)') -25.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
+         write(FN, '(a)') 'set logscale y'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+      else  ! Linux
+         write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
+         write(FN, '(a)') 'set logscale y'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+      endif
+      write(FN, '(a)') '}'
+   enddo
+end subroutine write_distribution_on_grid_gnuplot
+
+
 subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
@@ -3327,6 +3442,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
    endif
    if (numpar%save_fe) then
       write(print_to,'(a)') ' Calculated electron electron distributions are saved in output file'
+   endif
+   if (numpar%save_fe_grid) then
+      write(print_to,'(a)') ' Calculated electron electron distribution on grid is saved in output file'
    endif
    if (numpar%save_PCF) then
       write(print_to,'(a)') ' Calculated atomic pair correlation functions are saved in output file'
