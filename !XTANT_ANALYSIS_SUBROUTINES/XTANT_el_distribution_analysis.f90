@@ -45,7 +45,7 @@ real(8), dimension(:), allocatable :: distr
 real(8), dimension(:), allocatable :: distr_conv
 real(8), dimension(:), allocatable :: distr_aver
 real(8), dimension(:), allocatable :: weights_read
-real(8) :: tim, Conv_dE, temp_r
+real(8) :: tim, tim_Start, Conv_dE, temp_r
 integer :: FN_distr, FN_out_conv, FN_out_average, FN_weights, weights_COL
 integer :: INFO, Reason, i, Nsiz, tim_counter
 logical :: file_exist, read_well, print_conv, file_opened
@@ -135,6 +135,7 @@ do while (read_well)
        read_well = .true.  ! it read well, nothing to report
    end if
    if (print_conv) write(FN_out_conv,*) temp_ch, tim  ! copy the same markerline (timestemp)
+   if (i == 1) tim_Start = tim ! save starting time for gnuplotting below
 
    print*, 'Reading and analysing distribution, block #', i
 
@@ -192,7 +193,7 @@ print*, 'Analysis is done, starting gnuplotting'
 
 !-------------------------
 ! Make gnuplot script:
-call gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, print_conv)   ! below
+call gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, print_conv, tim_Start)   ! below
 print*, 'Everything is done, check the output files.'
 
 
@@ -202,10 +203,11 @@ STOP
  contains
 
 
-subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, print_conv)
+subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, print_conv, tim_Start)
    character(1), intent(in) :: path_sep
    character(*), intent(in) :: File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu
    logical, intent(in) :: print_conv
+   real(8), intent(in) :: tim_Start
    !----------------
    character(200) :: Gnu_script, Plot_file, ch_temp, ch_temp2, ch_temp3, ch_temp4
    integer :: FN_gnu_script
@@ -224,9 +226,11 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
       write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font "arial,14" '
       write(FN_gnu_script, '(a)') 'set output "'//trim(adjustl(File_out_conv_gnu))//'.gif'//'"'
       write(FN_gnu_script, '(a)') 'set xlabel "'//'Energy (eV)'//'" font "arial,18"'
-      write(FN_gnu_script, '(a)') 'set ylabel "'//'Distribution (arb.units)'//'" font "arial,18"'
+      write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron density (1/box)'//'" font "arial,18"'
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics 10'
+      write(FN_gnu_script, '(a)') 'set logscale y'
+      write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
    else
       Gnu_script = trim(adjustl(File_out_conv_gnu))//'.sh'
       open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
@@ -239,33 +243,39 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
       write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font \"arial,14\" '
       write(FN_gnu_script, '(a)') 'set output \"$NAME\"'
       write(FN_gnu_script, '(a)') 'set xlabel \"'//'Energy (eV)'//'\" font \"arial,18\" '
-      write(FN_gnu_script, '(a)') 'set ylabel \"'//'Distribution (arb.units)'//'\" font \"arial,18\" '
+      write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron density (1/box)'//'\" font \"arial,18\" '
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics \"$TICSIZ\" '
+      write(FN_gnu_script, '(a)') 'set logscale y'
+      write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
    endif
 
    ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
    write(ch_temp,'(f)') 100.0d0      ! Scell(NSC)%E_top
-   write(ch_temp2,'(f)') 0.0
+   write(ch_temp2,'(f)') abs(tim_Start)
+   if (tim_Start > 0.0d0) then
+      ch_temp2 = '+'//trim(adjustl(ch_temp2))
+   else
+      ch_temp2 = '-'//trim(adjustl(ch_temp2))
+   endif
    write(ch_temp3,'(f)') 1.0
+
 
    ! minimal energy grid:
    write(ch_temp4,'(f)') -25.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
    if (path_sep .EQ. '\') then	! if it is Windows
       write(FN_gnu_script, '(a)') 'stats "'//trim(adjustl(File_out_conv))//'" nooutput'
-      write(FN_gnu_script, '(a)') 'set logscale y'
       write(FN_gnu_script, '(a)') 'do for [i=1:int(STATS_blocks)] {'
       write(FN_gnu_script, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] "'// &
          trim(adjustl(File_out_conv))// &
-         '" index (i-1) u 1:2 w l lw 3 title sprintf("%i step",(i-1+'// &
+         '" index (i-1) u 1:2 w l lw 3 title sprintf("%i fs",(i-1'// &
          trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
    else  ! Linux
       write(FN_gnu_script, '(a)') 'stats \"'//trim(adjustl(File_out_conv))//'\" nooutput'
-      write(FN_gnu_script, '(a)') 'set logscale y'
       write(FN_gnu_script, '(a)') 'do for [i=1:int(STATS_blocks)] {'
       write(FN_gnu_script, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] \"'// &
          trim(adjustl(File_out_conv))// &
-         '\" index (i-1) u 1:2 w l lw 3 title sprintf(\"%i step\",(i-1+'// &
+         '\" index (i-1) u 1:2 w l lw 3 title sprintf(\"%i fs\",(i-1'// &
          trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
    endif
    write(FN_gnu_script, '(a)') '}'
@@ -294,10 +304,11 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
       write(FN_gnu_script, '(a)') 'set terminal pngcairo font "arial,14" '
       write(FN_gnu_script, '(a)') 'set output "'//trim(adjustl(File_out_average_gnu))//'.png'//'"'
       write(FN_gnu_script, '(a)') 'set xlabel "'//'Energy (eV)'//'" font "arial,18"'
-      write(FN_gnu_script, '(a)') 'set ylabel "'//'Distribution (arb.units)'//'" font "arial,18"'
+      write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron density (1/box)'//'" font "arial,18"'
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics 10'
-      write(FN_gnu_script, '(a)') 'set logscale y'
+      write(FN_gnu_script, '(a)') '#set logscale y'
+      write(FN_gnu_script, '(a)') '#set format y "%2.0tx10^{%L}"'
       write(FN_gnu_script, '(a)') 'p [][] "'//trim(adjustl(File_out_average))//'" u 1:2 w l lw LW title "Average"'
    else
       Gnu_script = trim(adjustl(File_out_average_gnu))//'.sh'
@@ -311,10 +322,11 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
       write(FN_gnu_script, '(a)') 'set terminal pngcairo font \"arial,14\" '
       write(FN_gnu_script, '(a)') 'set output \"$NAME\"'
       write(FN_gnu_script, '(a)') 'set xlabel \"'//'Energy (eV)'//'\" font \"arial,18\" '
-      write(FN_gnu_script, '(a)') 'set ylabel \"'//'Distribution (arb.units)'//'\" font \"arial,18\" '
+      write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron density (1/box)'//'\" font \"arial,18\" '
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics \"$TICSIZ\" '
-      write(FN_gnu_script, '(a)') 'set logscale y'
+      write(FN_gnu_script, '(a)') '#set logscale y'
+      write(FN_gnu_script, '(a)') '#set format y "%2.0tx10^{%L}"'
       write(FN_gnu_script, '(a)') 'p [][] \"'//trim(adjustl(File_out_average))//'\" u 1:3 w l lw \"$LW\" title \"Average\"'
       write(FN_gnu_script, '(a)') 'reset'
       write(FN_gnu_script, '(a)') '" | gnuplot '
