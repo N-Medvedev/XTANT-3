@@ -1,5 +1,5 @@
 :: This file was written by N.Medvedev
-:: in 2018-2022
+:: in 2018-2023
 :: -----------------------------------------------------
 :: Brief notes on cmd programming :  https://ss64.com/nt/if.html
 :: -----------------------------------------------------
@@ -16,6 +16,17 @@ IF "%1"=="" (
 )
 
 ::del *.obj
+
+:: Clean up before recompiling:
+del XTANT_atomic_data_analysis.obj
+del XTANT_autocorrelators.obj
+del XTANT_coupling_parameter.obj
+del XTANT_dielectric_function_analysis.obj
+del XTANT_fragmentation.obj
+del XTANT_entropy.obj
+del XTANT_el_distribution_analysis.obj
+
+
 
 SET "Starline=************************************************************************************"
 echo %Starline%
@@ -208,4 +219,32 @@ echo %Starline%
 :: Remove files that are no longer needed
 del XTANT_entropy.obj
 
+:: *********************************************************
+echo Started compilation: %date% %time%
+
+:: Program files to be compiled
+SET "List_of_files= XTANT_el_distribution_analysis.f90"
+
+:: List compiler options and the name of the executable:
+IF /I %arg1%==DEBUG (
+   :: Set name of the executable:
+   SET "Name_of_exe=XTANT_el_distribution_analysis.exe"
+) ELSE (
+   :: Set name of the executable:
+   SET "Name_of_exe=XTANT_el_distribution_analysis.exe"
+)
+
+:: Compiling:
+ifort.exe -c %Compile_options% %List_of_files%
+
+:: Assemble the code from all created obj-files
+ifort.exe %Compile_options% *.obj /exe:%Name_of_exe%
+
+echo %Starline%
+::   echo Completed: %date% %time%
+echo The program %Name_of_exe% was created at %date% %time%
+echo %Starline%
+
+:: Remove files that are no longer needed
+del XTANT_el_distribution_analysis.obj
 
