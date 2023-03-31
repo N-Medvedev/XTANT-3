@@ -229,7 +229,6 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
       write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron density (1/box)'//'" font "arial,18"'
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics 10'
-      write(FN_gnu_script, '(a)') 'set logscale y'
       write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
    else
       Gnu_script = trim(adjustl(File_out_conv_gnu))//'.sh'
@@ -246,7 +245,6 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
       write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron density (1/box)'//'\" font \"arial,18\" '
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics \"$TICSIZ\" '
-      write(FN_gnu_script, '(a)') 'set logscale y'
       write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
    endif
 
@@ -265,6 +263,7 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
    write(ch_temp4,'(f)') -25.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
    if (path_sep .EQ. '\') then	! if it is Windows
       write(FN_gnu_script, '(a)') 'stats "'//trim(adjustl(File_out_conv))//'" nooutput'
+      write(FN_gnu_script, '(a)') 'set logscale y'
       write(FN_gnu_script, '(a)') 'do for [i=1:int(STATS_blocks)] {'
       write(FN_gnu_script, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] "'// &
          trim(adjustl(File_out_conv))// &
@@ -272,6 +271,7 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
          trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
    else  ! Linux
       write(FN_gnu_script, '(a)') 'stats \"'//trim(adjustl(File_out_conv))//'\" nooutput'
+      write(FN_gnu_script, '(a)') 'set logscale y'
       write(FN_gnu_script, '(a)') 'do for [i=1:int(STATS_blocks)] {'
       write(FN_gnu_script, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] \"'// &
          trim(adjustl(File_out_conv))// &
