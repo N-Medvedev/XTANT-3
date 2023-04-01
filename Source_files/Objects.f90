@@ -491,7 +491,8 @@ type Super_cell
    real(8), dimension(:), allocatable :: fe_eq ! equivalent Fermi electron distribution
    real(8) :: Se, Se_eq  ! electron entropy [K/eV], and equivalent equilibrium entropy
    ! grid for electron distribution; distribution on this grid; high-energy electrons distribution on grid:
-   real(8), dimension(:), allocatable :: E_fe_grid, fe_on_grid, fe_high_on_grid
+   real(8), dimension(:), allocatable :: E_fe_grid, fe_on_grid, fe_high_on_grid  ! electron spectrum on grid (fe*DOS)
+   real(8), dimension(:), allocatable :: fe_norm_on_grid, fe_norm_high_on_grid   ! electron distribution on grid (fe)
    real(8), dimension(:), allocatable :: I_ij ! electron-ion collision integral [1/s]
    real(8), dimension(:), allocatable :: Norm_WF ! Normalization of wave functions
    real(8) :: Ce  ! electron heat capacity [J/(m^3 K)]

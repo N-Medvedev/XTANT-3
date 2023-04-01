@@ -4525,6 +4525,8 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
       allocate(Scell%fe_on_grid(Nsiz), source=0.0d0)
       allocate(Scell%fe_high_on_grid(Nsiz), source=0.0d0)
       allocate(numpar%high_DOS(Nsiz), source=0.0d0)
+      allocate(Scell%fe_norm_on_grid(Nsiz), source=0.0d0)
+      allocate(Scell%fe_norm_high_on_grid(Nsiz), source=0.0d0)
       ! Create the grid:
       Scell%E_fe_grid(1) = Emin
       do i = 2, Nsiz

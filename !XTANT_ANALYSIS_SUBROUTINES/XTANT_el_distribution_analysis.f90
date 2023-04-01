@@ -41,11 +41,11 @@ PROGRAM XTANT_el_distribution_analysis
 ! 1111111111111111111111111111111111111111111111111111111111111
 
 real(8), dimension(:), allocatable :: Ei
-real(8), dimension(:), allocatable :: distr
-real(8), dimension(:), allocatable :: distr_conv
-real(8), dimension(:), allocatable :: distr_aver
+real(8), dimension(:), allocatable :: distr, distr_norm
+real(8), dimension(:), allocatable :: distr_conv, distr_norm_conv
+real(8), dimension(:), allocatable :: distr_aver, distr_norm_aver
 real(8), dimension(:), allocatable :: weights_read
-real(8) :: tim, tim_Start, Conv_dE, temp_r
+real(8) :: tim, tim_Start, Conv_dE, temp_r, temp_r_norm
 integer :: FN_distr, FN_out_conv, FN_out_average, FN_weights, weights_COL
 integer :: INFO, Reason, i, Nsiz, tim_counter
 logical :: file_exist, read_well, print_conv, file_opened
@@ -109,8 +109,11 @@ open (unit=FN_distr, file=trim(adjustl(File_distr)), status = 'old', readonly)
 call get_size_of_distribution(FN_distr, Ei, distr)  ! below
 print*, 'Distribution size is known, proceeding to reading files'
 ! Knowing the size, define convolved distribution array:
+allocate(distr_norm(size(distr)), source = 0.0d0)
 allocate(distr_conv(size(distr)), source = 0.0d0)
 allocate(distr_aver(size(distr)), source = 0.0d0)
+allocate(distr_norm_conv(size(distr)), source = 0.0d0)
+allocate(distr_norm_aver(size(distr)), source = 0.0d0)
 
 ! Read weights from the file:
 if (weights_COL > 0) then
@@ -140,7 +143,7 @@ do while (read_well)
    print*, 'Reading and analysing distribution, block #', i
 
    ! Read the distributions at this timestep:
-   call read_distribution(FN_distr, Ei, distr, read_well)  ! below
+   call read_distribution(FN_distr, Ei, distr, distr_norm, read_well)  ! below
    if (.not. read_well) exit
 
    ! Demarcation between blocks:
@@ -163,30 +166,46 @@ do while (read_well)
    ! Now, process the data and print them out:
    ! If the convolution is required:
    if (print_conv) then
-      ! Convolve with Gaussian:
+      ! Convolve electronic spetrum with Gaussian:
       call convolve_with_Gaussian(Ei, distr, Conv_dE, distr_conv) ! below
+      !if (i == 1) temp_r = maxval(distr_conv)
+      !distr_conv(:) = distr_conv(:) / (temp_r)
+
+      ! Convolve normalized electronic distribution with Gaussian:
+      call convolve_with_Gaussian(Ei, distr_norm, Conv_dE, distr_norm_conv) ! below
+      ! And let's normalize it to the peak height:
+      if (i == 1) temp_r_norm = maxval(distr_norm_conv) * 0.5d0
+      distr_norm_conv(:) = distr_norm_conv(:) / (temp_r_norm)
+
       ! Printout the convolved function:
-      call print_convolved(FN_out_conv, Ei, distr_conv)   ! below
+      call print_convolved(FN_out_conv, Ei, distr_conv, distr_norm_conv)   ! below
 
       ! Average convolved function over time:
       call average_distr(distr_aver, distr_conv, weights_read, weights_COL, i)   ! below
+      ! Average convolved function over time:
+      call average_distr(distr_norm_aver, distr_norm_conv, weights_read, weights_COL, i)   ! below
    else
-      ! Average original function over time:
+      ! Average original Spectrum over time:
       call average_distr(distr_aver, distr, weights_read, weights_COL, i)   ! below
+      ! Average original Distribution function over time:
+      call average_distr(distr_norm_aver, distr_norm, weights_read, weights_COL, i)   ! below
    endif
 enddo
 ! Average distribution over time:
 distr_aver(:) = distr_aver(:) / dble(i)
-! And let's normalize it to the peak height:
-temp_r = maxval(distr_aver)
+distr_norm_aver(:) = distr_norm_aver(:) / dble(i)
+! And let's normalize it to the number of particles:
+temp_r = SUM(distr_aver)
 distr_aver(:) = distr_aver(:) / temp_r
+temp_r = maxval(distr_norm_aver)
+distr_norm_aver(:) = distr_norm_aver(:) / (temp_r*0.5d0)
 
 ! Clean up:
 close(FN_distr)
 if (print_conv) close(FN_out_conv)
 
 ! Printout the avereaged distribution:
-call print_averaged(FN_out_average, Ei, distr_aver)   ! below
+call print_averaged(FN_out_average, Ei, distr_aver, distr_norm_aver)   ! below
 close(FN_out_average)
 
 print*, 'Analysis is done, starting gnuplotting'
@@ -194,6 +213,11 @@ print*, 'Analysis is done, starting gnuplotting'
 !-------------------------
 ! Make gnuplot script:
 call gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, print_conv, tim_Start)   ! below
+
+print*, 'Scripts are prepared, starting to gnuplot them...'
+
+! execute gnuplot files:
+call execute_gnuplots(path_sep, File_out_conv_gnu, File_out_average_gnu) ! below
 print*, 'Everything is done, check the output files.'
 
 
@@ -201,6 +225,36 @@ print*, 'Everything is done, check the output files.'
 STOP
 !---------------------
  contains
+
+
+subroutine execute_gnuplots(path_sep, File_out_conv_gnu, File_out_average_gnu)
+   character(*), intent(in) :: path_sep, File_out_conv_gnu, File_out_average_gnu
+   character(100) :: command
+   integer :: iret
+   if (path_sep .EQ. '\') then	! if it is Windows
+      !call system("OUTPUT_Gnuplot_all.cmd")
+      command = trim(adjustl(File_out_conv_gnu))//'.cmd'
+      iret = system(command)
+      command = trim(adjustl(File_out_conv_gnu))//'_norm.cmd'
+      iret = system(command)
+      command = trim(adjustl(File_out_average_gnu))//'.cmd'
+      iret = system(command)
+      command = trim(adjustl(File_out_average_gnu))//'_norm.cmd'
+      iret = system(command)
+   else ! linux:
+      !call system("./OUTPUT_Gnuplot_all.sh")
+      command = "./"//trim(adjustl(File_out_conv_gnu))//'.sh'
+      iret = system(command)
+      command = "./"//trim(adjustl(File_out_conv_gnu))//'_norm.sh'
+      iret = system(command)
+      command = "./"//trim(adjustl(File_out_average_gnu))//'.sh'
+      iret = system(command)
+      command = "./"//trim(adjustl(File_out_average_gnu))//'_norm.sh'
+      iret = system(command)
+   endif
+end subroutine execute_gnuplots
+
+
 
 
 subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, print_conv, tim_Start)
@@ -214,9 +268,10 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
 
 
   !-------------------
-  ! 1) Time evolution of convolved distribution:
+  ! 1) Time evolution of convolved distribution and spectrum:
   if (print_conv) then
 
+   ! 1.a) Electronic spectrum:
    FN_gnu_script = 9996
    if (path_sep .EQ. '\') then	! if it is Windows
       Gnu_script = trim(adjustl(File_out_conv_gnu))//'.cmd'
@@ -289,12 +344,89 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
 
    ! Done, clean up:
    close (FN_gnu_script)
+
+
+   ! 1.b) Electronic distribution:
+   FN_gnu_script = 9996
+   if (path_sep .EQ. '\') then	! if it is Windows
+      Gnu_script = trim(adjustl(File_out_conv_gnu))//'_norm.cmd'
+      open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
+      write(FN_gnu_script, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
+      write(FN_gnu_script, '(a,f3.1)') 'LW=', 3.0
+      write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font "arial,14" '
+      write(FN_gnu_script, '(a)') 'set output "'//trim(adjustl(File_out_conv_gnu))//'_norm.gif'//'"'
+      write(FN_gnu_script, '(a)') 'set xlabel "'//'Energy (eV)'//'" font "arial,18"'
+      write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron distribution'//'" font "arial,18"'
+      write(FN_gnu_script, '(a)') 'set key right top '
+      write(FN_gnu_script, '(a)') 'set xtics 10'
+      write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
+   else
+      Gnu_script = trim(adjustl(File_out_conv_gnu))//'_norm.sh'
+      open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
+      write(FN_gnu_script, '(a)') '#!/bin/bash'
+      write(FN_gnu_script, '(a)') ''
+      write(FN_gnu_script, '(a)') 'NAME='//trim(adjustl(File_out_conv_gnu))//'_norm.gif'
+      write(FN_gnu_script, '(a)') 'LABL="Distribution"'
+      write(FN_gnu_script, '(a)') 'TICSIZ=10.00'
+      write(FN_gnu_script, '(a)') 'echo "'
+      write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font \"arial,14\" '
+      write(FN_gnu_script, '(a)') 'set output \"$NAME\"'
+      write(FN_gnu_script, '(a)') 'set xlabel \"'//'Energy (eV)'//'\" font \"arial,18\" '
+      write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron distribution'//'\" font \"arial,18\" '
+      write(FN_gnu_script, '(a)') 'set key right top '
+      write(FN_gnu_script, '(a)') 'set xtics \"$TICSIZ\" '
+      write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
+   endif
+
+   ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
+   write(ch_temp,'(f)') 100.0d0      ! Scell(NSC)%E_top
+   write(ch_temp2,'(f)') abs(tim_Start)
+   if (tim_Start > 0.0d0) then
+      ch_temp2 = '+'//trim(adjustl(ch_temp2))
+   else
+      ch_temp2 = '-'//trim(adjustl(ch_temp2))
+   endif
+   write(ch_temp3,'(f)') 1.0
+
+
+   ! minimal energy grid:
+   write(ch_temp4,'(f)') -25.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
+   if (path_sep .EQ. '\') then	! if it is Windows
+      write(FN_gnu_script, '(a)') 'stats "'//trim(adjustl(File_out_conv))//'" nooutput'
+      write(FN_gnu_script, '(a)') 'set logscale y'
+      write(FN_gnu_script, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+      write(FN_gnu_script, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] "'// &
+         trim(adjustl(File_out_conv))// &
+         '" index (i-1) u 1:3 w l lw 3 title sprintf("%i fs",(i-1'// &
+         trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+   else  ! Linux
+      write(FN_gnu_script, '(a)') 'stats \"'//trim(adjustl(File_out_conv))//'\" nooutput'
+      write(FN_gnu_script, '(a)') 'set logscale y'
+      write(FN_gnu_script, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+      write(FN_gnu_script, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] \"'// &
+         trim(adjustl(File_out_conv))// &
+         '\" index (i-1) u 1:3 w l lw 3 title sprintf(\"%i fs\",(i-1'// &
+         trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+   endif
+   write(FN_gnu_script, '(a)') '}'
+
+   if (path_sep .EQ. '\') then	! if it is Windows
+      ! nothing to do
+   else
+      write(FN_gnu_script, '(a)') 'reset'
+      write(FN_gnu_script, '(a)') '" | gnuplot '
+   endif
+
+   ! Done, clean up:
+   close (FN_gnu_script)
   endif
 
 
 
    !--------------------
    ! 2) Average distribution:
+
+   ! 2.a) Electron spectrum:
    FN_gnu_script = 9995
    if (path_sep .EQ. '\') then   ! if it is Windows
       Gnu_script = trim(adjustl(File_out_average_gnu))//'.cmd'
@@ -304,7 +436,7 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
       write(FN_gnu_script, '(a)') 'set terminal pngcairo font "arial,14" '
       write(FN_gnu_script, '(a)') 'set output "'//trim(adjustl(File_out_average_gnu))//'.png'//'"'
       write(FN_gnu_script, '(a)') 'set xlabel "'//'Energy (eV)'//'" font "arial,18"'
-      write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron density (1/box)'//'" font "arial,18"'
+      write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron density (1/eV)'//'" font "arial,18"'
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics 10'
       write(FN_gnu_script, '(a)') '#set logscale y'
@@ -322,7 +454,49 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
       write(FN_gnu_script, '(a)') 'set terminal pngcairo font \"arial,14\" '
       write(FN_gnu_script, '(a)') 'set output \"$NAME\"'
       write(FN_gnu_script, '(a)') 'set xlabel \"'//'Energy (eV)'//'\" font \"arial,18\" '
-      write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron density (1/box)'//'\" font \"arial,18\" '
+      write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron density (1/eV)'//'\" font \"arial,18\" '
+      write(FN_gnu_script, '(a)') 'set key right top '
+      write(FN_gnu_script, '(a)') 'set xtics \"$TICSIZ\" '
+      write(FN_gnu_script, '(a)') '#set logscale y'
+      write(FN_gnu_script, '(a)') '#set format y "%2.0tx10^{%L}"'
+      write(FN_gnu_script, '(a)') 'p [][] \"'//trim(adjustl(File_out_average))//'\" u 1:2 w l lw \"$LW\" title \"Average\"'
+      write(FN_gnu_script, '(a)') 'reset'
+      write(FN_gnu_script, '(a)') '" | gnuplot '
+   endif
+
+   ! Done, clean up:
+   close (FN_gnu_script)
+
+
+   ! 2.b) Electron distribution:
+   FN_gnu_script = 9995
+   if (path_sep .EQ. '\') then   ! if it is Windows
+      Gnu_script = trim(adjustl(File_out_average_gnu))//'_norm.cmd'
+      open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
+      write(FN_gnu_script, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
+      write(FN_gnu_script, '(a,f3.1)') 'LW=', 3.0
+      write(FN_gnu_script, '(a)') 'set terminal pngcairo font "arial,14" '
+      write(FN_gnu_script, '(a)') 'set output "'//trim(adjustl(File_out_average_gnu))//'_norm.png'//'"'
+      write(FN_gnu_script, '(a)') 'set xlabel "'//'Energy (eV)'//'" font "arial,18"'
+      write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron distribution'//'" font "arial,18"'
+      write(FN_gnu_script, '(a)') 'set key right top '
+      write(FN_gnu_script, '(a)') 'set xtics 10'
+      write(FN_gnu_script, '(a)') '#set logscale y'
+      write(FN_gnu_script, '(a)') '#set format y "%2.0tx10^{%L}"'
+      write(FN_gnu_script, '(a)') 'p [][] "'//trim(adjustl(File_out_average))//'" u 1:3 w l lw LW title "Average"'
+   else
+      Gnu_script = trim(adjustl(File_out_average_gnu))//'_norm.sh'
+      open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
+      write(FN_gnu_script, '(a)') '#!/bin/bash'
+      write(FN_gnu_script, '(a)') ''
+      write(FN_gnu_script, '(a)') 'NAME='//trim(adjustl(File_out_average_gnu))//'_norm.png'
+      write(FN_gnu_script, '(a)') 'LABL="Distribution"'
+      write(FN_gnu_script, '(a)') 'TICSIZ=10.00'
+      write(FN_gnu_script, '(a)') 'echo "'
+      write(FN_gnu_script, '(a)') 'set terminal pngcairo font \"arial,14\" '
+      write(FN_gnu_script, '(a)') 'set output \"$NAME\"'
+      write(FN_gnu_script, '(a)') 'set xlabel \"'//'Energy (eV)'//'\" font \"arial,18\" '
+      write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron distribution'//'\" font \"arial,18\" '
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics \"$TICSIZ\" '
       write(FN_gnu_script, '(a)') '#set logscale y'
@@ -413,15 +587,15 @@ end subroutine average_distr
 
 
 
-subroutine print_convolved(FN_out_conv, Ei, distr_conv)
+subroutine print_convolved(FN_out_conv, Ei, distr_conv, distr_norm_conv)
    integer, intent(in) :: FN_out_conv  ! file to print into (must be opened)
-   real(8), dimension(:), intent(in) :: Ei, distr_conv ! convolved function
+   real(8), dimension(:), intent(in) :: Ei, distr_conv, distr_norm_conv ! convolved function
    !-----------------------
    integer :: i, Nsiz
    Nsiz = size(distr_conv)
 
    do i = 1, Nsiz
-      write(FN_out_conv,*) Ei(i), distr_conv(i)
+      write(FN_out_conv,*) Ei(i), distr_conv(i), distr_norm_conv(i)
    enddo
 
    ! Demarcation between blocks:
@@ -430,15 +604,15 @@ subroutine print_convolved(FN_out_conv, Ei, distr_conv)
 end subroutine print_convolved
 
 
-subroutine print_averaged(FN_out_average, Ei, distr_aver)
+subroutine print_averaged(FN_out_average, Ei, distr_aver, distr_norm_aver)
    integer, intent(in) :: FN_out_average  ! file to print into (must be opened)
-   real(8), dimension(:), intent(in) :: Ei, distr_aver ! convolved function
+   real(8), dimension(:), intent(in) :: Ei, distr_aver, distr_norm_aver ! convolved function
    !-----------------------
    integer :: i, Nsiz
    Nsiz = size(distr_aver)
 
    do i = 1, Nsiz
-      write(FN_out_average,*) Ei(i), distr_aver(i)
+      write(FN_out_average,*) Ei(i), distr_aver(i), distr_norm_aver(i)
    enddo
 end subroutine print_averaged
 
@@ -510,8 +684,13 @@ subroutine read_EL_DISTR_txt(File_in, Conv_dE, File_weights, FN_weights, weights
    read(FN_in,*,IOSTAT=Reason) temp_ch, temp_i   ! file name and column index
    if (Reason == 0) then   ! read well
       File_weights = temp_ch
-      weights_COL = temp_i
-      open (unit=FN_weights, file=trim(adjustl(File_weights)), status = 'old', readonly)
+      inquire(file=trim(adjustl(File_weights)),exist=file_exist) ! check if input file is there
+      if (file_exist) then ! file available, use it:
+         weights_COL = temp_i
+         open (unit=FN_weights, file=trim(adjustl(File_weights)), status = 'old', readonly)
+      else  ! no file available => no averaging weights
+         weights_COL = -1
+      endif
    else
       print*, 'Could not interprete line #2 in file ', trim(adjustl(File_in))
       print*, 'Averaeging in time will be performed without weights'
@@ -565,20 +744,21 @@ end subroutine get_size_of_distribution
 
 
 
-subroutine read_distribution(FN_distr, Ei, distr, read_well)
+subroutine read_distribution(FN_distr, Ei, distr, distr_norm, read_well)
    integer, intent(in) :: FN_distr ! file number of the file with electronic distribution
-   real(8), dimension(:), allocatable, intent(inout) :: Ei
-   real(8), dimension(:), allocatable, intent(inout) :: distr
+   real(8), dimension(:), intent(inout) :: Ei
+   real(8), dimension(:), intent(inout) :: distr, distr_norm
    logical, intent(inout) :: read_well
    !-------------
    integer :: i, Reason
 
    Ei = 0.0d0  ! to start with
    distr = 0.0d0  ! to start with
+   distr_norm = 0.0d0  ! to start with
    read_well = .true. ! to start with
    do i = 1, size(Ei)
       ! Read the file with distribution block by block:
-      read(FN_distr,*,IOSTAT=Reason) Ei(i), distr(i)
+      read(FN_distr,*,IOSTAT=Reason) Ei(i), distr(i), distr_norm(i)
       if (Reason < 0) then ! end of file
          read_well = .false.
          exit

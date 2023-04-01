@@ -1,3 +1,2 @@
 1.0d0		! [eV] Energy convolution parameter (Gaussian width) / set <0 to exclude
-1.0d0		! [fs] Time convolution parameter (Gaussian width) / set <0 to exclude
 OUTPUT_deep_shell_holes.dat	5		! File with weights to average over time; column in this file to use

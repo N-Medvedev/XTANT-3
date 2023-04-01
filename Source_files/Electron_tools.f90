@@ -47,7 +47,7 @@ subroutine get_low_energy_distribution(Scell, numpar) ! On the grid, if requeste
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Numerics_param), intent(inout) :: numpar   ! numerical parameters, including lists of earest neighbors
    !--------------------
-   integer :: Nsiz, Nei, i, j
+   integer :: Nsiz, Nei, i, j, Nlev
 
    if (numpar%save_fe_grid) then  ! only user requested
       ! Count number of steps, over which the distribution is averaged:
@@ -60,9 +60,12 @@ subroutine get_low_energy_distribution(Scell, numpar) ! On the grid, if requeste
          ! Fill in the distribution function:
          i = 1 ! to start with
          SRTL:do j = 1, Nsiz ! all energy intervals
+            Nlev = 0 ! count levels within this grid interval
             do while (Scell%Ei(i) < Scell%E_fe_grid(j)) ! all energy levels below the given one in this step
                Scell%fe_on_grid(j) = Scell%fe_on_grid(j) + Scell%fe(i)
                !print*, j, i, Scell%E_fe_grid(j), Scell%fe_on_grid(j), Scell%fe(i)
+               Nlev = Nlev + 1
+               Scell%fe_norm_on_grid(j) = Scell%fe_on_grid(j)/Nlev
                i = i + 1
                if (i > Nei) exit SRTL
             enddo

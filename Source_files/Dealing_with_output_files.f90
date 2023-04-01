@@ -122,30 +122,34 @@ subroutine electronic_distribution_on_grid(Scell, numpar, tim)
 
    ! Add the high-energy part of the distribution (obtained from MC):
    Scell%fe_on_grid = Scell%fe_on_grid + Scell%fe_high_on_grid
+   Scell%fe_norm_on_grid = Scell%fe_norm_on_grid + Scell%fe_norm_high_on_grid
 
    ! Average over the number of time-steps it was collected over:
    N_steps = max( 1.0d0, dble(numpar%fe_aver_num) )   ! at least one step, to not change anything if nothing happened
    Scell%fe_on_grid = Scell%fe_on_grid / N_steps
+   Scell%fe_norm_on_grid = Scell%fe_norm_on_grid / N_steps
 
    ! Now save the distribution in the file:
-   call save_distribution_on_grid(numpar%FN_fe_on_grid, tim, Scell%E_fe_grid, Scell%fe_on_grid)  ! below
+   call save_distribution_on_grid(numpar%FN_fe_on_grid, tim, Scell%E_fe_grid, Scell%fe_on_grid, Scell%fe_norm_on_grid)  ! below
 
    ! Reset the high-energy electron part for the next step:
    Scell%fe_on_grid = 0.0d0
    Scell%fe_high_on_grid = 0.0d0
+   Scell%fe_norm_on_grid = 0.0d0
+   Scell%fe_norm_high_on_grid = 0.0d0
    numpar%fe_aver_num = 0   ! to restart counting time-steps
 end subroutine electronic_distribution_on_grid
 
 
-subroutine save_distribution_on_grid(FN, tim, wr, fe)
+subroutine save_distribution_on_grid(FN, tim, wr, fe, fe_norm)
    integer, intent(in) :: FN
    real(8), intent(in) :: tim
    real(8), dimension(:), intent(in) :: wr
-   real(8), dimension(:), intent(in) :: fe
+   real(8), dimension(:), intent(in) :: fe, fe_norm
    integer i
    write(FN,'(a,f25.16)') '#', tim
    do i = 1, size(fe)
-      write(FN,'(f25.16,es25.16E4)') wr(i), fe(i)
+      write(FN,'(f25.16,es25.16E4,es25.16E4)') wr(i), fe(i), fe_norm(i)
    enddo
    write(FN,*) ''
    write(FN,*) ''
@@ -2506,7 +2510,6 @@ subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
    !-----------------------
    integer :: i, M, NSC
    character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
-   logical :: do_fe_eq
 
    do NSC = 1, size(Scell)
       ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
@@ -2514,12 +2517,6 @@ subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
       write(ch_temp2,'(f)') numpar%t_start
       write(ch_temp3,'(f)') numpar%dt_save
 
-      select case (numpar%el_ion_scheme)
-         case (3:4)
-            do_fe_eq = .true.
-         case default
-            do_fe_eq = .false.
-      endselect
       ! minimal energy grid:
       write(ch_temp4,'(f)') -25.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
