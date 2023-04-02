@@ -48,7 +48,7 @@ real(8), dimension(:), allocatable :: weights_read
 real(8) :: tim, tim_Start, Conv_dE, temp_r, temp_r_norm
 integer :: FN_distr, FN_out_conv, FN_out_average, FN_weights, weights_COL
 integer :: INFO, Reason, i, Nsiz, tim_counter
-logical :: file_exist, read_well, print_conv, file_opened
+logical :: file_exist, read_well, print_conv, file_opened, norm_present
 character(100) :: File_distr, File_out_conv, File_out_average, File_weights, File_in
 character(100) :: File_out_conv_gnu, File_out_average_gnu
 character(1) :: path_sep, temp_ch
@@ -106,14 +106,22 @@ endif
 ! Get the energy grid from the file:
 open (unit=FN_distr, file=trim(adjustl(File_distr)), status = 'old', readonly)
 ! Get the size of the array for the distribution and allocate arrays:
-call get_size_of_distribution(FN_distr, Ei, distr)  ! below
+call get_size_of_distribution(FN_distr, Ei, distr, norm_present)  ! below
 print*, 'Distribution size is known, proceeding to reading files'
+if (.not.norm_present) then
+   print*, 'Normalized distribution is NOT provided, only spectrum'
+else
+   print*, 'Normalized distribution is provided, including it in the analysis'
+endif
+
 ! Knowing the size, define convolved distribution array:
-allocate(distr_norm(size(distr)), source = 0.0d0)
 allocate(distr_conv(size(distr)), source = 0.0d0)
 allocate(distr_aver(size(distr)), source = 0.0d0)
-allocate(distr_norm_conv(size(distr)), source = 0.0d0)
-allocate(distr_norm_aver(size(distr)), source = 0.0d0)
+if (norm_present) then
+   allocate(distr_norm(size(distr)), source = 0.0d0)
+   allocate(distr_norm_conv(size(distr)), source = 0.0d0)
+   allocate(distr_norm_aver(size(distr)), source = 0.0d0)
+endif
 
 ! Read weights from the file:
 if (weights_COL > 0) then
@@ -143,7 +151,7 @@ do while (read_well)
    print*, 'Reading and analysing distribution, block #', i
 
    ! Read the distributions at this timestep:
-   call read_distribution(FN_distr, Ei, distr, distr_norm, read_well)  ! below
+   call read_distribution(FN_distr, Ei, distr, distr_norm, norm_present, read_well)  ! below
    if (.not. read_well) exit
 
    ! Demarcation between blocks:
@@ -172,52 +180,62 @@ do while (read_well)
       !distr_conv(:) = distr_conv(:) / (temp_r)
 
       ! Convolve normalized electronic distribution with Gaussian:
-      call convolve_with_Gaussian(Ei, distr_norm, Conv_dE, distr_norm_conv) ! below
-      ! And let's normalize it to the peak height:
-      if (i == 1) temp_r_norm = maxval(distr_norm_conv) * 0.5d0
-      distr_norm_conv(:) = distr_norm_conv(:) / (temp_r_norm)
+      if (norm_present) then
+         call convolve_with_Gaussian(Ei, distr_norm, Conv_dE, distr_norm_conv) ! below
+         ! And let's normalize it to the peak height:
+         if (i == 1) temp_r_norm = maxval(distr_norm_conv) * 0.5d0
+         distr_norm_conv(:) = distr_norm_conv(:) / (temp_r_norm)
+      endif
 
       ! Printout the convolved function:
-      call print_convolved(FN_out_conv, Ei, distr_conv, distr_norm_conv)   ! below
+      call print_convolved(FN_out_conv, Ei, distr_conv, distr_norm_conv, norm_present)   ! below
 
-      ! Average convolved function over time:
+      ! Average convolved spectrum function over time:
       call average_distr(distr_aver, distr_conv, weights_read, weights_COL, i)   ! below
-      ! Average convolved function over time:
-      call average_distr(distr_norm_aver, distr_norm_conv, weights_read, weights_COL, i)   ! below
+      ! Average convolved distribution function over time:
+      if (norm_present) then
+         call average_distr(distr_norm_aver, distr_norm_conv, weights_read, weights_COL, i)   ! below
+      endif
    else
       ! Average original Spectrum over time:
       call average_distr(distr_aver, distr, weights_read, weights_COL, i)   ! below
       ! Average original Distribution function over time:
-      call average_distr(distr_norm_aver, distr_norm, weights_read, weights_COL, i)   ! below
+      if (norm_present) then
+         call average_distr(distr_norm_aver, distr_norm, weights_read, weights_COL, i)   ! below
+      endif
    endif
 enddo
 ! Average distribution over time:
 distr_aver(:) = distr_aver(:) / dble(i)
-distr_norm_aver(:) = distr_norm_aver(:) / dble(i)
 ! And let's normalize it to the number of particles:
 temp_r = SUM(distr_aver)
 distr_aver(:) = distr_aver(:) / temp_r
-temp_r = maxval(distr_norm_aver)
-distr_norm_aver(:) = distr_norm_aver(:) / (temp_r*0.5d0)
+
+if (norm_present) then
+   distr_norm_aver(:) = distr_norm_aver(:) / dble(i)
+   temp_r = maxval(distr_norm_aver)
+   distr_norm_aver(:) = distr_norm_aver(:) / (temp_r*0.5d0)
+endif
 
 ! Clean up:
 close(FN_distr)
 if (print_conv) close(FN_out_conv)
 
 ! Printout the avereaged distribution:
-call print_averaged(FN_out_average, Ei, distr_aver, distr_norm_aver)   ! below
+call print_averaged(FN_out_average, Ei, distr_aver, distr_norm_aver, norm_present)   ! below
 close(FN_out_average)
 
 print*, 'Analysis is done, starting gnuplotting'
 
 !-------------------------
 ! Make gnuplot script:
-call gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, print_conv, tim_Start)   ! below
+call gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, &
+                     print_conv, tim_Start, norm_present)   ! below
 
 print*, 'Scripts are prepared, starting to gnuplot them...'
 
 ! execute gnuplot files:
-call execute_gnuplots(path_sep, File_out_conv_gnu, File_out_average_gnu) ! below
+call execute_gnuplots(path_sep, File_out_conv_gnu, File_out_average_gnu, norm_present) ! below
 print*, 'Everything is done, check the output files.'
 
 
@@ -227,40 +245,48 @@ STOP
  contains
 
 
-subroutine execute_gnuplots(path_sep, File_out_conv_gnu, File_out_average_gnu)
+subroutine execute_gnuplots(path_sep, File_out_conv_gnu, File_out_average_gnu, norm_present)
    character(*), intent(in) :: path_sep, File_out_conv_gnu, File_out_average_gnu
+   logical, intent(in) :: norm_present
+   !---------------------------
    character(100) :: command
    integer :: iret
    if (path_sep .EQ. '\') then	! if it is Windows
       !call system("OUTPUT_Gnuplot_all.cmd")
       command = trim(adjustl(File_out_conv_gnu))//'.cmd'
       iret = system(command)
-      command = trim(adjustl(File_out_conv_gnu))//'_norm.cmd'
-      iret = system(command)
       command = trim(adjustl(File_out_average_gnu))//'.cmd'
       iret = system(command)
-      command = trim(adjustl(File_out_average_gnu))//'_norm.cmd'
-      iret = system(command)
+      if (norm_present) then
+         command = trim(adjustl(File_out_conv_gnu))//'_norm.cmd'
+         iret = system(command)
+         command = trim(adjustl(File_out_average_gnu))//'_norm.cmd'
+         iret = system(command)
+      endif
    else ! linux:
       !call system("./OUTPUT_Gnuplot_all.sh")
       command = "./"//trim(adjustl(File_out_conv_gnu))//'.sh'
       iret = system(command)
-      command = "./"//trim(adjustl(File_out_conv_gnu))//'_norm.sh'
-      iret = system(command)
       command = "./"//trim(adjustl(File_out_average_gnu))//'.sh'
       iret = system(command)
-      command = "./"//trim(adjustl(File_out_average_gnu))//'_norm.sh'
-      iret = system(command)
+      if (norm_present) then
+         command = "./"//trim(adjustl(File_out_conv_gnu))//'_norm.sh'
+         iret = system(command)
+         command = "./"//trim(adjustl(File_out_average_gnu))//'_norm.sh'
+         iret = system(command)
+      endif
    endif
 end subroutine execute_gnuplots
 
 
 
 
-subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, print_conv, tim_Start)
+
+subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, &
+            print_conv, tim_Start, norm_present)
    character(1), intent(in) :: path_sep
    character(*), intent(in) :: File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu
-   logical, intent(in) :: print_conv
+   logical, intent(in) :: print_conv, norm_present
    real(8), intent(in) :: tim_Start
    !----------------
    character(200) :: Gnu_script, Plot_file, ch_temp, ch_temp2, ch_temp3, ch_temp4
@@ -269,7 +295,7 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
 
   !-------------------
   ! 1) Time evolution of convolved distribution and spectrum:
-  if (print_conv) then
+if (print_conv) then
 
    ! 1.a) Electronic spectrum:
    FN_gnu_script = 9996
@@ -347,6 +373,7 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
 
 
    ! 1.b) Electronic distribution:
+  if (norm_present) then
    FN_gnu_script = 9996
    if (path_sep .EQ. '\') then	! if it is Windows
       Gnu_script = trim(adjustl(File_out_conv_gnu))//'_norm.cmd'
@@ -420,6 +447,7 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
    ! Done, clean up:
    close (FN_gnu_script)
   endif
+endif
 
 
 
@@ -463,12 +491,12 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
       write(FN_gnu_script, '(a)') 'reset'
       write(FN_gnu_script, '(a)') '" | gnuplot '
    endif
-
    ! Done, clean up:
    close (FN_gnu_script)
 
 
    ! 2.b) Electron distribution:
+  if (norm_present) then
    FN_gnu_script = 9995
    if (path_sep .EQ. '\') then   ! if it is Windows
       Gnu_script = trim(adjustl(File_out_average_gnu))//'_norm.cmd'
@@ -505,9 +533,9 @@ subroutine gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_c
       write(FN_gnu_script, '(a)') 'reset'
       write(FN_gnu_script, '(a)') '" | gnuplot '
    endif
-
    ! Done, clean up:
    close (FN_gnu_script)
+  endif
 end subroutine gnuplot_figures
 
 
@@ -587,33 +615,46 @@ end subroutine average_distr
 
 
 
-subroutine print_convolved(FN_out_conv, Ei, distr_conv, distr_norm_conv)
+subroutine print_convolved(FN_out_conv, Ei, distr_conv, distr_norm_conv, norm_present)
    integer, intent(in) :: FN_out_conv  ! file to print into (must be opened)
    real(8), dimension(:), intent(in) :: Ei, distr_conv, distr_norm_conv ! convolved function
+   logical, intent(in) :: norm_present
    !-----------------------
    integer :: i, Nsiz
    Nsiz = size(distr_conv)
 
-   do i = 1, Nsiz
-      write(FN_out_conv,*) Ei(i), distr_conv(i), distr_norm_conv(i)
-   enddo
-
+   if (norm_present) then ! new format
+      do i = 1, Nsiz
+         write(FN_out_conv,*) Ei(i), distr_conv(i), distr_norm_conv(i)
+      enddo
+   else  ! legacy format
+      do i = 1, Nsiz
+         write(FN_out_conv,*) Ei(i), distr_conv(i)
+      enddo
+   endif
    ! Demarcation between blocks:
    write(FN_out_conv,*)   ! first empty line
    write(FN_out_conv,*)   ! second empty line
 end subroutine print_convolved
 
 
-subroutine print_averaged(FN_out_average, Ei, distr_aver, distr_norm_aver)
+subroutine print_averaged(FN_out_average, Ei, distr_aver, distr_norm_aver, norm_present)
    integer, intent(in) :: FN_out_average  ! file to print into (must be opened)
    real(8), dimension(:), intent(in) :: Ei, distr_aver, distr_norm_aver ! convolved function
+   logical, intent(in) :: norm_present
    !-----------------------
    integer :: i, Nsiz
    Nsiz = size(distr_aver)
 
-   do i = 1, Nsiz
-      write(FN_out_average,*) Ei(i), distr_aver(i), distr_norm_aver(i)
-   enddo
+   if (norm_present) then
+      do i = 1, Nsiz
+         write(FN_out_average,*) Ei(i), distr_aver(i), distr_norm_aver(i)
+      enddo
+   else ! legacy format
+      do i = 1, Nsiz
+         write(FN_out_average,*) Ei(i), distr_aver(i)
+      enddo
+   endif
 end subroutine print_averaged
 
 
@@ -712,14 +753,23 @@ subroutine creat_output_files(FN_out_conv, File_out_conv, FN_out_average, File_o
 end subroutine creat_output_files
 
 
-subroutine get_size_of_distribution(FN_distr, Ei, distr)  ! below
+subroutine get_size_of_distribution(FN_distr, Ei, distr, norm_present)  ! below
    integer, intent(in) :: FN_distr ! file number of the file with electronic distribution
    real(8), dimension(:), allocatable, intent(inout) :: Ei
    real(8), dimension(:), allocatable, intent(inout) :: distr
+   logical, intent(inout) :: norm_present ! in the old format, there was no third column with normalized distribution
    !-------------
    real(8) :: temp
-   integer :: i, Reason
+   integer :: i, Reason, Ncol
    logical :: read_well
+
+   ! Find out if it is legacy format or new:
+   call Count_columns_in_file(FN_distr, Ncol, skip_lines = 1)  ! below
+   if (Ncol > 2) then
+      norm_present = .true.
+   else
+      norm_present = .false.
+   endif
 
    ! Skip first line:
    read(FN_distr,*,IOSTAT=Reason)
@@ -743,27 +793,87 @@ subroutine get_size_of_distribution(FN_distr, Ei, distr)  ! below
 end subroutine get_size_of_distribution
 
 
+subroutine Count_columns_in_file(File_num, N, skip_lines)
+    integer, INTENT(in) :: File_num     ! number of file to be opened
+    integer, INTENT(out) :: N           ! number of columns in this file
+    integer, intent(in), optional :: skip_lines ! if you want to start not from the first line
+    real(8) temp
+    character(1000) temp_ch
+    integer i, Reason
+    integer :: temp_i
+    if (present(skip_lines)) then
+       do i=1,skip_lines
+          read(File_num,*, end=605)
+       enddo
+       605 continue
+    endif
 
-subroutine read_distribution(FN_distr, Ei, distr, distr_norm, read_well)
+    read(File_num,'(a)', IOSTAT=Reason) temp_ch ! count columns in this line
+    N = number_of_columns(trim(adjustl(temp_ch))) ! see below
+
+    rewind (File_num) ! to read next time from the beginning, not continue from the line we ended now.
+end subroutine Count_columns_in_file
+
+
+
+pure function number_of_columns(line)
+   integer :: number_of_columns
+   character(*), intent(in) :: line
+   integer i, n
+   logical :: same_space
+   same_space = .false.
+   i = 0
+   n = len(line)
+   number_of_columns = 0
+   do while(i < n) ! scan through all the line
+      i = i + 1
+      selectcase (line(i:I))
+      case (' ', '	') ! space or tab can be a separator between the columns
+         if (.not.same_space) number_of_columns = number_of_columns + 1
+         same_space = .true. ! in case columns are separated by more than one space or tab
+      case default ! column data themselves, not a space inbetween
+         same_space = .false.
+      endselect
+   enddo
+   number_of_columns = number_of_columns + 1	! number of columns is by 1 more than number of spaces inbetween
+end function number_of_columns
+
+
+
+
+subroutine read_distribution(FN_distr, Ei, distr, distr_norm, norm_present, read_well)
    integer, intent(in) :: FN_distr ! file number of the file with electronic distribution
    real(8), dimension(:), intent(inout) :: Ei
    real(8), dimension(:), intent(inout) :: distr, distr_norm
+   logical, intent(in) :: norm_present ! new or legacy format
    logical, intent(inout) :: read_well
    !-------------
    integer :: i, Reason
 
    Ei = 0.0d0  ! to start with
    distr = 0.0d0  ! to start with
-   distr_norm = 0.0d0  ! to start with
    read_well = .true. ! to start with
-   do i = 1, size(Ei)
-      ! Read the file with distribution block by block:
-      read(FN_distr,*,IOSTAT=Reason) Ei(i), distr(i), distr_norm(i)
-      if (Reason < 0) then ! end of file
-         read_well = .false.
-         exit
-      endif
-   enddo
+   if (norm_present) then
+      distr_norm = 0.0d0  ! to start with
+      do i = 1, size(Ei)
+         ! Read the file with distribution block by block:
+         read(FN_distr,*,IOSTAT=Reason) Ei(i), distr(i), distr_norm(i)
+         if (Reason < 0) then ! end of file
+            read_well = .false.
+            exit
+         endif
+      enddo
+   else  ! legacy format, no normalized Distribution
+      do i = 1, size(Ei)
+         ! Read the file with distribution block by block:
+         read(FN_distr,*,IOSTAT=Reason) Ei(i), distr(i)
+         if (Reason < 0) then ! end of file
+            read_well = .false.
+            exit
+         endif
+      enddo
+   endif
+
 end subroutine read_distribution
 
 

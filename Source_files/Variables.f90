@@ -65,8 +65,23 @@ subroutine deallocate_all()
    if (allocated(g_MC)) deallocate(g_MC)
    if (allocated(g_matter%Atoms)) deallocate(g_matter%Atoms)
    if (allocated(g_matter%PCF)) deallocate(g_matter%PCF)
+   ! All allocatables in the g_numpar must be reset:
    if (allocated(g_numpar%mask_DOS)) deallocate(g_numpar%mask_DOS)
    if (allocated(g_numpar%DOS_weights)) deallocate(g_numpar%DOS_weights)
+   if (allocated(g_numpar%Subcell_coord_sx)) deallocate(g_numpar%Subcell_coord_sx)
+   if (allocated(g_numpar%Subcell_coord_sy)) deallocate(g_numpar%Subcell_coord_sy)
+   if (allocated(g_numpar%Subcell_coord_sz)) deallocate(g_numpar%Subcell_coord_sz)
+   if (allocated(g_numpar%fe_input)) deallocate(g_numpar%fe_input)
+   if (allocated(g_numpar%high_DOS)) deallocate(g_numpar%high_DOS)
+   if (allocated(g_numpar%dt_MD_reset_grid)) deallocate(g_numpar%dt_MD_reset_grid)
+   if (allocated(g_numpar%dt_MD_grid)) deallocate(g_numpar%dt_MD_grid)
+   if (allocated(g_numpar%At_bath_reset_grid)) deallocate(g_numpar%At_bath_reset_grid)
+   if (allocated(g_numpar%At_bath_grid_Ta)) deallocate(g_numpar%At_bath_grid_Ta)
+   if (allocated(g_numpar%At_bath_grid_tau)) deallocate(g_numpar%At_bath_grid_tau)
+   if (allocated(g_numpar%El_bath_reset_grid)) deallocate(g_numpar%El_bath_reset_grid)
+   if (allocated(g_numpar%El_bath_grid_Ta)) deallocate(g_numpar%El_bath_grid_Ta)
+   if (allocated(g_numpar%El_bath_grid_tau)) deallocate(g_numpar%El_bath_grid_tau)
+   if (allocated(g_numpar%k_grid)) deallocate(g_numpar%k_grid)
 end subroutine deallocate_all
 
 
