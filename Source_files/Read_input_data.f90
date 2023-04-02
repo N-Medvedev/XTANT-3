@@ -4640,6 +4640,7 @@ subroutine read_user_additional_data(FN, count_lines, matter, Scell, NSC, user_d
    integer :: Reason
    character(100) :: text
 
+   ! Default values:
    user_data%do_overwrite = .false. ! to start with, no data to use
 
    read_well = .true.   ! to start with
@@ -4670,11 +4671,13 @@ subroutine interpret_user_data(FN, count_lines, read_well, text, matter, Scell, 
    character(3) :: temp_ch
    character(150) :: Error_descript
 
-   Nat = size(matter%Atoms)
+   ! Nat = size(matter%Atoms) ! number of atoms is unknown yet, use just some large value here:
+   Nat = 100
    ! Find the maximal number of shells:
    Nsh = 0  ! to start with
    do i = 1, Nat
-      Nsh = max(Nsh, size(matter%Atoms(i)%Ip))
+      !Nsh = max(Nsh, size(matter%Atoms(i)%Ip)) ! numer of shells is undefined yet!
+      Nsh = 50
    enddo
 
    select case (trim(adjustl(text)))
@@ -4745,6 +4748,10 @@ subroutine interpret_user_data(FN, count_lines, read_well, text, matter, Scell, 
          user_data%auger(temp_int(1),temp_int(2)) = temp
          user_data%do_overwrite = .true.
       endif
+!       print*, 'AUGER', temp_int(1), temp_int(2), user_data%auger(temp_int(1),temp_int(2))
+!       print*, 'SIZE:', size(user_data%auger,1), size(user_data%auger,2), Nat, Nsh
+!       print*, 'ALL:', allocated(user_data%auger), user_data%auger(:,:)
+!       pause 'AUGER'
 
    !--------------------------------
    case ('IP', 'Ip', 'ip', 'ionization_potential', 'Ionization_potential', 'IONIZATION_POTENTIAL')
