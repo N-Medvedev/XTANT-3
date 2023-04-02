@@ -304,7 +304,7 @@ if (print_conv) then
       open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
       write(FN_gnu_script, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
       write(FN_gnu_script, '(a,f3.1)') 'LW=', 3.0
-      write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font "arial,14" '
+      write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font "arial,16" '
       write(FN_gnu_script, '(a)') 'set output "'//trim(adjustl(File_out_conv_gnu))//'.gif'//'"'
       write(FN_gnu_script, '(a)') 'set xlabel "'//'Energy (eV)'//'" font "arial,18"'
       write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron density (1/box)'//'" font "arial,18"'
@@ -320,7 +320,7 @@ if (print_conv) then
       write(FN_gnu_script, '(a)') 'LABL="Distribution"'
       write(FN_gnu_script, '(a)') 'TICSIZ=10.00'
       write(FN_gnu_script, '(a)') 'echo "'
-      write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font \"arial,14\" '
+      write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font \"arial,16\" '
       write(FN_gnu_script, '(a)') 'set output \"$NAME\"'
       write(FN_gnu_script, '(a)') 'set xlabel \"'//'Energy (eV)'//'\" font \"arial,18\" '
       write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron density (1/box)'//'\" font \"arial,18\" '
@@ -380,13 +380,14 @@ if (print_conv) then
       open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
       write(FN_gnu_script, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
       write(FN_gnu_script, '(a,f3.1)') 'LW=', 3.0
-      write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font "arial,14" '
+      write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font "arial,16" '
       write(FN_gnu_script, '(a)') 'set output "'//trim(adjustl(File_out_conv_gnu))//'_norm.gif'//'"'
       write(FN_gnu_script, '(a)') 'set xlabel "'//'Energy (eV)'//'" font "arial,18"'
       write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron distribution'//'" font "arial,18"'
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics 10'
-      write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
+      !write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
+      write(FN_gnu_script, '(a)') 'set format y "%10^{%L}"'
    else
       Gnu_script = trim(adjustl(File_out_conv_gnu))//'_norm.sh'
       open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
@@ -396,13 +397,14 @@ if (print_conv) then
       write(FN_gnu_script, '(a)') 'LABL="Distribution"'
       write(FN_gnu_script, '(a)') 'TICSIZ=10.00'
       write(FN_gnu_script, '(a)') 'echo "'
-      write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font \"arial,14\" '
+      write(FN_gnu_script, '(a)') 'set terminal gif animate delay 10 font \"arial,16\" '
       write(FN_gnu_script, '(a)') 'set output \"$NAME\"'
       write(FN_gnu_script, '(a)') 'set xlabel \"'//'Energy (eV)'//'\" font \"arial,18\" '
       write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron distribution'//'\" font \"arial,18\" '
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics \"$TICSIZ\" '
-      write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
+      !write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
+      write(FN_gnu_script, '(a)') 'set format y "10^{%L}"'
    endif
 
    ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
@@ -461,14 +463,15 @@ endif
       open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
       write(FN_gnu_script, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
       write(FN_gnu_script, '(a,f3.1)') 'LW=', 3.0
-      write(FN_gnu_script, '(a)') 'set terminal pngcairo font "arial,14" '
+      write(FN_gnu_script, '(a)') 'set terminal pngcairo font "arial,16" '
       write(FN_gnu_script, '(a)') 'set output "'//trim(adjustl(File_out_average_gnu))//'.png'//'"'
       write(FN_gnu_script, '(a)') 'set xlabel "'//'Energy (eV)'//'" font "arial,18"'
       write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron density (1/eV)'//'" font "arial,18"'
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics 10'
       write(FN_gnu_script, '(a)') '#set logscale y'
-      write(FN_gnu_script, '(a)') '#set format y "%2.0tx10^{%L}"'
+      !write(FN_gnu_script, '(a)') '#set format y "%2.0tx10^{%L}"'
+      write(FN_gnu_script, '(a)') '#set format y "%10^{%L}"'
       write(FN_gnu_script, '(a)') 'p [][] "'//trim(adjustl(File_out_average))//'" u 1:2 w l lw LW title "Average"'
    else
       Gnu_script = trim(adjustl(File_out_average_gnu))//'.sh'
@@ -479,14 +482,15 @@ endif
       write(FN_gnu_script, '(a)') 'LABL="Distribution"'
       write(FN_gnu_script, '(a)') 'TICSIZ=10.00'
       write(FN_gnu_script, '(a)') 'echo "'
-      write(FN_gnu_script, '(a)') 'set terminal pngcairo font \"arial,14\" '
+      write(FN_gnu_script, '(a)') 'set terminal pngcairo font \"arial,16\" '
       write(FN_gnu_script, '(a)') 'set output \"$NAME\"'
       write(FN_gnu_script, '(a)') 'set xlabel \"'//'Energy (eV)'//'\" font \"arial,18\" '
       write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron density (1/eV)'//'\" font \"arial,18\" '
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics \"$TICSIZ\" '
       write(FN_gnu_script, '(a)') '#set logscale y'
-      write(FN_gnu_script, '(a)') '#set format y "%2.0tx10^{%L}"'
+      !write(FN_gnu_script, '(a)') '#set format y "%2.0tx10^{%L}"'
+      write(FN_gnu_script, '(a)') '#set format y "%10^{%L}"'
       write(FN_gnu_script, '(a)') 'p [][] \"'//trim(adjustl(File_out_average))//'\" u 1:2 w l lw \"$LW\" title \"Average\"'
       write(FN_gnu_script, '(a)') 'reset'
       write(FN_gnu_script, '(a)') '" | gnuplot '
@@ -503,7 +507,7 @@ endif
       open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
       write(FN_gnu_script, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
       write(FN_gnu_script, '(a,f3.1)') 'LW=', 3.0
-      write(FN_gnu_script, '(a)') 'set terminal pngcairo font "arial,14" '
+      write(FN_gnu_script, '(a)') 'set terminal pngcairo font "arial,16" '
       write(FN_gnu_script, '(a)') 'set output "'//trim(adjustl(File_out_average_gnu))//'_norm.png'//'"'
       write(FN_gnu_script, '(a)') 'set xlabel "'//'Energy (eV)'//'" font "arial,18"'
       write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron distribution'//'" font "arial,18"'
@@ -521,7 +525,7 @@ endif
       write(FN_gnu_script, '(a)') 'LABL="Distribution"'
       write(FN_gnu_script, '(a)') 'TICSIZ=10.00'
       write(FN_gnu_script, '(a)') 'echo "'
-      write(FN_gnu_script, '(a)') 'set terminal pngcairo font \"arial,14\" '
+      write(FN_gnu_script, '(a)') 'set terminal pngcairo font \"arial,16\" '
       write(FN_gnu_script, '(a)') 'set output \"$NAME\"'
       write(FN_gnu_script, '(a)') 'set xlabel \"'//'Energy (eV)'//'\" font \"arial,18\" '
       write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron distribution'//'\" font \"arial,18\" '
