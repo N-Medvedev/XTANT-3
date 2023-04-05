@@ -40,16 +40,21 @@ PROGRAM XTANT_el_distribution_analysis
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
 
-real(8), dimension(:), allocatable :: Ei
-real(8), dimension(:), allocatable :: distr, distr_norm
+real(8), dimension(:), allocatable :: Ei, Ei_fe, Ei_fe_aver
+real(8), dimension(:), allocatable :: fe, fe_thermal  ! distribution function on molecular orbitals
+real(8), dimension(:), allocatable :: fe_aver, fe_thermal_aver ! averaged fe with given wieghts
+real(8), dimension(:), allocatable :: distr, distr_norm  ! distribution function of the equidistant grid
 real(8), dimension(:), allocatable :: distr_conv, distr_norm_conv
 real(8), dimension(:), allocatable :: distr_aver, distr_norm_aver
 real(8), dimension(:), allocatable :: weights_read
-real(8) :: tim, tim_Start, Conv_dE, temp_r, temp_r_norm
+real(8) :: tim, tim_Start, Conv_dE, temp_r, temp_r_norm, exclude_limit
 integer :: FN_distr, FN_out_conv, FN_out_average, FN_weights, weights_COL
 integer :: INFO, Reason, i, Nsiz, tim_counter
-logical :: file_exist, read_well, print_conv, file_opened, norm_present
+integer :: FN_fe, FN_out_fe_aver
+logical :: file_exist, read_well, file_opened, norm_present
+logical :: print_conv, print_fe, print_on_grid
 character(100) :: File_distr, File_out_conv, File_out_average, File_weights, File_in
+character(100) :: File_fe, File_out_fe_average
 character(100) :: File_out_conv_gnu, File_out_average_gnu
 character(1) :: path_sep, temp_ch
 
@@ -57,6 +62,8 @@ call Path_separator(path_sep)  ! below
 
 ! File names:
 File_in           = 'EL_DISTR.txt'  ! file with parameters to use for post-processing (see XTANT Manual)
+File_fe           = 'OUTPUT_electron_distribution.dat'
+File_out_fe_average  = 'OUT_fe_average'
 File_distr        = 'OUTPUT_electron_distribution_on_grid.dat'
 File_out_conv     = 'OUT_el_distr_vs_time.dat'
 File_out_average  = 'OUT_el_distr_average.dat'
@@ -67,61 +74,94 @@ File_out_average_gnu  = 'OUT_el_distr_average'
 ! File numbers:
 FN_weights = 9998
 FN_distr = 9999
+FN_fe = 9994
 FN_out_conv = 1000
 FN_out_average = 2000
+FN_out_fe_aver = 3000
 
 ! Set defaults:
 INFO = 0
 
 !---------------------------------------
 print*, '******************************************************************************'
-print*, 'For analysis of entropy, call XTANT_el_distribution_analysis.exe'
+print*, 'For analysis of distribution, call XTANT_el_distribution_analysis.exe'
 print*, 'Files required by the program:'
 print*, 'EL_DISTR.txt -- file with parameters (see XTANT manual)'
-print*, 'OUTPUT_electron_distribution_on_grid.dat -- file with fe(E)'
+print*, 'OUTPUT_electron_distribution.dat -- file with fe(E)'
+print*, 'OUTPUT_electron_distribution_on_grid.dat -- file with fe(E) on grid'
 print*, '******************************************************************************'
 
 !-----------------------------------
 ! Read input:
 inquire(file=trim(adjustl(File_in)),exist=file_exist) ! check if input file is there
 if (file_exist) then ! try to read it, if there is a grid provided
-   call read_EL_DISTR_txt(File_in, Conv_dE, File_weights, FN_weights, weights_COL) ! below
+   call read_EL_DISTR_txt(File_in, Conv_dE, File_weights, FN_weights, weights_COL, exclude_limit) ! below
    ! Knowing the parameters, define flag to mark if convolution is required:
    print_conv = (Conv_dE > 0.0d0)   ! only if convolution is used
    ! Open output file(s):
-   call creat_output_files(FN_out_conv, File_out_conv, FN_out_average, File_out_average, print_conv)  ! below
+   call creat_output_files(FN_out_conv, File_out_conv, FN_out_average, File_out_average, &
+                           FN_out_fe_aver, trim(adjustl(File_out_fe_average))//'.dat', print_conv)  ! below
    print*, 'Output files are created, starting the analysis'
 else
    print*, 'File ', trim(adjustl(File_in)), 'not found, program terminates.'
    print*, 'For execution of the program, this file must be present,'
-   print*, 'containing the following 2 lines:'
+   print*, 'containing the following lines:'
    print*, 'Line #1: Energy width in [eV]. Set a negative number to exclude convolution in the energy space, if not needed.'
    print*, 'Line #2: File name, providing the data on the widths in time to average the distribution with;'
    print*, 'and the index of column to use in this file.'
    print*, 'Set a non-existing file name to exclude averaging in time, if not needed.'
+   print*, 'Line #3: Cut off for plotting distribution: limit, below which data should be excluded from plotting.'
    print*, '******************************************************************************'
    goto 2012   ! exit, nothing else to do
 endif
 
+
+! Check which distributions are present:
+inquire(file=trim(adjustl(File_distr)),exist=print_on_grid) ! check if input file is there
+inquire(file=trim(adjustl(File_fe)),exist=print_fe) ! check if input file is there
+
 ! Get the energy grid from the file:
-open (unit=FN_distr, file=trim(adjustl(File_distr)), status = 'old', readonly)
+if (print_on_grid) then
+   open (unit=FN_distr, file=trim(adjustl(File_distr)), status = 'old', readonly)
+endif
+if (print_fe) then
+   open (unit=FN_fe, file=trim(adjustl(File_fe)), status = 'old', readonly)
+endif
+
 ! Get the size of the array for the distribution and allocate arrays:
-call get_size_of_distribution(FN_distr, Ei, distr, norm_present)  ! below
+call get_size_of_distribution(FN_distr, FN_fe, Ei, distr, Ei_fe, fe, norm_present, print_fe, print_on_grid)  ! below
 print*, 'Distribution size is known, proceeding to reading files'
-if (.not.norm_present) then
-   print*, 'Normalized distribution is NOT provided, only spectrum'
+if (.not.print_fe) then
+   print*, '1) Distribution on energy levels is provided to average'
 else
-   print*, 'Normalized distribution is provided, including it in the analysis'
+   print*, '1) No distribution on energy levels'
+endif
+if (.not.print_on_grid) then
+   print*, '2) Distribution on grid is provided to average'
+   if (.not.norm_present) then
+      print*, 'Normalized distribution is NOT provided, only spectrum'
+   else
+      print*, 'Normalized distribution is provided, including it in the analysis'
+   endif
+else
+   print*, '2) No distribution on grid'
 endif
 
 ! Knowing the size, define convolved distribution array:
-allocate(distr_conv(size(distr)), source = 0.0d0)
-allocate(distr_aver(size(distr)), source = 0.0d0)
-if (norm_present) then
-   allocate(distr_norm(size(distr)), source = 0.0d0)
-   allocate(distr_norm_conv(size(distr)), source = 0.0d0)
-   allocate(distr_norm_aver(size(distr)), source = 0.0d0)
+if (print_on_grid) then ! distribution on grid
+   allocate(distr_conv(size(distr)), source = 0.0d0)
+   allocate(distr_aver(size(distr)), source = 0.0d0)
+   if (norm_present) then
+      allocate(distr_norm(size(distr)), source = 0.0d0)
+      allocate(distr_norm_conv(size(distr)), source = 0.0d0)
+      allocate(distr_norm_aver(size(distr)), source = 0.0d0)
+   endif
 endif
+if (print_fe) then   ! distribution on MO
+   allocate(fe_aver(size(fe)), source = 0.0d0)
+   allocate(Ei_fe_aver(size(fe)), source = 0.0d0)
+endif
+
 
 ! Read weights from the file:
 if (weights_COL > 0) then
@@ -130,112 +170,188 @@ if (weights_COL > 0) then
 endif
 
 ! Output files:
-if (print_conv) open (unit=FN_out_conv, file=trim(adjustl(File_out_conv)))
-open (unit=FN_out_average, file=trim(adjustl(File_out_average)))
+if (print_on_grid) then
+   if (print_conv) open (unit=FN_out_conv, file=trim(adjustl(File_out_conv)))
+   open (unit=FN_out_average, file=trim(adjustl(File_out_average)))
+endif
+if (print_fe) then
+   open (unit=FN_out_fe_aver, file=trim(adjustl(File_out_fe_average))//'.dat')
+endif
 
 i = 0 ! block counter
 read_well = .true. ! to start with
 do while (read_well)
    i = i + 1
-   ! Read the file with distribution block by block:
-   read(FN_distr,*,IOSTAT=Reason) temp_ch, tim  ! read first line with timeprint
-   if (Reason /= 0) then ! wrong format or end of file reached
-       read_well = .false.
-       exit
-   else   ! normal reading
-       read_well = .true.  ! it read well, nothing to report
-   end if
-   if (print_conv) write(FN_out_conv,*) temp_ch, tim  ! copy the same markerline (timestemp)
-   if (i == 1) tim_Start = tim ! save starting time for gnuplotting below
-
    print*, 'Reading and analysing distribution, block #', i
 
-   ! Read the distributions at this timestep:
-   call read_distribution(FN_distr, Ei, distr, distr_norm, norm_present, read_well)  ! below
-   if (.not. read_well) exit
+   ! Read the file with distribution on grid block by block:
+   if (print_on_grid) then
+      read(FN_distr,*,IOSTAT=Reason) temp_ch, tim  ! read first line with timeprint
+      if (Reason /= 0) then ! wrong format or end of file reached
+         read_well = .false.
+         exit
+      else   ! normal reading
+         read_well = .true.  ! it read well, nothing to report
+      end if
+      if (print_conv) write(FN_out_conv,*) temp_ch, tim  ! copy the same markerline (timestemp)
+      if (i == 1) tim_Start = tim ! save starting time for gnuplotting below
+   endif
+   ! Distribution on MO:
+   if (print_fe) then
+      read(FN_distr,*,IOSTAT=Reason) temp_ch, tim  ! read first line with timeprint
+      if (Reason /= 0) then ! wrong format or end of file reached
+         read_well = .false.
+         exit
+      else   ! normal reading
+         read_well = .true.  ! it read well, nothing to report
+      end if
+      if (i == 1) tim_Start = tim ! save starting time for gnuplotting below
+   endif
+
+   ! Read the distributions on grid at this timestep:
+   if (print_on_grid) then
+      call read_distribution(FN_distr, Ei, distr, distr_norm, norm_present, read_well)  ! below
+      if (.not. read_well) exit
+   endif
+   ! Read the distributions on MO at this timestep:
+   if (print_fe) then
+      call read_distribution(FN_fe, Ei_fe, fe, distr_norm, .false., read_well)  ! below
+      if (.not. read_well) exit
+   endif
 
    ! Demarcation between blocks:
-   read(FN_distr,*,IOSTAT=Reason)   ! skip empty line
-   if (Reason /= 0) then ! wrong format or end of file reached
-       read_well = .false.
-       exit
-   else   ! normal reading
-       read_well = .true.  ! it read well, nothing to report
-   end if
-   read(FN_distr,*,IOSTAT=Reason)   ! skip second empty line
-   if (Reason /= 0) then ! wrong format or end of file reached
-       read_well = .false.
-       exit
-   else   ! normal reading
-       read_well = .true.  ! it read well, nothing to report
-   end if
+   if (print_on_grid) then
+      read(FN_distr,*,IOSTAT=Reason)   ! skip empty line
+      if (Reason /= 0) then ! wrong format or end of file reached
+         read_well = .false.
+         exit
+      else   ! normal reading
+         read_well = .true.  ! it read well, nothing to report
+      end if
+      read(FN_distr,*,IOSTAT=Reason)   ! skip second empty line
+      if (Reason /= 0) then ! wrong format or end of file reached
+         read_well = .false.
+         exit
+      else   ! normal reading
+         read_well = .true.  ! it read well, nothing to report
+      end if
+   endif
+   if (print_fe) then
+      read(FN_fe,*,IOSTAT=Reason)   ! skip empty line
+      if (Reason /= 0) then ! wrong format or end of file reached
+         read_well = .false.
+         exit
+      else   ! normal reading
+         read_well = .true.  ! it read well, nothing to report
+      end if
+      read(FN_fe,*,IOSTAT=Reason)   ! skip second empty line
+      if (Reason /= 0) then ! wrong format or end of file reached
+         read_well = .false.
+         exit
+      else   ! normal reading
+         read_well = .true.  ! it read well, nothing to report
+      end if
+   endif
 
    !-------------
    ! Now, process the data and print them out:
    ! If the convolution is required:
-   if (print_conv) then
-      ! Convolve electronic spetrum with Gaussian:
-      call convolve_with_Gaussian(Ei, distr, Conv_dE, distr_conv) ! below
-      !if (i == 1) temp_r = maxval(distr_conv)
-      !distr_conv(:) = distr_conv(:) / (temp_r)
+   if (print_on_grid) then
+      if (print_conv) then
+         ! Convolve electronic spetrum with Gaussian:
+         call convolve_with_Gaussian(Ei, distr, Conv_dE, distr_conv) ! below
+         !if (i == 1) temp_r = maxval(distr_conv)
+         !distr_conv(:) = distr_conv(:) / (temp_r)
 
-      ! Convolve normalized electronic distribution with Gaussian:
-      if (norm_present) then
-         call convolve_with_Gaussian(Ei, distr_norm, Conv_dE, distr_norm_conv) ! below
-         ! And let's normalize it to the peak height:
-         if (i == 1) temp_r_norm = maxval(distr_norm_conv) * 0.5d0
-         distr_norm_conv(:) = distr_norm_conv(:) / (temp_r_norm)
+         ! Convolve normalized electronic distribution with Gaussian:
+         if (norm_present) then
+            call convolve_with_Gaussian(Ei, distr_norm, Conv_dE, distr_norm_conv) ! below
+            ! And let's normalize it to the peak height:
+            if (i == 1) then
+               temp_r_norm = maxval(distr_norm_conv) * 0.5d0
+               if (temp_r_norm <= 1.0d-14) temp_r_norm = 1.0d0   ! no normalization, if no data
+            endif
+            distr_norm_conv(:) = distr_norm_conv(:) / (temp_r_norm)
+         endif
+
+         ! Printout the convolved function:
+         call print_convolved(FN_out_conv, Ei, distr_conv, distr_norm_conv, norm_present)   ! below
+
+         ! Average convolved spectrum function over time:
+         call average_distr(distr_aver, distr_conv, weights_read, weights_COL, i)   ! below
+         ! Average convolved distribution function over time:
+         if (norm_present) then
+            call average_distr(distr_norm_aver, distr_norm_conv, weights_read, weights_COL, i)   ! below
+         endif
+      else
+         ! Average original Spectrum over time:
+         call average_distr(distr_aver, distr, weights_read, weights_COL, i)   ! below
+         ! Average original Distribution function over time:
+         if (norm_present) then
+            call average_distr(distr_norm_aver, distr_norm, weights_read, weights_COL, i)   ! below
+         endif
       endif
+   endif ! (print_on_grid)
 
-      ! Printout the convolved function:
-      call print_convolved(FN_out_conv, Ei, distr_conv, distr_norm_conv, norm_present)   ! below
-
-      ! Average convolved spectrum function over time:
-      call average_distr(distr_aver, distr_conv, weights_read, weights_COL, i)   ! below
-      ! Average convolved distribution function over time:
-      if (norm_present) then
-         call average_distr(distr_norm_aver, distr_norm_conv, weights_read, weights_COL, i)   ! below
-      endif
-   else
+   if (print_fe) then
       ! Average original Spectrum over time:
-      call average_distr(distr_aver, distr, weights_read, weights_COL, i)   ! below
-      ! Average original Distribution function over time:
-      if (norm_present) then
-         call average_distr(distr_norm_aver, distr_norm, weights_read, weights_COL, i)   ! below
-      endif
-   endif
+      call average_distr(fe_aver, fe, weights_read, weights_COL, i)   ! below
+      Ei_fe_aver(:) = Ei_fe_aver(:) + Ei_fe(:)*weights_read(i)
+   endif ! (print_fe)
+
 enddo
 ! Average distribution over time:
-distr_aver(:) = distr_aver(:) / dble(i)
-! And let's normalize it to the number of particles:
-temp_r = SUM(distr_aver)
-distr_aver(:) = distr_aver(:) / temp_r
+if (print_on_grid) then ! distribution on grid
+   distr_aver(:) = distr_aver(:) / max(1.0d0, dble(i))
+   ! And let's normalize it to the number of particles:
+   temp_r = SUM(distr_aver)
+   if (temp_r > 1.0d-14) distr_aver(:) = distr_aver(:) / temp_r
 
-if (norm_present) then
-   distr_norm_aver(:) = distr_norm_aver(:) / dble(i)
-   temp_r = maxval(distr_norm_aver)
-   distr_norm_aver(:) = distr_norm_aver(:) / (temp_r*0.5d0)
+   if (norm_present) then
+      distr_norm_aver(:) = distr_norm_aver(:) / max(1.0d0, dble(i))
+      temp_r = maxval(distr_norm_aver)
+      if (temp_r > 1.0d-14) distr_norm_aver(:) = distr_norm_aver(:) / (temp_r*0.5d0)
+   endif
+endif
+if (print_fe) then   ! distribution on MO
+   temp_r = SUM(weights_read)
+   fe_aver(:) = fe_aver(:) / max(1.0d0, temp_r)
+   Ei_fe_aver(:) = Ei_fe_aver(:) / max(1.0d0, temp_r)
 endif
 
 ! Clean up:
-close(FN_distr)
-if (print_conv) close(FN_out_conv)
+if (print_on_grid) then ! distribution on grid
+   close(FN_distr)
+   if (print_conv) close(FN_out_conv)
+endif
+if (print_fe) then ! distribution on grid
+   close(FN_fe)
+endif
 
 ! Printout the avereaged distribution:
-call print_averaged(FN_out_average, Ei, distr_aver, distr_norm_aver, norm_present)   ! below
-close(FN_out_average)
-
+if (print_on_grid) then ! distribution on grid
+   call print_averaged(FN_out_average, Ei, distr_aver, distr_norm_aver, norm_present, exclude_limit)   ! below
+   close(FN_out_average)
+endif
+if (print_fe) then ! distribution on grid
+   call print_averaged(FN_out_fe_aver, Ei_fe_aver, fe_aver, distr_norm_aver, .false., exclude_limit)   ! below
+   close(FN_out_fe_aver)
+endif
 print*, 'Analysis is done, starting gnuplotting'
 
 !-------------------------
 ! Make gnuplot script:
-call gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, &
+if (print_on_grid) then ! distribution on grid
+   call gnuplot_figures(path_sep, File_out_conv, File_out_average, File_out_conv_gnu, File_out_average_gnu, &
                      print_conv, tim_Start, norm_present)   ! below
-
+endif
+if (print_fe) then ! distribution on grid
+   call gnuplot_figures_MO(path_sep, File_out_fe_average, exclude_limit)  ! below
+endif
 print*, 'Scripts are prepared, starting to gnuplot them...'
 
 ! execute gnuplot files:
-call execute_gnuplots(path_sep, File_out_conv_gnu, File_out_average_gnu, norm_present) ! below
+call execute_gnuplots(path_sep, File_out_conv_gnu, File_out_average_gnu, norm_present, File_out_fe_average, print_on_grid, print_fe) ! below
 print*, 'Everything is done, check the output files.'
 
 
@@ -245,35 +361,53 @@ STOP
  contains
 
 
-subroutine execute_gnuplots(path_sep, File_out_conv_gnu, File_out_average_gnu, norm_present)
-   character(*), intent(in) :: path_sep, File_out_conv_gnu, File_out_average_gnu
-   logical, intent(in) :: norm_present
+subroutine execute_gnuplots(path_sep, File_out_conv_gnu, File_out_average_gnu, norm_present, &
+                              File_out_fe_average, print_on_grid, print_fe)
+   character(*), intent(in) :: path_sep, File_out_conv_gnu, File_out_average_gnu, File_out_fe_average
+   logical, intent(in) :: norm_present, print_on_grid, print_fe
    !---------------------------
    character(100) :: command
    integer :: iret
-   if (path_sep .EQ. '\') then	! if it is Windows
-      !call system("OUTPUT_Gnuplot_all.cmd")
-      command = trim(adjustl(File_out_conv_gnu))//'.cmd'
-      iret = system(command)
-      command = trim(adjustl(File_out_average_gnu))//'.cmd'
-      iret = system(command)
-      if (norm_present) then
-         command = trim(adjustl(File_out_conv_gnu))//'_norm.cmd'
+
+   if (print_fe) then
+      if (path_sep .EQ. '\') then	! if it is Windows
+         !call system("OUTPUT_Gnuplot_all.cmd")
+         command = trim(adjustl(File_out_fe_average))//'.cmd'
          iret = system(command)
-         command = trim(adjustl(File_out_average_gnu))//'_norm.cmd'
+      else ! linux:
+         !call system("./OUTPUT_Gnuplot_all.sh")
+         command = "./"//trim(adjustl(File_out_fe_average))//'.sh'
          iret = system(command)
       endif
-   else ! linux:
-      !call system("./OUTPUT_Gnuplot_all.sh")
-      command = "./"//trim(adjustl(File_out_conv_gnu))//'.sh'
-      iret = system(command)
-      command = "./"//trim(adjustl(File_out_average_gnu))//'.sh'
-      iret = system(command)
-      if (norm_present) then
-         command = "./"//trim(adjustl(File_out_conv_gnu))//'_norm.sh'
+   endif
+
+   if (print_on_grid) then
+      if (path_sep .EQ. '\') then	! if it is Windows
+         !call system("OUTPUT_Gnuplot_all.cmd")
+         command = trim(adjustl(File_out_average_gnu))//'.cmd'
          iret = system(command)
-         command = "./"//trim(adjustl(File_out_average_gnu))//'_norm.sh'
+         if (norm_present) then
+            command = trim(adjustl(File_out_average_gnu))//'_norm.cmd'
+            iret = system(command)
+         endif
+         command = trim(adjustl(File_out_conv_gnu))//'.cmd'
          iret = system(command)
+         if (norm_present) then
+            command = trim(adjustl(File_out_conv_gnu))//'_norm.cmd'
+            iret = system(command)
+         endif
+      else ! linux:
+         !call system("./OUTPUT_Gnuplot_all.sh")
+         command = "./"//trim(adjustl(File_out_conv_gnu))//'.sh'
+         iret = system(command)
+         command = "./"//trim(adjustl(File_out_average_gnu))//'.sh'
+         iret = system(command)
+         if (norm_present) then
+            command = "./"//trim(adjustl(File_out_conv_gnu))//'_norm.sh'
+            iret = system(command)
+            command = "./"//trim(adjustl(File_out_average_gnu))//'_norm.sh'
+            iret = system(command)
+         endif
       endif
    endif
 end subroutine execute_gnuplots
@@ -387,7 +521,7 @@ if (print_conv) then
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics 10'
       !write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
-      write(FN_gnu_script, '(a)') 'set format y "%10^{%L}"'
+      write(FN_gnu_script, '(a)') 'set format y "10^{%L}"'
    else
       Gnu_script = trim(adjustl(File_out_conv_gnu))//'_norm.sh'
       open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
@@ -404,7 +538,7 @@ if (print_conv) then
       write(FN_gnu_script, '(a)') 'set key right top '
       write(FN_gnu_script, '(a)') 'set xtics \"$TICSIZ\" '
       !write(FN_gnu_script, '(a)') 'set format y "%2.0tx10^{%L}"'
-      write(FN_gnu_script, '(a)') 'set format y "10^{%L}"'
+      write(FN_gnu_script, '(a)') 'set format y "10^{\%L}"'
    endif
 
    ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
@@ -471,7 +605,7 @@ endif
       write(FN_gnu_script, '(a)') 'set xtics 10'
       write(FN_gnu_script, '(a)') '#set logscale y'
       !write(FN_gnu_script, '(a)') '#set format y "%2.0tx10^{%L}"'
-      write(FN_gnu_script, '(a)') '#set format y "%10^{%L}"'
+      write(FN_gnu_script, '(a)') '#set format y "10^{%L}"'
       write(FN_gnu_script, '(a)') 'p [][] "'//trim(adjustl(File_out_average))//'" u 1:2 w l lw LW title "Average"'
    else
       Gnu_script = trim(adjustl(File_out_average_gnu))//'.sh'
@@ -490,7 +624,7 @@ endif
       write(FN_gnu_script, '(a)') 'set xtics \"$TICSIZ\" '
       write(FN_gnu_script, '(a)') '#set logscale y'
       !write(FN_gnu_script, '(a)') '#set format y "%2.0tx10^{%L}"'
-      write(FN_gnu_script, '(a)') '#set format y "%10^{%L}"'
+      write(FN_gnu_script, '(a)') '#set format y "10^{\%L}"'
       write(FN_gnu_script, '(a)') 'p [][] \"'//trim(adjustl(File_out_average))//'\" u 1:2 w l lw \"$LW\" title \"Average\"'
       write(FN_gnu_script, '(a)') 'reset'
       write(FN_gnu_script, '(a)') '" | gnuplot '
@@ -541,6 +675,61 @@ endif
    close (FN_gnu_script)
   endif
 end subroutine gnuplot_figures
+
+
+
+
+subroutine gnuplot_figures_MO(path_sep, File_out_fe_average, exclude_limit)
+   character(1), intent(in) :: path_sep
+   character(*), intent(in) :: File_out_fe_average
+   real(8), intent(in) :: exclude_limit
+   !----------------
+   character(200) :: Gnu_script
+   integer :: FN_gnu_script
+
+   !--------------------
+   ! Average distribution:
+   FN_gnu_script = 9995
+   if (path_sep .EQ. '\') then   ! if it is Windows
+      Gnu_script = trim(adjustl(File_out_fe_average))//'.cmd'
+      open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
+      write(FN_gnu_script, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
+      write(FN_gnu_script, '(a,f3.1)') 'LW=', 3.0
+      write(FN_gnu_script, '(a)') 'set terminal pngcairo font "arial,16" '
+      write(FN_gnu_script, '(a)') 'set output "'//trim(adjustl(File_out_fe_average))//'.png'//'"'
+      write(FN_gnu_script, '(a)') 'set xlabel "'//'Energy (eV)'//'" font "arial,18"'
+      write(FN_gnu_script, '(a)') 'set ylabel "'//'Electron distribution'//'" font "arial,18"'
+      write(FN_gnu_script, '(a)') 'set key right top '
+      write(FN_gnu_script, '(a)') 'set xtics 10'
+      write(FN_gnu_script, '(a)') 'set logscale y'
+      write(FN_gnu_script, '(a)') '#set format y "%2.0tx10^{%L}"'
+      write(FN_gnu_script, '(a)') 'set format y "10^{%L}"'
+      write(FN_gnu_script, '(a)') 'p [][] "'//trim(adjustl(File_out_fe_average))//'.dat'//'" u 1:2 w l lw LW title "Average"'
+   else
+      Gnu_script = trim(adjustl(File_out_fe_average))//'.sh'
+      open (unit=FN_gnu_script, file=trim(adjustl(Gnu_script )))
+      write(FN_gnu_script, '(a)') '#!/bin/bash'
+      write(FN_gnu_script, '(a)') ''
+      write(FN_gnu_script, '(a)') 'NAME='//trim(adjustl(File_out_fe_average))//'.png'
+      write(FN_gnu_script, '(a)') 'LABL="Distribution"'
+      write(FN_gnu_script, '(a)') 'TICSIZ=10.00'
+      write(FN_gnu_script, '(a)') 'echo "'
+      write(FN_gnu_script, '(a)') 'set terminal pngcairo font \"arial,16\" '
+      write(FN_gnu_script, '(a)') 'set output \"$NAME\"'
+      write(FN_gnu_script, '(a)') 'set xlabel \"'//'Energy (eV)'//'\" font \"arial,18\" '
+      write(FN_gnu_script, '(a)') 'set ylabel \"'//'Electron distribution'//'\" font \"arial,18\" '
+      write(FN_gnu_script, '(a)') 'set key right top '
+      write(FN_gnu_script, '(a)') 'set xtics \"$TICSIZ\" '
+      write(FN_gnu_script, '(a)') 'set logscale y'
+      write(FN_gnu_script, '(a)') '#set format y "\%2.0tx10^{\%L}"'
+      write(FN_gnu_script, '(a)') 'set format y "10^{\%L}"'
+      write(FN_gnu_script, '(a)') 'p [][] \"'//trim(adjustl(File_out_fe_average))//'.dat'//'\" u 1:2 w l lw \"$LW\" title \"Average\"'
+      write(FN_gnu_script, '(a)') 'reset'
+      write(FN_gnu_script, '(a)') '" | gnuplot '
+   endif
+   ! Done, clean up:
+   close (FN_gnu_script)
+end subroutine gnuplot_figures_MO
 
 
 
@@ -642,21 +831,26 @@ subroutine print_convolved(FN_out_conv, Ei, distr_conv, distr_norm_conv, norm_pr
 end subroutine print_convolved
 
 
-subroutine print_averaged(FN_out_average, Ei, distr_aver, distr_norm_aver, norm_present)
+subroutine print_averaged(FN_out_average, Ei, distr_aver, distr_norm_aver, norm_present, exclude_limit)
    integer, intent(in) :: FN_out_average  ! file to print into (must be opened)
    real(8), dimension(:), intent(in) :: Ei, distr_aver, distr_norm_aver ! convolved function
    logical, intent(in) :: norm_present
+   real(8), intent(in) :: exclude_limit   ! limit, below which the data should be excluded
    !-----------------------
    integer :: i, Nsiz
    Nsiz = size(distr_aver)
 
    if (norm_present) then
       do i = 1, Nsiz
-         write(FN_out_average,*) Ei(i), distr_aver(i), distr_norm_aver(i)
+         if (distr_aver(i) > exclude_limit) then
+            write(FN_out_average,*) Ei(i), distr_aver(i), distr_norm_aver(i)
+         endif
       enddo
    else ! legacy format
       do i = 1, Nsiz
-         write(FN_out_average,*) Ei(i), distr_aver(i)
+         if (distr_aver(i) > exclude_limit) then
+            write(FN_out_average,*) Ei(i), distr_aver(i)
+         endif
       enddo
    endif
 end subroutine print_averaged
@@ -698,12 +892,13 @@ end function Gaussian
 
 
 
-subroutine read_EL_DISTR_txt(File_in, Conv_dE, File_weights, FN_weights, weights_COL)
+subroutine read_EL_DISTR_txt(File_in, Conv_dE, File_weights, FN_weights, weights_COL, exclude_limit)
    character(*), intent(in) :: File_in ! file name of the file with parameters for post-processing
    real(8), intent(out) :: Conv_dE  ! gaussian width for convlution in energy space
    character(*), intent(out) :: File_weights ! file name with weights for averaging of distribution over time
    integer, intent(in) :: FN_weights   ! file number with weights, to check if it exists and opened it
    integer, intent(out) :: weights_COL  ! column index in this file to use
+   real(8), intent(out) :: exclude_limit  ! limit, to exclude data points below it (if provided)
    !-----------------------
    integer :: FN_in  ! file number of the file with parameters for post-processing
    real(8) :: temp_r
@@ -741,59 +936,95 @@ subroutine read_EL_DISTR_txt(File_in, Conv_dE, File_weights, FN_weights, weights
       print*, 'Averaeging in time will be performed without weights'
    endif
 
+   read(FN_in,*,IOSTAT=Reason) temp_r
+   if (Reason == 0) then   ! read well
+      exclude_limit = temp_r
+   else  ! didn't read well, or not provided
+      exclude_limit = -1.0d10 ! don't exclude anything
+   endif
+
    close(FN_in)
 end subroutine read_EL_DISTR_txt
 
 
-subroutine creat_output_files(FN_out_conv, File_out_conv, FN_out_average, File_out_average, print_conv)  ! below
-   integer, intent(in) :: FN_out_conv, FN_out_average ! file numbers
-   character(*), intent(in) :: File_out_conv, File_out_average ! file names
+subroutine creat_output_files(FN_out_conv, File_out_conv, FN_out_average, File_out_average, &
+                              FN_out_fe_aver, File_out_fe_average, print_conv)  ! below
+   integer, intent(in) :: FN_out_conv, FN_out_average, FN_out_fe_aver ! file numbers
+   character(*), intent(in) :: File_out_conv, File_out_average, File_out_fe_average ! file names
    logical :: print_conv   ! flag for convolved output
    !-----------------
    if (print_conv) then
       open (unit=FN_out_conv, file=trim(adjustl(File_out_conv)))
    endif
    open (unit=FN_out_average, file=trim(adjustl(File_out_average)))
+   open (unit=FN_out_fe_aver, file=trim(adjustl(File_out_fe_average)))
 end subroutine creat_output_files
 
 
-subroutine get_size_of_distribution(FN_distr, Ei, distr, norm_present)  ! below
-   integer, intent(in) :: FN_distr ! file number of the file with electronic distribution
-   real(8), dimension(:), allocatable, intent(inout) :: Ei
-   real(8), dimension(:), allocatable, intent(inout) :: distr
-   logical, intent(inout) :: norm_present ! in the old format, there was no third column with normalized distribution
+subroutine get_size_of_distribution(FN_distr, FN_fe, Ei, distr, Ei_fe, fe, norm_present, print_fe, print_on_grid)  ! below
+   integer, intent(in) :: FN_distr, FN_fe ! file number of the file with electronic distribution
+   real(8), dimension(:), allocatable, intent(inout) :: Ei, Ei_fe
+   real(8), dimension(:), allocatable, intent(inout) :: distr, fe
+   logical, intent(inout) :: norm_present, print_fe, print_on_grid
+   ! in the old format, there was no third column with normalized distribution
    !-------------
    real(8) :: temp
    integer :: i, Reason, Ncol
    logical :: read_well
 
    ! Find out if it is legacy format or new:
-   call Count_columns_in_file(FN_distr, Ncol, skip_lines = 1)  ! below
-   if (Ncol > 2) then
-      norm_present = .true.
-   else
-      norm_present = .false.
-   endif
-
-   ! Skip first line:
-   read(FN_distr,*,IOSTAT=Reason)
-
-   i = 0
-   read_well = .true. ! to start with
-   do while (read_well)
-      i = i + 1
-      ! Read the file with distribution block by block:
-      read(FN_distr,*,IOSTAT=Reason) temp
-      if (Reason /= 0) then ! wrong format: probably new block
-         exit
+   if (print_on_grid) then
+      call Count_columns_in_file(FN_distr, Ncol, skip_lines = 1)  ! below
+      if (Ncol > 2) then
+         norm_present = .true.
+      else
+         norm_present = .false.
       endif
-   enddo
-   i = i - 1
 
-   allocate(Ei(i))
-   allocate(distr(i))
+      ! Skip first line:
+      read(FN_distr,*,IOSTAT=Reason)
 
-   rewind(FN_distr) ! to restart reading into the arrays from the start
+      i = 0
+      read_well = .true. ! to start with
+      do while (read_well)
+         i = i + 1
+         ! Read the file with distribution block by block:
+         read(FN_distr,*,IOSTAT=Reason) temp
+         if (Reason /= 0) then ! wrong format: probably new block
+            exit
+         endif
+      enddo
+      i = i - 1
+
+      allocate(Ei(i))
+      allocate(distr(i))
+
+      rewind(FN_distr) ! to restart reading into the arrays from the start
+   endif ! print_on_grid
+
+   ! Distribution on the electronic energy levels (molecular orbitals)
+   if (print_fe) then
+      ! Skip first line:
+      read(FN_fe,*,IOSTAT=Reason)
+
+      i = 0
+      read_well = .true. ! to start with
+      do while (read_well)
+         i = i + 1
+         ! Read the file with distribution block by block:
+         read(FN_fe,*,IOSTAT=Reason) temp
+         if (Reason /= 0) then ! wrong format: probably new block
+            exit
+         endif
+      enddo
+      i = i - 1
+
+      allocate(Ei_fe(i))
+      allocate(fe(i))
+
+      rewind(FN_fe) ! to restart reading into the arrays from the start
+   endif ! print_on_grid
+
 end subroutine get_size_of_distribution
 
 
