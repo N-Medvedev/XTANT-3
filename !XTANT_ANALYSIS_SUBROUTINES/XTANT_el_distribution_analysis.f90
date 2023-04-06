@@ -839,7 +839,7 @@ subroutine gnuplot_figures_gridded(path_sep, File_out_fe_gridded, File_out_fe_gr
       write(FN_gnu_script, '(a)') 'do for [i=1:int(STATS_blocks)] {'
       write(FN_gnu_script, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] "'// &
          trim(adjustl(File_out_fe_gridded))//'.dat'// &
-         '" index (i-1) u 1:3 w l lw 3 title sprintf("%i fs",(i-1'// &
+         '" index (i-1) u 1:2 w l lw 3 title sprintf("%i fs",(i-1'// &
          trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
    else  ! Linux
       write(FN_gnu_script, '(a)') 'stats \"'//trim(adjustl(File_out_fe_gridded))//'.dat'//'\" nooutput'
@@ -847,7 +847,7 @@ subroutine gnuplot_figures_gridded(path_sep, File_out_fe_gridded, File_out_fe_gr
       write(FN_gnu_script, '(a)') 'do for [i=1:int(STATS_blocks)] {'
       write(FN_gnu_script, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] \"'// &
          trim(adjustl(File_out_fe_gridded))//'.dat'// &
-         '\" index (i-1) u 1:3 w l lw 3 title sprintf(\"%i fs\",(i-1'// &
+         '\" index (i-1) u 1:2 w l lw 3 title sprintf(\"%i fs\",(i-1'// &
          trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
    endif
    write(FN_gnu_script, '(a)') '}'
