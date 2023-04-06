@@ -160,6 +160,8 @@ endif
 if (print_fe) then   ! distribution on MO
    allocate(fe_aver(size(fe)), source = 0.0d0)
    allocate(Ei_fe_aver(size(fe)), source = 0.0d0)
+   allocate(fe_thermal_aver(size(fe)), source = 0.0d0)
+   allocate(fe_thermal(size(fe)), source = 0.0d0)
 endif
 
 
@@ -198,7 +200,7 @@ do while (read_well)
    endif
    ! Distribution on MO:
    if (print_fe) then
-      read(FN_distr,*,IOSTAT=Reason) temp_ch, tim  ! read first line with timeprint
+      read(FN_fe,*,IOSTAT=Reason) temp_ch, tim  ! read first line with timeprint
       if (Reason /= 0) then ! wrong format or end of file reached
          read_well = .false.
          exit
