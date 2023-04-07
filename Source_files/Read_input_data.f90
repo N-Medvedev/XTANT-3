@@ -721,7 +721,8 @@ subroutine get_CDF_data(matter, numpar, Err)
          matter%Atoms(i)%Ma = at_masses(i)*g_Mp ! [kg]
          matter%Atoms(i)%percentage = at_percentage(i)
          matter%Atoms(i)%NVB = at_NVE(i)
-!          print*, matter%Atoms(i)%Name, matter%Atoms(i)%Ma, matter%Atoms(i)%NVB
+          !print*, matter%Atoms(i)%Name, matter%Atoms(i)%Ma, matter%Atoms(i)%NVB
+          !pause 'get_CDF_data'
       enddo
 
       read(FN,*,IOSTAT=Reason) retemp ! skip this line - density is given elsewhere
@@ -774,8 +775,9 @@ subroutine get_CDF_data(matter, numpar, Err)
                print*, trim(adjustl(Error_descript))
                goto 3420
             endif
+            matter%Atoms(i)%Shell_name(j) = ''  ! no name yet, to be defined  in the next subroutine
 
-            call check_atomic_data(matter, numpar, Err, i, j, matter%Atoms(i)%sh) 
+            call check_atomic_data(matter, numpar, Err, i, j, matter%Atoms(i)%sh)   ! below
 
             DOCDF:if (matter%Atoms(i)%N_CDF(j) .GT. 0) then ! do this shell with provided CDF coefficients
                matter%Atoms(i)%TOCS(j) = 1 ! CDF cross-section
@@ -822,6 +824,7 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot)
    integer FN, INFO, j, Z, imax, imin, N_shl
    real(8), dimension(:), allocatable :: Nel   ! number of electrons in each shell
    integer, dimension(:), allocatable :: Shl_num ! shell designator
+   character(11), dimension(:), allocatable :: Shell_name
    logical :: file_exist, file_opened
 
    ! Open eadl.all database:
@@ -854,6 +857,17 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot)
    select case (INFO)
    case (0)
       Z =  matter%Atoms(i)%Z ! atomic number
+
+      ! Shell name:
+      if (LEN(trim(adjustl(matter%Atoms(i)%Shell_name(cur_shl)))) < 1) then ! take if from EADL-database
+         if ( matter%Atoms(i)%Shl_dsgnr(cur_shl) >= 63 ) then
+            matter%Atoms(i)%Shell_name(cur_shl) = 'Valence'
+         else ! core shell
+            call READ_EADL_TYPE_FILE_int(FN, File_name, Z, 912, INFO, error_message=Error_descript, N_shl=N_shl, &
+                  Nel=Nel, Shell_name=Shell_name)    ! module "Dealing_with_EADL"
+            matter%Atoms(i)%Shell_name(cur_shl) = Shell_name(cur_shl)
+         endif
+      endif
       ! Number of electrons in this shell:
       if (matter%Atoms(i)%Ne_shell(cur_shl) .LT. 0) then ! take if from EADL-database
          call READ_EADL_TYPE_FILE_int(FN, File_name, Z, 912, INFO, error_message=Error_descript, N_shl=N_shl, Nel=Nel, Shl_num=Shl_num) ! module "Dealing_with_EADL"

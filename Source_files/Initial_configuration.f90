@@ -1476,6 +1476,7 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
    logical read_well
    type(Atom), dimension(:), allocatable :: MDAtoms ! if more then one supercell
    real(8), dimension(size(matter%Atoms)) :: perc
+   real(8), dimension(3,3) :: unit_cell   ! temporary storage of supercell vectors
 
    select case (which_one)
    case (1) ! saved all atomic coordinates
@@ -1547,6 +1548,11 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
       if (.not.allocated(MDAtoms)) deallocate(MDAtoms)
 
    case (3) ! coordinates in the XYZ file
+      ! Replicate unit cell, if requested:
+      unit_cell = Scell(SCN)%Supce  ! use it to resize the supercell
+      call set_supercell_size_from_unitcells(Scell, SCN, matter, unit_cell, .true.)   ! below
+
+      ! Set coordinates in the sueprcell:
       call set_initial_coords(matter, Scell, SCN, FN, File_name, Nat=Scell(SCN)%Na, INFO=INFO, Error_descript=Error_descript, XYZ=1)
       if (INFO .NE. 0) then
          call Save_error_details(Err, INFO, Error_descript)
@@ -1926,15 +1932,9 @@ subroutine get_supercell_vectors(FN, File_name, Scell, SCN, which_one, matter, E
          print*, trim(adjustl(Error_descript))
          goto 3417
       endif
-!       Scell(SCN)%supce(:,1) = matter%cell_x*unit_cell(:,1)	! [A] length of super-cell X
-!       Scell(SCN)%supce(:,2) = matter%cell_y*unit_cell(:,2)	! [A] length of super-cell Y
-!       Scell(SCN)%supce(:,3) = matter%cell_z*unit_cell(:,3)	! [A] length of super-cell Z
-      Scell(SCN)%supce(1,:) = matter%cell_x*unit_cell(1,:)	! [A] length of super-cell X
-      Scell(SCN)%supce(2,:) = matter%cell_y*unit_cell(2,:)	! [A] length of super-cell Y
-      Scell(SCN)%supce(3,:) = matter%cell_z*unit_cell(3,:)	! [A] length of super-cell Z 
-      Scell(SCN)%supce0 = Scell(SCN)%supce	! [A] length of super-cell on the previous time-step
-      Scell(SCN)%Vsupce = 0.0d0  ! initial velocity is 0
-      Scell(SCN)%Vsupce0 = 0.0d0 ! initial velocity is 0
+      ! Adjust size of the supercell given the number of unit cells:
+      call set_supercell_size_from_unitcells(Scell, SCN, matter, unit_cell, .false.)  ! below
+
    end select
    
     if (present(ind)) then  ! if we define two phases
@@ -1959,6 +1959,33 @@ subroutine get_supercell_vectors(FN, File_name, Scell, SCN, which_one, matter, E
 
 3417 continue
 end subroutine get_supercell_vectors
+
+
+subroutine set_supercell_size_from_unitcells(Scell, SCN, matter, unit_cell, def_par)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: SCN    ! index of supercell (=1)
+   type(Solid), intent(in) :: matter	! all material parameters
+   real(8), dimension(3,3), intent(in) :: unit_cell   ! unit cell vectors to construct the supercell
+   logical, intent(in) :: def_par   ! flag to define other parameters of the supercell
+   !-----------------------
+!       Scell(SCN)%supce(:,1) = matter%cell_x*unit_cell(:,1)   ! [A] length of super-cell X
+!       Scell(SCN)%supce(:,2) = matter%cell_y*unit_cell(:,2)   ! [A] length of super-cell Y
+!       Scell(SCN)%supce(:,3) = matter%cell_z*unit_cell(:,3)   ! [A] length of super-cell Z
+   Scell(SCN)%supce(1,:) = matter%cell_x*unit_cell(1,:)  ! [A] length of super-cell X
+   Scell(SCN)%supce(2,:) = matter%cell_y*unit_cell(2,:)  ! [A] length of super-cell Y
+   Scell(SCN)%supce(3,:) = matter%cell_z*unit_cell(3,:)  ! [A] length of super-cell Z
+   Scell(SCN)%supce0 = Scell(SCN)%supce   ! [A] length of super-cell on the previous time-step
+   Scell(SCN)%Vsupce = 0.0d0  ! initial velocity is 0
+   Scell(SCN)%Vsupce0 = 0.0d0 ! initial velocity is 0
+   if (def_par) then ! define volume, reciprocal, etc.
+      Scell(SCN)%SCforce%rep = 0.0d0
+      Scell(SCN)%SCforce%att = 0.0d0
+      Scell(SCN)%SCforce%total = 0.0d0
+      call Det_3x3(Scell(SCN)%supce, Scell(SCN)%V) ! finding initial volume of the super-cell, module "Algebra_tools"
+      call Reciproc(Scell(SCN)%supce, Scell(SCN)%k_supce) ! create reciprocal super-cell, module "Algebra_tools"
+      Scell(SCN)%supce_eq = Scell(SCN)%supce	! [A] equilibrium lengths of super-cell
+   endif
+end subroutine set_supercell_size_from_unitcells
 
 
 
