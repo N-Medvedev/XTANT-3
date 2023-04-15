@@ -392,6 +392,7 @@ if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully'
     write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
     inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
     if (file_exists) then ! second input file exists
+       write(*,'(a)') trim(adjustl(m_starline))
        write(*,'(a,a)')  'Another set of input parameter files exists: ', trim(adjustl(chtest))
        write(*,'(a)')    'Running XTANT again for these new parameters...'
        call deallocate_all() ! module "Variables"
@@ -403,6 +404,7 @@ if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully'
  else
     write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
  endif
+ write(*,'(a)') trim(adjustl(m_starline))
 
 2016 continue
 
