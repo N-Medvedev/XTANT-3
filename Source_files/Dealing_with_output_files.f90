@@ -39,13 +39,16 @@ use Dealing_with_files, only : get_file_stat, copy_file, read_file
 !use Electron_tools
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
-use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file
+use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline
 
 implicit none
 PRIVATE
 
+character(10), parameter :: m_XTANT_version = 'XTANT-3'
+
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
 public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
+public :: XTANT_label
 
  contains
 
@@ -2570,7 +2573,7 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
       goto 9999
    endif
    numpar%FN_parameters = FN ! save this file number with parameters
-   call Print_title(FN,Scell, matter,laser,numpar)
+   call Print_title(FN, Scell, matter, laser, numpar, 0) ! below
    !close(FN)
    inquire(file=trim(adjustl(File_name)),opened=file_opened)
    if (file_opened) then
@@ -3028,30 +3031,37 @@ end subroutine pars_comunications_file
 
 
 
-subroutine Print_title(print_to, Scell, matter, laser, numpar)
+subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    integer, intent(in) :: print_to ! the screen, or file
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter ! material parameters
    type(Pulse), dimension(:), intent(in) :: laser ! Laser pulse parameters
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
+   integer, intent(in) :: label_ind ! which label to print
    !type(TB_repulsive), dimension(:), intent(in) :: TB_Repuls  ! parameters of the repulsive part of TB
    !type(TB_Hamiltonian), dimension(:), intent(in) ::  TB_Hamil ! parameters of the Hamiltonian of TB
-   integer i 
-   character(100) :: text, text1, text2, text3, starline
+   !--------------
+   integer i
+   character(100) :: text, text1, text2, text3
+   logical :: optional_output
 
-   starline = '*************************************************************'
-
-   write(print_to,'(a)') trim(adjustl(starline))
-   write(print_to,'(a)') '*  XTANT: X-ray-induced Thermal And Nonthermal Transitions  *'
-   write(print_to,'(a)') trim(adjustl(starline))
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   call XTANT_label(print_to, label_ind) ! below
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '*  XTANT: X-ray-induced Thermal And Nonthermal Transitions  '
+   write(print_to,'(a,a)') '*  Current version of the code: ', trim(adjustl(m_XTANT_version))
+   write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  A hybrid approach consisting of: '
    write(print_to,'(a)') ' (1) Monte Carlo '
-   write(print_to,'(a)') ' (2) Transferable Tight Binding '
-   write(print_to,'(a)') ' (3) Molecular Dynamics '
-   write(print_to,'(a)') ' (4) Boltzmann collision integrals '
-   write(print_to,'(a,a)') ' Applied for ', trim(adjustl(matter%Name))
-   write(print_to,'(a)') trim(adjustl(starline))
-   write(print_to,'(a)') ' Chemical formula of target material interpreted as: '
+   write(print_to,'(a)') ' (2) Boltzmann collision integrals '
+   write(print_to,'(a)') ' (3) Transferable Tight Binding '
+   write(print_to,'(a)') ' (4) Molecular Dynamics '
+
+   write(print_to,'(a)') trim(adjustl(m_starline))
+
+   write(print_to,'(a)') '  Calculations performed for the following parameters:'
+   write(print_to,'(a,a)') ' Target material: ', trim(adjustl(matter%Name))
+   write(print_to,'(a)') ' Chemical formula interpreted as: '
    do i = 1, size(matter%Atoms)
       write(text,'(f12.6)') matter%Atoms(i)%percentage
       write(text1,'(i3)') INT(matter%Atoms(i)%Z)
@@ -3063,7 +3073,6 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       write(print_to,'(a)') ' (Note that the material was embedded in water with # of molecules: '//trim(adjustl(text1))//')'
    endif
 
-   write(print_to,'(a,a,a)') ' Calculations performed for the following parameters:'
    do i = 1, size(Scell)
       if (numpar%fe_input_exists) then
          write(print_to,'(a,a)') ' Initial electron distribution read from file: ', trim(adjustl(numpar%fe_filename))
@@ -3135,7 +3144,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
          endif
       endif
    enddo SCL
-   write(print_to,'(a)') trim(adjustl(starline))
+
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '  The model parameters used are:'
    write(text, '(f15.5)') numpar%t_total
    write(print_to,'(a,a,a)') ' Duration of modelling ' , trim(adjustl(text)), ' [fs]'
 
@@ -3241,7 +3252,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       if (allocated(Scell(1)%TB_Coul)) then ! if we have Coulomb potential defined
          write(print_to,'(a,a)') ' Coulomb energy: ', trim(adjustl(Scell(1)%TB_Coul(1,1)%Param))
       else !For this material vdW class is undefined
-         write(print_to,'(a,a)') ' No Coulomb potential was defined or unballanced charge allowed'
+         write(print_to,'(a,a)') ' No Coulomb potential was defined or unbalanced charge allowed'
       endif
       if (allocated(Scell(1)%TB_Expwall)) then ! if we have exponential wall potential defined
          write(print_to,'(a,a)') ' Exponential wall energy: ', trim(adjustl(Scell(1)%TB_Expwall(1,1)%Param))
@@ -3288,7 +3299,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       write(print_to,'(a,es25.3,a)') ' Density of the material: ', matter%dens,' [g/cm^3]'
       write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
    endif
-   write(print_to,'(a)') ' The following numerical parameters are used:'
+
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '  The following numerical parameters are used:'
    write(print_to,'(a,i6)') ' Number of iterations in the MC module: ', numpar%NMC
    if (numpar%do_elastic_MC) then ! allow elastic scattering of electrons on atoms within MC module
       write(print_to,'(a)') ' Elastic high-energy-electron scattering is included in MC via Motts cross section'
@@ -3323,28 +3336,32 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       else ! V=const
          write(print_to,'(a)') ' Constant volume simulation (NVE)'
       endif
-      write(print_to,'(a)') ' Scheme used for low-energy electrons modelling: '
-      select case (numpar%el_ion_scheme)
-      case (0)
-         write(print_to,'(a)') ' Decoupled electrons and atoms (instant electron thermalization)'
-      case (1)
-         write(print_to,'(a)') ' Enforced total energy conservation'
-      case (2)
-         write(print_to,'(a)') ' Enforced constant temperature of electrons'
-      case (3)
-         write(print_to,'(a)') ' True Born-Oppenheimer (constant electron populations)'
-      case (4)
-         if (numpar%tau_fe < 1e6) then
-            write(text1, '(f13.6)') numpar%tau_fe
-         else
-            write(text1, '(es16.6)') numpar%tau_fe
-         endif
-         write(print_to,'(a)') ' Relaxation-time approximation for electron thermalization'
-         write(print_to,'(a)') ' with the characteristic time '//trim(adjustl(text1))//' [fs]'
-      end select
    else AT_MOVE
       write(print_to,'(a)') ' Atoms were FROZEN instead of moving in MD!'
    endif AT_MOVE
+
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '  The schemes for electron populations used are:'
+
+   write(print_to,'(a)') ' Scheme used for low-energy electrons relaxation: '
+   select case (numpar%el_ion_scheme)
+   case (0)
+      write(print_to,'(a)') ' Decoupled electrons and atoms (instant electron thermalization)'
+   case (1)
+      write(print_to,'(a)') ' Enforced total energy conservation'
+   case (2)
+      write(print_to,'(a)') ' Enforced constant temperature of electrons'
+   case (3)
+      write(print_to,'(a)') ' True Born-Oppenheimer (constant electron populations)'
+   case (4)
+      if (numpar%tau_fe < 1e6) then
+         write(text1, '(f13.6)') numpar%tau_fe
+      else
+         write(text1, '(es16.6)') numpar%tau_fe
+      endif
+      write(print_to,'(a)') ' Relaxation-time approximation for electron thermalization'
+      write(print_to,'(a)') ' with the characteristic time '//trim(adjustl(text1))//' [fs]'
+   end select
 
    write(print_to,'(a)') ' Scheme used for electron-ion (electron-phonon) coupling: '
    if (numpar%NA_kind == 0) then
@@ -3362,14 +3379,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       end select
       write(print_to,'(a, f7.1, a)') ' switched on at: ', numpar%t_NA, ' [fs]'
       write(print_to,'(a, f7.1, a)') ' with the acceptance window: ', numpar%acc_window, ' [eV]'
-      write(print_to,'(a, f8.5, a)') ' degeneracy tollerance: ', numpar%degeneracy_eV, ' [eV]'
+      write(print_to,'(a, f8.5, a)') ' degeneracy tolerance: ', numpar%degeneracy_eV, ' [eV]'
       write(print_to,'(a, f8.5)') ' and scaling factor of: ', numpar%M2_scaling
-   endif
-
-   if (numpar%do_kappa) then
-      write(print_to,'(a)') ' Calculation of electronic heat conductivity is included'
-   else
-      write(print_to,'(a)') ' No calculation of electronic heat conductivity'
    endif
 
    if (numpar%do_cool) then
@@ -3379,19 +3390,17 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       write(print_to,'(a)') ' No quenching of atoms for resolidification'
    endif
 
-
    if (allocated(numpar%El_bath_reset_grid)) then
-      write(print_to,'(a)') ' Berendsen thermostat is used for electnros'
+      write(print_to,'(a)') ' Berendsen thermostat is used for electrons'
       write(print_to,'(a)') ' with parameters set in the file: '//trim(adjustl(numpar%El_bath_step_grid_file))
    elseif (g_numpar%Transport_e) then ! for electrons
       write(text,'(f10.1)') matter%T_bath_e*g_kb
       write(text1,'(f10.1)') matter%tau_bath_e
-      write(print_to,'(a)') ' Berendsen thermostat is used for electnros'
+      write(print_to,'(a)') ' Berendsen thermostat is used for electrons'
       write(print_to,'(a)') ' Electronic bath temperature: '//trim(adjustl(text))//' [K], time constant: '//trim(adjustl(text1))//' [fs]'
    else
       write(print_to,'(a)') ' No electronic thermostat is used'
    endif
-
 
    if (allocated(numpar%At_bath_reset_grid)) then
       write(print_to,'(a)') ' Berendsen thermostat is used for atoms'
@@ -3418,46 +3427,135 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
    else ! < 0, => number of collisions is the conduction, instead of work function
       write(print_to,'(a, f2.0, a)') ' Electron is considerred to be emitted after ', ABS(numpar%E_work), ' collisions'
    endif
+
+
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   optional_output = .false.  ! to start with
+   write(print_to,'(a)') '  Optional output:'
+
    if (numpar%save_Ei) then
-      write(print_to,'(a)') ' Calculated energy levels are saved in output file'
-   endif
-   if (numpar%save_DOS) then
-      write(print_to,'(a, f7.5, a)') ' Calculated DOS is saved in output file; smearing used: ', numpar%Smear_DOS, ' [eV]'
-      select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma
-         case (2)	! multiple k points
-            write(text1, '(i10)') numpar%ixm
-            write(text2, '(i10)') numpar%iym
-            write(text3, '(i10)') numpar%izm
-            if (allocated(numpar%k_grid)) then
-               write(print_to,'(a,a,a,a,a,a)') ' It is calculated on the user-defined grid for points: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))   
-            else
-               write(print_to,'(a,a,a,a,a,a)') ' It is calculated on Monkhorst Pack grid for points: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))   
-            endif
-         case default	! gamma point
-            write(print_to,'(a)') ' It is calculated at the Gamma point'
-         end select
-   endif
-   if (numpar%save_fe) then
-      write(print_to,'(a)') ' Calculated electron electron distributions are saved in output file'
-   endif
-   if (numpar%save_fe_grid) then
-      write(print_to,'(a)') ' Calculated electron electron distribution on grid is saved in output file'
-   endif
-   if (numpar%save_PCF) then
-      write(print_to,'(a)') ' Calculated atomic pair correlation functions are saved in output file'
-   endif
-   if (numpar%save_XYZ) then
-      write(print_to,'(a)') ' Calculated atomic positions in XYZ-format are saved in output file'
-   endif
-   if (numpar%save_CIF) then
-      write(print_to,'(a)') ' Calculated atomic positions in CIF-format are saved in output file'
-   endif
-   if (numpar%save_NN) then
-      write(text1, '(f6.2)') numpar%NN_radius
-      write(print_to,'(a,a,a)') ' Nearest neighbors numbers within the radius of ', trim(adjustl(text1)), ' [A] are saved'
+      write(print_to,'(a)') ' Electron energy levels (molecular orbitals)'
    endif
 
-9999   write(print_to,'(a)') trim(adjustl(starline))
+   if (numpar%save_DOS) then
+      write(print_to,'(a, f7.5, a)') ' Density of states (DOS); smearing used: ', numpar%Smear_DOS, ' [eV]'
+      select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma
+      case (2)	! multiple k points
+         write(text1, '(i10)') numpar%ixm
+         write(text2, '(i10)') numpar%iym
+         write(text3, '(i10)') numpar%izm
+         if (allocated(numpar%k_grid)) then
+            write(print_to,'(a,a,a,a,a,a)') ' сalculated on the user-defined grid for points: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+         else
+            write(print_to,'(a,a,a,a,a,a)') ' сalculated on Monkhorst-Pack grid for points: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+         endif
+      case default	! gamma point
+         write(print_to,'(a)') ' calculated at the Gamma point'
+      end select
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%Mulliken_model >= 1) then
+      write(print_to,'(a)') ' Average Mulliken charges on various elements'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_fe) then
+      write(print_to,'(a)') ' Electron distribution on energy levels'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_fe_grid) then
+      write(print_to,'(a)') ' Electron distribution on the grid'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_PCF) then
+      write(print_to,'(a)') ' Atomic pair correlation function'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_XYZ) then
+      write(print_to,'(a)') ' Atomic coordinates in XYZ-format'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_CIF) then
+      write(print_to,'(a)') ' Atomic coordinates in CIF-format'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_NN) then
+      write(text1, '(f6.2)') numpar%NN_radius
+      write(print_to,'(a,a,a)') ' Nearest neighbors numbers within the radius of ', trim(adjustl(text1)), ' [A]'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%do_kappa) then
+      write(print_to,'(a)') ' Electronic heat conductivity'
+      optional_output = .true.   ! there is at least some optional output
+   !else
+   !   write(print_to,'(a)') ' No calculation of electronic heat conductivity'
+   endif
+
+   if (.not.optional_output) then ! there ws no optional output, report it
+      write(print_to,'(a)') ' none requested by the user'
+   endif
+
+9999   write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine Print_title
+
+
+subroutine XTANT_label(print_to, ind)
+   integer, intent(in) :: print_to ! the screen, or file number to print to
+   integer, intent(in) :: ind    ! which label to print
+   select case (ind)
+   case default   ! regular
+      call XTANT_label_bold(print_to)  ! below
+   case (-1)       ! none
+      ! Print nothing
+   case (0)       ! small
+      call XTANT_label_small(print_to) ! below
+   case (2)       ! shaded
+      call XTANT_label_shade(print_to) ! below
+   endselect
+end subroutine XTANT_label
+
+
+subroutine XTANT_label_small(print_to)
+   integer, intent(in) :: print_to ! the screen, or file
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '       __    __  _______    __      __   _   _______ '
+   write(print_to,'(a)') '       \ \  / / |__   __|  /  \    |  \ | | |__   __|'
+   write(print_to,'(a)') '        \ \/ /     | |    / /\ \   |   \| |    | |   '
+   write(print_to,'(a)') '        / /\ \     | |   / ___  \  | |\   |    | |   '
+   write(print_to,'(a)') '       /_/  \_\    |_|  /_/    \_\ |_| \__|    |_|   '
+   write(print_to,'(a)') ' '
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine XTANT_label_small
+
+subroutine XTANT_label_bold(print_to)
+   integer, intent(in) :: print_to ! the screen, or file
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '     __     __  _______     __       __    _   _______ '
+   write(print_to,'(a)') '     \ \   / / |__   __|   /  \     |  \  | | |__   __|'
+   write(print_to,'(a)') '      \ \_/ /     | |     / /\ \    |   \ | |    | |   '
+   write(print_to,'(a)') '       ] _ [      | |    / /__\ \   | |\ \| |    | |   '
+   write(print_to,'(a)') '      / / \ \     | |   / ______ \  | | \   |    | |   '
+   write(print_to,'(a)') '     /_/   \_\    |_|  /_/      \_\ |_|  \__|    |_|   '
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine XTANT_label_bold
+
+subroutine XTANT_label_shade(print_to)
+   integer, intent(in) :: print_to ! the screen, or file
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '     __     __  _______     __       __    _   _______ '
+   write(print_to,'(a)') '     \ \   /// |__   _||   / \\     |  \  ||| |__   _||'
+   write(print_to,'(a)') '      \ \_///     | |     / /\\\    |   \ |||    | |   '
+   write(print_to,'(a)') '       ] _|[      | |    / /__\\\   | |\ \|||    | |   '
+   write(print_to,'(a)') '      / / \\\     | |   / ______\\  | | \  ||    | |   '
+   write(print_to,'(a)') '     /_/   \_\    |_|  /_/      \\\ |_|  \__|    |_|   '
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine XTANT_label_shade
 
 END MODULE Dealing_with_output_files

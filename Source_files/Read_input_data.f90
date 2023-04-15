@@ -51,6 +51,7 @@ PRIVATE
 
 ! Modular parameters:
 character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
+character(70), parameter :: m_starline = '*************************************************************'
 
 character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
 character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT info
@@ -65,7 +66,7 @@ parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat')
 
 
 public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
-public :: m_INFO_directory, m_INFO_file, m_HELP_file
+public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_starline
 
 public :: Read_Input_Files, get_add_data
 
@@ -707,7 +708,8 @@ subroutine get_CDF_data(matter, numpar, Err)
 
       !Folder_name2 = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))//'Atomic_parameters'
       Folder_name2 = trim(adjustl(numpar%input_path))//trim(adjustl(m_Atomic_parameters))  ! 'Atomic_parameters'
-      call Decompose_compound(Folder_name2, matter%Chem, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, at_percentage, at_short_names, at_names, at_masses, at_NVE) ! molude 'Periodic_table'
+      call Decompose_compound(Folder_name2, matter%Chem, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, &
+                  at_percentage, at_short_names, at_names, at_masses, at_NVE) ! molude 'Periodic_table'
       if (INFO .NE. 0) then
          call Save_error_details(Err, INFO, error_message)
          print*, trim(adjustl(error_message))
@@ -870,7 +872,8 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot)
       endif
       ! Number of electrons in this shell:
       if (matter%Atoms(i)%Ne_shell(cur_shl) .LT. 0) then ! take if from EADL-database
-         call READ_EADL_TYPE_FILE_int(FN, File_name, Z, 912, INFO, error_message=Error_descript, N_shl=N_shl, Nel=Nel, Shl_num=Shl_num) ! module "Dealing_with_EADL"
+         call READ_EADL_TYPE_FILE_int(FN, File_name, Z, 912, INFO, error_message=Error_descript, N_shl=N_shl, &
+                  Nel=Nel, Shl_num=Shl_num) ! module "Dealing_with_EADL"
          if (INFO .NE. 0) then
             call Save_error_details(Err, INFO, Error_descript)
             print*, trim(adjustl(Error_descript))
@@ -887,13 +890,17 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot)
       endif
       ! Ionization potential:
       if (matter%Atoms(i)%Ip(cur_shl) .LT. 0.0d0) then ! take if from EADL-database
-         call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 913, matter%Atoms(i)%Ip, cur_shl=cur_shl, shl_tot=shl_tot, Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! read auger-times, module "Dealing_with_EADL"
+         ! Read auger-times:
+         call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 913, matter%Atoms(i)%Ip, cur_shl=cur_shl, shl_tot=shl_tot, &
+               Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! module "Dealing_with_EADL"
          if (INFO .NE. 0) then
             call Save_error_details(Err, INFO, Error_descript)
             print*, trim(adjustl(Error_descript))
             goto 9999
          endif
-         call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 914, matter%Atoms(i)%Ek, cur_shl=cur_shl, shl_tot=shl_tot, Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! read kinetic energies, module "Dealing_with_EADL"
+         ! Read kinetic energies:
+         call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 914, matter%Atoms(i)%Ek, cur_shl=cur_shl, shl_tot=shl_tot, &
+               Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! module "Dealing_with_EADL"
          if (INFO .NE. 0) then
             call Save_error_details(Err, INFO, Error_descript)
             print*, trim(adjustl(Error_descript))
@@ -903,7 +910,9 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot)
       endif
       ! Auger-decay time:
       if (matter%Atoms(i)%Auger(cur_shl).LT. 0.0d0) then ! take if from EADL-database
-        call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 922, matter%Atoms(i)%Auger, cur_shl=cur_shl, shl_tot=shl_tot, Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! read auger-times, module "Dealing_with_EADL"
+        ! Read auger-times:
+        call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 922, matter%Atoms(i)%Auger, cur_shl=cur_shl, shl_tot=shl_tot, &
+               Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! module "Dealing_with_EADL"
         if (INFO .NE. 0) then
             call Save_error_details(Err, INFO, Error_descript)
             print*, trim(adjustl(Error_descript))
@@ -5468,11 +5477,9 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
    logical, intent(out), optional :: verbose
    !---------------
    character(1000) :: read_string, printline, ch_temp, string_read
-   character(200) :: starline, file_name
+   character(200) :: file_name
    integer :: FN, Reason, count_lines
    logical :: file_opened, read_text_well, read_well, file_exists
-
-   starline = '*******************************************************'
 
    string_read = trim(adjustl(string))
    ! Trim minus signs if present (for legacy reasons):
@@ -5485,29 +5492,29 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
    case ('verbose', 'VERBOSE', 'Verbose')
       print*, 'XTANT will print a lot of markers for testing and debugging'
       if (present(verbose)) verbose = .true.
-      write(*,'(a)') trim(adjustl(starline))
+      write(*,'(a)') trim(adjustl(m_starline))
 
    case ('allow_rotation', 'allow_rotate', 'no_ang_removal')
       print*, 'The angular momenta of the sample will not be removed'
       if (present(allow_rotate)) allow_rotate = .true. ! don't remove angular momentum from initial conditions
-      write(*,'(a)') trim(adjustl(starline))
+      write(*,'(a)') trim(adjustl(m_starline))
 
    case ('size', 'Size', 'SIZE')
       print*, 'Supercell size variation will be performed to plot potential energy curve'
       if (present(change_size)) change_size = .true. ! do changing size
-      write(*,'(a)') trim(adjustl(starline))
+      write(*,'(a)') trim(adjustl(m_starline))
 
    case ('test', 'TEST', 'Test')
       print*, 'Wow, it really works!'
       !if (present(contin)) contin = .false.
-      write(*,'(a)') trim(adjustl(starline))
+      write(*,'(a)') trim(adjustl(m_starline))
 
    case ('Matter', 'matter', 'MATTER', 'Materials', 'materials', 'list', 'LIST', 'List')
-      write(*,'(a)') trim(adjustl(starline))
+      write(*,'(a)') trim(adjustl(m_starline))
       ! Create file with list of available materials:
       call Get_list_of_materials(path_sep)  ! below
 
-      write(*,'(a)') trim(adjustl(starline))
+      write(*,'(a)') trim(adjustl(m_starline))
       if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
 
    case ('help', 'HELP', 'Help')
@@ -5545,7 +5552,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
          endif ! (.not.file_opened)
       endif ! (.not.file_exists)
 
-      write(*,'(a)') trim(adjustl(starline))
+      write(*,'(a)') trim(adjustl(m_starline))
       if (present(contin)) contin = .true.  ! stop calculations, user only wanted some help
    case ('info', 'INFO', 'Info')
       ! Filename with help:
@@ -5582,7 +5589,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
          endif ! (.not.file_opened)
       endif ! (.not.file_exists)
 
-      write(*,'(a)') trim(adjustl(starline))
+      write(*,'(a)') trim(adjustl(m_starline))
       if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
    case default
    end select

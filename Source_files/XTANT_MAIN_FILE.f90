@@ -53,6 +53,11 @@ include 'Use_statements.f90'   	! include part of the code from an external file
 
 implicit none
 
+
+!MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+! Print XTANT label on the screen
+call XTANT_label(6, 1)   ! module "Dealing_with_output_files"
+
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 g_numpar%which_input = 0 ! starting with the default input files
 g_numpar%allow_rotate = .false. ! do not allow rotation of the target, remove angular momentum from initial conditions
@@ -113,7 +118,7 @@ if (g_numpar%verbose) call print_time_step('Initial configuration set succesfull
 
 
 ! Print the title of the program and used parameters on the screen:
-call Print_title(6,g_Scell,g_matter,g_laser,g_numpar) ! module "Dealing_with_output_files"
+call Print_title(6, g_Scell, g_matter, g_laser, g_numpar, -1) ! module "Dealing_with_output_files"
 call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
 
 
