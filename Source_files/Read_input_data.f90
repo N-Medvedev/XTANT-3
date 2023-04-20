@@ -5759,14 +5759,14 @@ subroutine Get_list_of_materials(path_sep)
          exit RDLST
       else  ! line in the fil
          ! Check if the line is commented out:
-         if (trim(adjustl(read_line(1:1))) == '!') then ! iit is a comment
+         if (trim(adjustl(read_line(1:1))) == '!') then ! it is a comment
             ! ignor this folder / file
          else ! don't ignore this name
             ! Check if it is a directory:
             inquire(DIRECTORY=trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(read_line)), exist=file_exist)
             if (file_exist) then ! if it is a directory, it means it can be a material:
                select case ( trim(adjustl(read_line)) )  ! check if it is material or just forled
-               case (m_Atomic_parameters, m_INFO_directory, m_HELP_file, m_DFTB_directory, &
+               case (m_Atomic_parameters, m_INFO_directory, m_HELP_file, m_DFTB_directory, m_DFTB_norep_directory, &
                   m_3TB_directory, m_BOP_directory, m_xTB_directory) ! work directory, not a material
                   ! skip this line
                case default   ! material name

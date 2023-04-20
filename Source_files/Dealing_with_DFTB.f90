@@ -293,9 +293,12 @@ pure  subroutine idnetify_basis_size(TB_Hamil, Nsiz)
    Np = 1   ! to start with
    Nd = 1   ! to start with
    ! Check if d-band is used for any element:   
-   if ( maxval(ABS(TB_Hamil(:,:)%Ed)) < 1.0d-8) Nd = 0
-   ! Check if p band is used for any element:
-   if ( maxval(ABS(TB_Hamil(:,:)%Ep)) < 1.0d-8) Np = 0
+   if ( maxval(ABS(TB_Hamil(:,:)%Ed)) < 1.0d-8) then
+      Nd = 0
+      ! Check if p band is used for any element:
+      if ( maxval(ABS(TB_Hamil(:,:)%Ep)) < 1.0d-8) Np = 0
+   endif
+
    ! Set basis set size:
    Nsiz = Ns + Np + Nd
    ! And shift "empty" energy levels away, not to interfer with real calculations
