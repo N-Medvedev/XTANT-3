@@ -31,7 +31,7 @@ use Little_subroutines, only : print_time_step
 use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
 use Dealing_with_DFTB, only : m_DFTB_directory, construct_skf_filename, read_skf_file, same_or_different_atom_types, &
-                           idnetify_basis_size
+                           idnetify_basis_size, m_DFTB_norep_directory, read_skf_file_no_rep
 use Dealing_with_BOP, only : m_BOP_directory, m_BOP_file, read_BOP_parameters, idnetify_basis_size_BOP, &
                             read_BOP_repulsive, check_if_repulsion_exists
 use Dealing_with_3TB, only : m_3TB_directory, m_3TB_onsite_data, read_3TB_onsite_file , construct_3TB_filenames, &
@@ -1261,6 +1261,19 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endif
                TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
 
+            case ('DFTB_no_repulsion', 'DFTB_no_repulsive', 'DFTB_no_rep')
+               if (.not.allocated(TB_Hamil)) then
+                  allocate(TB_H_DFTB::TB_Hamil(matter%N_KAO,matter%N_KAO)) ! make it for DFTB parametrization
+                  TB_Hamil%Param = ''
+               endif
+               TB_Hamil(i,j)%Param = trim(adjustl(ch_temp))
+               ! DFTB skf files does not contain Repulsive potential, allocate special case:
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_DFTB_no::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for DFTB parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+
             case ('3TB')
                if (.not.allocated(TB_Hamil)) then
                   allocate(TB_H_3TB::TB_Hamil(matter%N_KAO,matter%N_KAO)) ! make it for 3TB parametrization
@@ -1274,6 +1287,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Error_descript))
                   goto 3421
                endif
+
             case ('BOP')
                if (.not.allocated(TB_Hamil)) then
                   allocate(TB_H_BOP::TB_Hamil(matter%N_KAO,matter%N_KAO)) ! make it for BOP parametrization
@@ -1351,8 +1365,10 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             type is (TB_H_DFTB) !in this case, read both Hamiltonian and Repulsive parts together:
                Error_descript = ''
                select type (TB_Repuls)  ! to confirm that repulsive part is consistent with the Hamiltonian
-               type is (TB_Rep_DFTB)
+               type is (TB_Rep_DFTB)   ! repulsive parameters provided in the skf-file
                   call read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Error_descript, INFO) ! below
+               type is (TB_Rep_DFTB_no)   ! no repulsive parameters in skf-file
+                  call read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Error_descript, INFO) ! below
                endselect
                if (INFO .NE. 0) then
                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
@@ -1487,6 +1503,12 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   TB_Repuls%Param = ''
                endif
                TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+            case ('DFTB_no_repulsion', 'DFTB_no_repulsive', 'DFTB_no_rep')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_DFTB_no::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for DFTB parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
             case ('3TB')
                if (.not.allocated(TB_Repuls)) then
                   allocate(TB_Rep_3TB::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for 3TB parametrization
@@ -1544,12 +1566,6 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             type is (TB_Rep_NRL)
                Error_descript = ''
                ! There is no repulsive part in NRL
-!                if (INFO .NE. 0) then
-!                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
-!                   call Save_error_details(Err, INFO, Err%Err_descript)
-!                   print*, trim(adjustl(Err%Err_descript))
-!                   goto 3421
-!                endif
             type is (TB_Rep_DFTB)
                Error_descript = ''
                call read_DFTB_TB_repulsive(FN, i,j, TB_Repuls, Error_descript, INFO)    ! below
@@ -1559,6 +1575,9 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
+            type is (TB_Rep_DFTB_no)
+               Error_descript = ''
+               ! Nothing to read, since repulsive potential is not provided in skf-file
             type is (TB_Rep_3TB)
                Error_descript = ''
                ! There is no repulsive part in 3TB
@@ -2601,7 +2620,7 @@ subroutine read_DFTB_TB_repulsive(FN, i,j, TB_Repuls, Error_descript, INFO)
    logical read_well
    count_lines = 1
 
-   ! Skip first two lines as they are already defined within the Hamiltonian file
+   ! Skip first line as it are already defined within the Hamiltonian file
    read(FN,*,IOSTAT=Reason)
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
@@ -3608,6 +3627,100 @@ subroutine read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Err
    call close_file('close', FN=FN_skf) ! module "Dealing_with_files"
    call close_file('close', FN=FN) ! module "Dealing_with_files"
 end subroutine read_DFTB_TB_Params
+
+
+
+subroutine read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Error_descript, INFO)
+   integer, intent(in) :: FN ! file number where to read from
+   integer, intent(in) :: i, j  ! numbers of pair of elements for which we read the data
+   type(TB_H_DFTB), dimension(:,:), intent(inout) ::  TB_Hamil ! parameters of the Hamiltonian of TB
+   type(TB_Rep_DFTB_no), dimension(:,:), intent(inout) ::  TB_Repuls ! parameters of the Hamiltonian of TB
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Solid), intent(in) :: matter	! all material parameters
+   character(*), intent(out) :: Error_descript	! error save
+   integer, intent(out) :: INFO	! error description
+   !------------------------------------------------------
+   character(100) :: Folder_name, File_name, Inner_folder_name
+   integer count_lines, Reason, i_cur, ind, FN_skf, ToA, N_basis_siz
+   logical file_exist, file_opened, read_well
+   INFO = 0
+   count_lines = 2
+
+   read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%param_name    ! name of the directory with skf files
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+       write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+       INFO = 3
+       goto 3426
+   endif
+
+   ! folder with all DFTB data:
+   Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_DFTB_norep_directory))//numpar%path_sep
+   Folder_name = trim(adjustl(Folder_name))//trim(adjustl(TB_Hamil(i,j)%param_name))
+
+   ! folder with chosen parameters sets:
+   select case (trim(adjustl(TB_Hamil(i,j)%param_name)))
+   case default ! e.g. '1element'
+      ! no inner folders, just skf-files
+   case ('2elements')
+      read(FN,*,IOSTAT=Reason) Inner_folder_name   ! read the inner folder name
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         goto 3426
+      endif
+      Folder_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(Inner_folder_name))
+      TB_Hamil(i,j)%param_name = trim(adjustl(TB_Hamil(i,j)%param_name))//numpar%path_sep//trim(adjustl(Inner_folder_name))
+   endselect
+
+   read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%rcut, TB_Hamil(i,j)%d  ! [A] cut off, and width of cut-off region [A]
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+       write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+       INFO = 3
+       goto 3426
+   endif
+
+   ! Construct name of the skf file:
+   call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), File_name, '_no_repulsion')    ! module "Dealing_with_DFTB"
+
+   File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+
+   ! Check if such DFTB parameterization exists:
+   inquire(file=trim(adjustl(File_name)),exist=file_exist)
+   if (.not.file_exist) then
+      Error_descript = 'File '//trim(adjustl(File_name))//' not found, the program terminates'
+      INFO = 1
+      goto 3426
+   endif
+   FN_skf=111
+   open(UNIT=FN_skf, FILE = trim(adjustl(File_name)), status = 'old', action='read')
+   inquire(file=trim(adjustl(File_name)),opened=file_opened)
+   if (.not.file_opened) then
+      Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
+      INFO = 2
+      goto 3426
+   endif
+
+   ToA = same_or_different_atom_types(trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name))) ! module "Dealing_with_DFTB"
+   call read_skf_file_no_rep(FN_skf, TB_Hamil(i,j), TB_Repuls(i,j), ToA, Error_descript)    ! module "Dealing_with_DFTB"
+   if (LEN(trim(adjustl(Error_descript))) > 0) then
+      INFO = 5
+      goto 3426
+   endif
+
+   ! Check which basis set is used: 0=s, 1=sp3, 2=sp3d5:
+   if ((i == matter%N_KAO) .and. (j == matter%N_KAO)) then  ! only when all parameters for all elements are read from files:
+      call idnetify_basis_size(TB_Hamil, N_basis_siz)  ! module "Dealing_with_DFTB"'
+      numpar%N_basis_size = max(numpar%N_basis_size,N_basis_siz)
+   endif
+
+3426 continue
+   ! Close files that have been read through:
+   call close_file('close', FN=FN_skf) ! module "Dealing_with_files"
+   call close_file('close', FN=FN) ! module "Dealing_with_files"
+end subroutine read_DFTB_TB_Params_no_rep
 
 
 

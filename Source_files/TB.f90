@@ -49,7 +49,7 @@ use TB_NRL, only : get_dHij_drij_NRL, dErdr_s_NRL, Construct_Vij_NRL, construct_
                      Attract_TB_Forces_Press_NRL
 use TB_DFTB, only : Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_drij_DFTB, &
                      Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB, &
-                     identify_DFTB_orbitals_per_atom
+                     identify_DFTB_orbitals_per_atom, dErdr_s_DFTB_no, get_Erep_s_DFTB_no, dErdr_Pressure_s_DFTB_no
 use TB_3TB, only : get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, Attract_TB_Forces_Press_3TB, &
                      Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors, get_dHij_drij_3TB
 use TB_BOP, only : Construct_Vij_BOP, construct_TB_H_BOP, get_Erep_s_BOP
@@ -305,6 +305,11 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                call dErdr_s_DFTB(ARRAY2, Scell, NSC) ! derivatives of the repulsive energy by s; module "TB_DFTB"
                ! Get repulsive forces acting on the supercell:
                call dErdr_Pressure_s_DFTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_DFTB"
+            type is (TB_Rep_DFTB_no) ! TB parametrization according to DFTB
+               ! Get repulsive forces acting on all atoms:
+               call dErdr_s_DFTB_no(ARRAY2, Scell, NSC) ! derivatives of the repulsive energy by s; module "TB_DFTB"
+               ! Get repulsive forces acting on the supercell:
+               call dErdr_Pressure_s_DFTB_no(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_DFTB"
             type is (TB_Rep_3TB) ! TB parametrization according to 3TB
                ! Get repulsive forces acting on all atoms:
                call dErdr_s_3TB(ARRAY2, Scell, NSC) ! derivatives of the repulsive energy by s; module "TB_3TB"
@@ -2781,6 +2786,8 @@ FUNCTION Erep_s(TB_Repuls, Scell, NSC, numpar)   ! repulsive energy as a functio
       call get_Erep_s_NRL(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_NRL"
    type is (TB_Rep_DFTB)
       call get_Erep_s_DFTB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_DFTB"
+   type is (TB_Rep_DFTB_no)
+      call get_Erep_s_DFTB_no(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_DFTB"
    type is (TB_Rep_3TB)
       call get_Erep_s_3TB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_3TB"
    type is (TB_Rep_BOP)
@@ -3382,6 +3389,8 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          call dErdr_Pressure_s_NRL(ARRAY2, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_NRL"
       type is (TB_Rep_DFTB) ! TB parametrization according to DFTB
          call dErdr_Pressure_s_DFTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_DFTB"
+      type is (TB_Rep_DFTB_no) ! TB parametrization according to DFTB
+         call dErdr_Pressure_s_DFTB_no(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_DFTB"
       type is (TB_Rep_3TB) ! TB parametrization according to 3TB
          call dErdr_Pressure_s_3TB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_3TB"
       type is (TB_Rep_BOP) ! TB parametrization according to BOP

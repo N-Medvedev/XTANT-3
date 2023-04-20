@@ -142,6 +142,17 @@ type, EXTENDS (TB_repulsive) :: TB_Rep_DFTB	! repulsive potential coefficients:
 end type TB_Rep_DFTB
 
 
+type, EXTENDS (TB_repulsive) :: TB_Rep_DFTB_no  ! repulsive potential coefficients:
+   ! Testing construction of the repulsive potential:
+   character(20) :: param_name  ! name of parameterization used
+   integer :: ToP   ! type of parameterization: 0=polinomial, 1=spline
+   ! In case there is no repulsive terms, this potential is reconstructed from ZBL repulsive potential:
+   ! https://en.wikipedia.org/wiki/Stopping_power_(particle_radiation)#Repulsive_interatomic_potentials
+   real(8), dimension(:), allocatable :: R  ! [A] distance
+   real(8), dimension(:), allocatable :: V_rep  ! [eV] parameterized repulsive potential
+end type TB_Rep_DFTB_no
+
+
 type, EXTENDS (TB_repulsive) :: TB_Rep_3TB	! repulsive potential coefficients:
    ! https://arxiv.org/pdf/2112.11585.pdf
    ! No repulsive part in this parameterization
@@ -189,7 +200,7 @@ end type TB_H_NRL
 
 type, EXTENDS (TB_Hamiltonian) :: TB_H_DFTB ! hamiltonian coefficients:
    ! http://www.dftb.org
-   character(20) :: param_name  ! name of parameterization used
+   character(30) :: param_name  ! name of parameterization used
    real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-like cut-off [A]
    real(8) :: Ed, Ep, Es    ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom
    real(8) :: Ud, Up, Us    ! Hubbard U for the angular momenta d, p and s for the given atom

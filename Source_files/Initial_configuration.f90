@@ -145,6 +145,7 @@ subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_n
    allocate(Scell(1)%Ei0(n1))  ! energy levels0, eigenvalues of the hamiltonian matrix
    allocate(Scell(1)%Aij(n1,n1))	! coefficients used for forces in TB
    allocate(Scell(1)%fe(size(Scell(1)%Ei))) ! electron distribution function (Fermi-function)
+   allocate(Scell(1)%fe_eq(size(Scell(1)%Ei))) ! equivalent electron distribution function (Fermi-function)
    if (numpar%do_kappa) then
       allocate(Scell(1)%I_ij(size(Scell(1)%Ei))) ! electron-ion collision integral
       allocate(Scell(1)%Ce_i(size(Scell(1)%Ei))) ! electron-energy resolved heat capacity
@@ -227,6 +228,7 @@ subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_n
    deallocate(Scell(1)%Ei0)
    deallocate(Scell(1)%Aij)
    deallocate(Scell(1)%fe)
+   deallocate(Scell(1)%fe_eq)
    deallocate(Scell(1)%G_ei_partial)
    deallocate(Scell(1)%Ce_part)
    call deallocate_array(Scell(1)%I_ij)      ! module "Little_subroutines"
@@ -659,7 +661,8 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          if (allocated(Scell(i)%Sij) .and. .not.allocated(Scell(i)%eigen_S)) allocate(Scell(i)%eigen_S(n1)) ! eigenvalues of Sij
          
          ! Electron distribution function:
-         if (.not. allocated(Scell(i)%fe)) allocate(Scell(i)%fe(size(Scell(i)%Ei))) ! electron distribution function (Fermi-function)
+         if (.not. allocated(Scell(i)%fe)) allocate(Scell(i)%fe(size(Scell(i)%Ei))) ! electron distribution function
+         if (.not. allocated(Scell(i)%fe_eq)) allocate(Scell(i)%fe_eq(size(Scell(i)%Ei))) ! equivalent distribution function (Fermi-function)
          ! Check if there is a file with the initial distribution:
          write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'SAVE_el_distribution.dat' ! default filename
          inquire(file=trim(adjustl(File_name2)),exist=file_exist_1)  ! check if default file exists

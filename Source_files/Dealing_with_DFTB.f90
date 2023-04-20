@@ -33,22 +33,25 @@ implicit none
 
 ! Modular parameters:
 character(10) :: m_DFTB_directory
+character(20) :: m_DFTB_norep_directory
 
 parameter (m_DFTB_directory = 'DFTB')
+parameter (m_DFTB_norep_directory = 'DFTB_no_repulsion')
 
  contains
 
 
-subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message)
+subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_pot)
    integer, intent(in) :: FN    ! skf file to read from (must be already opened)
    type(TB_H_DFTB), intent(inout) :: TB_Hamil    ! Hamiltonian and Overlap data
    type(TB_Rep_DFTB), intent(inout) :: TB_Rep   ! repulsive potential
    integer, intent(in) :: ToA    ! types of atoms (0=the same or 1=different)
    character(100), intent(inout) :: error_message
+   logical, intent(in), optional :: rep_pot   ! flag for no repulsion file
    !-----------------------
    real(8) :: dr, temp_r, rd_param(20), temp2, temp3, temp4, temp8
    integer :: Reason, count_lines, Ngrid, i, temp_i, N_basis
-   logical :: read_well
+   logical :: read_well, rep_present
    character(100) :: temp_ch
    error_message = ''   ! no error at the start
    N_basis = 10 ! number of overlap functions for sp3d5
@@ -129,6 +132,84 @@ subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message)
 
 2012 continue
 end subroutine read_skf_file
+
+
+
+subroutine read_skf_file_no_rep(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_pot)
+   integer, intent(in) :: FN    ! skf file to read from (must be already opened)
+   type(TB_H_DFTB), intent(inout) :: TB_Hamil    ! Hamiltonian and Overlap data
+   type(TB_Rep_DFTB_no), intent(inout) :: TB_Rep   ! repulsive potential
+   integer, intent(in) :: ToA    ! types of atoms (0=the same or 1=different)
+   character(100), intent(inout) :: error_message
+   logical, intent(in), optional :: rep_pot   ! flag for no repulsion file
+   !-----------------------
+   real(8) :: dr, temp_r, rd_param(20), temp2, temp3, temp4, temp8
+   real(8), dimension(8) :: c   ! [eV] c2, . . . , c9 are the polynomial coefficients
+   real(8) :: rcut  ! [A] cutoff radius of the repulsive interaction (can be zero, if the repulsive is described by splines)
+   integer :: Reason, count_lines, Ngrid, i, temp_i, N_basis
+   logical :: read_well, rep_present
+   character(100) :: temp_ch
+   error_message = ''   ! no error at the start
+   N_basis = 10 ! number of overlap functions for sp3d5
+   count_lines = 0
+   read(FN,*,IOSTAT=Reason) temp_ch
+   if (temp_ch(1:1) == '@') then    ! it is parameterization with f orbital, currently not suported!
+      error_message = 'DFTB parameterization includes f orbital, not supported in XTANT!'
+      goto 2012 ! exit
+   endif
+   backspace(FN)    ! to read it again
+
+   read(FN,*,IOSTAT=Reason) dr, Ngrid   ! radial grid step [Bohr], size of the grid
+   call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
+   if (.not.read_well) goto 2012 ! exit
+   Ngrid = Ngrid - 1
+   dr = dr*g_au2A ! [Bohr] -> [A]
+   ! Knowing the size, allocate the arrays:
+   if (.not.allocated(TB_Hamil%Rr)) allocate(TB_Hamil%Rr(Ngrid))    ! Grid [A]
+   if (.not.allocated(TB_Hamil%Vr)) allocate(TB_Hamil%Vr(Ngrid,N_basis))    ! Hamiltonian radial function [eV]
+   if (.not.allocated(TB_Hamil%Sr)) allocate(TB_Hamil%Sr(Ngrid,N_basis))    ! Overlap radial function [eV]
+
+   ! Read on-site energies:
+   if (ToA == 0) then   ! the same element, on-site energies:
+      read(FN,*,IOSTAT=Reason) TB_Hamil%Ed, TB_Hamil%Ep, TB_Hamil%Es, temp_r, &
+                               TB_Hamil%Ud, TB_Hamil%Up, TB_Hamil%Us  ! [a.u.] on-site energies; Hubbard coefficients
+      call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
+      if (.not.read_well) goto 2012 ! exit
+      TB_Hamil%Ed = TB_Hamil%Ed * g_au2ev  ! [Hartree] -> [eV]
+      TB_Hamil%Ep = TB_Hamil%Ep * g_au2ev  ! [Hartree] -> [eV]
+      TB_Hamil%Es = TB_Hamil%Es * g_au2ev  ! [Hartree] -> [eV]
+      TB_Hamil%Ud = TB_Hamil%Ud * g_au2ev  ! [Hartree] -> [eV]
+      TB_Hamil%Up = TB_Hamil%Up * g_au2ev  ! [Hartree] -> [eV]
+      TB_Hamil%Us = TB_Hamil%Us * g_au2ev  ! [Hartree] -> [eV]
+   else ! no on-site energies for non-like elements
+      TB_Hamil%Ed = 0.0d0
+      TB_Hamil%Ep = 0.0d0
+      TB_Hamil%Es = 0.0d0
+      TB_Hamil%Us = 0.0d0
+      TB_Hamil%Up = 0.0d0
+      TB_Hamil%Ud = 0.0d0
+   endif
+
+   ! Read parameters of repulsive potential in the polinomial form:
+   read(FN,*,IOSTAT=Reason) temp_r, c(:), rcut   ! [a.u.] coefficients for repulsive potential in polinomial form
+   call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
+   if (.not.read_well) goto 2012 ! exit
+
+   ! Now we know the grid step, can set the radial grid and read the parametres from the file:
+   TB_Hamil%Rr(1) = dr  ! [A]
+   do i = 1, Ngrid  ! read the data for all grid points
+      if (i > 1) TB_Hamil%Rr(i) = TB_Hamil%Rr(i - 1) + dr  ! [A] set grid points
+      read(FN,*, IOSTAT=Reason) rd_param(:)  ! read the parameters line by line
+      call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
+      if (.not. read_well) goto 2012 ! exit
+      ! Now distribute the read data into corresponding variables:
+      call distribute_parameters_DFTB(TB_Hamil, rd_param, i)   ! below
+   enddo
+   ! Convert in the units used in this code:
+   TB_Hamil%Vr = TB_Hamil%Vr * g_au2ev  ! [Hartree] -> [eV]
+
+2012 continue
+end subroutine read_skf_file_no_rep
 
 
 subroutine read_DFTB_spline(FN, count_lines, TB_Rep, error_message)
@@ -276,10 +357,16 @@ end function same_or_different_atom_types
 
 
 
-pure subroutine construct_skf_filename(Element1, Element2, Filename)
+pure subroutine construct_skf_filename(Element1, Element2, Filename, add_text)
    character(*), intent(in) :: Element1, Element2   ! elements names for which we require parameterization
    character(*), intent(inout) :: Filename  ! corresponding filename with skd file
-   write(Filename,'(a,a,a,a)') trim(adjustl(Element1)), '-', trim(adjustl(Element2)), '.skf'
+   character(*), intent(in), optional :: add_text
+   !------------------
+   if (present(add_text)) then
+      write(Filename,'(a,a,a,a)') trim(adjustl(Element1)), '-', trim(adjustl(Element2))//trim(adjustl(add_text)), '.skf'
+   else
+      write(Filename,'(a,a,a,a)') trim(adjustl(Element1)), '-', trim(adjustl(Element2)), '.skf'
+   endif
 end subroutine construct_skf_filename
  
 

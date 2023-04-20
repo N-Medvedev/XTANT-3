@@ -82,10 +82,12 @@ subroutine close_file(safe, File_name, FN)
       if (file_exists) INQUIRE(UNIT = FN, opened=file_opened)
       FN1 = FN
    endif
+
    if (present(File_name)) then
       inquire(file=trim(adjustl(File_name)),exist=file_exists)
       if (file_exists) inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN1)
    endif
+
    if (file_opened) then
       select case (trim(adjustl(safe)))
       case ('delete')
