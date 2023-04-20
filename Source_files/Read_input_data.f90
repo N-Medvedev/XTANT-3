@@ -1076,11 +1076,12 @@ subroutine get_EADL_data(matter, numpar, Err)
          matter%Atoms(i)%Ip(mod_shl_num) = E_gap ! VB only for 1st kind of atoms
          matter%Atoms(i)%Ek(mod_shl_num) = 0.0d0 ![eV]
          matter%Atoms(i)%Auger(mod_shl_num) = 1d23 ! [fs] no Auger-decays of VB
+         matter%Atoms(i)%Ne_shell(mod_shl_num) = matter%Atoms(i)%NVB ! number of valence electrons
       endif
-!        print*, 'Total numbert of shells:', matter%Atoms(i)%sh
-!        do j = 1, matter%Atoms(i)%sh
-!           print*, 'Names:', trim(adjustl(matter%Atoms(i)%Shell_name(j)))
-!        enddo
+!       print*, 'Total numbert of shells:', matter%Atoms(i)%sh
+!       do j = 1, matter%Atoms(i)%sh
+!          print*, 'Names:', trim(adjustl(matter%Atoms(i)%Shell_name(j)))
+!       enddo
 !       print*, 'Shl_dsgnr:', matter%Atoms(i)%Shl_dsgnr
 !       print*, 'Ne_shell:', matter%Atoms(i)%Ne_shell
 !       print*, 'Ip:', matter%Atoms(i)%Ip
@@ -1145,9 +1146,9 @@ subroutine exclude_BV(NOA, sh, Ne_shell, NVB, mod_shl_num, N_shl)
    endif
 
 
-!    print*, NVB, mod_shl_num, sh
-!    print*, Ne_shell(:)
-!    pause 'exclude_BV'
+!     print*, NVB, mod_shl_num, sh
+!     print*, Ne_shell(:)
+!     pause 'exclude_BV'
 end subroutine exclude_BV 
 
 

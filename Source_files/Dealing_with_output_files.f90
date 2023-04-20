@@ -3485,6 +3485,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       optional_output = .true.   ! there is at least some optional output
    endif
 
+   if (numpar%save_raw) then
+      write(print_to,'(a)') ' Atomic coordinates and velocities (raw data)'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
    if (numpar%save_NN) then
       write(text1, '(f6.2)') numpar%NN_radius
       write(print_to,'(a,a,a)') ' Nearest neighbors numbers within the radius of ', trim(adjustl(text1)), ' [A]'
