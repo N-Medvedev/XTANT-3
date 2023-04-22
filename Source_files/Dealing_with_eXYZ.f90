@@ -85,7 +85,9 @@ subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_at
          ! Supercell vectors:
          !read(line_2(current_block+block_start+1:current_block+block_start+block_end-1),*,IOSTAT=Reason) Supce(:,:)
          read(line_2(current_block+block_start+1:current_block+block_start+block_end-1),*,IOSTAT=Reason) &
-               Supce(1,:), Supce(2,:), Supce(3,:)  ! the order of reading: vector-wise instead of column-wise
+               Supce(1,1), Supce(1,2), Supce(1,3), &
+               Supce(2,1), Supce(2,2), Supce(2,3), &
+               Supce(3,1), Supce(3,2), Supce(3,3)  ! the order of reading: vector-wise instead of column-wise
          call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
             write(Error_descript,'(a,i3,a)') 'Could not read block ', count_lines, ' in line #2 in XYZ file'

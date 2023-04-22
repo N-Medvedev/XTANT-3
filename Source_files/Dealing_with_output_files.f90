@@ -446,7 +446,9 @@ subroutine write_atomic_xyz(FN, atoms, matter, Supce)
    write(Numb_out, '(i10)') size(atoms)
    write(FN, '(a)') trim(adjustl(Numb_out))
    !write(FN, '(a)') trim(adjustl(matter%Name)) ! Material name, not needed
-   write(FN, '(a,f,f,f,f,f,f,f,f,f,a)') 'Lattice="', Supce(1,:), Supce(2,:), Supce(3,:), '" Properties=species:S:1:pos:R:3'
+   write(FN, '(a,f,f,f,f,f,f,f,f,f,a)') 'Lattice="', Supce(1,1), Supce(1,2), Supce(1,3), &
+                                                     Supce(2,1), Supce(2,2), Supce(2,3), &
+                                                     Supce(3,1), Supce(3,2), Supce(3,3), '" Properties=species:S:1:pos:R:3'
    do i = 1, size(atoms)
       write(FN, '(a,es25.16,es25.16,es25.16)') trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), atoms(i)%R(1), atoms(i)%R(2), atoms(i)%R(3)
    enddo

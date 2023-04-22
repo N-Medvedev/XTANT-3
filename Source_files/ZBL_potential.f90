@@ -26,6 +26,8 @@
 
 MODULE ZBL_potential
 use Universal_constants
+use Objects
+use Atomic_tools, only : shortest_distance
 
 implicit none
 PRIVATE
@@ -42,10 +44,46 @@ real(8), parameter :: m_exp3 = -0.4028d0
 real(8), parameter :: m_exp4 = -0.2016d0
 real(8), parameter :: m_k = 1.0d0/(4.0d0 * g_Pi * g_e0)
 
-public :: ZBL_pot, d_ZBL_pot
+public :: ZBL_pot, d_ZBL_pot, get_total_ZBL
 
 
  contains
+
+
+
+subroutine get_total_ZBL(Scell, NSC, matter, a)   ! vdW energy
+! This subroutine is only used for comparison of the interlayer vdW energy with other works
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in) :: matter   ! material parameters
+   real(8), intent(out) :: a  ! total ZBL repulsive energy [eV]
+   !=====================================================
+   real(8) :: sum_a, a_r, Z1, Z2
+   INTEGER(4) i1, j1, m, atom_2
+   integer, pointer :: KOA1, KOA2
+   sum_a = 0.0d0
+
+   !$omp PARALLEL private(i1,j1,m,KOA1,Z1,atom_2,KOA2,Z2,a_r)
+   !$omp do reduction( + : sum_a)
+   do i1 = 1, Scell(NSC)%Na ! all atoms
+      m = Scell(NSC)%Near_neighbor_size(i1)
+      KOA1 => Scell(NSC)%MDatoms(i1)%KOA   ! kind of atom #1
+      Z1 = matter%Atoms(KOA1)%Z  ! Z of element #1
+      do atom_2 = 1, m ! do only for atoms close to that one
+         j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
+         KOA2 => Scell(NSC)%MDatoms(j1)%KOA   ! kind of atom #2
+         Z2 = matter%Atoms(KOA2)%Z  ! Z of element #2
+         if ( j1 /= i1 ) then ! count only interplane energy:
+            call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
+            sum_a = sum_a + ZBL_pot(Z1, Z2, a_r)    ! function below
+         endif ! (j1 .NE. i1)
+      enddo ! j1
+   enddo ! i1
+   !$omp end do
+   !$omp end parallel
+   a = sum_a
+   nullify(KOA1, KOA2)
+end subroutine get_total_ZBL
 
 
 pure function ZBL_pot(Z1, Z2, r) result(V_ZBL)

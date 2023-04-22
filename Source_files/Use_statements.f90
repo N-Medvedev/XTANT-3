@@ -19,3 +19,4 @@ use TB, only : get_new_energies, get_DOS, get_Mulliken, Get_pressure, get_electr
 use Optical_parameters, only : get_optical_parameters
 use MC_cross_sections, only : get_mfps, get_photon_attenuation
 use Monte_carlo, only : MC_Propagate
+use ZBL_potential, only : get_total_ZBL

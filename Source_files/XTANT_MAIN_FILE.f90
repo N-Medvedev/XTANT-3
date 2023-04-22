@@ -522,12 +522,17 @@ end subroutine coordinate_path
 subroutine vary_size(do_forces, Err)
    integer, optional, intent(in) :: do_forces
    logical, intent(out), optional :: Err
-   real(8) :: r_sh, x, y, z, E_vdW_interplane, g_time_save, z_sh, z_sh0, temp
+   real(8) :: r_sh, x, y, z, E_vdW_interplane, g_time_save, z_sh, z_sh0, temp, E_ZBL
    integer i, j, at1, at2
    character(13) :: char1
    logical yesno
-   open(UNIT = 100, FILE = 'OUTPUT_Energy.dat') !<-
-   
+   open(UNIT = 100, FILE = 'OUTPUT_Energy.dat')
+   if (present(do_forces)) then
+      write(100,'(a)') '#Distance   E_total  E_rep El_low   F_rep F_att'
+   else
+      write(100,'(a)') '#Distance   E_total  E_rep El_low   E_vdW E_ZBL Z_size'
+   endif
+
    g_time_save = g_time
    z_sh0 = 0.0d0
    
@@ -572,14 +577,9 @@ subroutine vary_size(do_forces, Err)
 !       z_sh0 = z_sh
 !       !----------------------------------------------
 
-!        print*, 'Test 0'
       call Det_3x3(g_Scell(1)%supce,g_Scell(1)%V) !<- modlue "Algebra_tools"
-      !g_time = g_Scell(1)%supce(3,3)/real(g_matter%cell_x)*0.25d0*sqrt(3.0d0)  !<- ZnS
-      !g_time = g_Scell(1)%supce(2,2)/real(g_matter%cell_x)*(r_sh)
-      
+
       call Coordinates_rel_to_abs(g_Scell, 1, if_old=.true.)	! from the module "Atomic_tools"!<-
-      
-!        print*, 'Test 1'
       
       g_time = 1d9   ! to start with
       r_sh = 1d10    ! to start with
@@ -596,8 +596,7 @@ subroutine vary_size(do_forces, Err)
          enddo
       enddo
       !call change_r_cut_TB_Hamiltonian(1.70d0*(g_Scell(1)%supce(3,3)*0.25d0)/1.3d0, TB_Waals=g_Scell(1)%TB_Waals) !<-
-!       print*, 'Test 2'
-      
+
       ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
       call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 1, g_Err, g_time) ! module "TB"
       if (g_numpar%verbose) call print_time_step('Hamiltonian constructed and diagonalized', msec=.true.)
@@ -607,8 +606,6 @@ subroutine vary_size(do_forces, Err)
 
       ! Get initial optical coefficients:
       call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
-      
-!        print*, 'Test 3'
       
       ! Get initial DOS:
       call get_DOS(g_numpar, g_matter, g_Scell, g_Err)	! module "TB"
@@ -620,32 +617,32 @@ subroutine vary_size(do_forces, Err)
       ! Save initial step in output:
       call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
 
-!        print*, 'Test 5'
-      
       ! Get interplane energy for vdW potential:
       E_vdW_interplane = vdW_interplane(g_Scell(1)%TB_Waals, g_Scell, 1, g_numpar, g_matter)/dble(g_Scell(1)%Na) !module "TB"
 
+      ! Get ZBL potential is requested:
+      call get_total_ZBL(g_Scell, 1, g_matter, E_ZBL) ! module "ZBL_potential"
+      E_ZBL = E_ZBL/dble(g_Scell(1)%Na)   ! [eV] => [eV/atom]
+
       if (present(do_forces)) then
-         !print*, 'Supercell size:', i_test, g_Scell(1)%supce(1,1)/real(g_matter%cell_x), g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot !<-
          print*, 'Supercell size:', i_test, &
          trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
          trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)) , g_time, &
-         g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW !<-
-         !write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_Scell(1)%supce(1,1)/real(g_matter%cell_x), g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%MDatoms(do_forces)%forces%rep(:), g_Scell(1)%MDatoms(do_forces)%forces%att(:) !<-
-         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%MDatoms(do_forces)%forces%rep(:), g_Scell(1)%MDatoms(do_forces)%forces%att(:) !<-
+         g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
+         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') &
+               g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, &
+               g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%MDatoms(do_forces)%forces%rep(:), &
+               g_Scell(1)%MDatoms(do_forces)%forces%att(:)
       else
          print*, 'Supercell size:', i_test, &
          trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
          trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)), at1, at2, g_time, &
-         g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW !<-
-         !write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%nrg%E_vdW, g_Scell(1)%supce(3,3)*0.25d0 !<-
-         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, E_vdW_interplane, g_Scell(1)%supce(3,3) !<-
+         g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
+         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, &
+               g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, &
+               g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, E_vdW_interplane, E_ZBL, g_Scell(1)%supce(3,3)
       endif
-      
-!        print*, 'Test 6'
-      
-   enddo !<-
-   !g_time = -100.0d0
+   enddo
    g_time = g_time_save
    g_Scell(1)%supce = g_Scell(1)%supce0
 
