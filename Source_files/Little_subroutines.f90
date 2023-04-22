@@ -444,13 +444,13 @@ subroutine order_of_time(tim, text, gnu_text, x_tics)
    integer :: time_ord
    time_ord = find_order_of_number(tim) ! module "Little_subroutines"
    if (present(x_tics)) then
-      x_tics = 10**(time_ord) ! set tics for gnuplot
+      x_tics = 10.0d0**(time_ord) ! set tics for gnuplot
       if (tim/dble(x_tics) > 0.5) then
-         x_tics = 10**(time_ord-1) ! set tics for gnuplot
+         x_tics = 10.0d0**(time_ord-1) ! set tics for gnuplot
       else if (tim/dble(x_tics) > 0.2) then
-         x_tics = 0.5*10**(time_ord-1) ! set tics for gnuplot
+         x_tics = 0.5d0*10.0d0**(time_ord-1) ! set tics for gnuplot
       else
-         x_tics = 10**(time_ord-2) ! set tics for gnuplot
+         x_tics = 10.0d0**(time_ord-2) ! set tics for gnuplot
       endif
    endif
 
