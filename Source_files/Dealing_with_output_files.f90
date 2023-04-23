@@ -3257,9 +3257,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(print_to,'(a,a)') ' No Coulomb potential was defined or unbalanced charge allowed'
       endif
       if (allocated(Scell(1)%TB_Expwall)) then ! if we have exponential wall potential defined
-         write(print_to,'(a,a)') ' Exponential wall energy: ', trim(adjustl(Scell(1)%TB_Expwall(1,1)%Param))
+         write(print_to,'(a,a)') ' Short-range repulsion (exponential wall): ', trim(adjustl(Scell(1)%TB_Expwall(1,1)%Param))
       else !For this material exponential wall class is undefined
-         write(print_to,'(a,a)') ' No exponential wall potential was defined for close interatomic distances'
+         write(print_to,'(a,a)') ' No additional short-range repulsion was defined for close interatomic distances'
       endif
 
       ! What kind of supercell is used:

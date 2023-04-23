@@ -342,6 +342,54 @@ type, EXTENDS (TB_Coulomb) :: TB_Coulomb_cut
    real(8) :: alpha  ! Wolf's truncation parameter
 end type TB_Coulomb_cut
 
+
+
+!+111111111111111111111111111111111111111111111
+! Short-range repulsion in various functional formats:
+
+! Enveloping Fermi-like function: f_cut = 1/(1+exp((r-d0)/dd))
+type :: Fermi_cutoff
+   real(8) :: d0  ! [A] cut-off radius
+   real(8) :: dd  ! [A] cut-off smoothing distance
+end type Fermi_cutoff
+
+! Exponential of 1/r: C*exp(1/(r-r0))
+type :: Rep_inv_exp
+   logical :: use_it  ! flag to use this function or not
+   real(8) :: C   ! [eV] energy of the "wall"
+   real(8) :: r0  ! [A] "wall" position
+end type Rep_inv_exp
+
+! Exponential of r: Phi*exp(-(r-r0)/a)
+type :: Rep_exp
+   logical :: use_it ! flag to use this function or not
+   real(8) :: Phi    ! [eV] energy of the "wall"
+   real(8) :: r0     ! [A] "wall" position
+   real(8) :: a   ! [A] width
+end type Rep_exp
+
+! Power of r: Phi*(r/r0)^m
+type :: Rep_pow
+   logical :: use_it ! flag to use this function or not
+   real(8) :: Phi    ! [eV] energy of the "wall"
+   real(8) :: r0     ! [A] position
+   real(8) :: m      ! [-] power
+end type Rep_pow
+
+
+! Combined functions together:
+type, EXTENDS (TB_Exp_wall) :: TB_Short_Rep
+   ! 1) Enveloping Fermi function:
+   type(Fermi_cutoff) :: f_cut
+   ! 2) Inverse exponential:
+   type(Rep_inv_exp) :: f_inv_exp
+   ! 3) Exponential:
+   type(Rep_exp) :: f_exp
+   ! 4) Power (array to be able to construct arbitrary polynomial):
+   type(Rep_pow), dimension(:), allocatable  :: f_pow
+end type TB_Short_Rep
+
+
 ! e) Exponential wall at short distances:
 type, EXTENDS (TB_Exp_wall) :: TB_Exp_wall_simple
 ! Exponential wall with smooth cut-off at lond distances:
@@ -352,6 +400,9 @@ type, EXTENDS (TB_Exp_wall) :: TB_Exp_wall_simple
    real(8) :: d0	! [A] cut-off radius: f_cut = 1/(1+exp((r-d0)/dd))
    real(8) :: dd	! [A] cut-off smoothing distance
 end type TB_Exp_wall_simple
+
+
+
 
 !+111111111111111111111111111111111111111111111
 type, EXTENDS (TB_Coulomb) :: Cutie
@@ -532,11 +583,11 @@ type Super_cell
    complex, dimension(:,:,:,:,:), allocatable :: CHa	! Complex hamiltonian matrix for each (kx, ky, kz) points
    complex, dimension(:,:,:,:,:), allocatable :: CHa0	! Complex hamiltonian matrix on the last step
    ! Parameters of TB:
-   class(TB_repulsive), allocatable, dimension(:,:)   :: TB_Repuls	! parameters of the repulsive part of TB (shape to be defined)
-   class(TB_Hamiltonian), allocatable, dimension(:,:) :: TB_Hamil	! parameters of the Hamiltonian of TB (shape to be defined)
-   class(TB_vdW), allocatable, dimension(:,:) :: TB_Waals		! parameters of the van der Waals for TB (shape to be defined)
-   class(TB_Coulomb), allocatable, dimension(:,:) :: TB_Coul		! parameters of the Coulomb together with TB (shape to be defined)
-   class(TB_Exp_wall), allocatable, dimension(:,:) :: TB_Expwall	! parameters of the exponential wall potential for TB (shape to be defined)
+   class(TB_repulsive), allocatable, dimension(:,:)   :: TB_Repuls   ! parameters of the repulsive part of TB (shape to be defined)
+   class(TB_Hamiltonian), allocatable, dimension(:,:) :: TB_Hamil ! parameters of the Hamiltonian of TB (shape to be defined)
+   class(TB_vdW), allocatable, dimension(:,:) :: TB_Waals         ! parameters of the van der Waals for TB (shape to be defined)
+   class(TB_Coulomb), allocatable, dimension(:,:) :: TB_Coul      ! parameters of the Coulomb together with TB (shape to be defined)
+   class(TB_Exp_wall), allocatable, dimension(:,:) :: TB_Expwall  ! parameters of the exponential wall potential (shape to be defined)
    ! Forces:
    type(Supce_force) :: SCforce ! forces acting on the supercell
    ! Super-cell size and velocities (used within Parrinello-Rahman):

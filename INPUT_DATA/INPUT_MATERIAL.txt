@@ -1,19 +1,19 @@
-Diamond                   ! material name
-C
+PbI2                  ! material name
+PbI2
 300.0               ! initial electron temperature [K]
 300.0               ! initial atomic temperature [K]
--10.0                 ! start of simulation [fs]
-100.0              ! end of simulation [fs]
+0.0                 ! start of simulation [fs]
+1.0                 ! end of simulation [fs]
 1                   ! number of FEL-pulses
-1.0d0	!3.0d0	0.2e0	! absorbed dose per this pulse [eV/atom] (min, max, step)
-90.0e0  0.0          ! hw, mean photon energy [eV], FWHM of the distirbution of hw [eV]
-10.0d0              ! pulse FWHM-duration [fs]
+0.0d0	!3.0d0	0.2e0	! absorbed dose per this pulse [eV/atom] (min, max, step)
+2.0e0  0.0          ! hw, mean photon energy [eV], FWHM of the distirbution of hw [eV]
+15.0d0              ! pulse FWHM-duration [fs]
 1                   ! type of pulse to be analysed: 0 = rectangular, 1 = Gaussian, 2 = SASE
 0.0d0               ! position of the maximum of the laser pulse [fs]
 
-!size
+size
 
-! coupling
+!coupling
 5
 
 !water

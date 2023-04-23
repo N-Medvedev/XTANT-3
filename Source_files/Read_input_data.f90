@@ -362,7 +362,8 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       Scell(i)%N_Egap = -1	! just to start with something
       ! Read TB parameters:
       if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
-         call read_TB_parameters(matter, numpar, Scell(i)%TB_Repuls, Scell(i)%TB_Hamil, Scell(i)%TB_Waals, Scell(i)%TB_Coul, Scell(i)%TB_Expwall, Err)
+         call read_TB_parameters(matter, numpar, Scell(i)%TB_Repuls, Scell(i)%TB_Hamil, &
+                           Scell(i)%TB_Waals, Scell(i)%TB_Coul, Scell(i)%TB_Expwall, Err) ! below
       else ! do only MC part
           ! Run it like XCASCADE
       endif
@@ -1756,11 +1757,15 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
 3423     continue
          
 
-         ! Now read Exponential wall parameterization:
+         ! Now read additional short-range repulsive (exponential wall) parameterization:
          write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
          write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_wall.txt'
          inquire(file=trim(adjustl(File_name)),exist=file_exists)
-         
+         if (.not.file_exists) then ! try the new name
+            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_short.txt'
+            inquire(file=trim(adjustl(File_name)),exist=file_exists)
+         endif
+
          if (file_exists) then
             FN=110
             open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
@@ -1785,17 +1790,23 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             
             ! Make the exponential wall  parameters of a selected class, depending on what is read in the file:
             select case (trim(adjustl(ch_temp)))
-            case ('Simple_wall')
+            case ('Simple_wall', 'SIMPLE_WALL', 'simple_wall')
                if (.not.allocated(TB_Expwall)) then
                   allocate(TB_Exp_wall_simple::TB_Expwall(matter%N_KAO,matter%N_KAO)) ! make it for exponential wall  parametrization
                   TB_Expwall%Param = ''
                endif
                TB_Expwall(i,j)%Param = trim(adjustl(ch_temp))
+            case ('General', 'general', 'GENERAL')
+               if (.not.allocated(TB_Expwall)) then
+                  allocate(TB_Short_Rep::TB_Expwall(matter%N_KAO,matter%N_KAO)) ! make it for exponential wall  parametrization
+                  TB_Expwall%Param = ''
+               endif
+               TB_Expwall(i,j)%Param = trim(adjustl(ch_temp))
             case default
-               write(Error_descript,'(a,a,a,$)') 'Unknown exponential wall parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
+               write(Error_descript,'(a,a,a,$)') 'Unknown short-range (exponential wall) parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
 !                call Save_error_details(Err, 4, Error_descript)
                print*, trim(adjustl(Error_descript))
-               print*, 'Proceeding without exponential wall forces at short distances'
+               print*, 'Proceeding without additional short-range (exponential wall) forces'
                close(FN) ! close file
                goto 3425
             end select
@@ -1804,9 +1815,18 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             select type (TB_Expwall)
             type is (TB_Exp_wall_simple)
                Error_descript = ''
-               call read_Exponential_wall_TB(FN, i,j, TB_Expwall, Error_descript, INFO)
+               call read_Exponential_wall_TB(FN, i,j, TB_Expwall, Error_descript, INFO)   ! below
                if (INFO .NE. 0) then
                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
+                  call Save_error_details(Err, INFO, Err%Err_descript)
+                  print*, trim(adjustl(Err%Err_descript))
+                  goto 3425
+               endif
+            type is (TB_Short_Rep)
+               Error_descript = ''
+               call read_Short_Rep_TB(FN, i,j, TB_Expwall, Error_descript, INFO)   ! below
+               if (INFO .NE. 0) then
+                  Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name))
                   call Save_error_details(Err, INFO, Err%Err_descript)
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3425
@@ -1842,6 +1862,99 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
 
 3421 continue
 end subroutine read_TB_parameters
+
+
+
+subroutine read_Short_Rep_TB(FN, i,j, TB_Expwall, Error_descript, INFO)   ! below
+   integer, intent(in) :: FN ! file number where to read from
+   integer, intent(in) :: i, j ! numbers of pair of elements for which we read the data
+   type(TB_Short_Rep), dimension(:,:), intent(inout) ::  TB_Expwall ! parameters of the exponential wall potential
+   character(*), intent(out) :: Error_descript	! error save
+   integer, intent(out) :: INFO	! error description
+   !------------------------
+   integer :: count_lines, Reason
+   logical :: read_well
+   character(30) :: text
+   count_lines = 1
+   INFO = 0
+
+   ! Set default values:
+   TB_Expwall(i,j)%f_exp%use_it = .false.       ! no exp by default
+   TB_Expwall(i,j)%f_inv_exp%use_it = .false.   ! no inverse exp by default
+   TB_Expwall(i,j)%f_cut%d0 = 0.0d0 ! cut off at zero, no repulsion by default
+   TB_Expwall(i,j)%f_cut%dd = 0.01d0 ! short cut-off by default
+
+   read_well = .true.   ! to start with
+   RD: do while (read_well)
+      read(FN,*,IOSTAT=Reason) text
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) exit RD  ! end of file, stop reading
+
+      call interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwall(i,j), INFO, Error_descript) ! below
+      if (.not. read_well) exit RD  ! end of file, stop reading
+   enddo RD
+end subroutine read_Short_Rep_TB
+
+
+subroutine interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwall, INFO, Error_descript)
+   integer, intent(in) :: FN ! file number where to read from
+   integer, intent(inout) :: count_lines
+   logical, intent(inout) :: read_well
+   character(*), intent(in) :: text
+   type(TB_Short_Rep), intent(inout) ::  TB_Expwall ! parameters of the exponential wall potential
+   integer, intent(inout) :: INFO   ! error description
+   character(*), intent(inout) :: Error_descript   ! error save
+   !-------------------------------------
+   integer :: N_pow, i, Reason
+
+   select case (trim(adjustl(text)))
+   case ('CUTOFF', 'Cutoff', 'cutoff', 'CUT_OFF', 'Cut_off', 'cut_off', 'CUT-OFF', 'Cut-off', 'cut-off', 'FERMI', 'Fermi', 'fermi')
+      read(FN,*,IOSTAT=Reason) TB_Expwall%f_cut%d0, TB_Expwall%f_cut%dd
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         return   ! exit the function if there is nothing else to do
+      endif
+
+   case ('EXP', 'Exp', 'exp', 'Exponential', 'exponential', 'EXPONENTIAL')
+      TB_Expwall%f_exp%use_it = .true.
+      read(FN,*,IOSTAT=Reason) TB_Expwall%f_exp%Phi, TB_Expwall%f_exp%r0, TB_Expwall%f_exp%a
+
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         TB_Expwall%f_exp%use_it = .false. ! not to use
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         return   ! exit the function if there is nothing else to do
+      endif
+
+   case ('INVEXP', 'InvExp', 'invexp', 'INV_EXP', 'Inv_Exp', 'inv_exp')
+      TB_Expwall%f_inv_exp%use_it = .true.
+      read(FN,*,IOSTAT=Reason) TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         TB_Expwall%f_inv_exp%use_it = .false.   ! not to use
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         return   ! exit the function if there is nothing else to do
+      endif
+
+   case ('POWER', 'Power', 'power', 'POW', 'Pow', 'pow')
+      read(FN,*,IOSTAT=Reason) N_pow   ! number of power-functions
+      allocate(TB_Expwall%f_pow(N_pow))
+      TB_Expwall%f_pow(:)%use_it = .true.
+      do i = 1, N_pow   ! read for all functions
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            deallocate(TB_Expwall%f_pow)   ! not to use
+            write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+            INFO = 3
+            return   ! exit the function if there is nothing else to do
+         endif
+      enddo
+   end select
+end subroutine interpret_short_range_data
 
 
 

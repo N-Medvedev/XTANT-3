@@ -81,7 +81,7 @@ subroutine get_total_ZBL(Scell, NSC, matter, a)   ! vdW energy
    enddo ! i1
    !$omp end do
    !$omp end parallel
-   a = sum_a
+   a = sum_a * 0.5d0
    nullify(KOA1, KOA2)
 end subroutine get_total_ZBL
 

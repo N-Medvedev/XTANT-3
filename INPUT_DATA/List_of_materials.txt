@@ -1,10 +1,13 @@
 Al
 Al2O3
+Al2O3_new
+Al2O3_test
 AlAs
 AlCu
 AlP
 Aluminum
 Al_on_Si
+Al_test
 Amorphous_Carbon
 Angiotensin_II
 aSi
@@ -36,6 +39,7 @@ Cu_on_Si
 C_dimer
 C_layer
 C_mobius
+C_test
 Diamond
 Fe
 Fe2O3
@@ -88,9 +92,11 @@ Pt
 Quartz
 Re
 Rh
+Ru
 Ruthenium
 Ru_bcc
 Ru_NP
+Ru_test
 SarsCov2_spike_protein
 Sc
 Se
@@ -99,11 +105,11 @@ Si3N4
 SiAl
 SiAu3
 SiC
-SiC_3
-SiC_mol
+SiC_test
 Silicon
 Silver
 Si_beta
+Si_BOP
 Si_dimer
 Sn
 Sr
