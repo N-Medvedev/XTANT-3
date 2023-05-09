@@ -56,7 +56,11 @@ implicit none
 
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! Print XTANT label on the screen
-call XTANT_label(6, 1)   ! module "Dealing_with_output_files"
+#ifdef OMP_inside
+   call XTANT_label(6, 1)   ! module "Dealing_with_output_files"
+#else ! if you set to use OpenMP in compiling: 'make OMP=no'
+   call XTANT_label(6, 3)   ! module "Dealing_with_output_files"
+#endif
 
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 g_numpar%which_input = 0 ! starting with the default input files

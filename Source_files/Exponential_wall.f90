@@ -30,6 +30,7 @@ use Objects
 !use Little_subroutines
 !use Atomic_tools
 use Coulomb, only : f_cut_L_C, d_f_cut_L_C
+use ZBL_potential, only : ZBL_pot, d_ZBL_pot
 
 implicit none
 PRIVATE
@@ -40,16 +41,17 @@ public :: get_short_range_rep_s
  contains
 
 ! New, general repulsive potential:
-subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, numpar, a)   ! Short-range potential energy
+subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! Short-range potential energy
    type(TB_Short_Rep), dimension(:,:), intent(in) :: TB_Expwall    ! General short-range repulsive parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
+   type(Solid), intent(in), target :: matter   ! all material parameters
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    real(8), intent(out) :: a  ! [eV] short-range energy
    !=====================================================
-   real(8), pointer :: a_r
    real(8) :: sum_a, Short_range_pot
-   INTEGER(4) i, atom_2
+   integer(4) :: i, atom_2
+   real(8), pointer :: a_r, Z1, Z2
    integer, pointer :: j, KOA1, KOA2, m
 
    sum_a = 0.0d0
@@ -58,12 +60,14 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, numpar, a)   ! Short-ra
    do i = 1, Scell(NSC)%Na ! all atoms
       m => Scell(NSC)%Near_neighbor_size(i)
       KOA1 => Scell(NSC)%MDatoms(i)%KOA
+      Z1 => matter%Atoms(KOA1)%Z
       do atom_2 = 1,m ! do only for atoms close to that one
          j => Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
          if (j .GT. 0) then
             KOA2 => Scell(NSC)%MDatoms(j)%KOA
+            Z2 => matter%Atoms(KOA2)%Z
             a_r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4)	! at this distance, R
-            Short_range_pot = Shortrange_pot(TB_Expwall(KOA1,KOA2), a_r)    ! function below
+            Short_range_pot = Shortrange_pot(TB_Expwall(KOA1,KOA2), a_r, Z1, Z2)    ! function below
             sum_a = sum_a + Short_range_pot
          endif ! (j .GT. 0)
       enddo ! j
@@ -71,29 +75,42 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, numpar, a)   ! Short-ra
    !$omp end do
    !$omp end parallel
    a = sum_a*0.5d0	! [eV], factor to compensate for double-counting
-   nullify(a_r, j, m, KOA1, KOA2)
+   nullify(a_r, j, m, KOA1, KOA2, Z1, Z2)
 end subroutine get_short_range_rep_s
 
 
-function Shortrange_pot(TB_Expwall, a_r) result(Pot)
+function Shortrange_pot(TB_Expwall, a_r, Z1, Z2) result(Pot)
    real(8) Pot ! [eV] Repulsive potential
    type(TB_Short_Rep), intent(in), target :: TB_Expwall  ! Exponential wall parameters
    real(8), intent(in) :: a_r ! [A] distance between the atoms
+   real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL)
    !====================================
-   real(8) :: f_cut_large, f_pow, f_exp, f_invexp
+   real(8) :: f_cut_large, f_pow, f_exp, f_invexp, f_ZBL
 
    Pot = 0.0d0 ! to start with
    if (a_r < TB_Expwall%f_cut%d0 + TB_Expwall%f_cut%dd*10.0d0) then ! only at close range
+
       ! Cut-off function:
       f_cut_large = f_cut_L_C(a_r, TB_Expwall%f_cut%d0, TB_Expwall%f_cut%dd)   ! module "Coulomb"
+
       ! Contribution of the exponential function:
       f_exp = exp_function(a_r, TB_Expwall%f_exp%use_it, TB_Expwall%f_exp%Phi, TB_Expwall%f_exp%r0, TB_Expwall%f_exp%a)  ! below
+
       ! Contribution of the inverse exponential function:
       f_invexp = inv_exp_function(a_r, TB_Expwall%f_inv_exp%use_it, TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0)  ! below
+
       ! Contribution of the power functions:
       f_pow = power_function(a_r, TB_Expwall%f_pow)   ! below
+
+      ! Contribution of the ZBL potential:
+      if (TB_Expwall%f_ZBL%use_it) then
+         f_ZBL = ZBL_pot(Z1, Z2, a_r)   ! module "ZBL_potential"
+      else
+         f_ZBL = 0.0d0
+      endif
+
       ! Combine all:
-      Pot = f_invexp + f_exp + f_pow
+      Pot = f_invexp + f_exp + f_pow + f_ZBL
       ! Augment with the cut-off function:
       Pot = Pot * f_cut_large  ! [eV]
    endif
@@ -102,12 +119,13 @@ end function Shortrange_pot
 
 
 
-function d_Short_range_pot(TB_Expwall, a_r) result(dPot)
+function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
    real(8) :: dPot   ! derivative of the short-range potential
    type(TB_Short_Rep), intent(in), target :: TB_Expwall  ! short-range parameters
    real(8), intent(in) :: a_r ! [A] distance between the atoms
+   real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL)
    !====================================
-   real(8) :: f_cut_large, d_f_large, f_exp, d_f_exp, f_invexp, d_f_invexp, f_pow, d_f_pow, Pot, d_Pot
+   real(8) :: f_cut_large, d_f_large, f_exp, d_f_exp, f_invexp, d_f_invexp, f_pow, d_f_pow, Pot, d_Pot, f_ZBL, d_f_ZBL
 
    dPot = 0.0d0   ! to start with
    if (a_r < TB_Expwall%f_cut%d0 + TB_Expwall%f_cut%dd*10.0d0) then ! only at close range
@@ -134,9 +152,18 @@ function d_Short_range_pot(TB_Expwall, a_r) result(dPot)
       ! And its derivative:
       d_f_pow = d_power_function(a_r, TB_Expwall%f_pow)   ! below
 
+      ! Contribution of the ZBL potential:
+      if (TB_Expwall%f_ZBL%use_it) then
+         f_ZBL = ZBL_pot(Z1, Z2, a_r)   ! module "ZBL_potential"
+         d_f_ZBL = d_ZBL_pot(Z1, Z2, a_r)   ! module "ZBL_potential"
+      else
+         f_ZBL = 0.0d0
+         d_f_ZBL = 0.0d0
+      endif
+
       ! Combine all:
-      Pot = f_invexp + f_exp + f_pow
-      d_Pot = d_f_invexp + d_f_exp + d_f_pow
+      Pot = f_invexp + f_exp + f_pow + f_ZBL
+      d_Pot = d_f_invexp + d_f_exp + d_f_pow + d_f_ZBL
 
       ! Augment the potential with the cut-off function:
       dPot = Pot*f_cut_large + d_Pot*d_f_large
@@ -145,9 +172,10 @@ end function d_Short_range_pot
 
 
 ! Derivatives of the Short-range energy by s:
-subroutine d_Short_range_pot_s(Scell, NSC, TB_Expwall, numpar)
+subroutine d_Short_range_pot_s(Scell, NSC, matter, TB_Expwall, numpar)
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
+   type(Solid), intent(in), target :: matter   ! all material parameters
    type(TB_Short_Rep), dimension(:,:),intent(in) :: TB_Expwall	! Exponential wall parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    !---------------------------------------
@@ -155,8 +183,9 @@ subroutine d_Short_range_pot_s(Scell, NSC, TB_Expwall, numpar)
    real(8) dpsi(3), psi, a_r, r1, x0, y0, z0, a, b, ddlta, b_delta
    integer i, j, k, ik, i1, ian, dik, djk, n, atom_2
    real(8), dimension(:,:), allocatable :: Erx_s
+   real(8), pointer ::  x, y, z, Z1, Z2
    integer, pointer :: KOA1, KOA2, m, j1
-   real(8), pointer ::  x, y, z
+
    n = Scell(NSC)%Na ! number of atoms
    allocate(Erx_s(3,n)) ! x,y,z-forces for each atoms
    Erx_s = 0.0d0
@@ -173,6 +202,7 @@ subroutine d_Short_range_pot_s(Scell, NSC, TB_Expwall, numpar)
          dpsi = 0.0d0
          m => Scell(NSC)%Near_neighbor_size(i1)
          KOA1 => Scell(NSC)%MDatoms(i1)%KOA
+         Z1 => matter%Atoms(KOA1)%Z ! atomic number
          do atom_2 = 1,m		! do only for atoms close to that one
             j1 => Scell(NSC)%Near_neighbor_list(i1, atom_2)	! this is the list of such close atoms
             if (j1 > 0) then
@@ -183,6 +213,7 @@ subroutine d_Short_range_pot_s(Scell, NSC, TB_Expwall, numpar)
                endif
                cos_if:if ((dik-djk) /= 0) then ! without it, it gives ERROR
                   KOA2 => Scell(NSC)%MDatoms(j1)%KOA
+                  Z2 => matter%Atoms(KOA2)%Z ! atomic number
                   x => Scell(NSC)%Near_neighbor_dist(i1,atom_2,1) ! at this distance, X, Y, Z
                   y => Scell(NSC)%Near_neighbor_dist(i1,atom_2,2) ! at this distance, Y
                   z => Scell(NSC)%Near_neighbor_dist(i1,atom_2,3) ! at this distance, Z
@@ -192,7 +223,7 @@ subroutine d_Short_range_pot_s(Scell, NSC, TB_Expwall, numpar)
                   x1(3) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
 
                   a_r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4)   ! at this distance, R
-                  b = d_Short_range_pot(TB_Expwall(KOA1,KOA2), a_r)  ! function above
+                  b = d_Short_range_pot(TB_Expwall(KOA1,KOA2), a_r, Z1, Z2)  ! function above
 
                   ddlta = dble(dik - djk)/a_r
                   b_delta = b*ddlta
@@ -211,21 +242,23 @@ subroutine d_Short_range_pot_s(Scell, NSC, TB_Expwall, numpar)
    !$omp end parallel
 
    deallocate(Erx_s)
-   nullify(j1, m, KOA1, KOA2, x, y, z)
+   nullify(j1, m, KOA1, KOA2, x, y, z, Z1, Z2)
 END subroutine d_Short_range_pot_s
 
 
 
 ! Derivatives of the short-range energy by h:
-subroutine d_Short_range_Pressure_s(Scell, NSC, TB_Expwall, numpar)
+subroutine d_Short_range_Pressure_s(Scell, NSC, TB_Expwall, matter, numpar)
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_Short_Rep), dimension(:,:),intent(in) :: TB_Expwall	! Exponential wall parameters
+   type(Solid), intent(in), target :: matter   ! all material parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    !===============================================
    REAL(8), DIMENSION(3,3) :: Rep_Pr  ! for dErep/dr for (X,Y,Z) for all atoms
    integer i, k, l, n, atom_2
    integer, pointer :: KOA1, KOA2, m, j
+   real(8), pointer :: Z1, Z2
    real(8) r, rcur(3), scur(3), PForce(3,3)
    real(8) df_psy, psi, dpsy
 
@@ -238,10 +271,12 @@ subroutine d_Short_range_Pressure_s(Scell, NSC, TB_Expwall, numpar)
          dpsy = 0.0d0
          m => Scell(NSC)%Near_neighbor_size(i)
          KOA1 => Scell(NSC)%MDatoms(i)%KOA
+         Z1 => matter%Atoms(KOA1)%Z ! atomic number
          do atom_2 = 1,m		! do only for atoms close to that one
             j => Scell(NSC)%Near_neighbor_list(i, atom_2)	! this is the list of such close atoms
             if (j > 0) then
                KOA2 => Scell(NSC)%MDatoms(j)%KOA
+               Z2 => matter%Atoms(KOA2)%Z ! atomic number
                rcur(1) = Scell(NSC)%Near_neighbor_dist(i,atom_2,1) ! at this distance, X
                rcur(2) = Scell(NSC)%Near_neighbor_dist(i,atom_2,2) ! at this distance, Y
                rcur(3) = Scell(NSC)%Near_neighbor_dist(i,atom_2,3) ! at this distance, Z
@@ -249,7 +284,7 @@ subroutine d_Short_range_Pressure_s(Scell, NSC, TB_Expwall, numpar)
                scur(2) = Scell(NSC)%Near_neighbor_dist_s(i,atom_2,2) ! at this distance, SY
                scur(3) = Scell(NSC)%Near_neighbor_dist_s(i,atom_2,3) ! at this distance, SZ
                r = Scell(NSC)%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
-               dpsy = d_Short_range_pot(TB_Expwall(KOA1,KOA2), r)	! function above
+               dpsy = d_Short_range_pot(TB_Expwall(KOA1,KOA2), r, Z1, Z2)	! function above
 
                do k = 1,3 ! supce indices: a,b,c
                   do l = 1,3  ! supce indices: x,y,z
@@ -267,7 +302,7 @@ subroutine d_Short_range_Pressure_s(Scell, NSC, TB_Expwall, numpar)
       enddo ! i
       Scell(NSC)%SCforce%rep = Scell(NSC)%SCforce%rep + PForce ! add extra short-range part to existing TB part
    endif
-   nullify(KOA1, KOA2, m, j)
+   nullify(KOA1, KOA2, m, j, Z1, Z2)
 end subroutine d_Short_range_Pressure_s
 
 

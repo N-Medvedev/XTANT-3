@@ -57,7 +57,7 @@ use TB_xTB, only : Construct_Vij_xTB, construct_TB_H_xTB, get_Erep_s_xTB, identi
 use Van_der_Waals, only : Construct_B, get_vdW_s, get_vdW_s_D, get_vdW_interlayer
 use Coulomb, only: m_k, m_sqrtPi, Coulomb_Wolf_pot, get_Coulomb_Wolf_s, cut_off_distance, Construct_B_C, get_Coulomb_s, &
                      Coulomb_Wolf_self_term, d_Coulomb_Wolf_pot
-use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s
+use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s, get_short_range_rep_s
 
 implicit none
 PRIVATE
@@ -2675,24 +2675,27 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
          Scell(NSC)%nrg%E_coul = Coulomb_s(Scell(NSC)%TB_Coul, Scell, NSC, numpar) * Na_inv ! [eV/atom], function below
          
          ! Exponential wall potential energy:
-         Scell(NSC)%nrg%E_expwall = Exponential_wall_s(Scell(NSC)%TB_Expwall, Scell, NSC, numpar) * Na_inv ! [eV/atom], below
+         Scell(NSC)%nrg%E_expwall = Exponential_wall_s(Scell(NSC)%TB_Expwall, Scell, NSC, matter, numpar) * Na_inv ! [eV/atom], below
       enddo
       
    endif DO_TB
 end subroutine get_pot_nrg
 
 
-function Exponential_wall_s(TB_Expwall, Scell, NSC, numpar) result(Pot)
+function Exponential_wall_s(TB_Expwall, Scell, NSC, matter, numpar) result(Pot)
    real(8) :: Pot	! Exponential wall energy [eV]
    class(TB_Exp_wall), allocatable, dimension(:,:), intent(in) :: TB_Expwall	! exponential wall
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
+   type(Solid), intent(in) :: matter   ! all material parameters
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8) a
    if (allocated(TB_Expwall)) then ! if we have Exponential wall potential defined
       select type(TB_Expwall)
       type is (TB_Exp_wall_simple)
          call get_Exp_wall_s(TB_Expwall, Scell, NSC, numpar, a)   ! module "Exponential_wall"
+      type is (TB_Short_Rep)
+         call get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! module "Exponential_wall"
       end select
    else !For this material exponential wall class is undefined
       a = 0.0d0 ! no energy for no potential

@@ -2575,7 +2575,11 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
       goto 9999
    endif
    numpar%FN_parameters = FN ! save this file number with parameters
+#ifdef OMP_inside
    call Print_title(FN, Scell, matter, laser, numpar, 0) ! below
+#else
+   call Print_title(FN, Scell, matter, laser, numpar, 4) ! below
+#endif
    !close(FN)
    inquire(file=trim(adjustl(File_name)),opened=file_opened)
    if (file_opened) then
@@ -3525,6 +3529,10 @@ subroutine XTANT_label(print_to, ind)
       call XTANT_label_small(print_to) ! below
    case (2)       ! shaded
       call XTANT_label_shade(print_to) ! below
+   case (3)       ! filled
+      call XTANT_label_filled(print_to) ! below
+   case (4)       ! starred
+      call XTANT_label_filled(print_to) ! below
    endselect
 end subroutine XTANT_label
 
@@ -3544,25 +3552,48 @@ end subroutine XTANT_label_small
 subroutine XTANT_label_bold(print_to)
    integer, intent(in) :: print_to ! the screen, or file
    write(print_to,'(a)') trim(adjustl(m_starline))
-   write(print_to,'(a)') '     __     __  _______     __       __    _   _______ '
-   write(print_to,'(a)') '     \ \   / / |__   __|   /  \     |  \  | | |__   __|'
-   write(print_to,'(a)') '      \ \_/ /     | |     / /\ \    |   \ | |    | |   '
-   write(print_to,'(a)') '       ] _ [      | |    / /__\ \   | |\ \| |    | |   '
-   write(print_to,'(a)') '      / / \ \     | |   / ______ \  | | \   |    | |   '
-   write(print_to,'(a)') '     /_/   \_\    |_|  /_/      \_\ |_|  \__|    |_|   '
+   write(print_to,'(a)') '     __    __  _______     __       __    _   _______ '
+   write(print_to,'(a)') '     \ \  / / |__   __|   /  \     |  \  | | |__   __|'
+   write(print_to,'(a)') '      \ \/ /     | |     / /\ \    |   \ | |    | |   '
+   write(print_to,'(a)') '       )  (      | |    / /__\ \   | |\ \| |    | |   '
+   write(print_to,'(a)') '      / /\ \     | |   / ______ \  | | \   |    | |   '
+   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \_\ |_|  \__|    |_|   '
    write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine XTANT_label_bold
 
 subroutine XTANT_label_shade(print_to)
    integer, intent(in) :: print_to ! the screen, or file
    write(print_to,'(a)') trim(adjustl(m_starline))
-   write(print_to,'(a)') '     __     __  _______     __       __    _   _______ '
-   write(print_to,'(a)') '     \ \   /// |__   _||   / \\     |  \  ||| |__   _||'
-   write(print_to,'(a)') '      \ \_///     | |     / /\\\    |   \ |||    | |   '
-   write(print_to,'(a)') '       ] _|[      | |    / /__\\\   | |\ \|||    | |   '
-   write(print_to,'(a)') '      / / \\\     | |   / ______\\  | | \  ||    | |   '
-   write(print_to,'(a)') '     /_/   \_\    |_|  /_/      \\\ |_|  \__|    |_|   '
+   write(print_to,'(a)') '     __    __  _______     __       __    _   _______ '
+   write(print_to,'(a)') '     \ \  /// |__   _||   / \\     |  \  ||| |__   _||'
+   write(print_to,'(a)') '      \ \///     | |     / /\\\    |   \ |||    | |   '
+   write(print_to,'(a)') '       ) |(      | |    / /__\\\   | |\ \|||    | |   '
+   write(print_to,'(a)') '      / /\\\     | |   / ______\\  | | \  ||    | |   '
+   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \\\ |_|  \__|    |_|   '
    write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine XTANT_label_shade
+
+subroutine XTANT_label_filled(print_to)
+   integer, intent(in) :: print_to ! the screen, or file
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '     __    __  _______     __       __    _   _______ '
+   write(print_to,'(a)') '     \*\  /*/ |__***__|   /**\     |**\  |*| |__***__|'
+   write(print_to,'(a)') '      \*\/*/     |*|     /*/\*\    |***\ |*|    |*|   '
+   write(print_to,'(a)') '       )**(      |*|    /*/__\*\   |*|\*\|*|    |*|   '
+   write(print_to,'(a)') '      /*/\*\     |*|   /*______*\  |*| \***|    |*|   '
+   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \_\ |_|  \__|    |_|   '
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine XTANT_label_filled
+
+subroutine XTANT_label_starred(print_to)
+   integer, intent(in) :: print_to ! the screen, or file
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '     **   ** ********   **     ***   ** ******** '
+   write(print_to,'(a)') '      ** **     **     ****    ****  **    **    '
+   write(print_to,'(a)') '       ***      **    **  **   ** ** **    **    '
+   write(print_to,'(a)') '      ** **     **   ********  **  ****    **    '
+   write(print_to,'(a)') '     **   **    **  **      ** **   ***    **    '
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine XTANT_label_starred
 
 END MODULE Dealing_with_output_files

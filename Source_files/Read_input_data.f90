@@ -1881,6 +1881,7 @@ subroutine read_Short_Rep_TB(FN, i,j, TB_Expwall, Error_descript, INFO)   ! belo
    ! Set default values:
    TB_Expwall(i,j)%f_exp%use_it = .false.       ! no exp by default
    TB_Expwall(i,j)%f_inv_exp%use_it = .false.   ! no inverse exp by default
+   TB_Expwall(i,j)%f_ZBL%use_it = .false.       ! no ZBL potential by default
    TB_Expwall(i,j)%f_cut%d0 = 0.0d0 ! cut off at zero, no repulsion by default
    TB_Expwall(i,j)%f_cut%dd = 0.01d0 ! short cut-off by default
 
@@ -1953,6 +1954,10 @@ subroutine interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwa
             return   ! exit the function if there is nothing else to do
          endif
       enddo
+
+   case ('ZBL', 'zbl')
+      TB_Expwall%f_ZBL%use_it = .true.
+
    end select
 end subroutine interpret_short_range_data
 

@@ -376,6 +376,10 @@ type :: Rep_pow
    real(8) :: m      ! [-] power
 end type Rep_pow
 
+! ZBL potential - see separate module
+type :: Rep_ZBL
+   logical :: use_it
+end type Rep_ZBL
 
 ! Combined functions together:
 type, EXTENDS (TB_Exp_wall) :: TB_Short_Rep
@@ -387,6 +391,8 @@ type, EXTENDS (TB_Exp_wall) :: TB_Short_Rep
    type(Rep_exp) :: f_exp
    ! 4) Power (array to be able to construct arbitrary polynomial):
    type(Rep_pow), dimension(:), allocatable  :: f_pow
+   ! 5) ZBL:
+   type(Rep_exp) :: f_ZBL
 end type TB_Short_Rep
 
 
