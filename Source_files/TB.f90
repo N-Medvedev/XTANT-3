@@ -57,7 +57,8 @@ use TB_xTB, only : Construct_Vij_xTB, construct_TB_H_xTB, get_Erep_s_xTB, identi
 use Van_der_Waals, only : Construct_B, get_vdW_s, get_vdW_s_D, get_vdW_interlayer
 use Coulomb, only: m_k, m_sqrtPi, Coulomb_Wolf_pot, get_Coulomb_Wolf_s, cut_off_distance, Construct_B_C, get_Coulomb_s, &
                      Coulomb_Wolf_self_term, d_Coulomb_Wolf_pot
-use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s, get_short_range_rep_s
+use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s, &
+                     get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s
 
 implicit none
 PRIVATE
@@ -337,7 +338,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
          call Coulomb_forces(Scell(NSC)%TB_Coul, Scell, NSC, numpar) ! get Coulomb forces, see below
          
          ! Exponential wall potential part:
-         call Exponential_wall_forces(Scell(NSC)%TB_Expwall, Scell, NSC, numpar) ! get Exponential wall forces, see below
+         call Exponential_wall_forces(Scell(NSC)%TB_Expwall, Scell, NSC, matter, numpar) ! get Exponential wall forces, see below
          !cccccccccccccccccccccccccccccccccccccccccccccc
 
 
@@ -2319,19 +2320,25 @@ subroutine Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn)
 end subroutine Construct_M_x1
 
 
-subroutine Exponential_wall_forces(TB_Expwall, Scell, NSC, numpar) ! get Exponential wall forces
+subroutine Exponential_wall_forces(TB_Expwall, Scell, NSC, matter, numpar) ! get Exponential wall forces
    class(TB_Exp_wall), allocatable, dimension(:,:), intent(in) :: TB_Expwall	! exponential wall
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of super-cell
+   type(solid), intent(in) :: matter   ! materil parameters
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    !----------------------------------
     if (allocated(TB_Expwall)) then ! if we have vdW potential defined
       select type (TB_Expwall)
       type is (TB_Exp_wall_simple)
-          ! Forces for all atoms:
-         call d_Exp_wall_pot_s(Scell, NSC, TB_Expwall, numpar)	! module "Exponential_wall"
+         ! Forces for all atoms:
+         call d_Exp_wall_pot_s(Scell, NSC, TB_Expwall, numpar) ! module "Exponential_wall"
          ! Forces for the super-cell:
-         call d_Exp_wall_Pressure_s(Scell, NSC, TB_Expwall, numpar)	! module "Exponential_wall"
+         call d_Exp_wall_Pressure_s(Scell, NSC, TB_Expwall, numpar)  ! module "Exponential_wall"
+      type is (TB_Short_Rep)
+         ! Forces for all atoms:
+         call d_Short_range_pot_s(Scell, NSC, matter, TB_Expwall, numpar) ! module "Exponential_wall"
+         ! Forces for the super-cell:
+         call d_Short_range_Pressure_s(Scell, NSC, TB_Expwall, matter, numpar) ! module "Exponential_wall"
       end select
    else
       ! No additional forces, if there is no exponential wall parameters given
@@ -2684,11 +2691,11 @@ end subroutine get_pot_nrg
 
 function Exponential_wall_s(TB_Expwall, Scell, NSC, matter, numpar) result(Pot)
    real(8) :: Pot	! Exponential wall energy [eV]
-   class(TB_Exp_wall), allocatable, dimension(:,:), intent(in) :: TB_Expwall	! exponential wall
+   class(TB_Exp_wall), allocatable, dimension(:,:), intent(in) :: TB_Expwall  ! exponential wall
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Solid), intent(in) :: matter   ! all material parameters
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    real(8) a
    if (allocated(TB_Expwall)) then ! if we have Exponential wall potential defined
       select type(TB_Expwall)

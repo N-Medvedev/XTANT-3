@@ -1765,6 +1765,16 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_short.txt'
             inquire(file=trim(adjustl(File_name)),exist=file_exists)
          endif
+         ! try the other order of elements:
+         if (.not.file_exists) then
+            write(ch_temp,'(a)') trim(adjustl(matter%Atoms(j)%Name))//'_'//trim(adjustl(matter%Atoms(i)%Name))//'_'
+            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_wall.txt'
+            inquire(file=trim(adjustl(File_name)),exist=file_exists)
+         endif
+         if (.not.file_exists) then ! try the new name
+            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_short.txt'
+            inquire(file=trim(adjustl(File_name)),exist=file_exists)
+         endif
 
          if (file_exists) then
             FN=110
@@ -1895,7 +1905,11 @@ subroutine read_Short_Rep_TB(FN, i,j, TB_Expwall, Error_descript, INFO)   ! belo
 
       call interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwall(i,j), INFO, Error_descript) ! below
       if (.not. read_well) exit RD  ! end of file, stop reading
+!       print*, 'o:', i, j, text, TB_Expwall(i,j)%f_inv_exp%use_it
    enddo RD
+!
+!    print*, i, j, TB_Expwall(:,:)%f_inv_exp%use_it
+!    pause 'read_Short_Rep_TB'
 end subroutine read_Short_Rep_TB
 
 
@@ -1923,7 +1937,6 @@ subroutine interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwa
    case ('EXP', 'Exp', 'exp', 'Exponential', 'exponential', 'EXPONENTIAL')
       TB_Expwall%f_exp%use_it = .true.
       read(FN,*,IOSTAT=Reason) TB_Expwall%f_exp%Phi, TB_Expwall%f_exp%r0, TB_Expwall%f_exp%a
-
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
          TB_Expwall%f_exp%use_it = .false. ! not to use
@@ -1932,7 +1945,7 @@ subroutine interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwa
          return   ! exit the function if there is nothing else to do
       endif
 
-   case ('INVEXP', 'InvExp', 'invexp', 'INV_EXP', 'Inv_Exp', 'inv_exp')
+   case ('INVEXP', 'InvExp', 'invexp', 'Invexp', 'INV_EXP', 'Inv_Exp', 'Inv_exp', 'inv_exp')
       TB_Expwall%f_inv_exp%use_it = .true.
       read(FN,*,IOSTAT=Reason) TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0
       call read_file(Reason, count_lines, read_well)
@@ -1948,6 +1961,8 @@ subroutine interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwa
       allocate(TB_Expwall%f_pow(N_pow))
       TB_Expwall%f_pow(:)%use_it = .true.
       do i = 1, N_pow   ! read for all functions
+         read(FN,*,IOSTAT=Reason) TB_Expwall%f_pow(i)%Phi, TB_Expwall%f_pow(i)%r0, TB_Expwall%f_pow(i)%m
+!          print*, TB_Expwall%f_pow%Phi, TB_Expwall%f_pow%r0, TB_Expwall%f_pow%m
          call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
             deallocate(TB_Expwall%f_pow)   ! not to use

@@ -36,7 +36,7 @@ implicit none
 PRIVATE
 
 public :: get_Exp_wall_s, d_Exp_wall_Pressure_s, d_Exp_wall_pot_s
-public :: get_short_range_rep_s
+public :: get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s
 
  contains
 
@@ -55,7 +55,7 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! 
    integer, pointer :: j, KOA1, KOA2, m
 
    sum_a = 0.0d0
-   !$omp PARALLEL private(i, m, KOA1, atom_2, j, KOA2, a_r, Short_range_pot)
+   !$omp PARALLEL private(i, m, KOA1, Z1, atom_2, j, KOA2, Z2, a_r, Short_range_pot)
    !$omp do reduction( + : sum_a)
    do i = 1, Scell(NSC)%Na ! all atoms
       m => Scell(NSC)%Near_neighbor_size(i)
@@ -69,6 +69,7 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! 
             a_r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4)	! at this distance, R
             Short_range_pot = Shortrange_pot(TB_Expwall(KOA1,KOA2), a_r, Z1, Z2)    ! function below
             sum_a = sum_a + Short_range_pot
+!             print*, 'get_short_range_rep_s', sum_a, Short_range_pot, a_r, KOA1, KOA2
          endif ! (j .GT. 0)
       enddo ! j
    enddo ! i
@@ -108,6 +109,9 @@ function Shortrange_pot(TB_Expwall, a_r, Z1, Z2) result(Pot)
       else
          f_ZBL = 0.0d0
       endif
+
+!       print*, 'Shortrange_pot-1:', f_invexp, f_exp, f_pow, f_ZBL, f_cut_large
+!       print*, 'Shortrange_pot-2:', a_r, TB_Expwall%f_inv_exp%use_it, TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0
 
       ! Combine all:
       Pot = f_invexp + f_exp + f_pow + f_ZBL
@@ -190,7 +194,7 @@ subroutine d_Short_range_pot_s(Scell, NSC, matter, TB_Expwall, numpar)
    allocate(Erx_s(3,n)) ! x,y,z-forces for each atoms
    Erx_s = 0.0d0
 
-   !$omp PARALLEL private(ian, i1, dik, dpsi, m, KOA1, atom_2, j1, djk, KOA2, x,y,z, x1, b, a_r,ddlta,b_delta)
+   !$omp PARALLEL private(ian, i1, dik, dpsi, m, KOA1, Z1, atom_2, j1, djk, KOA2, Z2, x,y,z, x1, b, a_r,ddlta,b_delta)
    !$omp DO
    do ian = 1, n	! Forces for all atoms
       do i1 = 1, n	! contribution from all atoms
@@ -318,7 +322,7 @@ pure function power_function(r, f_pow) result(Pot)
    if (allocated(f_pow)) then ! and only then
       Nsiz = size(f_pow)
       do i = 1, Nsiz
-         Pot = Pot + (r/f_pow(i)%r0)**f_pow(i)%m
+         Pot = Pot + f_pow(i)%Phi * (r/f_pow(i)%r0)**f_pow(i)%m
       enddo
    endif
 end function power_function
@@ -332,7 +336,7 @@ pure function d_power_function(r, f_pow) result(Pot)
    if (allocated(f_pow)) then ! and only then
       Nsiz = size(f_pow)
       do i = 1, Nsiz
-         Pot = Pot + (r/f_pow(i)%r0)**f_pow(i)%m * f_pow(i)%m / r
+         Pot = Pot + f_pow(i)%Phi * (r/f_pow(i)%r0)**f_pow(i)%m * f_pow(i)%m / r
       enddo
    endif
 end function d_power_function
