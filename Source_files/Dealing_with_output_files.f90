@@ -3047,7 +3047,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    !type(TB_repulsive), dimension(:), intent(in) :: TB_Repuls  ! parameters of the repulsive part of TB
    !type(TB_Hamiltonian), dimension(:), intent(in) ::  TB_Hamil ! parameters of the Hamiltonian of TB
    !--------------
-   integer i
+   integer :: i, j
    character(100) :: text, text1, text2, text3
    logical :: optional_output
 
@@ -3261,7 +3261,15 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(print_to,'(a,a)') ' No Coulomb potential was defined or unbalanced charge allowed'
       endif
       if (allocated(Scell(1)%TB_Expwall)) then ! if we have exponential wall potential defined
-         write(print_to,'(a,a)') ' Short-range repulsion (exponential wall): ', trim(adjustl(Scell(1)%TB_Expwall(1,1)%Param))
+         FPN:do i = 1, size(Scell(1)%TB_Expwall,1)
+            do j = 1, size(Scell(1)%TB_Expwall,2)
+               if (LEN(trim(adjustl(Scell(1)%TB_Expwall(i,j)%Param))) > 0) then
+                  write(text1, '(a)') trim(adjustl(Scell(1)%TB_Expwall(i,j)%Param))
+                  exit FPN
+               endif
+            enddo
+         enddo FPN
+         write(print_to,'(a,a)') ' Short-range repulsion (exponential wall): ', trim(adjustl(text1))
       else !For this material exponential wall class is undefined
          write(print_to,'(a,a)') ' No additional short-range repulsion was defined for close interatomic distances'
       endif

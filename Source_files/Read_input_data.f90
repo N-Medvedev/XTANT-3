@@ -1796,12 +1796,14 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   TB_Expwall%Param = ''
                endif
                TB_Expwall(i,j)%Param = trim(adjustl(ch_temp))
+               !print*, i, j, TB_Expwall(i,j)%Param, trim(adjustl(ch_temp))
             case ('General', 'general', 'GENERAL')
                if (.not.allocated(TB_Expwall)) then
                   allocate(TB_Short_Rep::TB_Expwall(matter%N_KAO,matter%N_KAO)) ! make it for exponential wall  parametrization
                   TB_Expwall%Param = ''
                endif
                TB_Expwall(i,j)%Param = trim(adjustl(ch_temp))
+               !print*, i, j, TB_Expwall(i,j)%Param, trim(adjustl(ch_temp))
             case default
                write(Error_descript,'(a,a,a,$)') 'Unknown short-range (exponential wall) parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
 !                call Save_error_details(Err, 4, Error_descript)
