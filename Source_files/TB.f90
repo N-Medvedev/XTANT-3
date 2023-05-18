@@ -3327,6 +3327,10 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    real(8), dimension(:,:,:), allocatable :: M_Lag_exp   ! matrix of Laguerres for 3-body radial funcs (for 3TB)
    real(8), dimension(:,:,:), allocatable :: M_d_Lag_exp   ! matrix of derivatives of Laguerres for 3-body radial funcs
    real(8), dimension(:,:,:), allocatable :: Mjs      ! matrix of K-S part of overlaps with s-orb. (for 3TB)
+   ! For vdW and Coulomb contribution:
+   real(8), dimension(:,:,:), allocatable :: Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, XijSupce, YijSupce, ZijSupce
+   integer :: Nx, Ny, Nz
+
    
    ! so far we only have one supercell:
    NSC = 1
@@ -3409,7 +3413,70 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
 !          call dErdr_Pressure_s_xTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_xTB"
       end select
    END ASSOCIATE
-   
+
+   ! Other contributions to forces/pressure:
+   ! van der Waals part with TB Hamiltonian:
+   if (allocated(Scell(NSC)%TB_Waals)) then ! if we have vdW potential defined
+      ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Waals(:,:))
+      select type (ARRAY2)
+      type is (TB_vdW_Girifalco) ! so far, it is the only type we have
+         ! Get multipliers used many times into temporary arrays:
+         call Construct_B(ARRAY2, Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
+         ! Forces for the super-cell:
+         call  d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
+         if (allocated(Bij))   deallocate(Bij)
+         if (allocated(A_rij)) deallocate(A_rij)
+         if (allocated(Xij))   deallocate(Xij)
+         if (allocated(Yij))   deallocate(Yij)
+         if (allocated(Zij))   deallocate(Zij)
+         if (allocated(SXij))  deallocate(SXij)
+         if (allocated(SYij))  deallocate(SYij)
+         if (allocated(SZij))  deallocate(SZij)
+         if (allocated(XijSupce))   deallocate(XijSupce)
+         if (allocated(YijSupce))   deallocate(YijSupce)
+         if (allocated(ZijSupce))   deallocate(ZijSupce)
+      end select
+      END ASSOCIATE
+   endif
+
+
+   if (allocated(Scell(NSC)%TB_Coul)) then ! if we have vdW potential defined
+      ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Coul(:,:))
+      select type (ARRAY2)
+      type is (TB_Coulomb_cut) ! so far, it is the only type we have
+         ! Get multipliers used many times into temporary arrays:
+         call Construct_B_C(ARRAY2, Scell, NSC, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Coulomb"
+         call d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
+         if (allocated(Bij))   deallocate(Bij)
+         if (allocated(A_rij)) deallocate(A_rij)
+         if (allocated(Xij))   deallocate(Xij)
+         if (allocated(Yij))   deallocate(Yij)
+         if (allocated(Zij))   deallocate(Zij)
+         if (allocated(SXij))  deallocate(SXij)
+         if (allocated(SYij))  deallocate(SYij)
+         if (allocated(SZij))  deallocate(SZij)
+         if (allocated(XijSupce))   deallocate(XijSupce)
+         if (allocated(YijSupce))   deallocate(YijSupce)
+         if (allocated(ZijSupce))   deallocate(ZijSupce)
+      end select
+      END ASSOCIATE
+   endif
+
+   ! Exponential wall potential part:
+   if (allocated(Scell(NSC)%TB_Expwall)) then ! if we have vdW potential defined
+      ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Expwall)
+      select type (ARRAY2)
+      type is (TB_Exp_wall_simple)
+         ! Forces for the super-cell:
+         call d_Exp_wall_Pressure_s(Scell, NSC, ARRAY2, numpar)  ! module "Exponential_wall"
+      type is (TB_Short_Rep)
+         ! Forces for the super-cell:
+         call d_Short_range_Pressure_s(Scell, NSC, ARRAY2, matter, numpar) ! module "Exponential_wall"
+      end select
+      END ASSOCIATE
+   endif
+   !cccccccccccccccccccccccccccccccccccccccccccccc
+
    ! Get forces for the supercell:
    call Potential_super_cell_forces(numpar, Scell, NSC, matter)  ! module "Atomic_tools"
 
@@ -3417,7 +3484,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    call super_cell_forces(numpar, Scell, NSC, matter, Scell(NSC)%SCforce, sigma_tensor) ! module "Atomic_tools"
    
    ! Invert sigma tensor:
-   call  Invers_3x3(sigma_tensor, sigma_inversed, 'Get_pressure')	! module "Algebra_tools"
+   call Invers_3x3(sigma_tensor, sigma_inversed, 'Get_pressure')	! module "Algebra_tools"
    
    ! Calculate the stress tensor (factor 1.040 is to convert from [kg/A/fs^2] to [kg/m/s^2]):
    stress_tensor(:,:) = Scell(NSC)%SCforce%total(:,:) * matter%W_PR * sigma_inversed(:,:) * 1.0d40	! [kg/m/s^2]
