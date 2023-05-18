@@ -75,7 +75,7 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! 
    enddo ! i
    !$omp end do
    !$omp end parallel
-   a = sum_a*0.5d0	! [eV], factor to compensate for double-counting
+   a = sum_a*0.5d0   ! [eV], factor to compensate for double-counting
    nullify(a_r, j, m, KOA1, KOA2, Z1, Z2)
 end subroutine get_short_range_rep_s
 
@@ -110,8 +110,8 @@ function Shortrange_pot(TB_Expwall, a_r, Z1, Z2) result(Pot)
          f_ZBL = 0.0d0
       endif
 
-!       print*, 'Shortrange_pot-1:', f_invexp, f_exp, f_pow, f_ZBL, f_cut_large
-!       print*, 'Shortrange_pot-2:', a_r, TB_Expwall%f_inv_exp%use_it, TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0
+      !print*, 'Shortrange_pot-1:', a_r, f_invexp, f_exp, f_pow, f_ZBL, f_cut_large
+      !print*, 'Shortrange_pot-2:', a_r, TB_Expwall%f_inv_exp%use_it, TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0
 
       ! Combine all:
       Pot = f_invexp + f_exp + f_pow + f_ZBL
@@ -170,7 +170,7 @@ function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
       d_Pot = d_f_invexp + d_f_exp + d_f_pow + d_f_ZBL
 
       ! Augment the potential with the cut-off function:
-      dPot = Pot*f_cut_large + d_Pot*d_f_large
+      dPot = Pot*d_f_large + d_Pot*f_cut_large
    endif
 end function d_Short_range_pot
 
