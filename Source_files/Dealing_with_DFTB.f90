@@ -30,6 +30,7 @@ use Objects   ! since it uses derived types, it must know about them from module
 use Dealing_with_files, only : read_file
 
 implicit none
+PRIVATE
 
 ! Modular parameters:
 character(10) :: m_DFTB_directory
@@ -37,6 +38,9 @@ character(20) :: m_DFTB_norep_directory
 
 parameter (m_DFTB_directory = 'DFTB')
 parameter (m_DFTB_norep_directory = 'DFTB_no_repulsion')
+
+public :: read_skf_file, same_or_different_atom_types, m_DFTB_directory, construct_skf_filename, idnetify_basis_size, m_DFTB_norep_directory, &
+read_skf_file_no_rep
 
  contains
 

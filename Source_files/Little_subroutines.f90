@@ -27,6 +27,7 @@ use Objects
 !use Variables
 use Dealing_with_files, only : Count_columns_in_file, Count_lines_in_file
 implicit none
+PRIVATE
 
 ! this interface finds by itself which of the two subroutine to use depending on the parameters passed:
 interface extend_array_size ! extend array size
@@ -66,7 +67,13 @@ end interface deallocate_array
 
 
 ! private :: ! hides items not listed on public statement 
-public :: Find_in_array, Find_in_array_monoton, extend_array_size, deallocate_array
+public :: Find_in_array, Find_in_array_monoton, extend_array_size, deallocate_array, Find_monotonous_LE, Fermi_interpolation, &
+linear_interpolation, Find_in_monotonous_1D_array, Gaussian, print_time_step, fast_pow, count_3d, print_progress, &
+interpolate_data_on_grid, number_of_types_of_orbitals, name_of_orbitals, order_of_time, set_starting_time, convolution, &
+sample_gaussian, Fermi_function, d_Fermi_function, print_time, parse_yes_no, parse_time
+
+
+
 
  contains
  

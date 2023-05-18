@@ -32,12 +32,23 @@ use Objects
 use Algebra_tools, only : Cross_Prod, Invers_3x3, Matrix_Vec_Prod, Transpose_M, d_detH_d_h_a_b, Two_Matr_mult, Det_3x3
 use Little_subroutines, only : Find_in_array_monoton
 implicit none
+PRIVATE
 
 ! this interface finds by itself which of the two subroutine to use depending on the array passed:
 interface shortest_distance
    module procedure shortest_distance_NEW ! for Scell as single object
    module procedure shortest_distance_OLD ! for Scell as an array
 end interface shortest_distance
+
+
+public :: define_subcells, Maxwell_int_shifted, Coordinates_rel_to_abs, velocities_abs_to_rel, make_time_step_supercell, shortest_distance, &
+get_energy_from_temperature, distance_to_given_cell, make_time_step_atoms, Rescale_atomic_velocities, save_last_timestep, &
+get_interplane_indices, get_near_neighbours, get_number_of_image_cells, pair_correlation_function, get_fraction_of_given_sort, &
+Reciproc_rel_to_abs, total_forces, Potential_super_cell_forces, super_cell_forces, Convert_reciproc_rel_to_abs, get_kinetic_energy_abs, &
+get_mean_square_displacement, Cooling_atoms, Coordinates_abs_to_rel, get_Ekin, make_time_step_supercell_Y4, make_time_step_atoms_M, &
+remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_atoms_Y4, check_periodic_boundaries, &
+Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
+Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity
 
 
 !=======================================

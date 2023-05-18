@@ -24,6 +24,10 @@
 module Gnuplotting
 
 implicit none 
+PRIVATE
+
+public :: write_gnu_printout, write_gnuplot_script_header_new
+
 
  contains
  

@@ -519,7 +519,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                Mass = matter%Atoms(Scell(i)%MDatoms(j)%KOA)%Ma ! atomic mass
                Ta = Ta + Mass*V2/2.0d0/g_e ! Temperature [eV], Eq.(2.62) from H.Jeschke PhD thesis, p.49
             enddo
-            Ta = Ta*2.0d0/(3.0d0*real(Natoms) - 6.0d0) ! [eV] proper normalization
+            Ta = Ta*2.0d0/(3.0d0*dble(Natoms) - 6.0d0) ! [eV] proper normalization
             Ta = Ta*g_kb	! [eV] -> [K]
 
             if (max(Ta,Scell(i)%Ta)/min(Ta+1d-6,Scell(i)%Ta+1d-6) > 1.5d0) then ! if given temperature is too different from the initial one
@@ -572,8 +572,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          !call Coordinates_rel_to_abs(Scell, i, if_old=.true.)	! from the module "Atomic_tools"
          ! Save atomic coordinates at their equilibrium positions:
          do j = 1, Scell(i)%Na
-            Scell(i)%MDatoms(j)%R_eq(:) = Scell(i)%MDatoms(j)%R(:)	! save coords at equilibrium positions to ger mean square displacements later
-            Scell(i)%MDatoms(j)%S_eq(:) = Scell(i)%MDatoms(j)%S(:)	! save coords at equilibrium positions to ger mean square displacements later
+            Scell(i)%MDatoms(j)%R_eq(:) = Scell(i)%MDatoms(j)%R(:)   ! save coords at equilibrium positions to ger mean square displacements
+            Scell(i)%MDatoms(j)%S_eq(:) = Scell(i)%MDatoms(j)%S(:)   ! save coords at equilibrium positions to ger mean square displacements
+            !print*, 'After Make_free_surfaces', Scell(i)%MDAtoms(j)%R(:), Scell(i)%MDAtoms(j)%S(:), Scell(i)%supce
          enddo ! j
          !---------------------------
          
@@ -1104,6 +1105,7 @@ subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, i
          Scell(SCN)%MDAtoms(i)%R0(:) = Scell(SCN)%MDAtoms(i)%R(:)
          ! Get the relative coordinates from the absolute ones provided:
          call Coordinates_abs_to_rel(Scell, SCN, if_old=.true.) ! module "Atomic_tools"
+         !print*, 'read_XYZ_coords', Scell(SCN)%MDAtoms(i)%R(:), Scell(SCN)%MDAtoms(i)%S(:), Scell(SCN)%supce
       else
          Scell(SCN)%MDAtoms(i)%S(:) = coord(:)
          Scell(SCN)%MDAtoms(i)%S0(:) = Scell(SCN)%MDAtoms(i)%S(:)

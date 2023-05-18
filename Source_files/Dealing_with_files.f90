@@ -27,6 +27,9 @@ MODULE Dealing_with_files
 ! USE IFPORT ! standart FORTRAN module for dealing with files
 
 implicit none
+PRIVATE
+
+public :: get_file_stat, Count_columns_in_file, Count_lines_in_file, read_file, close_file, Path_separator, copy_file
 
  contains
 

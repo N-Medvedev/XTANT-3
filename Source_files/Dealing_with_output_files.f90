@@ -36,7 +36,6 @@ use Atomic_tools, only : pair_correlation_function
 use Variables, only : g_numpar, g_matter
 use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution
 use Dealing_with_files, only : get_file_stat, copy_file, read_file
-!use Electron_tools
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
 use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline
@@ -44,7 +43,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 15.05.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 18.05.2023)'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
 public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
