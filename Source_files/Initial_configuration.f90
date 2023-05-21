@@ -442,6 +442,12 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          inquire(file=trim(adjustl(File_name2)),exist=file_exist)
             
          ! Select among different possibilities to set the atomic cell:
+         ! In the following priorities:
+         ! 1) Path-coordinates  (in internal XTANT SAVE-files format)
+         ! 2) SAVE-files  (internal XTANT SAVE-files format)
+         ! 3) Cell-file  (extended XYZ format)
+         ! 4) unit-cell coordinates  (old internal XTANT format)
+
          SAVED_ATOMS:if (numpar%do_path_coordinate) then ! read from the files with initial and final configurations to do the path coordinate plots
 
             ! Save the flag for output:
@@ -476,6 +482,30 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             endif
          
          !----------------------------
+         elseif (file_exist) then SAVED_ATOMS    ! read from this file with transient Super cell:
+            ! Save the flag for output:
+            numpar%save_files_used = 1  ! Save files read
+
+            open(UNIT=FN2, FILE = trim(adjustl(File_name2)), status = 'old', action='read')
+            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 1, matter, Err) ! below
+
+            ! Get atomic temperature set by the velocities given in the SAVE file:
+            Natoms = size(Scell(i)%MDatoms)	! number of atoms
+            Ta = 0.0d0 ! atomic temperature
+            do j = 1,Natoms	! all atoms:
+               V2 = SUM(Scell(i)%MDatoms(j)%V(:)*Scell(i)%MDatoms(j)%V(:))*1d10 ! abs value of velocity [A/fs]^2 -> [m/s]^2
+               Mass = matter%Atoms(Scell(i)%MDatoms(j)%KOA)%Ma ! atomic mass
+               Ta = Ta + Mass*V2/2.0d0/g_e ! Temperature [eV], Eq.(2.62) from H.Jeschke PhD thesis, p.49
+            enddo
+            Ta = Ta*2.0d0/(3.0d0*dble(Natoms) - 6.0d0) ! [eV] proper normalization
+            Ta = Ta*g_kb	! [eV] -> [K]
+
+            if (max(Ta,Scell(i)%Ta)/min(Ta+1d-6,Scell(i)%Ta+1d-6) > 1.5d0) then ! if given temperature is too different from the initial one
+               ! Set initial velocities according to the given input temperature:
+               call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate)  ! below
+            endif
+
+         !----------------------------
          elseif (XYZ_file_exists) then SAVED_ATOMS ! XYZ file contains atomic coordinates
             open(UNIT=FN_XYZ, FILE = trim(adjustl(File_name_XYZ)), status = 'old', action='read')
             inquire(file=trim(adjustl(File_name_XYZ)),opened=file_opened)
@@ -503,29 +533,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
             inquire(file=trim(adjustl(File_name_XYZ)),opened=file_opened)
             if (file_opened) close (FN_XYZ)
-         !----------------------------
-         elseif (file_exist) then SAVED_ATOMS    ! read from this file with transient Super cell:
-            ! Save the flag for output:
-            numpar%save_files_used = 1  ! Save files read
 
-            open(UNIT=FN2, FILE = trim(adjustl(File_name2)), status = 'old', action='read')
-            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 1, matter, Err) ! below
-
-            ! Get atomic temperature set by the velocities given in the SAVE file:
-            Natoms = size(Scell(i)%MDatoms)	! number of atoms
-            Ta = 0.0d0 ! atomic temperature
-            do j = 1,Natoms	! all atoms:
-               V2 = SUM(Scell(i)%MDatoms(j)%V(:)*Scell(i)%MDatoms(j)%V(:))*1d10 ! abs value of velocity [A/fs]^2 -> [m/s]^2
-               Mass = matter%Atoms(Scell(i)%MDatoms(j)%KOA)%Ma ! atomic mass
-               Ta = Ta + Mass*V2/2.0d0/g_e ! Temperature [eV], Eq.(2.62) from H.Jeschke PhD thesis, p.49
-            enddo
-            Ta = Ta*2.0d0/(3.0d0*dble(Natoms) - 6.0d0) ! [eV] proper normalization
-            Ta = Ta*g_kb	! [eV] -> [K]
-
-            if (max(Ta,Scell(i)%Ta)/min(Ta+1d-6,Scell(i)%Ta+1d-6) > 1.5d0) then ! if given temperature is too different from the initial one
-               ! Set initial velocities according to the given input temperature:
-               call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate)  ! below
-            endif
          !----------------------------
          else SAVED_ATOMS
             ! Save the flag for output:
