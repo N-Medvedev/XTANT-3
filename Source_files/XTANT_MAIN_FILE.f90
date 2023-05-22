@@ -59,7 +59,7 @@ implicit none
 #ifdef OMP_inside
    call XTANT_label(6, 1)   ! module "Dealing_with_output_files"
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
-   call XTANT_label(6, 3)   ! module "Dealing_with_output_files"
+   call XTANT_label(6, 4)   ! module "Dealing_with_output_files"
 #endif
 
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
@@ -369,17 +369,16 @@ endif
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Printing out the duration of the program, starting and ending time and date:
-call date_and_time(values=g_c1)	    ! For calculation of the time of execution of the program
-g_as1=dble(24.0d0*60.0d0*60.0d0*(g_c1(3)-g_ctim(3))+3600.0d0*(g_c1(5)-g_ctim(5))+60.0d0*(g_c1(6)-g_ctim(6))+(g_c1(7)-g_ctim(7))+(g_c1(8)-g_ctim(8))*0.001d0)	! sec
-print*, '   '
-call parse_time(g_as1,chtest) ! module "Little_subroutines"
+call parse_time(chtest, c0_in=g_ctim) ! module "Little_subroutines"
 write(*,'(a,a)') 'Duration of execution of program: ', trim(adjustl(chtest))
 
 call save_duration(g_matter, g_numpar, trim(adjustl(chtest))) ! module "Dealing_with_output_files"
 
 call print_time('Started  at', ctim=g_ctim) ! module "Little_subroutines"
 call print_time('Finished at') ! module "Little_subroutines"
-!print*, '   '
+write(*,'(a)') trim(adjustl(m_starline))
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 write(*,'(a)')  'Executing gnuplot scripts to create plots...'
 call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
 if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully', msec=.true.)

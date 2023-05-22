@@ -2575,7 +2575,7 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
    endif
    numpar%FN_parameters = FN ! save this file number with parameters
 #ifdef OMP_inside
-   call Print_title(FN, Scell, matter, laser, numpar, 0) ! below
+   call Print_title(FN, Scell, matter, laser, numpar, 1) ! below
 #else
    call Print_title(FN, Scell, matter, laser, numpar, 4) ! below
 #endif
@@ -3539,7 +3539,7 @@ subroutine XTANT_label(print_to, ind)
    case (3)       ! filled
       call XTANT_label_filled(print_to) ! below
    case (4)       ! starred
-      call XTANT_label_filled(print_to) ! below
+      call XTANT_label_starred(print_to) ! below
    endselect
 end subroutine XTANT_label
 

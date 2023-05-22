@@ -500,11 +500,26 @@ pure function find_order_of_number_int(num)
 end function find_order_of_number_int
 
 
-subroutine parse_time(sec,chtest)
-   real(8), intent(inout) :: sec ! time interval in [sec]
+subroutine parse_time(chtest, sec_in, c0_in, c1_in)
    character(*), intent(out) :: chtest ! split it into miuns, hours, days...
+   real(8), intent(inout), optional :: sec_in   ! time interval in [sec]
+   integer, dimension(8), intent(inout), optional :: c1_in, c0_in ! time stamp
+   !-------------------------
    character(100) temp
-   real(8) days, hours, mins
+   integer, dimension(8) :: c1 ! time stamp
+   real(8) days, hours, mins, sec
+
+   if (present(sec_in)) then  ! data provided in total number of seconds
+      sec = sec_in
+   elseif (present(c1_in) .and. present(c0_in)) then   ! data provided in fortran time-stamp format
+      sec = get_seconds_from_timestamp(c0_in, c1_in)   ! below
+   elseif (present(c0_in)) then
+      call date_and_time(values=c1) ! current time
+      sec = get_seconds_from_timestamp(c0_in, c1)   ! below
+   else
+      sec = 0.0d0 ! no data provided, nothing to printout
+   endif
+
    days = 0.0d0
    hours = 0.0d0
    mins = 0.0d0
@@ -546,6 +561,18 @@ subroutine parse_time(sec,chtest)
    write(temp, '(f7.3)') sec
    write(chtest, '(a,a,a)') trim(adjustl(chtest)), ' '//trim(adjustl(temp)), ' sec'
 end subroutine parse_time
+
+
+pure function get_seconds_from_timestamp(c0, c1) result(Sec)
+   real(8) Sec
+   integer, dimension(8), intent(in) :: c1, c0 ! timestamp, current and starting
+   Sec = dble(24.0d0*3600.0d0*(c1(3)-c0(3)) + &    ! days
+               3600.0d0*(c1(5)-c0(5)) + &          ! hours
+               60.0d0*(c1(6)-c0(6)) + &            ! minutes
+               (c1(7)-c0(7)) + &                   ! seconds
+               (c1(8)-c0(8))*0.001d0)              ! milliseconds
+end function get_seconds_from_timestamp
+
 
 
 subroutine print_progress(string,ndone,ntotal)
