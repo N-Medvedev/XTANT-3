@@ -330,12 +330,18 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          !File_name = trim(adjustl(Folder_name))//'NUMERICAL_PARAMETERS.txt'
          File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
       else ! it's not the first run, use next set of parameters:
-      !File_name = trim(adjustl(Folder_name))//'NUMERICAL_PARAMETERS'
-      File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))
+         !File_name = trim(adjustl(Folder_name))//'NUMERICAL_PARAMETERS'
+         File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))
          write(chnum,'(i3)') Numb
          write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
       endif
       inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      ! Maybe reuse the default one, if identical parameters are to be used:
+      if (.not.file_exist) then
+         File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      endif
+
       NUMERICAL_PARAMETERS:if (file_exist) then
          call read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err) ! see below
          if (Err%Err) goto 3416

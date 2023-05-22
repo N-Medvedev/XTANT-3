@@ -386,25 +386,41 @@ if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully'
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !Check if there is another set of input files to run next simulation:
  g_numpar%which_input = g_numpar%which_input + 1
- chtest = 'INPUT_DATA'//g_numpar%path_sep//'INPUT_MATERIAL'
+ !chtest = 'INPUT_DATA'//g_numpar%path_sep//'INPUT_MATERIAL'
+ chtest = 'INPUT_DATA'//g_numpar%path_sep//trim(adjustl(m_INPUT_MATERIAL))
  write(chtest2,'(i3)') g_numpar%which_input
  write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
  inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
  if (file_exists) then ! one file exists
-    chtest = 'INPUT_DATA'//g_numpar%path_sep//'NUMERICAL_PARAMETERS'
+    write(*,'(a)') trim(adjustl(m_starline))
+    write(*,'(a,a)')  'Another set of input parameter files exists: '
+    print*, trim(adjustl(chtest))
+
+    !chtest = 'INPUT_DATA'//g_numpar%path_sep//'NUMERICAL_PARAMETERS'
+    chtest = 'INPUT_DATA'//g_numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))
     write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
     inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
     if (file_exists) then ! second input file exists
-       write(*,'(a)') trim(adjustl(m_starline))
-       write(*,'(a,a)')  'Another set of input parameter files exists: ', trim(adjustl(chtest))
+      print*, 'and ', trim(adjustl(chtest))
+    else ! Maybe reuse the original file, if identical parameters are required:
+      print*, 'File ', trim(adjustl(chtest)), ' not found'
+      chtest = 'INPUT_DATA'//g_numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+      inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
+      print*, 'File ', trim(adjustl(chtest)), ' will be reused'
+    endif
+
+    if (file_exists) then ! second input file exists
        write(*,'(a)')    'Running XTANT again for these new parameters...'
        call deallocate_all() ! module "Variables"
+       write(*,'(a)') trim(adjustl(m_starline))
        goto 1984 ! go to the beginning and run the program again for the new input files
     else
+       write(*,'(a)') trim(adjustl(m_starline))
        write(*,'(a,a,a)')  'File ', trim(adjustl(chtest)), ' could not be found.'
        write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
     endif
  else
+    write(*,'(a)') trim(adjustl(m_starline))
     write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
  endif
  write(*,'(a)') trim(adjustl(m_starline))
