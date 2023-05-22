@@ -322,6 +322,13 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          write(File_name, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'SAVE_supercell.dat'
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          
+         ! Select among different possibilities to set the super-cell:
+         ! In the following priorities:
+         ! 1) Path-coordinates  (in internal XTANT SAVE-files format)
+         ! 2) SAVE-files  (internal XTANT SAVE-files format)
+         ! 3) Cell-file  (extended XYZ format)
+         ! 4) unit-cell coordinates  (old internal XTANT format)
+
          SAVED_SUPCELL:if (numpar%do_path_coordinate) then ! read phase 1 and 2 supercells:
             
             ! Read phase 1 parameters:
@@ -375,10 +382,6 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             if (file_opened) close (FN4)
          
          !----------------------------
-         elseif (XYZ_file_exists) then SAVED_SUPCELL  ! read from XYZ file:
-            ! Will read it together with atomic coordinates from the same file below
-
-         !----------------------------
          elseif (file_exist) then SAVED_SUPCELL  ! read from this file with transient Super cell:
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             INPUT_SUPCELL:if (file_exist) then
@@ -399,6 +402,11 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                print*, trim(adjustl(Error_descript))
                goto 3416
             endif INPUT_SUPCELL
+
+         !----------------------------
+         elseif (XYZ_file_exists) then SAVED_SUPCELL  ! read from XYZ file:
+            ! Will read it together with atomic coordinates from the same file below
+
          !----------------------------
          else SAVED_SUPCELL   ! no supercell, create from unit cell
             write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), &
