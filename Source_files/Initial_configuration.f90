@@ -1861,13 +1861,15 @@ subroutine get_supercell_vectors(FN, File_name, Scell, SCN, which_one, matter, E
          if (present(ind)) then
             if (ind == 1) then   ! to read this index or not
                read(FN,*,IOSTAT=Reason) temp_vec
-               Scell(SCN)%supce(i,:) =  temp_vec
+               !Scell(SCN)%supce(i,:) =  temp_vec
+               Scell(SCN)%supce(:,i) =  temp_vec
             else
                read(FN,*,IOSTAT=Reason) ! do not read this index
             endif
          else
             read(FN,*,IOSTAT=Reason) temp_vec
-            Scell(SCN)%supce(i,:) =  temp_vec
+            !Scell(SCN)%supce(i,:) =  temp_vec
+            Scell(SCN)%supce(:,i) =  temp_vec
          endif
          call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
@@ -1880,13 +1882,15 @@ subroutine get_supercell_vectors(FN, File_name, Scell, SCN, which_one, matter, E
          if (present(ind)) then
             if (ind == 0) then
                read(FN,*,IOSTAT=Reason) temp_vec
-               Scell(SCN)%supce0(i-4,:) = temp_vec
+               !Scell(SCN)%supce0(i-4,:) = temp_vec
+               Scell(SCN)%supce0(:,i-4) = temp_vec
             else
                read(FN,*,IOSTAT=Reason) ! do not read this index
             endif
          else
             read(FN,*,IOSTAT=Reason) temp_vec
-            Scell(SCN)%supce0(i-4,:) = temp_vec
+            !Scell(SCN)%supce0(i-4,:) = temp_vec
+            Scell(SCN)%supce0(:,i-4) = temp_vec
          endif
          call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
@@ -1899,13 +1903,15 @@ subroutine get_supercell_vectors(FN, File_name, Scell, SCN, which_one, matter, E
          if (present(ind)) then
             if (ind == 1) then
                read(FN,*,IOSTAT=Reason) temp_vec
-               Scell(SCN)%Vsupce(i-8,:) = temp_vec
+               !Scell(SCN)%Vsupce(i-8,:) = temp_vec
+               Scell(SCN)%Vsupce(:,i-8) = temp_vec
             else
                read(FN,*,IOSTAT=Reason) ! do not read this index
             endif
          else
             read(FN,*,IOSTAT=Reason) temp_vec
-            Scell(SCN)%Vsupce(i-8,:) = temp_vec
+            !Scell(SCN)%Vsupce(i-8,:) = temp_vec
+            Scell(SCN)%Vsupce(:,i-8) = temp_vec
          endif
          call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
@@ -1918,13 +1924,15 @@ subroutine get_supercell_vectors(FN, File_name, Scell, SCN, which_one, matter, E
        if (present(ind)) then
             if (ind == 0) then
                read(FN,*,IOSTAT=Reason) temp_vec
-               Scell(SCN)%Vsupce0(i-12,:) = temp_vec
+               !Scell(SCN)%Vsupce0(i-12,:) = temp_vec
+               Scell(SCN)%Vsupce0(:,i-12) = temp_vec
             else
                read(FN,*,IOSTAT=Reason) ! do not read this index
             endif
          else
             read(FN,*,IOSTAT=Reason) temp_vec
-            Scell(SCN)%Vsupce0(i-12,:) = temp_vec
+            !Scell(SCN)%Vsupce0(i-12,:) = temp_vec
+            Scell(SCN)%Vsupce0(:,i-12) = temp_vec
          endif
          call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
