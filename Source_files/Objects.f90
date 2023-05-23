@@ -820,6 +820,7 @@ type Numerics_param
    real(8) :: BOP_bond_length   ! [A]
    ! General flags:
    integer :: save_files_used ! to mark for the output printing out, whether SAVE-files are used or unit cell
+   logical :: numpar_in_input ! numpar were already read from the single file, no need for separate file reading
 end type Numerics_param
 !==============================================
 

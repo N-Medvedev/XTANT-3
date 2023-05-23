@@ -38,12 +38,13 @@ use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, se
 use Dealing_with_files, only : get_file_stat, copy_file, read_file
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
-use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline
+use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, &
+                           m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL
 
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 22.05.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 23.05.2023)'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
 public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
@@ -778,7 +779,7 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
    character(3) :: chtest2
    integer INFO
    integer :: MOD_TIM ! time when the communication.txt file was last modified
-   logical :: file_opened, file_exist
+   logical :: file_opened, file_exist, NP_file_exists, IM_file_exists
 
    ! Create directory where the output files will be saved:
    call create_output_folder(Scell,matter,laser,numpar)	! module "Dealing_with_output_files"
@@ -787,17 +788,32 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
    if (numpar%which_input >= 1) then
       
       ! Check if new format of input file exists:
-      chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT'
+      !chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT'
+      chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_MINIMUM))
+
       write(chtest2,'(i3)') numpar%which_input
       write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
       inquire(file=trim(adjustl(chtest)),exist=file_exist)
       
       if (.not.file_exist) then ! use old format of input files:
-         chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL'
-         write(chtest2,'(i3)') numpar%which_input
+         !chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL'
+         chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_MATERIAL))
          write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
-         chtest1 = 'INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS'
+         inquire(file=trim(adjustl(chtest)),exist=IM_file_exists)
+         if (.not.IM_file_exists) then ! check if short-named file exists
+            chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_ALL))
+            write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
+         endif
+
+         !chtest1 = 'INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS'
+         chtest1 = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))
          write(chtest1,'(a,a,a,a)') trim(adjustl(chtest1)), '_', trim(adjustl(chtest2)), '.txt'
+         inquire(file=trim(adjustl(chtest1)),exist=NP_file_exists)
+         if (.not.NP_file_exists) then ! check if unnumbered file with NumPars:
+            chtest1 = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+            inquire(file=trim(adjustl(chtest1)),exist=NP_file_exists)
+         endif
+
          ! And a file with MD_grid if user provided:
          if (allocated(numpar%dt_MD_reset_grid)) then
             chtest_MDgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%MD_step_grid_file))
@@ -813,12 +829,22 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
       endif
    else
       ! Check if new format of input file exists:
-      chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT.txt'
+      !chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT.txt'
+      chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_MINIMUM))//'.txt'
       inquire(file=trim(adjustl(chtest)),exist=file_exist)
       
       if (.not.file_exist) then ! use old format of input files:
-         chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL.txt'
-         chtest1 = 'INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS.txt'
+         !chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL.txt'
+         chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_MATERIAL))//'.txt'
+         inquire(file=trim(adjustl(chtest)),exist=IM_file_exists)
+         if (.not.IM_file_exists) then ! check if short-named file exists
+            chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_ALL))//'.txt'
+         endif
+
+         !chtest1 = 'INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS.txt'
+         chtest1 = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+         inquire(file=trim(adjustl(chtest1)),exist=NP_file_exists)
+
          ! And a file with MD_grid if user provided:
          if (allocated(numpar%dt_MD_reset_grid)) then
             chtest_MDgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%MD_step_grid_file))
@@ -835,10 +861,10 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
    endif
 
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
-      !call copy_file('INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL.txt',trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
+
       call copy_file(trim(adjustl(chtest)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
-      !call copy_file('INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS.txt',trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
-      if (.not.file_exist) call copy_file(trim(adjustl(chtest1)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
+
+      if (.not.file_exist .and. NP_file_exists) call copy_file(trim(adjustl(chtest1)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
       ! And file with MD grid, if user provided:
       if (allocated(numpar%dt_MD_reset_grid)) then
          call copy_file(trim(adjustl(chtest_MDgrid)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
@@ -850,10 +876,9 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
          call copy_file(trim(adjustl(chtest_AtBathgrid)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
       endif
    else ! it is linux
-      !call copy_file('INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL.txt',trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
       call copy_file(trim(adjustl(chtest)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
-      !call copy_file('INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS.txt',trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
-      if (.not.file_exist) call copy_file(trim(adjustl(chtest1)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
+
+      if (.not.file_exist .and. NP_file_exists) call copy_file(trim(adjustl(chtest1)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
       ! And file with MD grid, if user provided:
       if (allocated(numpar%dt_MD_reset_grid)) then
          call copy_file(trim(adjustl(chtest_MDgrid)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"

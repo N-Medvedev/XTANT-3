@@ -50,7 +50,7 @@ PRIVATE
 
 
 ! Modular parameters:
-character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
+character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_MINIMUM, m_INPUT_ALL, m_Atomic_parameters, m_Hubbard_U
 character(70), parameter :: m_starline = '*************************************************************'
 
 character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
@@ -58,16 +58,16 @@ character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT inf
 character(15), parameter :: m_HELP_file = 'HELP.txt'  ! file with the helpful info
 character(25), parameter :: m_List_ofmaterials = 'List_of_materials.txt'  ! list of materials existing
 
-parameter (m_INPUT_directory = 'INPUT_DATA')
-parameter (m_INPUT_MATERIAL = 'INPUT_MATERIAL')
-parameter (m_NUMERICAL_PARAMETERS = 'NUMERICAL_PARAMETERS')
-parameter (m_Atomic_parameters = 'Atomic_parameters')
-parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat')
-
+parameter (m_INPUT_directory = 'INPUT_DATA')    ! directory with all the input data
+parameter (m_INPUT_MATERIAL = 'INPUT_MATERIAL') ! old format, material and pulse parameters
+parameter (m_NUMERICAL_PARAMETERS = 'NUMERICAL_PARAMETERS') ! old format, numerical parameters
+parameter (m_INPUT_MINIMUM = 'INPUT_MINIMUM') ! format with only parameters different from default (to be depricated)
+parameter (m_INPUT_ALL = 'INPUT') ! new format with all parameters together
+parameter (m_Atomic_parameters = 'Atomic_parameters') ! data-file with atomic parameters
+parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat') ! data-file with Hubbard-U parameters (for SCC calculations)
 
 public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
-public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_starline
-
+public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL
 public :: Read_Input_Files, get_add_data
 
  contains
@@ -85,7 +85,8 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    matter%Name = '' ! Material name
    matter%Chem = '' ! chemical formula of the compound
    if (.not.allocated(Scell)) allocate(Scell(1)) ! So far we only use 1 supercell
-   numpar%lin_scal = 0   ! do not use linear scaling TB
+   numpar%numpar_in_input = .false.    ! assume separate file with the numerical parameters
+   numpar%lin_scal = 0   ! do not use linear scaling TB (NOT READY)
    Scell(1)%Te = 300.0d0 ! initial electron temperature [K]
    Scell(1)%TeeV = Scell(1)%Te/g_kb ! [eV] electron temperature
    Scell(1)%Ta = 300.0d0 ! initial atomic temperature [K]
@@ -273,14 +274,13 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    type(User_overwrite_data) :: user_data
    real(8) temp
    integer FN, Reason, count_lines, N, i
-   logical file_exist, file_opened, read_well
-   character(100) Error_descript, Folder_name, File_name
+   logical :: file_exist, file_opened, read_well, new_format_exists
+   character(100) Error_descript, Folder_name, File_name, File_name_NEW
    character(3) chnum
    
    !--------------------------------------------------------------------------
    ! In case the user didn't define something, the default values will be used
-   ! So, the user does not have to define everything every time. 
-   ! Set default values:
+   ! Set the default values:
    call initialize_default_values(matter, numpar, laser, Scell)
    !--------------------------------------------------------------------------
    ! Now, read the input file:
@@ -289,19 +289,23 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep
    numpar%input_path = Folder_name ! save the address with input files
 
-   ! New input file format:
+   ! File in minimum-format:
    if (.not.present(Numb)) then ! first run, use default files:
-      File_name = trim(adjustl(Folder_name))//'INPUT.txt'
+      File_name = trim(adjustl(Folder_name))//trim(adjustl(m_INPUT_MINIMUM))//'.txt'
    else ! it's not the first run, use next set of parameters:
-      File_name = trim(adjustl(Folder_name))//'INPUT'
+      File_name = trim(adjustl(Folder_name))//trim(adjustl(m_INPUT_MINIMUM))
       write(chnum,'(i3)') Numb
       write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
    endif
-   inquire(file=trim(adjustl(File_name)),exist=file_exist)
+   inquire(file=trim(adjustl(File_name)),exist=new_format_exists)
    
-   NEW_FORMAT:if (file_exist) then ! read parameters from the new file format
+   !-------------------------------
+   ! Read input parameters in various formats:
+   NEW_FORMAT:if (new_format_exists) then ! minimum format (inconvenient, to be deprecated)
       call read_input_txt(File_name, Scell, matter, numpar, laser, Err) ! see above
       if (Err%Err) goto 3416
+
+   !-------------------------------
    else NEW_FORMAT ! Then use old format of two files
       ! First read material and pulse parameters:
       if (.not.present(Numb)) then ! first run, use default files:
@@ -314,8 +318,21 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
       endif
       inquire(file=trim(adjustl(File_name)),exist=file_exist)
+
+      ! Check the short name of the file, if needed:
+      TWO_OR_ONE_FILE:if (.not.file_exist) then ! try the short name:
+         if (.not.present(Numb)) then ! first run, use default files:
+            File_name = trim(adjustl(Folder_name))//trim(adjustl(m_INPUT_ALL))//'.txt'
+         else ! it's not the first run, use next set of parameters:
+            File_name = trim(adjustl(Folder_name))//trim(adjustl(m_INPUT_ALL))
+            write(chnum,'(i3)') Numb
+            write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
+         endif
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      endif TWO_OR_ONE_FILE
+
       INPUT_MATERIAL:if (file_exist) then
-         call read_input_material(File_name, Scell, matter, numpar, laser, Err) ! see below
+         call read_input_material(File_name, Scell, matter, numpar, laser, user_data, Err) ! see below
          if (Err%Err) goto 3416
       else
          write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
@@ -324,34 +341,34 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          goto 3416
       endif INPUT_MATERIAL
 
-
       ! Read numerical parameters:
-      if (.not.present(Numb)) then ! first run, use default files:
-         !File_name = trim(adjustl(Folder_name))//'NUMERICAL_PARAMETERS.txt'
-         File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
-      else ! it's not the first run, use next set of parameters:
-         !File_name = trim(adjustl(Folder_name))//'NUMERICAL_PARAMETERS'
-         File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))
-         write(chnum,'(i3)') Numb
-         write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
-      endif
-      inquire(file=trim(adjustl(File_name)),exist=file_exist)
-      ! Maybe reuse the default one, if identical parameters are to be used:
-      if (.not.file_exist) then
-         File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+      if (.not.numpar%numpar_in_input) then ! if the parameters were not provided in the INPUT-file, try a separate file:
+         if (.not.present(Numb)) then ! first run, use default files:
+            File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+         else ! it's not the first run, use next set of parameters:
+            File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))
+            write(chnum,'(i3)') Numb
+            write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
+         endif
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
-      endif
+         ! Maybe reuse the default one, if identical parameters are to be used:
+         if (.not.file_exist) then
+            File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         endif
 
-      NUMERICAL_PARAMETERS:if (file_exist) then
-         call read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err) ! see below
-         if (Err%Err) goto 3416
-      else
-         write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
-         call Save_error_details(Err, 1, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3416
-      endif NUMERICAL_PARAMETERS
+         NUMERICAL_PARAMETERS:if (file_exist) then
+            call read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err) ! see below
+            if (Err%Err) goto 3416
+         else
+            write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
+            call Save_error_details(Err, 1, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3416
+         endif NUMERICAL_PARAMETERS
+      endif ! (.not.numpar%numpar_in_input)
    endif NEW_FORMAT
+   !-------------------------------
 
    ! Check if the molecule needs to be embedded in water (as requested in input file):
    if (numpar%embed_water) then
@@ -4180,7 +4197,7 @@ end subroutine read_xTB_Params
 
 
 
-subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err)
+subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err, add_data)
    character(*), intent(in) :: File_name
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -4188,22 +4205,34 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(User_overwrite_data), intent(inout) :: user_data   ! atomic data provided by the user
    type(Error_handling), intent(inout) :: Err	! error save
+   logical, intent(in), optional :: add_data   ! read stricktly numpar data, no additional data
    !---------------------------------
    integer FN, N, Reason, count_lines, i, NSC, temp1, temp2, temp3
-   logical file_opened, read_well
+   logical file_opened, read_well, old_file, add_data_present
    character(100) Error_descript, temp_ch
 
    NSC = 1 ! for now, we only have 1 supercell...
+   if (present(add_data)) then
+      add_data_present = add_data ! user defines whether to read additional data
+   else
+      add_data_present = .true. ! by default, read possible additional data
+   endif
 
-   !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old')
-   FN=108
-   open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read')
-   inquire(file=trim(adjustl(File_name)),opened=file_opened)
-   if (.not.file_opened) then
-      Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
-      call Save_error_details(Err, 2, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
+   !inquire(file=trim(adjustl(File_name)),opened=file_opened)
+   inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN) ! if file is opened, use its number
+   if (file_opened) then ! file is already opened, continue reading from it
+      old_file = .true. ! mark that this file was laready opened
+   else ! file is not open, open and read from it:
+      old_file = .false. ! mark that this file was not opened yet
+      FN=108
+      open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read')
+      inquire(file=trim(adjustl(File_name)),opened=file_opened)
+      if (.not.file_opened) then
+         Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
+         call Save_error_details(Err, 2, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3418
+      endif
    endif
 
    ! number of unit-cells in X,Y,Z:
@@ -4740,11 +4769,13 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 
    !----------------------------------------
    ! Read optional data provided by the user (e.g., to overwrite default atomic data):
-   call read_user_additional_data(FN, count_lines, matter, Scell, NSC, user_data)   ! below
+   if (add_data_present) then
+      call read_user_additional_data(FN, count_lines, matter, Scell, NSC, user_data)   ! below
+   endif
 
-
-   ! Close this file, it has been read through:
-3418 if (file_opened) close(FN)
+   ! Close this file only if it was opened within this subroutine:
+3418 continue
+   if (.not.old_file .and. file_opened) close(FN)
 end subroutine read_numerical_parameters
 
 
@@ -5206,12 +5237,13 @@ end subroutine set_MD_step_grid
 
 
 
-subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
+subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_data, Err)
    type(Super_cell), dimension(:), allocatable, intent(inout) :: Scell ! suoer-cell with all the atoms inside
    character(*), intent(in) :: File_name
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Pulse), dimension(:), allocatable, intent(inout) :: laser	! Laser pulse parameters
+   type(User_overwrite_data), intent(inout) :: user_data
    type(Error_handling), intent(inout) :: Err	! error save
    real(8) read_var(3) ! just to read variables from file
    integer FN, N, Reason, count_lines, i
@@ -5407,8 +5439,23 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) exit RDID  ! end of file, stop reading
 
+      ! Check if additional INPUT options are provided:
       call interpret_user_data_INPUT(FN, trim(adjustl(File_name)), count_lines, text, Scell, numpar, Err) ! below
-      if (Err%Err) goto 3417
+      if (Err%Err) exit RDID  ! end of file, stop reading
+
+      ! Check if optional numerical or model data provided by the user (e.g., to overwrite default atomic data):
+      call interpret_user_data(FN, count_lines, read_well, text, matter, Scell, 1, user_data) ! below
+      if (.not. read_well) exit RDID  ! end of file, stop reading
+
+      ! Check if the numerical parameters are provided in this file:
+      select case (trim(adjustl(text)))
+      case ('NUMPAR', 'NumPar', 'numpar', &
+            'NUMERICAL_PARAMETERS', 'Numerical_Parameters', 'numerical_parameters', &
+            'NUMERICS', 'Numerics', 'numerics')
+         numpar%numpar_in_input = .true.  ! mark that the num.parameters were read from here
+         call read_numerical_parameters(trim(adjustl(File_name)), matter, numpar, laser, Scell, user_data, Err, add_data=.false.) ! below
+         if (Err%Err) exit RDID  ! end of file, stop reading
+      end select
    enddo RDID
 
    if (numpar%verbose) call print_time_step('Verbose option is on, XTANT is going to be a chatterbox', msec=.true.) ! modlue "Little_subroutines"
@@ -5534,7 +5581,7 @@ subroutine prepare_multiple_inputs(numpar, File_name, read_var, do_eph, num_phon
    character(250), allocatable, dimension(:) :: File_content
    character(5) :: chtest2
    character(25) :: chtest
-   logical :: read_well, do_el_phon
+   logical :: read_well, do_el_phon, file_exists
 
    ! Check, if user requested average electron-phonon coupling calculations:
    if (present(do_eph)) then
@@ -5669,14 +5716,16 @@ subroutine prepare_multiple_inputs(numpar, File_name, read_var, do_eph, num_phon
       call close_file('close', FN=FN2) ! module "Dealing_with_files"
 
       ! Also, make a copy of the numerical_parameters file:
-      Cur_file = trim(adjustl(numpar%input_path))//trim(adjustl(m_NUMERICAL_PARAMETERS))
-      write(Cur_file,'(a,a,a,a)') trim(adjustl(Cur_file)), '_', trim(adjustl(chtest2)), '.txt'
-      ! Create the temporary save file
-      if (numpar%path_sep .EQ. '\') then	! if it is Windows
-         call copy_file(Num_par_file, Cur_file, 1, add_com='* /YQ') ! module "Dealing_with_files"
-      else
-         call copy_file(Num_par_file, Cur_file) ! module "Dealing_with_files"
-      endif
+!       Cur_file = trim(adjustl(numpar%input_path))//trim(adjustl(m_NUMERICAL_PARAMETERS))
+!       write(Cur_file,'(a,a,a,a)') trim(adjustl(Cur_file)), '_', trim(adjustl(chtest2)), '.txt'
+!       inquire(file=trim(adjustl(Cur_file)),exist=file_exist) ! check if input file is there
+!       if (file_exist) then ! Create the second file:
+!          if (numpar%path_sep .EQ. '\') then	! if it is Windows
+!             call copy_file(Num_par_file, Cur_file, 1, add_com='* /YQ') ! module "Dealing_with_files"
+!          else
+!             call copy_file(Num_par_file, Cur_file) ! module "Dealing_with_files"
+!          endif
+!       endif
    enddo
 
 3440 continue
