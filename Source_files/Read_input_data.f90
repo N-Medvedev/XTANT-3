@@ -1208,9 +1208,9 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
 !             inquire(file=trim(adjustl(File_name)),exist=file_exists)
 !          endif
          if (.not.file_exists) then ! try general name used for multiple species at once:
-            write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
+            if (numpar%verbose) write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
             write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), 'TB_Hamiltonian_parameters.txt'
-            write(*,'(a)') 'Trying '//trim(adjustl(File_name))//' file instead.'
+            if (numpar%verbose) write(*,'(a)') 'Trying '//trim(adjustl(File_name))//' file instead.'
             inquire(file=trim(adjustl(File_name)),exist=file_exists)
          endif
          
@@ -1457,9 +1457,10 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
 !             !print*, trim(adjustl(File_name)), file_exists
 !          endif
          if (.not.file_exists) then ! try general name used for multiple species at once:
-            write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
+
+            if (numpar%verbose) write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
             write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), 'TB_Repulsive_parameters.txt'
-            write(*,'(a)') 'Trying '//trim(adjustl(File_name))//' file instead.'
+            if (numpar%verbose) write(*,'(a)') 'Trying '//trim(adjustl(File_name))//' file instead.'
             inquire(file=trim(adjustl(File_name)),exist=file_exists)
          endif
 
@@ -1669,11 +1670,14 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endif
                TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
             case default
-               write(Error_descript,'(a,a,a,$)') 'Unknown TB-vdW parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
+               !if (numpar%verbose) then
+                  write(Error_descript,'(a,a,a,$)') 'Unknown TB-vdW parametrization class '// &
+                     trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
 !                call Save_error_details(Err, 4, Error_descript)
-               print*, trim(adjustl(Error_descript))
-               print*, 'Proceeding without van der Waals forces'
-               close(FN) ! close file
+                  print*, trim(adjustl(Error_descript))
+                  print*, 'Proceeding without van der Waals forces'
+                  close(FN) ! close file
+               !endif
                goto 3422
             end select
             
@@ -1702,7 +1706,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             end select
             close(FN)
          else
-            print*, 'No van der Waals file found, go on without van der Waals forces'
+            if (numpar%verbose) print*, 'No van der Waals file found, go on without van der Waals forces'
          endif !(file_exists)
 3422     continue
 
@@ -1748,11 +1752,14 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endif
                TB_Coul(i,j)%Param = trim(adjustl(ch_temp))
             case default
-               write(Error_descript,'(a,a,a,$)') 'Unknown Coulomb parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
+               !if (numpar%verbose) then
+                  write(Error_descript,'(a,a,a,$)') 'Unknown Coulomb parametrization class '// &
+                     trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
 !                call Save_error_details(Err, 4, Error_descript)
-               print*, trim(adjustl(Error_descript))
-               print*, 'Proceeding without Coulomb forces from unballanced charge'
-               close(FN) ! close file
+                  print*, trim(adjustl(Error_descript))
+                  print*, 'Proceeding without Coulomb forces from unballanced charge'
+                  close(FN) ! close file
+               !endif
                goto 3423
             end select
             
@@ -1774,8 +1781,10 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             end select
             close(FN)
          else
-            print*, 'No Coulomb parameterization file found, or no unbalanced charge possible'
-            print*, 'go on without Coulomb forces'
+            if (numpar%verbose) then
+               print*, 'No Coulomb parameterization file found, or no unbalanced charge possible'
+               print*, 'go on without Coulomb forces'
+            endif
          endif
 3423     continue
          
@@ -1838,11 +1847,13 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                TB_Expwall(i,j)%Param = trim(adjustl(ch_temp))
                !print*, i, j, TB_Expwall(i,j)%Param, trim(adjustl(ch_temp))
             case default
-               write(Error_descript,'(a,a,a,$)') 'Unknown short-range (exponential wall) parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
+               !if (numpar%verbose) then
+                  write(Error_descript,'(a,a,a,$)') 'Unknown short-range (exponential wall) parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
 !                call Save_error_details(Err, 4, Error_descript)
-               print*, trim(adjustl(Error_descript))
-               print*, 'Proceeding without additional short-range (exponential wall) forces'
-               close(FN) ! close file
+                  print*, trim(adjustl(Error_descript))
+                  print*, 'Proceeding without additional short-range (exponential wall) forces'
+                  close(FN) ! close file
+               !endif
                goto 3425
             end select
             
@@ -1869,8 +1880,10 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             end select
             close(FN)
          else
-            print*, 'No exponential wall parameterization file found'
-            print*, 'go on without an exponential wall at short distances'
+            if (numpar%verbose) then
+               print*, 'No exponential wall parameterization file found'
+               print*, 'go on without an exponential wall at short distances'
+            endif
          endif
 3425     continue
 
@@ -5794,7 +5807,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
    ! Interpret the command:
    select case (trim(adjustl(string_read)))
    case ('verbose', 'VERBOSE', 'Verbose')
-      print*, 'XTANT will print a lot of markers for testing and debugging'
+      print*, 'Verbose on: XTANT will print markers for testing and debugging'
       if (present(verbose)) verbose = .true.
       write(*,'(a)') trim(adjustl(m_starline))
 
