@@ -44,6 +44,7 @@ PROGRAM Fragmentation
 
 use Universal_constants
 use periodic_table
+USE IFLPORT, only : system, chdir
 
 type Instant_data
    real(8) :: Tim   ! time instant [fs]
@@ -55,7 +56,7 @@ type Instant_data
 end type Instant_data
 
 character(200) :: error_message, File_XYZ, File_supce
-character(200) :: File_fragments, Gnu_script, Gnu_file
+character(200) :: File_fragments, Gnu_script, Gnu_file, command
 character(100) :: ChemFormula
 character(32), dimension(10) :: char_var
 character(10) :: temp_ch
@@ -73,7 +74,7 @@ real(8), dimension(:), allocatable :: fragment_masses
 real(8), dimension(:), allocatable :: mass_grid
 real(8), dimension(:,:), allocatable :: output_fragment_array
 integer :: FN1, FN2, FN_out, FN_out1	! file number
-integer :: INFO, Reason, i, j, Tsiz, Nat, existing_elem, at_num, cur_j
+integer :: INFO, Reason, i, j, Tsiz, Nat, existing_elem, at_num, cur_j, iret
 logical :: read_well
 
 call Path_separator(path_sep)  ! Objects_and_types
@@ -265,20 +266,23 @@ else ! it is linux
    write(FN_out1, '(a)') "plot[][0:50] 'OUT_fragments_spectrum.dat' matrix nonuniform with image title"//'\"Fragments mass spectrum\"'
    write(FN_out1, '(a)') 'reset'
    write(FN_out1, '(a)') '" | gnuplot '
-   call system('chmod +x '//trim(adjustl(Gnu_script))//'.sh') ! make the output-script executable
+   !call system('chmod +x '//trim(adjustl(Gnu_script))//'.sh') ! make the output-script executable
    !command = 'chmod +x '//trim(adjustl(File_name))
-   !iret = system(command)
+   command = 'chmod +x '//trim(adjustl(Gnu_script))//'.sh'
+   iret = system(command)
 endif
 close(FN_out1)
 
 if (path_sep .EQ. '\') then	! if it is Windows
-   call system(trim(adjustl(Gnu_script))//'.cmd')
+   !call system(trim(adjustl(Gnu_script))//'.cmd')
 !    command = "OUTPUT_Gnuplot_all.cmd"
-!    iret = system(command)
+   command = trim(adjustl(Gnu_script))//'.cmd'
+   iret = system(command)
 else ! linux:
-   call system(trim(adjustl(Gnu_script))//'.sh')
+   !call system(trim(adjustl(Gnu_script))//'.sh')
 !    command = "./OUTPUT_Gnuplot_all.sh"
-!    iret = system(command)
+   command = trim(adjustl(Gnu_script))//'.sh'
+   iret = system(command)
 endif
 
 2012 continue   ! to exit the program
