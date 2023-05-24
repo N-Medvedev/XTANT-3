@@ -392,7 +392,7 @@ type, EXTENDS (TB_Exp_wall) :: TB_Short_Rep
    ! 4) Power (array to be able to construct arbitrary polynomial):
    type(Rep_pow), dimension(:), allocatable  :: f_pow
    ! 5) ZBL:
-   type(Rep_exp) :: f_ZBL
+   type(Rep_ZBL) :: f_ZBL
 end type TB_Short_Rep
 
 

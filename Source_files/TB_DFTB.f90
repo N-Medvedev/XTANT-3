@@ -1528,9 +1528,13 @@ subroutine dErdr_s_DFTB(TB_Repuls, Scell, NSC) ! derivatives of the repulsive en
                   y => Scell(NSC)%Near_neighbor_dist(i1,atom_2,2) ! at this distance, Y
                   z => Scell(NSC)%Near_neighbor_dist(i1,atom_2,3) ! at this distance, Z
                   
-                  x1(1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
+                  x1(1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3) ! correct
                   x1(2) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
                   x1(3) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
+
+                  !x1(1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(2,1) + z*Scell(NSC)%supce(3,1)   ! incorrect
+                  !x1(2) = x*Scell(NSC)%supce(1,2) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(3,2)
+                  !x1(3) = x*Scell(NSC)%supce(1,3) + y*Scell(NSC)%supce(2,3) + z*Scell(NSC)%supce(3,3)
                   
                   a_r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4) ! at this distance, R
                   b =d_DFTB_repulsive_one(TB_Repuls(KOA1, KOA2), a_r) ! below

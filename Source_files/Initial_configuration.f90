@@ -1997,12 +1997,12 @@ subroutine set_supercell_size_from_unitcells(Scell, SCN, matter, unit_cell, def_
    real(8), dimension(3,3), intent(in) :: unit_cell   ! unit cell vectors to construct the supercell
    logical, intent(in) :: def_par   ! flag to define other parameters of the supercell
    !-----------------------
-!       Scell(SCN)%supce(:,1) = matter%cell_x*unit_cell(:,1)   ! [A] length of super-cell X
-!       Scell(SCN)%supce(:,2) = matter%cell_y*unit_cell(:,2)   ! [A] length of super-cell Y
-!       Scell(SCN)%supce(:,3) = matter%cell_z*unit_cell(:,3)   ! [A] length of super-cell Z
-   Scell(SCN)%supce(1,:) = matter%cell_x*unit_cell(1,:)  ! [A] length of super-cell X
-   Scell(SCN)%supce(2,:) = matter%cell_y*unit_cell(2,:)  ! [A] length of super-cell Y
-   Scell(SCN)%supce(3,:) = matter%cell_z*unit_cell(3,:)  ! [A] length of super-cell Z
+   Scell(SCN)%supce(:,1) = matter%cell_x*unit_cell(:,1)   ! [A] length of super-cell X
+   Scell(SCN)%supce(:,2) = matter%cell_y*unit_cell(:,2)   ! [A] length of super-cell Y
+   Scell(SCN)%supce(:,3) = matter%cell_z*unit_cell(:,3)   ! [A] length of super-cell Z
+   !Scell(SCN)%supce(1,:) = matter%cell_x*unit_cell(1,:)  ! [A] length of super-cell X
+   !Scell(SCN)%supce(2,:) = matter%cell_y*unit_cell(2,:)  ! [A] length of super-cell Y
+   !Scell(SCN)%supce(3,:) = matter%cell_z*unit_cell(3,:)  ! [A] length of super-cell Z
    Scell(SCN)%supce0 = Scell(SCN)%supce   ! [A] length of super-cell on the previous time-step
    Scell(SCN)%Vsupce = 0.0d0  ! initial velocity is 0
    Scell(SCN)%Vsupce0 = 0.0d0 ! initial velocity is 0

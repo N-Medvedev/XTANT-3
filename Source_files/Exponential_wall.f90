@@ -228,6 +228,7 @@ subroutine d_Short_range_pot_s(Scell, NSC, matter, TB_Expwall, numpar)
 
                   a_r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4)   ! at this distance, R
                   b = d_Short_range_pot(TB_Expwall(KOA1,KOA2), a_r, Z1, Z2)  ! function above
+                  !print*, KOA1, KOA2, TB_Expwall(KOA1,KOA2)%Param, TB_Expwall(KOA1,KOA2)%f_ZBL%use_it, TB_Expwall(KOA1,KOA2)%f_pow%use_it
 
                   ddlta = dble(dik - djk)/a_r
                   b_delta = b*ddlta
@@ -244,6 +245,8 @@ subroutine d_Short_range_pot_s(Scell, NSC, matter, TB_Expwall, numpar)
    enddo ! ian
    !$omp end do
    !$omp end parallel
+
+   !pause 'd_Short_range_pot_s'
 
    deallocate(Erx_s)
    nullify(j1, m, KOA1, KOA2, x, y, z, Z1, Z2)

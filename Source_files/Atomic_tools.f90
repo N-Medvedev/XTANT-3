@@ -1899,7 +1899,7 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
                y0 = 0.0d0
                z0 = 0.0d0
                do ik = 1,3
-!                   x0 = x0 + (S(ik) - S0(ik) + zb(ik))*Scell(1)%supce(1,ik) ! correct
+!                   x0 = x0 + (S(ik) - S0(ik) + zb(ik))*Scell(1)%supce(1,ik) ! incorrect
 !                   y0 = y0 + (S(ik) - S0(ik) + zb(ik))*Scell(1)%supce(2,ik)
 !                   z0 = z0 + (S(ik) - S0(ik) + zb(ik))*Scell(1)%supce(3,ik)
                   x0 = x0 + (S(ik) - S0(ik) + zb(ik))*Scell(1)%supce(ik,1) ! correct
@@ -1951,7 +1951,7 @@ subroutine get_coords_in_new_supce(Scell, NSC) !  (S_eq are updated, R_eq do not
 !          sx = sx + Scell(NSC)%MDatoms(j)%R_eq(ik)*supce_inv(1,ik)
 !          sy = sy + Scell(NSC)%MDatoms(j)%R_eq(ik)*supce_inv(2,ik)
 !          sz = sz + Scell(NSC)%MDatoms(j)%R_eq(ik)*supce_inv(3,ik)
-         sx = sx + Scell(NSC)%MDatoms(j)%R_eq(ik)*supce_inv(ik,1)
+         sx = sx + Scell(NSC)%MDatoms(j)%R_eq(ik)*supce_inv(ik,1) ! correct
          sy = sy + Scell(NSC)%MDatoms(j)%R_eq(ik)*supce_inv(ik,2)
          sz = sz + Scell(NSC)%MDatoms(j)%R_eq(ik)*supce_inv(ik,3)
       enddo ! ik
@@ -2345,7 +2345,7 @@ subroutine shortest_distance_OLD(Scell, NSC, atoms, i1, j1, a_r, x1, y1, z1, sx1
 !       x = x + (atoms(i1)%S(ik) - atoms(j1)%S(ik))*Scell(NSC)%supce(1,ik)
 !       y = y + (atoms(i1)%S(ik) - atoms(j1)%S(ik))*Scell(NSC)%supce(2,ik)
 !       z = z + (atoms(i1)%S(ik) - atoms(j1)%S(ik))*Scell(NSC)%supce(3,ik)
-      x = x + (atoms(i1)%S(ik) - atoms(j1)%S(ik))*Scell(NSC)%supce(ik,1)
+      x = x + (atoms(i1)%S(ik) - atoms(j1)%S(ik))*Scell(NSC)%supce(ik,1)   ! correct
       y = y + (atoms(i1)%S(ik) - atoms(j1)%S(ik))*Scell(NSC)%supce(ik,2)
       z = z + (atoms(i1)%S(ik) - atoms(j1)%S(ik))*Scell(NSC)%supce(ik,3)
    enddo ! ik
@@ -2377,10 +2377,10 @@ subroutine shortest_distance_OLD(Scell, NSC, atoms, i1, j1, a_r, x1, y1, z1, sx1
             y0 = 0.0d0
             z0 = 0.0d0
             do ik = 1,3
-!                x0 = x0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell(NSC)%supce(1,ik) ! correct
+!                x0 = x0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell(NSC)%supce(1,ik) ! incorrect
 !                y0 = y0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell(NSC)%supce(2,ik)
 !                z0 = z0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell(NSC)%supce(3,ik)
-               x0 = x0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell(NSC)%supce(ik,1)
+               x0 = x0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell(NSC)%supce(ik,1) ! correct
                y0 = y0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell(NSC)%supce(ik,2)
                z0 = z0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell(NSC)%supce(ik,3)
             enddo ! ik

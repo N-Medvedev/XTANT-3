@@ -1235,7 +1235,8 @@ subroutine Two_Matr_mult(M1,M2,Mout)
    Mout = 0.0d0
    do i = 1,l2
       do j = 1,l
-         Mout(i,j) = Mout(i,j) + SUM(M1(i,:)*M2(:,j))
+         !Mout(i,j) = Mout(i,j) + SUM(M1(i,:)*M2(:,j)) ! incorrect
+         Mout(i,j) = Mout(i,j) + SUM(M1(:,i)*M2(j,:)) ! correct
       enddo ! j
    enddo ! i
 end subroutine Two_Matr_mult ! checked!
