@@ -39,12 +39,12 @@ use Dealing_with_files, only : get_file_stat, copy_file, read_file
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
 use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, &
-                           m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL
+                           m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL, m_Communication
 
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 23.05.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 24.05.2023)'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
 public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
@@ -895,7 +895,9 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
    call output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err)	! and save the input data for output, module "Dealing_with_output_files"
 
    ! Prepare a file for communication with the user:
-   File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt'
+   !File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt'
+   File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//trim(adjustl(m_Communication))
+   numpar%Filename_communication = File_name ! save it to reuse later
    numpar%FN_communication = 110
    open(UNIT=numpar%FN_communication, FILE = trim(adjustl(File_name)), status = 'replace')
    inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -2741,7 +2743,8 @@ subroutine communicate(FN, time, numpar, matter)
    real(8) given_num
    logical :: read_well, read_well_2, file_opened
    
-   File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt'
+   !File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt'
+   File_name = numpar%Filename_communication
    inquire(UNIT=FN,opened=file_opened)
    if (file_opened) close(FN) ! for windows, we have to close the file to let the user write into it
    ! Check if the file was modified since the last time:

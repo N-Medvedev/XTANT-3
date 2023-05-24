@@ -338,7 +338,7 @@ enddo
 
 !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 ! Finish execution of the program:
-call close_file('delete', FN=g_numpar%FN_communication) ! module "Dealing_with_files"
+call close_file('delete', FN=g_numpar%FN_communication, File_name=g_numpar%Filename_communication) ! module "Dealing_with_files"
 2012 continue
 
 INQUIRE(UNIT = g_Err%File_Num, opened=file_opened, name=chtest)

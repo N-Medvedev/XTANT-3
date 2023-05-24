@@ -50,7 +50,9 @@ PRIVATE
 
 
 ! Modular parameters:
-character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_MINIMUM, m_INPUT_ALL, m_Atomic_parameters, m_Hubbard_U
+character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_MINIMUM, m_INPUT_ALL, m_Atomic_parameters, &
+                  m_Hubbard_U, m_Communication
+
 character(70), parameter :: m_starline = '*************************************************************'
 
 character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
@@ -65,10 +67,11 @@ parameter (m_INPUT_MINIMUM = 'INPUT_MINIMUM') ! format with only parameters diff
 parameter (m_INPUT_ALL = 'INPUT') ! new format with all parameters together
 parameter (m_Atomic_parameters = 'Atomic_parameters') ! data-file with atomic parameters
 parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat') ! data-file with Hubbard-U parameters (for SCC calculations)
+parameter (m_Communication = 'Communication.txt')  ! file for comunication with the user
 
 public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
 public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL
-public :: Read_Input_Files, get_add_data
+public :: Read_Input_Files, get_add_data, m_Communication
 
  contains
 

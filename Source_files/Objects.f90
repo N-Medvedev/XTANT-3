@@ -816,7 +816,7 @@ type Numerics_param
    character(4) :: fig_extention
    ! BOP parameters creation:
    logical :: create_BOP_repulse
-   character(200) :: BOP_Folder_name
+   character(200) :: BOP_Folder_name, Filename_communication
    real(8) :: BOP_bond_length   ! [A]
    ! General flags:
    integer :: save_files_used ! to mark for the output printing out, whether SAVE-files are used or unit cell

@@ -83,6 +83,10 @@ subroutine close_file(safe, File_name, FN)
    if (present(FN)) then
       inquire(UNIT = FN, exist=file_exists)
       if (file_exists) INQUIRE(UNIT = FN, opened=file_opened)
+      if ( (.not.file_opened) .and. present(File_name) ) then ! we can reopen it and close properly
+         open(UNIT=FN, FILE = trim(adjustl(File_name)))
+         INQUIRE(UNIT = FN, opened=file_opened)
+      endif
       FN1 = FN
    endif
 
