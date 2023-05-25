@@ -24,6 +24,7 @@
 ! This module contains subroutines to deal with TB hamiltonian in the BOP parametrization
 ! This parameterization is described in:
 ! [1] https://arxiv.org/abs/1909.04561
+! (Only TB part, without the repulsive terms; must be added manualy!)
 
 MODULE TB_BOP
 

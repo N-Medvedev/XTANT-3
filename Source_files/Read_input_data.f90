@@ -26,7 +26,6 @@
 MODULE Read_input_data
 use Objects
 use Universal_constants
-!use Variables
 use Little_subroutines, only : print_time_step
 use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
@@ -1032,7 +1031,7 @@ subroutine get_EADL_data(matter, numpar, Err)
 
 
       ! Then correct it to exclude VB:
-      call exclude_BV(i, matter%Atoms(i)%sh, matter%Atoms(i)%Ne_shell, matter%Atoms(i)%NVB, mod_shl_num)
+      call exclude_VB(i, matter%Atoms(i)%sh, matter%Atoms(i)%Ne_shell, matter%Atoms(i)%NVB, mod_shl_num)
       old_shl_num = matter%Atoms(i)%sh ! save old uppermost level to use as initial band gap
       matter%Atoms(i)%sh = mod_shl_num ! new number of shells
 !       print*, 'itest', i, matter%Atoms(i)%sh , mod_shl_num 
@@ -1130,7 +1129,7 @@ subroutine get_EADL_data(matter, numpar, Err)
 end subroutine get_EADL_data
 
 
-subroutine exclude_BV(NOA, sh, Ne_shell, NVB, mod_shl_num, N_shl)
+subroutine exclude_VB(NOA, sh, Ne_shell, NVB, mod_shl_num, N_shl)
    integer, intent(in) :: NOA   ! number of atom in the compound
    integer, intent(inout) :: sh ! number of shells of the element
    real(8), dimension(:), allocatable, intent(inout) :: Ne_shell ! number of electron in each shell
@@ -1160,7 +1159,7 @@ subroutine exclude_BV(NOA, sh, Ne_shell, NVB, mod_shl_num, N_shl)
 
 !    print*, NVB, mod_shl_num, sh
 !    print*, Ne_shell(:)
-!    pause 'exclude_BV - 0'
+!    pause 'exclude_VB - 0'
 
    if (size(Ne_shell) /= mod_shl_num) then ! redefine it:
       Ne_temp = Ne_shell
@@ -1175,8 +1174,8 @@ subroutine exclude_BV(NOA, sh, Ne_shell, NVB, mod_shl_num, N_shl)
 
 !     print*, NVB, mod_shl_num, sh
 !     print*, Ne_shell(:)
-!     pause 'exclude_BV'
-end subroutine exclude_BV 
+!     pause 'exclude_VB'
+end subroutine exclude_VB
 
 
 
@@ -5990,7 +5989,8 @@ subroutine Get_list_of_materials(path_sep)
 end subroutine Get_list_of_materials
 
 
-!---------------------------------------------
+!OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+! Obsolete format, to be deprecated
 ! Alternative format of input file:
 
 subroutine read_input_txt(File_name, Scell, matter, numpar, laser, Err)

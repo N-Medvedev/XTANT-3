@@ -21,13 +21,12 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-! This module contains subroutines to deal with TB hamiltonian in the Pettifor parametrization
+! This module contains subroutines to deal with TB hamiltonian in the Pettifor parametrization for compounds
+! (Has problems, not recommended to use!)
 
 MODULE TB_Fu
 use Universal_constants
 use Objects
-!use Variables
-!use Little_subroutines
 use TB_Koster_Slater
 use Algebra_tools, only : Kronecker_delta, sym_diagonalize, Reciproc
 use Atomic_tools, only : get_fraction_of_given_sort, shortest_distance, Reciproc_rel_to_abs

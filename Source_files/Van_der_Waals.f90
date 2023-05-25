@@ -26,7 +26,6 @@
 MODULE Van_der_Waals
 use Universal_constants
 use Objects
-!use Variables
 use Little_subroutines, only : fast_pow, count_3d
 use Atomic_tools, only : get_interplane_indices, shortest_distance, get_near_neighbours, get_number_of_image_cells, &
             distance_to_given_cell

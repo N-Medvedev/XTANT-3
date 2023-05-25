@@ -21,14 +21,11 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-! This module contains subroutines to deal with TB hamiltonian in the Pettifor parametrization
+! This module contains subroutines to deal with TB hamiltonian in the Molteni parametrization
 
 MODULE TB_Molteni
 use Universal_constants
 use Objects
-! use Variables
-!use Little_subroutines
-!use Nonadiabatic
 use Atomic_tools, only : shortest_distance, Reciproc_rel_to_abs
 use Electron_tools, only : find_band_gap
 use Algebra_tools, only : Reciproc, sym_diagonalize

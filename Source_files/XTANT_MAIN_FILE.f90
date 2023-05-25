@@ -49,7 +49,7 @@
 PROGRAM XTANT
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! Initiate modules with all the 'use' statements collected in a separate file:
-include 'Use_statements.f90'   	! include part of the code from an external file
+include 'Use_statements.f90'  ! include part of the code from an external file
 
 implicit none
 
@@ -66,9 +66,10 @@ implicit none
 g_numpar%which_input = 0 ! starting with the default input files
 g_numpar%allow_rotate = .false. ! do not allow rotation of the target, remove angular momentum from initial conditions
 1984 g_Err%Err = .false.
-g_Err%Err_descript = ''	! start with an empty string
+g_Err%Err_descript = '' ! start with an empty string
 g_Err%File_Num = 99
-open(UNIT = g_Err%File_Num, FILE = 'OUTPUT_Error_log.dat')
+!open(UNIT = g_Err%File_Num, FILE = 'OUTPUT_Error_log.dat')
+open(UNIT = g_Err%File_Num, FILE = trim(adjustl(m_Error_log_file)))
 
 ! Check if the user needs any additional info (by setting the flags):
 call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_Err%Err, &
@@ -78,7 +79,7 @@ if (g_Err%Err) goto 2016     ! if the USER does not want to run the calculations
 ! Otherwise, run the calculations:
 call random_seed() ! standard FORTRAN seeding of random numbers
 call date_and_time(values=g_c1) ! standard FORTRAN time and date
-g_ctim=g_c1	! save the timestamp
+g_ctim=g_c1 ! save the timestamp
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 
 call print_time('Attempting to start XTANT at', ind=0) ! prints out the current time, module "Little_subroutines"
@@ -92,7 +93,7 @@ else ! it is the first run:
    print*, '# It is the first run'
    call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err) ! module "Read_input_data"
 endif
-if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
+if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
 ! Printout additional info, if requested:
 if (g_numpar%verbose) call print_time_step('Input files read succesfully:', msec=.true.)
 
@@ -116,7 +117,7 @@ call reset_dt(g_numpar, g_matter, g_time)   ! module "Dealing_with_output_files"
 
 ! Prepare initial conditions (read supercell and atomic positions from the files):
 call set_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err) ! module "Initial_configuration"
-if (g_Err%Err) goto 2012	! if there was an error in preparing the initial configuration, cannot continue, go to the end...
+if (g_Err%Err) goto 2012   ! if there was an error in preparing the initial configuration, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true.)
 
 
@@ -127,12 +128,12 @@ call print_time('Start at', ind=0) ! prints out the current time, module "Little
 
 ! Read (or create) electronic mean free paths (both, inelastic and elastic):
 call get_MFPs(g_Scell, 1, g_matter, g_laser, g_numpar, g_Scell(1)%TeeV, g_Err) ! module "MC_cross_sections"
-if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
+if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Electron mean free paths set succesfully:', msec=.true.)
 
 ! Read (or create) photonic mean free paths:
 call get_photon_attenuation(g_matter, g_laser, g_numpar, g_Err) ! module "MC_cross_sections"
-if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
+if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Photon attenuation lengths set succesfully:', msec=.true.)
 
 if (.not.g_numpar%do_path_coordinate) then  ! only for real calculations, not for coordinate path
@@ -141,7 +142,7 @@ endif
 
 ! Create the folder where output files will be storred, and prepare the files:
 call prepare_output_files(g_Scell,g_matter, g_laser, g_numpar, g_Scell(1)%TB_Hamil(1,1), g_Scell(1)%TB_Repuls(1,1), g_Err) ! module "Dealing_with_output_files"
-if (g_Err%Err) goto 2012 	! if there was an error in preparing the output files, cannot continue, go to the end...
+if (g_Err%Err) goto 2012   ! if there was an error in preparing the output files, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Output directory prepared succesfully:', msec=.true.)
 
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
@@ -286,7 +287,7 @@ do while (g_time .LT. g_numpar%t_total)
          call make_time_step_supercell(g_Scell, g_matter, g_numpar, 1) ! supercell Verlet step, module "Atomic_tools"
          ! Update corresponding energies of the system:
          call get_new_energies(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
-      case (1)  ! Youshida (4th order)
+      case (1)  ! Yoshida (4th order)
          ! No divided steps, all of them are performed above
       case (2)  ! Martyna (4th order)
          ! No divided steps for atoms, but use Verlet for supercell:

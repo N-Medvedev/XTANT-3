@@ -24,9 +24,7 @@
 MODULE Electron_tools
 use Universal_constants
 use Objects
-!use Variables
 use Algebra_tools, only : Two_Vect_Matr
-!use Atomic_tools
 use Little_subroutines, only : Find_in_array_monoton, Fermi_interpolation, linear_interpolation, &
                         Find_in_monotonous_1D_array, Gaussian
 

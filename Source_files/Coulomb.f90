@@ -37,7 +37,6 @@
 MODULE Coulomb
 use Universal_constants
 use Objects
-!use Variables
 use Little_subroutines, only : count_3d
 use Atomic_tools, only : get_number_of_image_cells, distance_to_given_cell
 

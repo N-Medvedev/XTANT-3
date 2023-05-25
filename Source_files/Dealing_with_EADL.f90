@@ -25,7 +25,6 @@
 MODULE Dealing_with_EADL
 use Universal_Constants   ! let it use universal constants
 use Objects   ! since it uses derived types, it must know about them from module 'Objects'
-!use Dealing_with_files ! count lines in file etc.
 use Little_subroutines, only : Find_monotonous_LE
 
 implicit none

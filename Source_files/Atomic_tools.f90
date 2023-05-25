@@ -28,7 +28,6 @@
 MODULE Atomic_tools
 use Universal_constants
 use Objects
-!use Variables
 use Algebra_tools, only : Cross_Prod, Invers_3x3, Matrix_Vec_Prod, Transpose_M, d_detH_d_h_a_b, Two_Matr_mult, Det_3x3
 use Little_subroutines, only : Find_in_array_monoton
 implicit none

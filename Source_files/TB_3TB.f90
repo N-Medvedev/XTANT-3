@@ -24,6 +24,7 @@
 ! This module contains subroutines to deal with 3TB hamiltonian: https://github.com/usnistgov/ThreeBodyTB.jl
 ! [1] https://arxiv.org/pdf/2112.11585.pdf
 ! [2] https://github.com/usnistgov/ThreeBodyTB.jl/blob/master/src/CalcTB_laguerre.jl
+! So far, without the 3-body-terms; 2-body-terms are included, but problematic (not recommended to use)
 
 MODULE TB_3TB
 

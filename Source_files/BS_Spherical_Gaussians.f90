@@ -29,7 +29,6 @@ module BS_Spherical_Gaussians
 
 use Universal_constants
 use Objects, only: Basis_set
-!use Algebra_tools
 
 implicit none
 PRIVATE

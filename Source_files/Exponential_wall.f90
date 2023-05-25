@@ -26,9 +26,6 @@
 MODULE Exponential_wall
 use Universal_constants
 use Objects
-!use Variables
-!use Little_subroutines
-!use Atomic_tools
 use Coulomb, only : f_cut_L_C, d_f_cut_L_C
 use ZBL_potential, only : ZBL_pot, d_ZBL_pot
 

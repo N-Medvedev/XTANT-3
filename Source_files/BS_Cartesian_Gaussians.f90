@@ -28,7 +28,6 @@
 module BS_Cartesian_Gaussians
 
 use Universal_constants
-!use Algebra_tools
 
 implicit none
 PRIVATE

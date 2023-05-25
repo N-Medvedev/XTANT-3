@@ -29,9 +29,6 @@ MODULE TB_NRL
 use Universal_constants
 use TB_Koster_Slater
 use Objects
-!use Variables
-! use Algebra_tools
-!use Nonadiabatic
 use Little_subroutines, only : print_time_step
 use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_hermiticity
 use Atomic_tools, only : get_near_neighbours, get_number_of_image_cells, distance_to_given_cell, shortest_distance, Reciproc_rel_to_abs

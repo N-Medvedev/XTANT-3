@@ -24,7 +24,6 @@
 module Little_subroutines
 use Universal_constants
 use Objects
-!use Variables
 use Dealing_with_files, only : Count_columns_in_file, Count_lines_in_file
 implicit none
 PRIVATE

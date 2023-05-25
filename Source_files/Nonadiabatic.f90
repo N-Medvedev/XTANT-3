@@ -26,9 +26,6 @@
 MODULE Nonadiabatic
 use Universal_constants
 use Objects
-!use Variables
-!use Algebra_tools
-!use Electron_tools
 use Atomic_tools, only : Maxwell_int_shifted
 
 

@@ -23,6 +23,7 @@
 ! 1111111111111111111111111111111111111111111111111111111111111
 ! This module contains subroutines to deal with TB hamiltonian in the GFN-xTB formalism:
 ! https://github.com/grimme-lab/xtb
+! UNFINISHED, UNUSED!
 
 
 MODULE TB_xTB

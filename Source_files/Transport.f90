@@ -23,8 +23,9 @@
 ! 1111111111111111111111111111111111111111111111111111111111111
 ! This module contains transport equations for electron particle and energy,
 ! and for heat transport in the atomic system out of the simulation box,
-! using Berendsen thermostat:
-! https://en.wikipedia.org/wiki/Berendsen_thermostat
+! using generalized Berendsen thermostat (https://en.wikipedia.org/wiki/Berendsen_thermostat)
+! without linearization:
+! Medvedev et al., Adv. Theory Simul. 5, 2200091 (2022)
 
 MODULE Transport
 use Universal_constants

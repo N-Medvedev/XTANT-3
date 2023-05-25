@@ -44,11 +44,12 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 24.05.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 25.05.2023)'
+character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
 public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
-public :: XTANT_label
+public :: XTANT_label, m_Error_log_file
 
  contains
 
