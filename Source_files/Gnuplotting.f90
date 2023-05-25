@@ -153,7 +153,7 @@ subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlab
          write(FN, '(a)') 'set output \"$NAME\"'
       case (4)  ! png
          !write(FN, '(a)') 'set terminal png font \"arial,14\" '
-         write(FN, '(a)') 'set terminal pngcairo font \"arial,14\" '
+         write(FN, '(a)') 'set terminal pngcairo dashed font \"arial,14\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (5)  ! pdf
          write(FN, '(a)') 'set terminal pdf color font \"arial,14\" '
@@ -216,7 +216,7 @@ subroutine write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xl
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (4)  ! png
          !write(FN, '(a)') 'set terminal png font "arial,14" '
-         write(FN, '(a)') 'set terminal pngcairo font "arial,14" '
+         write(FN, '(a)') 'set terminal pngcairo dashed font "arial,14" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (5)  ! pdf
          write(FN, '(a)') 'set terminal pdf color font "arial,14" '

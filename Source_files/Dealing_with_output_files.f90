@@ -669,7 +669,7 @@ subroutine write_coulping(FN, time, Scell, NSC, numpar)
                                                                          (j-1)*N_types+1:(j-1)*N_types+N_types) )
       enddo
    enddo
-   ! All shells resolved:
+   ! Partial:
    do i = 1, Nsiz
       do j = 1, Nsiz
          write(FN,'(es25.16)', advance='no') Scell(NSC)%G_ei_partial(i,j)
@@ -2034,7 +2034,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
    type(Solid), intent(in) :: matter
    character(*), intent(in) :: eps_name ! name of the figure
    integer :: FN, counter, Nshl, i, j, Na
-   character(100) :: chtemp
+   character(100) :: chtemp, ch_temp
    character(11) :: chtemp11
    real(8) :: x_tics
    character(8) :: temp, time_order
@@ -2052,8 +2052,9 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
    counter = 0 ! to start with
    first_line = .true.  ! to start from the first line
    W_vs_L:if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+     Na = size(matter%Atoms)
      ATOMS0:do i = 1, size(matter%Atoms) ! for all atoms
-         Na = size(matter%Atoms)
+         write(ch_temp,'(a,i0)') "dashtype ", i ! to set line type
          Nshl = size(matter%Atoms(i)%Ip)
          SHELLS0:do j = 1, Nshl ! for all shells of this atom
             if ((i .NE. 1) .or. (j .NE. Nshl)) then ! atomic shell:
@@ -2065,9 +2066,11 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                   !if ((i == 1) .and. (j == 1)) then
                   if (first_line) then
                      first_line = .false. ! first line is done, don't repeat it
-                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), '" u 1:', 1+j ,' w l lw LW title "', trim(adjustl(chtemp))  ,'"'
+                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), &
+                        '" u 1:', 1+j ,' w l lw LW '//trim(adjustl(ch_temp))//' title "', trim(adjustl(chtemp))  ,'"'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), '" u 1:', 1+j ,' w l lw LW title "', trim(adjustl(chtemp))  ,'"'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), '" u 1:', 1+j ,' w l lw LW '// &
+                        trim(adjustl(ch_temp))//' title "', trim(adjustl(chtemp))  ,'"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl-1)) then
                      write(FN, '(a)') ',\'
@@ -2078,9 +2081,11 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                   !if ((i == 1) .and. (j == 1)) then
                   if (first_line) then
                      first_line = .false. ! first line is done, don't repeat it
-                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), ' "u 1:', 1+counter,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
+                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), &
+                        ' "u 1:', 1+counter,' w l lw LW '//trim(adjustl(ch_temp))//' title " ', trim(adjustl(chtemp))  ,' "'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), '" u 1:', 1+counter,' w l lw LW title "', trim(adjustl(chtemp))  ,'"'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), '" u 1:', 1+counter, &
+                        ' w l lw LW '//trim(adjustl(ch_temp))//' title "', trim(adjustl(chtemp))  ,'"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl)) then
                      write(FN, '(a)') ',\'
@@ -2096,6 +2101,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
       enddo ATOMS0
    else W_vs_L ! It is linux
       ATOMS:do i = 1, size(matter%Atoms) ! for all atoms
+         write(ch_temp,'(a,i0)') "dashtype ", i ! to set line type
          Nshl = size(matter%Atoms(i)%Ip)
          SHELLS:do j = 1, Nshl ! for all shells of this atom
             if ((i .NE. 1) .or. (j .NE. Nshl)) then ! atomic shell:
@@ -2107,9 +2113,11 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
 !                   if ((i == 1) .and. (j == 1)) then
                   if (first_line) then
                      first_line = .false. ! first line is done, don't repeat it
-                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), '\"u 1:', 1+j ,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,'\"'
+                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), &
+                        '\"u 1:', 1+j ,' w l lw \"$LW\" '//trim(adjustl(ch_temp))//' title \" ', trim(adjustl(chtemp))  ,'\"'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+j ,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,'\"'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+j , &
+                        ' w l lw \"$LW\" '//trim(adjustl(ch_temp))//' title \" ', trim(adjustl(chtemp))  ,'\"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl-1)) then
                      write(FN, '(a)') ',\'
@@ -2120,9 +2128,11 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
 !                   if ((i == 1) .and. (j == 1)) then
                   if (first_line) then
                      first_line = .false. ! first line is done, don't repeat it
-                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,'\"'
+                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), &
+                        '\"u 1:', 1+counter,' w l lw \"$LW\" '//trim(adjustl(ch_temp))//' title \" ', trim(adjustl(chtemp))  ,'\"'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,'\"'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter, &
+                        ' w l lw \"$LW\" '//trim(adjustl(ch_temp))//' title \" ', trim(adjustl(chtemp))  ,'\"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl)) then
                      write(FN, '(a)') ',\'
