@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 25.05.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 26.05.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -727,9 +727,16 @@ subroutine write_energies(FN, time, nrg)
    real(8), intent(in) :: time	! [fs]
    type(Energies), intent(in) :: nrg
 
-   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, nrg%E_tot, nrg%Eh_tot, nrg%At_pot+nrg%E_vdW+nrg%E_coul_scc, nrg%At_kin, nrg%Total, & !+nrg%E_supce,
-   nrg%Total+nrg%E_supce+nrg%El_high, &
-   nrg%Total+nrg%E_supce+nrg%El_high+nrg%Eh_tot, nrg%E_vdW
+   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, &
+   nrg%E_tot, &   ! Band energy
+   nrg%Eh_tot, &  ! Energy of holes
+   nrg%At_pot+nrg%E_vdW+nrg%E_coul_scc, & ! TB potential energy (without external short-range, vdW, Coulomb, etc.)
+   nrg%At_kin, &  ! Kinetic energy of atoms
+   nrg%Total, &   ! Total atomic energy
+   nrg%Total+nrg%E_supce+nrg%El_high, &   ! Energy of atoms and electrons
+   nrg%Total+nrg%E_supce+nrg%El_high+nrg%Eh_tot, & ! Total energy
+   nrg%E_vdW, &   ! van der Waals
+   nrg%E_expwall  ! Short-range repulsive
 end subroutine write_energies
 
 
@@ -1102,8 +1109,8 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    file_energies = trim(adjustl(file_path))//'OUTPUT_energies.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_energies)))
    numpar%FN_energies = FN
-   call create_file_header(numpar%FN_energies, '#Time	Electrons	Holes	Potential	Kinetic	Atoms	Atoms_n_electrons	Atom_all_electrons	Total	van_der_Waals')
-   call create_file_header(numpar%FN_energies, '#[fs]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]')
+   call create_file_header(numpar%FN_energies, '#Time	Electrons	Holes	Potential	Kinetic	Atoms	Atoms_n_electrons	Atom_all_electrons	Total	van_der_Waals   Short-range')
+   call create_file_header(numpar%FN_energies, '#[fs]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]  [eV/atom]')
 
    file_numbers = trim(adjustl(file_path))//'OUTPUT_electron_hole_numbers.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_numbers)))
@@ -2034,7 +2041,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
    real(8), intent(in) :: t0, t_last	 ! time instance [fs]
    type(Solid), intent(in) :: matter
    character(*), intent(in) :: eps_name ! name of the figure
-   integer :: FN, counter, Nshl, i, j, Na
+   integer :: FN, counter, Nshl, i, j, Na, N_sh_max, font_siz, N_sh_tot
    character(100) :: chtemp, ch_temp
    character(11) :: chtemp11
    real(8) :: x_tics
@@ -2046,14 +2053,31 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
     ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3, 'Holes','Time (fs)', 'Particles per atoms (arb.units)', trim(adjustl(file_path))//'OUTPUT_deep_shell_holes.'//trim(adjustl(g_numpar%fig_extention)))
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Holes','Time (fs)', 'Particles per atoms (arb.units)', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Holes','Time (fs)', 'Particles (total)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   ! Find how many shells we have for plotting:
+   Na = size(matter%Atoms)
+   N_sh_max = size(matter%Atoms(1)%Ip)
+   do i = 1, size(matter%Atoms) ! for all atoms
+      Nshl = size(matter%Atoms(i)%Ip)
+      if (N_sh_max < Nshl) N_sh_max = Nshl ! to find the maximal value
+   enddo
+   N_sh_tot = Na*N_sh_max  ! estimate the total amount of shells
+   if (N_sh_tot > 70) then ! make tiny font
+      font_siz = 8
+   elseif (N_sh_tot > 45) then ! make very small font
+      font_siz = 10
+   elseif (N_sh_tot > 26) then ! make small font
+      font_siz = 12
+   else  ! standard font
+      font_siz = 14
+   endif
+
+   ! prepare gnuplot header:
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Holes','Time (fs)', 'Particles (total)', &
+         trim(adjustl(eps_name)), g_numpar%path_sep, setkey=0, fontsize=font_siz)  ! module "Gnuplotting"
    
    counter = 0 ! to start with
    first_line = .true.  ! to start from the first line
    W_vs_L:if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-     Na = size(matter%Atoms)
      ATOMS0:do i = 1, size(matter%Atoms) ! for all atoms
          write(ch_temp,'(a,i0)') "dashtype ", i ! to set line type
          Nshl = size(matter%Atoms(i)%Ip)

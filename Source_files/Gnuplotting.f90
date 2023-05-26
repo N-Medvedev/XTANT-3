@@ -101,35 +101,49 @@ end subroutine write_gnu_printout
  
  
 
-subroutine write_gnuplot_script_header_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, path_sep, setkey)
+subroutine write_gnuplot_script_header_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, path_sep, setkey, fontsize)
    integer, intent(in) :: FN, ind
    real(8), intent(in) :: LW, x_tics
    character(1), intent(in) :: path_sep ! path separator defines which system it is
    character(*), intent(in) :: labl, xlabl, ylabl, Out_file
-   integer, intent(in), optional :: setkey
+   integer, intent(in), optional :: setkey, fontsize
+   integer :: font_size
+
+   if (present(fontsize)) then   ! user-set font size
+      font_size = fontsize
+   else  ! default font size
+      font_size = 14
+   endif
       
    if (present(setkey)) then
       if (path_sep .EQ. '\') then	! if it is Windows
-         call write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey)
+         call write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey, font_size)
       else ! it is linux
-         call write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey)
+         call write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey, font_size)
       endif
    else
       if (path_sep .EQ. '\') then	! if it is Windows
-         call write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file)
+         call write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, font_size)
       else ! it is linux
-         call write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file)
+         call write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, font_size)
       endif
    endif
 end subroutine write_gnuplot_script_header_new
 
 
-subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey)
+subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey, font_size)
    integer, intent(in) :: FN, ind
    real(8), intent(in) :: LW, x_tics
-   integer, intent(in), optional :: setkey
+   integer, intent(in), optional :: setkey, font_size
    character(*), intent(in) :: labl, xlabl, ylabl, Out_file
-   character(20) :: temp
+   character(20) :: temp, temp2
+
+   if (present(font_size)) then
+      write(temp2,'(i0)') font_size
+   else
+      write(temp2,'(i0)') 14
+   endif
+
    select case (ind)
    case(1:) ! any file format
       write(FN, '(a)') '#!/bin/bash'
@@ -146,20 +160,20 @@ subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlab
          write(FN, '(a)') 'set terminal postscript enhanced \"Helvetica\" 16 color '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (2)  ! gpeg
-         write(FN, '(a)') 'set terminal jpeg font \"arial,14\" '
+         write(FN, '(a)') 'set terminal jpeg font \"arial,'//trim(adjustl(temp2))//'\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (3)  ! gif
-         write(FN, '(a)') 'set terminal gif font \"arial,14\" '
+         write(FN, '(a)') 'set terminal gif font \"arial,'//trim(adjustl(temp2))//'\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (4)  ! png
          !write(FN, '(a)') 'set terminal png font \"arial,14\" '
-         write(FN, '(a)') 'set terminal pngcairo dashed font \"arial,14\" '
+         write(FN, '(a)') 'set terminal pngcairo dashed font \"arial,'//trim(adjustl(temp2))//'\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (5)  ! pdf
-         write(FN, '(a)') 'set terminal pdf color font \"arial,14\" '
+         write(FN, '(a)') 'set terminal pdf color font \"arial,'//trim(adjustl(temp2))//'\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (6)  ! animated gif
-         write(FN, '(a)') 'set terminal gif animate delay 10 font \"arial,14\" '
+         write(FN, '(a)') 'set terminal gif animate delay 10 font \"arial,'//trim(adjustl(temp2))//'\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (0)
          write(FN, '(a)') 'set terminal x11 persist'
@@ -192,12 +206,21 @@ end subroutine write_gnuplot_script_header_linux_new
 
 
 
-subroutine write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey)
+subroutine write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey, font_size)
    integer, intent(in) :: FN, ind
    real(8), intent(in) :: LW, x_tics
-   integer, intent(in), optional :: setkey
+   integer, intent(in), optional :: setkey, font_size
    character(*), intent(in) :: labl, xlabl, ylabl, Out_file
-   character(20) :: temp
+   character(20) :: temp, temp2
+
+
+   if (present(font_size)) then
+      write(temp2,'(i0)') font_size
+   else
+      write(temp2,'(i0)') 14
+   endif
+
+
    select case (ind)
    case(1:)	! eps
       write(FN, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
@@ -206,23 +229,23 @@ subroutine write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xl
 
     select case (ind)
       case (1)  ! eps
-         write(FN, '(a)') 'set terminal postscript enhanced "Helvetica,14" color '
+         write(FN, '(a)') 'set terminal postscript enhanced "Helvetica,'//trim(adjustl(temp2))//'" color '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (2)  ! gpeg
-         write(FN, '(a)') 'set terminal jpeg large font "arial,14" '
+         write(FN, '(a)') 'set terminal jpeg large font "arial,'//trim(adjustl(temp2))//'" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (3)  ! gif
-         write(FN, '(a)') 'set terminal gif large font "arial,14" '
+         write(FN, '(a)') 'set terminal gif large font "arial,'//trim(adjustl(temp2))//'" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (4)  ! png
          !write(FN, '(a)') 'set terminal png font "arial,14" '
-         write(FN, '(a)') 'set terminal pngcairo dashed font "arial,14" '
+         write(FN, '(a)') 'set terminal pngcairo dashed font "arial,'//trim(adjustl(temp2))//'" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (5)  ! pdf
-         write(FN, '(a)') 'set terminal pdf color font "arial,14" '
+         write(FN, '(a)') 'set terminal pdf color font "arial,'//trim(adjustl(temp2))//'" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (6)  ! animated gif
-         write(FN, '(a)') 'set terminal gif animate delay 10 font "arial,14" '
+         write(FN, '(a)') 'set terminal gif animate delay 10 font "arial,'//trim(adjustl(temp2))//'" '
          write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
       case (0)
          write(FN, '(a)') 'set terminal x11 persist'
