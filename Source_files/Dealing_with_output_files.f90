@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 26.05.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 30.05.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -305,7 +305,12 @@ subroutine write_optical_all_hw(FN, tim, eps)
    type(Drude), intent(in) :: eps	! epsylon, Drude dielectric function and its parameters
    integer i
    do i = 1,size(eps%Eps_hw,2)
-      write(FN, '(f25.16, es25.16, es25.16, es25.16, f25.16, f25.16, f25.16, f25.16, f25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') eps%Eps_hw(1,i), eps%Eps_hw(2,i), eps%Eps_hw(3,i), eps%Eps_hw(4,i), eps%Eps_hw(5,i), eps%Eps_hw(6,i), eps%Eps_hw(7,i), eps%Eps_hw(8,i), eps%Eps_hw(9,i), eps%Eps_hw(10,i), eps%Eps_hw(11:,i)
+      write(FN, '(f25.16, es25.16, es25.16, es25.16, f25.16, f25.16, f25.16, f25.16, f25.16, es25.16, es25.16, &
+                  es25.16, es25.16, es25.16, es25.16, es25.16)') &
+                  eps%Eps_hw(1,i), eps%Eps_hw(2,i), eps%Eps_hw(3,i), &
+                  eps%Eps_hw(4,i), eps%Eps_hw(5,i), eps%Eps_hw(6,i), &
+                  eps%Eps_hw(7,i), eps%Eps_hw(8,i), eps%Eps_hw(9,i), &
+                  eps%Eps_hw(10,i), eps%Eps_hw(11:,i)
    enddo
    write(FN, '(a)')
    write(FN, '(a)')
@@ -333,7 +338,8 @@ subroutine write_optical_coefs(FN, tim, eps)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: tim
    type(Drude), intent(in) :: eps	! epsylon, Drude dielectric function and its parameters
-   write(FN, '(f25.16,es25.16,es25.16,es25.16,f25.16,f25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') tim, eps%R, eps%T, eps%A, eps%n, eps%k, eps%ReEps, eps%ImEps, eps%dc_cond, eps%Eps_xx, eps%Eps_yy, eps%Eps_zz
+   write(FN, '(f25.16,es25.16,es25.16,es25.16,f25.16,f25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') &
+      tim, eps%R, eps%T, eps%A, eps%n, eps%k, eps%ReEps, eps%ImEps, eps%dc_cond, eps%Eps_xx, eps%Eps_yy, eps%Eps_zz
 end subroutine write_optical_coefs
 
 
@@ -502,7 +508,8 @@ subroutine write_atomic_cif(FN_out, Supce, atoms, matter, tim)
    write(FN_out, '(a)') "_atom_site_fract_z"
    do i = 1, Nat
       write(i_char,'(i12)') i
-      write(FN_out, '(a,es25.16,es25.16,es25.16)')  trim(adjustl(i_char))//'	'//trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), atoms(i)%S(1), atoms(i)%S(2), atoms(i)%S(3)
+      write(FN_out, '(a,es25.16,es25.16,es25.16)')  trim(adjustl(i_char))//'	'//trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), &
+         atoms(i)%S(1), atoms(i)%S(2), atoms(i)%S(3)
    enddo
 end subroutine write_atomic_cif
 
@@ -521,7 +528,9 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    integer i, Nat, n_at, Nsiz, norb, N_types, i_at, i_types, i_G1
 
    ! Write electron properties:
-   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, Scell(NSC)%Ne_low/real(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
+   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, &
+      Scell(NSC)%Ne_low/dble(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
+      Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
    Nat = size(matter%Atoms(:)) ! number of elements
    do i = 1, Nat    ! index starting from 11
       write(FN,'(es25.16)', advance='no') (matter%Atoms(i)%NVB - matter%Atoms(i)%mulliken_Ne)
@@ -592,22 +601,17 @@ subroutine write_coulping_header(FN, Scell, NSC, matter, numpar)
    do i = 1, N_at
       do j = 1, N_at
          write(FN,'(a,a,a)', advance='no') trim(adjustl(matter%Atoms(i)%Name)), '-', trim(adjustl(matter%Atoms(j)%Name))//' '
-         !write(*,'(a,a,a)') trim(adjustl(matter%Atoms(i)%Name)), '-', trim(adjustl(matter%Atoms(j)%Name))//' '
       enddo
    enddo
    ! All shells resolved:
    do i_at = 1, N_at
       do i_types = 1, N_types
-!          i_G1 = (i_at-1) * N_types + i_types
          chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"  
          do i_at2 = 1, N_at
             do i_types2 = 1, N_types
-!                i_G2 = (i_at2-1) * N_types + i_types2
                chtemp2 = name_of_orbitals(norb, i_types2) ! module "Little_subroutines"
                write(FN,'(a,a,a)',advance='no') trim(adjustl(matter%Atoms(i_at)%Name))//'_'//trim(adjustl(chtemp1)), '--', &
                                         trim(adjustl(matter%Atoms(i_at2)%Name))//'_'//trim(adjustl(chtemp2))//'  '
-                !write(*,'(a,a,a)') trim(adjustl(matter%Atoms(i_at)%Name))//'_'//trim(adjustl(chtemp1)), '--', &
-                !                        trim(adjustl(matter%Atoms(i_at2)%Name))//'_'//trim(adjustl(chtemp2))//'  '
             enddo   ! i_types2
          enddo ! i_at2
       enddo   ! i_types
@@ -688,7 +692,9 @@ subroutine write_atomic_relatives(FN, atoms)
    type(Atom), dimension(:), intent(in) :: atoms	! atomic parameters
    integer i
    do i = 1, size(atoms)
-      write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') atoms(i)%R(1), atoms(i)%R(2), atoms(i)%R(3), atoms(i)%V(1), atoms(i)%V(2), atoms(i)%V(3), atoms(i)%S(1), atoms(i)%S(2), atoms(i)%S(3), atoms(i)%SV(1), atoms(i)%SV(2), atoms(i)%SV(3)
+      write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') &
+         atoms(i)%R(1), atoms(i)%R(2), atoms(i)%R(3), atoms(i)%V(1), atoms(i)%V(2), atoms(i)%V(3), &
+         atoms(i)%S(1), atoms(i)%S(2), atoms(i)%S(3), atoms(i)%SV(1), atoms(i)%SV(2), atoms(i)%SV(3)
    enddo
    write(FN, '(a)') ''
    write(FN, '(a)') ''
@@ -699,7 +705,9 @@ subroutine write_numbers(FN, time, Scell)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: time	! [fs]
    type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
-   write(FN,'(f25.16,f25.16,es,es25.16,es25.16,es25.16,es25.16)') time, Scell%Ne_low/real(Scell%Na), Scell%Ne_CB/real(Scell%Na), Scell%Ne_high/real(Scell%Na), Scell%Nh/real(Scell%Na), (real(Scell%Ne)-(Scell%Ne_low+Scell%Ne_high-Scell%Nh))/real(Scell%Na), Scell%Nph/real(Scell%Na) 
+   write(FN,'(f25.16,f25.16,es,es25.16,es25.16,es25.16,es25.16)') time, Scell%Ne_low/dble(Scell%Na), Scell%Ne_CB/dble(Scell%Na), &
+      Scell%Ne_high/dble(Scell%Na), Scell%Nh/dble(Scell%Na), (dble(Scell%Ne)-(Scell%Ne_low+Scell%Ne_high-Scell%Nh))/dble(Scell%Na), &
+      Scell%Nph/dble(Scell%Na)
 end subroutine write_numbers
 
 
@@ -730,11 +738,11 @@ subroutine write_energies(FN, time, nrg)
    write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, &
    nrg%E_tot, &   ! Band energy
    nrg%Eh_tot, &  ! Energy of holes
-   nrg%At_pot+nrg%E_vdW+nrg%E_coul_scc, & ! TB potential energy (without external short-range, vdW, Coulomb, etc.)
+   nrg%At_pot + nrg%E_vdW + nrg%E_coul_scc + nrg%E_coul + nrg%E_expwall, & ! potential energy (incl. short-range, vdW, Coulomb, etc.)
    nrg%At_kin, &  ! Kinetic energy of atoms
    nrg%Total, &   ! Total atomic energy
-   nrg%Total+nrg%E_supce+nrg%El_high, &   ! Energy of atoms and electrons
-   nrg%Total+nrg%E_supce+nrg%El_high+nrg%Eh_tot, & ! Total energy
+   nrg%Total + nrg%E_supce + nrg%El_high, &   ! Energy of atoms (incl. supercell) and electrons
+   nrg%Total + nrg%E_supce + nrg%El_high + nrg%Eh_tot, & ! Total energy (incl. holes)
    nrg%E_vdW, &   ! van der Waals
    nrg%E_expwall  ! Short-range repulsive
 end subroutine write_energies
@@ -2191,8 +2199,6 @@ subroutine gnu_Egap(File_name, file_electron_properties, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3, 'mu and Egap','Time (fs)', 'Energy (eV)', trim(adjustl(file_path))//'OUTPUT_mu_and_Egap.'//trim(adjustl(g_numpar%fig_extention)))
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'mu and Egap','Time (fs)', 'Energy (eV)', trim(adjustl(eps_name)))
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'mu and Egap','Time (fs)', 'Energy (eV)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
    
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
@@ -2311,13 +2317,15 @@ subroutine gnu_coupling(File_name, file_electron_properties, t0, t_last, eps_nam
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Coupling parameter','Time (fs)', 'Coupling parameter (W/(m^3 K))', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Coupling parameter','Time (fs)', 'Coupling parameter (W/(m^3 K))', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Coupling parameter','Time (fs)', &
+      'Coupling parameter (W/(m^3 K))', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
    
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_properties)), ' "u 1:6 w l lw LW title "Electron-ion coupling" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_properties)), &
+         ' "u 1:6 w l lw LW title "Electron-ion coupling" '
    else ! It is linux
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_properties)), '\"u 1:6 w l lw \"$LW\" title \"Electron-ion coupling\" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_properties)), &
+         '\"u 1:6 w l lw \"$LW\" title \"Electron-ion coupling\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -2338,14 +2346,13 @@ subroutine gnu_volume(File_name, file_supercell, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3, 'Volume','Time (fs)', 'Volume (A^3)', trim(adjustl(file_path))//'OUTPUT_volume.'//trim(adjustl(g_numpar%fig_extention)))
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Volume','Time (fs)', 'Volume (A^3)', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Volume','Time (fs)', 'Volume (A^3)', trim(adjustl(eps_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Volume','Time (fs)', 'Volume (A^3)', &
+      trim(adjustl(eps_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
    
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_supercell)), ' "u 1:2 w l lw LW title "Supercell volume" '
    else ! It is linux
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_supercell)), '\"u 1:2 w l lw \"$LW\" title \"Supercell volume\" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"', trim(adjustl(file_supercell)), '\"u 1:2 w l lw \"$LW\" title \"Supercell volume\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -2366,8 +2373,8 @@ subroutine gnu_optical_coefficients(File_name, file_optics, t0, t_last, eps_name
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Optical coefficients','Time (fs)', 'Optical coefficients', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Optical coefficients','Time (fs)', 'Optical coefficients', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Optical coefficients','Time (fs)', &
+      'Optical coefficients', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
       
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_optics)), ' "u 1:2 w l lw LW title "Reflectivity" ,\'
@@ -2397,8 +2404,8 @@ subroutine gnu_n_and_k(File_name, file_optics, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Optical n and k','Time (fs)', 'Optical parameters', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Optical n and k','Time (fs)', 'Optical parameters', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Optical n and k','Time (fs)', &
+      'Optical parameters', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
    
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_optics)), ' "u 1:5 w l lw LW title "n" ,\'
@@ -2648,7 +2655,8 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
       do i = 1, matter%N_KAO
          write(chtemp(1), '(i12)') i
          write(chtemp(2), '(f6.2)') matter%Atoms(i)%percentage
-         write(FN, '(a,$)') 'Element #'//trim(adjustl(chtemp(1)))//' is '//trim(adjustl(matter%Atoms(i)%Name))//' contributing to the compound with '//trim(adjustl(chtemp(2)))
+         write(FN, '(a,$)') 'Element #'//trim(adjustl(chtemp(1)))//' is '//trim(adjustl(matter%Atoms(i)%Name))// &
+            ' contributing to the compound with '//trim(adjustl(chtemp(2)))
          write(FN, '(a)') ''
          write(chtemp(1), '(i4)') INT(matter%Atoms(i)%Z)
          write(chtemp(2), '(es25.5)') matter%Atoms(i)%Ma
@@ -2673,7 +2681,8 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
             write(FN, '(a)') ''
          enddo !j
       enddo !i
-      write(FN,'(a)') '*************************************************************'
+      !write(FN,'(a)') '*************************************************************'
+      write(FN,'(a)') trim(adjustl(m_starline))
    endif
 9999 continue
 end subroutine output_parameters_file
@@ -2709,16 +2718,20 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
       if (numpar%path_sep .EQ. '\') then	! if it is Windows
          if (size(laser) .GT. 1) then
             write(ch4,'(i2)') size(laser)
-            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw_', trim(adjustl(ch1)), '_t_', trim(adjustl(ch2)), '_F_', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
+            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw_', trim(adjustl(ch1)), '_t_', &
+                  trim(adjustl(ch2)), '_F_', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
          else ! singe pulse
-            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw_', trim(adjustl(ch1)), '_t_', trim(adjustl(ch2)), '_F_', trim(adjustl(ch3))
+            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw_', trim(adjustl(ch1)), '_t_', &
+                  trim(adjustl(ch2)), '_F_', trim(adjustl(ch3))
          endif
       else ! it is linux
          if (size(laser) .GT. 1) then
             write(ch4,'(i2)') size(laser)
-            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw=', trim(adjustl(ch1)), '_t=', trim(adjustl(ch2)), '_F=', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
+            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw=', trim(adjustl(ch1)), '_t=', &
+               trim(adjustl(ch2)), '_F=', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
          else ! singe pulse
-            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw=', trim(adjustl(ch1)), '_t=', trim(adjustl(ch2)), '_F=', trim(adjustl(ch3))
+            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw=', trim(adjustl(ch1)), '_t=', &
+               trim(adjustl(ch2)), '_F=', trim(adjustl(ch3))
          endif
       endif 
    else LAS
@@ -2732,7 +2745,8 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
          else
             write(ch3,'(a)') 'no_coupling'
          endif
-         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_Te_', trim(adjustl(ch1)), '_Ta_', trim(adjustl(ch2)), '_', trim(adjustl(ch3))
+         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_Te_', trim(adjustl(ch1)), '_Ta_', &
+            trim(adjustl(ch2)), '_', trim(adjustl(ch3))
       else ! it is linux
          do i = 1,size(Scell)
             write(ch1,'(f8.1)') Scell(i)%Te ! electron temperature [K]
@@ -2743,7 +2757,8 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
          else
             write(ch3,'(a)') 'no_coupling'
          endif
-         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_Te=', trim(adjustl(ch1)), '_Ta=', trim(adjustl(ch2)), '_', trim(adjustl(ch3))
+         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_Te=', trim(adjustl(ch1)), '_Ta=', &
+            trim(adjustl(ch2)), '_', trim(adjustl(ch3))
       endif
    endif LAS
 
@@ -2778,7 +2793,6 @@ subroutine communicate(FN, time, numpar, matter)
    real(8) given_num
    logical :: read_well, read_well_2, file_opened
    
-   !File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt'
    File_name = numpar%Filename_communication
    inquire(UNIT=FN,opened=file_opened)
    if (file_opened) close(FN) ! for windows, we have to close the file to let the user write into it
@@ -2792,8 +2806,6 @@ subroutine communicate(FN, time, numpar, matter)
    endif
    
    inquire(UNIT=FN,opened=file_opened)
-
-!    prinT*, 'communicate', MOD_TIM, numpar%MOD_TIME, file_opened
 
    COM_OPEN:if (file_opened) then ! read it
       rewind(FN)  ! to start reading from the start
@@ -2839,7 +2851,8 @@ subroutine save_duration(matter, numpar, chtext)
    endif
    !write(FN,'(a)') '-----------------------------------------------------------'
    write(FN,'(a,a)') 'Duration of execution of program: ', trim(adjustl(chtext))
-   write(FN,'(a)') '*************************************************************'
+   !write(FN,'(a)') '*************************************************************'
+   write(FN,'(a)') trim(adjustl(m_starline))
 end subroutine save_duration
 
 
@@ -2986,9 +2999,11 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
          noth = OMP_GET_MAX_THREADS()   ! to chech if the function worked
          call set_OMP_number( numpar%NOMP, .true., 6, 'Reset number of threads in OpenMP to '//trim(adjustl(temp2)) )    ! below
          if ( noth /= OMP_GET_MAX_THREADS() ) then
-            write(FN,'(a,a,a,a)') 'At time instant of ',  trim(adjustl(temp1)), '[fs], number of threads in OpenMP is changed to ',  trim(adjustl(temp2))
+            write(FN,'(a,a,a,a)') 'At time instant of ',  trim(adjustl(temp1)), '[fs], number of threads in OpenMP is changed to ', &
+               trim(adjustl(temp2))
          else
-            write(FN,'(a,a,a,a)') 'At time instant of ',  trim(adjustl(temp1)), '[fs]: unsuccessful attempt to change number of threads in OpenMP to ',  trim(adjustl(temp2))
+            write(FN,'(a,a,a,a)') 'At time instant of ',  trim(adjustl(temp1)), &
+               '[fs]: unsuccessful attempt to change number of threads in OpenMP to ',  trim(adjustl(temp2))
             write(6,'(a)') 'Number of threads in OpenMP is unchanged: ',  trim(adjustl(temp2))
          endif
 #else
@@ -3133,7 +3148,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    do i = 1, size(matter%Atoms)
       write(text,'(f12.6)') matter%Atoms(i)%percentage
       write(text1,'(i3)') INT(matter%Atoms(i)%Z)
-      write(print_to,'(a,a,a,a,a)') ' '//trim(adjustl(text)), ' of ', trim(adjustl(matter%Atoms(i)%Name)), ' (element #', trim(adjustl(text1))//')'
+      write(print_to,'(a,a,a,a,a)') ' '//trim(adjustl(text)), ' of ', trim(adjustl(matter%Atoms(i)%Name)), &
+         ' (element #', trim(adjustl(text1))//')'
    enddo
 
    if (numpar%embed_water) then
@@ -3180,23 +3196,27 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       case (1)	! within the Drude model
          write(print_to,'(a)') ' Probe-pulse is calculated within Drude model'
          write(print_to,'(a)') ' with the following parameters of the probe:'
-         write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, '[nm]; Angle:', Scell(i)%eps%teta/g_Pi*(180.0d0), '[degrees]'
+         write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, '[nm]; Angle:', &
+            Scell(i)%eps%teta/g_Pi*(180.0d0), '[degrees]'
          write(print_to,'(a, f7.1, a)') ' Thickness of the sample: ', Scell(i)%eps%dd, ' [nm]'
          write(print_to,'(a, es12.3, es12.3)') ' Effective mass of electron and hole: ', Scell(i)%eps%me_eff, Scell(i)%eps%mh_eff
          write(print_to,'(a, es12.3, es12.3)') ' Effective scattering time of electron and of hole: ', Scell(i)%eps%tau_e, Scell(i)%eps%tau_h
       case (2:3)	! Trani model
          write(print_to,'(a)') ' Probe-pulse is calculated within Trani approach  [PRB 72, 075423 (2005)]'
          write(print_to,'(a)') ' with the following parameters of the probe:'
-         write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', Scell(i)%eps%teta/g_Pi*(180.0d0), '    [degrees]'
+         write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', &
+            Scell(i)%eps%teta/g_Pi*(180.0d0), '    [degrees]'
          write(print_to,'(a, f7.1, a)') ' Thickness of the sample: ', Scell(i)%eps%dd, ' [nm]'
          if (numpar%optic_model .EQ. 2) then
             write(text1, '(i10)') numpar%ixm
             write(text2, '(i10)') numpar%iym
             write(text3, '(i10)') numpar%izm
              if (allocated(numpar%k_grid)) then
-               write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on user-defined grid): ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+               write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on user-defined grid): ', &
+                  trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
             else
-               write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on Monkhorst Pack grid): ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+               write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on Monkhorst Pack grid): ', &
+                  trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
             endif
          else
             write(print_to,'(a)') ' Calculations are performed for Gamma-point'
@@ -3342,7 +3362,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(text1, '(i10)') matter%cell_x
          write(text2, '(i10)') matter%cell_y
          write(text3, '(i10)') matter%cell_z
-         write(print_to,'(a,a,a,a,a,a)') ' Super-cell size in unit-cells: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+         write(print_to,'(a,a,a,a,a,a)') ' Super-cell size in unit-cells: ', &
+            trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
       case (1)  ! save files are used
          write(print_to,'(a)') ' Super-cell parameters are set in SAVE files'
       case (2)  ! path coordinate
@@ -3521,9 +3542,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(text2, '(i10)') numpar%iym
          write(text3, '(i10)') numpar%izm
          if (allocated(numpar%k_grid)) then
-            write(print_to,'(a,a,a,a,a,a)') ' сalculated on the user-defined grid for points: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+            write(print_to,'(a,a,a,a,a,a)') ' сalculated on the user-defined grid for points: ', &
+               trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
          else
-            write(print_to,'(a,a,a,a,a,a)') ' сalculated on Monkhorst-Pack grid for points: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+            write(print_to,'(a,a,a,a,a,a)') ' сalculated on Monkhorst-Pack grid for points: ', &
+               trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
          endif
       case default	! gamma point
          write(print_to,'(a)') ' calculated at the Gamma point'
