@@ -142,8 +142,10 @@ pure subroutine Make_free_surfaces(Scell, numpar, matter)
    
    if (.not.numpar%r_periodic(1)) then		! free surface along X
       ! Expand the simulation box along this direction:
-      Scell(1)%supce(:,1) = Scell(1)%supce(:,1)*factr
-      Scell(1)%supce0(:,1) = Scell(1)%supce(:,1)
+      !Scell(1)%supce(:,1) = Scell(1)%supce(:,1)*factr   ! incorrect
+      !Scell(1)%supce0(:,1) = Scell(1)%supce(:,1)
+      Scell(1)%supce(1,:) = Scell(1)%supce(1,:)*factr ! correct
+      Scell(1)%supce0(1,:) = Scell(1)%supce(1,:)
       ! Rescale relative coordinates of atoms and place atoms into the middle of the simulation box:
       do i_at = 1, N_at
          call Coordinate_rescaling(Scell(1), i_at, 1, factr)
@@ -154,8 +156,10 @@ pure subroutine Make_free_surfaces(Scell, numpar, matter)
    
    if (.not.numpar%r_periodic(2)) then		! free surface along Y
       ! Expand the simulation box along this direction:
-      Scell(1)%supce(:,2) = Scell(1)%supce(:,2)*factr
-      Scell(1)%supce0(:,2) = Scell(1)%supce(:,2)
+      !Scell(1)%supce(:,2) = Scell(1)%supce(:,2)*factr   ! incorrect
+      !Scell(1)%supce0(:,2) = Scell(1)%supce(:,2)
+      Scell(1)%supce(2,:) = Scell(1)%supce(2,:)*factr ! correct
+      Scell(1)%supce0(2,:) = Scell(1)%supce(2,:)
       ! Rescale relative coordinates of atoms and place atoms into the middle of the simulation box:
       do i_at = 1, N_at
          call Coordinate_rescaling(Scell(1), i_at, 2, factr)
@@ -166,8 +170,10 @@ pure subroutine Make_free_surfaces(Scell, numpar, matter)
    
    if (.not.numpar%r_periodic(3)) then		! free surface along Z
       ! Expand the simulation box along this direction:
-      Scell(1)%supce(:,3) = Scell(1)%supce(:,3)*factr
-      Scell(1)%supce0(:,3) = Scell(1)%supce(:,3)
+      !Scell(1)%supce(:,3) = Scell(1)%supce(:,3)*factr ! incorrect
+      !Scell(1)%supce0(:,3) = Scell(1)%supce(:,3)
+      Scell(1)%supce(3,:) = Scell(1)%supce(3,:)*factr ! correct
+      Scell(1)%supce0(3,:) = Scell(1)%supce(3,:)
       ! Rescale relative coordinates of atoms and place atoms into the middle of the simulation box:
       do i_at = 1, N_at
          call Coordinate_rescaling(Scell(1), i_at, 3, factr)
