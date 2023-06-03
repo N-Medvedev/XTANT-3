@@ -159,7 +159,7 @@ subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlab
       case (1)  ! eps
          write(FN, '(a)') 'set terminal postscript enhanced \"Helvetica\" 16 color '
          write(FN, '(a)') 'set output \"$NAME\"'
-      case (2)  ! gpeg
+      case (2)  ! jpeg
          write(FN, '(a)') 'set terminal jpeg font \"arial,'//trim(adjustl(temp2))//'\" '
          write(FN, '(a)') 'set output \"$NAME\"'
       case (3)  ! gif

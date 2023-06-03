@@ -21,7 +21,7 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-! This module contains subroutines to deal with van der Waals forces within TB
+! This module contains subroutines to deal with short-range classical potential ("exponential wall")
 
 MODULE Exponential_wall
 use Universal_constants
@@ -45,7 +45,7 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! 
    type(Solid), intent(in), target :: matter   ! all material parameters
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    real(8), intent(out) :: a  ! [eV] short-range energy
-   !=====================================================
+   !------------------------
    real(8) :: sum_a, Short_range_pot
    integer(4) :: i, atom_2
    real(8), pointer :: a_r, Z1, Z2
@@ -82,7 +82,7 @@ function Shortrange_pot(TB_Expwall, a_r, Z1, Z2) result(Pot)
    type(TB_Short_Rep), intent(in), target :: TB_Expwall  ! Exponential wall parameters
    real(8), intent(in) :: a_r ! [A] distance between the atoms
    real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL)
-   !====================================
+   !------------------------
    real(8) :: f_cut_large, f_pow, f_exp, f_invexp, f_ZBL
 
    Pot = 0.0d0 ! to start with
@@ -125,7 +125,7 @@ function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
    type(TB_Short_Rep), intent(in), target :: TB_Expwall  ! short-range parameters
    real(8), intent(in) :: a_r ! [A] distance between the atoms
    real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL)
-   !====================================
+   !------------------------
    real(8) :: f_cut_large, d_f_large, f_exp, d_f_exp, f_invexp, d_f_invexp, f_pow, d_f_pow, Pot, d_Pot, f_ZBL, d_f_ZBL
 
    dPot = 0.0d0   ! to start with
@@ -179,7 +179,7 @@ subroutine d_Short_range_pot_s(Scell, NSC, matter, TB_Expwall, numpar)
    type(Solid), intent(in), target :: matter   ! all material parameters
    type(TB_Short_Rep), dimension(:,:),intent(in) :: TB_Expwall	! Exponential wall parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
-   !---------------------------------------
+   !------------------------
    real(8), dimension(3) :: x1  ! for coordinates of all atoms (X,Y,Z)-for all atoms
    real(8) dpsi(3), psi, a_r, r1, x0, y0, z0, a, b, ddlta, b_delta
    integer i, j, k, ik, i1, ian, dik, djk, n, atom_2
@@ -258,7 +258,7 @@ subroutine d_Short_range_Pressure_s(Scell, NSC, TB_Expwall, matter, numpar)
    type(TB_Short_Rep), dimension(:,:),intent(in) :: TB_Expwall	! Exponential wall parameters
    type(Solid), intent(in), target :: matter   ! all material parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
-   !===============================================
+   !------------------------
    REAL(8), DIMENSION(3,3) :: Rep_Pr  ! for dErep/dr for (X,Y,Z) for all atoms
    integer i, k, l, n, atom_2
    integer, pointer :: KOA1, KOA2, m, j
@@ -405,14 +405,14 @@ end function d_exp_function
 
 
 !------------------------------------------------------
-! Obsolete simply-wall (inverse exponential) potential:
+! Obsolete simple-wall (inverse exponential) potential:
 subroutine get_Exp_wall_s(TB_Expwall, Scell, NSC, numpar, a)   ! Exponential wall energy
    type(TB_Exp_wall_simple), dimension(:,:), intent(in) :: TB_Expwall	! Exponential wall parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a	! [eV] exponential "wall" energy
-   !=====================================================
+   !----------------------
    real(8), pointer :: a_r
    real(8) :: sum_a, Expwall_pot
    INTEGER(4) i, atom_2
@@ -445,7 +445,7 @@ function Exp_wall_pot(TB_Expwall, a_r) result(Pot)
    real(8) Pot	! [eV] Exponential wall potential
    type(TB_Exp_wall_simple), intent(in), target :: TB_Expwall	! Exponential wall parameters
    real(8), intent(in) :: a_r ! [A] distance between the atoms
-   !====================================
+   !-------------------
    real(8) :: f_cut_large
    real(8), pointer :: C	! [eV]
    real(8), pointer :: r0	! [A]
@@ -498,7 +498,7 @@ function d_Exp_wall_pot(TB_Expwall, a_r) result(dPot)
    real(8) :: dPot		! derivative of the exponential wall potential
    type(TB_Exp_wall_simple), intent(in), target :: TB_Expwall	! Exponential wall parameters
    real(8), intent(in) :: a_r ! [A] distance between the atoms
-   !====================================
+   !---------------------
    real(8) :: E_C, f_cut_large, d_f_large, d_E_C
    real(8), pointer :: C	! [eV]
    real(8), pointer :: r0	! [A]

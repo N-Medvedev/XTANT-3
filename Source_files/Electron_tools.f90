@@ -26,7 +26,8 @@ use Universal_constants
 use Objects
 use Algebra_tools, only : Two_Vect_Matr
 use Little_subroutines, only : Find_in_array_monoton, Fermi_interpolation, linear_interpolation, &
-                        Find_in_monotonous_1D_array, Gaussian
+                        Find_in_monotonous_1D_array, Gaussian, print_progress
+use MC_cross_sections, only : TotIMFP
 
 implicit none
 PRIVATE
@@ -134,7 +135,9 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(solid), intent(inout) :: matter	! materil parameters
    type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
-   integer i, sumNe, siz, j
+   !-----------
+   real(8) :: L, Ele
+   integer :: i, sumNe, siz, j, Nshl, N_grid, k
 
    siz = size(wr)
    
@@ -164,24 +167,52 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    Scell%E_VB_top = wr(i)		! [eV] current top of the valence band
    
    ! Set MC high-energy electron cut-off energy equal to the uppermost level of CB:
-   !if (numpar%E_cut_dynamic) numpar%E_cut = wr(siz) - Scell%E_bottom ! [eV]
    if (numpar%E_cut_dynamic) numpar%E_cut = Scell%E_top - Scell%E_bottom ! [eV]
+
    ! For noneuqilibrium distributions (BO or relaxation time), threshold cannot be higher than
    ! the topmost level of CB, otherwise, there is no way to place an incomming electron:
    select case (numpar%el_ion_scheme)
    case (3:4)
+      if ( (numpar%verbose) .and. (numpar%E_cut > (Scell%E_top-Scell%E_bottom) ) ) then
+         print*, 'E_cut > E_CB, which is impossible in nonequilibrium simulation,', &
+         ' resetting it to E_cut=', Scell%E_top-Scell%E_bottom
+      endif
       numpar%E_cut = min(numpar%E_cut, Scell%E_top-Scell%E_bottom) ! [eV]
+
+      ! Also ionization potential and the cross-section may need to be adjusted:
+      Nshl = size(matter%Atoms(1)%Ip)  ! last shell, corresponding to bandgap
+      if (matter%Atoms(1)%Ip(Nshl) > (Scell%E_top-Scell%E_bottom) ) then
+         if (numpar%verbose) then
+            print*, 'Ionization potential is smaller than CB width,', ' it will be reset to Ip=', Scell%E_top-Scell%E_bottom
+            print*, 'Note that it will affect the cross-section'
+         endif
+         matter%Atoms(1)%Ip(Nshl) = Scell%E_top-Scell%E_bottom ! change it to the width of CB
+         N_grid = size( matter%Atoms(1)%El_MFP(Nshl)%E )
+         do k = 1, N_grid  ! recalculate the cross-section of scattering on CB
+            Ele = matter%Atoms(1)%El_MFP(Nshl)%E(k) ! [eV] energy
+            call TotIMFP(Ele, matter, Scell%TeeV, 1, Nshl, L)  ! module "MC_cross_sections"
+            matter%Atoms(1)%El_MFP(Nshl)%L(k) = L ! [A] MFP
+            if (numpar%verbose) call print_progress('Progress:', k, N_grid)    ! module "Little_subroutines"
+         enddo
+      endif
    endselect
 
    ! In case we have a very wide gap material, cut-off cannot be smaller than the gap:
-   if (numpar%E_cut < Scell%E_gap) numpar%E_cut = Scell%E_gap
+   if (numpar%E_cut < Scell%E_gap) then
+      if (numpar%verbose) print*, 'Potential problem: E_cut < E_gap, resetting it'
+      numpar%E_cut = Scell%E_gap
+   endif
 
    select case (matter%Atoms(1)%TOCS(size(matter%Atoms(1)%TOCS))) ! which inelastic cross section to use (BEB vs CDF):
       case (1) ! CDF cross section
          matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) = Scell%E_gap ! [eV] ionization potential of the valence band
       case default  ! BEB:
          ! Renormalization is optional:
-         !if (numpar%E_cut < matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) ) numpar%E_cut = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+         if (numpar%E_cut < matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) ) then
+            if (numpar%verbose) print*, 'Electron cut-off energy cannot be smaller than the highest ionization otential,', &
+            'resetting it to E_cut=', matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+            numpar%E_cut = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+         endif
    end select
    
 !    print*, 'numpar%E_cut =', numpar%E_cut , Scell%E_gap , matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))

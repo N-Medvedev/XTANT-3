@@ -35,7 +35,7 @@ PRIVATE
 
 
 public :: Mean_free_path, which_atom, which_shell, NRG_transfer_elastic_atomic, Electron_energy_transfer_inelastic
-public :: Get_mfps, Get_photon_attenuation
+public :: Get_mfps, Get_photon_attenuation, TotIMFP
 
  contains
 
