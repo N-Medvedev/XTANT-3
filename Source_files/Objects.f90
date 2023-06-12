@@ -812,7 +812,8 @@ type Numerics_param
    logical :: do_elastic_MC, do_path_coordinate, do_kappa
    logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN
    integer :: Mulliken_model
-   integer :: ind_fig_extention
+   integer :: ind_fig_extention, change_size_step
+   real(8) :: change_size_max, change_size_min
    character(4) :: fig_extention
    ! BOP parameters creation:
    logical :: create_BOP_repulse

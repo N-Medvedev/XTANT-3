@@ -133,26 +133,31 @@ function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
       Pot = 0.0d0 ! to start with
       d_Pot = 0.0d0  ! to start with
 
+      !------------------
       ! Cut-off function:
       f_cut_large = f_cut_L_C(a_r, TB_Expwall%f_cut%d0, TB_Expwall%f_cut%dd)   ! module "Coulomb"
       ! And its derivative:
       d_f_large = d_f_cut_L_C(a_r, TB_Expwall%f_cut%d0, TB_Expwall%f_cut%dd)   ! module "Coulomb"
 
+      !------------------
       ! Contribution of the exponential function:
       f_exp = exp_function(a_r, TB_Expwall%f_exp%use_it, TB_Expwall%f_exp%Phi, TB_Expwall%f_exp%r0, TB_Expwall%f_exp%a)  ! below
       ! And its derivative:
       d_f_exp = d_exp_function(a_r, TB_Expwall%f_exp%use_it, TB_Expwall%f_exp%Phi, TB_Expwall%f_exp%r0, TB_Expwall%f_exp%a)  ! below
 
+      !------------------
       ! Contribution of the inverse exponential function:
       f_invexp = inv_exp_function(a_r, TB_Expwall%f_inv_exp%use_it, TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0)  ! below
       ! And its derivative:
       d_f_invexp = d_inv_exp_function(a_r, TB_Expwall%f_inv_exp%use_it, TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0)  ! below
 
+      !------------------
       ! Contribution of the power functions:
       f_pow = power_function(a_r, TB_Expwall%f_pow)   ! below
       ! And its derivative:
       d_f_pow = d_power_function(a_r, TB_Expwall%f_pow)   ! below
 
+      !------------------
       ! Contribution of the ZBL potential:
       if (TB_Expwall%f_ZBL%use_it) then
          f_ZBL = ZBL_pot(Z1, Z2, a_r)   ! module "ZBL_potential"
@@ -162,11 +167,13 @@ function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
          d_f_ZBL = 0.0d0
       endif
 
+      !------------------
       ! Combine all:
       Pot = f_invexp + f_exp + f_pow + f_ZBL
       d_Pot = d_f_invexp + d_f_exp + d_f_pow + d_f_ZBL
 
-      ! Augment the potential with the cut-off function:
+      !------------------
+      ! Augment the potential with the cut-off function (and its derivative):
       dPot = Pot*d_f_large + d_Pot*f_cut_large
    endif
 end function d_Short_range_pot
@@ -259,7 +266,7 @@ subroutine d_Short_range_Pressure_s(Scell, NSC, TB_Expwall, matter, numpar)
    type(Solid), intent(in), target :: matter   ! all material parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    !------------------------
-   REAL(8), DIMENSION(3,3) :: Rep_Pr  ! for dErep/dr for (X,Y,Z) for all atoms
+   real(8), dimension(3,3) :: Rep_Pr  ! for dErep/dr for (X,Y,Z) for all atoms
    integer i, k, l, n, atom_2
    integer, pointer :: KOA1, KOA2, m, j
    real(8), pointer :: Z1, Z2
@@ -300,7 +307,7 @@ subroutine d_Short_range_Pressure_s(Scell, NSC, TB_Expwall, matter, numpar)
 
          do k = 1,3 ! supce indices
             do l = 1,3  ! supce indices
-               PForce(l,k) = PForce(l,k) + Rep_Pr(l,k)*0.5d0	! factor 0.5 to compensate for double-counting
+               PForce(l,k) = PForce(l,k) + Rep_Pr(l,k)*0.5d0   ! factor 0.5 to compensate for double-counting
             enddo ! l
          enddo ! k
       enddo ! i

@@ -88,6 +88,10 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    matter%Chem = '' ! chemical formula of the compound
    if (.not.allocated(Scell)) allocate(Scell(1)) ! So far we only use 1 supercell
    numpar%numpar_in_input = .false.    ! assume separate file with the numerical parameters
+   numpar%change_size_min = 0.7d0   ! default starting point for vary_size
+   numpar%change_size_max = 2.1d0   ! default ending point for vary_size
+   numpar%change_size_step = 300    ! default number of points for vary_size
+
    numpar%lin_scal = 0   ! do not use linear scaling TB (NOT READY)
    Scell(1)%Te = 300.0d0 ! initial electron temperature [K]
    Scell(1)%TeeV = Scell(1)%Te/g_kb ! [eV] electron temperature
@@ -5491,8 +5495,10 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
    !--------------------------
    real(8), dimension(3) :: read_var   ! fluence: starting, ending, step; all in [eV/atom]
    integer :: Reason, num_phon, i, N
+   real(8) :: i_min, i_max
    logical :: read_well
-   character(200) :: Error_descript
+   character(200) :: Error_descript, temp_ch
+   character(20) :: temp_ch1, temp_ch2, temp_ch3
 
    read_well = .true.   ! to start with
    read_var = 0.0d0     ! unused variable in this case
@@ -5522,6 +5528,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
 
       ! Calculate optical parameters, and with which model:
       read(FN,*,IOSTAT=Reason) numpar%optic_model, N, read_var
+      call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
          write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
@@ -5550,6 +5557,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
 
          ! Absorbtion of how many rays (0=exclude, 1=1st ray, (>1)=sum all); probe-pulse wavelength [nm]; probe duration FWHM [fs]
          read(FN,*,IOSTAT=Reason) numpar%drude_ray, Scell(i)%eps%l, Scell(i)%eps%tau
+         call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
             write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
             call Save_error_details(Err, 3, Error_descript)
@@ -5563,6 +5571,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
 
          ! Angle of prob-pulse with respect to normal [degrees]; material thickness [nm]:
          read(FN,*,IOSTAT=Reason) Scell(i)%eps%teta, Scell(i)%eps%dd
+         call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
             write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
             call Save_error_details(Err, 3, Error_descript)
@@ -5571,6 +5580,27 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
          endif
          Scell(i)%eps%teta = Scell(i)%eps%teta*g_Pi/(180.0d0) !c [radians]
       enddo SCL
+
+   case ('size', 'Size', 'SIZE')
+      print*, 'Supercell size variation will be performed to plot potential energy curve'
+      numpar%change_size = .true. ! do changing size
+      ! Optional number of points for vary_size:
+      read(FN,*,IOSTAT=Reason) i_min, i_max, N
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then ! save and use it later
+         numpar%change_size_min = i_min
+         numpar%change_size_max = i_max
+         numpar%change_size_step = N
+         write(temp_ch1, '(f12.2)') numpar%change_size_min
+         write(temp_ch2, '(f12.2)') numpar%change_size_max
+         write(temp_ch3,'(i8)') numpar%change_size_step
+         write(temp_ch, '(a)') trim(adjustl(temp_ch1))//' : '//trim(adjustl(temp_ch2))//' : '//trim(adjustl(temp_ch3))
+         print*, 'With parameters of the supercell (min, max, grid): '//trim(adjustl(temp_ch))
+      else ! reread the line next time, if it was not an integer number
+         BACKSPACE(FN)
+         print*, 'With default parameters of the supercell min, max, and step'
+      endif
+      !write(*,'(a)') trim(adjustl(m_starline))
 
    case default
       ! Check if the user needs any additional info (by setting the flags):

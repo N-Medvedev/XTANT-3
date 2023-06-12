@@ -550,7 +550,8 @@ subroutine vary_size(do_forces, Err)
    integer, optional, intent(in) :: do_forces
    logical, intent(out), optional :: Err
    real(8) :: r_sh, x, y, z, E_vdW_interplane, g_time_save, z_sh, z_sh0, temp, E_ZBL
-   integer i, j, at1, at2
+   real(8) :: d_i, i_min, i_max
+   integer i, j, at1, at2, N_points
    character(13) :: char1
    logical yesno
    open(UNIT = 100, FILE = 'OUTPUT_Energy.dat')
@@ -575,11 +576,22 @@ subroutine vary_size(do_forces, Err)
 !    enddo
 !    !----------------------------------------------
    
-   do i_test = 1,300 !<-
+   ! Set grid points:
+   i_min = g_numpar%change_size_min
+   i_max = g_numpar%change_size_max
+   N_points = g_numpar%change_size_step-1
+   d_i = (i_max - i_min)/dble(N_points)   ! step size in units of Supce
+
+   !print*, 'vary_size:', i_min, i_max, N_points, d_i
+
+   !do i_test = 1,300 !<-
+   do i_test = 1, g_numpar%change_size_step+1
       !----------------------------------------------
       ! General feature, changing size:
       
-       g_Scell(1)%supce = g_Scell(1)%supce0*(0.7d0 + dble(i_test)/200.0d0) !<-
+       !g_Scell(1)%supce = g_Scell(1)%supce0*(0.7d0 + dble(i_test)/200.0d0) !<-
+       g_Scell(1)%supce = g_Scell(1)%supce0*( i_min  +  d_i*dble(i_test-1) ) !<-
+       !print*, g_Scell(1)%supce0(1,1)*(0.7d0 + dble(i_test)/200.0d0), g_Scell(1)%supce(1,1)
       
 !       print*, 'g_Scell0', g_Scell(1)%supce0
 !       print*, 'g_Scell', g_Scell(1)%supce
@@ -652,7 +664,7 @@ subroutine vary_size(do_forces, Err)
       E_ZBL = E_ZBL/dble(g_Scell(1)%Na)   ! [eV] => [eV/atom]
 
       if (present(do_forces)) then
-         print*, 'Supercell size:', i_test, &
+         print*, 'Supercell size:', i_test-1, &
          trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
          trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)) , g_time, &
          g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
@@ -661,7 +673,7 @@ subroutine vary_size(do_forces, Err)
                g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%MDatoms(do_forces)%forces%rep(:), &
                g_Scell(1)%MDatoms(do_forces)%forces%att(:)
       else
-         print*, 'Supercell size:', i_test, &
+         print*, 'Supercell size:', i_test-1, &
          trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
          trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)), at1, at2, g_time, &
          g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
