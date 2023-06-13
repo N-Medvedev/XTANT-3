@@ -550,7 +550,7 @@ subroutine vary_size(do_forces, Err)
    integer, optional, intent(in) :: do_forces
    logical, intent(out), optional :: Err
    real(8) :: r_sh, x, y, z, E_vdW_interplane, g_time_save, z_sh, z_sh0, temp, E_ZBL
-   real(8) :: d_i, i_min, i_max
+   real(8) :: d_i, i_min, i_max, rescale_factor
    integer i, j, at1, at2, N_points
    character(13) :: char1
    logical yesno
@@ -590,7 +590,8 @@ subroutine vary_size(do_forces, Err)
       ! General feature, changing size:
       
        !g_Scell(1)%supce = g_Scell(1)%supce0*(0.7d0 + dble(i_test)/200.0d0) !<-
-       g_Scell(1)%supce = g_Scell(1)%supce0*( i_min  +  d_i*dble(i_test-1) ) !<-
+       rescale_factor = i_min  +  d_i*dble(i_test-1) !<-
+       g_Scell(1)%supce = g_Scell(1)%supce0 * rescale_factor   !<-
        !print*, g_Scell(1)%supce0(1,1)*(0.7d0 + dble(i_test)/200.0d0), g_Scell(1)%supce(1,1)
       
 !       print*, 'g_Scell0', g_Scell(1)%supce0
@@ -664,18 +665,18 @@ subroutine vary_size(do_forces, Err)
       E_ZBL = E_ZBL/dble(g_Scell(1)%Na)   ! [eV] => [eV/atom]
 
       if (present(do_forces)) then
-         print*, 'Supercell size:', i_test-1, &
-         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
-         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)) , g_time, &
+         write(*,'(a,X1i0,a,X1i0,f14.6,f14.6,f14.6)') 'Supercell size:', i_test-1, &
+         ' '//trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
+         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)) , rescale_factor, g_time, &
          g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
          write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') &
                g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, &
                g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%MDatoms(do_forces)%forces%rep(:), &
                g_Scell(1)%MDatoms(do_forces)%forces%att(:)
       else
-         print*, 'Supercell size:', i_test-1, &
-         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
-         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)), at1, at2, g_time, &
+         write(*,'(a,X1i0,a,X1i0,X1i0,f14.6,f14.6,f14.6)') 'Supercell size:', i_test-1, &
+         ' '//trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
+         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)), at1, at2, rescale_factor, g_time, &
          g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
          write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, &
                g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, &
