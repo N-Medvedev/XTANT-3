@@ -194,7 +194,7 @@ subroutine read_skf_file_no_rep(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_po
       TB_Hamil%Ud = 0.0d0
    endif
 
-   ! Read parameters of repulsive potential in the polinomial form:
+   ! Read parameters of repulsive potential in the polinomial form (zeros in the line present):
    read(FN,*,IOSTAT=Reason) temp_r, c(:), rcut   ! [a.u.] coefficients for repulsive potential in polinomial form
    call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
    if (.not.read_well) goto 2012 ! exit

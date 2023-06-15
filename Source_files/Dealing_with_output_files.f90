@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 12.06.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 15.06.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2787,7 +2787,7 @@ subroutine communicate(FN, time, numpar, matter)
    integer, intent(in) :: FN ! file number to read from
    real(8), intent(in) :: time ! current time [fs]
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
-   type(Solid), intent(in) :: matter ! parameters of the material
+   type(Solid), intent(inout) :: matter ! parameters of the material
    integer :: Reason, i, MOD_TIM, sz
    character(200) :: readline, given_line, File_name
    real(8) given_num
@@ -2814,7 +2814,7 @@ subroutine communicate(FN, time, numpar, matter)
       Reason = 1  ! to start with
       do while (Reason >= 0) ! read all lines if there is more than one
          call pars_comunications_file(FN, i, given_line, given_num, Reason) ! below
-         if (Reason == 0) call act_on_comunication(read_well_2, given_line, given_num, numpar, matter, time)   ! below
+         if (Reason == 0) call act_on_comunication(given_line, given_num, numpar, matter, time)   ! below
       enddo
       rewind(FN)
       write(FN,'(a)') ''
@@ -2932,18 +2932,19 @@ pure subroutine reset_support_times(numpar)
 end subroutine reset_support_times
 
 
-subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter, time)
-   logical, intent(in) :: read_well ! did we read something meaningful from the comunication file?
+subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
+   !logical, intent(in) :: read_well ! did we read something meaningful from the comunication file?
    character(*), intent(in) :: given_line ! line read from the file
    real(8), intent(in) :: given_num  ! number read from the file
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
-   type(Solid), intent(in) :: matter ! parameters of the material
+   type(Solid), intent(inout) :: matter ! parameters of the material
    real(8), intent(in) :: time ! current time [fs]
    integer FN, noth, lngt
-   logical file_opened
+   logical file_opened, read_well
    character(200) :: File_name, temp1, temp2, given_line_processed
    character(1) path_sep
 
+   read_well = .true.   ! by default, we could read everything well; change later if problem
    path_sep = trim(adjustl(numpar%path_sep))
    lngt = LEN(trim(adjustl(given_line)))    ! length of the line
 
@@ -2965,15 +2966,17 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
 
       select case(trim(adjustl(given_line_processed)))
       case ('verbose', 'VERBOSE', 'Verbose')
-         print*, 'Verbose option on: XTANT will print a lot of markers for testing and debugging'
          numpar%verbose = .true.
+         write(6,'(a)') 'Verbose option on: XTANT will print a lot of markers for testing and debugging'
          write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' verbose option was switched on'
 
+      !-------------------
       case ('time', 'TIME', 'Time', 'TIme', 'TIMe', 'tIme', 'emit', 'Vremya')
          numpar%t_total = given_num ! total duration of simulation [fs]
-         print*, 'Duration of simulation is changed to', given_num
+         write(6,'(a,f10.3)') 'Duration of simulation is changed to', given_num
          write(FN,'(a,f10.3,a,f10.3)') 'At time instance of ', time, ' duration of simulation is changed to ', given_num
 
+      !-------------------
       case ('MDdt', 'dtMD', 'mddt', 'dtmd', 'MDDT', 'DTMD')
          numpar%dt = given_num ! Time step for MD [fs]
          call reset_support_times(numpar)   ! above
@@ -2981,14 +2984,16 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
          !numpar%dtsqare = numpar%dt*numpar%halfdt ! dt*dt/2, often used
          !numpar%dt3 = numpar%dt**3/6.0d0            ! dt^3/6, often used
          !numpar%dt4 = numpar%dt*numpar%dt3/8.0d0    ! dt^4/48, often used
-         print*, 'Time-step of MD simulation is changed to', given_num
+         write(6,'(a,f9.3)') 'Time-step of MD simulation is changed to', given_num
          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' time-step of MD simulation is changed to ', given_num 
 
+      !-------------------
       case ('SAVEdt', 'savedt', 'dtsave', 'dtSAVE', 'Savedt', 'SaveDT', 'SaveDt')
          numpar%dt_save = given_num ! save data into files every 'dt_save_time' [fs]
-         print*, 'Time-step of saving output files is changed to', given_num
+         write(6,'(a,f9.3)') 'Time-step of saving output files is changed to', given_num
          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' time-step of saving output files is changed to ', given_num
       
+      !-------------------
       case ('OMP', 'omp', 'NOMP', 'nomp', 'Nomp', 'N_OMP', 'n_omp')
          ! Reset the OpenMP parallelization options:
          numpar%NOMP = given_num
@@ -3011,15 +3016,64 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
          write(6,'(a)') 'The code compiled without OpenMP, cannot set parallelization'
 #endif
 
-      case ('Te', 'te', 'TE') ! DO NOT USE: this option is not finished yet!
-!          print*, 'Time-step of saving output files is changed to', given_num
-!          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' electronic temperature is changed to ', given_num
-      case ('pulse', 'PULSE', 'Pulse') ! DO NOT USE: this option is not finished yet!
-!          print*, 'Parameters of the pulse number', int(given_num), 'are changed'
-!          write(FN,'(a,f10.3,a,i4,a)') 'At time instance of ', time, ' parameters of the pulse number ', int(given_num), ' are changed'
+      !-------------------
+      case ('Thermostat_dt_a', 'THERMOSTAT_DT_A', 'thermostat_dt_a')
+         if (given_num < 0.0d0) then
+            numpar%Transport = .false. ! excluded atomic thermostat
+            write(6,'(a)') 'Atomic thermostat is switched off'
+            write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' atomic thermostat is switched off'
+         else
+            numpar%Transport = .true. ! included atomic thermostat
+            matter%tau_bath = given_num   ! [fs] time constant of cooling for atoms
+            write(6,'(a,f12.3)') 'Atomic thermostat time is changed to', given_num
+            write(FN,'(a,f10.3,a,f12.3)') 'At time instance of ', time, ' atomic thermostat time is changed to ', given_num
+         endif
+      !-------------------
+      case ('Thermostat_Ta', 'THERMOSTAT_Ta', 'thermostat_Ta')
+         if (given_num < 0.0d0) then
+            numpar%Transport = .false. ! excluded atomic thermostat
+            write(6,'(a)') 'Atomic thermostat is switched off'
+            write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' atomic thermostat is switched off'
+         else
+            numpar%Transport = .true. ! included atomic thermostat
+            matter%T_bath = given_num   ! [K] bath temperature for atoms
+            matter%T_bath = matter%T_bath/g_kb  ! [eV] thermostat temperature
+            write(6,'(a,f12.3)') 'Atomic thermostat temperature is changed to', given_num
+            write(FN,'(a,f10.3,a,f12.3)') 'At time instance of ', time, ' atomic thermostat temperature is changed to ', given_num
+         endif
+
+      !-------------------
+      case ('Thermostat_dt_e', 'THERMOSTAT_DT_E', 'thermostat_dt_e')
+         if (given_num < 0.0d0) then
+            numpar%Transport_e = .false. ! excluded atomic thermostat
+            write(6,'(a)') 'Electronic thermostat is switched off'
+            write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' electronic thermostat is switched off'
+         else
+            numpar%Transport_e = .true. ! included atomic thermostat
+            matter%tau_bath_e = given_num   ! [fs] time constant of cooling for atoms
+            write(6,'(a,f10.3)') 'Electronic thermostat time is changed to', given_num
+            write(FN,'(a,f10.3,a,f12.3)') 'At time instance of ', time, ' electronic thermostat time is changed to ', given_num
+         endif
+      !-------------------
+      case ('Thermostat_Te', 'THERMOSTAT_Te', 'thermostat_Te')
+         if (given_num < 0.0d0) then
+            numpar%Transport_e = .false. ! excluded atomic thermostat
+            write(6,'(a)') 'Electronic thermostat is switched off'
+            write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' electronic thermostat is switched off'
+         else
+            numpar%Transport_e = .true. ! included atomic thermostat
+            matter%T_bath_e = given_num   ! [K] bath temperature for atoms
+            matter%T_bath_e = matter%T_bath_e/g_kb  ! [eV] thermostat temperature
+            write(6,'(a,f12.3)') 'Electronic thermostat temperature is changed to', given_num
+            write(FN,'(a,f10.3,a,f12.3)') 'At time instance of ', time, ' electronic thermostat temperature is changed to ', given_num
+         endif
+
+      !-------------------
       case default
          print*, 'Could not interpret what is read from the file: ', trim(adjustl(given_line)), given_num
       end select
+   else
+      print*, 'Could not read well from the file: ', trim(adjustl(given_line)), given_num
    endif
 end subroutine act_on_comunication
 
