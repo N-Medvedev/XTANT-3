@@ -31,7 +31,7 @@ real(8) :: g_Pi, g_2Pi, g_half_Pi, g_exp, g_e, g_me, g_cvel, g_Mp, g_h, g_kb, g_
 g_Ry, g_a0, g_v0, g_alpha, g_P_atm, g_e_m, g_h_MeVs, g_e_ESU, g_me_MeV, g_u_MeV, g_amu, g_re, g_lambda_e, g_SIGMA_0, &
 g_MU_B_MeV_T, g_E_M_e, g_E_M_P, g_G, g_g_Earth, g_N_A, g_V_MOLAR, g_LAMBDAT, g_SIGMA_SB, g_G_F, g_M_W, g_M_Z0, &
 g_G_S, g_AUENERGY, g_AUACTION, g_AUTIME, g_AUFORCE, g_AUVELOCITY, g_AUMOMENTUM, g_AUEFIELD, g_AUEDIPOLE, &
-g_AUMFLUX, g_AUMDIPOLE, g_ASTRONOMICALUNIT, g_NA
+g_AUMFLUX, g_AUMDIPOLE, g_ASTRONOMICALUNIT, g_NA, g_ms2Afs, g_Afs2ms, g_r0
 
 complex :: g_CI
 
@@ -62,10 +62,11 @@ parameter (g_e0		= 8.854187817620d-12)	! Electrical constant	[F/m]
 parameter (g_ke     = 1.0d0/(4.0d0*g_Pi*g_e0))  ! Coulomb constant
 parameter (g_mu0	= 1.2566370614359d-6)	! Magnetic constant	[H*A^-2]
 parameter (g_Ry	= 13.6056981d0)		! Rydberg constant	[eV]
+parameter (g_alpha	= g_e*g_e/(g_h*g_cvel*4.0d0*g_Pi*g_e0))	! Fine structure constant // 0.0072973530796448
 parameter (g_a0		= 0.5291772085936d0)	! Bohr radius		[A]
+parameter (g_r0		= g_alpha*g_alpha*g_a0)	! classical electron radius [A]
 parameter (g_re		= 2.81794092d-15)	! classical electron radius	[m]
 parameter (g_v0		= sqrt(2.0d0*g_Ry*g_e/g_me))	! Bohr velocity	[m/s]
-parameter (g_alpha	= g_e*g_e/(g_h*g_cvel*4.0d0*g_Pi*g_e0))	! Fine structure constant // 0.0072973530796448
 parameter (g_P_atm	= 101325.0d0)		! Atmospheric pressure	[Pa]
 parameter (g_e_m	= g_e/g_me)		! Ratio of electron charge to its mass	[Coulomb/kg]
 parameter (g_lambda_e	= 3.86159323d-13)	! electron Compton wavelength	[m]
@@ -121,7 +122,8 @@ parameter (g_yd2m	= 0.9144d0)		! [yard] -> [m]
 parameter (g_cm2in	= 0.39370078740157d0)	! [cm]-> [inch]
 parameter (g_m2ft	= 3.2808398950131d0)	! [m] ->  [feet]
 parameter (g_m2yd	= 1.0936132983377d0)	! [m] -> [yard]
-
+parameter (g_ms2Afs = 1.0d-5)                   ! [m/s] -> [A/fs]
+parameter (g_Afs2ms = 1.0d5)                    ! [A/fs] -> [m/s]
 !UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU
 
 END MODULE Universal_constants

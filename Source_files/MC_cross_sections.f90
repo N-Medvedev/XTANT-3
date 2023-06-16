@@ -21,7 +21,14 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-! This module contains subroutines to deal with cross-sections:
+! This module contains subroutines to deal with cross-sections.
+! References used in the module:
+! [1]  F. Salvat, J. M. Fernandez-Varea, E. Acosta, J. Sempau
+!   "PENELOPE-2014 A Code System for Monte Carlo Simulation of Electron and Photon Transport", OECD (2014)
+! [2] R. Rymzhanov et al. Phys. Status Solidi B 252, 159-164 (2015) / DOI 10.1002/pssb.201400130
+! [3] M. Azzolini et al. J. Phys. Condens. Matter 31, 055901 (2019)
+
+
 
 MODULE MC_cross_sections
 use Objects
@@ -34,8 +41,12 @@ implicit none
 PRIVATE
 
 
+real(8), parameter :: m_two_third = 2.0d0/3.0d0
+
+
 public :: Mean_free_path, which_atom, which_shell, NRG_transfer_elastic_atomic, Electron_energy_transfer_inelastic
 public :: Get_mfps, Get_photon_attenuation, TotIMFP
+
 
  contains
 
@@ -1110,7 +1121,9 @@ subroutine Elastic_MFP(i_at, numpar, matter) ! elastic mean free path for scatte
       write(0,'(a)') ' Calculating electron EMFP for '//trim(adjustl(matter%Atoms(i_at)%Name))//' atom'
       do k = 1, N_grid
          Ele = matter%Atoms(i_at)%El_EMFP%E(k) ! [eV] electron energy
-         call Atomic_elastic_sigma(Zat, Ele, sigma_el) ! [A^2] cross section
+         ! Cross section (Mott's):
+         !call Atomic_elastic_sigma(Zat, Ele, sigma_el) ! [A^2] OLD
+         sigma_el = Mott_total_CS(Ele, Zat)   ! [A^2] below (relativistic)
 
          Contrib = matter%At_Dens*1d-24*(matter%Atoms(i_at)%percentage)/SUM(matter%Atoms(:)%percentage)
          if (sigma_el <= 0.0d0) then ! no scattering
@@ -1131,17 +1144,204 @@ subroutine Elastic_MFP(i_at, numpar, matter) ! elastic mean free path for scatte
    nullify(Zat) ! free the pointers
    inquire(file=trim(adjustl(File_name)),opened=file_opened)
    if (file_opened) close(FN)
+   !PAUSE 'Elastic_MFP'
 end subroutine Elastic_MFP
 
 
 
-subroutine Atomic_elastic_sigma(Zat, Ee, sigma_el) ! total cross-section of elastic scattering on an atom:
+
+! Mott's cross section according to [3]
+pure function Mott_total_CS(Ee, Z, mass, mu_max_in) result(sigma)
+   real(8) sigma	! [A^2] cross section
+   real(8), intent(in) :: Ee	! [eV] electron kinetic energy
+   real(8), intent(in) :: Z	! Ion atomic number
+   real(8), intent(in), optional :: mass    ! [me] incident particle mass
+   real(8), intent(in), optional :: mu_max_in  ! mu=cos(theta), integration limit
+   real(8) :: nu, beta, v, dbleZ, beta2, me, mu_max
+   if (present(mass)) then
+      me = mass*g_me
+   else
+      me = g_me
+   endif
+   if (present(mu_max_in)) then
+      if (mu_max_in > 1.0d0) then ! total CS
+         mu_max = 1.0d0
+      else if (mu_max_in < -1.0d0) then ! zero
+         mu_max = -1.0d0
+      else  ! partially integrated CS, used for definition of the transfered energy
+         mu_max = mu_max_in
+      endif
+   else ! total CS
+      mu_max = 1.0d0
+   endif
+   v = velosity_from_kinetic_energy(Ee, me, afs=.false.)    ! [m/s] below
+   if (v < 1.0d-6) then ! immobile particle does not scatter
+      sigma = 0.0d0
+   else
+      beta = beta_factor(v)   ! module "Relativity"
+      beta2 = beta*beta
+      dbleZ = dble(Z)
+      nu = screening_parameter(beta, dbleZ, Ee, me)   ! below
+      sigma = g_Pi*g_r0*g_r0*dbleZ*(dbleZ + 1.0d0) * (mu_max + 1.0d0) / ((2.0d0*nu + 1.0d0 - mu_max)*(nu + 1.0d0)) * &
+               (1.0d0 - beta2)/(beta2*beta2)	! [3] int of Eq.(39)
+   endif
+end function Mott_total_CS
+
+
+
+subroutine NRG_transfer_elastic_atomic(Mat, Zat, Ee, dE) ! energy transfer in an elastic scattering on an atom:
+   real(8), intent(in) :: Mat   ! mass of an atom of the media [kg]
+   real(8), intent(in) :: Zat   ! atomic number of an atom of the media
+   real(8), intent(in) :: Ee    ! [eV] incident electron energy
+   real(8), intent(out) :: dE   ! [eV] transferred energy
+
+   real(8) :: theta
+
+   ! Sample polar angle according to the differential cross section
+   call  get_electron_elastic_polar_angle(Ee, Zat, theta) ! below
+
+   ! Change electron energy accordingly:
+   dE = transfered_E_from_theta(Ee, theta, g_me, Mat) ! below
+end subroutine NRG_transfer_elastic_atomic
+
+
+
+function transfered_E_from_theta(Ekin, theta, M_in, mt) result(dE)
+   real(8) dE   ! [eV]  according to Eq.(A.25) in 2015-edition of [1]
+   real(8), intent(in) :: Ekin  ! [eV] kinetic energy of the incident particle
+   real(8), intent(in) :: theta ! scattering angle
+   real(8), intent(in) :: M_in, mt  ! incoming particle and target particle masses
+   real(8) :: cos_theta, cos_theta2, sin_theta2, mc2, Mct2, Emc, E2mc, W1, W2, EmcMc
+   mc2 = rest_energy(M_in)	! mc^2 [eV],  module "Relativity"
+   Mct2 = rest_energy(mt)	! Mc^2 [eV],  module "Relativity"
+   cos_theta = cos(theta)
+   cos_theta2 = cos_theta*cos_theta
+   sin_theta2 = 1.0d0 - cos_theta2
+   Emc = Ekin + mc2
+   E2mc = Ekin + 2.0d0*mc2
+   EmcMc = Emc + Mct2
+   W1 = Emc*sin_theta2 + Mct2 - cos_theta * sqrt( Mct2*Mct2 - mc2*mc2*sin_theta2 )
+   W2 = Ekin*E2mc / ( EmcMc*EmcMc - Ekin*E2mc*cos_theta2 )
+   dE = W1*W2
+end function transfered_E_from_theta
+
+
+subroutine get_electron_elastic_polar_angle(Ekin, Zat, theta)
+   real(8), intent(in) :: Ekin  ! [eV] photon energy
+   real(8), intent(in) :: Zat   ! element number
+   real(8), intent(out) :: theta   ! polar angle of photoelectron emission
+   real(8) :: RN
+   ! Sample the angle:
+   call random_number(RN)
+   ! The scattering angle is:
+   theta = Mott_sample_mu(Ekin, Zat, RN)  ! below
+end subroutine get_electron_elastic_polar_angle
+
+
+! Solution of diff.Mott's cross section:
+pure function Mott_sample_mu(Ee, Z, RN, mass) result(theta)
+   real(8) theta	! deflection angle
+   real(8), intent(in) :: Ee	! [eV] electron kinetic energy
+   real(8), intent(in) :: Z	! Ion atomic number
+   real(8), intent(in) :: RN    ! random number [0,1]
+   real(8), intent(in), optional :: mass    ! in units of [me]
+   real(8) :: nu, beta, v, beta2, me, mu
+   if (present(mass)) then
+      me = mass*g_me
+   else
+      me = g_me
+   endif
+   v = velosity_from_kinetic_energy(Ee, me, afs=.false.)    ! [m/s] below
+   if (v < 1.0d-6) then ! immobile particle does not scatter
+      theta = 0.0d0
+   else
+      beta = beta_factor(v)   ! below
+      beta2 = beta*beta
+      nu = screening_parameter(beta, Z, Ee, me)   ! below
+      mu = (RN*(2.0d0*nu + 1.0d0) - nu) / (RN + nu)
+      theta = ACOS(mu)
+   endif
+end function Mott_sample_mu
+
+
+pure function screening_parameter(beta, Z, Ee, me) result(nu)
+   real(8) nu	! screening parameter ! [4] Page 160, Eq. (7.8)
+   real(8), intent(in) :: beta	! relativistic beta
+   real(8), intent(in) :: Z	! atomic number
+   real(8), intent(in) :: Ee	! [eV] electron kinetic energy
+   real(8), intent(in), optional :: me  ! [kg] mass of the particle
+   real(8) :: beta2, tau, Erest
+   beta2 = beta*beta
+   if (present(me)) then
+      Erest = rest_energy(me)	! module "Relativity"
+   else
+      Erest = rest_energy(g_me)	! module "Relativity"
+   endif
+   tau = Ee / Erest
+   nu = 1.7d-5*Z**m_two_third*(1.0d0 - beta2)/beta2 * ( 1.13d0 + 3.76d0 * g_alpha*g_alpha/beta2 * Z*Z * sqrt(tau/(1.0d0 + tau)) )
+end function screening_parameter
+
+
+
+pure function velosity_from_kinetic_energy(Ekin, M0, afs) result(v)
+   real(8) v        ! velosity  [A/fs], unless afs=.true. then [m/s]
+   real(8), intent(in) :: Ekin	! kinetic energy [eV]
+   real(8), intent(in) :: M0	! rest mass [kg]
+   logical, intent(in), optional :: afs ! output velosity in [A/fs] (true), or in [m/s] (false)
+   real(8) :: fact, Erest
+   if (M0 < 1.0d-10*g_me) then   ! assume massless particle
+      v = g_cvel    ! [m/s]
+   else
+      if (Ekin < 1.0d-15) then
+         v = 0.0d0
+      else
+         Erest = rest_energy(M0) ! [eV] rest energy
+         fact = Ekin/Erest + 1.0d0
+         v = g_cvel*sqrt(1.0d0 - 1.0d0/(fact*fact))   ! [m/s]
+      endif
+   endif
+   if (present(afs)) then
+      if (afs) v = v * g_ms2Afs ! [m/s] -> [A/fs]
+   else ! by default, use [A/fs]
+      v = v * g_ms2Afs ! [m/s] -> [A/fs]
+   endif
+end function velosity_from_kinetic_energy
+
+
+pure function beta_factor(v, afs_in) result(beta)
+   real(8) beta
+   real(8), intent(in) :: v	! [m/s] velosity
+   logical, intent(in), optional :: afs_in ! v provided in [A/fs] if true, [m/s] otherwise
+   real(8) :: conv
+   if (present(afs_in)) then
+      if (afs_in) then
+         conv = g_Afs2ms ! [A/fs] -> [m/s]
+      else
+         conv = 1.0d0 ! v is in [m/s] by default
+      endif
+   else
+      conv = 1.0d0  ! v is in [m/s] by default
+   endif
+   beta = v/g_cvel * conv
+end function beta_factor
+
+
+pure function rest_energy(M0) result(E)
+   real(8) E	! [eV] total energy
+   real(8), intent(in) :: M0	! [kg] rest mass of the particle
+   E = M0*g_cvel*g_cvel/g_e	! [eV]
+end function rest_energy
+
+
+
+! Obsolete Mott's subroutines:
+subroutine Atomic_elastic_sigma_OLD(Zat, Ee, sigma_el) ! total cross-section of elastic scattering on an atom:
    real(8), intent(in) :: Zat   ! atomic number of an atom of the media
    real(8), intent(in) :: Ee    ! [eV] incident electron energy
    REAL(8), INTENT(out) :: sigma_el   ! cross-section of elastic scteering [A^2]
-   
+
    real(8) nc, pc, mec2e, Zat137, RyEe, beta2
-   
+
    mec2e = g_me*g_cvel*g_cvel/g_e   ! a parameter enterring eq. below
    Zat137 = Zat/137.0d0   ! a parameter enterring eq. below
    RyEe = g_Ry/Ee         ! a parameter enterring eq. below
@@ -1152,19 +1352,18 @@ subroutine Atomic_elastic_sigma(Zat, Ee, sigma_el) ! total cross-section of elas
    nc = pc*(1.13d0 + 3.76d0*(Zat137*Zat137)/beta2*sqrt(Ee/(Ee+mec2e)))
    ! Mott's cross-section with screening:
    sigma_el = g_Pi*g_a0*g_a0*Zat*(Zat+1.0d0)/(nc*(nc+1.0d0))*RyEe*RyEe ! [A^2]
-end subroutine Atomic_elastic_sigma
+end subroutine Atomic_elastic_sigma_OLD
 
-
-subroutine NRG_transfer_elastic_atomic(Mat, Zat, Ee, dE) ! energy transfer in an elastic scattering on an atom:
+subroutine NRG_transfer_elastic_atomic_OLD(Mat, Zat, Ee, dE) ! energy transfer in an elastic scattering on an atom:
    REAL(8), intent(in) :: Mat   ! mass of an atom of the media [kg]
    real(8), intent(in) :: Zat   ! atomic number of an atom of the media
    real(8), intent(in) :: Ee    ! [eV] incident electron energy
    REAL(8), INTENT(out) :: dE   ! [eV] transferred energy
 
    real(8) nc, pc, mec2e, Zat137, RyEe, Masses, beta2, RN
-   
+
    call random_number(RN)
-   
+
    mec2e = g_me*g_cvel*g_cvel/g_e   ! a parameter enterring eq. below
    Zat137 = Zat/137.0d0   ! a parameter enterring eq. below
    RyEe = g_Ry/Ee         ! a parameter enterring eq. below
@@ -1175,7 +1374,10 @@ subroutine NRG_transfer_elastic_atomic(Mat, Zat, Ee, dE) ! energy transfer in an
    pc = 1.7d-5*(Zat**(2.0d0/3.0d0))*(1.0d0-beta2)/beta2
    nc = pc*(1.13d0 + 3.76d0*(Zat137*Zat137)/beta2*sqrt(Ee/(Ee+mec2e)))
    dE = 4.0d0*Ee*g_me*Mat/(Masses*Masses)*(nc*(1.0d0-RN)/(nc+RN)) ! [eV]
-end subroutine NRG_transfer_elastic_atomic
+end subroutine NRG_transfer_elastic_atomic_OLD
+
+
+
 
 
 

@@ -2808,7 +2808,7 @@ subroutine communicate(FN, time, numpar, matter)
    inquire(UNIT=FN,opened=file_opened)
 
    COM_OPEN:if (file_opened) then ! read it
-      rewind(FN)  ! to start reading from the start
+      rewind(FN,IOSTAT=Reason)  ! to start reading from the start
       i = 1 ! to start with
       read_well = .true.   ! to start with
       Reason = 1  ! to start with
@@ -2816,16 +2816,17 @@ subroutine communicate(FN, time, numpar, matter)
          call pars_comunications_file(FN, i, given_line, given_num, Reason) ! below
          if (Reason == 0) call act_on_comunication(given_line, given_num, numpar, matter, time)   ! below
       enddo
-      rewind(FN)
-      write(FN,'(a)') ''
-      rewind(FN)
+      rewind(FN,IOSTAT=Reason)
+      write(FN,'(a)',IOSTAT=Reason) ''
+      rewind(FN,IOSTAT=Reason)
 
       call get_file_stat(trim(adjustl(File_name)), Last_modification_time=MOD_TIM) ! module 'Dealing_with_files'
       if (MOD_TIM /= numpar%MOD_TIME) then ! if it was modified by the user, then
          numpar%MOD_TIME = MOD_TIM         ! save new time of the last modification
       endif
 
-      close(FN) ! we have to close the file to let the user write into it
+      close(FN,ERR=7778) ! we have to close the file to let the user write into it
+7778  continue ! in case if the program could not close the file
    endif COM_OPEN
 end subroutine communicate
 
@@ -2969,6 +2970,11 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
          numpar%verbose = .true.
          write(6,'(a)') 'Verbose option on: XTANT will print a lot of markers for testing and debugging'
          write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' verbose option was switched on'
+      !-------------------
+      case ('verbose_off', 'VERBOSE_OFF', 'Verbose_off')
+         numpar%verbose = .false.
+         write(6,'(a)') 'Verbose option off: XTANT will not print markers'
+         write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' verbose option was switched off'
 
       !-------------------
       case ('time', 'TIME', 'Time', 'TIme', 'TIMe', 'tIme', 'emit', 'Vremya')
@@ -2977,7 +2983,7 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
          write(FN,'(a,f10.3,a,f10.3)') 'At time instance of ', time, ' duration of simulation is changed to ', given_num
 
       !-------------------
-      case ('MDdt', 'dtMD', 'mddt', 'dtmd', 'MDDT', 'DTMD')
+      case ('MDdt', 'dtMD', 'mddt', 'dtmd', 'MDDT', 'DTMD', 'MD_dt', 'md_dt')
          numpar%dt = given_num ! Time step for MD [fs]
          call reset_support_times(numpar)   ! above
          !numpar%halfdt = numpar%dt/2.0d0      ! dt/2, often used
@@ -2988,7 +2994,7 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' time-step of MD simulation is changed to ', given_num 
 
       !-------------------
-      case ('SAVEdt', 'savedt', 'dtsave', 'dtSAVE', 'Savedt', 'SaveDT', 'SaveDt')
+      case ('SAVEdt', 'savedt', 'dtsave', 'dtSAVE', 'Savedt', 'SaveDT', 'SaveDt', 'SAVE_dt', 'Save_dt', 'save_dt')
          numpar%dt_save = given_num ! save data into files every 'dt_save_time' [fs]
          write(6,'(a,f9.3)') 'Time-step of saving output files is changed to', given_num
          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' time-step of saving output files is changed to ', given_num
