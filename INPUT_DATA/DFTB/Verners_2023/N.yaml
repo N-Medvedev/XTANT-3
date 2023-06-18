@@ -1,0 +1,7 @@
+# atomic magnetic Hubbard parameter [Hartree]
+magnetic_hubbard: -0.025504029801713127
+
+# shell-resolved magnetic Hubbard parameter [Hartree]
+magnetic_hubbard_ldep: >
+    -0.0332 -0.0275
+    -0.0275 -0.0255

@@ -1,0 +1,47 @@
+format: txt
+
+supports: [ noscc, scc ]
+repulsion: yes
+spin_polarization: yes
+
+orbital_dependence: [ noldep, ldep ]
+default_orbital_dependence: noldep
+
+dispersion: [ uff, ulg, d2, d4 ]
+default_dispersion: uff
+
+url: http://www.dftb.org/parameters/download/pbc/pbc-0-3-cc/
+
+reference: |
+    E. Rauls, R. Gutierrez, J. Elsner, Th. Frauenheim
+        "Stoichiometric and non-stoichiometric (1010) and (1120) surfaces in 2H–SiC: a theoretical study"
+        Sol. State Comm. 111, 459 (1999)
+
+    C. Koehler, Z. Hajnal, P. Deak, Th. Frauenheim, S. Suhai
+        "Theoretical investigation of carbon defects and diffusion in alpha-quartz"
+        Phys. Rev. B 64, 85333 (2001)
+        [Citation reference for Si-O]
+
+    A. Sieck, Th. Frauenheim, K. A. Jackson
+        "Shape transition of medium-sized neutral silicon clusters"
+        Phys. Stat. Sol. (B) 240, 537 (2003)
+
+    C. Koehler, Th. Frauenheim
+        "Molecular dynamics simulations of CFx (x = 2, 3) molecules at Si3N4 and SiO2 surfaces"
+        Surf. Sci. 600, 453 (2006)
+        [Citation reference for F - (Si,O,N,C,H)]
+
+    C. Koehler, G. Seifert, Th. Frauenheim
+        "Density functional based calculations for Fe_n (n <= 32)"
+        Chem. Phys. 309, 23 (2005)
+        [Citation reference for Fe-Fe]
+
+    A. Sieck, Ph.D. Thesis, University of Paderborn, 2000
+        [Citation reference for Si-Si]
+
+short_reference: |
+    [Si-Si] A. Sieck, Ph.D. Thesis, University of Paderborn, 2000
+    [Si-O] Phys. Rev. B 64, 85333 (2001)
+    [F-(Si,O,N,C,H)] Surf. Sci. 600, 453 (2006)
+    [Fe-Fe] Chem. Phys. 309, 23 (2005)
+
