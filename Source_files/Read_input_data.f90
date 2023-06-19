@@ -3742,19 +3742,37 @@ subroutine read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Err
    character(*), intent(out) :: Error_descript	! error save
    integer, intent(out) :: INFO	! error description
    !------------------------------------------------------
-   character(100) :: Folder_name, File_name
+   character(200) :: Folder_name, File_name
+   character(200) :: path_to_skf
    integer count_lines, Reason, i_cur, ind, FN_skf, ToA, N_basis_siz
    logical file_exist, file_opened, read_well
    INFO = 0
    count_lines = 2
    
-   read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%param_name    ! name of the directory with skf files
+   read(FN,*,IOSTAT=Reason) path_to_skf
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
        write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
        INFO = 3
        goto 3426
    endif
+
+   ! Define the path to the skf file:
+   select case (trim(adjustl(path_to_skf)))  ! how to set it
+   case ('PATH', 'Path', 'path') ! then specify exactly the path to the skf file
+      read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%param_name  ! read the full path
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         goto 3426
+      endif
+      Folder_name = trim(adjustl(TB_Hamil(i,j)%param_name))    ! folder with chosen parameters sets
+   case default   ! it is a parameterization within the predefined directory 'DFTB'
+      TB_Hamil(i,j)%param_name = trim(adjustl(path_to_skf)) ! name of the directory with skf files
+      Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_DFTB_directory))//numpar%path_sep ! default folder
+      Folder_name = trim(adjustl(Folder_name))//trim(adjustl(TB_Hamil(i,j)%param_name))    ! folder with chosen parameters sets
+   endselect
 
    read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%rcut, TB_Hamil(i,j)%d  ! [A] cut off, and width of cut-off region [A]
    call read_file(Reason, count_lines, read_well)
@@ -3764,9 +3782,6 @@ subroutine read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Err
        goto 3426
    endif
 
-   Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_DFTB_directory))//numpar%path_sep ! folder with all DFTB data
-   Folder_name = trim(adjustl(Folder_name))//trim(adjustl(TB_Hamil(i,j)%param_name))    ! folder with chosen parameters sets
-   
    ! Construct name of the skf file:
    call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), File_name)    ! module "Dealing_with_DFTB"
    File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
@@ -3818,7 +3833,7 @@ subroutine read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matt
    character(*), intent(out) :: Error_descript	! error save
    integer, intent(out) :: INFO	! error description
    !------------------------------------------------------
-   character(100) :: Folder_name, File_name, Inner_folder_name
+   character(200) :: Folder_name, File_name, Inner_folder_name, path_to_skf
    integer count_lines, Reason, i_cur, ind, FN_skf, ToA, N_basis_siz
    logical file_exist, file_opened, read_well
    INFO = 0
@@ -3832,9 +3847,24 @@ subroutine read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matt
        goto 3426
    endif
 
-   ! folder with all DFTB data:
-   Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_DFTB_norep_directory))//numpar%path_sep
-   Folder_name = trim(adjustl(Folder_name))//trim(adjustl(TB_Hamil(i,j)%param_name))
+
+   ! Define the path to the skf file:
+   select case (trim(adjustl(path_to_skf)))  ! how to set it
+   case ('PATH', 'Path', 'path') ! then specify exactly the path to the skf file
+      read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%param_name  ! read the full path
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         goto 3426
+      endif
+      Folder_name = trim(adjustl(TB_Hamil(i,j)%param_name))    ! folder with chosen parameters sets
+   case default   ! it is a parameterization within the predefined directory 'DFTB'
+      TB_Hamil(i,j)%param_name = trim(adjustl(path_to_skf)) ! name of the directory with skf files
+      ! folder with all DFTB data:
+      Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_DFTB_norep_directory))//numpar%path_sep
+      Folder_name = trim(adjustl(Folder_name))//trim(adjustl(TB_Hamil(i,j)%param_name))
+   endselect
 
    ! folder with chosen parameters sets:
    select case (trim(adjustl(TB_Hamil(i,j)%param_name)))

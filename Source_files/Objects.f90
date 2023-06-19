@@ -129,7 +129,7 @@ end type TB_Rep_BOP
 
 type, EXTENDS (TB_repulsive) :: TB_Rep_DFTB	! repulsive potential coefficients:
    ! www.dftb.org
-   character(20) :: param_name  ! name of parameterization used
+   character(200) :: param_name  ! name of parameterization used
    integer :: ToP   ! type of parameterization: 0=polinomial, 1=spline
    ! Polinomial coefficients:
    real(8), dimension(8) :: c   ! [eV] c2, . . . , c9 are the polynomial coefficients
@@ -144,7 +144,7 @@ end type TB_Rep_DFTB
 
 type, EXTENDS (TB_repulsive) :: TB_Rep_DFTB_no  ! repulsive potential coefficients:
    ! Testing construction of the repulsive potential:
-   character(20) :: param_name  ! name of parameterization used
+   character(200) :: param_name  ! name of parameterization used
    integer :: ToP   ! type of parameterization: 0=polinomial, 1=spline
    ! In case there is no repulsive terms, this potential is reconstructed from ZBL repulsive potential:
    ! https://en.wikipedia.org/wiki/Stopping_power_(particle_radiation)#Repulsive_interatomic_potentials
@@ -200,7 +200,7 @@ end type TB_H_NRL
 
 type, EXTENDS (TB_Hamiltonian) :: TB_H_DFTB ! hamiltonian coefficients:
    ! http://www.dftb.org
-   character(30) :: param_name  ! name of parameterization used
+   character(200) :: param_name  ! name of parameterization used (or a path to it)
    real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-like cut-off [A]
    real(8) :: Ed, Ep, Es    ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom
    real(8) :: Ud, Up, Us    ! Hubbard U for the angular momenta d, p and s for the given atom
@@ -286,7 +286,7 @@ end type TB_H_BOP
 
 type, EXTENDS (TB_Hamiltonian) :: TB_H_xTB ! hamiltonian coefficients:
    ! [1] R.F. Stewart, The Journal of Chemical Physics 52, 431 (1970); doi: 10.1063/1.1672702
-   character(10) :: param_name  ! name of parameterization used
+   character(200) :: param_name  ! name of parameterization used
    character(10) :: AO_names    ! orbitals descriptor
    real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-lik cut-off [A]
    integer :: Nprim     ! number of primitive gaussian-type orbitals (GTO) in Slater-type orb. (STO) (can be from 1 to 6 [1])
