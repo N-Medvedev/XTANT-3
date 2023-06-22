@@ -3782,9 +3782,16 @@ subroutine read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Err
        goto 3426
    endif
 
-   ! Construct name of the skf file:
-   call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), File_name)    ! module "Dealing_with_DFTB"
-   File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+   ! Assume it is a file name:
+   inquire(file=trim(adjustl(Folder_name)),exist=file_exist)
+   if (file_exist) then ! such a file exists, use it
+      File_name = trim(adjustl(Folder_name))
+   else  ! no file => assume it is a directory name, and use default file name:
+      ! Construct name of the skf file:
+      call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
+                                 File_name)    ! module "Dealing_with_DFTB"
+      File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+   endif
 
    ! Check if such DFTB parameterization exists:
    inquire(file=trim(adjustl(File_name)),exist=file_exist)
@@ -3890,10 +3897,16 @@ subroutine read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matt
        goto 3426
    endif
 
-   ! Construct name of the skf file:
-   call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), File_name, '_no_repulsion')    ! module "Dealing_with_DFTB"
-
-   File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+   ! Assume it is a file name:
+   inquire(file=trim(adjustl(Folder_name)),exist=file_exist)
+   if (file_exist) then ! such a file exists, use it
+      File_name = trim(adjustl(Folder_name))
+   else  ! no file => assume it is a directory name, and use default file name:
+      ! Construct name of the skf file:
+      call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
+                                 File_name, '_no_repulsion')   ! module "Dealing_with_DFTB"
+      File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+   endif
 
    ! Check if such DFTB parameterization exists:
    inquire(file=trim(adjustl(File_name)),exist=file_exist)

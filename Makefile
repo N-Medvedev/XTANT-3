@@ -17,9 +17,17 @@ subsystem:
 # Delete executable from the Source_files directory:
 	rm -r Source_files/XTANT.x
 
+# Compile post-processing subroutines:
+	cd \!XTANT_ANALYSIS_SUBROUTINES && $(MAKE)
+
 
 clean:
-	cd Source_files && $(MAKE clean)
-	rm -f *.o
-	rm -f *.mod
-	rm -f XTANT.x
+	rm -f Source_files/*.o
+	rm -f Source_files/*.mod
+	rm -f Source_files/*.obj
+	rm -f Source_files/*.x
+
+	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.o
+	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.mod
+	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.obj
+	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.x

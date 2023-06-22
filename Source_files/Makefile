@@ -59,7 +59,7 @@ OBJS = Universal_constants.o Objects.o Variables.o BS_Cartesian_Gaussians.o BS_S
 
 # print explanations
 default:
-	@echo " "
+	@echo "**************************************************"
 ifeq ($(c),gf)
 	@echo "Compiling XTANT-3 with gfortran"
 else ifeq ($(c),gf6)

@@ -1,3 +1,6 @@
+include 'Periodic_table.f90'     ! include periodic Periodic_Table
+
+
 PROGRAM Fragmentation
 ! Compilation:
 !
