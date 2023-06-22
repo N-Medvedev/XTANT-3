@@ -3846,7 +3846,7 @@ subroutine read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matt
    INFO = 0
    count_lines = 2
 
-   read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%param_name    ! name of the directory with skf files
+   read(FN,*,IOSTAT=Reason) path_to_skf    ! name of the directory with skf files
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
        write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
