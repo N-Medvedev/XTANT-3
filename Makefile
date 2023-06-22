@@ -21,7 +21,24 @@ subsystem:
 	cd \!XTANT_ANALYSIS_SUBROUTINES && $(MAKE)
 
 
+# Clean all compiled files:
 clean:
+	rm -f Source_files/*.o
+	rm -f Source_files/*.mod
+	rm -f Source_files/*.obj
+
+	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.o
+	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.mod
+	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.obj
+
+	rm -f *.x
+
+# Clean all results:
+cleanresults:
+	rm -f OUTPUT_*
+
+# Clean all compiled files and the results:
+veryclean:
 	rm -f Source_files/*.o
 	rm -f Source_files/*.mod
 	rm -f Source_files/*.obj
@@ -31,3 +48,6 @@ clean:
 	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.mod
 	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.obj
 	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.x
+
+	rm -f *.x
+	rm -f OUTPUT_*
