@@ -38,13 +38,13 @@ use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, se
 use Dealing_with_files, only : get_file_stat, copy_file, read_file
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
-use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, &
+use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_dashline, &
                            m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL, m_Communication
 
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 19.06.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 23.06.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2652,7 +2652,9 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
    inquire(file=trim(adjustl(File_name)),opened=file_opened)
    if (file_opened) then
       write(FN, '(a)') 'Atomic data used for '//trim(adjustl(matter%Name))//' are:'
+
       do i = 1, matter%N_KAO
+         write(FN,'(a)') trim(adjustl(m_dashline))
          write(chtemp(1), '(i12)') i
          write(chtemp(2), '(f6.2)') matter%Atoms(i)%percentage
          write(FN, '(a,$)') 'Element #'//trim(adjustl(chtemp(1)))//' is '//trim(adjustl(matter%Atoms(i)%Name))// &
@@ -2661,6 +2663,11 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
          write(chtemp(1), '(i4)') INT(matter%Atoms(i)%Z)
          write(chtemp(2), '(es25.5)') matter%Atoms(i)%Ma
          write(FN, '(a,a,a,a,a)') 'Atomic number: ', trim(adjustl(chtemp(1))), ', mass: ', trim(adjustl(chtemp(2))), ' [kg]'
+
+         write(chtemp(1), '(f12.2)') dble(matter%Atoms(i)%NVB)
+         write(chtemp(2), '(f12.2)') dble(Scell(1)%Ne/Scell(1)%Na)
+         write(FN, '(a,a,a,a,a)') 'Number of valence electrons: ', trim(adjustl(chtemp(1))), ' (band: ', &
+                                    trim(adjustl(chtemp(2))), '/atom)'
 
          write(FN, '(a)') 'Shell#	Designator	Ne	Ip [eV]	Ek [eV]	Auger [fs]	'
          Nshl = size(matter%Atoms(i)%Ip)

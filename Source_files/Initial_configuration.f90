@@ -73,7 +73,7 @@ subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_n
    real(8), intent(in) :: Elem1, Elem2  ! atomic numbers of the two elements we need the parameters for
    type(Error_handling), intent(inout) :: Err	! error save
    !-------------------
-   character(300) :: File_name, Error_descript
+   character(300) :: File_name, Error_descript, chtemp(2)
    integer :: FN_BL, k, NSC, n1, icur
    real(8) :: r_start, r_stop, dr, supcesize, Pot_shift, d_bond, ZBL_length, TB_d, ZBL_d, bond_length
    real(8), dimension(m_N_BOP_rep_grid) :: Ref_Pot, V_rep
@@ -115,6 +115,12 @@ subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_n
    allocate(Scell(1)%MDatoms(2))    ! dimer
    Scell(1)%Na = 2
    Scell(1)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)/SUM(matter%Atoms(:)%percentage)*Scell(1)%Na
+
+   if (numpar%verbose) then
+      write(*, '(a)', advance='no') 'Number of valence electrons: '
+      write(*, '(f12.5)') matter%Atoms(:)%NVB, ' (total: ', Scell(1)%Ne, ')'
+   endif
+
    Scell(1)%Ne_low = Scell(1)%Ne ! at the start, all electrons are low-energy
    Scell(1)%Ne_high = 0.0d0 ! no high-energy electrons at the start
    Scell(1)%Ne_emit = 0.0d0 ! no emitted electrons at the start
@@ -468,10 +474,10 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             
             ! Get the phase 1 coordinates:
             open(UNIT=FN3, FILE = trim(adjustl(File_name_S1)), status = 'old', action='read')
-            call get_initial_atomic_coord(FN3, File_name_S1, Scell, i, 1, matter, Err, ind = 0) ! below
+            call get_initial_atomic_coord(FN3, File_name_S1, Scell, i, 1, matter, numpar, Err, ind = 0) ! below
             ! Get the phase 2 coordinates:
             open(UNIT=FN4, FILE = trim(adjustl(File_name_S2)), status = 'old', action='read')
-            call get_initial_atomic_coord(FN4, File_name_S2, Scell, i, 1, matter, Err, ind = 1) ! below
+            call get_initial_atomic_coord(FN4, File_name_S2, Scell, i, 1, matter, numpar, Err, ind = 1) ! below
             
             ! Get atomic temperature set by the velocities given in the SAVE file:
             Natoms = size(Scell(i)%MDatoms)	! number of atoms
@@ -495,7 +501,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             numpar%save_files_used = 1  ! Save files read
 
             open(UNIT=FN2, FILE = trim(adjustl(File_name2)), status = 'old', action='read')
-            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 1, matter, Err) ! below
+            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 1, matter, numpar, Err) ! below
 
             ! Get atomic temperature set by the velocities given in the SAVE file:
             Natoms = size(Scell(i)%MDatoms)	! number of atoms
@@ -531,7 +537,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             endif
 
             ! 2) Make the supercell, if required:
-            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 3, matter, Err) ! below
+            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 3, matter, numpar, Err) ! below
             if ( trim(adjustl(Err%Err_descript)) /= '' ) then
                goto 3416
             endif
@@ -560,7 +566,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                   goto 3416
                endif
 
-               call get_initial_atomic_coord(FN2, File_name2, Scell, i, 2, matter, Err) ! below
+               call get_initial_atomic_coord(FN2, File_name2, Scell, i, 2, matter, numpar, Err) ! below
                ! Set initial velocities:
                call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
 
@@ -1454,6 +1460,11 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    Scell(SCN)%Ne_high = 0.0d0 ! no high-energy electrons at the start
    Scell(SCN)%Ne_emit = 0.0d0 ! no emitted electrons at the start
 
+   if (numpar%verbose) then
+      write(*, '(a)', advance='no') 'Number of valence electrons: '
+      write(*, '(f12.5)') matter%Atoms(:)%NVB, ' (total: ', Scell(1)%Ne, ')'
+   endif
+
 !     print*, 'Ne ', matter%Atoms(:)%NVB, Scell(SCN)%Na, Scell(SCN)%Ne
 !     print*, 'Per', matter%Atoms(:)%percentage, SUM(matter%Atoms(:)%percentage)
 !      pause 'embed_molecule_in_water'
@@ -1483,11 +1494,12 @@ end subroutine embed_molecule_in_water
 
 
 
-subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter, Err, ind)
+subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter, numpar, Err, ind)
    integer, intent(in) :: FN, which_one, SCN ! file number; type of file to read from (2=unit-cell, 1=super-cell); number of supercell
    character(*), intent(in) :: File_name ! file with the super-cell parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(inout) :: matter	! all material parameters
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters
    type(Error_handling), intent(inout) :: Err	! error save
    integer, intent(in), optional :: ind ! read files for phase path tracing
    !=====================================
@@ -1602,6 +1614,14 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
    enddo
    Scell(SCN)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)/SUM(matter%Atoms(:)%percentage)*Scell(SCN)%Na
    Scell(SCN)%Ne_low = Scell(SCN)%Ne ! at the start, all electrons are low-energy
+
+   if (numpar%verbose) then
+      write(*, '(a)', advance='no') 'Number of valence electrons: '
+      !write(*, '(a)') 'Number of valence electrons: '
+      write(*,*) dble(matter%Atoms(:)%NVB)
+      write(*,*) '(total: ', Scell(1)%Ne, 'per atom:', Scell(1)%Ne/Scell(1)%Na, ')'
+   endif
+
 !    print*, 'NVB_2 = ', Scell(SCN)%Ne
 !    pause
    

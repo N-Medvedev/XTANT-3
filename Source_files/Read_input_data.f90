@@ -53,6 +53,7 @@ character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_
                   m_Hubbard_U, m_Communication
 
 character(70), parameter :: m_starline = '*************************************************************'
+character(70), parameter :: m_dashline = '-------------------------------------------------------------'
 
 character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
 character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT info
@@ -70,7 +71,7 @@ parameter (m_Communication = 'Communication.txt')  ! file for comunication with 
 
 public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
 public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL
-public :: Read_Input_Files, get_add_data, m_Communication
+public :: Read_Input_Files, get_add_data, m_Communication, m_dashline
 
  contains
 

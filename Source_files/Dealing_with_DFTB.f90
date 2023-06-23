@@ -171,7 +171,7 @@ subroutine read_skf_file_no_rep(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_po
    ! Knowing the size, allocate the arrays:
    if (.not.allocated(TB_Hamil%Rr)) allocate(TB_Hamil%Rr(Ngrid))    ! Grid [A]
    if (.not.allocated(TB_Hamil%Vr)) allocate(TB_Hamil%Vr(Ngrid,N_basis))    ! Hamiltonian radial function [eV]
-   if (.not.allocated(TB_Hamil%Sr)) allocate(TB_Hamil%Sr(Ngrid,N_basis))    ! Overlap radial function [eV]
+   if (.not.allocated(TB_Hamil%Sr)) allocate(TB_Hamil%Sr(Ngrid,N_basis))    ! Overlap radial function [-]
 
    ! Read on-site energies:
    if (ToA == 0) then   ! the same element, on-site energies:
