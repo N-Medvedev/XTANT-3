@@ -40,12 +40,12 @@ use Universal_constants
 character(200) :: File_electron, File_temperatures, File_coupling_partial, File_pressure, File_energies, File_Ce_partial
 character(200) :: File_name1, File_name2, File_name3, File_name4, File_name5, File_name6, char_var
 character(200) :: File_name_out, File_name_out2, File_name_out3, File_name_out4, File_name_out5, File_name_out6
-character(200) :: File_numpar, File_matter, Matter_name
+character(50) :: File_numpar, File_matter, Matter_name, File_INPUT
 character(200), dimension(:), allocatable :: Folders_with_data
 character(200) :: gnu_script, gnu_fig
 character(10) :: call_slash, sh_cmd
 character(1) :: path_sep
-real(8) :: starting_time, ending_time, scaling_G
+real(8) :: starting_time, ending_time, scaling_G, Up_lim_Te
 real(8), dimension(:,:,:), allocatable :: G_mean_part, Ce_mean_part
 real(8), dimension(:,:), allocatable :: G_mean, mu_mean, Ce_mean
 real(8), dimension(:,:), allocatable :: P_mean, E_mean, Grun_mean
@@ -54,7 +54,7 @@ real(8), dimension(:,:), allocatable :: G_part_ave, Ce_part_ave
 real(8), dimension(:), allocatable :: mu_ave, Ce_ave, E_ave, P_ave, Grun_ave
 integer :: FN1, FN2, FN3, FN4, FN5, FN6, FN7, FN8
 integer :: FN_out, FN_out2, FN_out3, FN_out4, FN_out5, FN_out6  ! file number
-integer :: Reason, i, j, siz, Tsiz
+integer :: Reason, i, j, siz, Tsiz, N_arg, i_arg
 logical :: read_well, file_exist, file_exist2
 
 call Path_separator(path_sep)  ! Objects_and_types
@@ -82,6 +82,7 @@ File_energies = 'OUTPUT_energies.dat'
 File_Ce_partial = 'OUTPUT_electron_Ce.dat'
 File_numpar = 'NUMERICAL_PARAMETERS'
 File_matter = 'INPUT_MATERIAL'
+File_INPUT = 'INPUT'
 
 File_name_out =  'OUT_average_coupling.dat'
 File_name_out2 = 'OUT_average_parameters.dat'
@@ -90,26 +91,46 @@ File_name_out4 = 'OUT_average_pressure.dat'
 File_name_out5 = 'OUT_average_partial_Ce.dat'
 
 ! Get the starting time, if user defined it:
-if (IARGC() >= 1) then 	! there was at least 1 argument passes by the user:
-   call getarg(1, char_var, status=Reason)	! read only the first one
-   if (Reason <= 0) then 
-      starting_time = -1.0d20	! start from -infinity, i.e. include all data
-   else
+! if (IARGC() >= 1) then 	! there was at least 1 argument passes by the user:
+!    call getarg(1, char_var, status=Reason)	! read only the first one
+!    if (Reason <= 0) then
+!       starting_time = -1.0d20	! start from -infinity, i.e. include all data
+!    else
+!       read(char_var,*) starting_time
+!    endif
+! endif
+
+! Default values (may be overwritten by the user):
+starting_time = -1.0d20	! start from -infinity, i.e. include all data
+Up_lim_Te = 25e3  ! uper limit for the grid on Te
+
+! Count how many arguments the user provided:
+N_arg = COMMAND_ARGUMENT_COUNT() ! Fortran intrinsic function
+ALLARG:do i_arg = 1, N_arg ! read all the arguments passed
+   ! Read the argument provided:
+   call GET_COMMAND_ARGUMENT(i_arg, char_var)  ! intrinsic
+
+   select case (i_arg)
+   case (1) ! variable #1 must be starting_time
       read(char_var,*) starting_time
-   endif
-endif
+   case (2) ! uper limit tfor Te
+      read(char_var,*) Up_lim_Te
+   end select
+enddo ALLARG
+
+
 ! print*, 'starting_time', starting_time
 
 ! Get all the output folders names:
 call collect_all_output(Folders_with_data)	! below
 
 ! Read the factor for G rescaling set by the user:
-call read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, scaling_G, Matter_name)  ! below
+call read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, File_INPUT, scaling_G, Matter_name)  ! below
 File_name_out6 = 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce_G.dat'
 
 
 ! Create the electron temeprature grid:
-call create_grid(Te_grid, G_mean, size(Folders_with_data))
+call create_grid(Te_grid, G_mean, size(Folders_with_data), Up_lim_Te)
 allocate(mu_mean( size(G_mean,1) , size(G_mean,2) ) )
 allocate(Ce_mean( size(G_mean,1) , size(G_mean,2) ) )
 allocate(P_mean( size(G_mean,1) , size(G_mean,2) ) )
@@ -299,7 +320,7 @@ endif
 
 
 
-call gnu_plot(File_name_out6, sh_cmd, 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_G.gif', G_part_ave, Ce_part_ave)  ! below
+call gnu_plot(File_name_out6, sh_cmd, 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_G.gif', G_part_ave, Ce_part_ave, Up_lim_Te)  ! below
 
 
 close (FN_out)
@@ -315,15 +336,24 @@ print*, 'XTANT: analysis with Coupling_parameter is executed'
  contains
 
 
-subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, Ce_part_ave)
+subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, Ce_part_ave, Up_lim_Te)
    character(*), intent(in) :: File_name_out, sh_cmd, File_Ce_gif, File_G_gif
    real(8), dimension(:,:), intent(in) :: G_part_ave, Ce_part_ave
+   real(8), intent(in) :: Up_lim_Te
    !-------------------
-   character(300) :: File_name, File_name2, command
+   character(300) :: File_name, File_name2, command, char_Te
    integer :: FN, iret
    real(8) :: x_tics
 
-   x_tics = 5000.0d0  ! [K]
+   if (Up_lim_Te < 10000.0e0) then
+      x_tics = 1000.0d0  ! [K]
+   elseif (Up_lim_Te < 50000.0e0) then
+      x_tics = 5000.0d0  ! [K]
+   else
+      x_tics = 10000.0d0  ! [K]
+   endif
+
+   write(char_Te, '(i0)') CEILING(Up_lim_Te/1000.0e0)*1000
 
    ! Script for Ce:
    File_name  = 'OUT_gnuplot_Ce'//trim(adjustl(sh_cmd))
@@ -333,9 +363,9 @@ subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, 
 
    if (path_sep .EQ. '\') then	! if it is Windows
       if (size(Ce_part_ave,2) < 3) then ! s
-         write(FN, '(a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), ' "u 1:2 w l lw LW title "Total" '
+         write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), ' "u 1:2 w l lw LW title "Total" '
       else ! more than one line
-         write(FN, '(a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), ' "u 1:2 w l lw LW title "Total" ,\'
+         write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), ' "u 1:2 w l lw LW title "Total" ,\'
       endif
 
 !       print*, 'Ce:', size(Ce_part_ave,2)
@@ -350,9 +380,9 @@ subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, 
       endif
    else
       if (size(Ce_part_ave,2) < 3) then ! s
-         write(FN, '(a,a,a)') 'p [0.0:25000.0][] \"' , trim(adjustl(File_name_out)), '\"u 1:4 w l lw \"$LW\" title \"Total\" '
+         write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] \"' , trim(adjustl(File_name_out)), '\"u 1:4 w l lw \"$LW\" title \"Total\" '
       else
-         write(FN, '(a,a,a)') 'p [0.0:25000.0][] \"' , trim(adjustl(File_name_out)), '\"u 1:4 w l lw \"$LW\" title \"Total\" ,\'
+         write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] \"' , trim(adjustl(File_name_out)), '\"u 1:4 w l lw \"$LW\" title \"Total\" ,\'
       endif
 
       if (size(Ce_part_ave,2) == 3) then ! sp3
@@ -376,14 +406,14 @@ subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, 
 
    if (path_sep .EQ. '\') then	! if it is Windows
       if (size(G_part_ave,2) < 4) then ! s
-         write(FN, '(a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), ' "u 1:3 w l lw LW title "Total" '
+         write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), ' "u 1:3 w l lw LW title "Total" '
       elseif (size(G_part_ave,2) == 6) then ! sp3
-         write(FN, '(a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), ' "u 1:5 w l lw LW title "Total" ,\'
+         write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), ' "u 1:5 w l lw LW title "Total" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:6 w l lw LW title "s-s" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:7 w l lw LW title "s-p" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:8 w l lw LW title "p-p"'
       elseif (size(G_part_ave,2) > 6) then ! sp3d5
-         write(FN, '(a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), ' "u 1:6 w l lw LW title "Total" ,\'
+         write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), ' "u 1:6 w l lw LW title "Total" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:7 w l lw LW title "s-s" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:8 w l lw LW title "s-p" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:9 w l lw LW title "s-d" ,\'
@@ -393,14 +423,14 @@ subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, 
       endif
    else
       if (size(G_part_ave,2) < 4) then ! s
-         write(FN, '(a,es25.16,a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), '\"u 1:3 w l lw \"$LW\" title \"Total\" '
+         write(FN, '(a,es25.16,a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), '\"u 1:3 w l lw \"$LW\" title \"Total\" '
       elseif (size(G_part_ave,2) == 6) then ! sp3
-         write(FN, '(a,es25.16,a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), '\"u 1:5 w l lw \"$LW\" title \"Total\" ,\'
+         write(FN, '(a,es25.16,a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), '\"u 1:5 w l lw \"$LW\" title \"Total\" ,\'
          write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:6 w l lw \"$LW\" title "s-s" ,\'
          write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:7 w l lw \"$LW\" title "s-p" ,\'
          write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:8 w l lw \"$LW\" title "p-p"'
       elseif (size(G_part_ave,2) > 6) then ! sp3d5
-         write(FN, '(a,es25.16,a,a,a)') 'p [0.0:25000.0][] "' , trim(adjustl(File_name_out)), '\"u 1:6 w l lw \"$LW\" title \"Total\" ,\'
+         write(FN, '(a,es25.16,a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), '\"u 1:6 w l lw \"$LW\" title \"Total\" ,\'
          write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:7 w l lw \"$LW\" title "s-s" ,\'
          write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:8 w l lw \"$LW\" title "s-p" ,\'
          write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:9 w l lw \"$LW\" title "s-d" ,\'
@@ -421,19 +451,22 @@ end subroutine gnu_plot
 
 
 
-subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, scaling_G, Matter_name)
+subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, File_INPUT, scaling_G, Matter_name)
    character(*), dimension(:), intent(in) :: Folders_with_data
    character(1), intent(in) :: path_sep
    integer, intent(in) :: FN7, FN8
-   character(*), intent(inout) :: File_numpar, File_matter
+   character(*), intent(inout) :: File_numpar, File_matter, File_INPUT
    real(8), intent(out) :: scaling_G
    character(*), intent(out) :: Matter_name
    !------------------
-   character(300) :: File_name, File_name2
+   character(300) :: File_name, File_name2, string
    character(10) :: temp, temp2
-   logical :: file_exists
-   integer :: open_status, v, i
+   logical :: file_exists, short_named
+   integer :: open_status, v, i, Reason
    real(8) :: r_temp
+
+   scaling_G = 4.0d0 ! to start with, no known scaling
+   short_named = .false.   ! to start with
 
    ! Find filename for NUMPAR:
    file_exists = .false.
@@ -448,8 +481,15 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
       File_name = trim(adjustl(Folders_with_data(1)))//path_sep//trim(adjustl(File_numpar))//trim(adjustl(temp))
       inquire(file=trim(adjustl(File_name)),exist=file_exists)
 
-      File_name2 = trim(adjustl(Folders_with_data(1)))//path_sep//trim(adjustl(File_matter))//trim(adjustl(temp))
-
+      ! Check if the long-named file exists:
+      if (file_exists) then   ! two files with input
+         short_named = .false.
+         File_name2 = trim(adjustl(Folders_with_data(1)))//path_sep//trim(adjustl(File_matter))//trim(adjustl(temp))
+      else  ! check one file with short name
+         short_named = .true.
+         File_name2 = trim(adjustl(Folders_with_data(1)))//path_sep//trim(adjustl(File_INPUT))//trim(adjustl(temp))
+         inquire(file=trim(adjustl(File_name2)),exist=file_exists)
+      endif
       !print*, v, trim(adjustl(File_name)), file_exists
 
       ! If not:
@@ -460,28 +500,53 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
       endif
    enddo
    ! Once correct file found, save the name:
-   File_numpar = trim(adjustl(File_name))
-   ! Open file:
-   open(UNIT=FN7, file=trim(adjustl(File_numpar)), iostat=open_status, action='read')
+   if (.not.short_named) then
+      File_numpar = trim(adjustl(File_name))
+      ! Open file:
+      open(UNIT=FN7, file=trim(adjustl(File_numpar)), iostat=open_status, action='read')
+   endif
 
    File_matter = trim(adjustl(File_name2))
    inquire(file=trim(adjustl(File_matter)),exist=file_exists)
    open(UNIT=FN8, file=trim(adjustl(File_matter)), iostat=open_status, action='read')
    !print*, 'Matter:', trim(adjustl(File_matter)), file_exists, open_status
 
-
-   ! Read the file with numpar to find the sacling factor:
-   do i = 1, 16
-      read(FN7,*) ! skip first 16 lines
-   enddo
-   ! read line with scaling factor:
-   read(FN7,*) r_temp, scaling_G
    ! Read material name:
    read(FN8,*) Matter_name
    !print*, scaling_G, trim(adjustl(Matter_name))
 
+   ! Read the file with numpar to find the sacling factor:
+   if (.not.short_named) then
+      do i = 1, 16
+         read(FN7,*) ! skip first 16 lines
+      enddo
+      ! read line with scaling factor:
+      read(FN7,*) r_temp, scaling_G
+   else ! short-named inupt file:
+      RDFL:do
+         read(FN8,'(a)',IOSTAT=Reason) string
+         if (Reason < 0) then ! end of file reached ...
+            print*, 'Could not find Numerical parameters in File:', trim(adjustl(File_matter)), ', cannot use scaling factor!'
+            close(FN8)
+            goto 2015
+         else
+            select case (trim(adjustl(string)))
+            case ('NUMPAR', 'NumPar', 'numpar', &
+               'NUMERICAL_PARAMETERS', 'Numerical_Parameters', 'numerical_parameters', &
+               'NUMERICS', 'Numerics', 'numerics')
+               do i = 1, 16
+                  read(FN8,*) ! skip first 16 lines
+               enddo
+               exit RDFL
+            endselect
+         endif
+      enddo RDFL
+      ! read line with scaling factor:
+      read(FN8,*) r_temp, scaling_G
+   endif
+
    ! Use the default value to renormalize it:
-   scaling_G = 4.0d0/scaling_G ! to multiply G with this factor
+2015   scaling_G = 4.0d0/scaling_G ! to multiply G with this factor
 end subroutine read_NUMPAR_file
 
 
@@ -832,17 +897,22 @@ end subroutine sort_array
 
 
 
-subroutine create_grid(Te_grid, G_mean, N_data)
+subroutine create_grid(Te_grid, G_mean, N_data, Up_lim_in)
    real(8), dimension(:), allocatable, intent(inout) :: Te_grid
    real(8), dimension(:,:), allocatable, intent(inout) :: G_mean
    integer, intent(in) :: N_data
+   real(8), intent(in), optional :: Up_lim_in
    real(8) :: Up_lim, step
    integer :: i, Nsiz
    
    if (allocated(Te_grid)) deallocate(Te_grid)
    if (allocated(G_mean)) deallocate(G_mean)
    
-   Up_lim = 25000.0d0
+   if (present(Up_lim_in)) then  ! user-defined uer limit of Te
+      Up_lim = Up_lim_in
+   else  ! default limit of Te
+      Up_lim = 25000.0d0
+   endif
    step = 100.0d0
    Nsiz = int(Up_lim/step)
    allocate(Te_grid(Nsiz), source = 0.0d0)
