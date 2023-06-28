@@ -21,7 +21,11 @@ This code is distributed _as is_ for non-commercial peaceful purposes only, such
 
 ## How to cite
 
-By using this code or its materials, you agree with these terms and conditions. The use of the code is at your own risk. Should you chose to use it, an appropriate citation is mandatory:
+By using this code or its materials, you agree with these terms and conditions. The use of the code is at your own risk. Should you chose to use it, an appropriate citation is mandatory. The manual and the code can be cited as:
+
+N. Medvedev “XTANT-3: X-ray-induced Thermal And Nonthermal Transitions in Matter: theory, numerical details, user manual” (2023) https://github.com/N-Medvedev/XTANT-3
+
+Journal citations may be used as follows: 
 
 N. Medvedev, V. Tkachenko, V. Lipp, Z. Li, B. Ziaja, Various damage mechanisms in carbon and silicon materials under femtosecond x-ray irradiation, 4open. 1 (2018) 3. https://doi.org/10.1051/fopen/2018003
 
