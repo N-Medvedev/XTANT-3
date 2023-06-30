@@ -483,7 +483,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                write(*,'(a)') '2) SAVE-files  (internal XTANT SAVE-files format: SAVE_atoms.dat and SAVE_supercell.dat)'
                write(*,'(a)') '3) Cell-file  (extended XYZ format: Cell.xzy)'
                write(*,'(a)') '4) POSCAR file (default name: Cell.poscar)'
-               write(*,'(a)') '5) unit-cell coordinates (files Unit_cell_equilibrium.txt and Unit_cell_atom_relative_coordinates.txt)'
+               write(*,'(a)') '5) Unit-cell coordinates (files Unit_cell_equilibrium.txt and Unit_cell_atom_relative_coordinates.txt)'
                goto 3416
             endif INPUT_SUPCELL2
          endif SAVED_SUPCELL
