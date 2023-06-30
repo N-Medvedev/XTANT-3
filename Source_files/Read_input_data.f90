@@ -27,7 +27,7 @@ MODULE Read_input_data
 use Objects
 use Universal_constants
 use Little_subroutines, only : print_time_step
-use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file
+use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file, get_file_extension
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
 use Dealing_with_DFTB, only : m_DFTB_directory, construct_skf_filename, read_skf_file, same_or_different_atom_types, &
                            idnetify_basis_size, m_DFTB_norep_directory, read_skf_file_no_rep
@@ -86,6 +86,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    integer :: N
    ! Here we set default values, in case some of them are not given by the user:
    matter%Name = '' ! Material name
+   numpar%Cell_filename = ''  ! no name given, defaults are hardcoded in nodule "Initial_configuration"
    matter%Chem = '' ! chemical formula of the compound
    if (.not.allocated(Scell)) allocate(Scell(1)) ! So far we only use 1 supercell
    numpar%numpar_in_input = .false.    ! assume separate file with the numerical parameters
@@ -1937,6 +1938,7 @@ subroutine read_Short_Rep_TB(FN, i,j, TB_Expwall, Error_descript, INFO)   ! belo
    TB_Expwall(i,j)%f_exp%use_it = .false.       ! no exp by default
    TB_Expwall(i,j)%f_inv_exp%use_it = .false.   ! no inverse exp by default
    TB_Expwall(i,j)%f_ZBL%use_it = .false.       ! no ZBL potential by default
+   TB_Expwall(i,j)%f_cut_inv%use_it = .false.   ! no short-range cutoff by default
    TB_Expwall(i,j)%f_cut%d0 = 0.0d0 ! cut off at zero, no repulsion by default
    TB_Expwall(i,j)%f_cut%dd = 0.01d0 ! short cut-off by default
 
@@ -1970,6 +1972,16 @@ subroutine interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwa
    select case (trim(adjustl(text)))
    case ('CUTOFF', 'Cutoff', 'cutoff', 'CUT_OFF', 'Cut_off', 'cut_off', 'CUT-OFF', 'Cut-off', 'cut-off', 'FERMI', 'Fermi', 'fermi')
       read(FN,*,IOSTAT=Reason) TB_Expwall%f_cut%d0, TB_Expwall%f_cut%dd
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         return   ! exit the function if there is nothing else to do
+      endif
+
+   case ('CUTOFF_SHORT', 'Cutoff_short', 'cutoff_short', 'CUT_OFF_SHORT', 'Cut_off_short', 'cut_off_short', &
+         'CUT-OFF_short', 'Cut-off_short', 'cut-off_short', 'FERMI_INV', 'Fermi_inv', 'fermi_inv')
+      read(FN,*,IOSTAT=Reason) TB_Expwall%f_cut_inv%d0, TB_Expwall%f_cut_inv%dd
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
          write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
@@ -5324,8 +5336,15 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       goto 3417
    endif
 
-   ! Material name:
-   read(FN,*,IOSTAT=Reason) matter%Name
+   ! Material name (and possibly the file name with coordinates):
+   read(FN,*,IOSTAT=Reason) matter%Name, numpar%Cell_filename
+   if (Reason /= 0) then ! try to read just single variable:
+      numpar%Cell_filename = ''  ! nullify it
+      read(FN,*,IOSTAT=Reason) matter%Name
+      if (numpar%verbose) write(*,'(a)') 'No valid filename with coordinates provided, assuming default'
+   else
+      call check_coordinates_filename(numpar%Cell_filename, numpar%verbose) ! see below
+   endif
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
       write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
@@ -5333,6 +5352,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       print*, trim(adjustl(Error_descript))
       goto 3417
    endif
+   !print*, trim(adjustl(matter%Name)), ' : ', trim(adjustl(numpar%Cell_filename))
 
    ! chemical formula of the compound (used in MC in case of EADL parameters):
    read(FN,*,IOSTAT=Reason) matter%Chem
@@ -5528,7 +5548,24 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
 end subroutine read_input_material
 
 
-subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, numpar, Err) ! below
+
+subroutine check_coordinates_filename(Cell_filename, verbose)  ! check if the name has correct extension
+   character(*), intent(inout) :: Cell_filename
+   logical, intent(in) :: verbose
+   !------------------
+   character(200) :: filename_extension
+
+   call get_file_extension(trim(adjustl(Cell_filename)), filename_extension)  ! module "Dealing_with_files"
+
+   if (LEN(trim(adjustl(filename_extension))) <= 0) then ! it contains a dot
+      Cell_filename = ''
+      if (verbose) write(*,'(a)') 'No valid filename with coordinates provided, using default'
+   endif
+end subroutine check_coordinates_filename
+
+
+
+subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, numpar, Err)
    integer, intent(in) :: FN  ! file to read from
    character(*), intent(in) :: File_name
    integer, intent(inout) :: count_lines  ! line we are reading

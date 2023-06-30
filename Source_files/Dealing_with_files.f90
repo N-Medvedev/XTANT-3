@@ -29,7 +29,8 @@ MODULE Dealing_with_files
 implicit none
 PRIVATE
 
-public :: get_file_stat, Count_columns_in_file, Count_lines_in_file, read_file, close_file, Path_separator, copy_file
+public :: get_file_stat, Count_columns_in_file, Count_lines_in_file, read_file, close_file, Path_separator, copy_file, &
+          get_file_extension, number_of_columns
 
  contains
 
@@ -70,6 +71,23 @@ subroutine get_file_stat(File_name, device_ID, Inode_number, File_mode, Number_o
    if (present(Last_status_change)) Last_status_change = info_array(11) ! Time of last file status change (*)
    if (present(blocks_allocated)) blocks_allocated = info_array(12) ! Blocksize for file system I/O operations
 end subroutine get_file_stat
+
+
+subroutine get_file_extension(file_name, file_extension)
+   character(*), intent(in) :: file_name
+   character(*), intent(inout) :: file_extension
+   !--------------------
+   integer :: dot_position
+
+   file_extension = ''  ! to start with
+   ! Check if the file name contains a dot:
+   dot_position = INDEX(file_name, '.', BACK=.true.)  ! intrinsic
+
+   if (dot_position > 0) then ! it contains a dot
+      file_extension = file_name(dot_position+1:LEN(file_name))
+   endif
+end subroutine get_file_extension
+
 
 
 subroutine close_file(safe, File_name, FN)

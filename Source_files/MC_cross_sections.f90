@@ -675,7 +675,7 @@ subroutine TotIMFP(Ele, matter, TeeV, Nat, Nshl, Sigma, dEdx)
        endif ! (Ee < Emin)
        if (present(dEdx)) dEdx = ddEdx !*dE ! energy losses [eV/A]
     case default ! BEB cross section
-       Sigma = Sigma_BEB(Ele,matter%Atoms(Nat)%Ip(Nshl),matter%Atoms(Nat)%Ek(Nshl),matter%Atoms(Nat)%Ne_shell(Nshl)) ! [A^2] cross section, function below
+       Sigma = Sigma_BEB(Ele, matter%Atoms(Nat)%Ip(Nshl), matter%Atoms(Nat)%Ek(Nshl), matter%Atoms(Nat)%Ne_shell(Nshl)) ! [A^2] cross section, function below
 
        temp1 = matter%At_Dens*1d-24*(matter%Atoms(Nat)%percentage)/SUM(matter%Atoms(:)%percentage)
        if (Sigma .LE. 0.0d0) then
@@ -947,13 +947,18 @@ function Sigma_BEB(T,B,U,N)
    real(8) U	! mean kinetic energy of electron in sub-shell [eV]
    real(8) N	! ocupation number of electrons in this shell
    real(8) t0, u0, S
-   if (T .LE. B) then
+   if ((T .LE. B) .or. (abs(B) < 1.0d-6)) then
       Sigma_BEB = 0.0d0 ! [A^2] cross section for energies lower than the Ip
    else
       S = 4.0d0*g_Pi*g_a0*g_a0*N*(g_Ry/B)*(g_Ry/B) ! Eq.(4)
-      t0 = T/B	! energy normalized to the Rydberg constant ! Eq.(4)
+      t0 = T/B ! energy normalized to the Rydberg constant ! Eq.(4)
       u0 = U/B
-      Sigma_BEB = S/(t0+u0+1.0d0)*(log(t0)*0.5d0*(1.0d0-1.0d0/(t0*t0)) + (1.0d0-1.0d0/t0) -log(t0)/(t0+1.0d0)) ! [A^2]
+      if (t0 <= 0.0d0) then
+         !print*, 'Sigma_BEB', t0
+         Sigma_BEB = 0.0d0
+      else
+         Sigma_BEB = S/(t0+u0+1.0d0)*(log(t0)*0.5d0*(1.0d0-1.0d0/(t0*t0)) + (1.0d0-1.0d0/t0) -log(t0)/(t0+1.0d0)) ! [A^2]
+      endif
    endif
 end function Sigma_BEB
 

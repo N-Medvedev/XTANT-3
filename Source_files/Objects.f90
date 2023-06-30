@@ -353,11 +353,19 @@ type :: Fermi_cutoff
    real(8) :: dd  ! [A] cut-off smoothing distance
 end type Fermi_cutoff
 
+! Enveloping inverse Fermi-like function: f_cut' = 1 - 1/(1+exp((r-d0)/dd))
+type :: Fermi_cutoff_inv
+   logical :: use_it ! flag to use this function or not
+   real(8) :: d0  ! [A] cut-off radius
+   real(8) :: dd  ! [A] cut-off smoothing distance
+end type Fermi_cutoff_inv
+
 ! Exponential of 1/r: C*exp(1/(r-r0))
 type :: Rep_inv_exp
    logical :: use_it  ! flag to use this function or not
    real(8) :: C   ! [eV] energy of the "wall"
    real(8) :: r0  ! [A] "wall" position
+   !logical :: use_short_cutoff ! flag to use short-range cutoff or not
 end type Rep_inv_exp
 
 ! Exponential of r: Phi*exp(-(r-r0)/a)
@@ -366,6 +374,7 @@ type :: Rep_exp
    real(8) :: Phi    ! [eV] energy of the "wall"
    real(8) :: r0     ! [A] "wall" position
    real(8) :: a   ! [A] width
+   !logical :: use_short_cutoff ! flag to use short-range cutoff or not
 end type Rep_exp
 
 ! Power of r: Phi*(r/r0)^m
@@ -374,6 +383,7 @@ type :: Rep_pow
    real(8) :: Phi    ! [eV] energy of the "wall"
    real(8) :: r0     ! [A] position
    real(8) :: m      ! [-] power
+   !logical :: use_short_cutoff ! flag to use short-range cutoff or not
 end type Rep_pow
 
 ! ZBL potential - see separate module
@@ -383,8 +393,10 @@ end type Rep_ZBL
 
 ! Combined functions together:
 type, EXTENDS (TB_Exp_wall) :: TB_Short_Rep
-   ! 1) Enveloping Fermi function:
+   ! 1) Enveloping Fermi function (cut off at large distances):
    type(Fermi_cutoff) :: f_cut
+   ! 1.5) Enveloping inverse Fermi function (cut off at short distances):
+   type(Fermi_cutoff_inv) :: f_cut_inv
    ! 2) Inverse exponential:
    type(Rep_inv_exp) :: f_inv_exp
    ! 3) Exponential:
@@ -819,6 +831,8 @@ type Numerics_param
    logical :: create_BOP_repulse
    character(200) :: BOP_Folder_name, Filename_communication
    real(8) :: BOP_bond_length   ! [A]
+   ! Initial cell data file:
+   character(200) :: Cell_filename
    ! General flags:
    integer :: save_files_used ! to mark for the output printing out, whether SAVE-files are used or unit cell
    logical :: numpar_in_input ! numpar were already read from the single file, no need for separate file reading

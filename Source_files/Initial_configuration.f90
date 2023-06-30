@@ -27,7 +27,7 @@ MODULE Initial_configuration
 use Universal_constants
 use Objects
 use Algebra_tools, only : Det_3x3, Reciproc
-use Dealing_with_files, only : Count_lines_in_file, Count_columns_in_file, close_file, read_file
+use Dealing_with_files, only : Count_lines_in_file, Count_columns_in_file, close_file, read_file, get_file_extension, number_of_columns
 use Atomic_tools, only : Coordinates_abs_to_rel, remove_angular_momentum, get_fragments_indices, remove_momentum, &
                   Get_random_velocity, check_periodic_boundaries, Make_free_surfaces, Coordinates_abs_to_rel_single, &
                   shortest_distance, velocities_rel_to_abs, velocities_abs_to_rel, Coordinates_rel_to_abs, &
@@ -277,9 +277,10 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
    type(MC_data), dimension(:), allocatable, intent(inout) :: MC ! all MC parameters
    type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
-   integer i, Nsc, Natoms, FN, FN2, Reason, count_lines, N, j, k, n1, FN3, FN4, FN_XYZ
-   character(200) :: File_name, File_name2, Error_descript, File_name_S1, File_name_S2, File_name_XYZ
-   logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2, XYZ_file_exists
+   integer i, Nsc, Natoms, FN, FN2, Reason, count_lines, N, j, k, n1, FN3, FN4, FN_XYZ, FN_POSCAR
+   character(200) :: File_name, File_name2, Error_descript, File_name_S1, File_name_S2, File_name_XYZ, File_name_POSCAR, Cell_filename
+   character(10) :: file_extension
+   logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2, XYZ_file_exists, POSCAR_file_exists
    real(8) RN, temp, Mass, V2, Ta
 
    Nsc = 1 !in the present version of the code, there is always only one super-cell
@@ -308,11 +309,49 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          
          ! Supercell vectors:
 
-         ! Check if there is extended XYZ-format with the unit/super-cell:
+         ! Check if the user provided the filename with coordinates and supercell:
+         call get_file_extension(trim(adjustl(numpar%Cell_filename)), file_extension)  ! module "Dealing_with_files"
          XYZ_file_exists = .false.  ! to start with
+         POSCAR_file_exists = .false.  ! to start with
+         Cell_filename = ''   ! default
+         if (LEN(trim(adjustl(file_extension))) > 0) then ! no filename was provided by the user, use defaults
+            Cell_filename = trim(adjustl(numpar%Cell_filename))
+            select case(trim(adjustl(file_extension)))
+            case ('XYZ', 'XYz', 'Xyz', 'xyz')
+               XYZ_file_exists = .true.
+            case ('POSCAR', 'Poscar', 'poscar', 'PosCar')
+               POSCAR_file_exists = .true.
+            case default
+               write(*,'(a)') 'Extension of provided file '//trim(adjustl(numpar%Cell_filename))//' not supported; using defult instead'
+               XYZ_file_exists = .false.  ! to start with
+               POSCAR_file_exists = .false.  ! to start with
+               Cell_filename = ''   ! default
+            end select
+         endif
+
+         ! Check if there is extended XYZ-format with the unit/super-cell:
+         if (.not.XYZ_file_exists) then ! there is no name given, use default
+            Cell_filename = 'Cell.xyz'   ! default name
+         else
+            Cell_filename = trim(adjustl(numpar%Cell_filename))
+         endif
          FN_XYZ = 9004
-         write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'Cell.xyz'
+         write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+                                         trim(adjustl(Cell_filename))
          inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
+
+
+         ! Check if there is extended POSCAR-format with the unit/super-cell:
+         if (.not.POSCAR_file_exists) then ! there is no name given, use default
+            Cell_filename = 'Cell.poscar'   ! default name
+         else
+            Cell_filename = trim(adjustl(numpar%Cell_filename))
+         endif
+         FN_POSCAR = 9005
+         write(File_name_POSCAR, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+                                            trim(adjustl(Cell_filename))
+         inquire(file=trim(adjustl(File_name_POSCAR)),exist=POSCAR_file_exists)
+
 
          ! Check if user set to calculate along path coordinate:
          FN3 = 9002
@@ -333,7 +372,8 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          ! 1) Path-coordinates  (in internal XTANT SAVE-files format)
          ! 2) SAVE-files  (internal XTANT SAVE-files format)
          ! 3) Cell-file  (extended XYZ format)
-         ! 4) unit-cell coordinates  (old internal XTANT format)
+         ! 4) POSCAR-file (vasp format)
+         ! 5) unit-cell coordinates  (old internal XTANT format)
 
          SAVED_SUPCELL:if (numpar%do_path_coordinate) then ! read phase 1 and 2 supercells:
             
@@ -414,6 +454,10 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             ! Will read it together with atomic coordinates from the same file below
 
          !----------------------------
+         elseif (POSCAR_file_exists) then SAVED_SUPCELL  ! read from POSCAR file:
+            ! Will read it together with atomic coordinates from the same file below
+
+         !----------------------------
          else SAVED_SUPCELL   ! no supercell, create from unit cell
             write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), &
                                 trim(adjustl(matter%Name))//trim(adjustl(numpar%path_sep)), 'Unit_cell_equilibrium.txt'
@@ -433,7 +477,13 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             else INPUT_SUPCELL2
                write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
                call Save_error_details(Err, 1, Error_descript)
-               print*, trim(adjustl(Error_descript))
+               write(*,'(a)') trim(adjustl(Error_descript))
+               write(*,'(a)') 'No file with supercell was found. The file(s) must be set in one of the formats:'
+               write(*,'(a)') '1) Path-coordinates  (in internal XTANT SAVE-files format: PHASE_1_supercell.dat and PHASE_2_supercell.dat)'
+               write(*,'(a)') '2) SAVE-files  (internal XTANT SAVE-files format: SAVE_atoms.dat and SAVE_supercell.dat)'
+               write(*,'(a)') '3) Cell-file  (extended XYZ format: Cell.xzy)'
+               write(*,'(a)') '4) POSCAR file (default name: Cell.poscar)'
+               write(*,'(a)') '5) unit-cell coordinates (files Unit_cell_equilibrium.txt and Unit_cell_atom_relative_coordinates.txt)'
                goto 3416
             endif INPUT_SUPCELL2
          endif SAVED_SUPCELL
@@ -460,7 +510,8 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          ! 1) Path-coordinates  (in internal XTANT SAVE-files format)
          ! 2) SAVE-files  (internal XTANT SAVE-files format)
          ! 3) Cell-file  (extended XYZ format)
-         ! 4) unit-cell coordinates  (old internal XTANT format)
+         ! 4) POSCAR file
+         ! 5) unit-cell coordinates  (old internal XTANT format)
 
          SAVED_ATOMS:if (numpar%do_path_coordinate) then ! read from the files with initial and final configurations to do the path coordinate plots
 
@@ -494,9 +545,10 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                ! Set initial velocities according to the given input temperature:
                call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
             endif
-         
+
+
          !----------------------------
-         elseif (file_exist) then SAVED_ATOMS    ! read from this file with transient Super cell:
+         elseif (file_exist) then SAVED_ATOMS    ! read from SAVE file with atomic coordinates:
             ! Save the flag for output:
             numpar%save_files_used = 1  ! Save files read
 
@@ -518,6 +570,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                ! Set initial velocities according to the given input temperature:
                call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate)  ! below
             endif
+
 
          !----------------------------
          elseif (XYZ_file_exists) then SAVED_ATOMS ! XYZ file contains atomic coordinates
@@ -548,8 +601,39 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             inquire(file=trim(adjustl(File_name_XYZ)),opened=file_opened)
             if (file_opened) close (FN_XYZ)
 
+
          !----------------------------
-         else SAVED_ATOMS
+         elseif (POSCAR_file_exists) then SAVED_ATOMS ! POSCAR file contains atomic coordinates
+            open(UNIT=FN_POSCAR, FILE = trim(adjustl(File_name_POSCAR)), status = 'old', action='read')
+            inquire(file=trim(adjustl(File_name_POSCAR)),opened=file_opened)
+            if (.not.file_opened) then
+               Error_descript = 'File '//trim(adjustl(File_name_POSCAR))//' could not be opened, the program terminates'
+               call Save_error_details(Err, 2, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               goto 3416
+            endif
+
+            ! 1) Read the unit cell:
+            call read_POSCAR(FN_POSCAR, File_name_POSCAR, Scell, i, matter, numpar, Err) ! see below
+            if ( trim(adjustl(Err%Err_descript)) /= '' ) then
+               goto 3416
+            endif
+
+            ! 2) Make the supercell, if required:
+            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 3, matter, numpar, Err) ! below
+            if ( trim(adjustl(Err%Err_descript)) /= '' ) then
+               goto 3416
+            endif
+
+            ! 3) Set initial velocities:
+            call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
+
+            inquire(file=trim(adjustl(File_name_POSCAR)),opened=file_opened)
+            if (file_opened) close (FN_POSCAR)
+
+
+         !----------------------------
+         else SAVED_ATOMS  ! unit-cell file
             ! Save the flag for output:
             numpar%save_files_used = 0  ! Save files read
 
@@ -574,6 +658,12 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name2))//' could not be found, the program terminates'
                call Save_error_details(Err, 1, Error_descript)
                print*, trim(adjustl(Error_descript))
+               print*, 'No file with atomic coordinates was found. The file(s) must be set in one of the formats:'
+               print*, '1) Path-coordinates  (in internal XTANT SAVE-files format: PHASE_1_supercell.dat and PHASE_2_supercell.dat)'
+               print*, '2) SAVE-files  (internal XTANT SAVE-files format: SAVE_atoms.dat and SAVE_supercell.dat)'
+               print*, '3) Cell-file  (extended XYZ format: Cell.xzy)'
+               print*, '4) POSCAR file (default name: Cell.poscar)'
+               print*, '5) unit-cell coordinates (files Unit_cell_equilibrium.txt and Unit_cell_atom_relative_coordinates.txt)'
                goto 3416
             endif INPUT_ATOMS
          endif SAVED_ATOMS
@@ -796,6 +886,227 @@ end subroutine set_initial_configuration
 
 
 
+subroutine read_POSCAR(FN_POSCAR, File_name_POSCAR, Scell, SCN, matter, numpar, Err) ! poscar format
+   ! Description of the format: https://www.vasp.at/wiki/index.php/POSCAR
+   integer, intent(in) :: FN_POSCAR ! extended XYZ file number (must be already open)
+   character(*), intent(in) :: File_name_POSCAR ! extended XYZ file name
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   integer, intent(in) :: SCN ! number of the supercell (always =1)
+   type(Solid), intent(inout) :: matter	! all material parameters
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !-------------------
+   real(8) :: Scalfac(3), coord(3)
+   integer :: count_lines, Reason, Nat, Ncol, i, kind_count, atoms_count, KOA
+   integer, dimension(:), allocatable :: i_temp
+   logical :: read_well
+   character(1000) :: read_line, Error_descript
+   character(3), dimension(:), allocatable :: El_name
+   character(*), parameter :: numbers = '0123456789'
+
+   Scalfac(:) = 0.0d0   ! to start with
+   count_lines = 0      ! to start with
+
+   ! First line in POSCAR, comment:
+   read(FN_POSCAR,*,IOSTAT=Reason) ! skip
+   call read_file(Reason, count_lines, read_well)
+
+   ! Second line in POSCAR, Scaling factor(s):
+   read(FN_POSCAR,*,IOSTAT=Reason) read_line
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 4400
+   endif
+   Ncol = number_of_columns(read_line) ! module "Dealing_with_files"
+   select case(Ncol)
+   case (3)
+      read(read_line,*,IOSTAT=Reason) Scalfac   ! three numbers
+   case default
+      read(read_line,*,IOSTAT=Reason) Scalfac(1)   ! one number
+      Scalfac(2:3) = Scalfac(1)
+   end select
+
+   ! Lines 3-5 in POSCAR, Lattice:
+   read(FN_POSCAR,*,IOSTAT=Reason) coord(:)
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 4400
+   endif
+   Scell(SCN)%Supce(1,:) = coord(:)  ! three numbers
+
+   read(FN_POSCAR,*,IOSTAT=Reason) coord(:)
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 4400
+   endif
+   Scell(SCN)%Supce(2,:) = coord(:)  ! three numbers
+
+   read(FN_POSCAR,*,IOSTAT=Reason) coord(:)
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 4400
+   endif
+   Scell(SCN)%Supce(3,:) = coord(:)  ! three numbers
+
+   ! Scaling factor:
+   Scell(SCN)%Supce(:,1) = Scell(SCN)%Supce(:,1) * Scalfac(1)
+   Scell(SCN)%Supce(:,2) = Scell(SCN)%Supce(:,2) * Scalfac(2)
+   Scell(SCN)%Supce(:,3) = Scell(SCN)%Supce(:,3) * Scalfac(3)
+
+   ! Previous step:
+   Scell(SCN)%Supce0 = Scell(SCN)%Supce   ! initial
+
+   ! Line 6 in POSCAR, Species names (optional):
+   read_line = '' ! to restart
+   read(FN_POSCAR, '(a200)', IOSTAT=Reason) read_line ! read names or numbers of species
+   !print*, Reason, 'read_line', trim(adjustl(read_line))
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 4400
+   endif
+   ! Check if the line contains optional names, or the mandatory numbers:
+   if (verify(trim(adjustl(read_line(1:1))), trim(adjustl(numbers))) /= 0) then ! it was optional line with names
+      Ncol = number_of_columns(read_line) ! module "Dealing_with_files"
+      allocate(El_name(Ncol))
+      read(read_line,*,IOSTAT=Reason) El_name(:) ! read kinds of species
+
+      ! Next line, numbers of atoms:
+      read(FN_POSCAR,'(a200)',IOSTAT=Reason) read_line ! read numbers of species
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 4400
+      endif
+   endif
+   ! Having the numbers of species, get the total number of atoms:
+   Ncol = number_of_columns(read_line) ! module "Dealing_with_files"
+   allocate(i_temp(Ncol), source = 0)
+   read(read_line,*,IOSTAT=Reason) i_temp(:) ! read numbers of species
+   Nat = SUM(i_temp) ! count all the atoms
+   !print*, 'Nat=', Nat, size(i_temp), i_temp, ': ', read_line
+   Scell(SCN)%Na = Nat
+   allocate(Scell(SCN)%MDAtoms(Nat))
+
+   ! Selective dynamics (optional) OR specification of coordinate format:
+   read(FN_POSCAR,*,IOSTAT=Reason) read_line ! read names or numbers of species
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 4400
+   endif
+   ! Check if it was optional line or not
+   select case(read_line(1:1))
+   case('S', 's') ! read the next mandatory line with specification of coordinate format
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 4400
+      endif
+   endselect
+   ! Check what format coordinates are given in (relative or absolute):
+
+   ! Next lines contain at least the atomic type and coordinates:
+   kind_count = 1
+   atoms_count = i_temp(kind_count)
+   do i = 1, Scell(SCN)%Na
+      if (i > atoms_count) then
+         kind_count = kind_count + 1   ! next index of kinds of atoms
+         atoms_count = atoms_count + i_temp(kind_count)  ! next boundary for this kind of atoms
+      endif
+
+      ! Define kind of atom:
+      if (allocated(El_name)) then ! element names are given
+         ! Find the index from the element name:
+         call get_KOA_from_element(El_name(kind_count), matter, KOA) ! below
+         if (KOA <= 0) then
+            write(Error_descript,'(a,i3,a,$)') 'In the target, there is no element ', trim(adjustl(El_name(kind_count))), &
+                                               ' from file '//trim(adjustl(File_name_POSCAR))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 4400
+         endif
+         Scell(SCN)%MDAtoms(i)%KOA = KOA
+      else ! assume elements follow from the chemical formula
+         Scell(SCN)%MDAtoms(i)%KOA = kind_count
+      endif
+
+      ! Define atomic coordinates:
+      read(FN_POSCAR,*,IOSTAT=Reason) coord(:)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 4400
+      endif
+
+      select case(read_line(1:1))
+      case ('C', 'c', 'K', 'k') ! Absolute
+         Scell(SCN)%MDAtoms(i)%R(:) = coord(:) * Scalfac(:)
+         Scell(SCN)%MDAtoms(i)%R0(:) = Scell(SCN)%MDAtoms(i)%R(:)
+         ! Get the relative coordinates from the absolute ones provided:
+         call Coordinates_abs_to_rel(Scell, SCN, if_old=.true.) ! module "Atomic_tools"
+      case default ! Relative
+         Scell(SCN)%MDAtoms(i)%S(:) = coord(:)
+         Scell(SCN)%MDAtoms(i)%S0(:) = Scell(SCN)%MDAtoms(i)%S(:)
+      endselect
+      !print*, i, Scell(SCN)%MDAtoms(i)%KOA, Scell(SCN)%MDAtoms(i)%S(:)
+   enddo
+
+   ! Optional lines from here (incl. velosities)
+   read_well = .true.   ! to start with
+   RDID: do while (read_well)
+      read(FN_POSCAR,*,IOSTAT=Reason) read_line ! read names or numbers of species
+      call read_file(Reason, count_lines, read_well)
+
+      ! Sort the atomic velocities that were read:
+      select case(trim(adjustl(read_line)))
+      case ('CARTESIAN', 'Cartesian', 'cartesian') ! Absolute
+         do i = 1, Scell(SCN)%Na
+            read(FN_POSCAR,*,IOSTAT=Reason) Scell(SCN)%MDAtoms(i)%V(:)
+            call read_file(Reason, count_lines, read_well)
+            Scell(SCN)%MDAtoms(i)%V0(:) = Scell(SCN)%MDAtoms(i)%V(:)
+            ! Get the relative velocities from the absolute ones provided:
+            call velocities_abs_to_rel(Scell, SCN, if_old=.true.) ! module "Atomic_tools"
+         enddo
+      case('DIRECT', 'Direct', 'direct')  ! relative
+         do i = 1, Scell(SCN)%Na
+            read(FN_POSCAR,*,IOSTAT=Reason) Scell(SCN)%MDAtoms(i)%SV(:)
+            call read_file(Reason, count_lines, read_well)
+            Scell(SCN)%MDAtoms(i)%SV0(:) = Scell(SCN)%MDAtoms(i)%SV(:)
+         enddo
+      end select
+   enddo RDID
+
+   if (allocated(El_name)) deallocate(El_name)
+   deallocate(i_temp)
+4400 continue
+!    pause 'read_POSCAR'
+end subroutine read_POSCAR
+
+
+
+
 subroutine read_XYZ(FN_XYZ, File_name_XYZ, Scell, SCN, matter, numpar, Err) ! extended XYZ format
    integer, intent(in) :: FN_XYZ ! extended XYZ file number (must be already open)
    character(*), intent(in) :: File_name_XYZ ! extended XYZ file name
@@ -870,10 +1181,10 @@ subroutine interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Sce
    select case (ind_atoms)
    case (1) ! there are data for atomic species and coordinates
       Scell(SCN)%Supce0 = Scell(SCN)%Supce   ! initial
-      if (numpar%verbose) print*, 'Reading defined atomic coordinates from Cell.xyz'
+      if (numpar%verbose) print*, 'Reading defined atomic coordinates from xyz-file'
       call read_XYZ_coords(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, ind_S, ind_R, ind_V, Err) ! below
    case (0) ! to be set randomly
-      if (numpar%verbose) print*, 'Setting random atomic coordinates defined in Cell.xyz'
+      if (numpar%verbose) print*, 'Setting random atomic coordinates defined in xyz-file'
       call read_XYZ_random(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, SC_X, SC_Y, numpar, Err) ! below
    case default
       Error_descript = 'Could not interpret the data in file '//trim(adjustl(File_name_XYZ))
