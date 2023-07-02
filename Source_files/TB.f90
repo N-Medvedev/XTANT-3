@@ -2559,7 +2559,7 @@ subroutine d_Forces_Pressure(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zi
                   do k = 1,3 ! supce indices
                      do l = 1,3  ! supce indices
                         !Scell(NSC)%SCforce%rep(l,k) = Scell(NSC)%SCforce%rep(l,k) + Rep_Pr(l,k) !*0.5d0
-                        PForce(l,k) = PForce(l,k) + Rep_Pr(l,k)
+                        PForce(l,k) = PForce(l,k) + Rep_Pr(l,k)*0.5d0
                      enddo ! l
                   enddo ! k
                enddo ! i
