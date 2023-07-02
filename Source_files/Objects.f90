@@ -42,6 +42,7 @@ end type
 ! van der Waals within TB parametrization
 type :: TB_vdW ! parent type
    character(25) :: Param ! name of parametrization
+   real(8) :: d0_cut, dd_cut  ! [A] [A] cutoff radius and smoothing distance
 end type
 ! Coulomb potential:
 type :: TB_Coulomb ! parent type
@@ -326,11 +327,23 @@ type, EXTENDS (TB_vdW) :: TB_vdW_Girifalco
    real(8) :: fs
 end type TB_vdW_Girifalco
 
-type, EXTENDS (TB_vdW) :: TB_vdW_Dumitrica ! UNFINISHED, SINCE DIDN'T SEEM TO WORK!
+type, EXTENDS (TB_vdW) :: TB_vdW_Dumitrica ! UNFINISHED
    ! [A. Carlson and T. Dumitrica, Nanotechnology 18 (2007) 065706]
    real(8) :: C6	! [eV*A^6]
    real(8) :: alpha	! [1/A]
 end type TB_vdW_Dumitrica
+
+type, EXTENDS (TB_vdW) :: TB_vdW_LJ_cut
+   ! Mie potential, generalized LJ in n-exp form: V=eps*( (r0/r)^(2*n) + (r0/r)^n )
+   ! reducing to LJ for n=6
+   real(8) :: eps    ! [eV*A^12] Lennard-Jones C12
+   real(8) :: r0     ! [eV*A^6] Lennard-Jones C6
+   real(8) :: n      ! power
+   real(8) :: d0_short, dd_short ! [A] [A] cutoff radius and width at short distances
+end type TB_vdW_LJ_cut
+
+
+
 
 ! d) Coulomb energy contribution:
 type, EXTENDS (TB_Coulomb) :: TB_Coulomb_cut

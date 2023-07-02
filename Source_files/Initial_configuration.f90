@@ -341,7 +341,6 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                                          trim(adjustl(Cell_filename))
          inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
 
-
          ! Check if there is extended POSCAR-format with the unit/super-cell:
          if (.not.POSCAR_file_exists) then ! there is no name given, use default
             Cell_filename = 'Cell.poscar'   ! default name
@@ -516,6 +515,8 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
          SAVED_ATOMS:if (numpar%do_path_coordinate) then ! read from the files with initial and final configurations to do the path coordinate plots
 
+            if (numpar%verbose) print*, 'Atomic coordinates from files: ', trim(adjustl(File_name_S1)), trim(adjustl(File_name_S2))
+
             ! Save the flag for output:
             numpar%save_files_used = 2  ! path coordinate
 
@@ -550,6 +551,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
          !----------------------------
          elseif (file_exist) then SAVED_ATOMS    ! read from SAVE file with atomic coordinates:
+
+            if (numpar%verbose) print*, 'Atomic coordinates from file: ', trim(adjustl(File_name2))
+
             ! Save the flag for output:
             numpar%save_files_used = 1  ! Save files read
 
@@ -575,6 +579,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
          !----------------------------
          elseif (XYZ_file_exists) then SAVED_ATOMS ! XYZ file contains atomic coordinates
+
+            if (numpar%verbose) print*, 'Atomic coordinates from file: ', trim(adjustl(File_name_XYZ))
+
             open(UNIT=FN_XYZ, FILE = trim(adjustl(File_name_XYZ)), status = 'old', action='read')
             inquire(file=trim(adjustl(File_name_XYZ)),opened=file_opened)
             if (.not.file_opened) then
@@ -605,6 +612,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
          !----------------------------
          elseif (POSCAR_file_exists) then SAVED_ATOMS ! POSCAR file contains atomic coordinates
+
+            if (numpar%verbose) print*, 'Atomic coordinates from file: ', trim(adjustl(File_name_POSCAR))
+
             open(UNIT=FN_POSCAR, FILE = trim(adjustl(File_name_POSCAR)), status = 'old', action='read')
             inquire(file=trim(adjustl(File_name_POSCAR)),opened=file_opened)
             if (.not.file_opened) then
@@ -639,7 +649,11 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             numpar%save_files_used = 0  ! Save files read
 
             ! c) if user set to construct supercell from unit cells:
-            write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'Unit_cell_atom_relative_coordinates.txt'
+            write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+                                       'Unit_cell_atom_relative_coordinates.txt'
+
+            if (numpar%verbose) print*, 'Atomic coordinates from file: ', trim(adjustl(File_name2))
+
             inquire(file=trim(adjustl(File_name2)),exist=file_exist)
             INPUT_ATOMS:if (file_exist) then
                open(UNIT=FN2, FILE = trim(adjustl(File_name2)), status = 'old', action='read')

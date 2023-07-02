@@ -2327,7 +2327,7 @@ subroutine Exponential_wall_forces(TB_Expwall, Scell, NSC, matter, numpar) ! get
    type(solid), intent(in) :: matter   ! materil parameters
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    !----------------------------------
-    if (allocated(TB_Expwall)) then ! if we have vdW potential defined
+    if (allocated(TB_Expwall)) then ! if we have short-range potential defined
       select type (TB_Expwall)
       type is (TB_Exp_wall_simple)
          ! Forces for all atoms:
@@ -2356,7 +2356,7 @@ subroutine Coulomb_forces(TB_Coul, Scell, NSC, numpar)
    real(8), dimension(:,:,:), allocatable :: Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, XijSupce, YijSupce, ZijSupce
    integer :: Nx, Ny, Nz
    
-   if (allocated(TB_Coul)) then ! if we have vdW potential defined
+   if (allocated(TB_Coul)) then ! if we have Coupomb potential defined
       select type (TB_Coul)
       type is (TB_Coulomb_cut) ! so far, it is the only type we have
          ! Get multipliers used many times into temporary arrays:
@@ -2396,34 +2396,27 @@ subroutine vdW_forces(TB_Waals, Scell, NSC, numpar)
    integer :: Nx, Ny, Nz
 
    if (allocated(TB_Waals)) then ! if we have vdW potential defined
-      select type (TB_Waals)
-      type is (TB_vdW_Girifalco) ! so far, it is the only type we have
-!          call dvdWdr_s_OLD(TB_Waals, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! module "Van_der_Waals"
-!          call dvdWdr_Pressure_s_OLD(TB_Waals, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! module "Van_der_Waals"
-
-         ! Get multipliers used many times into temporary arrays:
-         call Construct_B(TB_Waals, Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
+      ! Get multipliers used many times into temporary arrays:
+      call Construct_B(TB_Waals, Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, &
+                        Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
          
-         ! Forces for all atoms:
-!          call dvdWdr_s(TB_Waals, Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Nx, Ny, Nz) ! module "Van_der_Waals"
-         call d_Forces_s(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Nx, Ny, Nz) ! below
+      ! Forces for all atoms:
+      call d_Forces_s(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Nx, Ny, Nz) ! below
          
-         ! Forces for the super-cell:
-!          call dvdWdr_Pressure_s(TB_Waals, Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
-         call  d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
+      ! Forces for the super-cell:
+      call d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
 
-         if (allocated(Bij))   deallocate(Bij)
-         if (allocated(A_rij)) deallocate(A_rij)
-         if (allocated(Xij))   deallocate(Xij)
-         if (allocated(Yij))   deallocate(Yij)
-         if (allocated(Zij))   deallocate(Zij)
-         if (allocated(SXij))  deallocate(SXij)
-         if (allocated(SYij))  deallocate(SYij)
-         if (allocated(SZij))  deallocate(SZij)
-         if (allocated(XijSupce))   deallocate(XijSupce)
-         if (allocated(YijSupce))   deallocate(YijSupce)
-         if (allocated(ZijSupce))   deallocate(ZijSupce)
-      end select
+      if (allocated(Bij))   deallocate(Bij)
+      if (allocated(A_rij)) deallocate(A_rij)
+      if (allocated(Xij))   deallocate(Xij)
+      if (allocated(Yij))   deallocate(Yij)
+      if (allocated(Zij))   deallocate(Zij)
+      if (allocated(SXij))  deallocate(SXij)
+      if (allocated(SYij))  deallocate(SYij)
+      if (allocated(SZij))  deallocate(SZij)
+      if (allocated(XijSupce))   deallocate(XijSupce)
+      if (allocated(YijSupce))   deallocate(YijSupce)
+      if (allocated(ZijSupce))   deallocate(ZijSupce)
    else
       ! No additional forces, if there is no van der Waals parameters given
    endif
@@ -2454,57 +2447,57 @@ subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, 
 
    !$omp PARALLEL private(i1,j1,ian,dik,djk,dpsi,x1,b,a_r,ddlta,b_delta, x_cell, y_cell, z_cell, coun_cell, zb, origin_cell)
    !$omp DO
-   do ian = 1, n  ! Forces for all atoms
-      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with   
-      do i1 = 1, n ! contribution from all atoms
-         if (ian == i1) then
-            dik = 1
-         else
-            dik = 0
-         endif
-         dpsi = 0.0d0
-         do j1 = 1,n ! for each pair of atoms
-            if (ian == j1) then
-               djk = 1
-            else
-               djk = 0
-            endif
-            cos_if:if ((dik-djk) /= 0) then ! without it, it gives ERROR
-               XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
-                  YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
-                     ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
-                        zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
-                        origin_cell = ALL(zb==0) ! if it is the origin cell
-                        cell_if:if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
-                           ! contribution from this image of the cell:
-                           coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
-                     
-                           x1(1) = Xij(coun_cell,i1,j1) ! x*supce(1,1) + y*supce(1,2) + z*supce(1,3)
-                           x1(2) = Yij(coun_cell,i1,j1) ! x*supce(2,1) + y*supce(2,2) + z*supce(2,3)
-                           x1(3) = Zij(coun_cell,i1,j1) ! x*supce(3,1) + y*supce(3,2) + z*supce(3,3)
-                           b = Bij(coun_cell,i1,j1) ! dvdW(TB_Coul(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),A_rij(coun_cell,i1,j1))
-                           a_r = A_rij(coun_cell,i1,j1) ! call shortest_distance(Scell, NSC, atoms, i1, j1, A_rij(coun_cell,i1,j1), x1=x, y1=y, z1=z, sx1=sx, sy1=sy, sz1=sz) 
+   XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
+      YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+         ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+            zb = (/x_cell, y_cell, z_cell/) ! vector of image of the super-cell
+            origin_cell = ALL(zb==0) ! if it is the origin cell
+            do ian = 1, n  ! Forces for all atoms
+               !Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
+               do i1 = 1, n ! contribution from all atoms
+                  if (ian == i1) then
+                     dik = 1
+                  else
+                     dik = 0
+                  endif
+                  dpsi = 0.0d0
+                  do j1 = 1,n ! for each pair of atoms
+                     if (ian == j1) then
+                        djk = 1
+                     else
+                        djk = 0
+                     endif
 
-                           ddlta = real(dik - djk)/a_r
-                           b_delta = b*ddlta
-                           dpsi(1) = dpsi(1) + b_delta*x1(1) ! X, Eq.(F21), H.Jeschke PhD Thesis
-                           dpsi(2) = dpsi(2) + b_delta*x1(2) ! Y, Eq.(F21), H.Jeschke PhD Thesis
-                           dpsi(3) = dpsi(3) + b_delta*x1(3) ! Z, Eq.(F21), H.Jeschke PhD Thesis
-                        endif cell_if
-                     enddo ZC2
-                  enddo YC2
-               enddo XC2
-            endif cos_if
-         enddo ! j1
+                     !cos_if:if ((dik-djk) /= 0) then ! without it, it gives ERROR
+                     cell_if:if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+                        ! contribution from this image of the cell:
+                        coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
 
-         Erx_s(1,ian) = Erx_s(1,ian) + dpsi(1) ! repulsive part in X-coordinate
-         Erx_s(2,ian) = Erx_s(2,ian) + dpsi(2) ! repulsive part in Y-coordinate
-         Erx_s(3,ian) = Erx_s(3,ian) + dpsi(3) ! repulsive part in Z-coordinate
-      enddo ! i1
-      ! Add van der Waals force to already calculated other forces:
-      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)
-!       write(*,'(a,i3,es,es,es)') 'NEW', ian, Erx_s(:,ian)
-   enddo ! ian
+                        x1(1) = Xij(coun_cell,i1,j1)
+                        x1(2) = Yij(coun_cell,i1,j1)
+                        x1(3) = Zij(coun_cell,i1,j1)
+                        a_r = A_rij(coun_cell,i1,j1) ! shortest distance
+
+                        b = Bij(coun_cell,i1,j1) ! dvdW(TB_Coul(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),a_r)
+
+                        ddlta = dble(dik - djk)/a_r
+                        b_delta = b*ddlta
+                        dpsi(1) = dpsi(1) + b_delta*x1(1) ! X, Eq.(F21), H.Jeschke PhD Thesis
+                        dpsi(2) = dpsi(2) + b_delta*x1(2) ! Y, Eq.(F21), H.Jeschke PhD Thesis
+                        dpsi(3) = dpsi(3) + b_delta*x1(3) ! Z, Eq.(F21), H.Jeschke PhD Thesis
+                     endif cell_if
+                     !endif cos_if
+                  enddo ! j1
+                  Erx_s(1,ian) = Erx_s(1,ian) + dpsi(1) ! repulsive part in X-coordinate
+                  Erx_s(2,ian) = Erx_s(2,ian) + dpsi(2) ! repulsive part in Y-coordinate
+                  Erx_s(3,ian) = Erx_s(3,ian) + dpsi(3) ! repulsive part in Z-coordinate
+               enddo ! i1
+               ! Add van der Waals force to already calculated other forces:
+               Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)*0.5d0
+            enddo ! ian
+         enddo ZC2
+      enddo YC2
+   enddo XC2
    !$omp end do
    !$omp end parallel
 
@@ -2532,15 +2525,16 @@ subroutine d_Forces_Pressure(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zi
       n = size(atoms)
 
       PForce = 0.0d0 ! to start with
-      do i = 1, n ! Forces from all atoms
-         Rep_Pr = 0.0d0 ! to start
-         dpsy = 0.0d0
-         do j = 1, n ! do for all pairs of atoms
-            XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
-               YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
-                  ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
-                     zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
-                     origin_cell = ALL(zb==0) ! if it is the origin cell
+      XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
+         YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+            ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+               zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+               origin_cell = ALL(zb==0) ! if it is the origin cell
+               do i = 1, n ! Forces from all atoms
+                  Rep_Pr = 0.0d0 ! to start
+                  dpsy = 0.0d0
+                  do j = 1, n ! do for all pairs of atoms
+
                      cell_if:if ((j /= i) .or. (.not.origin_cell)) then ! exclude self-interaction within original super cell
                         ! contribution from this image of the cell:
                         coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
@@ -2552,7 +2546,7 @@ subroutine d_Forces_Pressure(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zi
                         scur(2) = SYij(coun_cell,i,j) ! SY
                         scur(3) = SZij(coun_cell,i,j) ! SZ
                         r = A_rij(coun_cell,i,j)     ! R
-                        dpsy = Bij(coun_cell,i,j)    ! dvdW(TB_Coul(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),A_rij(coun_cell,i1,j1))
+                        dpsy = Bij(coun_cell,i,j)    ! dvdW(TB_Coul(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),r)
 
                         do k = 1,3 ! supce indices: a,b,c
                            do l = 1,3  ! supce indices: x,y,z
@@ -2560,20 +2554,19 @@ subroutine d_Forces_Pressure(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zi
                            enddo ! l
                         enddo ! k
                      endif cell_if
-                  enddo ZC2
-               enddo YC2
-            enddo XC2
-         enddo ! j
+                  enddo ! j
 
-         do k = 1,3 ! supce indices
-            do l = 1,3  ! supce indices
-               !Scell(NSC)%SCforce%rep(l,k) = Scell(NSC)%SCforce%rep(l,k) + Rep_Pr(l,k) !*0.5d0
-               PForce(l,k) = PForce(l,k) + Rep_Pr(l,k)
-            enddo ! l
-         enddo ! k
-      enddo ! i
+                  do k = 1,3 ! supce indices
+                     do l = 1,3  ! supce indices
+                        !Scell(NSC)%SCforce%rep(l,k) = Scell(NSC)%SCforce%rep(l,k) + Rep_Pr(l,k) !*0.5d0
+                        PForce(l,k) = PForce(l,k) + Rep_Pr(l,k)
+                     enddo ! l
+                  enddo ! k
+               enddo ! i
+            enddo ZC2
+         enddo YC2
+      enddo XC2
       Scell(NSC)%SCforce%rep = Scell(NSC)%SCforce%rep + PForce ! add vdW part to existing TB part
-!       print*, 'NEW P', PForce
    endif
 end subroutine d_Forces_Pressure
 
@@ -2675,7 +2668,7 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
          
          Scell(NSC)%nrg%E_rep = Erepuls ! [eV]
          
-         ! van der Waals potential energy:
+         ! van der Waals (vdW) potential energy:
          Scell(NSC)%nrg%E_vdW = vdW_s(Scell(NSC)%TB_Waals, Scell, NSC, numpar) * Na_inv ! [eV/atom], function below
          
          ! Coulomb potential energy:
@@ -2738,13 +2731,17 @@ function vdW_s(TB_Waals, Scell, NSC, numpar)
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8) :: vdW_s ! van der Waals energy [eV]
    real(8) a
+
+   !print*, 'vdW_s', allocated(TB_Waals)
+   !pause
+
    if (allocated(TB_Waals)) then ! if we have vdW potential defined
-      select type(TB_Waals)
-      type is (TB_vdW_Girifalco)
+!       select type(TB_Waals)
+!       type is (TB_vdW_Girifalco)
          call get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! van der Waals energy, module "Van_der_Waals"
-      type is (TB_vdW_Dumitrica) ! UNFINISHED! DO NOT USE!
-         call get_vdW_s_D(TB_Waals, Scell, NSC, numpar, a)   ! van der Waals energy, module "Van_der_Waals"
-      end select
+!       type is (TB_vdW_Dumitrica) ! UNFINISHED! DO NOT USE!
+!          call get_vdW_s_D(TB_Waals, Scell, NSC, numpar, a)   ! van der Waals energy, module "Van_der_Waals"
+!       end select
    else !For this material vdW class is undefined
       a = 0.0d0 ! no energy for no potential
    endif
@@ -3415,32 +3412,37 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    END ASSOCIATE
 
    ! Other contributions to forces/pressure:
-   ! van der Waals part with TB Hamiltonian:
+   ! van der Waals (vdW) part with TB Hamiltonian:
    if (allocated(Scell(NSC)%TB_Waals)) then ! if we have vdW potential defined
-      ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Waals(:,:))
-      select type (ARRAY2)
-      type is (TB_vdW_Girifalco) ! so far, it is the only type we have
+!       ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Waals(:,:))
+!       select type (ARRAY2)
+!       type is (TB_vdW_Girifalco)
          ! Get multipliers used many times into temporary arrays:
-         call Construct_B(ARRAY2, Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
+         call Construct_B(Scell(NSC)%TB_Waals, Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
          ! Forces for the super-cell:
-         call  d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
-         if (allocated(Bij))   deallocate(Bij)
-         if (allocated(A_rij)) deallocate(A_rij)
-         if (allocated(Xij))   deallocate(Xij)
-         if (allocated(Yij))   deallocate(Yij)
-         if (allocated(Zij))   deallocate(Zij)
-         if (allocated(SXij))  deallocate(SXij)
-         if (allocated(SYij))  deallocate(SYij)
-         if (allocated(SZij))  deallocate(SZij)
-         if (allocated(XijSupce))   deallocate(XijSupce)
-         if (allocated(YijSupce))   deallocate(YijSupce)
-         if (allocated(ZijSupce))   deallocate(ZijSupce)
-      end select
-      END ASSOCIATE
+         call d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
+!       type is (TB_vdW_LJ_cut)
+!          ! Get multipliers used many times into temporary arrays:
+!          call Construct_B(Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
+!          ! Forces for the super-cell:
+!          call  d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
+!       end select
+!       END ASSOCIATE
+      if (allocated(Bij))   deallocate(Bij)
+      if (allocated(A_rij)) deallocate(A_rij)
+      if (allocated(Xij))   deallocate(Xij)
+      if (allocated(Yij))   deallocate(Yij)
+      if (allocated(Zij))   deallocate(Zij)
+      if (allocated(SXij))  deallocate(SXij)
+      if (allocated(SYij))  deallocate(SYij)
+      if (allocated(SZij))  deallocate(SZij)
+      if (allocated(XijSupce))   deallocate(XijSupce)
+      if (allocated(YijSupce))   deallocate(YijSupce)
+      if (allocated(ZijSupce))   deallocate(ZijSupce)
    endif
 
 
-   if (allocated(Scell(NSC)%TB_Coul)) then ! if we have vdW potential defined
+   if (allocated(Scell(NSC)%TB_Coul)) then ! if we have Coulomb potential defined
       ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Coul(:,:))
       select type (ARRAY2)
       type is (TB_Coulomb_cut) ! so far, it is the only type we have
@@ -3463,7 +3465,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    endif
 
    ! Exponential wall potential part:
-   if (allocated(Scell(NSC)%TB_Expwall)) then ! if we have vdW potential defined
+   if (allocated(Scell(NSC)%TB_Expwall)) then ! if we have short-range potential defined
       ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Expwall)
       select type (ARRAY2)
       type is (TB_Exp_wall_simple)

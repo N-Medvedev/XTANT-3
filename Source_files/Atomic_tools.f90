@@ -348,14 +348,17 @@ subroutine get_near_neighbours(Scell, numpar, include_vdW, dm)
       endif
       
       if (present(include_vdW) .and. allocated(Scell(NSC)%TB_Waals)) then ! if we have vdW potential defined
-      !if (allocated(Scell(NSC)%TB_Waals)) then ! if we have vdW potential defined
-         ASSOCIATE (ARRAY => Scell(NSC)%TB_Waals(:,:)) ! van der Waals part
-            select type(ARRAY)
-            type is (TB_vdW_Girifalco)
-               r = maxval(ARRAY(:,:)%d_cut) ! [A] cut-off radius
-               if (rm < r(1)) rm = r(1)
-            end select
-         END ASSOCIATE
+!          ASSOCIATE (ARRAY => Scell(NSC)%TB_Waals(:,:)) ! van der Waals part
+!             select type(ARRAY)
+!             type is (TB_vdW_Girifalco)
+!                r = maxval(ARRAY(:,:)%d_cut) ! [A] cut-off radius
+!                if (rm < r(1)) rm = r(1)
+!             end select
+!          END ASSOCIATE
+         r = maxval(Scell(NSC)%TB_Waals(:,:)%d0_cut)
+         d = maxval(Scell(NSC)%TB_Waals(:,:)%dd_cut)
+         X = r(1) + 10.0d0*d(1)
+         if (rm < X) rm = X
       endif
       
       if (present(dm)) then
@@ -380,10 +383,11 @@ subroutine get_number_of_image_cells(Scell, NSC, atoms, R_cut, Nx, Ny, Nz)
    real(8) :: R
    
    ! Get the number of image cells in X-direction:
-   R = 0.0d0 ! just to start
-   zb = 0.0d0
+   !R = 0.0d0 ! just to start
    Nx = 0
-   do while (R < R_cut) ! do X-direction:
+   zb = (/1.0d0, 0.0d0, 0.0d0/)
+   call distance_to_given_cell(Scell, NSC, atoms, zb, 1, 1, R) ! module "Atomic_tools"
+   do while (R < 2.0d0*R_cut) ! do X-direction:
       Nx = Nx + 1 ! check next image of the super-cell in X-derection
       zb(1) = dble(Nx) ! create a vector of super-cell image numbers
       ! Check whether the distance is without cut-off or not (chech for atom #1 distance to its own image),
@@ -392,10 +396,11 @@ subroutine get_number_of_image_cells(Scell, NSC, atoms, R_cut, Nx, Ny, Nz)
    enddo
    
    ! Get the number of image cells in Y-direction:
-   R = 0.0d0 ! just to start
-   zb = 0.0d0
+   !R = 0.0d0 ! just to start
    Ny = 0
-   do while (R < R_cut) ! do Y-direction:
+   zb = (/0.0d0, 1.0d0, 0.0d0/)
+   call distance_to_given_cell(Scell, NSC, atoms, zb, 1, 1, R) ! module "Atomic_tools"
+   do while (R < 2.0d0*R_cut) ! do Y-direction:
       Ny = Ny + 1 ! check next image of the super-cell in Y-derection
       zb(2) = dble(Ny) ! create a vector of super-cell image numbers
       ! Check whether the distance is without cut-off or not (chech for atom #1 distance to its own image),
@@ -404,10 +409,11 @@ subroutine get_number_of_image_cells(Scell, NSC, atoms, R_cut, Nx, Ny, Nz)
    enddo
    
    ! Get the number of image cells in Z-direction:
-   R = 0.0d0 ! just to start
-   zb = 0.0d0
+   !R = 0.0d0 ! just to start
    Nz = 0
-   do while (R < R_cut) ! do Z-direction:
+   zb = (/0.0d0, 0.0d0, 1.0d0/)
+   call distance_to_given_cell(Scell, NSC, atoms, zb, 1, 1, R) ! module "Atomic_tools"
+   do while (R < 2.0d0*R_cut) ! do Z-direction:
       Nz = Nz + 1 ! check next image of the super-cell in Z-derection
       zb(3) = dble(Nz) ! create a vector of super-cell image numbers
       ! Check whether the distance is without cut-off or not (chech for atom #1 distance to its own image),

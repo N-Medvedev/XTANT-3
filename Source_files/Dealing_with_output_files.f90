@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 30.06.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 02.07.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -735,7 +735,7 @@ subroutine write_energies(FN, time, nrg)
    real(8), intent(in) :: time	! [fs]
    type(Energies), intent(in) :: nrg
 
-   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, &
+   write(FN, '(es25.16, es25.16, es25.16, es26.16E4, es25.16, es25.16, es25.16, es25.16, es26.16E4, 1X, es25.16E4)') time, &
    nrg%E_tot, &   ! Band energy
    nrg%Eh_tot, &  ! Energy of holes
    nrg%At_pot + nrg%E_vdW + nrg%E_coul_scc + nrg%E_coul + nrg%E_expwall, & ! potential energy (incl. short-range, vdW, Coulomb, etc.)
@@ -3400,7 +3400,14 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
       
       if (allocated(Scell(1)%TB_Waals)) then ! if we have vdW potential defined
-         write(print_to,'(a,a)') ' van der Waals energy: ', trim(adjustl(Scell(1)%TB_Waals(1,1)%Param))
+         ! Find (first awailable) name of vdW parameterization:
+         VDWP:do i = 1, size(Scell(1)%TB_Waals,1)
+            do j = 1, size(Scell(1)%TB_Waals,2)
+               text1 = trim(adjustl(Scell(1)%TB_Waals(i,j)%Param))
+               if (LEN(trim(adjustl(text1))) > 0) exit VDWP ! found some name
+            enddo
+         enddo VDWP
+         write(print_to,'(a,a)') ' van der Waals energy: ', trim(adjustl(text1))
       else !For this material vdW class is undefined
          write(print_to,'(a,a)') ' No van der Waals potential was defined'
       endif

@@ -1668,13 +1668,36 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             case ('Girifalco')
                if (.not.allocated(TB_Waals)) then
                   allocate(TB_vdW_Girifalco::TB_Waals(matter%N_KAO,matter%N_KAO)) ! make it for Girifalco parametrization
+                  ! Default values:
                   TB_Waals%Param = ''
+                  TB_Waals%d0_cut = 0.0d0
+                  TB_Waals%dd_cut = 0.0d0
+               endif
+               TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
+            case('LJ', 'Lennar-Jones', 'Lennard_Jones', 'lj', 'Lj', 'LENNARD-JONES', 'LENNARD_JONES', 'lennard-jones', 'lennard_jones')
+               if (.not.allocated(TB_Waals)) then
+                  allocate(TB_vdW_LJ_cut::TB_Waals(matter%N_KAO,matter%N_KAO)) ! make it for LJ parametrization
+                  ! Default values:
+                  TB_Waals%Param = ''
+                  TB_Waals%d0_cut = 0.0d0
+                  TB_Waals%dd_cut = 0.0d0
+                  select type (TB_Waals)
+                  type is (TB_vdW_LJ_cut)
+                     TB_Waals%eps = 0.0d0
+                     TB_Waals%r0 = 0.0d0
+                     TB_Waals%n = 1.0d0
+                     TB_Waals%d0_short = 0.0d0
+                     TB_Waals%dd_short = 0.0d0
+                  end select
                endif
                TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
             case ('Dumitrica') ! UNFINISHED, DO NOT USE
                if (.not.allocated(TB_Waals)) then
                   allocate(TB_vdW_Dumitrica::TB_Waals(matter%N_KAO,matter%N_KAO)) ! make it for Dumitrica parametrization
+                  ! Default values:
                   TB_Waals%Param = ''
+                  TB_Waals%d0_cut = 0.0d0
+                  TB_Waals%dd_cut = 0.0d0
                endif
                TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
             case default
@@ -1693,18 +1716,33 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             select type (TB_Waals)
             type is (TB_vdW_Girifalco)
                Error_descript = ''
-               !call read_Pettifor_TB_repulsive(FN, numpar%El_num_ij(i,j), TB_Repuls, Error_descript, INFO)
-               call read_vdW_Girifalco_TB(FN, i,j, TB_Waals, Error_descript, INFO)
+               call read_vdW_Girifalco_TB(FN, i,j, TB_Waals, Error_descript, INFO)  ! below
                if (INFO .NE. 0) then
                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
                   call Save_error_details(Err, INFO, Err%Err_descript)
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3422
                endif
+               ! Set default values:
+               TB_Waals(i,j)%d0_cut = TB_Waals(i,j)%d_cut   ! long-range cutoff radius [A]
+               TB_Waals(i,j)%dd_cut = 0.0d0  ! long-range cutoff width [A]
+            type is (TB_vdW_LJ_cut)
+               Error_descript = ''
+               call read_vdW_LJ_TB(FN, i,j, TB_Waals, Error_descript, INFO)   ! below
+               if (INFO .NE. 0) then
+                  Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name))
+                  call Save_error_details(Err, INFO, Err%Err_descript)
+                  print*, trim(adjustl(Err%Err_descript))
+                  goto 3422
+               endif
+               if (numpar%verbose) print*, 'vdW minimum: ', TB_Waals(i,j)%eps, TB_Waals(i,j)%r0
+
             type is (TB_vdW_Dumitrica) ! UNFINISHED, DO NOT USE
                Error_descript = ''
-               !call read_Pettifor_TB_repulsive(FN, numpar%El_num_ij(i,j), TB_Repuls, Error_descript, INFO)
-               call read_vdW_Dumitrica_TB(FN, i,j, TB_Waals, Error_descript, INFO)
+               ! Set default values:
+               TB_Waals(i,j)%d0_cut = 0.0d0   ! long-range cutoff radius [A]
+               TB_Waals(i,j)%dd_cut = 0.0d0  ! long-range cutoff width [A]
+               call read_vdW_Dumitrica_TB(FN, i,j, TB_Waals, Error_descript, INFO)  ! below
                if (INFO .NE. 0) then
                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
                   call Save_error_details(Err, INFO, Err%Err_descript)
@@ -2297,6 +2335,78 @@ subroutine read_vdW_Girifalco_TB(FN, i,j, TB_Waals, Error_descript, INFO)
 
 3423 continue
 end subroutine read_vdW_Girifalco_TB
+
+
+subroutine read_vdW_LJ_TB(FN, i,j, TB_Waals, Error_descript, INFO)
+   integer, intent(in) :: FN ! file number where to read from
+   integer, intent(in) :: i, j ! numbers of pair of elements for which we read the data
+   type(TB_vdW_LJ_cut), dimension(:,:), intent(inout) ::  TB_Waals ! parameters of the Hamiltonian of TB
+   character(*), intent(out) :: Error_descript	! error save
+   integer, intent(out) :: INFO  ! error description
+   !---------------------------
+   character(20) :: LJ_type
+   real(8) :: A, B, n
+   integer count_lines, Reason
+   logical read_well
+   count_lines = 1
+
+   ! Form of LJ:
+   read(FN,*,IOSTAT=Reason) LJ_type
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      goto 3430
+   endif
+
+   ! LJ coefficients:
+   read(FN,*,IOSTAT=Reason) A, B, n
+   if (Reason /= 0) then   ! try to read two coefficients
+      read(FN,*,IOSTAT=Reason) A, B
+      n = 6.0d0 ! default value
+   endif
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      goto 3430
+   endif
+
+   ! Various forms of LJ potential are supported
+   ! https://en.wikipedia.org/wiki/Lennard-Jones_potential
+   select case (trim(adjustl(LJ_type)))
+   case ('SE', 'Se', 'se', 'sE', 'Segma-E', 'sigma-e', 'SIGMA-E') ! Sigma-epsylon form
+      TB_Waals(i,j)%eps = B**2/(4.0d0*A)        ! [eV] prefactor
+      TB_Waals(i,j)%r0  = (A/B)**(1.0d0/6.0d0)  ! [A] radius
+   case ('AB', 'Ab', 'ab', 'aB') ! AB form
+      TB_Waals(i,j)%eps = A/8.0d0         ! [eV] prefactor
+      TB_Waals(i,j)%r0  = sqrt(2.0d0)*B   ! [A] radius
+   case ('n-exp', 'N-exp', 'N-Exp', 'N-EXP') ! n-exp form
+      TB_Waals(i,j)%eps = A   ! [eV] prefactor
+      TB_Waals(i,j)%r0  = B   ! [A] radius
+   end select
+   TB_Waals(i,j)%n   = n   ! power
+
+   ! Short-range cutoff parameters:
+   read(FN,*,IOSTAT=Reason) TB_Waals(i,j)%d0_short, TB_Waals(i,j)%dd_short ! [A] cutoff radiues, [A] cutoff width
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      goto 3430
+   endif
+
+   ! Long-range cutoff parameters:
+   read(FN,*,IOSTAT=Reason) TB_Waals(i,j)%d0_cut, TB_Waals(i,j)%dd_cut ! [A] cutoff radiues, [A] cutoff width
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      goto 3430
+   endif
+
+3430 continue
+end subroutine read_vdW_LJ_TB
 
 
 subroutine read_vdW_Dumitrica_TB(FN, i,j, TB_Waals, Error_descript, INFO)
