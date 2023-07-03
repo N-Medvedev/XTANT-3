@@ -2376,11 +2376,11 @@ subroutine read_vdW_LJ_TB(FN, i,j, TB_Waals, Error_descript, INFO)
    ! https://en.wikipedia.org/wiki/Lennard-Jones_potential
    select case (trim(adjustl(LJ_type)))
    case ('SE', 'Se', 'se', 'sE', 'Segma-E', 'sigma-e', 'SIGMA-E') ! Sigma-epsylon form
-      TB_Waals(i,j)%eps = B**2/(4.0d0*A)        ! [eV] prefactor
-      TB_Waals(i,j)%r0  = (A/B)**(1.0d0/6.0d0)  ! [A] radius
-   case ('AB', 'Ab', 'ab', 'aB') ! AB form
       TB_Waals(i,j)%eps = A/8.0d0         ! [eV] prefactor
       TB_Waals(i,j)%r0  = sqrt(2.0d0)*B   ! [A] radius
+   case ('AB', 'Ab', 'ab', 'aB') ! AB form
+      TB_Waals(i,j)%eps = B**2/(4.0d0*A)        ! [eV] prefactor
+      TB_Waals(i,j)%r0  = (A/B)**(1.0d0/6.0d0)  ! [A] radius
    case ('n-exp', 'N-exp', 'N-Exp', 'N-EXP') ! n-exp form
       TB_Waals(i,j)%eps = A   ! [eV] prefactor
       TB_Waals(i,j)%r0  = B   ! [A] radius
