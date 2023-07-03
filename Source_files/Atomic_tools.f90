@@ -40,14 +40,14 @@ interface shortest_distance
 end interface shortest_distance
 
 
-public :: define_subcells, Maxwell_int_shifted, Coordinates_rel_to_abs, velocities_abs_to_rel, make_time_step_supercell, shortest_distance, &
+public :: define_subcells, Maxwell_int_shifted, Coordinates_rel_to_abs, velocities_abs_to_rel, make_time_step_supercell, &
 get_energy_from_temperature, distance_to_given_cell, make_time_step_atoms, Rescale_atomic_velocities, save_last_timestep, &
 get_interplane_indices, get_near_neighbours, get_number_of_image_cells, pair_correlation_function, get_fraction_of_given_sort, &
 Reciproc_rel_to_abs, total_forces, Potential_super_cell_forces, super_cell_forces, Convert_reciproc_rel_to_abs, get_kinetic_energy_abs, &
 get_mean_square_displacement, Cooling_atoms, Coordinates_abs_to_rel, get_Ekin, make_time_step_supercell_Y4, make_time_step_atoms_M, &
 remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_atoms_Y4, check_periodic_boundaries, &
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
-Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity
+Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance
 
 
 !=======================================
@@ -348,13 +348,6 @@ subroutine get_near_neighbours(Scell, numpar, include_vdW, dm)
       endif
       
       if (present(include_vdW) .and. allocated(Scell(NSC)%TB_Waals)) then ! if we have vdW potential defined
-!          ASSOCIATE (ARRAY => Scell(NSC)%TB_Waals(:,:)) ! van der Waals part
-!             select type(ARRAY)
-!             type is (TB_vdW_Girifalco)
-!                r = maxval(ARRAY(:,:)%d_cut) ! [A] cut-off radius
-!                if (rm < r(1)) rm = r(1)
-!             end select
-!          END ASSOCIATE
          r = maxval(Scell(NSC)%TB_Waals(:,:)%d0_cut)
          d = maxval(Scell(NSC)%TB_Waals(:,:)%dd_cut)
          X = r(1) + 10.0d0*d(1)
@@ -2230,7 +2223,6 @@ end subroutine deflect_velosity
 
 
 
-
 subroutine shortest_distance_NEW(Scell, i1, j1, a_r, x1, y1, z1, sx1, sy1, sz1, cell_x, cell_y, cell_z)
    type(Super_cell), intent(in), target :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: i1, j1 ! atomic numbers
@@ -2482,6 +2474,13 @@ subroutine Find_nearest_neighbours(Scell, rm, numpar)
          do j1=1, n
              if (j1 .NE. i1) then
                 call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r, x1=x, y1=y, z1=z, sx1=sx, sy1=sy, sz1=sz)
+
+!                 Testing:
+!                 call shortest_distance_slow(Scell(NSC), i1, j1, a_r, x1=x, y1=y, z1=z, sx1=sx, sy1=sy, sz1=sz)
+!                 print*, 'OLD:', a_r, x, y, z, sx, sy, sz
+!                 call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r, x1=x, y1=y, z1=z, sx1=sx, sy1=sy, sz1=sz)
+!                 print*, 'NEW:', a_r, x, y, z, sx, sy, sz
+
 !                 if (a_r .LE. rm) then   ! this atoms do interact:
                 if (a_r < rm) then   ! this atoms do interact:
                    coun = coun + 1

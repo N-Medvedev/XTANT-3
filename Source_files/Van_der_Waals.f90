@@ -60,7 +60,7 @@ end subroutine test_vdW
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Girifalco type of van der Waals forces:
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
+!
 subroutine get_vdW_interlayer(TB_Waals, Scell, NSC, matter, numpar, a)   ! vdW energy
 ! This subroutine is only used for comparison of the interlayer vdW energy with other works
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
@@ -115,6 +115,15 @@ subroutine get_mirror_cell_num(Scell, NSC, numpar, atoms, Nx, Ny, Nz)
    call get_near_neighbours(Scell, numpar, include_vdW=.true., dm=R_cut) ! module "Atomic_tools"
    
    call get_number_of_image_cells(Scell, NSC, atoms, R_cut, Nx, Ny, Nz) ! module "Atomic_tools"
+
+   ! It has to be at least one image cell:
+   if (Nx < 1) Nx = 1
+   if (Ny < 1) Ny = 1
+   if (Nz < 1) Nz = 1
+!    !Test
+!    Nx = 0
+!    Ny = 0
+!    Nz = 0
 end subroutine get_mirror_cell_num
 
 
@@ -137,12 +146,11 @@ subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
    call get_mirror_cell_num(Scell, NSC, numpar, Scell(NSC)%MDatoms, Nx, Ny, Nz) ! subroutine above
    
    sum_a = 0.0d0
-   !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell, V_vdW)
+   !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell) shared(NSC)
    !$omp do reduction( + : sum_a)
    XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
       YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
          ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
-            !zb = (/dble(Nx),dble(Ny),dble(Nx)/) ! vector of image of the super-cell
             zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
             origin_cell = ALL(zb==0) ! if it is the origin cell
             do i1 = 1, Scell(NSC)%Na ! all atoms
@@ -151,8 +159,7 @@ subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
                      !call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
                      call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
                      !sum_a = sum_a + vdW_Girifalco(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
-                     V_vdW = vdW_energy(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
-                     sum_a = sum_a + V_vdW
+                     sum_a = sum_a + vdW_energy(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
                   endif ! (j1 .NE. i1)
                enddo ! j1
             enddo ! i1
@@ -181,8 +188,6 @@ subroutine Construct_B(TB_Waals, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupce
    real(8) :: x, y, z, sx, sy, sz
    integer :: x_cell, y_cell, z_cell, coun_cell
    integer :: i1, j1, n
-   integer, DIMENSION(3) :: zb
-   logical :: origin_cell
 
    n = size(atoms) ! total number of atoms
 
@@ -191,28 +196,38 @@ subroutine Construct_B(TB_Waals, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupce
 
    coun_cell = (2*Nx+1)*(2*Ny+1)*(2*Nz+1) ! total number of image cells
 
-   if (.not.allocated(Bij))   allocate(Bij(coun_cell,n,n))
-   if (.not.allocated(A_rij)) allocate(A_rij(coun_cell,n,n))
-   if (.not.allocated(Xij))   allocate(Xij(coun_cell,n,n))
-   if (.not.allocated(Yij))   allocate(Yij(coun_cell,n,n))
-   if (.not.allocated(Zij))   allocate(Zij(coun_cell,n,n))
-   if (.not.allocated(SXij))   allocate(SXij(coun_cell,n,n))
-   if (.not.allocated(SYij))   allocate(SYij(coun_cell,n,n))
-   if (.not.allocated(SZij))   allocate(SZij(coun_cell,n,n))
-   if (.not.allocated(XijSupce))   allocate(XijSupce(coun_cell,n,n))
-   if (.not.allocated(YijSupce))   allocate(YijSupce(coun_cell,n,n))
-   if (.not.allocated(ZijSupce))   allocate(ZijSupce(coun_cell,n,n))
-   Bij = 0.0d0
-   A_rij = 1.0d30
-   Xij = 0.0d0
-   Yij = 0.0d0
-   Zij = 0.0d0
-   SXij = 0.0d0
-   SYij = 0.0d0
-   SZij = 0.0d0
-   XijSupce = 0.0d0
-   YijSupce = 0.0d0
-   ZijSupce = 0.0d0
+   if (.not.allocated(Bij))   allocate(Bij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(A_rij)) allocate(A_rij(coun_cell,n,n), source=1.0d30)
+   if (.not.allocated(Xij))   allocate(Xij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(Yij))   allocate(Yij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(Zij))   allocate(Zij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(SXij))   allocate(SXij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(SYij))   allocate(SYij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(SZij))   allocate(SZij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(XijSupce))   allocate(XijSupce(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(YijSupce))   allocate(YijSupce(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(ZijSupce))   allocate(ZijSupce(coun_cell,n,n), source=0.0d0)
+
+   ! Fill the arrays that were already allocated:
+   call cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n) ! below
+
+end subroutine Construct_B
+
+
+subroutine cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n)
+   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   class(TB_vdW), dimension(:,:), allocatable, intent(in) :: TB_Waals ! van der Waals parameters within TB
+   real(8), dimension(:,:,:), intent(inout) :: Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij
+   integer, intent(in) :: Nx, Ny, Nz ! number of super-cell images to consider
+   integer, intent(in) :: n ! number of atoms
+   !-------------------------
+   real(8) :: x, y, z, sx, sy, sz
+   integer :: x_cell, y_cell, z_cell, coun_cell
+   integer :: i1, j1
+   integer, dimension(3) :: zb
+   logical :: origin_cell
+
 
    !$omp PARALLEL private(i1,j1,x,y,z,sx,sy,sz,x_cell,y_cell,z_cell,zb,origin_cell,coun_cell)
    !$omp do
@@ -238,9 +253,6 @@ subroutine Construct_B(TB_Waals, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupce
                      XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
                      YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
                      ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
-                     !XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(2,1) + z*Scell(NSC)%supce(3,1)
-                     !YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,2) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(3,2)
-                     !ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,3) + y*Scell(NSC)%supce(2,3) + z*Scell(NSC)%supce(3,3)
 
                      Bij(coun_cell,i1,j1) = dvdW(TB_Waals, Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA, A_rij(coun_cell,i1,j1)) ! below
                   else ! No self-interaction
@@ -257,8 +269,7 @@ subroutine Construct_B(TB_Waals, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupce
    enddo XC
    !$omp end do
    !$omp end parallel
-
-end subroutine Construct_B
+end subroutine cell_cycle_B
 
 
 

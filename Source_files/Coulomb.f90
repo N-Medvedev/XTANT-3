@@ -218,6 +218,10 @@ subroutine get_mirror_cell_num_C(Scell, NSC, TB_Coul, atoms, Nx, Ny, Nz)
    R_cut = TB_Coul(1,1)%dm ! [A] cut-off distance
    call get_number_of_image_cells(Scell, NSC, atoms, R_cut, Nx, Ny, Nz) ! module "Atomic_tools"
 
+   ! It has to be at least one image cell:
+   if (Nx < 1) Nx = 1
+   if (Ny < 1) Ny = 1
+   if (Nz < 1) Nz = 1
 end subroutine get_mirror_cell_num_C
 
 
@@ -446,9 +450,7 @@ subroutine Construct_B_C(TB_Coul, Scell, NSC, atoms, Bij, A_rij, XijSupce, YijSu
                         SXij(coun_cell,i1,j1) = sx
                         SYij(coun_cell,i1,j1) = sy
                         SZij(coun_cell,i1,j1) = sz
-!                         XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
-!                         YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
-!                         ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
+
                         XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(2,1) + z*Scell(NSC)%supce(3,1)
                         YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,2) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(3,2)
                         ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,3) + y*Scell(NSC)%supce(2,3) + z*Scell(NSC)%supce(3,3)

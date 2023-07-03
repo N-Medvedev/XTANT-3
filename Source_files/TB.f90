@@ -2442,31 +2442,30 @@ subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, 
    real(8), dimension(:,:), allocatable :: Erx_s
    logical :: origin_cell
    n = size(atoms) ! total number of atoms
-   allocate(Erx_s(3,n)) ! x,y,z-forces for each atoms
-   Erx_s = 0.0d0
+   allocate(Erx_s(3,n), source = 0.0d0) ! x,y,z-forces for each atoms
 
    !$omp PARALLEL private(i1,j1,ian,dik,djk,dpsi,x1,b,a_r,ddlta,b_delta, x_cell, y_cell, z_cell, coun_cell, zb, origin_cell)
    !$omp DO
-   XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
-      YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
-         ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
-            zb = (/x_cell, y_cell, z_cell/) ! vector of image of the super-cell
-            origin_cell = ALL(zb==0) ! if it is the origin cell
-            do ian = 1, n  ! Forces for all atoms
-               !Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
-               do i1 = 1, n ! contribution from all atoms
-                  if (ian == i1) then
-                     dik = 1
-                  else
-                     dik = 0
-                  endif
-                  dpsi = 0.0d0
-                  do j1 = 1,n ! for each pair of atoms
-                     if (ian == j1) then
-                        djk = 1
-                     else
-                        djk = 0
-                     endif
+   do ian = 1, n  ! Forces for all atoms
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
+      do i1 = 1, n ! contribution from all atoms
+         if (ian == i1) then
+            dik = 1
+         else
+            dik = 0
+         endif
+         dpsi = 0.0d0
+         do j1 = 1,n ! for each pair of atoms
+            if (ian == j1) then
+               djk = 1
+            else
+               djk = 0
+            endif
+            XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
+               YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+                  ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+                     zb = (/x_cell, y_cell, z_cell/) ! vector of image of the super-cell
+                     origin_cell = ALL(zb==0) ! if it is the origin cell
 
                      !cos_if:if ((dik-djk) /= 0) then ! without it, it gives ERROR
                      cell_if:if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
@@ -2487,17 +2486,18 @@ subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, 
                         dpsi(3) = dpsi(3) + b_delta*x1(3) ! Z, Eq.(F21), H.Jeschke PhD Thesis
                      endif cell_if
                      !endif cos_if
-                  enddo ! j1
-                  Erx_s(1,ian) = Erx_s(1,ian) + dpsi(1) ! repulsive part in X-coordinate
-                  Erx_s(2,ian) = Erx_s(2,ian) + dpsi(2) ! repulsive part in Y-coordinate
-                  Erx_s(3,ian) = Erx_s(3,ian) + dpsi(3) ! repulsive part in Z-coordinate
-               enddo ! i1
-               ! Add van der Waals force to already calculated other forces:
-               Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)*0.5d0
-            enddo ! ian
-         enddo ZC2
-      enddo YC2
-   enddo XC2
+                  enddo ZC2
+               enddo YC2
+            enddo XC2
+         enddo ! j1
+         !print*, allocated(Erx_s), size(Erx_s,2)
+         Erx_s(1,ian) = Erx_s(1,ian) + dpsi(1) ! repulsive part in X-coordinate
+         Erx_s(2,ian) = Erx_s(2,ian) + dpsi(2) ! repulsive part in Y-coordinate
+         Erx_s(3,ian) = Erx_s(3,ian) + dpsi(3) ! repulsive part in Z-coordinate
+      enddo ! i1
+      ! Add van der Waals force to already calculated other forces:
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)*0.5d0
+   enddo ! ian
    !$omp end do
    !$omp end parallel
 
@@ -2569,6 +2569,7 @@ subroutine d_Forces_Pressure(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zi
       Scell(NSC)%SCforce%rep = Scell(NSC)%SCforce%rep + PForce ! add vdW part to existing TB part
    endif
 end subroutine d_Forces_Pressure
+
 
 
 !-------------------------------------
