@@ -2362,6 +2362,7 @@ subroutine read_vdW_LJ_TB(FN, i,j, TB_Waals, Error_descript, INFO)
    ! LJ coefficients:
    read(FN,*,IOSTAT=Reason) A, B, n
    if (Reason /= 0) then   ! try to read two coefficients
+      backspace(FN)  ! to read the same line again
       read(FN,*,IOSTAT=Reason) A, B
       n = 6.0d0 ! default value
    endif
