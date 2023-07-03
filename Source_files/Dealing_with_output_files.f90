@@ -3126,6 +3126,25 @@ subroutine set_OMP_number(NOMP, prnt, FN, lin)
 end subroutine set_OMP_number
 
 
+
+subroutine pars_comunications_file(FN, i, out_line, out_num, Reason)
+   integer, intent(in) :: FN
+   integer, intent(inout) :: i
+   character(*), intent(out) :: out_line
+   real(8), intent(out) :: out_num
+   integer, intent(out) :: Reason
+   !---------------------------------
+   character(200) :: read_line
+   logical :: read_well
+   read_well = .false.
+   out_line = ''
+   out_num = 0.0d0
+
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   call pars_comunications(read_line, out_line, out_num, read_well)  ! below
+end subroutine pars_comunications_file
+
+
 subroutine pars_comunications(readline, out_line, out_num, read_well)
    character(*), intent(in) :: readline
    character(*), intent(out) :: out_line
@@ -3139,6 +3158,11 @@ subroutine pars_comunications(readline, out_line, out_num, read_well)
 
    i = 1    ! to start with
    read(readline, *, IOSTAT=Reason) out_line, out_num
+   !print*, 'Reason', Reason, out_line, out_num
+   if (Reason /= 0) then ! try again but with one variable
+      read(readline, *, IOSTAT=Reason) out_line
+      !print*, 'Reason2', Reason, out_line
+   endif
    call read_file(Reason, i, read_well)  ! module "Dealing_with_files"
    if (Reason .LT. 0) then
       print*, 'No descriptor or value found in the communication file'
@@ -3146,39 +3170,9 @@ subroutine pars_comunications(readline, out_line, out_num, read_well)
       print*, 'Given number interpreted as', out_num, ', it does not match the variable type'
    endif
    if (.not.read_well) then
-      print*, 'Comunication format must be as follows:'
-      print*, 'Two columns: 1) descriptor; 2) value'
-      print*, 'Allowed descriptors: Time; dt; Save_dt; OMP'
+      print*, 'Wrong format of input in Comunication, could not interpret.'
    endif
 end subroutine pars_comunications
-
-
-subroutine pars_comunications_file(FN, i, out_line, out_num, Reason)
-   integer, intent(in) :: FN
-   integer, intent(inout) :: i
-   character(*), intent(out) :: out_line
-   real(8), intent(out) :: out_num
-   integer, intent(out) :: Reason
-   !---------------------------------
-   logical :: read_well
-   read_well = .false.
-   out_line = ''
-   out_num = 0.0d0
-
-   read(FN, *, IOSTAT=Reason) out_line, out_num
-   if (Reason /= 0) then ! try again
-      backspace(FN)
-      read(FN, *, IOSTAT=Reason) out_line
-   endif
-   call read_file(Reason, i, read_well)  ! module "Dealing_with_files"
-   if (Reason /= 0) then
-      print*, 'Wrong format of input, could not interpret.'
-      !print*, 'Comunication format must be as follows:'
-      !print*, 'Two variables: 1) descriptor; 2) value'
-      !print*, '(Or one variable)'
-   endif
-end subroutine pars_comunications_file
-
 
 
 
