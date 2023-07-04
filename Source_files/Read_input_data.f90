@@ -2345,6 +2345,7 @@ subroutine read_vdW_LJ_TB(FN, i,j, TB_Waals, Error_descript, INFO)
    integer, intent(out) :: INFO  ! error description
    !---------------------------
    character(20) :: LJ_type
+   character(200) :: read_line
    real(8) :: A, B, n
    integer count_lines, Reason
    logical read_well
@@ -2360,10 +2361,13 @@ subroutine read_vdW_LJ_TB(FN, i,j, TB_Waals, Error_descript, INFO)
    endif
 
    ! LJ coefficients:
-   read(FN,*,IOSTAT=Reason) A, B, n
+   !read(FN,*,IOSTAT=Reason) A, B, n
+   read(FN,'(a)',IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) A, B, n   ! try to read it from the text line
    if (Reason /= 0) then   ! try to read two coefficients
-      backspace(FN)  ! to read the same line again
-      read(FN,*,IOSTAT=Reason) A, B
+      !backspace(FN)  ! to read the same line again
+      !read(FN,*,IOSTAT=Reason) A, B
+      read(read_line,*,IOSTAT=Reason) A, B   ! try to read it into only 2 variables
       n = 6.0d0 ! default value
    endif
    call read_file(Reason, count_lines, read_well)
@@ -4474,6 +4478,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       print*, trim(adjustl(Error_descript))
       goto 3418
    endif
+   if (numpar%NMC < 0) numpar%NMC = 0  ! by default, no MC
 
    ! number of threads for OPENMP:
    read(FN,*,IOSTAT=Reason) numpar%NOMP
@@ -4483,6 +4488,9 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
+   endif
+   if (numpar%NOMP < 1) then ! use default: maximum number of available threads
+      numpar%NOMP = omp_get_max_threads() ! number of processors available by default
    endif
    
    ! MD algorithm (0=Verlet, 2d order; 1=Yoshida, 4th order)

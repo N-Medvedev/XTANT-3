@@ -200,7 +200,7 @@ pure function ddija_drkb(i, j, k, alpha, beta, rija, rijb, rij)
    ! Delta-symbols:
    dik = Kronecker_delta(i,k) 	! module "Algebra_tools"
    djk = Kronecker_delta(j,k) 	! module "Algebra_tools"
-   dab= Kronecker_delta(alpha, beta)	! module "Algebra_tools"
+   dab = Kronecker_delta(alpha, beta)	! module "Algebra_tools"
    ddija_drkb = (dik - djk)/rij*(dab - rija*rijb/(rij*rij))
 end function ddija_drkb
 
@@ -291,6 +291,7 @@ end function coefs_dlmm
 
 ! Coefficients of S and T from Eqs.(24,25):
 pure subroutine coefs_S_T()
+   ! UNFINISHED
 end subroutine coefs_S_T
 
 
@@ -767,7 +768,7 @@ end function d_t_pz_d3z2_r2
 
 
 ! 15)
-pure function d_t_dab_dab(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dab_dab(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: l2, m2, l2m2, dl2m2
@@ -782,7 +783,7 @@ end function d_t_dab_dab
 
 
 ! 16)
-pure function d_t_dab_dbg(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dab_dbg(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: ln, m2, dm2, temp, temp1
@@ -800,7 +801,7 @@ end function d_t_dab_dbg
 
 
 ! 17)
-pure function d_t_dxy_dx2_y2(l, dl, m, dm, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dxy_dx2_y2(l, dl, m, dm, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: lm, l2m2
@@ -812,7 +813,7 @@ end function d_t_dxy_dx2_y2
 
 
 ! 18)
-pure function d_t_dyz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dyz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: mn, l2m2, dl2m2, temp, temp1
@@ -827,7 +828,7 @@ end function d_t_dyz_dx2_y2
 
 
 ! 19)
-pure function d_t_dxz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dxz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: ln, l2m2, dl2m2, temp, temp1
@@ -842,7 +843,7 @@ end function d_t_dxz_dx2_y2
 
 
 ! 20)
-pure function d_t_dxy_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dxy_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: lm, l2m2, n2, dl2m2, temp, temp1, dn2
@@ -859,7 +860,7 @@ end function d_t_dxy_d3z2_r2
 
 
 ! 21)
-pure function d_t_dyz_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dyz_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: mn, l2m2, n2, temp, temp1, dn2, dl2m2
@@ -877,7 +878,7 @@ end function d_t_dyz_d3z2_r2
 
 
 ! 22)
-pure function d_t_dxz_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dxz_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: ln, l2m2, n2, temp, temp1, dn2, dl2m2
@@ -895,7 +896,7 @@ end function d_t_dxz_d3z2_r2
 
 
 ! 23)
-pure function d_t_dx2_y2_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dx2_y2_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: l2m2, l2_m2, l2_m2_2, n2, dl2m2, dl2_m2_2, l2, m2, ldl, mdm, dn2
@@ -917,7 +918,7 @@ end function d_t_dx2_y2_dx2_y2
 
 
 ! 24)
-pure function d_t_dx2_y2_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dx2_y2_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: l2m2, l2_m2, n2, dn2, l2, m2, dl2, dm2, dl2m2, dl2_m2, temp, temp1
@@ -940,7 +941,7 @@ end function d_t_dx2_y2_d3z2_r2
 
 
 ! 25)
-pure function d_t_d3z2_r2_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_d3z2_r2_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: l2m2, dl2m2, n2, temp, dtemp, dn2
