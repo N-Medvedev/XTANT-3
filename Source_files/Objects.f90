@@ -343,15 +343,15 @@ type, EXTENDS (TB_vdW) :: TB_vdW_LJ_cut
 end type TB_vdW_LJ_cut
 
 
-type, EXTENDS (TB_vdW) :: TB_vdW_ILJ   ! unfinished
+type, EXTENDS (TB_vdW) :: TB_vdW_ILJ_cut
    ! Improved Lennard-Jones: https://www.mdpi.com/1420-3049/26/13/3906
-   ! V=eps*( m/(n-m)*(r0/r)^(n) + n/(n-m)*(r0/r)^m )
+   ! V=eps*( m/(n-m)*(r0/r)^(n) - n/(n-m)*(r0/r)^m )
    ! reducing to LJ for n=12, m=6
    real(8) :: eps    ! [eV*A^12] Lennard-Jones C12
    real(8) :: r0     ! [eV*A^6] Lennard-Jones C6
    real(8) :: n, m   ! powers
    real(8) :: d0_short, dd_short ! [A] [A] cutoff radius and width at short distances
-end type TB_vdW_ILJ
+end type TB_vdW_ILJ_cut
 
 
 

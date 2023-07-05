@@ -318,6 +318,9 @@ function dvdW(TB_Waals, KOA1, KOA2, a_r) result(dV)
    type is (TB_vdW_LJ_cut)
       dV = d_double_truncated_LJ(TB_Waals(KOA1,KOA2), a_r) ! below
 
+   type is (TB_vdW_ILJ_cut)
+      dV = d_ILJ(TB_Waals(KOA1,KOA2), a_r) ! below
+
    type is (TB_vdW_Dumitrica) ! UNFINISHED, DO NOT USE
       dV = 0.0d0
    end select
@@ -364,6 +367,47 @@ pure function d_double_truncated_LJ(TB_Waals, a_r) result(V)
 end function d_double_truncated_LJ
 
 
+
+
+pure function ILJ(TB_Waals, a_r) result(V)
+   real(8) V   ! [eV] potential
+   type(TB_vdW_ILJ_cut), intent(in) :: TB_Waals   ! LJ parameters
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
+   !----------------------------
+   real(8) :: V_LJ, f_short, f_long
+   ! Pure LJ potential:
+   V_LJ = Improved_LJ_potential(TB_Waals%eps, TB_Waals%r0, TB_Waals%n, TB_Waals%m, a_r) ! below
+   ! Long-range cutoff:
+   f_long = large_range_cutoff(TB_Waals%d0_cut, TB_Waals%dd_cut, a_r) ! below
+   ! Short-range cutoff:
+   f_short = short_range_cutoff(TB_Waals%d0_short, TB_Waals%dd_short, a_r) ! below
+   ! collect terms:
+   V = V_LJ * f_short * f_long   ! [eV]
+   !if ((f_short < 1.0d0) .and. (f_long < 1.0d0)) print*, a_r, V_LJ, f_short, f_long
+end function ILJ
+
+
+pure function d_ILJ(TB_Waals, a_r) result(V)
+   real(8) V   ! [eV] potential
+   type(TB_vdW_ILJ_cut), intent(in) :: TB_Waals   ! LJ parameters
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
+   !----------------------------
+   real(8) :: V_LJ, f_short, f_long, d_V_LJ, d_f_short, d_f_long
+   ! Pure LJ potential and its derivative:
+   V_LJ = Improved_LJ_potential(TB_Waals%eps, TB_Waals%r0, TB_Waals%n, TB_Waals%m, a_r) ! below
+   d_V_LJ = d_Improved_LJ_potential(TB_Waals%eps, TB_Waals%r0, TB_Waals%n, TB_Waals%m, a_r) ! below
+   ! Long-range cutoff and its derivative:
+   f_long = large_range_cutoff(TB_Waals%d0_cut, TB_Waals%dd_cut, a_r) ! below
+   d_f_long = d_large_range_cutoff(TB_Waals%d0_cut, TB_Waals%dd_cut, a_r) ! below
+   ! Short-range cutoff and its derivative:
+   f_short = short_range_cutoff(TB_Waals%d0_short, TB_Waals%dd_short, a_r) ! below
+   d_f_short = d_short_range_cutoff(TB_Waals%d0_short, TB_Waals%dd_short, a_r) ! below
+   ! collect terms:
+   V = V_LJ*(d_f_short*f_long + f_short*d_f_long) + d_V_LJ*(f_short*f_long)   ! [eV]
+end function d_ILJ
+
+
+
 pure function General_LJ_potential(eps, r0, n, r) result(V)
    real(8) :: V   ! LJ potential in Mie form
    real(8), intent(in) :: eps, r0, n   ! [eV], {A], [-] : potential minimum, position of minimum, power
@@ -394,6 +438,44 @@ pure function d_General_LJ_potential(eps, r0, n, r) result(V)
       V = 0.0d0
    endif
 end function d_General_LJ_potential
+
+
+
+pure function Improved_LJ_potential(eps, r0, n, m, r) result(V)
+   ! Improved Lennard-Jones: https://www.mdpi.com/1420-3049/26/13/3906
+   ! V=eps*( m/(n-m)*(r0/r)^(n) - n/(n-m)*(r0/r)^m )
+   ! reducing to LJ for n=12, m=6
+   real(8) :: V   ! LJ potential in Mie form
+   real(8), intent(in) :: eps, r0, n, m   ! [eV], {A], [-] : potential minimum, position of minimum, powers
+   real(8), intent(in) :: r   ! [A] interatomic distance
+   !------------------
+   real(8) :: r0r, n_m
+   if (r > 0.0d0) then
+      r0r = r0/r
+      n_m = n - m
+      V = eps * (m/n_m*r0r**n - n/n_m*r0r**m)
+   else
+      V = 0.0d0
+   endif
+end function Improved_LJ_potential
+
+
+pure function d_Improved_LJ_potential(eps, r0, n, m, r) result(V)
+   real(8) :: V   ! LJ potential in Mie form
+   real(8), intent(in) :: eps, r0, n, m  ! [eV], {A], [-] : potential minimum, position of minimum, powers
+   real(8), intent(in) :: r   ! [A] interatomic distance
+   !------------------
+   real(8) :: r0r, n_m
+   if (r > 0.0d0) then
+      r0r = r0/r
+      n_m = n - m
+      V = -eps*(r0r**n - r0r**m)*n*m/(n_m*r)
+   else
+      V = 0.0d0
+   endif
+end function d_Improved_LJ_potential
+
+
 
 
 pure function large_range_cutoff(d0, dd, r) result(fl)
