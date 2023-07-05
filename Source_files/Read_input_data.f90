@@ -1205,16 +1205,13 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
    
    do_first:do i = 1, matter%N_KAO
       do_second:do j = 1, matter%N_KAO
+
+         !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
          ! First read Hamiltonian (hopping integrals) parametrization:
          write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
          write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Hamiltonian_parameters.txt'
          inquire(file=trim(adjustl(File_name)),exist=file_exists)
-         !print*, trim(adjustl(File_name)), file_exists
-!          if (.not.file_exists) then ! try inverse combination of atoms in the file-name:
-!             write(ch_temp,'(a)') trim(adjustl(matter%Atoms(j)%Name))//'_'//trim(adjustl(matter%Atoms(i)%Name))//'_'
-!             write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Hamiltonian_parameters.txt'
-!             inquire(file=trim(adjustl(File_name)),exist=file_exists)
-!          endif
+
          if (.not.file_exists) then ! try general name used for multiple species at once:
             if (numpar%verbose) write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
             write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), 'TB_Hamiltonian_parameters.txt'
@@ -1223,7 +1220,6 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
          endif
          
          if (file_exists) then
-            !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             FN=106
             open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -1357,7 +1353,6 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             select type (TB_Hamil)
             type is (TB_H_Pettifor)
                Error_descript = ''
-               !call read_Pettifor_TB_Hamiltonian(FN, numpar%El_num_ij(i,j), TB_Hamil, Error_descript, INFO)
                call read_Pettifor_TB_Hamiltonian(FN, i,j, TB_Hamil, Error_descript, INFO)
                if (INFO .NE. 0) then
                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
@@ -1365,7 +1360,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
-!                print*, trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//' TB_Hamil ', TB_Hamil(i,j)
+
             type is (TB_H_Molteni)
                Error_descript = ''
                call read_Molteni_TB_Hamiltonian(FN, i,j, TB_Hamil, Error_descript, INFO)
@@ -1375,7 +1370,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
-!                print*, trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//' TB_Hamil ', TB_Hamil(i,j)
+
              type is (TB_H_Fu)
                Error_descript = ''
                !call read_Pettifor_TB_Hamiltonian(FN, numpar%El_num_ij(i,j), TB_Hamil, Error_descript, INFO)
@@ -1457,13 +1452,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
          write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
          write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Repulsive_parameters.txt'
          inquire(file=trim(adjustl(File_name)),exist=file_exists)
-!          print*, trim(adjustl(File_name)), file_exists
-!          if (.not.file_exists) then ! try inverse combination of atoms in the file-name:
-!             write(ch_temp,'(a)') trim(adjustl(matter%Atoms(j)%Name))//'_'//trim(adjustl(matter%Atoms(i)%Name))//'_'
-!             write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Repulsive_parameters.txt'
-!             inquire(file=trim(adjustl(File_name)),exist=file_exists)
-!             !print*, trim(adjustl(File_name)), file_exists
-!          endif
+
          if (.not.file_exists) then ! try general name used for multiple species at once:
 
             if (numpar%verbose) write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
@@ -1473,7 +1462,6 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
          endif
 
          if (file_exists) then
-            !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             FN=107
             open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -1640,7 +1628,6 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
          inquire(file=trim(adjustl(File_name)),exist=file_exists)
          
          if (file_exists) then
-            !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             FN=108
             open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -1674,6 +1661,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   TB_Waals%dd_cut = 0.0d0
                endif
                TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
+
             case('LJ', 'Lennar-Jones', 'Lennard_Jones', 'lj', 'Lj', 'LENNARD-JONES', 'LENNARD_JONES', 'lennard-jones', 'lennard_jones')
                if (.not.allocated(TB_Waals)) then
                   allocate(TB_vdW_LJ_cut::TB_Waals(matter%N_KAO,matter%N_KAO)) ! make it for LJ parametrization
@@ -1691,7 +1679,8 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   end select
                endif
                TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
-            case('ILJ', 'ilv', 'Improved_LJ', 'Ilv', 'improved_lj')
+
+            case('ILJ', 'ilj', 'Improved_LJ', 'Ilj', 'improved_lj', 'I_LJ', 'i_lj')
                if (.not.allocated(TB_Waals)) then
                   allocate(TB_vdW_ILJ_cut::TB_Waals(matter%N_KAO,matter%N_KAO)) ! make it for LJ parametrization
                   ! Default values:
@@ -1710,7 +1699,6 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endif
                TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
 
-
             case ('Dumitrica') ! UNFINISHED, DO NOT USE
                if (.not.allocated(TB_Waals)) then
                   allocate(TB_vdW_Dumitrica::TB_Waals(matter%N_KAO,matter%N_KAO)) ! make it for Dumitrica parametrization
@@ -1721,18 +1709,15 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endif
                TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
             case default
-               !if (numpar%verbose) then
-                  write(Error_descript,'(a,a,a,$)') 'Unknown TB-vdW parametrization class '// &
+               write(Error_descript,'(a,a,a,$)') 'Unknown TB-vdW parametrization class '// &
                      trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
-!                call Save_error_details(Err, 4, Error_descript)
-                  print*, trim(adjustl(Error_descript))
-                  print*, 'Proceeding without van der Waals forces'
-                  close(FN) ! close file
-               !endif
+               print*, trim(adjustl(Error_descript))
+               print*, 'Proceeding without van der Waals forces'
+               close(FN) ! close file
                goto 3422
             end select
             
-            ! Prior to use TB parameters, we now always have to find out which class the belong to:
+            ! Read the parameters of the dispersion correction (vdW-type additional potential):
             select type (TB_Waals)
             type is (TB_vdW_Girifalco)
                Error_descript = ''
@@ -1746,6 +1731,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                ! Set default values:
                TB_Waals(i,j)%d0_cut = TB_Waals(i,j)%d_cut   ! long-range cutoff radius [A]
                TB_Waals(i,j)%dd_cut = 0.0d0  ! long-range cutoff width [A]
+
             type is (TB_vdW_LJ_cut) ! Lennard-Jones (smoothly cut at short and large sitances)
                Error_descript = ''
                call read_vdW_LJ_TB(FN, i,j, TB_Waals, Error_descript, INFO)   ! below
@@ -1755,7 +1741,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3422
                endif
-               if (numpar%verbose) print*, 'vdW minimum: ', TB_Waals(i,j)%eps, TB_Waals(i,j)%r0
+               if (numpar%verbose) write(*,'(a,f,f)') 'LJ: vdW minimum: ', TB_Waals(i,j)%eps, TB_Waals(i,j)%r0
 
             type is (TB_vdW_ILJ_cut) ! Improved Lennard-Jones (smoothly cut at short and large sitances)
                Error_descript = ''
@@ -1766,7 +1752,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3422
                endif
-               !if (numpar%verbose) print*, 'vdW minimum: ', TB_Waals(i,j)%eps, TB_Waals(i,j)%r0
+               if (numpar%verbose) write(*,'(a,f,f)') 'ILJ: vdW minimum: ', TB_Waals(i,j)%eps, TB_Waals(i,j)%r0
 
             type is (TB_vdW_Dumitrica) ! UNFINISHED, DO NOT USE
                Error_descript = ''
@@ -1787,6 +1773,8 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
          endif !(file_exists)
 3422     continue
 
+
+         !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
          ! Now read Coulomb parameterization:
          write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
          write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Coulomb.txt'
@@ -1829,18 +1817,14 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endif
                TB_Coul(i,j)%Param = trim(adjustl(ch_temp))
             case default
-               !if (numpar%verbose) then
-                  write(Error_descript,'(a,a,a,$)') 'Unknown Coulomb parametrization class '// &
-                     trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
-!                call Save_error_details(Err, 4, Error_descript)
-                  print*, trim(adjustl(Error_descript))
-                  print*, 'Proceeding without Coulomb forces from unballanced charge'
-                  close(FN) ! close file
-               !endif
+               write(Error_descript,'(a,a,a,$)') 'Unknown Coulomb parametrization class '// &
+                  trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
+               print*, trim(adjustl(Error_descript))
+               print*, 'Proceeding without Coulomb forces from unballanced charge'
+               close(FN) ! close file
                goto 3423
             end select
             
-            ! Prior to use Coulomb parameters, we now always have to find out which class the belong to:
             select type (TB_Coul)
             type is (TB_Coulomb_cut)
                Error_descript = ''
@@ -1866,6 +1850,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
 3423     continue
          
 
+         !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
          ! Now read additional short-range repulsive (exponential wall) parameterization:
          write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
          write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_wall.txt'
@@ -1924,13 +1909,10 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                TB_Expwall(i,j)%Param = trim(adjustl(ch_temp))
                !print*, i, j, TB_Expwall(i,j)%Param, trim(adjustl(ch_temp))
             case default
-               !if (numpar%verbose) then
-                  write(Error_descript,'(a,a,a,$)') 'Unknown short-range (exponential wall) parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
-!                call Save_error_details(Err, 4, Error_descript)
-                  print*, trim(adjustl(Error_descript))
-                  print*, 'Proceeding without additional short-range (exponential wall) forces'
-                  close(FN) ! close file
-               !endif
+               write(Error_descript,'(a,a,a,$)') 'Unknown short-range (exponential wall) parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
+               print*, trim(adjustl(Error_descript))
+               print*, 'Proceeding without additional short-range (exponential wall) forces'
+               close(FN) ! close file
                goto 3425
             end select
             
@@ -1969,7 +1951,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
 
    ! For 3TB parameterization, compounds requires rewriting on-site terms:
    select type (TB_Hamil)
-   type is (TB_H_3TB)
+   type is (TB_H_3TB)   ! UNFINISHED
       if (matter%N_KAO > 1) then
          ! [OS 0] :
 !          TB_Hamil(1,1)%Hhavg = TB_Hamil(1,2)%Hhavg
@@ -6310,6 +6292,7 @@ subroutine Get_list_of_materials(path_sep)
    call close_file('delete', trim(adjustl(File_scratch)))   ! module "Dealing_with_files"
    call close_file('close', FN=FN)  ! module "Dealing_with_files"
 end subroutine Get_list_of_materials
+
 
 
 !OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
