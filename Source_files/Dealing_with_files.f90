@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -27,6 +27,10 @@ MODULE Dealing_with_files
 ! USE IFPORT ! standart FORTRAN module for dealing with files
 
 implicit none
+PRIVATE
+
+public :: get_file_stat, Count_columns_in_file, Count_lines_in_file, read_file, close_file, Path_separator, copy_file, &
+          get_file_extension, number_of_columns
 
  contains
 
@@ -69,6 +73,23 @@ subroutine get_file_stat(File_name, device_ID, Inode_number, File_mode, Number_o
 end subroutine get_file_stat
 
 
+subroutine get_file_extension(file_name, file_extension)
+   character(*), intent(in) :: file_name
+   character(*), intent(inout) :: file_extension
+   !--------------------
+   integer :: dot_position
+
+   file_extension = ''  ! to start with
+   ! Check if the file name contains a dot:
+   dot_position = INDEX(file_name, '.', BACK=.true.)  ! intrinsic
+
+   if (dot_position > 0) then ! it contains a dot
+      file_extension = file_name(dot_position+1:LEN(file_name))
+   endif
+end subroutine get_file_extension
+
+
+
 subroutine close_file(safe, File_name, FN)
    character(*), intent(in) :: safe ! open with or without permision to overwrite
    character(*), intent(in), optional :: File_name ! path to file named
@@ -80,12 +101,18 @@ subroutine close_file(safe, File_name, FN)
    if (present(FN)) then
       inquire(UNIT = FN, exist=file_exists)
       if (file_exists) INQUIRE(UNIT = FN, opened=file_opened)
+      if ( (.not.file_opened) .and. present(File_name) ) then ! we can reopen it and close properly
+         open(UNIT=FN, FILE = trim(adjustl(File_name)))
+         INQUIRE(UNIT = FN, opened=file_opened)
+      endif
       FN1 = FN
    endif
+
    if (present(File_name)) then
       inquire(file=trim(adjustl(File_name)),exist=file_exists)
       if (file_exists) inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN1)
    endif
+
    if (file_opened) then
       select case (trim(adjustl(safe)))
       case ('delete')
@@ -217,19 +244,27 @@ subroutine Count_lines_in_file(File_num, N, skip_lines)
 end subroutine Count_lines_in_file
 
 
-subroutine copy_file(file_to_copy, folder_copy_to, OS_ind)
+subroutine copy_file(file_to_copy, folder_copy_to, OS_ind, add_com)
    character(len=*), intent(in) :: file_to_copy, folder_copy_to
    integer, intent(in), optional :: OS_ind ! windows or linux
-   character(200) command
+   character(len=*), intent(in), optional :: add_com  ! additional options provided (such as /Y /F)
+   character(250) command, add_option
+
+   if (present(add_com)) then
+      add_option = add_com
+   else
+      add_option = ''   ! no additional options
+   endif
+
    if (present(OS_ind)) then
       select case (OS_ind)
       case (0) ! linux
-         command='cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))   
+         command='cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))//trim(adjustl(add_option))
       case default ! assume windows
-         command='xcopy '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))
+         command='xcopy '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))//trim(adjustl(add_option))
       end select
    else ! assume linux
-      command='cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))
+      command='cp '//trim(adjustl(file_to_copy))//' '//trim(adjustl(folder_copy_to))//trim(adjustl(add_option))
    endif
    CALL system(command)
 end subroutine copy_file

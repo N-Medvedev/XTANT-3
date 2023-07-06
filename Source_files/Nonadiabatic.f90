@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -26,13 +26,13 @@
 MODULE Nonadiabatic
 use Universal_constants
 use Objects
-use Variables
-use Algebra_tools
-use Electron_tools
-use Atomic_tools
+use Atomic_tools, only : Maxwell_int_shifted
 
 
 implicit none
+PRIVATE
+
+public :: Electron_ion_collision_int, get_G_ei, Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex
 
  contains
 
@@ -47,70 +47,202 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
    real(8), dimension(:), intent(inout) :: distre   ! electron distribution function
    real(8), intent(out) :: dE_nonadiabat ! energy exchanged [eV]
    integer, intent(in) :: kind_M	! index of the model used for the matri element calculation
-   real(8), dimension(:,:,:), intent(in), optional :: DOS_weights     ! weigths of the particular type of orbital on each energy level
-   real(8), dimension(:,:), intent(inout), optional :: G_ei_partial     ! partial contributions into coupling from different shells of diff. atoms
+   real(8), dimension(:,:,:), intent(in) :: DOS_weights   ! weigths of the particular type of orbital on each energy level
+   real(8), dimension(:,:), intent(inout) :: G_ei_partial ! partial contributions into coupling from shells of atoms
    !---------------------------------------
-   logical :: do_partial
-!     integer :: N_at, N_types, Nsiz, i_at, i_types, i_at2, i_types2, i_G1, i_G2
-   integer i, j, k, kp, nat4,  N_steps, i_t, N_at_iter
-   real(8) dfdt, distr_at_fin, distr_at_in, Mij2, coef, coef_inv, dfdt_i, dt_small, N_loss, E_loss, dtij
-   real(8) :: dfdt_ai, dfdt_bi, dfdt_aij, dfdt_bij, dfdt_ai_small, dfdt_bi_small
-   real(8) N_tot_cut, E_tot_cur, E_last, mu, Te, ViVj, dE, E_at_tot, E_at_cur, T_Maxwell, Int_f1, Int_f2
-   real(8) E_at_end, Fini, Ffin, nat, wij
-   real(8), dimension(:), allocatable :: G_ei_temp
-   real(8), dimension(:), allocatable :: dfdt_e	! change of the distribution function
-   real(8), dimension(:), allocatable :: distre_temp	! electron distribution
-   real(8), dimension(:), allocatable :: dfdt_A, dfdt_B ! factors for explicit scheme
-!    real(8), dimension(:), allocatable :: inv_t_e_ph	! inverse electron-phonon scattering time [1/fs]
+   integer :: i, N_orb, N_steps, i_t, i_pc
+   real(8) :: coef, coef_inv, dt_small, N_tot_cut, E_tot_cur, alpha, A_pc, B_pc, AB, A2AB, arg, eps, eps_N
+   real(8), dimension(:), allocatable :: dfdt_e ! change of the distribution function
+   real(8), dimension(:), allocatable :: dfdt_e2 ! predictotr change of the distribution function
+   real(8), dimension(:), allocatable :: distre_temp  ! electron distribution
+   real(8), dimension(:), allocatable :: distre_temp2  ! predictor electron distribution
+   real(8), dimension(:), allocatable :: dfdt_A, dfdt_B  ! factors for explicit scheme
+   real(8), dimension(:), allocatable :: dfdt_A2, dfdt_B2  ! predictor factors for explicit scheme
+!    real(8), dimension(:), allocatable :: inv_t_e_ph ! inverse electron-phonon scattering time [1/fs]
+   logical :: pc_iterations
+
+   alpha = 0.35d0  ! mixing parameter in predictor-corrector
+   eps = 1.0d-10   ! precision in A-B
+   eps_N = 1.0d-6  ! precision in number of electrons
    
-   ! Find out whether user wants to have partial contributions into G_ei:
-   if (present(DOS_weights) .and. present(G_ei_partial)) then
-      do_partial = .true.
-   else
-      do_partial = .false.
-   endif
    
-   nat = real(Scell%Na) ! how many atoms
-   nat4 = size(wr) ! how many energy levels
-   allocate(dfdt_e(nat4), source = 0.0d0)
-   allocate(dfdt_A(nat4), source = 0.0d0)
-   allocate(dfdt_B(nat4), source = 0.0d0)
-   allocate(distre_temp(nat4))
-!    allocate(inv_t_e_ph(nat4))
+   N_orb = size(wr) ! how many energy levels
+   allocate(dfdt_e(N_orb), source = 0.0d0)
+   allocate(dfdt_e2(N_orb), source = 0.0d0)
+   allocate(dfdt_A(N_orb), source = 0.0d0)
+   allocate(dfdt_B(N_orb), source = 0.0d0)
+   allocate(dfdt_A2(N_orb), source = 0.0d0)
+   allocate(dfdt_B2(N_orb), source = 0.0d0)
+   allocate(distre_temp(N_orb))
+   allocate(distre_temp2(N_orb))
+!    allocate(inv_t_e_ph(N_orb))
    N_steps = 1
-   !N_steps = max(1, int(numpar%dt/0.01d0)) ! max timestep for electrons: 0.01 fs
 
    ! Deal with atomic distribution:
-   T_Maxwell = Scell%TaeV  ! [eV]
-   E_at_cur = 0.0d0
    N_tot_cut = 0.0d0
    coef = 2.0d0*g_e/g_h
    !coef_inv =g_h/( 2.0d0*g_e)   ! [s]
    coef_inv = numpar%M2_scaling*g_h/(g_e)   ! [s] with scaling factor added (e.g. 2 from d|a|^2/dt)
 110 continue
    dt_small = numpar%dt*(1d-15)/dble(N_steps) ! [s] smaller time-steps to iterate with better precision
-   !dt_small = min(numpar%dt*(1d-15)/real(N_steps), 0.01d-15) ! [fs] time-step
    dE_nonadiabat = 0.0d0
-   distre_temp = distre	! to start
-   if (do_partial) G_ei_partial = 0.0d0 ! to start with
+   distre_temp = distre ! to start
+   distre_temp2 = distre_temp ! to start
    !E_tot_cur = Scell%E_tot
    E_tot_cur = nrg%El_low
-   N_loss = 0.0d0
-   E_loss = 0.0d0
 
    TIME_STEPS:do i_t = 1, N_steps
-    dfdt_e = 0.0d0 ! initializing
-    dfdt_A = 0.0d0
-    dfdt_B = 0.0d0
-!     inv_t_e_ph = 0.0d0 ! initializing
+      ! initializing:
+      dfdt_e = 0.0d0
+      dfdt_e2 = 0.0d0
+      dfdt_A = 0.0d0
+      dfdt_B = 0.0d0
+      dfdt_A2 = 0.0d0
+      dfdt_B2 = 0.0d0
+      i_pc = 1 ! counter of predictor-corrector iterations
+      pc_iterations = .true.  ! predictor-corrector iterations needed
+!     inv_t_e_ph = 0.0d0
 
-!$omp PARALLEL private(i,j,dfdt_i,ViVj,Mij2,distr_at_in,distr_at_fin, dtij, wij, dfdt) ! implicit scheme
-!$omp do schedule(dynamic) reduction( + : dfdt_e, G_ei_partial)   ! implicit scheme
-! !$omp PARALLEL private(i,j,ViVj,Mij2,distr_at_in,distr_at_fin, dtij, wij, dfdt_aij, dfdt_bij) ! explicit scheme
-! !$omp do reduction( + : dfdt_A, dfdt_B) ! explicit scheme
-    do i = 1,nat4
+      P_C:do while (pc_iterations)
+         G_ei_partial = 0.0d0 ! to start with
+
+         ! Get the collision integral parameters:
+         !call get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, distre_temp2, dfdt_e2, dfdt_A2, dfdt_B2, &
+         !                        DOS_weights, G_ei_partial) ! below
+         call get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, numpar%dt*(1d-15), kind_M, distre_temp2, dfdt_e2, dfdt_A2, dfdt_B2, &
+                                 DOS_weights, G_ei_partial) ! below
+
+         ! first step, no iterative data yet, use what we have:
+         if (i_pc == 1) then
+            dfdt_e = dfdt_e2
+            dfdt_A = dfdt_A2
+            dfdt_B = dfdt_B2
+         endif
+         pc_iterations = .false. ! assume this iteration of predictor-corrector is the last one (to check below)
+
+         ! Having the collision integral, update the distribution function:
+         do i = 1, N_orb
+            ! Explicit scheme:
+            distre_temp2(i) = distre_temp(i) + dfdt_e(i)*dt_small
+            ! Implicit scheme:
+            !distre_temp(i) = (distre_temp(i) + 2.0d0*dfdt_A(i)*dt_small)/(1.0d0 + (dfdt_B(i) + dfdt_A(i))*dt_small)
+            ! Explicit predictor-corrector:
+            !distre_temp2(i) = distre_temp(i) + ( dfdt_e(i)*(1.0d0-alpha) + dfdt_e2(i)*alpha ) * dt_small
+            ! Implicit predictor-corrector:
+            !A_pc = dfdt_A(i)*(1.0d0-alpha) + dfdt_A2(i)*alpha
+            !B_pc = dfdt_B(i)*(1.0d0-alpha) + dfdt_B2(i)*alpha
+            !AB = A_pc + B_pc
+            !if (abs(AB) < eps) then
+            !   A2AB = 0.0d0
+            !else
+            !   A2AB = 2.0d0*A_pc / AB
+            !endif
+            !arg = dt_small*AB
+            !distre_temp2(i) = A2AB - (A2AB - distre_temp(i))* exp(-dt_small*AB)
+         
+            ! Check if another iteration of predictor-corrector is required:
+            !if ((distre_temp2(i) > 2.0d0) .OR. (distre_temp2(i) < 0.0d0)) then   ! obviously
+               !if (i < 5) print*, 'Predictor-corrector problem:', i_pc, i, distre_temp2(i)
+            !   pc_iterations = .true.
+            !endif
+
+            ! Reducing time-steps if needed:
+            if ((distre_temp2(i) > 2.0d0) .OR. (distre_temp2(i) < 0.0d0)) then
+               N_steps = INT(N_steps*2.0d0)  ! decrease time step in Boltzmann equation and recalculate
+               if (N_steps > 1000) then
+                  print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (1)'
+                  write(*,'(i5, e25.16, e25.16, e25.16, e25.16, e25.16, e25.16)') i, dt_small, coef, coef_inv, distre_temp2(i), dfdt_e(i), dfdt_e(i)*dt_small
+               endif
+               ! Recalculate with smaller time steps:
+               goto 110
+            endif
+         enddo
+         !i_pc = i_pc + 1   ! one more iteration
+         ! for the next iteration:
+         dfdt_e = dfdt_e2
+         dfdt_A = dfdt_A2
+         dfdt_B = dfdt_B2
+
+         ! Predictor-corrector check:
+         !N_tot_cut = SUM(distre_temp2(:))
+         !if (ABS(N_tot_cut - Scell%Ne_low)/Scell%Ne_low > eps_N) then
+         !   pc_iterations = .true.  ! another iteration required
+         !   print*, 'PC_steps=', i_pc, 'SOMETHING MIGHT BE WRONG (1):', N_tot_cut, Scell%Ne_low
+         !endif
+         !if (i_pc > 10000) then ! maximal number of p-c iterations
+         !   print*, 'Too many iterations in P-C'
+            !print*, N_tot_cut, Scell%Ne_low
+         !   pc_iterations = .false.
+         !endif
+      enddo P_C
+      ! When we have an acceptable solution:
+      distre_temp(:) = distre_temp2(:)
+
+      G_ei_partial = G_ei_partial*dt_small
+
+      N_tot_cut = SUM(distre_temp(:))
+      !E_tot_cur = SUM(distre_temp(:)*wr(:))
+
+      if (ABS(N_tot_cut - Scell%Ne_low)/Scell%Ne_low > eps_N) then
+         N_steps = INT(N_steps*2.0d0)
+         print*, 'Trouble in Electron_ion_collision_int:'
+         print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (2):'
+         print*, N_tot_cut, Scell%Ne_low
+!          print*, dfdt_e(:)
+         goto 110
+      endif
+   enddo TIME_STEPS
+
+   ! Update electron energy:
+   nrg%El_low = SUM(distre_temp(:)*wr(:)) ! new total electron energy [eV]
+   dE_nonadiabat = SUM( (distre(:) - distre_temp(:)) * wr(:) )    ! [eV] transfered energy
+   !print*, 'dE:', dE_nonadiabat
+
+   ! Save the collision integral, if needed:
+   if (numpar%do_kappa) then
+      Scell%I_ij(:) = (distre(:) - distre_temp(:))/(numpar%dt * 1d-15)  ! [1/s]
+   endif
+
+   distre = distre_temp ! update electron distribution function after energy exchange with the atomic system
+   
+   deallocate(dfdt_e, dfdt_A, dfdt_B, distre_temp)
+   deallocate(dfdt_e2, dfdt_A2, dfdt_B2, distre_temp2)
+!    deallocate(inv_t_e_ph)
+end subroutine Electron_ion_collision_int
+
+
+
+
+subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, distre_temp, &
+                              dfdt_e, dfdt_A, dfdt_B, DOS_weights, G_ei_partial)
+   type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   real(8), dimension(:,:), intent(in) :: Mij  ! Matrix element coupling electron energy levels via ion motion
+   real(8), dimension(:), intent(in) :: wr, wr0  ! electron energy levels [eV], on current and last timesteps
+   real(8), intent(in) :: dt_small  ! timestep [fs]
+   integer, intent(in) :: kind_M	! index of the model used for the matri element calculation
+   real(8), dimension(:), intent(in) :: distre_temp	! electron distribution
+   real(8), dimension(:), intent(inout) :: dfdt_e	! change of the distribution function
+   real(8), dimension(:), intent(inout) :: dfdt_A, dfdt_B ! factors for explicit scheme
+   real(8), dimension(:,:,:), intent(in) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
+   real(8), dimension(:,:), intent(inout) :: G_ei_partial     ! partial contributions into coupling from different shells of
+   !------------------
+   real(8) :: dfdt_i, wij, ViVj, Mij2, distr_at_in, distr_at_fin, dtij, dfdt, dfdt_aij, dfdt_bij, coef, coef_inv
+   integer :: i, j
+
+   coef = 2.0d0*g_e/g_h
+   coef_inv = numpar%M2_scaling*g_h/(g_e)   ! [s] with scaling factor added (e.g. 2 from d|a|^2/dt) OLD
+   !coef_inv = numpar%M2_scaling   ! scaling factor added (e.g. 2 from d|a|^2/dt)
+   ! Initializing for summation:
+   dfdt_e = 0.0d0
+   dfdt_A = 0.0d0
+   dfdt_B = 0.0d0
+
+!$omp PARALLEL private(i,j,dfdt_i,ViVj,Mij2,distr_at_in,distr_at_fin, dtij, wij, dfdt, dfdt_aij, dfdt_bij) ! Implicit scheme
+!$omp do reduction( + : dfdt_e, G_ei_partial, dfdt_A, dfdt_B) ! explicit scheme
+    do i = 1, size(wr) ! all energy levels
       dfdt_i = 0.0d0  ! implicit
-      do j = 1,nat4
+      do j = 1, size(wr) ! all pairs of energy levels
           ! All transitions except degenerate levels
           wij = abs( wr(i) - wr(j) )    ! [eV] energy difference between the levels = transferred energy
           ! Exclude too large jumps, and quasidegenerate levels:
@@ -119,12 +251,14 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
                select case (kind_M)
                case (-1)    ! Landau nonperturbative expression (with ad hoc correction):
                   dtij = coef_inv !/ wij
-                  Mij2 = Mij(i,j)*Mij(i,j) / dt_small * (dtij/dt_small)
+                  Mij2 = Mij(i,j)*Mij(i,j) / dt_small * dtij/dt_small
                case(0)
                   Mij2 = 0.0d0 ! no coupling
                case(2)  ! Fermi's golden rule:
+                  dtij = coef_inv !/ wij
                   ViVj = (wr(i)+wr0(i) - (wr(j)+wr0(j)))/2.0d0 ! for matrix element:
-                  Mij2 = Mij(i,j)*Mij(i,j)*ViVj*ViVj*g_Pi*coef
+                  !Mij2 = Mij(i,j)*Mij(i,j)*ViVj*ViVj*g_Pi*coef   ! OLD
+                  Mij2 = Mij(i,j)*Mij(i,j)*ViVj*ViVj*g_Pi*coef * (dtij/dt_small)**2 ! trying...
                case(3)  ! incomplete Fermi golden rule:
                   ViVj = (wr(i)+wr0(i) - (wr(j)+wr0(j)))/2.0d0 ! for matrix element:
                   Mij2 = Mij(i,j)*Mij(i,j)*ViVj*sin(ViVj*g_e/g_h*dt_small)*coef
@@ -134,43 +268,30 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
 
                ! analytical integration of maxwell function:
                if (i > j) then
-                  !distr_at_fin = Maxwell_int(Scell%TaeV, wij) ! from module "Atomic_tools"
                   distr_at_fin = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
                   distr_at_in = 1.0d0	! all atoms can absorb this energy
                else
                   distr_at_fin = 1.0d0	! all atoms can absorb this energy
-!                   distr_at_in = Maxwell_int(Scell%TaeV, wij) ! from module "Atomic_tools"
                   distr_at_in = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
                endif
-               ! Implicit scheme (reqiures small timestep):
+
+               ! Explicit scheme (reqiures small timestep):
                dfdt = Mij2*( distre_temp(j)*distr_at_fin*(2.0d0-distre_temp(i)) - distre_temp(i)*distr_at_in*(2.0d0-distre_temp(j)) )
-               ! Explicit scheme (stable):
-!                dfdt_aij = Mij2*distr_at_fin
-!                dfdt_bij = Mij2*distr_at_in
+
+               ! Implicit scheme (unconditionally stable, but does not conserve number of electrons!):
+               dfdt_aij = Mij2*distr_at_fin
+               dfdt_bij = Mij2*distr_at_in
                ! Sum the contributions up:
-!                dfdt_A(i) = dfdt_A(i) + dfdt_aij*distre_temp(j)
-!                dfdt_B(i) = dfdt_B(i) + dfdt_bij*(2.0d0-distre_temp(j))
-!                dfdt_A(j) = dfdt_A(j) + dfdt_bij*distre_temp(i)
-!                dfdt_B(j) = dfdt_B(j) + dfdt_aij*(2.0d0-distre_temp(i))
+               dfdt_A(i) = dfdt_A(i) + dfdt_aij*distre_temp(j)
+               dfdt_B(i) = dfdt_B(i) + dfdt_bij*(2.0d0-distre_temp(j))
 
-                if (abs(dfdt * dt_small) < 2.0d0) then
+               !if (abs(dfdt * dt_small) < 2.0d0) then
                    dfdt_i = dfdt_i + dfdt
+                   ! Get contributions from different shells:
+                   call Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)    ! below
+               !endif ! (abs(dfdt * dt_small) < 2.0d0)
 
-                   ! If user wants to have partial contributions from shells:
-                   if (do_partial) then
-                      ! Get contributions from different shells:
-                      call Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)    ! below
-                   endif ! (do_partial)
 
-                endif ! (abs(dfdt * dt_small) < 2.0d0) 
-
-!                if (isnan(dfdt_i)) then
-!                   print*, 'dfdt=', dfdt, Mij2
-!                   PAUSE 'dfdt_i IS NAN PAUSE'
-!                endif
-               
-!                inv_t_j = Mij2*(distre_temp(j)*distr_at_fin*2.0d0 + distr_at_in*(2.0d0-distre_temp(j))*2.0d0) ! scattering time [1/s]
-!                inv_t_e_ph(i) = inv_t_e_ph(i) + inv_t_j ! save it into array, [1/s]
           endif large_jumps
       enddo ! j
       ! Implicit scheme:
@@ -179,78 +300,7 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
 !$omp end do
 !$omp end parallel
 
-      111 continue
-!       N_loss = N_loss + SUM(dfdt_e(:))*dt_small
-!       E_loss = E_loss + SUM(dfdt_e(:)*wr(:))*dt_small
-      do i = 1, nat4
-         ! Implicit scheme:
-         distre_temp(i) = distre_temp(i) + dfdt_e(i)*dt_small
-         ! Explicit scheme:         
-!          distre_temp(i) = (distre_temp(i) + 2.0d0*dfdt_A(i)*dt_small)/(1.0d0 + (dfdt_B(i) + dfdt_A(i))*dt_small)
-         
-         ! Check if finite difference did not produce unphysical values:
-!          if (distre_temp(i) > 2.0d0) then
-!             print*, 'DC', i, distre_temp(i),  dfdt_e(i)*dt_small
-!             distre_temp(i) = 2.0d0
-!          endif
-!          if (distre_temp(i) < 0.0d0) then
-!             print*, 'DC', i, distre_temp(i),  dfdt_e(i)*dt_small
-!             distre_temp(i) = 0.0d0
-!          endif
-         
-!          if ((distre_temp(i) .GT. 2.0d0) .OR. (distre_temp(i) .LT. 0.0d0)) then
-!             N_steps = INT(N_steps*2.0d0)
-! !             if (N_steps .GT. 1d1) then
-!                print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (1)'
-!                write(*,'(i5, e25.16, e25.16, e25.16, e25.16, e25.16)') i, dt_small, coef, coef_inv, distre_temp(i), dfdt_e(i)
-! !             endif
-! !             goto 110
-!             distre_temp = distre	! to restart
-!             dt_small = dt_small / 2.0d0
-!             goto 111
-!          endif
-      enddo
-
-      if (do_partial) G_ei_partial = G_ei_partial*dt_small
-
-      N_tot_cut = SUM(distre_temp(:))
-      !E_tot_cur = SUM(distre_temp(:)*wr(:))
-
-      if (ABS(N_tot_cut - Scell%Ne_low)/Scell%Ne_low .GT. 0.1d0) then
-          N_steps = INT(N_steps*2.0d0)
-!           if (N_steps .GT. 1d1) then 
-             print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (2):'
-             print*, N_tot_cut, Scell%Ne_low
-             print*, dfdt_e(:)
-!           endif
-          goto 110
-      endif
-   enddo TIME_STEPS
-
-   ! Update electron energy:
-   nrg%El_low = SUM(distre_temp(:)*wr(:)) ! new total electron energy [eV]
-!    dE_nonadiabat = -SUM(distre_temp(:)*wr(:)-distre(:)*wr(:))
-   dE_nonadiabat = SUM( (distre(:) - distre_temp(:)) * wr(:) )    ! [eV] transfered energy
-   distre = distre_temp ! update electron distribution function after energy exchange with the atomic system
-   
-   ! Test partial G_ei contributions:
-!    if (do_partial) then
-!       print*, 'Electron_ion_collision_int: test of partial: ', SUM( G_ei_partial ), dE_nonadiabat
-!    endif
-   
-!    print*, 'Ne', N_tot_cut, Scell%Ne_low, dE_nonadiabat
-   
-!    open(unit=8899, FILE = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_Scattering_rate.dat',action='write',position='append')
-!    do i = 1,nat4
-!       write(8899, '(f,es)') wr(i), 1.0d0/inv_t_e_ph(i)*1d15 ! [fs]
-!    enddo
-!    write(8899, '(a)') ''
-!    close(8899)
-!    PAUSE
-   
-   deallocate(dfdt_e, dfdt_A, dfdt_B, distre_temp)
-!    deallocate(inv_t_e_ph)
-end subroutine Electron_ion_collision_int
+end subroutine get_el_ion_kernel
 
 
 

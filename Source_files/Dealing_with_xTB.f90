@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -21,7 +21,7 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-! This module contains subroutines for dealing with the xTB input files
+! This module contains subroutines for dealing with the xTB input files (UNFINISHED!)
 ! Available from https://github.com/grimme-lab/xtb
 ! PArameters pAlpha1 are copied from xTB file "slater.f90"
 
@@ -32,10 +32,13 @@ use Dealing_with_files, only : read_file, close_file
 use BS_Basis_sets, only : set_xTB_AO
 
 implicit none
+PRIVATE
 
 ! Modular parameters:
 character(10), parameter :: m_xTB_directory = 'xTB'
 character(20), parameter :: m_xTB_file = 'param_gfn0-xtb.txt'
+
+public :: m_xTB_directory, read_xTB_parameters, identify_basis_size_xTB, identify_AOs_xTB
 
 
  contains

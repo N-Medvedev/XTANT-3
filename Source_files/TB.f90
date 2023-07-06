@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2022 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -26,34 +26,126 @@
 MODULE TB
 use Universal_constants
 use Objects
-use Variables
-use Algebra_tools
-use Little_subroutines
-use Atomic_tools
-use Electron_tools
-use Nonadiabatic
-use TB_Fu
-use TB_Pettifor
-use TB_Molteni
-use TB_NRL
+use Algebra_tools, only : Det_3x3, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points, sym_diagonalize, Reciproc, &
+                        mkl_matrix_mult, Invers_3x3
+use Little_subroutines, only : number_of_types_of_orbitals, count_3d, deallocate_array
+use Atomic_tools, only : get_near_neighbours, total_forces, Potential_super_cell_forces, super_cell_forces, &
+                        Convert_reciproc_rel_to_abs, Rescale_atomic_velocities, get_kinetic_energy_abs, &
+                        get_Ekin, save_last_timestep, Potential_super_cell_forces, &
+                        make_time_step_atoms, make_time_step_supercell, make_time_step_atoms_Y4, make_time_step_supercell_Y4, &
+                        make_time_step_atoms_M
+use Electron_tools, only : set_initial_fe, update_fe, get_new_global_energy, find_band_gap, get_DOS_sort, &
+                     get_electronic_heat_capacity, electronic_entropy, Diff_Fermi_E, get_low_e_energy, get_total_el_energy
+use Nonadiabatic, only : Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, Electron_ion_collision_int, get_G_ei
+use TB_Fu, only : dHij_s_F, Attract_TB_Forces_Press_F, dErdr_s_F, dErdr_Pressure_s_F, construct_TB_H_Fu, &
+                     Complex_Hamil_tot_F, Attract_TB_Forces_Press_F, get_Erep_s_F, dErdr_Pressure_s_F
+use TB_Pettifor, only : dHij_s, Attract_TB_Forces_Press, dErdr_s, dErdr_Pressure_s, construct_TB_H_Pettifor, &
+                     Complex_Hamil_tot, Attract_TB_Forces_Press, get_Erep_s, dErdr_Pressure_s, Construct_M_Vs, &
+                     dHij_r, dE2rep_dr2
+use TB_Molteni, only : dHij_s_M, Attract_TB_Forces_Press_M, dErdr_s_M, dErdr_Pressure_s_M, construct_TB_H_Molteni, &
+                     Complex_Hamil_tot_Molteni, Attract_TB_Forces_Press_M, get_Erep_s_M, dErdr_Pressure_s_M
+use TB_NRL, only : get_dHij_drij_NRL, dErdr_s_NRL, Construct_Vij_NRL, construct_TB_H_NRL, Complex_Hamil_NRL, &
+                     get_Erep_s_NRL, dErdr_Pressure_s_NRL, Loewdin_Orthogonalization_c, m_two_third, &
+                     Attract_TB_Forces_Press_NRL
 use TB_DFTB, only : Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_drij_DFTB, &
                      Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB, &
-                     identify_DFTB_orbitals_per_atom
+                     identify_DFTB_orbitals_per_atom, dErdr_s_DFTB_no, get_Erep_s_DFTB_no, dErdr_Pressure_s_DFTB_no
 use TB_3TB, only : get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, Attract_TB_Forces_Press_3TB, &
                      Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors, get_dHij_drij_3TB
 use TB_BOP, only : Construct_Vij_BOP, construct_TB_H_BOP, get_Erep_s_BOP
 use TB_xTB, only : Construct_Vij_xTB, construct_TB_H_xTB, get_Erep_s_xTB, identify_xTB_orbitals_per_atom
-use Van_der_Waals
+use Van_der_Waals, only : Construct_B, get_vdW_s, get_vdW_s_D, get_vdW_interlayer
 use Coulomb, only: m_k, m_sqrtPi, Coulomb_Wolf_pot, get_Coulomb_Wolf_s, cut_off_distance, Construct_B_C, get_Coulomb_s, &
                      Coulomb_Wolf_self_term, d_Coulomb_Wolf_pot
-use Exponential_wall
+use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s, &
+                     get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s
 
 implicit none
+PRIVATE
+
+public :: get_new_energies, get_DOS, get_Mulliken, Get_pressure, get_electronic_thermal_parameters, &
+         vdW_interplane, Electron_ion_coupling, update_nrg_after_change, get_DOS_masks, k_point_choice, &
+         construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step
 
  contains
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 !Common TB tools:
+
+
+subroutine MD_step(Scell, matter, numpar, time, Err)
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Solid), intent(inout) :: matter ! material parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   real(8), intent(in) :: time ! [fs] timestep
+   !------------------------------------------
+
+   ! Choose which MD propagator to use:
+   select case(numpar%MD_algo)
+   !00000000000000000000000000000000000000000
+   case default  ! velocity Verlet (2d order):
+      ! Atomic Verlet step:
+      call make_time_step_atoms(Scell, matter, numpar, 2)    ! module "Atomic_tools"
+      ! Supercell Verlet step:
+      call make_time_step_supercell(Scell, matter, numpar, 2) ! supercall Verlet step, module "Atomic_tools"
+      ! Update Hamiltonian after the atomic and supercell motion:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! below
+   !11111111111111111111111111111111111111111
+   case (1)  ! Yoshida (4th order)
+      ! First step of Yoshida for atomic coordinates and for supercell vectors:
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 1, 1)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 1, 1) ! supercall Verlet step, module "Atomic_tools"
+      ! Update forces/accelerations after the first coordinates step:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! module "TB"
+      ! First step of Yoshida for velosities:
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 1, 2)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 1, 2) ! supercall Verlet step, module "Atomic_tools"
+
+      ! Second step of Yoshida
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 2, 1)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 2, 1) ! supercall Verlet step, module "Atomic_tools"
+      ! Update forces/accelerations after the first coordinates step:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! module "TB"
+      ! Second step of Yoshida for velosities:
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 2, 2)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 2, 2) ! supercall Verlet step, module "Atomic_tools"
+
+      ! Third step of Yoshida
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 3, 1)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 3, 1) ! supercall Verlet step, module "Atomic_tools"
+      ! Update forces/accelerations after the first coordinates step:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! module "TB"
+      ! Third step of Yoshida for velosities:
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 3, 2)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 3, 2) ! supercall Verlet step, module "Atomic_tools"
+
+      ! Fourth step of Yoshida
+      call make_time_step_atoms_Y4(Scell, matter, numpar, 4, 1)    ! module "Atomic_tools"
+      call make_time_step_supercell_Y4(Scell, matter, numpar, 4, 1) ! supercall Verlet step, module "Atomic_tools"
+      ! Update forces/accelerations after the first coordinates step:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! module "TB"
+      ! Fourth step of Yoshida for velosities is absent, V4=V3.
+   !22222222222222222222222222222222222222222
+   case (2)  ! Martyna algorithm (4th order):
+      ! a) New coordinate:
+      call make_time_step_atoms_M(Scell, matter, numpar, 1)    ! module "Atomic_tools"
+      ! b) New potential:
+      call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! module "TB"
+      ! c) New velocity:
+      call make_time_step_atoms_M(Scell, matter, numpar, 2)    ! module "Atomic_tools"
+      ! d) New effective force:
+      call make_time_step_atoms_M(Scell, matter, numpar, 3)    ! module "Atomic_tools"
+      ! e) New effective force velocity:
+      call make_time_step_atoms_M(Scell, matter, numpar, 4)    ! module "Atomic_tools"
+      ! f) New effective force acceleration:
+      call make_time_step_atoms_M(Scell, matter, numpar, 5)    ! module "Atomic_tools"
+
+      ! For Supercell, use Verlet:
+      call make_time_step_supercell(Scell, matter, numpar, 2) ! supercall Verlet step, module "Atomic_tools"
+   endselect
+
+end subroutine MD_step
 
 
 ! Attractive part:
@@ -214,6 +306,11 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                call dErdr_s_DFTB(ARRAY2, Scell, NSC) ! derivatives of the repulsive energy by s; module "TB_DFTB"
                ! Get repulsive forces acting on the supercell:
                call dErdr_Pressure_s_DFTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_DFTB"
+            type is (TB_Rep_DFTB_no) ! TB parametrization according to DFTB
+               ! Get repulsive forces acting on all atoms:
+               call dErdr_s_DFTB_no(ARRAY2, Scell, NSC) ! derivatives of the repulsive energy by s; module "TB_DFTB"
+               ! Get repulsive forces acting on the supercell:
+               call dErdr_Pressure_s_DFTB_no(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_DFTB"
             type is (TB_Rep_3TB) ! TB parametrization according to 3TB
                ! Get repulsive forces acting on all atoms:
                call dErdr_s_3TB(ARRAY2, Scell, NSC) ! derivatives of the repulsive energy by s; module "TB_3TB"
@@ -241,7 +338,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
          call Coulomb_forces(Scell(NSC)%TB_Coul, Scell, NSC, numpar) ! get Coulomb forces, see below
          
          ! Exponential wall potential part:
-         call Exponential_wall_forces(Scell(NSC)%TB_Expwall, Scell, NSC, numpar) ! get Exponential wall forces, see below
+         call Exponential_wall_forces(Scell(NSC)%TB_Expwall, Scell, NSC, matter, numpar) ! get Exponential wall forces, see below
          !cccccccccccccccccccccccccccccccccccccccccccccc
 
 
@@ -273,6 +370,13 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
    if (allocated(M_E0ij)) deallocate(M_E0ij)
    if (allocated(M_lmn)) deallocate(M_lmn)
    if (allocated(M_Aij_x_Ei)) deallocate(M_Aij_x_Ei)
+   if (allocated(M_dE0ij)) deallocate(M_dE0ij)
+   if (allocated(M_Lag_exp)) deallocate(M_Lag_exp)
+   if (allocated(M_d_Lag_exp)) deallocate(M_d_Lag_exp)
+   if (allocated(Mjs)) deallocate(Mjs)
+   if (allocated(M_drij_dsk)) deallocate(M_drij_dsk)
+   if (allocated(M_dlmn)) deallocate(M_dlmn)
+   if (allocated(HperS)) deallocate(HperS)
 end subroutine get_Hamilonian_and_E
 
 
@@ -349,11 +453,18 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
    ! Fill corresponding energy levels + repulsive energy cotribution:
    select case (which_fe)
-      case (1) ! distribution for given Te:
-         call set_initial_fe(Scell, matter, Err) ! module "Electron_tools"
-         call get_new_global_energy(Scell(NSC), Scell(NSC)%nrg) ! module "Electron_tools"
-         if (numpar%scc) call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
+      case (1) ! distribution for given Te (or provided in the file):
+         if (numpar%fe_input_exists) then ! distribution provieded by the user:
+            Scell(NSC)%fe = 0.0d0 ! to start with
+            Scell(NSC)%fe(1 : min( size(numpar%fe_input),size(Scell(NSC)%fe) ) ) = &
+                 numpar%fe_input(1 : min( size(numpar%fe_input),size(Scell(NSC)%fe) ) )
+            deallocate(numpar%fe_input)   ! no longer needed
+         else ! given temperature, assuming Fermi distribution:
+            call set_initial_fe(Scell, matter, Err) ! module "Electron_tools"
+            call get_new_global_energy(Scell(NSC), Scell(NSC)%nrg) ! module "Electron_tools"
+            if (numpar%scc) call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
                      Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne, matter%Atoms(:)%mulliken_q) ! below
+         endif
       case (2) ! distribution for given Ee + repulsive energy:
          call get_new_energies(Scell, matter, numpar, t, Err) ! below
    end select
@@ -1061,17 +1172,18 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
    type(Error_handling), intent(inout) :: Err	! error save
    !=====================================
    integer :: NSC, Nsiz, Ei_siz, i, n_types
-   real(8) :: dE, Estart
+   real(8) :: dE, Estart, Emax
    real(8), dimension(:), allocatable :: Ei_cur
    
    do NSC = 1, size(Scell) ! for all super-cells
       if (numpar%save_DOS) then	! only calculate DOS if the user chose to do so:
-!          call print_time_step('Before DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
+!           call print_time_step('Before DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
          ! Set grid for DOS:
          if (.not.allocated(Scell(NSC)%DOS)) then	! it's the first time, set it:
             dE = 0.1d0	! [eV] uniform energy grid step for DOS
             Ei_siz = size(Scell(NSC)%Ei)	! the uppermost energy level at the start
-            Nsiz = CEILING( (Scell(NSC)%Ei(Ei_siz) - Scell(NSC)%Ei(1) + 20.0d0*numpar%Smear_DOS)/dE )
+            Emax = min(Scell(NSC)%Ei(Ei_siz),100.0)   ! no need to trace levels higher than 100 eV
+            Nsiz = CEILING( (Emax - Scell(NSC)%Ei(1) + 20.0d0*numpar%Smear_DOS)/dE )
             allocate(Scell(NSC)%DOS(2,Nsiz))
             Scell(NSC)%DOS = 0.0d0
             ! Partial DOS if needed:
@@ -1094,7 +1206,7 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
             !$omp end parallel
          endif
          
-!          print*, 'get_DOS test 1'
+!           print*, 'get_DOS test 1'
          
          ! Now calculate the DOS:
          select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma
@@ -1102,8 +1214,14 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
             ! Partial DOS if needed:
             select case (numpar%DOS_splitting)
             case (1)
+
+!                call print_time_step('DOSp:', 2.0, msec=.true.)   ! module "Little_subroutines"
+
                call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err, Scell(NSC)%partial_DOS, numpar%mask_DOS)	! see below
             case default    ! No need to sort DOS per orbitals
+
+!                call print_time_step('DOSc:', 2.0, msec=.true.)   ! module "Little_subroutines"
+
                call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err)	! see below
             endselect
          case default	! gamma point
@@ -1112,19 +1230,19 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
             
             select case (numpar%DOS_splitting)
             case (1)
-!                print*, 'get_DOS test 2a'
+!                 print*, 'get_DOS test 2a'
                call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS, Scell(NSC)%partial_DOS, numpar%mask_DOS, Hij = Scell(NSC)%Ha)	! module "Electron_tools"
-!                print*, 'get_DOS test 3a'
+!                 print*, 'get_DOS test 3a'
             case default    ! No need to sort DOS per orbitals
-!                print*, 'get_DOS test 2b'
+!                 print*, 'get_DOS test 2b'
                call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS)	! module "Electron_tools"
-!                print*, 'get_DOS test 3b'
+!                 print*, 'get_DOS test 3b'
             endselect
          end select
-!          call print_time_step('After DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
+!           call print_time_step('After DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
       endif	!  (numpar%save_DOS) 
    enddo	! NSC = 1, size(Scell) ! for all super-cells
-!    print*, 'get_DOS test end'
+!     print*, 'get_DOS test end'
 end subroutine get_DOS
 
 
@@ -1285,7 +1403,7 @@ subroutine get_DOS_masks(Scell, matter, numpar, only_coupling, do_cartesian)
    nat = size(Scell(NSC)%MDatoms) ! number of atoms
    Nsiz = size(Scell(NSC)%Ha,1) ! total number of orbitals
 
-   BS:if (do_cart) then ! Cartesian basis set:
+   BS:if (do_cart) then ! Cartesian basis set (UNUSED FOR NOW):
       ! Find number of different orbital types:
       norb = identify_xTB_orbitals_per_atom(numpar%N_basis_size) ! module "TB_xTB"
       n_types = number_of_types_of_orbitals(norb, cartesian=.true.)  ! module "Little_subroutines"
@@ -1527,6 +1645,7 @@ subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter,
       do i_at = 1, N_at
          ! how many atoms of this kind are in the supercell:
          Nat = COUNT(MASK = (MDatoms(:)%KOA == i_at))
+         if (Nat <= 0) Nat = 1   ! in case there are no atoms of this kind
          ! Mulliken electron populations:
          mulliken_Ne(i_at) = mulliken_Ne(i_at) / dble(Nat)
       enddo
@@ -1544,9 +1663,289 @@ end subroutine get_Mulliken
 
 
 
+subroutine get_electronic_thermal_parameters(numpar, Scell, NSC, matter, Err)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in) :: matter   ! materil parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !----------------------------
+   ! 1) Electron heat capacity:
+   call get_electronic_heat_capacity(Scell, NSC, Scell(NSC)%Ce, numpar%do_kappa, numpar%DOS_weights, Scell(NSC)%Ce_part) ! module "Electron_tools"
+
+   !----------------------------
+   ! 2) Electronic entropy:
+   !print*, 'Before Se'
+   call electronic_entropy(Scell(NSC)%fe, Scell(NSC)%Se) ! module "Electron_tools"
+   ! and equivalent equilibrium entropy:
+   call electronic_entropy(Scell(NSC)%fe_eq, Scell(NSC)%Se_eq) ! module "Electron_tools"
+
+
+   !----------------------------
+   ! Electron heat conductivity, if required (does not work well...):
+   call get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err) ! below
+
+end subroutine get_electronic_thermal_parameters
+
+
+
+
+subroutine get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in) :: matter	! materil parameters
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Error_handling), intent(inout) :: Err	! error save
+   !-------------------------
+   real(8), dimension(3,3) :: kappa_e, kappa_ei, L_EE, L_ET, L_TT, kappa_ee
+   real(8), dimension(:,:,:), allocatable :: kappa_e_part, L_EE_part, L_ET_part, L_TT_part
+   real(8), dimension(:,:), allocatable :: v_e
+   real(8), dimension(:), allocatable :: dfdE
+   real(8) :: coef, temp(3,3), tau, eps, Emu, Etemp(3,3), E2temp(3,3)
+   integer :: Nsiz, i, j, k, N_at, N_types, i_at, i_types, i_G1
+
+   if (numpar%do_kappa) then ! only if requested
+      if (Scell(NSC)%Te < 35.0d0) then ! effectively zero Te
+         Scell(NSC)%kappa_e = 0.0d0
+
+      else ! non-zero Te
+         eps = 1.0d-8   ! precision
+         Nsiz = size(Scell(NSC)%Ei)
+         if (.not.allocated(Scell(NSC)%kappa_e_part)) allocate(Scell(NSC)%kappa_e_part(size(Scell(NSC)%G_ei_partial,1)))
+         N_at = size(numpar%DOS_weights,1)    ! number of kinds of atoms
+         N_types = size(numpar%DOS_weights,2) ! number of atomic shells (basis set size)
+         ! Band resolved kappa calculations:
+         allocate(kappa_e_part(3,3,size(Scell(NSC)%kappa_e_part)), source=0.0d0)
+         allocate(   L_EE_part(3,3,size(Scell(NSC)%kappa_e_part)), source=0.0d0)
+         allocate(   L_ET_part(3,3,size(Scell(NSC)%kappa_e_part)), source=0.0d0)
+         allocate(   L_TT_part(3,3,size(Scell(NSC)%kappa_e_part)), source=0.0d0)
+
+
+!          call print_time_step('Start: get_electron_heat_conductivity:', 1.0, msec=.true.)   ! module "Little_subroutines"
+
+         !-------------------------
+         ! Electron-ion contribution, according to [https://doi.org/10.1002/aenm.202200657], Eqs.(1-5):
+         ! 1) Get the electron band velosities:
+         allocate(v_e(Nsiz,3))   ! v_x, v_y, v_z
+         call get_electron_band_velosities(numpar, Scell, NSC, v_e, Err) ! below
+
+         ! 2) Get the derivative of Fermi:
+         allocate(dfdE(Nsiz))
+         do i = 1, Nsiz
+            dfdE(i) = Diff_Fermi_E(Scell(NSC)%TeeV, Scell(NSC)%mu, Scell(NSC)%Ei(i)) ! module "Electron_tools"
+         enddo
+
+         ! 3) Collect the terms:
+         L_EE = 0.0d0   ! to start with
+         L_ET = 0.0d0   ! to start with
+         L_TT = 0.0d0   ! to start with
+         do i = 1, Nsiz
+
+            Emu = Scell(NSC)%Ei(i)-Scell(NSC)%mu
+
+            !if ( (abs(Scell(NSC)%Ei(i)) > eps) .and. (abs(Scell(NSC)%I_ij(i)) > eps) .and. (abs(dfdE(i)) > eps) ) then ! [O 1]
+            if ( (abs(Emu) > eps) .and. (abs(dfdE(i)) > eps) ) then  ! [O 2]
+               ! Scattering time:
+               !tau = (Scell(NSC)%Te-Scell(NSC)%Ta)/Scell(NSC)%Ei(i) * Scell(NSC)%Ce_i(i)/Scell(NSC)%I_ij(i) ! [O 1]
+               if (abs(Scell(NSC)%I_ij(i)) > eps) then
+                  tau = (Scell(NSC)%Te-Scell(NSC)%Ta)/Emu * Scell(NSC)%Ce_i(i)/Scell(NSC)%I_ij(i) ! [O 2]
+               else
+                  tau = 0.0d0
+               endif
+!                print*, 'tau', i, Scell(NSC)%Ei(i), Scell(NSC)%I_ij(i), tau
+               tau = abs(tau)
+
+               ! Velosities:
+               forall (j=1:3, k=1:3)
+                  !temp(j,k) = v_e(i,j)*v_e(i,k) * dfdE(i) * tau  ! [O 1]
+                  temp(j,k) = v_e(i,j)*v_e(i,k) * Scell(NSC)%Ce_i(i) * tau  ! [O 2]
+               end forall
+               Etemp(:,:) = Emu*temp(:,:)
+               E2temp(:,:) = Emu*Etemp(:,:)
+
+               ! L terms:
+               L_TT = L_TT + temp
+               L_ET = L_ET + Etemp
+               L_EE = L_EE + E2temp
+
+               do i_at = 1, N_at ! all elements
+                  do i_types = 1, N_types  ! all shells of each element
+                     i_G1 = (i_at-1) * N_types + i_types
+                     L_TT_part(:,:,i_G1) = L_TT_part(:,:,i_G1) + temp * numpar%DOS_weights(i_at, i_types, i)
+                     L_ET_part(:,:,i_G1) = L_ET_part(:,:,i_G1) + Etemp * numpar%DOS_weights(i_at, i_types, i)
+                     L_EE_part(:,:,i_G1) = L_EE_part(:,:,i_G1) + E2temp * numpar%DOS_weights(i_at, i_types, i)
+                  enddo ! i_types
+               enddo ! i_at
+
+            endif ! (abs(Scell(NSC)%Ei(i)) > eps)
+         enddo
+
+         ! Kappa e-i:
+         ! [O 1]:
+!          where (abs(L_TT(:,:)) > eps)
+!             kappa_ei = 1.0d0/(Scell(NSC)%V * Scell(NSC)%Te) * (L_EE - L_ET**2/L_TT) ! [eV*m^2/(A^3*K)]
+!          elsewhere
+!             kappa_ei = 1.0d0/(Scell(NSC)%V * Scell(NSC)%Te) * L_EE ! [eV*m^2/(A^3*K)]
+!          endwhere
+!          where (abs(L_TT_part(:,:,:)) > eps)
+!             kappa_e_part = 1.0d0/(Scell(NSC)%V * Scell(NSC)%Te) * (L_EE_part - L_ET_part**2/L_TT_part) ! [eV*m^2/(A^3*K)]
+!          elsewhere
+!             kappa_e_part = 1.0d0/(Scell(NSC)%V * Scell(NSC)%Te) * L_EE_part ! [eV*m^2/(A^3*K)]
+!          endwhere
+         ! [O 2]:
+         kappa_ei = L_TT/Scell(NSC)%V           ! [eV*m^2/(A^3*K*s)]
+         kappa_e_part = L_TT_part/Scell(NSC)%V  ! [eV*m^2/(A^3*K*s)]
+
+         ! Convert into SI units:
+         coef = 1.0d30*g_e ! [eV/A^3] -> [J/m^3]
+         kappa_ei = kappa_ei * coef ! [W/(m*K)]
+         kappa_e_part = kappa_e_part * coef ! [W/(m*K)]
+
+         !-------------------------
+         ! Electron-electron scattering, using CDF cross-sections:
+         kappa_ee = 1.0d30
+         do i = 1, 3 ! diagonal elements have non-zero contributions
+            kappa_ee(i,i) = 1.0d30
+         enddo
+
+         !-------------------------
+         ! Contributions from electron-ion and electron-electron scattering,
+         ! accordint to [10.1103/PhysRevD.74.043004], Eq.(2):
+         where (kappa_ei(:,:) > eps)
+            kappa_e = 1.0d0/(1.0d0/kappa_ei + 1.0d0/kappa_ee)  ! total electron conductivity
+         elsewhere
+            kappa_e = kappa_ei   ! total electron conductivity
+         endwhere
+         ! Save average electron conductivity:
+         Scell(NSC)%kappa_e = 1.0d0/3.0d0 * (kappa_e(1,1) + kappa_e(2,2) + kappa_e(3,3))  ! trace of the matrix
+         Scell(NSC)%kappa_e_part(:) = 1.0d0/3.0d0 * (kappa_e_part(1,1,:) + kappa_e_part(2,2,:) + kappa_e_part(3,3,:))
+
+         ! Clean up:
+         deallocate(v_e, dfdE)
+
+!          call print_time_step('End :  get_electron_heat_conductivity:', 2.0, msec=.true.)   ! module "Little_subroutines"
+      endif ! (Scell(NSC)%Te < 30.0d0)
+   endif ! (numpar%do_kappa)
+end subroutine get_electron_heat_conductivity
+
+
+subroutine get_electron_band_velosities(numpar, Scell, NSC, v_e, Err)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   real(8), dimension(:,:), intent(inout) :: v_e
+   type(Error_handling), intent(inout) :: Err	! error save
+   !--------------------------------------
+   complex, dimension(:,:), allocatable :: CHij, CSij	! eigenvectors of the hamiltonian
+   real(8), dimension(:), allocatable :: Ei	! [eV] current energy levels at the selected k point
+   real(8), dimension(:,:), allocatable :: E_c ! [eV]
+   real(8) :: k_shift, k_shift2, coef, A, B, C, k_add
+   integer :: Nsiz, i
+
+!    call print_time_step('get_electron_band_velosities:', 1.0, msec=.true.)   ! module "Little_subroutines"
+
+   k_shift = 0.05d0
+   k_shift2 = 2.0d0 * k_shift
+   k_add = k_shift + k_shift2
+   Nsiz = size(Scell(NSC)%Ei)
+
+   ! Get the energy levels:
+   allocate(E_c(Nsiz,6))
+
+   ! Get energy levels at given k-points (function below):
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, k_shift, 0.0d0, 0.0d0, Err)  ! below
+   E_c(:,1) = Ei  ! -kx
+!    call print_time_step('get_electron_band_velosities:', 2.0, msec=.true.)   ! module "Little_subroutines"
+!    print*, 'Ec 1:', E_c(1,1), Scell(NSC)%Ei(1)
+
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, k_shift2, 0.0d0, 0.0d0, Err)  ! below
+   E_c(:,2) = Ei  ! +kx
+!    call print_time_step('get_electron_band_velosities:', 3.0, msec=.true.)   ! module "Little_subroutines"
+!    print*, 'Ec 2:', E_c(1,2), Scell(NSC)%Ei(1)
+
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, 0.0d0, k_shift, 0.0d0, Err)  ! below
+   E_c(:,3) = Ei  ! -ky
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, 0.0d0, k_shift2, 0.0d0, Err)  ! below
+   E_c(:,4) = Ei  ! +ky
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, 0.0d0, 0.0d0, k_shift, Err)  ! below
+   E_c(:,5) = Ei  ! -kz
+   call get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, 0.0d0, 0.0d0, k_shift2, Err)  ! below
+   E_c(:,6) = Ei  ! +kz
+
+   ! Now get the derivetives dEi/dk:
+   do i = 1, Nsiz
+      call fit_parabola_to_3points(0.0d0, Scell(NSC)%Ei(i), k_shift, E_c(i,1), k_shift2, E_c(i,2), A, B, C)  ! module "Algebra_tools"
+      !v_e(i,1) = B   ! v_x
+      v_e(i,1) = m_two_third*(A * k_add) + B   ! v_x
+      call fit_parabola_to_3points(0.0d0, Scell(NSC)%Ei(i), k_shift, E_c(i,3), k_shift2, E_c(i,4), A, B, C)  ! module "Algebra_tools"
+      !v_e(i,2) = B   ! v_y
+      v_e(i,2) = m_two_third*(A * k_add) + B   ! v_y
+      call fit_parabola_to_3points(0.0d0, Scell(NSC)%Ei(i), k_shift, E_c(i,5), k_shift2, E_c(i,6), A, B, C)  ! module "Algebra_tools"
+      !v_e(i,3) = B   ! v_z
+      v_e(i,3) = m_two_third*(A * k_add) + B   ! v_z
+   enddo
+
+   ! Convert into SI units:
+   coef = (g_e*1.0d-10)/g_h ! [eV*A]/h -> [J*m]/h = [m/s]
+   v_e = v_e * coef
+   ! Check for consistency:
+   where(abs(v_e) > g_cvel)  ! cannot be bigger than the speed of light:
+      v_e = sign(g_cvel,v_e)
+   endwhere
+!    print*, 'Ve=', v_e
+!    pause 'get_electron_band_velosities'
+
+   ! Clean up:
+   deallocate(Ei, E_c)
+   call deallocate_array(CHij)   ! module "Little_sobroutine"
+   call deallocate_array(CSij)   ! module "Little_sobroutine"
+end subroutine get_electron_band_velosities
+
+
+
+
+subroutine get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   real(8), dimension(:), intent(inout), allocatable :: Ei	! [eV] current energy levels at the selected k point
+   complex, dimension(:,:), intent(inout), allocatable :: CHij	! eigenvectors of the hamiltonian
+   complex, dimension(:,:), intent(inout), allocatable :: CSij	! overlap matrix of the nonorthogonal hamiltonian
+   real(8), intent(in) :: kx, ky, kz	! k point
+   type(Error_handling), intent(inout) :: Err	! error save
+   !-------------------------------
+   ! Construct complex Hamiltonian from the real one for the given k-point:
+   if ((abs(kx) < 1.0d-14) .AND. (abs(ky) < 1.0d-14) .AND. (abs(kz) < 1.0d-14)) then ! Gamma point:
+      Ei = Scell(NSC)%Ei    !already known
+   else ! any other point:
+      ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
+         select type(ARRAY)
+         type is (TB_H_Pettifor)	! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err) ! below
+         type is (TB_H_Molteni)	! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err)  ! below
+         type is (TB_H_Fu)		! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err) ! below
+         type is (TB_H_NRL)	! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, &
+               Sij=Scell(NSC)%Sij, CSij=CSij) ! below
+         type is (TB_H_DFTB) 	! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, &
+               Sij=Scell(NSC)%Sij, CSij=CSij) ! below
+         type is (TB_H_3TB) 	! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, &
+               Sij=Scell(NSC)%Sij, CSij=CSij) ! below
+         type is (TB_H_xTB) 	! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, Err, &
+               Sij=Scell(NSC)%Sij, CSij=CSij) ! below
+         end select
+      END ASSOCIATE
+   endif
+end subroutine get_complex_Hamiltonian_new
+
 
 subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function 
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(inout), allocatable :: Ei	! [eV] current energy levels at the selected k point
@@ -1573,7 +1972,7 @@ subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, 
             type is (TB_H_NRL)
                call Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_NRL"
             type is (TB_H_DFTB)
-               call Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_DFTB"   
+               call Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_DFTB"
             type is (TB_H_3TB)
                call Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_DFTB", the are the same
             type is (TB_H_xTB)
@@ -1582,6 +1981,8 @@ subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, 
       END ASSOCIATE
    endif
 end subroutine get_complex_Hamiltonian
+
+
 
 
 subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ksx, ksy, ksz, Err, cPRRx, cPRRy, cPRRz, Sij, CSij)   ! CHECKED
@@ -1797,6 +2198,8 @@ end subroutine construct_complex_Hamiltonian
 
 
 
+
+
 subroutine diagonalize_complex_Hamiltonian(CHij, Ei, Err, CSij, CHij_orth)
    complex, dimension(:,:), intent(inout) :: CHij	! complex hermitian Hamiltonian
    real(8), dimension(:), intent(out), allocatable :: Ei ! eigenvalues [eV]
@@ -1917,19 +2320,25 @@ subroutine Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn)
 end subroutine Construct_M_x1
 
 
-subroutine Exponential_wall_forces(TB_Expwall, Scell, NSC, numpar) ! get Exponential wall forces
+subroutine Exponential_wall_forces(TB_Expwall, Scell, NSC, matter, numpar) ! get Exponential wall forces
    class(TB_Exp_wall), allocatable, dimension(:,:), intent(in) :: TB_Expwall	! exponential wall
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of super-cell
+   type(solid), intent(in) :: matter   ! materil parameters
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    !----------------------------------
-    if (allocated(TB_Expwall)) then ! if we have vdW potential defined
+    if (allocated(TB_Expwall)) then ! if we have short-range potential defined
       select type (TB_Expwall)
       type is (TB_Exp_wall_simple)
-          ! Forces for all atoms:
-         call d_Exp_wall_pot_s(Scell, NSC, TB_Expwall, numpar)	! module "Exponential_wall"
+         ! Forces for all atoms:
+         call d_Exp_wall_pot_s(Scell, NSC, TB_Expwall, numpar) ! module "Exponential_wall"
          ! Forces for the super-cell:
-         call d_Exp_wall_Pressure_s(Scell, NSC, TB_Expwall, numpar)	! module "Exponential_wall"
+         call d_Exp_wall_Pressure_s(Scell, NSC, TB_Expwall, numpar)  ! module "Exponential_wall"
+      type is (TB_Short_Rep)
+         ! Forces for all atoms:
+         call d_Short_range_pot_s(Scell, NSC, matter, TB_Expwall, numpar) ! module "Exponential_wall"
+         ! Forces for the super-cell:
+         call d_Short_range_Pressure_s(Scell, NSC, TB_Expwall, matter, numpar) ! module "Exponential_wall"
       end select
    else
       ! No additional forces, if there is no exponential wall parameters given
@@ -1947,7 +2356,7 @@ subroutine Coulomb_forces(TB_Coul, Scell, NSC, numpar)
    real(8), dimension(:,:,:), allocatable :: Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, XijSupce, YijSupce, ZijSupce
    integer :: Nx, Ny, Nz
    
-   if (allocated(TB_Coul)) then ! if we have vdW potential defined
+   if (allocated(TB_Coul)) then ! if we have Coupomb potential defined
       select type (TB_Coul)
       type is (TB_Coulomb_cut) ! so far, it is the only type we have
          ! Get multipliers used many times into temporary arrays:
@@ -1987,34 +2396,27 @@ subroutine vdW_forces(TB_Waals, Scell, NSC, numpar)
    integer :: Nx, Ny, Nz
 
    if (allocated(TB_Waals)) then ! if we have vdW potential defined
-      select type (TB_Waals)
-      type is (TB_vdW_Girifalco) ! so far, it is the only type we have
-!          call dvdWdr_s_OLD(TB_Waals, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! module "Van_der_Waals"
-!          call dvdWdr_Pressure_s_OLD(TB_Waals, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! module "Van_der_Waals"
-
-         ! Get multipliers used many times into temporary arrays:
-         call Construct_B(TB_Waals, Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
+      ! Get multipliers used many times into temporary arrays:
+      call Construct_B(TB_Waals, Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, &
+                        Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
          
-         ! Forces for all atoms:
-!          call dvdWdr_s(TB_Waals, Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Nx, Ny, Nz) ! module "Van_der_Waals"
-         call d_Forces_s(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Nx, Ny, Nz) ! below
+      ! Forces for all atoms:
+      call d_Forces_s(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Nx, Ny, Nz) ! below
          
-         ! Forces for the super-cell:
-!          call dvdWdr_Pressure_s(TB_Waals, Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
-         call  d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
+      ! Forces for the super-cell:
+      call d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
 
-         if (allocated(Bij))   deallocate(Bij)
-         if (allocated(A_rij)) deallocate(A_rij)
-         if (allocated(Xij))   deallocate(Xij)
-         if (allocated(Yij))   deallocate(Yij)
-         if (allocated(Zij))   deallocate(Zij)
-         if (allocated(SXij))  deallocate(SXij)
-         if (allocated(SYij))  deallocate(SYij)
-         if (allocated(SZij))  deallocate(SZij)
-         if (allocated(XijSupce))   deallocate(XijSupce)
-         if (allocated(YijSupce))   deallocate(YijSupce)
-         if (allocated(ZijSupce))   deallocate(ZijSupce)
-      end select
+      if (allocated(Bij))   deallocate(Bij)
+      if (allocated(A_rij)) deallocate(A_rij)
+      if (allocated(Xij))   deallocate(Xij)
+      if (allocated(Yij))   deallocate(Yij)
+      if (allocated(Zij))   deallocate(Zij)
+      if (allocated(SXij))  deallocate(SXij)
+      if (allocated(SYij))  deallocate(SYij)
+      if (allocated(SZij))  deallocate(SZij)
+      if (allocated(XijSupce))   deallocate(XijSupce)
+      if (allocated(YijSupce))   deallocate(YijSupce)
+      if (allocated(ZijSupce))   deallocate(ZijSupce)
    else
       ! No additional forces, if there is no van der Waals parameters given
    endif
@@ -2040,13 +2442,12 @@ subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, 
    real(8), dimension(:,:), allocatable :: Erx_s
    logical :: origin_cell
    n = size(atoms) ! total number of atoms
-   allocate(Erx_s(3,n)) ! x,y,z-forces for each atoms
-   Erx_s = 0.0d0
+   allocate(Erx_s(3,n), source = 0.0d0) ! x,y,z-forces for each atoms
 
    !$omp PARALLEL private(i1,j1,ian,dik,djk,dpsi,x1,b,a_r,ddlta,b_delta, x_cell, y_cell, z_cell, coun_cell, zb, origin_cell)
    !$omp DO
    do ian = 1, n  ! Forces for all atoms
-      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with   
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
       do i1 = 1, n ! contribution from all atoms
          if (ian == i1) then
             dik = 1
@@ -2060,41 +2461,42 @@ subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, 
             else
                djk = 0
             endif
-            cos_if:if ((dik-djk) /= 0) then ! without it, it gives ERROR
-               XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
-                  YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
-                     ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
-                        zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
-                        origin_cell = ALL(zb==0) ! if it is the origin cell
-                        cell_if:if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
-                           ! contribution from this image of the cell:
-                           coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
-                     
-                           x1(1) = Xij(coun_cell,i1,j1) ! x*supce(1,1) + y*supce(1,2) + z*supce(1,3)
-                           x1(2) = Yij(coun_cell,i1,j1) ! x*supce(2,1) + y*supce(2,2) + z*supce(2,3)
-                           x1(3) = Zij(coun_cell,i1,j1) ! x*supce(3,1) + y*supce(3,2) + z*supce(3,3)
-                           b = Bij(coun_cell,i1,j1) ! dvdW(TB_Coul(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),A_rij(coun_cell,i1,j1))
-                           a_r = A_rij(coun_cell,i1,j1) ! call shortest_distance(Scell, NSC, atoms, i1, j1, A_rij(coun_cell,i1,j1), x1=x, y1=y, z1=z, sx1=sx, sy1=sy, sz1=sz) 
+            XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
+               YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+                  ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+                     zb = (/x_cell, y_cell, z_cell/) ! vector of image of the super-cell
+                     origin_cell = ALL(zb==0) ! if it is the origin cell
 
-                           ddlta = real(dik - djk)/a_r
-                           b_delta = b*ddlta
-                           dpsi(1) = dpsi(1) + b_delta*x1(1) ! X, Eq.(F21), H.Jeschke PhD Thesis
-                           dpsi(2) = dpsi(2) + b_delta*x1(2) ! Y, Eq.(F21), H.Jeschke PhD Thesis
-                           dpsi(3) = dpsi(3) + b_delta*x1(3) ! Z, Eq.(F21), H.Jeschke PhD Thesis
-                        endif cell_if
-                     enddo ZC2
-                  enddo YC2
-               enddo XC2
-            endif cos_if
+                     !cos_if:if ((dik-djk) /= 0) then ! without it, it gives ERROR
+                     cell_if:if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+                        ! contribution from this image of the cell:
+                        coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
+
+                        x1(1) = Xij(coun_cell,i1,j1)
+                        x1(2) = Yij(coun_cell,i1,j1)
+                        x1(3) = Zij(coun_cell,i1,j1)
+                        a_r = A_rij(coun_cell,i1,j1) ! shortest distance
+
+                        b = Bij(coun_cell,i1,j1) ! dvdW(TB_Coul(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),a_r)
+
+                        ddlta = dble(dik - djk)/a_r
+                        b_delta = b*ddlta
+                        dpsi(1) = dpsi(1) + b_delta*x1(1) ! X, Eq.(F21), H.Jeschke PhD Thesis
+                        dpsi(2) = dpsi(2) + b_delta*x1(2) ! Y, Eq.(F21), H.Jeschke PhD Thesis
+                        dpsi(3) = dpsi(3) + b_delta*x1(3) ! Z, Eq.(F21), H.Jeschke PhD Thesis
+                     endif cell_if
+                     !endif cos_if
+                  enddo ZC2
+               enddo YC2
+            enddo XC2
          enddo ! j1
-
+         !print*, allocated(Erx_s), size(Erx_s,2)
          Erx_s(1,ian) = Erx_s(1,ian) + dpsi(1) ! repulsive part in X-coordinate
          Erx_s(2,ian) = Erx_s(2,ian) + dpsi(2) ! repulsive part in Y-coordinate
          Erx_s(3,ian) = Erx_s(3,ian) + dpsi(3) ! repulsive part in Z-coordinate
       enddo ! i1
       ! Add van der Waals force to already calculated other forces:
-      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)
-!       write(*,'(a,i3,es,es,es)') 'NEW', ian, Erx_s(:,ian)
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)*0.5d0
    enddo ! ian
    !$omp end do
    !$omp end parallel
@@ -2123,15 +2525,16 @@ subroutine d_Forces_Pressure(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zi
       n = size(atoms)
 
       PForce = 0.0d0 ! to start with
-      do i = 1, n ! Forces from all atoms
-         Rep_Pr = 0.0d0 ! to start
-         dpsy = 0.0d0
-         do j = 1, n ! do for all pairs of atoms
-            XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
-               YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
-                  ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
-                     zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
-                     origin_cell = ALL(zb==0) ! if it is the origin cell
+      XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
+         YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+            ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+               zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+               origin_cell = ALL(zb==0) ! if it is the origin cell
+               do i = 1, n ! Forces from all atoms
+                  Rep_Pr = 0.0d0 ! to start
+                  dpsy = 0.0d0
+                  do j = 1, n ! do for all pairs of atoms
+
                      cell_if:if ((j /= i) .or. (.not.origin_cell)) then ! exclude self-interaction within original super cell
                         ! contribution from this image of the cell:
                         coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
@@ -2143,7 +2546,7 @@ subroutine d_Forces_Pressure(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zi
                         scur(2) = SYij(coun_cell,i,j) ! SY
                         scur(3) = SZij(coun_cell,i,j) ! SZ
                         r = A_rij(coun_cell,i,j)     ! R
-                        dpsy = Bij(coun_cell,i,j)    ! dvdW(TB_Coul(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),A_rij(coun_cell,i1,j1))
+                        dpsy = Bij(coun_cell,i,j)    ! dvdW(TB_Coul(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),r)
 
                         do k = 1,3 ! supce indices: a,b,c
                            do l = 1,3  ! supce indices: x,y,z
@@ -2151,22 +2554,22 @@ subroutine d_Forces_Pressure(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zi
                            enddo ! l
                         enddo ! k
                      endif cell_if
-                  enddo ZC2
-               enddo YC2
-            enddo XC2
-         enddo ! j
+                  enddo ! j
 
-         do k = 1,3 ! supce indices
-            do l = 1,3  ! supce indices
-               !Scell(NSC)%SCforce%rep(l,k) = Scell(NSC)%SCforce%rep(l,k) + Rep_Pr(l,k) !*0.5d0
-               PForce(l,k) = PForce(l,k) + Rep_Pr(l,k)
-            enddo ! l
-         enddo ! k
-      enddo ! i
+                  do k = 1,3 ! supce indices
+                     do l = 1,3  ! supce indices
+                        !Scell(NSC)%SCforce%rep(l,k) = Scell(NSC)%SCforce%rep(l,k) + Rep_Pr(l,k) !*0.5d0
+                        PForce(l,k) = PForce(l,k) + Rep_Pr(l,k)*0.5d0
+                     enddo ! l
+                  enddo ! k
+               enddo ! i
+            enddo ZC2
+         enddo YC2
+      enddo XC2
       Scell(NSC)%SCforce%rep = Scell(NSC)%SCforce%rep + PForce ! add vdW part to existing TB part
-!       print*, 'NEW P', PForce
    endif
 end subroutine d_Forces_Pressure
+
 
 
 !-------------------------------------
@@ -2266,31 +2669,34 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
          
          Scell(NSC)%nrg%E_rep = Erepuls ! [eV]
          
-         ! van der Waals potential energy:
+         ! van der Waals (vdW) potential energy:
          Scell(NSC)%nrg%E_vdW = vdW_s(Scell(NSC)%TB_Waals, Scell, NSC, numpar) * Na_inv ! [eV/atom], function below
          
          ! Coulomb potential energy:
          Scell(NSC)%nrg%E_coul = Coulomb_s(Scell(NSC)%TB_Coul, Scell, NSC, numpar) * Na_inv ! [eV/atom], function below
          
          ! Exponential wall potential energy:
-         Scell(NSC)%nrg%E_expwall = Exponential_wall_s(Scell(NSC)%TB_Expwall, Scell, NSC, numpar) * Na_inv ! [eV/atom], below
+         Scell(NSC)%nrg%E_expwall = Exponential_wall_s(Scell(NSC)%TB_Expwall, Scell, NSC, matter, numpar) * Na_inv ! [eV/atom], below
       enddo
       
    endif DO_TB
 end subroutine get_pot_nrg
 
 
-function Exponential_wall_s(TB_Expwall, Scell, NSC, numpar) result(Pot)
+function Exponential_wall_s(TB_Expwall, Scell, NSC, matter, numpar) result(Pot)
    real(8) :: Pot	! Exponential wall energy [eV]
-   class(TB_Exp_wall), allocatable, dimension(:,:), intent(in) :: TB_Expwall	! exponential wall
+   class(TB_Exp_wall), allocatable, dimension(:,:), intent(in) :: TB_Expwall  ! exponential wall
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Solid), intent(in) :: matter   ! all material parameters
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    real(8) a
    if (allocated(TB_Expwall)) then ! if we have Exponential wall potential defined
       select type(TB_Expwall)
       type is (TB_Exp_wall_simple)
          call get_Exp_wall_s(TB_Expwall, Scell, NSC, numpar, a)   ! module "Exponential_wall"
+      type is (TB_Short_Rep)
+         call get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! module "Exponential_wall"
       end select
    else !For this material exponential wall class is undefined
       a = 0.0d0 ! no energy for no potential
@@ -2326,13 +2732,17 @@ function vdW_s(TB_Waals, Scell, NSC, numpar)
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8) :: vdW_s ! van der Waals energy [eV]
    real(8) a
+
+   !print*, 'vdW_s', allocated(TB_Waals)
+   !pause
+
    if (allocated(TB_Waals)) then ! if we have vdW potential defined
-      select type(TB_Waals)
-      type is (TB_vdW_Girifalco)
+!       select type(TB_Waals)
+!       type is (TB_vdW_Girifalco)
          call get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! van der Waals energy, module "Van_der_Waals"
-      type is (TB_vdW_Dumitrica) ! UNFINISHED! DO NOT USE!
-         call get_vdW_s_D(TB_Waals, Scell, NSC, numpar, a)   ! van der Waals energy, module "Van_der_Waals"
-      end select
+!       type is (TB_vdW_Dumitrica) ! UNFINISHED! DO NOT USE!
+!          call get_vdW_s_D(TB_Waals, Scell, NSC, numpar, a)   ! van der Waals energy, module "Van_der_Waals"
+!       end select
    else !For this material vdW class is undefined
       a = 0.0d0 ! no energy for no potential
    endif
@@ -2384,6 +2794,8 @@ FUNCTION Erep_s(TB_Repuls, Scell, NSC, numpar)   ! repulsive energy as a functio
       call get_Erep_s_NRL(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_NRL"
    type is (TB_Rep_DFTB)
       call get_Erep_s_DFTB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_DFTB"
+   type is (TB_Rep_DFTB_no)
+      call get_Erep_s_DFTB_no(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_DFTB"
    type is (TB_Rep_3TB)
       call get_Erep_s_3TB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_3TB"
    type is (TB_Rep_BOP)
@@ -2405,7 +2817,7 @@ subroutine update_nrg_after_change(Scell, matter, numpar, time, Err)
    !=========================================
    integer NSC
    
-    ! Update correspondingly the electron distribution for the new given total energy:
+   ! Update correspondingly the electron distribution for the new given total energy:
    call update_fe(Scell, matter, numpar, time, Err, do_E_tot=.true.) ! module "Electron_tools"
       
    do NSC = 1, size(Scell)
@@ -2466,10 +2878,10 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
       SC:do NSC = 1, size(Scell) ! for all supercells
          dE_nonadiabat = 0.0d0
+         !print*, 'NA:', numpar%Nonadiabat, t, numpar%t_NA
          if ((numpar%Nonadiabat) .AND. (t .GT. numpar%t_NA)) then ! electron-coupling included
             ! Ensure Fermi distribution:
             call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
-            
 !             print*, 'Electron_ion_coupling 1'
             
             !--------------------------------
@@ -2552,7 +2964,7 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
                      
                      
                      !sssssssssssssssssssssss
-                     ! Project specific subroutine:
+                     ! Project-specific subroutine:
                      ! Test SAKUREI'S EXPRESSION:
 !                     call Landau_vs_Sakurei_test(Mij, Scell(NSC)%Ha, Scell(NSC)%Ha0, Ha_non=Scell(NSC)%H_non, Ha_non0=Scell(NSC)%H_non0, wr=Scell(NSC)%Ei, wr0=Scell(NSC)%Ei0) ! module "Nonadiabatic"
                      !sssssssssssssssssssssss
@@ -2561,14 +2973,15 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
 !                      print*, 'Electron_ion_coupling 4', numpar%DOS_splitting
 !                      E0 = Scell(NSC)%nrg%El_low
 !                      print*, 'before', E0
-                     select case (numpar%DOS_splitting) ! include analysis of partial coupling (contribution of atomic shells) or not:
-                     case (1)
-                         call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
-                            dE_nonadiabat, numpar%NA_kind, numpar%DOS_weights, Scell(NSC)%G_ei_partial) ! module "Nonadiabatic"
-                     case default    ! No need to sort per orbitals
-                        call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
-                            dE_nonadiabat, numpar%NA_kind) ! module "Nonadiabatic"
-                     endselect
+!                      select case (numpar%DOS_splitting) ! include analysis of partial coupling (contribution of atomic shells) or not:
+!                      case (1)
+                         call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, &
+                                 Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
+                                 dE_nonadiabat, numpar%NA_kind, numpar%DOS_weights, Scell(NSC)%G_ei_partial) ! module "Nonadiabatic"
+!                      case default    ! No need to sort per orbitals
+!                         call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
+!                             dE_nonadiabat, numpar%NA_kind) ! module "Nonadiabatic"
+!                      endselect
 !                      print*, 'Electron_ion_coupling 5'
                   enddo ! iz
                enddo ! iy
@@ -2912,6 +3325,10 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    real(8), dimension(:,:,:), allocatable :: M_Lag_exp   ! matrix of Laguerres for 3-body radial funcs (for 3TB)
    real(8), dimension(:,:,:), allocatable :: M_d_Lag_exp   ! matrix of derivatives of Laguerres for 3-body radial funcs
    real(8), dimension(:,:,:), allocatable :: Mjs      ! matrix of K-S part of overlaps with s-orb. (for 3TB)
+   ! For vdW and Coulomb contribution:
+   real(8), dimension(:,:,:), allocatable :: Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, XijSupce, YijSupce, ZijSupce
+   integer :: Nx, Ny, Nz
+
    
    ! so far we only have one supercell:
    NSC = 1
@@ -2984,6 +3401,8 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          call dErdr_Pressure_s_NRL(ARRAY2, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_NRL"
       type is (TB_Rep_DFTB) ! TB parametrization according to DFTB
          call dErdr_Pressure_s_DFTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_DFTB"
+      type is (TB_Rep_DFTB_no) ! TB parametrization according to DFTB
+         call dErdr_Pressure_s_DFTB_no(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_DFTB"
       type is (TB_Rep_3TB) ! TB parametrization according to 3TB
          call dErdr_Pressure_s_3TB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_3TB"
       type is (TB_Rep_BOP) ! TB parametrization according to BOP
@@ -2992,7 +3411,75 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
 !          call dErdr_Pressure_s_xTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_xTB"
       end select
    END ASSOCIATE
-   
+
+   ! Other contributions to forces/pressure:
+   ! van der Waals (vdW) part with TB Hamiltonian:
+   if (allocated(Scell(NSC)%TB_Waals)) then ! if we have vdW potential defined
+!       ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Waals(:,:))
+!       select type (ARRAY2)
+!       type is (TB_vdW_Girifalco)
+         ! Get multipliers used many times into temporary arrays:
+         call Construct_B(Scell(NSC)%TB_Waals, Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
+         ! Forces for the super-cell:
+         call d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
+!       type is (TB_vdW_LJ_cut)
+!          ! Get multipliers used many times into temporary arrays:
+!          call Construct_B(Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Van_der_Waals"
+!          ! Forces for the super-cell:
+!          call  d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
+!       end select
+!       END ASSOCIATE
+      if (allocated(Bij))   deallocate(Bij)
+      if (allocated(A_rij)) deallocate(A_rij)
+      if (allocated(Xij))   deallocate(Xij)
+      if (allocated(Yij))   deallocate(Yij)
+      if (allocated(Zij))   deallocate(Zij)
+      if (allocated(SXij))  deallocate(SXij)
+      if (allocated(SYij))  deallocate(SYij)
+      if (allocated(SZij))  deallocate(SZij)
+      if (allocated(XijSupce))   deallocate(XijSupce)
+      if (allocated(YijSupce))   deallocate(YijSupce)
+      if (allocated(ZijSupce))   deallocate(ZijSupce)
+   endif
+
+
+   if (allocated(Scell(NSC)%TB_Coul)) then ! if we have Coulomb potential defined
+      ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Coul(:,:))
+      select type (ARRAY2)
+      type is (TB_Coulomb_cut) ! so far, it is the only type we have
+         ! Get multipliers used many times into temporary arrays:
+         call Construct_B_C(ARRAY2, Scell, NSC, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Coulomb"
+         call d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
+         if (allocated(Bij))   deallocate(Bij)
+         if (allocated(A_rij)) deallocate(A_rij)
+         if (allocated(Xij))   deallocate(Xij)
+         if (allocated(Yij))   deallocate(Yij)
+         if (allocated(Zij))   deallocate(Zij)
+         if (allocated(SXij))  deallocate(SXij)
+         if (allocated(SYij))  deallocate(SYij)
+         if (allocated(SZij))  deallocate(SZij)
+         if (allocated(XijSupce))   deallocate(XijSupce)
+         if (allocated(YijSupce))   deallocate(YijSupce)
+         if (allocated(ZijSupce))   deallocate(ZijSupce)
+      end select
+      END ASSOCIATE
+   endif
+
+   ! Exponential wall potential part:
+   if (allocated(Scell(NSC)%TB_Expwall)) then ! if we have short-range potential defined
+      ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Expwall)
+      select type (ARRAY2)
+      type is (TB_Exp_wall_simple)
+         ! Forces for the super-cell:
+         call d_Exp_wall_Pressure_s(Scell, NSC, ARRAY2, numpar)  ! module "Exponential_wall"
+      type is (TB_Short_Rep)
+         ! Forces for the super-cell:
+         call d_Short_range_Pressure_s(Scell, NSC, ARRAY2, matter, numpar) ! module "Exponential_wall"
+      end select
+      END ASSOCIATE
+   endif
+   !cccccccccccccccccccccccccccccccccccccccccccccc
+
    ! Get forces for the supercell:
    call Potential_super_cell_forces(numpar, Scell, NSC, matter)  ! module "Atomic_tools"
 
@@ -3000,7 +3487,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    call super_cell_forces(numpar, Scell, NSC, matter, Scell(NSC)%SCforce, sigma_tensor) ! module "Atomic_tools"
    
    ! Invert sigma tensor:
-   call  Invers_3x3(sigma_tensor, sigma_inversed, 'Get_pressure')	! module "Algebra_tools"
+   call Invers_3x3(sigma_tensor, sigma_inversed, 'Get_pressure')	! module "Algebra_tools"
    
    ! Calculate the stress tensor (factor 1.040 is to convert from [kg/A/fs^2] to [kg/m/s^2]):
    stress_tensor(:,:) = Scell(NSC)%SCforce%total(:,:) * matter%W_PR * sigma_inversed(:,:) * 1.0d40	! [kg/m/s^2]

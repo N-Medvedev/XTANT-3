@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -21,17 +21,32 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-! This module contains subroutines to deal with cross-sections:
+! This module contains subroutines to deal with cross-sections.
+! References used in the module:
+! [1]  F. Salvat, J. M. Fernandez-Varea, E. Acosta, J. Sempau
+!   "PENELOPE-2014 A Code System for Monte Carlo Simulation of Electron and Photon Transport", OECD (2014)
+! [2] R. Rymzhanov et al. Phys. Status Solidi B 252, 159-164 (2015) / DOI 10.1002/pssb.201400130
+! [3] M. Azzolini et al. J. Phys. Condens. Matter 31, 055901 (2019)
+
+
 
 MODULE MC_cross_sections
 use Objects
 use Universal_constants
-use Variables
 use Little_subroutines, only : Find_in_array_monoton, linear_interpolation, print_progress, interpolate_data_on_grid
-use Dealing_with_files
+use Dealing_with_files, only : Count_lines_in_file, read_file
 use Dealing_with_EADL, only : m_EPDL_file, READ_EPDL_TYPE_FILE_real, next_designator, Read_EPDL_data
 
 implicit none
+PRIVATE
+
+
+real(8), parameter :: m_two_third = 2.0d0/3.0d0
+
+
+public :: Mean_free_path, which_atom, which_shell, NRG_transfer_elastic_atomic, Electron_energy_transfer_inelastic
+public :: Get_mfps, Get_photon_attenuation, TotIMFP
+
 
  contains
 
@@ -175,24 +190,38 @@ end subroutine which_shell
 
 !EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
 ! Electrons
-subroutine get_MFPs(matter, laser, numpar, Err)
+subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
+   type(Super_cell), dimension(:), intent(in) :: Scell ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! supercell index
    type(Solid), intent(inout) :: matter ! parameters of the material
    type(Pulse), dimension(:), intent(in) :: laser ! Laser pulse parameters
    type(Numerics_param), intent(in) :: numpar  ! all numerical parameters
+   real(8), intent(in) :: TeeV   ! [eV] electronic tempreature
    type(Error_handling), intent(inout) :: Err	! error save
    !===============================================
    integer N_grid, N, FN, INFO
    character(300) :: File_name, Error_descript
    character(10) :: chtemp, chtemp2
    logical :: redo, file_opened, file_exists, read_well
-   integer i, j, k, Nshl, my_id, Reason, count_lines
-   real(8) :: Ele, L, dEdx, Omega, ksum, fsum
+   integer i, j, k, Nshl, my_id, Reason, count_lines, N_Te_points
+   real(8) :: Ele, L, dEdx, Omega, ksum, fsum, Te_temp
    integer OMP_GET_THREAD_NUM, OMP_GET_NUM_THREADS
    
    ! Set grid for MFPs:
    call get_grid_4CS(N_grid, maxval(laser(:)%hw), matter%Atoms(1)%El_MFP(1)%E)
 
    if (.not.allocated(matter%Atoms(1)%El_MFP(1)%L)) allocate(matter%Atoms(1)%El_MFP(1)%L(N_grid))
+
+   ! Temperature dependence (for the valence/conduction band only):
+   if (.not. allocated(matter%Atoms(1)%El_MFP_vs_T)) then
+      N_Te_points = 51  ! points in Te, by 1000K step
+      allocate(matter%Atoms(1)%El_MFP_vs_T(N_Te_points))
+      do i = 1, N_Te_points
+         allocate(matter%Atoms(1)%El_MFP_vs_T(i)%L(N_grid))
+         allocate(matter%Atoms(1)%El_MFP_vs_T(i)%E(N_grid))
+      enddo
+   endif
+
    ! Total inelastic mean free paths:
    if (.not.allocated(matter%El_MFP_tot%L)) allocate(matter%El_MFP_tot%L(N_grid))
    if (.not.allocated(matter%El_MFP_tot%E)) allocate(matter%El_MFP_tot%E(N_grid))
@@ -212,6 +241,17 @@ subroutine get_MFPs(matter, laser, numpar, Err)
       Nshl = size(matter%Atoms(i)%Ip)
       SHELLS:do j = 1, Nshl ! for all shells of this atom
          redo = .false. ! may be there is no need to recalculate MFPs
+
+
+         ! Check if CDF coefficients are set:
+         ! if not, use single-pole approximation
+         if (.not. allocated(matter%Atoms(i)%CDF)) then
+            allocate(matter%Atoms(i)%CDF(Nshl))
+            if (.not. allocated(matter%Atoms(i)%CDF(j)%A) ) then
+               call set_single_pole_CDF(Scell, NSC, matter, i, j)  ! below
+            endif
+         endif
+
 
          if ((i .NE. 1) .or. (j .NE. 1)) then
             if (.not.allocated(matter%Atoms(i)%El_MFP(j)%E)) allocate(matter%Atoms(i)%El_MFP(j)%E(N_grid))
@@ -259,7 +299,7 @@ subroutine get_MFPs(matter, laser, numpar, Err)
             !!$omp do
             do k = 1, N_grid
                Ele = matter%Atoms(i)%El_MFP(j)%E(k) ! [eV] energy
-               call TotIMFP(Ele, matter, i, j, L, dEdx=dEdx)
+               call TotIMFP(Ele, matter, TeeV, i, j, L, dEdx=dEdx)
                matter%Atoms(i)%El_MFP(j)%L(k) = L ! [A] MFP
                write(FN,'(f25.16,es25.16,es25.16)') Ele, L, dEdx
                call print_progress('Progress:',k,N_grid)    ! module "Little_subroutines"
@@ -326,6 +366,22 @@ subroutine get_MFPs(matter, laser, numpar, Err)
       write(FN,'(f25.16,es25.16)') matter%El_MFP_tot%E(i), matter%El_MFP_tot%L(i)
    enddo
 
+
+   !TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
+   ! Get the mean free paths vs Te:
+   Nshl = size(matter%Atoms(1)%Ip)
+   select case (matter%Atoms(1)%TOCS(Nshl)) ! Valence band and CDF only
+   case (1) ! CDF
+      !!$omp PARALLEL private(i, Te_temp)
+      !!$omp do schedule(dynamic)
+      do i = 1, N_Te_points   ! for all electronic temperature points
+         Te_temp = dble((i-1)*1000)*g_kb_EV ! electronic temperature [eV]
+         call IMFP_vs_Te_files(matter, laser, numpar, Te_temp, i) ! below
+      enddo ! i = 1, N_Te_points
+      !!$omp end do
+      !!$omp end parallel
+   endselect
+
    !iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
    ! Make the inverse MFPs, since that's how we use them in the MC code:
    matter%El_MFP_tot%L = 1.0d0/matter%El_MFP_tot%L ! [1/A]
@@ -354,15 +410,136 @@ end subroutine get_MFPs
 
 
 
-subroutine Electron_energy_transfer_inelastic(matter, Ele, Nat, Nshl, mfps, dE_out)
+subroutine set_single_pole_CDF(Scell, NSC, matter, i, j)  ! only for VB/CB
+   type(Super_cell), dimension(:), intent(in) :: Scell ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! supercell index
+   type(Solid), intent(inout) :: matter ! parameters of the material
+   integer, intent(in) :: i, j   ! index of atom and shell
+   !----------------
+   real(8) :: Omega, NVB, ksum, fsum
+   integer :: Nshl
+
+   Nshl = size(matter%Atoms(1)%Ip)  ! index of the valence band
+   if ( (i == 1) .and. (j == Nshl) ) then ! do only for the valence band
+
+      if (.not. allocated(matter%Atoms(i)%N_CDF)) allocate(matter%Atoms(i)%N_CDF(matter%Atoms(i)%sh)) ! allocate number of electrons
+
+      if (.not.allocated(matter%Atoms(i)%CDF(j)%A)) then
+         matter%Atoms(i)%N_CDF(j) = 1  ! set single CDF, coefficients to be determined
+         allocate(matter%Atoms(i)%CDF(j)%A(matter%Atoms(i)%N_CDF(j)))
+         allocate(matter%Atoms(i)%CDF(j)%E0(matter%Atoms(i)%N_CDF(j)))
+         allocate(matter%Atoms(i)%CDF(j)%G(matter%Atoms(i)%N_CDF(j)))
+      endif
+
+      NVB = dble(Scell(NSC)%Ne) / dble(Scell(NSC)%Na) ! valence electrons per atom
+
+      ! Set them according to the single-pole approximation:
+      Omega = w_plasma(1d6*matter%At_dens*NVB) ! function below, plasma frequency [1/s]
+
+      matter%Atoms(i)%CDF(j)%E0(1) = sqrt((g_h/g_e)*(g_h/g_e) * Omega)  ! [eV]
+      ! Gamma set equal to E0 without effective mass (empirical approximation):
+      matter%Atoms(i)%CDF(j)%G(1) = matter%Atoms(i)%CDF(j)%E0(1)
+      ! A is set vie normalization (sum rule):
+      matter%Atoms(i)%CDF(j)%A(1) = 1.0d0   ! just to get sum rule to renormalize below
+      ! Get sum rule:
+      call sumrules(matter%Atoms(i)%CDF(j)%A, matter%Atoms(i)%CDF(j)%E0, matter%Atoms(i)%CDF(j)%G, ksum, fsum, Scell(NSC)%E_gap, Omega) ! below
+
+      matter%Atoms(i)%CDF(j)%A(1) = NVB/ksum
+
+   endif !( (i == 1) .and. (j == Nshl) )
+end subroutine set_single_pole_CDF
+
+
+
+subroutine IMFP_vs_Te_files(matter, laser, numpar, Te, N_Te)
+   type(Solid), intent(inout) :: matter ! parameters of the material
+   type(Pulse), dimension(:), intent(in) :: laser ! Laser pulse parameters
+   type(Numerics_param), intent(in) :: numpar  ! all numerical parameters
+   real(8), intent(in) :: Te  ! [eV] electronic tempreature
+   integer, intent(in) :: N_Te   ! index
+   !-------------------
+   logical :: redo, file_exists, file_opened, read_well
+   character(10) :: chtemp, ch_Te
+   character(200) :: File_name
+   integer :: Nshl, FN, N, N_grid, k, Reason, count_lines
+   real(8) :: Ele, L, dEdx
+
+
+   redo = .false. ! may be there is no need to recalculate MFPs
+   Nshl = size(matter%Atoms(1)%Ip)
+   N_grid = size(matter%Atoms(1)%El_MFP_vs_T(1)%L)
+   matter%Atoms(1)%El_MFP_vs_T(N_Te)%E(:) = matter%Atoms(1)%El_MFP(Nshl)%E(:) ! copy energy grid [eV]
+
+   write(chtemp,'(i6)') INT(matter%Atoms(1)%Ip(Nshl))
+   write(ch_Te,'(i6)') INT(Te*g_kb)
+   write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(matter%Atoms(1)%Name))//'_CDF_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV_'//trim(adjustl(ch_Te))//'K.txt'
+   FN = 312+N_Te   ! file number
+
+   inquire(file=trim(adjustl(File_name)),exist=file_exists) ! check if this file already exists
+   if (file_exists) then ! IMFPs are already there
+      open(UNIT=FN, FILE = trim(adjustl(File_name)))
+      inquire(file=trim(adjustl(File_name)),opened=file_opened)
+      if (.not.file_opened) then ! there is no such file, create a new one
+         open(UNIT=FN, FILE = trim(adjustl(File_name)))
+         inquire(file=trim(adjustl(File_name)),opened=file_opened)
+         redo = .true. ! no data, need to recalculate the MFPs
+      else
+         call Count_lines_in_file(FN, N) ! get how many lines in the file
+         !print*, 'N:', N, N_grid
+         if (N .NE. N_grid) then ! replace file
+            redo = .true. ! not enough data, need to recalculate the MFPs
+         endif
+      endif
+   else
+      open(UNIT=FN, FILE = trim(adjustl(File_name)))
+      redo = .true. ! no data, need to recalculate the MFPs
+   endif
+
+9901 if (redo) then ! recalculate the MFPs:
+      write(0,'(a,f8.1)') ' Calculating electron IMFP for valence band at Te=', Te*g_kb
+      do k = 1, N_grid
+         Ele = matter%Atoms(1)%El_MFP(Nshl)%E(k) ! [eV] energy grid
+         call TotIMFP(Ele, matter, Te, 1, Nshl, L, dEdx=dEdx)   ! below
+         matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(k) = L ! [A] MFP
+         write(FN,'(f25.16,es25.16,es25.16)') Ele, L, dEdx
+         call print_progress('Progress:',k,N_grid)    ! module "Little_subroutines"
+         !my_id = 1 + OMP_GET_THREAD_NUM() ! identify which thread it is
+         !write(*,*) 'Thread #', my_id, k
+         !print*, 'MFP:', k, Ele, L
+      enddo
+      print*, 'Electron IMFPs are saved into file:', trim(adjustl(File_name))
+
+   else ! Just read MFPs from the file:
+      count_lines = 0 ! to start with
+      do k = 1, N_grid
+         read(FN,*,IOSTAT=Reason) Ele, L, dEdx ! read the line
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            redo = .true. ! no data, need to recalculate the MFPs
+            goto 9901 ! if couldn't read the file, just recalculate it then
+         endif
+         matter%Atoms(1)%El_MFP_vs_T(N_Te)%E(k) = Ele ! [eV] energy
+         matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(k) = L   ! [A] MFP
+      enddo
+   endif
+   inquire(file=trim(adjustl(File_name)),opened=file_opened)
+   if (file_opened) close(FN)
+
+   matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) = 1.0d0/matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) ! [1/A] inverse MFP
+end subroutine IMFP_vs_Te_files
+
+
+
+subroutine Electron_energy_transfer_inelastic(matter, TeeV, Ele, Nat, Nshl, mfps, dE_out)
     type(solid), intent(in) :: matter	! materil parameters
     real(8), intent(in) :: Ele  ! electron energy [eV]
+    real(8), intent(in) :: TeeV  ! electronic tempreature [eV]
     integer, intent(in) :: Nat, Nshl    ! number of atom, number of shell
     type(MFP), intent(in) :: mfps	! electron mean free paths for each shell [1/A]
     real(8), intent(out) :: dE_out   ! the transferred energy [eV]
     real(8) :: L_tot    ! [A] total mean free path
     integer i, j, n, coun
-    real(8) Emin, Emax, E_cur, E, dE, dL, Ltot1, Ltot0, ddEdx, a, b, temp1, temp2, RN, L_need, L_cur, Sigma_cur
+    real(8) Emin, Emax, E_cur, E, dE, dL, Ltot1, Ltot0, ddEdx, a, b, temp1, temp2, RN, L_need, L_cur, Sigma_cur, Tfact
 
     if (Ele .LT. matter%Atoms(Nat)%Ip(Nshl)) then
        print*, 'Attention! In subroutine Electron_energy_transfer_inelastic:'
@@ -392,6 +569,9 @@ subroutine Electron_energy_transfer_inelastic(matter, Ele, Nat, Nshl, mfps, dE_o
        call Diff_cross_section(Ele, E, matter, Nat, Nshl, Ltot0)
        do while (L_cur .GT. L_need)
           dE = (1.0d0/(E+1.0d0) + E)/real(n)
+          ! Temperature factor:
+          Tfact = temperature_factor(dE, TeeV)    ! below
+
           ! If it's Simpson integration:
           a =  E + dE/2.0d0
           call Diff_cross_section(Ele, a, matter, Nat, Nshl, dL)
@@ -399,6 +579,10 @@ subroutine Electron_energy_transfer_inelastic(matter, Ele, Nat, Nshl, mfps, dE_o
           b = E + dE
           call Diff_cross_section(Ele, b, matter, Nat, Nshl, dL)
           temp2 = dE/6.0d0*(Ltot0 + 4.0d0*temp1 + dL)
+
+          ! Include temperature factor:
+          temp2 = temp2*Tfact
+
           Ltot1 = Ltot1 + temp2
           Ltot0 = dL
           L_cur = 1.0d0/Ltot1
@@ -434,16 +618,17 @@ end subroutine Electron_energy_transfer_inelastic
 
 
 !subroutine TotIMFP(Ele, Target_atoms, Nat, Nshl, Sigma, dEdx, Matter, Mat_DOS, Mat_DOS_inv, NumPar)
-subroutine TotIMFP(Ele, matter, Nat, Nshl, Sigma, dEdx)
+subroutine TotIMFP(Ele, matter, TeeV, Nat, Nshl, Sigma, dEdx)
     real(8), intent(in) :: Ele  ! electron energy [eV]
     !type(Atom), dimension(:), intent(in) :: Target_atoms  ! all data for target atoms
     type(Solid), intent(in) :: matter ! parameters of the material
+    real(8), intent(in) :: TeeV  ! [eV] electronic tempreature
     integer, intent(in) :: Nat, Nshl    ! number of atom, number of shell
     real(8), intent(out) :: Sigma       ! calculated inverse mean free path (cross-section) [1/A],
     real(8), intent(out), optional :: dEdx   ! the energy losses [eV/A]
     !=====================================
     integer i, j, n, num
-    real(8) Emin, Emax, E, dE, dL, Ltot1, Ltot0, ddEdx, a, b, temp1, temp2
+    real(8) Emin, Emax, E, dE, dL, Ltot1, Ltot0, ddEdx, a, b, temp1, temp2, Tfact
 
     Emin = matter%Atoms(Nat)%Ip(Nshl) ! [eV] ionization potential of the shell is minimum possible transferred energy
 
@@ -452,39 +637,45 @@ subroutine TotIMFP(Ele, matter, Nat, Nshl, Sigma, dEdx)
 
     select case (matter%Atoms(Nat)%TOCS(Nshl)) ! which inelastic cross section to use (BEB vs CDF):
     case (1) ! CDF cross section
-       n = 10*(MAX(INT(Emin),10))    ! number of integration steps
-       dE = (Emax - Emin)/(real(n)) ! differential of transferred momentum [kg*m/s]
-       i = 1       ! to start integration
-       E = Emin    ! to start integration
-       Ltot1 = 0.0d0
-       Ltot0 = 0.0d0
-       !call Diff_cross_section(Ele, E, Target_atoms, Nat, Nshl, Ltot0, Mass, Matter, Mat_DOS_temp, NumPar)
-       call Diff_cross_section(Ele, E, matter, Nat, Nshl, Ltot0)
-       ddEdx = 0.0d0
-       do while (E .LE. Emax) ! integration
-          dE = (1.0d0/(E+1.0d0) + E)/real(n)
-          ! If it's Simpson integration:
-          a =  E + dE/2.0d0
-          !call Diff_cross_section(Ele, a, Target_atoms, Nat, Nshl, dL, Mass, Matter, Mat_DOS_temp, NumPar)
-          call Diff_cross_section(Ele, a, matter, Nat, Nshl, dL)
-          temp1 = dL
-          b = E + dE
-          !call Diff_cross_section(Ele, b, Target_atoms, Nat, Nshl, dL, Mass, Matter, Mat_DOS_temp, NumPar)
-          call Diff_cross_section(Ele, b, matter, Nat, Nshl, dL)
-          temp2 = dE/6.0d0*(Ltot0 + 4.0d0*temp1 + dL)
-          Ltot1 = Ltot1 + temp2
-          if (present(dEdx)) ddEdx = ddEdx + E*temp2
-          Ltot0 = dL
-          E = E + dE  ! [eV]
-       enddo
-       if (Ltot1 .LE. 0.0d0) then
-          Sigma = 1d30 ! [A]
-       else
-          Sigma = 1.0d0/Ltot1 !*dE ! [A]
-       endif
+       if (Ele < Emin) then ! no scattering possible
+         Ltot1 = 0.0d0
+         ddEdx = 0.0d0
+         Sigma = 1d30 ! [A]
+       else ! (Ee < Emin) ! scattering possible
+         n = 10*(MAX(INT(Emin),10))    ! number of integration steps
+         dE = (Emax - Emin)/(real(n)) ! differential of transferred energy [eV]
+         i = 1       ! to start integration
+         E = Emin    ! to start integration
+         Ltot1 = 0.0d0
+         Ltot0 = 0.0d0
+         !call Diff_cross_section(Ele, E, Target_atoms, Nat, Nshl, Ltot0, Mass, Matter, Mat_DOS_temp, NumPar)
+         call Diff_cross_section(Ele, E, matter, Nat, Nshl, Ltot0)  ! below
+         ddEdx = 0.0d0
+         do while (E .LE. Emax) ! integration
+            dE = (1.0d0/(E+1.0d0) + E)/real(n)
+            ! If it's Simpson integration:
+            a =  E + dE/2.0d0
+            ! Temperature factor (for the mean point):
+            Tfact = temperature_factor(a, TeeV)    ! below
+            !call Diff_cross_section(Ele, a, Target_atoms, Nat, Nshl, dL, Mass, Matter, Mat_DOS_temp, NumPar)
+            call Diff_cross_section(Ele, a, matter, Nat, Nshl, dL)  ! below
+            temp1 = dL
+            b = E + dE
+            !call Diff_cross_section(Ele, b, Target_atoms, Nat, Nshl, dL, Mass, Matter, Mat_DOS_temp, NumPar)
+            call Diff_cross_section(Ele, b, matter, Nat, Nshl, dL)  ! below
+            temp2 = dE/6.0d0*(Ltot0 + 4.0d0*temp1 + dL)
+            temp2 = temp2*Tfact    ! include temprature factor
+
+            Ltot1 = Ltot1 + temp2
+            if (present(dEdx)) ddEdx = ddEdx + E*temp2
+            Ltot0 = dL
+            E = E + dE  ! [eV]
+         enddo
+         Sigma = 1.0d0/Ltot1 !*dE ! [A]
+       endif ! (Ee < Emin)
        if (present(dEdx)) dEdx = ddEdx !*dE ! energy losses [eV/A]
     case default ! BEB cross section
-       Sigma = Sigma_BEB(Ele,matter%Atoms(Nat)%Ip(Nshl),matter%Atoms(Nat)%Ek(Nshl),matter%Atoms(Nat)%Ne_shell(Nshl)) ! [A^2] cross section
+       Sigma = Sigma_BEB(Ele, matter%Atoms(Nat)%Ip(Nshl), matter%Atoms(Nat)%Ek(Nshl), matter%Atoms(Nat)%Ne_shell(Nshl)) ! [A^2] cross section, function below
 
        temp1 = matter%At_Dens*1d-24*(matter%Atoms(Nat)%percentage)/SUM(matter%Atoms(:)%percentage)
        if (Sigma .LE. 0.0d0) then
@@ -548,6 +739,20 @@ subroutine Diff_cross_section(Ele, hw, matter, Nat, Nshl, Diff_IMFP)
     nullify(Ee)
     nullify(dE)
 end subroutine Diff_cross_section
+
+
+pure function temperature_factor(W, T) result (F)
+   real(8) :: F
+   real(8), intent(in) :: W ! [eV] transferred energy
+   real(8), intent(in) :: T  ! [eV] target temperature
+   real(8) :: eps
+   eps = 1.0d-4
+   if ((T < eps) .or. (W < 1.0d-10)) then    ! zero temperature or no energy
+      F = 1.0d0
+   else ! non-zero tempreature
+      F = 1.0d0/(1.0d0 - exp(-W/T))
+   endif
+end function temperature_factor
 
 
 !subroutine Imewq(matter, hw, hq, shl, ImE) ! constructs Im(-1/e(w,q)) as a sum of Drude-like functions
@@ -742,13 +947,18 @@ function Sigma_BEB(T,B,U,N)
    real(8) U	! mean kinetic energy of electron in sub-shell [eV]
    real(8) N	! ocupation number of electrons in this shell
    real(8) t0, u0, S
-   if (T .LE. B) then
+   if ((T .LE. B) .or. (abs(B) < 1.0d-6)) then
       Sigma_BEB = 0.0d0 ! [A^2] cross section for energies lower than the Ip
    else
       S = 4.0d0*g_Pi*g_a0*g_a0*N*(g_Ry/B)*(g_Ry/B) ! Eq.(4)
-      t0 = T/B	! energy normalized to the Rydberg constant ! Eq.(4)
+      t0 = T/B ! energy normalized to the Rydberg constant ! Eq.(4)
       u0 = U/B
-      Sigma_BEB = S/(t0+u0+1.0d0)*(log(t0)*0.5d0*(1.0d0-1.0d0/(t0*t0)) + (1.0d0-1.0d0/t0) -log(t0)/(t0+1.0d0)) ! [A^2]
+      if (t0 <= 0.0d0) then
+         !print*, 'Sigma_BEB', t0
+         Sigma_BEB = 0.0d0
+      else
+         Sigma_BEB = S/(t0+u0+1.0d0)*(log(t0)*0.5d0*(1.0d0-1.0d0/(t0*t0)) + (1.0d0-1.0d0/t0) -log(t0)/(t0+1.0d0)) ! [A^2]
+      endif
    endif
 end function Sigma_BEB
 
@@ -916,7 +1126,9 @@ subroutine Elastic_MFP(i_at, numpar, matter) ! elastic mean free path for scatte
       write(0,'(a)') ' Calculating electron EMFP for '//trim(adjustl(matter%Atoms(i_at)%Name))//' atom'
       do k = 1, N_grid
          Ele = matter%Atoms(i_at)%El_EMFP%E(k) ! [eV] electron energy
-         call Atomic_elastic_sigma(Zat, Ele, sigma_el) ! [A^2] cross section
+         ! Cross section (Mott's):
+         !call Atomic_elastic_sigma(Zat, Ele, sigma_el) ! [A^2] OLD
+         sigma_el = Mott_total_CS(Ele, Zat)   ! [A^2] below (relativistic)
 
          Contrib = matter%At_Dens*1d-24*(matter%Atoms(i_at)%percentage)/SUM(matter%Atoms(:)%percentage)
          if (sigma_el <= 0.0d0) then ! no scattering
@@ -937,17 +1149,204 @@ subroutine Elastic_MFP(i_at, numpar, matter) ! elastic mean free path for scatte
    nullify(Zat) ! free the pointers
    inquire(file=trim(adjustl(File_name)),opened=file_opened)
    if (file_opened) close(FN)
+   !PAUSE 'Elastic_MFP'
 end subroutine Elastic_MFP
 
 
 
-subroutine Atomic_elastic_sigma(Zat, Ee, sigma_el) ! total cross-section of elastic scattering on an atom:
+
+! Mott's cross section according to [3]
+pure function Mott_total_CS(Ee, Z, mass, mu_max_in) result(sigma)
+   real(8) sigma	! [A^2] cross section
+   real(8), intent(in) :: Ee	! [eV] electron kinetic energy
+   real(8), intent(in) :: Z	! Ion atomic number
+   real(8), intent(in), optional :: mass    ! [me] incident particle mass
+   real(8), intent(in), optional :: mu_max_in  ! mu=cos(theta), integration limit
+   real(8) :: nu, beta, v, dbleZ, beta2, me, mu_max
+   if (present(mass)) then
+      me = mass*g_me
+   else
+      me = g_me
+   endif
+   if (present(mu_max_in)) then
+      if (mu_max_in > 1.0d0) then ! total CS
+         mu_max = 1.0d0
+      else if (mu_max_in < -1.0d0) then ! zero
+         mu_max = -1.0d0
+      else  ! partially integrated CS, used for definition of the transfered energy
+         mu_max = mu_max_in
+      endif
+   else ! total CS
+      mu_max = 1.0d0
+   endif
+   v = velosity_from_kinetic_energy(Ee, me, afs=.false.)    ! [m/s] below
+   if (v < 1.0d-6) then ! immobile particle does not scatter
+      sigma = 0.0d0
+   else
+      beta = beta_factor(v)   ! module "Relativity"
+      beta2 = beta*beta
+      dbleZ = dble(Z)
+      nu = screening_parameter(beta, dbleZ, Ee, me)   ! below
+      sigma = g_Pi*g_r0*g_r0*dbleZ*(dbleZ + 1.0d0) * (mu_max + 1.0d0) / ((2.0d0*nu + 1.0d0 - mu_max)*(nu + 1.0d0)) * &
+               (1.0d0 - beta2)/(beta2*beta2)	! [3] int of Eq.(39)
+   endif
+end function Mott_total_CS
+
+
+
+subroutine NRG_transfer_elastic_atomic(Mat, Zat, Ee, dE) ! energy transfer in an elastic scattering on an atom:
+   real(8), intent(in) :: Mat   ! mass of an atom of the media [kg]
+   real(8), intent(in) :: Zat   ! atomic number of an atom of the media
+   real(8), intent(in) :: Ee    ! [eV] incident electron energy
+   real(8), intent(out) :: dE   ! [eV] transferred energy
+
+   real(8) :: theta
+
+   ! Sample polar angle according to the differential cross section
+   call  get_electron_elastic_polar_angle(Ee, Zat, theta) ! below
+
+   ! Change electron energy accordingly:
+   dE = transfered_E_from_theta(Ee, theta, g_me, Mat) ! below
+end subroutine NRG_transfer_elastic_atomic
+
+
+
+function transfered_E_from_theta(Ekin, theta, M_in, mt) result(dE)
+   real(8) dE   ! [eV]  according to Eq.(A.25) in 2015-edition of [1]
+   real(8), intent(in) :: Ekin  ! [eV] kinetic energy of the incident particle
+   real(8), intent(in) :: theta ! scattering angle
+   real(8), intent(in) :: M_in, mt  ! incoming particle and target particle masses
+   real(8) :: cos_theta, cos_theta2, sin_theta2, mc2, Mct2, Emc, E2mc, W1, W2, EmcMc
+   mc2 = rest_energy(M_in)	! mc^2 [eV],  module "Relativity"
+   Mct2 = rest_energy(mt)	! Mc^2 [eV],  module "Relativity"
+   cos_theta = cos(theta)
+   cos_theta2 = cos_theta*cos_theta
+   sin_theta2 = 1.0d0 - cos_theta2
+   Emc = Ekin + mc2
+   E2mc = Ekin + 2.0d0*mc2
+   EmcMc = Emc + Mct2
+   W1 = Emc*sin_theta2 + Mct2 - cos_theta * sqrt( Mct2*Mct2 - mc2*mc2*sin_theta2 )
+   W2 = Ekin*E2mc / ( EmcMc*EmcMc - Ekin*E2mc*cos_theta2 )
+   dE = W1*W2
+end function transfered_E_from_theta
+
+
+subroutine get_electron_elastic_polar_angle(Ekin, Zat, theta)
+   real(8), intent(in) :: Ekin  ! [eV] photon energy
+   real(8), intent(in) :: Zat   ! element number
+   real(8), intent(out) :: theta   ! polar angle of photoelectron emission
+   real(8) :: RN
+   ! Sample the angle:
+   call random_number(RN)
+   ! The scattering angle is:
+   theta = Mott_sample_mu(Ekin, Zat, RN)  ! below
+end subroutine get_electron_elastic_polar_angle
+
+
+! Solution of diff.Mott's cross section:
+pure function Mott_sample_mu(Ee, Z, RN, mass) result(theta)
+   real(8) theta	! deflection angle
+   real(8), intent(in) :: Ee	! [eV] electron kinetic energy
+   real(8), intent(in) :: Z	! Ion atomic number
+   real(8), intent(in) :: RN    ! random number [0,1]
+   real(8), intent(in), optional :: mass    ! in units of [me]
+   real(8) :: nu, beta, v, beta2, me, mu
+   if (present(mass)) then
+      me = mass*g_me
+   else
+      me = g_me
+   endif
+   v = velosity_from_kinetic_energy(Ee, me, afs=.false.)    ! [m/s] below
+   if (v < 1.0d-6) then ! immobile particle does not scatter
+      theta = 0.0d0
+   else
+      beta = beta_factor(v)   ! below
+      beta2 = beta*beta
+      nu = screening_parameter(beta, Z, Ee, me)   ! below
+      mu = (RN*(2.0d0*nu + 1.0d0) - nu) / (RN + nu)
+      theta = ACOS(mu)
+   endif
+end function Mott_sample_mu
+
+
+pure function screening_parameter(beta, Z, Ee, me) result(nu)
+   real(8) nu	! screening parameter ! [4] Page 160, Eq. (7.8)
+   real(8), intent(in) :: beta	! relativistic beta
+   real(8), intent(in) :: Z	! atomic number
+   real(8), intent(in) :: Ee	! [eV] electron kinetic energy
+   real(8), intent(in), optional :: me  ! [kg] mass of the particle
+   real(8) :: beta2, tau, Erest
+   beta2 = beta*beta
+   if (present(me)) then
+      Erest = rest_energy(me)	! module "Relativity"
+   else
+      Erest = rest_energy(g_me)	! module "Relativity"
+   endif
+   tau = Ee / Erest
+   nu = 1.7d-5*Z**m_two_third*(1.0d0 - beta2)/beta2 * ( 1.13d0 + 3.76d0 * g_alpha*g_alpha/beta2 * Z*Z * sqrt(tau/(1.0d0 + tau)) )
+end function screening_parameter
+
+
+
+pure function velosity_from_kinetic_energy(Ekin, M0, afs) result(v)
+   real(8) v        ! velosity  [A/fs], unless afs=.true. then [m/s]
+   real(8), intent(in) :: Ekin	! kinetic energy [eV]
+   real(8), intent(in) :: M0	! rest mass [kg]
+   logical, intent(in), optional :: afs ! output velosity in [A/fs] (true), or in [m/s] (false)
+   real(8) :: fact, Erest
+   if (M0 < 1.0d-10*g_me) then   ! assume massless particle
+      v = g_cvel    ! [m/s]
+   else
+      if (Ekin < 1.0d-15) then
+         v = 0.0d0
+      else
+         Erest = rest_energy(M0) ! [eV] rest energy
+         fact = Ekin/Erest + 1.0d0
+         v = g_cvel*sqrt(1.0d0 - 1.0d0/(fact*fact))   ! [m/s]
+      endif
+   endif
+   if (present(afs)) then
+      if (afs) v = v * g_ms2Afs ! [m/s] -> [A/fs]
+   else ! by default, use [A/fs]
+      v = v * g_ms2Afs ! [m/s] -> [A/fs]
+   endif
+end function velosity_from_kinetic_energy
+
+
+pure function beta_factor(v, afs_in) result(beta)
+   real(8) beta
+   real(8), intent(in) :: v	! [m/s] velosity
+   logical, intent(in), optional :: afs_in ! v provided in [A/fs] if true, [m/s] otherwise
+   real(8) :: conv
+   if (present(afs_in)) then
+      if (afs_in) then
+         conv = g_Afs2ms ! [A/fs] -> [m/s]
+      else
+         conv = 1.0d0 ! v is in [m/s] by default
+      endif
+   else
+      conv = 1.0d0  ! v is in [m/s] by default
+   endif
+   beta = v/g_cvel * conv
+end function beta_factor
+
+
+pure function rest_energy(M0) result(E)
+   real(8) E	! [eV] total energy
+   real(8), intent(in) :: M0	! [kg] rest mass of the particle
+   E = M0*g_cvel*g_cvel/g_e	! [eV]
+end function rest_energy
+
+
+
+! Obsolete Mott's subroutines:
+subroutine Atomic_elastic_sigma_OLD(Zat, Ee, sigma_el) ! total cross-section of elastic scattering on an atom:
    real(8), intent(in) :: Zat   ! atomic number of an atom of the media
    real(8), intent(in) :: Ee    ! [eV] incident electron energy
    REAL(8), INTENT(out) :: sigma_el   ! cross-section of elastic scteering [A^2]
-   
+
    real(8) nc, pc, mec2e, Zat137, RyEe, beta2
-   
+
    mec2e = g_me*g_cvel*g_cvel/g_e   ! a parameter enterring eq. below
    Zat137 = Zat/137.0d0   ! a parameter enterring eq. below
    RyEe = g_Ry/Ee         ! a parameter enterring eq. below
@@ -958,19 +1357,18 @@ subroutine Atomic_elastic_sigma(Zat, Ee, sigma_el) ! total cross-section of elas
    nc = pc*(1.13d0 + 3.76d0*(Zat137*Zat137)/beta2*sqrt(Ee/(Ee+mec2e)))
    ! Mott's cross-section with screening:
    sigma_el = g_Pi*g_a0*g_a0*Zat*(Zat+1.0d0)/(nc*(nc+1.0d0))*RyEe*RyEe ! [A^2]
-end subroutine Atomic_elastic_sigma
+end subroutine Atomic_elastic_sigma_OLD
 
-
-subroutine NRG_transfer_elastic_atomic(Mat, Zat, Ee, dE) ! energy transfer in an elastic scattering on an atom:
+subroutine NRG_transfer_elastic_atomic_OLD(Mat, Zat, Ee, dE) ! energy transfer in an elastic scattering on an atom:
    REAL(8), intent(in) :: Mat   ! mass of an atom of the media [kg]
    real(8), intent(in) :: Zat   ! atomic number of an atom of the media
    real(8), intent(in) :: Ee    ! [eV] incident electron energy
    REAL(8), INTENT(out) :: dE   ! [eV] transferred energy
 
    real(8) nc, pc, mec2e, Zat137, RyEe, Masses, beta2, RN
-   
+
    call random_number(RN)
-   
+
    mec2e = g_me*g_cvel*g_cvel/g_e   ! a parameter enterring eq. below
    Zat137 = Zat/137.0d0   ! a parameter enterring eq. below
    RyEe = g_Ry/Ee         ! a parameter enterring eq. below
@@ -981,7 +1379,10 @@ subroutine NRG_transfer_elastic_atomic(Mat, Zat, Ee, dE) ! energy transfer in an
    pc = 1.7d-5*(Zat**(2.0d0/3.0d0))*(1.0d0-beta2)/beta2
    nc = pc*(1.13d0 + 3.76d0*(Zat137*Zat137)/beta2*sqrt(Ee/(Ee+mec2e)))
    dE = 4.0d0*Ee*g_me*Mat/(Masses*Masses)*(nc*(1.0d0-RN)/(nc+RN)) ! [eV]
-end subroutine NRG_transfer_elastic_atomic
+end subroutine NRG_transfer_elastic_atomic_OLD
+
+
+
 
 
 

@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -26,33 +26,36 @@
 MODULE Dealing_with_output_files
 ! Open_MP related modules from external libraries:
 #ifdef OMP_inside
-   USE OMP_LIB
+   USE OMP_LIB, only : OMP_GET_MAX_THREADS
 #endif
-USE IFLPORT
+USE IFLPORT, only : system, chdir
 
-use Objects
 use Universal_constants
-use Variables
-use Little_subroutines
-use Dealing_with_files
-use Electron_tools
-use Dealing_with_EADL
+use Objects
+use Atomic_tools, only : pair_correlation_function
+use Variables, only : g_numpar, g_matter
+use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution
+use Dealing_with_files, only : get_file_stat, copy_file, read_file
+use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
-use Read_input_data, only : m_INPUT_directory
+use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_dashline, &
+                           m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL, m_Communication
 
 implicit none
+PRIVATE
 
-! Modular parameters:
-character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
-character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT info
-character(15), parameter :: m_HELP_file = 'HELP.txt'  ! file with the helpful info
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 05.07.2023)'
+character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
+public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
+public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
+public :: XTANT_label, m_Error_log_file
 
  contains
 
 
 subroutine write_output_files(numpar, time, matter, Scell)
-   type(Super_cell), dimension(:), intent(in):: Scell ! super-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(inout):: Scell ! super-cell with all the atoms inside
    real(8), intent(in) :: time ! time instance [fs]
    type(Solid), intent(inout) :: matter ! parameters of the material
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
@@ -66,7 +69,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
       ! All subroutines for saving output data into files are within this file below:
       call update_save_files(time, Scell(NSC)%MDatoms, matter, numpar, Scell(NSC))
       call write_temperatures_n_displacements(numpar%FN_temperatures, time, Scell(NSC)%Te, Scell(NSC)%Ta,  &
-                                                      Scell(NSC)%Ta_sub, g_Scell(NSC)%MSD, g_Scell(NSC)%MSDP)
+                                                      Scell(NSC)%Ta_sub, Scell(NSC)%MSD, Scell(NSC)%MSDP)
       ! Renormalization to printing units:
       Pressure = Scell(NSC)%Pressure * 1.0d-9
       Stress = Scell(NSC)%Stress * 1.0d-9
@@ -75,11 +78,12 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_pressure(numpar%FN_pressure, time, Pressure, Stress)
       call write_energies(numpar%FN_energies, time, nrg)
       call write_numbers(numpar%FN_numbers, time, Scell(NSC))
-      call write_holes(g_numpar%FN_deep_holes, time, matter, Scell(NSC))
+      call write_holes(numpar%FN_deep_holes, time, matter, Scell(NSC))
       if (numpar%save_raw) call write_atomic_relatives(numpar%FN_atoms_S, Scell(NSC)%MDatoms)
       call write_super_cell(numpar%FN_supercell, time, Scell(NSC))
-      call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter)
-      if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter)
+      call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, &
+               numpar%FN_Ce, numpar%FN_kappa, numpar%FN_Se)
+      if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:))
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time)
       if (numpar%save_Ei) then
          if (numpar%scc) then ! Energy levels include SCC term:
@@ -100,7 +104,8 @@ subroutine write_output_files(numpar, time, matter, Scell)
          case (1) ! with partial DOS
          call write_coulping(numpar%FN_coupling, time, Scell, NSC, numpar)
       end select
-      if (numpar%save_fe) call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe)
+      if (numpar%save_fe) call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq)
+      if (numpar%save_fe_grid) call electronic_distribution_on_grid(Scell(1), numpar, time)  ! below
       if (numpar%save_PCF) call write_PCF(numpar%FN_PCF, Scell(1)%MDatoms, matter, Scell, 1)
       if (numpar%do_drude) call write_optical_coefs(numpar%FN_optics, time, Scell(1)%eps)
       if (Scell(1)%eps%all_w) call write_optical_all_hw(numpar%FN_all_w, time, Scell(1)%eps)
@@ -108,6 +113,53 @@ subroutine write_output_files(numpar, time, matter, Scell)
       
    enddo
 end subroutine write_output_files
+
+
+
+subroutine electronic_distribution_on_grid(Scell, numpar, tim)
+   type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: tim ! [fs] timestep
+   !----------------
+   integer :: i, j, Nsiz, Nei
+   real(8) :: N_steps
+
+   ! Add the high-energy part of the distribution (obtained from MC):
+   Scell%fe_on_grid = Scell%fe_on_grid + Scell%fe_high_on_grid
+   Scell%fe_norm_on_grid = Scell%fe_norm_on_grid + Scell%fe_norm_high_on_grid
+
+   ! Average over the number of time-steps it was collected over:
+   N_steps = max( 1.0d0, dble(numpar%fe_aver_num) )   ! at least one step, to not change anything if nothing happened
+   Scell%fe_on_grid = Scell%fe_on_grid / N_steps
+   Scell%fe_norm_on_grid = Scell%fe_norm_on_grid / N_steps
+
+   ! Now save the distribution in the file:
+   call save_distribution_on_grid(numpar%FN_fe_on_grid, tim, Scell%E_fe_grid, Scell%fe_on_grid, Scell%fe_norm_on_grid)  ! below
+
+   ! Reset the high-energy electron part for the next step:
+   Scell%fe_on_grid = 0.0d0
+   Scell%fe_high_on_grid = 0.0d0
+   Scell%fe_norm_on_grid = 0.0d0
+   Scell%fe_norm_high_on_grid = 0.0d0
+   numpar%fe_aver_num = 0   ! to restart counting time-steps
+end subroutine electronic_distribution_on_grid
+
+
+subroutine save_distribution_on_grid(FN, tim, wr, fe, fe_norm)
+   integer, intent(in) :: FN
+   real(8), intent(in) :: tim
+   real(8), dimension(:), intent(in) :: wr
+   real(8), dimension(:), intent(in) :: fe, fe_norm
+   integer i
+   write(FN,'(a,f25.16)') '#', tim
+   do i = 1, size(fe)
+      write(FN,'(f25.16,es25.16E4,es25.16E4)') wr(i), fe(i), fe_norm(i)
+   enddo
+   write(FN,*) ''
+   write(FN,*) ''
+end subroutine save_distribution_on_grid
+
+
 
 
 subroutine convolve_output(Scell, numpar)
@@ -142,6 +194,14 @@ subroutine convolve_output(Scell, numpar)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))  
             call convolution(FN, Scell(i)%eps%tau) ! electron properties
+            close(FN)
+         endif
+
+         File_name = trim(adjustl(file_path))//'OUTPUT_electron_entropy.dat'
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         if (file_exist) then
+            open(UNIT=FN, FILE = trim(adjustl(File_name)))
+            call convolution(FN, Scell(i)%eps%tau) ! electron entropy
             close(FN)
          endif
 
@@ -245,7 +305,12 @@ subroutine write_optical_all_hw(FN, tim, eps)
    type(Drude), intent(in) :: eps	! epsylon, Drude dielectric function and its parameters
    integer i
    do i = 1,size(eps%Eps_hw,2)
-      write(FN, '(f25.16, es25.16, es25.16, es25.16, f25.16, f25.16, f25.16, f25.16, f25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') eps%Eps_hw(1,i), eps%Eps_hw(2,i), eps%Eps_hw(3,i), eps%Eps_hw(4,i), eps%Eps_hw(5,i), eps%Eps_hw(6,i), eps%Eps_hw(7,i), eps%Eps_hw(8,i), eps%Eps_hw(9,i), eps%Eps_hw(10,i), eps%Eps_hw(11:,i)
+      write(FN, '(f25.16, es25.16, es25.16, es25.16, f25.16, f25.16, f25.16, f25.16, f25.16, es25.16, es25.16, &
+                  es25.16, es25.16, es25.16, es25.16, es25.16)') &
+                  eps%Eps_hw(1,i), eps%Eps_hw(2,i), eps%Eps_hw(3,i), &
+                  eps%Eps_hw(4,i), eps%Eps_hw(5,i), eps%Eps_hw(6,i), &
+                  eps%Eps_hw(7,i), eps%Eps_hw(8,i), eps%Eps_hw(9,i), &
+                  eps%Eps_hw(10,i), eps%Eps_hw(11:,i)
    enddo
    write(FN, '(a)')
    write(FN, '(a)')
@@ -273,7 +338,8 @@ subroutine write_optical_coefs(FN, tim, eps)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: tim
    type(Drude), intent(in) :: eps	! epsylon, Drude dielectric function and its parameters
-   write(FN, '(f25.16,es25.16,es25.16,es25.16,f25.16,f25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') tim, eps%R, eps%T, eps%A, eps%n, eps%k, eps%ReEps, eps%ImEps, eps%dc_cond, eps%Eps_xx, eps%Eps_yy, eps%Eps_zz
+   write(FN, '(f25.16,es25.16,es25.16,es25.16,f25.16,f25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') &
+      tim, eps%R, eps%T, eps%A, eps%n, eps%k, eps%ReEps, eps%ImEps, eps%dc_cond, eps%Eps_xx, eps%Eps_yy, eps%Eps_zz
 end subroutine write_optical_coefs
 
 
@@ -293,16 +359,23 @@ subroutine write_PCF(FN, atoms, matter, Scell, NSC)
 end subroutine write_PCF
 
 
-subroutine save_distribution(FN, tim, wr, fe)
+subroutine save_distribution(FN, tim, wr, fe, fe_eq)
    integer, intent(in) :: FN
    real(8), intent(in) :: tim
    real(8), dimension(:), intent(in) :: wr
    real(8), dimension(:), intent(in) :: fe
+   real(8), dimension(:), allocatable, intent(in) :: fe_eq
    integer i
    write(FN,'(a,f25.16)') '#', tim
-   do i = 1, size(fe)
-      write(FN,'(f25.16,f25.16)') wr(i), fe(i)
-   enddo
+   if (allocated(fe_eq)) then ! there is equivalent-temperature Fermi distribution
+      do i = 1, size(fe)
+         write(FN,'(f25.16,f25.16,f25.16)') wr(i), fe(i), fe_eq(i)
+      enddo
+   else  ! fe is Fermi, no equivalent distribution needed
+      do i = 1, size(fe)
+         write(FN,'(f25.16,f25.16)') wr(i), fe(i)
+      enddo
+   endif
    write(FN,*) ''
    write(FN,*) ''
 end subroutine save_distribution
@@ -369,15 +442,20 @@ subroutine save_nearest_neighbors(FN, Scell, NSC, tim)
 end subroutine save_nearest_neighbors
 
 
-subroutine write_atomic_xyz(FN, atoms, matter)
+subroutine write_atomic_xyz(FN, atoms, matter, Supce)
    integer, intent(in) :: FN	! file number
    type(Atom), dimension(:), intent(in) :: atoms	! atomic parameters
    type(Solid), intent(in) :: matter	! Material parameters
+   real(8), dimension(3,3), intent(in) :: Supce	! [A]  supercell vectors [a(x,y,z),b(x,y,z),c(x,y,z)]
+   !-------------------------------------
    integer i
    character(10) :: Numb_out
    write(Numb_out, '(i10)') size(atoms)
    write(FN, '(a)') trim(adjustl(Numb_out))
-   write(FN, '(a)') trim(adjustl(matter%Name))
+   !write(FN, '(a)') trim(adjustl(matter%Name)) ! Material name, not needed
+   write(FN, '(a,f,f,f,f,f,f,f,f,f,a)') 'Lattice="', Supce(1,1), Supce(1,2), Supce(1,3), &
+                                                     Supce(2,1), Supce(2,2), Supce(2,3), &
+                                                     Supce(3,1), Supce(3,2), Supce(3,3), '" Properties=species:S:1:pos:R:3'
    do i = 1, size(atoms)
       write(FN, '(a,es25.16,es25.16,es25.16)') trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), atoms(i)%R(1), atoms(i)%R(2), atoms(i)%R(3)
    enddo
@@ -430,29 +508,69 @@ subroutine write_atomic_cif(FN_out, Supce, atoms, matter, tim)
    write(FN_out, '(a)') "_atom_site_fract_z"
    do i = 1, Nat
       write(i_char,'(i12)') i
-      write(FN_out, '(a,es25.16,es25.16,es25.16)')  trim(adjustl(i_char))//'	'//trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), atoms(i)%S(1), atoms(i)%S(2), atoms(i)%S(3)
+      write(FN_out, '(a,es25.16,es25.16,es25.16)')  trim(adjustl(i_char))//'	'//trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), &
+         atoms(i)%S(1), atoms(i)%S(2), atoms(i)%S(3)
    enddo
 end subroutine write_atomic_cif
 
 
 
-subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter)
+subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, FN_Ce, FN_kappa, FN_Se)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: time	! [fs]
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(in) :: Ei	! energy levels
    type(Solid), intent(in) :: matter	! Material parameters
-   real(8) Ce
-   integer i, Nat
-   call get_electron_heat_capacity(Scell, NSC, Ce) ! module "Electron_tools"
-   
-   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, Scell(NSC)%Ne_low/real(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Ce, Scell(NSC)%G_ei, Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
-   Nat = size(matter%Atoms(:))
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   integer, intent(in) :: FN_Ce, FN_kappa, FN_Se  ! file number for band-resolved Ce and kappa, and electron entropy
+   !------------------------
+   integer i, Nat, n_at, Nsiz, norb, N_types, i_at, i_types, i_G1
+
+   ! Write electron properties:
+   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, &
+      Scell(NSC)%Ne_low/dble(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
+      Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
+   Nat = size(matter%Atoms(:)) ! number of elements
    do i = 1, Nat    ! index starting from 11
       write(FN,'(es25.16)', advance='no') (matter%Atoms(i)%NVB - matter%Atoms(i)%mulliken_Ne)
    enddo
    write(FN,'(a)') ''
+
+   ! Write band-resolved electron heat capacity:
+   n_at = size(Scell(NSC)%MDatoms) ! number of atoms
+   Nsiz = size(Scell(NSC)%Ha,1) ! total number of orbitals
+   norb =  Nsiz/n_at ! orbitals per atom
+   ! Find number of different orbital types:
+   N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+   ! Total Ce:
+   write(FN_Ce, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%Ce
+   ! All shells resolved:
+   do i_at = 1, Nat
+      do i_types = 1, N_types
+         i_G1 = (i_at-1) * N_types + i_types
+         write(FN_Ce,'(es25.16)',advance='no') Scell(NSC)%Ce_part(i_G1)
+      enddo   ! i_types
+   enddo ! i_at
+   write(FN_Ce,'(a)') ''
+
+   ! Write electron heat conductivity if requesed:
+   if (numpar%do_kappa) then
+      ! Total kappa:
+      write(FN_kappa, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%kappa_e
+      ! All shells resolved:
+      do i_at = 1, Nat
+         do i_types = 1, N_types
+            i_G1 = (i_at-1) * N_types + i_types
+            write(FN_kappa,'(es25.16)',advance='no') Scell(NSC)%kappa_e_part(i_G1)
+         enddo   ! i_types
+      enddo ! i_at
+      write(FN_kappa,'(a)') ''
+   endif
+
+   ! Write electron entropy:
+   write(FN_Se, '(es25.16, es25.16, es25.16)') time, Scell(NSC)%Se, Scell(NSC)%Se_eq
+
 end subroutine write_electron_properties
 
 
@@ -483,28 +601,54 @@ subroutine write_coulping_header(FN, Scell, NSC, matter, numpar)
    do i = 1, N_at
       do j = 1, N_at
          write(FN,'(a,a,a)', advance='no') trim(adjustl(matter%Atoms(i)%Name)), '-', trim(adjustl(matter%Atoms(j)%Name))//' '
-         !write(*,'(a,a,a)') trim(adjustl(matter%Atoms(i)%Name)), '-', trim(adjustl(matter%Atoms(j)%Name))//' '
       enddo
    enddo
    ! All shells resolved:
    do i_at = 1, N_at
       do i_types = 1, N_types
-!          i_G1 = (i_at-1) * N_types + i_types
          chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"  
          do i_at2 = 1, N_at
             do i_types2 = 1, N_types
-!                i_G2 = (i_at2-1) * N_types + i_types2
                chtemp2 = name_of_orbitals(norb, i_types2) ! module "Little_subroutines"
                write(FN,'(a,a,a)',advance='no') trim(adjustl(matter%Atoms(i_at)%Name))//'_'//trim(adjustl(chtemp1)), '--', &
                                         trim(adjustl(matter%Atoms(i_at2)%Name))//'_'//trim(adjustl(chtemp2))//'  '
-                !write(*,'(a,a,a)') trim(adjustl(matter%Atoms(i_at)%Name))//'_'//trim(adjustl(chtemp1)), '--', &
-                !                        trim(adjustl(matter%Atoms(i_at2)%Name))//'_'//trim(adjustl(chtemp2))//'  '
             enddo   ! i_types2
          enddo ! i_at2
       enddo   ! i_types
    enddo ! i_at
    write(FN,'(a)') ''
 end subroutine write_coulping_header
+
+
+subroutine write_Ce_header(FN, Scell, NSC, matter)
+   integer, intent(in) :: FN	! file number
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(Solid), intent(in) :: matter	! Material parameters
+   !--------------------------------
+   integer :: N_at, N_types, Nsiz, i_at, i_types, nat, norb
+   character(2) :: chtemp1
+
+   N_at = matter%N_KAO    ! number of kinds of atoms
+   ! Find number of orbitals per atom:
+   nat = size(Scell(NSC)%MDatoms) ! number of atoms
+   Nsiz = size(Scell(NSC)%Ha,1) ! total number of orbitals
+   norb =  Nsiz/nat ! orbitals per atom
+   ! Find number of different orbital types:
+   N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+
+   ! Total Ce:
+   write(FN, '(a)', advance='no') ' #Time   Total   '
+   ! All shells resolved:
+   do i_at = 1, N_at
+      do i_types = 1, N_types
+         chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+         write(FN,'(a)',advance='no') trim(adjustl(matter%Atoms(i_at)%Name))//'_'//trim(adjustl(chtemp1))//'   '
+      enddo   ! i_types
+   enddo ! i_at
+   write(FN,'(a)') ''
+end subroutine write_Ce_header
+
 
 
 subroutine write_coulping(FN, time, Scell, NSC, numpar)
@@ -530,7 +674,7 @@ subroutine write_coulping(FN, time, Scell, NSC, numpar)
                                                                          (j-1)*N_types+1:(j-1)*N_types+N_types) )
       enddo
    enddo
-   ! All shells resolved:
+   ! Partial:
    do i = 1, Nsiz
       do j = 1, Nsiz
          write(FN,'(es25.16)', advance='no') Scell(NSC)%G_ei_partial(i,j)
@@ -548,7 +692,9 @@ subroutine write_atomic_relatives(FN, atoms)
    type(Atom), dimension(:), intent(in) :: atoms	! atomic parameters
    integer i
    do i = 1, size(atoms)
-      write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') atoms(i)%R(1), atoms(i)%R(2), atoms(i)%R(3), atoms(i)%V(1), atoms(i)%V(2), atoms(i)%V(3), atoms(i)%S(1), atoms(i)%S(2), atoms(i)%S(3), atoms(i)%SV(1), atoms(i)%SV(2), atoms(i)%SV(3)
+      write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') &
+         atoms(i)%R(1), atoms(i)%R(2), atoms(i)%R(3), atoms(i)%V(1), atoms(i)%V(2), atoms(i)%V(3), &
+         atoms(i)%S(1), atoms(i)%S(2), atoms(i)%S(3), atoms(i)%SV(1), atoms(i)%SV(2), atoms(i)%SV(3)
    enddo
    write(FN, '(a)') ''
    write(FN, '(a)') ''
@@ -559,7 +705,9 @@ subroutine write_numbers(FN, time, Scell)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: time	! [fs]
    type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
-   write(FN,'(f25.16,f25.16,es,es25.16,es25.16,es25.16,es25.16)') time, Scell%Ne_low/real(Scell%Na), Scell%Ne_CB/real(Scell%Na), Scell%Ne_high/real(Scell%Na), Scell%Nh/real(Scell%Na), (real(Scell%Ne)-(Scell%Ne_low+Scell%Ne_high-Scell%Nh))/real(Scell%Na), Scell%Nph/real(Scell%Na) 
+   write(FN,'(f25.16,f25.16,es,es25.16,es25.16,es25.16,es25.16)') time, Scell%Ne_low/dble(Scell%Na), Scell%Ne_CB/dble(Scell%Na), &
+      Scell%Ne_high/dble(Scell%Na), Scell%Nh/dble(Scell%Na), (dble(Scell%Ne)-(Scell%Ne_low+Scell%Ne_high-Scell%Nh))/dble(Scell%Na), &
+      Scell%Nph/dble(Scell%Na)
 end subroutine write_numbers
 
 
@@ -587,9 +735,16 @@ subroutine write_energies(FN, time, nrg)
    real(8), intent(in) :: time	! [fs]
    type(Energies), intent(in) :: nrg
 
-   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') time, nrg%E_tot, nrg%Eh_tot, nrg%At_pot+nrg%E_vdW+nrg%E_coul_scc, nrg%At_kin, nrg%Total, & !+nrg%E_supce,
-   nrg%Total+nrg%E_supce+nrg%El_high, &
-   nrg%Total+nrg%E_supce+nrg%El_high+nrg%Eh_tot, nrg%E_vdW
+   write(FN, '(es25.16, es25.16, es25.16, es26.16E4, es25.16, es25.16, es25.16, es25.16, es26.16E4, 1X, es25.16E4)') time, &
+   nrg%E_tot, &   ! Band energy
+   nrg%Eh_tot, &  ! Energy of holes
+   nrg%At_pot + nrg%E_vdW + nrg%E_coul_scc + nrg%E_coul + nrg%E_expwall, & ! potential energy (incl. short-range, vdW, Coulomb, etc.)
+   nrg%At_kin, &  ! Kinetic energy of atoms
+   nrg%Total, &   ! Total atomic energy
+   nrg%Total + nrg%E_supce + nrg%El_high, &   ! Energy of atoms (incl. supercell) and electrons
+   nrg%Total + nrg%E_supce + nrg%El_high + nrg%Eh_tot, & ! Total energy (incl. holes)
+   nrg%E_vdW, &   ! van der Waals
+   nrg%E_expwall  ! Short-range repulsive
 end subroutine write_energies
 
 
@@ -636,11 +791,11 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
    type(TB_Hamiltonian), intent(in) ::  TB_Hamil ! parameters of the Hamiltonian of TB
    type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
-   character(200) :: File_name, Error_descript, chtest, chtest1, chtest_MDgrid
+   character(200) :: File_name, Error_descript, chtest, chtest1, chtest_MDgrid, chtest_AtBathgrid, chtest_ElBathgrid
    character(3) :: chtest2
    integer INFO
    integer :: MOD_TIM ! time when the communication.txt file was last modified
-   logical :: file_opened, file_exist
+   logical :: file_opened, file_exist, NP_file_exists, IM_file_exists
 
    ! Create directory where the output files will be saved:
    call create_output_folder(Scell,matter,laser,numpar)	! module "Dealing_with_output_files"
@@ -649,54 +804,106 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
    if (numpar%which_input >= 1) then
       
       ! Check if new format of input file exists:
-      chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT'
+      !chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT'
+      chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_MINIMUM))
+
       write(chtest2,'(i3)') numpar%which_input
       write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
       inquire(file=trim(adjustl(chtest)),exist=file_exist)
       
       if (.not.file_exist) then ! use old format of input files:
-         chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL'
-         write(chtest2,'(i3)') numpar%which_input
+         !chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL'
+         chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_MATERIAL))
          write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
-         chtest1 = 'INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS'
+         inquire(file=trim(adjustl(chtest)),exist=IM_file_exists)
+         if (.not.IM_file_exists) then ! check if short-named file exists
+            chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_ALL))
+            write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
+         endif
+
+         !chtest1 = 'INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS'
+         chtest1 = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))
          write(chtest1,'(a,a,a,a)') trim(adjustl(chtest1)), '_', trim(adjustl(chtest2)), '.txt'
+         inquire(file=trim(adjustl(chtest1)),exist=NP_file_exists)
+         if (.not.NP_file_exists) then ! check if unnumbered file with NumPars:
+            chtest1 = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+            inquire(file=trim(adjustl(chtest1)),exist=NP_file_exists)
+         endif
+
          ! And a file with MD_grid if user provided:
          if (allocated(numpar%dt_MD_reset_grid)) then
             chtest_MDgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%MD_step_grid_file))
          endif
+         ! File with electronic thermostat parameters:
+         if (allocated(numpar%El_bath_reset_grid)) then
+            chtest_ElBathgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%El_bath_step_grid_file))
+         endif
+         ! File with atomic thermostat parameters:
+         if (allocated(numpar%At_bath_reset_grid)) then
+            chtest_AtBathgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%At_bath_step_grid_file))
+         endif
       endif
    else
       ! Check if new format of input file exists:
-      chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT.txt'
+      !chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT.txt'
+      chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_MINIMUM))//'.txt'
       inquire(file=trim(adjustl(chtest)),exist=file_exist)
       
       if (.not.file_exist) then ! use old format of input files:
-         chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL.txt'
-         chtest1 = 'INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS.txt'
+         !chtest = 'INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL.txt'
+         chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_MATERIAL))//'.txt'
+         inquire(file=trim(adjustl(chtest)),exist=IM_file_exists)
+         if (.not.IM_file_exists) then ! check if short-named file exists
+            chtest = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_INPUT_ALL))//'.txt'
+         endif
+
+         !chtest1 = 'INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS.txt'
+         chtest1 = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+         inquire(file=trim(adjustl(chtest1)),exist=NP_file_exists)
+
          ! And a file with MD_grid if user provided:
          if (allocated(numpar%dt_MD_reset_grid)) then
             chtest_MDgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%MD_step_grid_file))
+         endif
+         ! File with electronic thermostat parameters:
+         if (allocated(numpar%El_bath_reset_grid)) then
+            chtest_ElBathgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%El_bath_step_grid_file))
+         endif
+         ! File with atomic thermostat parameters:
+         if (allocated(numpar%At_bath_reset_grid)) then
+            chtest_AtBathgrid = 'INPUT_DATA'//numpar%path_sep//trim(adjustl(numpar%At_bath_step_grid_file))
          endif
       endif
    endif
 
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
-      !call copy_file('INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL.txt',trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
+
       call copy_file(trim(adjustl(chtest)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
-      !call copy_file('INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS.txt',trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
-      if (.not.file_exist) call copy_file(trim(adjustl(chtest1)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
+
+      if (.not.file_exist .and. NP_file_exists) call copy_file(trim(adjustl(chtest1)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
       ! And file with MD grid, if user provided:
       if (allocated(numpar%dt_MD_reset_grid)) then
          call copy_file(trim(adjustl(chtest_MDgrid)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
       endif
+      if (allocated(numpar%El_bath_reset_grid)) then
+         call copy_file(trim(adjustl(chtest_ElBathgrid)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
+      endif
+      if (allocated(numpar%At_bath_reset_grid)) then
+         call copy_file(trim(adjustl(chtest_AtBathgrid)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
+      endif
    else ! it is linux
-      !call copy_file('INPUT_DATA'//numpar%path_sep//'INPUT_MATERIAL.txt',trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
       call copy_file(trim(adjustl(chtest)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
-      !call copy_file('INPUT_DATA'//numpar%path_sep//'NUMERICAL_PARAMETERS.txt',trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
-      if (.not.file_exist) call copy_file(trim(adjustl(chtest1)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
+
+      if (.not.file_exist .and. NP_file_exists) call copy_file(trim(adjustl(chtest1)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
       ! And file with MD grid, if user provided:
       if (allocated(numpar%dt_MD_reset_grid)) then
          call copy_file(trim(adjustl(chtest_MDgrid)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
+      endif
+      if (allocated(numpar%El_bath_reset_grid)) then
+         call copy_file(trim(adjustl(chtest_ElBathgrid)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
+      endif
+      if (allocated(numpar%At_bath_reset_grid)) then
+         call copy_file(trim(adjustl(chtest_AtBathgrid)),trim(adjustl(numpar%output_path))) ! module "Dealing_with_output_files"
       endif
    endif
 
@@ -704,7 +911,9 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
    call output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err)	! and save the input data for output, module "Dealing_with_output_files"
 
    ! Prepare a file for communication with the user:
-   File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt'
+   !File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt'
+   File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//trim(adjustl(m_Communication))
+   numpar%Filename_communication = File_name ! save it to reuse later
    numpar%FN_communication = 110
    open(UNIT=numpar%FN_communication, FILE = trim(adjustl(File_name)), status = 'replace')
    inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -747,7 +956,8 @@ subroutine make_save_files(path)
    file_name = trim(adjustl(path))//'SAVE_supercell.dat'
    open(UNIT=FN2, FILE = trim(adjustl(file_name)))
    FN3 = 702
-   file_name = trim(adjustl(path))//'SAVE_parameters.dat'
+   !file_name = trim(adjustl(path))//'SAVE_parameters.dat'
+   file_name = trim(adjustl(path))//'SAVE_el_distribution.dat'
    open(UNIT=FN3, FILE = trim(adjustl(file_name)))
 end subroutine make_save_files
 
@@ -760,12 +970,14 @@ subroutine update_save_files(time, atoms, matter, numpar, Scell)
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
    integer i
-   rewind(702)	! overwrite the old state
-   write(702,'(es25.16,es25.16,es25.16,es25.16,es25.16)') time, Scell%Te, Scell%mu, Scell%Ne_low, Scell%Ta
+
+   ! SAVE_atoms.dat :
    rewind(700)	! overwrite the old state
    do i = 1,size(atoms)
       write(700, '(i3,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') atoms(i)%KOA, atoms(i)%S(:), atoms(i)%S0(:), atoms(i)%SV(:), atoms(i)%SV0(:)
    enddo
+
+   ! SAVE_supercell.dat :
    rewind(701)	! overwrite the old state
    write(701,*) Scell%supce(:,:)
    write(701,'(a)') ''
@@ -775,6 +987,14 @@ subroutine update_save_files(time, atoms, matter, numpar, Scell)
    write(701,'(a)') ''
    write(701,*) Scell%Vsupce0(:,:)
    write(701,'(a)') ''
+
+   ! SAVE_el_distribution.dat :
+   rewind(702)	! overwrite the old state
+   !write(702,'(es25.16,es25.16,es25.16,es25.16,es25.16)') time, Scell%Te, Scell%mu, Scell%Ne_low, Scell%Ta
+   write(702,'(a)') '# Electron distribution'
+   do i = 1, size(Scell%fe)
+      write(702,'(f25.16, f25.16)') Scell%Ei(i), Scell%fe(i)
+   enddo
 end subroutine update_save_files
 
 
@@ -792,11 +1012,13 @@ subroutine close_output_files(Scell, numpar)
    close(numpar%FN_temperatures)
    close(numpar%FN_pressure)
    close(numpar%FN_electron_properties)
+   close(numpar%FN_Ce)
    close(numpar%FN_energies)
    close(numpar%FN_supercell)
-   if (numpar%save_raw) close(numpar%FN_atoms_S)
    close(numpar%FN_numbers)
    close(numpar%FN_deep_holes)
+   if (numpar%do_kappa) close(numpar%FN_kappa)
+   if (numpar%save_raw) close(numpar%FN_atoms_S)
    if (numpar%do_drude) close(numpar%FN_optics)
    if (numpar%save_XYZ) close(numpar%FN_atoms_R)
    if (numpar%save_CIF) close(numpar%FN_cif)
@@ -804,6 +1026,7 @@ subroutine close_output_files(Scell, numpar)
    if (numpar%save_DOS)  close(numpar%FN_DOS)
    if (numpar%DOS_splitting == 1) close(numpar%FN_coupling)
    if (numpar%save_fe)  close(numpar%FN_fe)
+   if (numpar%save_fe_grid)  close(numpar%FN_fe_on_grid)
    if (numpar%save_PCF) close(numpar%FN_PCF)
    if (Scell(1)%eps%all_w) close(numpar%FN_all_w)
    if (numpar%save_NN) close(numpar%FN_neighbors)
@@ -826,12 +1049,16 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    character(100) :: file_atoms_cif	! atomic coordinates in cif-format (standard for constructing diffraction patterns)
    character(100) :: file_supercell	! supercell vectors
    character(100) :: file_electron_properties	! electron properties
+   character(200) :: file_electron_heat_capacity	! band-resolved electron heat capacity
+   character(200) :: file_electron_heat_conductivity  ! electron heat conductivity
+   character(100) :: file_electron_entropy	! electron entropy
    character(100) :: file_numbers	! total numbers of electrons and holes
    character(100) :: file_deep_holes	! number of deep-shell holes in each shell
    character(100) :: file_Ei		! energy levels
    character(100) :: file_DOS	! DOS
    character(100) :: file_coupling  ! partial coupling parameter
    character(100) :: file_fe		! electron distribution (low-energy part)
+   character(100) :: file_fe_on_grid   ! electron distribution (full: low- + high-energy)
    character(100) :: file_PCF		! pair correlation function
    character(100) :: file_optics	! optical coefficients
    character(100) :: file_all_w		! optical coeffs for all hw
@@ -868,11 +1095,30 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    call create_file_header(numpar%FN_electron_properties, '#Time	Ne	mu	band_gap	Ce	Coupling_parameter	VB_bottom	VB_top	CB_bottom	CB_top Mullikens(:)')
    call create_file_header(numpar%FN_electron_properties, '#[fs]	[%]	[eV]	[eV]	[J/(m^3K)]	[W/(m^3K)]	[eV]	[eV]	[eV]	[eV]  [e](:)')
 
+   file_electron_heat_capacity = trim(adjustl(file_path))//'OUTPUT_electron_Ce.dat'
+   open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_capacity)))
+   numpar%FN_Ce = FN
+   call write_Ce_header(numpar%FN_Ce, Scell, 1, matter) ! below
+
+   file_electron_entropy = trim(adjustl(file_path))//'OUTPUT_electron_entropy.dat'
+   open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_entropy)))
+   numpar%FN_Se = FN
+   call create_file_header(numpar%FN_Se, '#Time Se  Se_eq')
+   call create_file_header(numpar%FN_electron_properties, '#[fs]  [eV/K]   [eV/K]')
+
+   if (numpar%do_kappa) then
+      file_electron_heat_conductivity = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_conductivity)))
+      numpar%FN_kappa = FN
+      ! We can use the same header here as for Ce:
+      call write_Ce_header(numpar%FN_kappa, Scell, 1, matter) ! below
+   endif
+
    file_energies = trim(adjustl(file_path))//'OUTPUT_energies.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_energies)))
    numpar%FN_energies = FN
-   call create_file_header(numpar%FN_energies, '#Time	Electrons	Holes	Potential	Kinetic	Atoms	Atoms_n_electrons	Atom_all_electrons	Total	van_der_Waals')
-   call create_file_header(numpar%FN_energies, '#[fs]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]')
+   call create_file_header(numpar%FN_energies, '#Time	Electrons	Holes	Potential	Kinetic	Atoms	Atoms_n_electrons	Atom_all_electrons	Total	van_der_Waals   Short-range')
+   call create_file_header(numpar%FN_energies, '#[fs]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]  [eV/atom]')
 
    file_numbers = trim(adjustl(file_path))//'OUTPUT_electron_hole_numbers.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_numbers)))
@@ -903,7 +1149,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       file_coupling = trim(adjustl(file_path))//'OUTPUT_coupling.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_coupling)))
       numpar%FN_coupling = FN
-      call write_coulping_header(numpar%FN_coupling, Scell, 1, matter, numpar)
+      call write_coulping_header(numpar%FN_coupling, Scell, 1, matter, numpar) ! below
    endif
 
 
@@ -959,6 +1205,12 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       numpar%FN_fe = FN
    endif
 
+   if (numpar%save_fe_grid) then
+      file_fe_on_grid = trim(adjustl(file_path))//'OUTPUT_electron_distribution_on_grid.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_fe_on_grid)))
+      numpar%FN_fe_on_grid = FN
+   endif
+
    if (numpar%save_PCF) then
       file_PCF = trim(adjustl(file_path))//'OUTPUT_pair_correlation_function.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_PCF)))
@@ -980,7 +1232,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       endif
    enddo
 
-   call create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, 'OUTPUT_temperatures.dat',  'OUTPUT_pressure_and_stress.dat', 'OUTPUT_energies.dat', file_atoms_R, file_atoms_S, 'OUTPUT_supercell.dat', 'OUTPUT_electron_properties.dat', 'OUTPUT_electron_hole_numbers.dat', 'OUTPUT_deep_shell_holes.dat', 'OUTPUT_optical_coefficients.dat', file_Ei, file_PCF, 'OUTPUT_nearest_neighbors.dat')
+   call create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, 'OUTPUT_temperatures.dat',  'OUTPUT_pressure_and_stress.dat', 'OUTPUT_energies.dat', file_atoms_R, file_atoms_S, 'OUTPUT_supercell.dat', 'OUTPUT_electron_properties.dat', 'OUTPUT_electron_hole_numbers.dat', 'OUTPUT_deep_shell_holes.dat', 'OUTPUT_optical_coefficients.dat', file_Ei, file_PCF, 'OUTPUT_nearest_neighbors.dat', 'OUTPUT_electron_entropy.dat')  ! below
    !call create_gnuplot_scripts(matter,numpar,laser, file_path, file_temperatures, file_energies, file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_numbers, file_deep_holes, file_Ei, file_PCF)
 end subroutine create_output_files
 
@@ -992,7 +1244,7 @@ subroutine create_file_header(FN, text)
 end subroutine create_file_header
 
 
-subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN)
+subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -1011,6 +1263,8 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    character(*) :: file_Ei		! energy levels
    character(*) :: file_PCF		! pair correlation function
    character(*) :: file_NN      ! nearest neighbors
+   character(*) :: file_electron_entropy  ! electron netropy
+   !----------------
    character(200) :: File_name, File_name2
    real(8) :: t0, t_last, x_tics
    integer FN, i, j, Nshl, counter, iret
@@ -1036,38 +1290,79 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a)') '@echo off'
+
+      write(FN, '(a)') 'echo Executing OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
+
+      write(FN, '(a)') 'echo Executing OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
+      write(FN, '(a)') 'call OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
+
       if (numpar%do_drude) then 
+         write(FN, '(a)') 'echo Executing OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') 'echo Executing OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
       endif
       if (numpar%save_Ei) then
+         write(FN, '(a)') 'echo Executing OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (numpar%save_fe) then
+         write(FN, '(a)') 'echo Executing OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
+      endif
+      if (numpar%save_fe_grid) then
+         write(FN, '(a)') 'echo Executing OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') 'call OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (numpar%DOS_splitting >= 1) then   ! Mulliken charges
          if (numpar%Mulliken_model >= 1) then
+            write(FN, '(a)') 'echo Executing OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
             write(FN, '(a)') 'call OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
          endif
       endif
       if (numpar%save_NN) then
+         write(FN, '(a)') 'echo Executing OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (Scell(1)%eps%tau > 0.0d0) then ! convolved files too:
+         write(FN, '(a)') 'call Executing convolved files...'
          write(FN, '(a)') 'call OUTPUT_optical_coefficients_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_optical_n_and_k_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_energies_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -1083,6 +1378,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') 'call OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') 'call OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
          if (numpar%Mulliken_model >= 1) then
             write(FN, '(a)') 'call OUTPUT_Mulliken_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          endif
@@ -1103,15 +1399,19 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       write(FN, '(a)') './OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
+      write(FN, '(a)') './OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
       if (numpar%do_drude) then 
          write(FN, '(a)') './OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
       endif
-      if (g_numpar%save_Ei) then
+      if (numpar%save_Ei) then
          write(FN, '(a)') './OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
       endif
-      if (g_numpar%save_fe) then
+      if (numpar%save_fe) then
          write(FN, '(a)') './OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
+      endif
+      if (numpar%save_fe_grid) then
+         write(FN, '(a)') './OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (numpar%DOS_splitting >= 1) then   ! Mulliken charges
          if (numpar%Mulliken_model >= 1) then
@@ -1137,6 +1437,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') './OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') './OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
          if (numpar%Mulliken_model >= 1) then
             write(FN, '(a)') './OUTPUT_Mulliken_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          endif
@@ -1153,65 +1454,69 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
 
    ! Energies:
    File_name  = trim(adjustl(file_path))//'OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_energies(File_name, file_energies, t0, t_last, 'OUTPUT_energies.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_energies(numpar, File_name, file_energies, t0, t_last, 'OUTPUT_energies.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Temepratures:
    File_name  = trim(adjustl(file_path))//'OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_temperatures(File_name, file_temperatures, t0, t_last, 'OUTPUT_temepratures.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_temperatures(numpar, File_name, file_temperatures, t0, t_last, 'OUTPUT_temepratures.'//trim(adjustl(numpar%fig_extention))) ! below
    
    ! Mean square displacement:
    File_name  = trim(adjustl(file_path))//'OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_MSD(File_name, file_temperatures, t0, t_last, 'OUTPUT_mean_displacement.'//trim(adjustl(g_numpar%fig_extention)), &
-                g_numpar%MSD_power) ! below
+   call gnu_MSD(File_name, file_temperatures, t0, t_last, 'OUTPUT_mean_displacement.'//trim(adjustl(numpar%fig_extention)), &
+                numpar%MSD_power) ! below
    
    ! Pressure:
    File_name  = trim(adjustl(file_path))//'OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_pressure(File_name, file_pressure, t0, t_last, 'OUTPUT_pressure.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_pressure(File_name, file_pressure, t0, t_last, 'OUTPUT_pressure.'//trim(adjustl(numpar%fig_extention))) ! below
    
    ! Stress tensor:
    File_name  = trim(adjustl(file_path))//'OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_stress(File_name, file_pressure, t0, t_last, 'OUTPUT_pressure_tensor.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_stress(File_name, file_pressure, t0, t_last, 'OUTPUT_pressure_tensor.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Numbers of particles:
    File_name  = trim(adjustl(file_path))//'OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_numbers(File_name, file_numbers, t0, t_last, 'OUTPUT_electrons_holes.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_numbers(File_name, file_numbers, t0, t_last, 'OUTPUT_electrons_holes.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Numbers of CB electrons:
    File_name  = trim(adjustl(file_path))//'OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_CB_electrons(File_name, file_numbers, t0, t_last, 'OUTPUT_CB_electrons.'//trim(adjustl(g_numpar%fig_extention)))
+   call gnu_CB_electrons(File_name, file_numbers, t0, t_last, 'OUTPUT_CB_electrons.'//trim(adjustl(numpar%fig_extention)))
 
    ! Numbers of deep-shell holes:
    File_name  = trim(adjustl(file_path))//'OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_holes(File_name, file_deep_holes, t0, t_last, matter, 'OUTPUT_deep_shell_holes.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_holes(File_name, file_deep_holes, t0, t_last, matter, 'OUTPUT_deep_shell_holes.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Chemical potential and band gap:
    File_name  = trim(adjustl(file_path))//'OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_Egap(File_name, file_electron_properties, t0, t_last, 'OUTPUT_mu_and_Egap.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_Egap(File_name, file_electron_properties, t0, t_last, 'OUTPUT_mu_and_Egap.'//trim(adjustl(numpar%fig_extention))) ! below
    
    ! Boundaries of the bands:
    File_name  = trim(adjustl(file_path))//'OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_Ebands(File_name, file_electron_properties, t0, t_last, 'OUTPUT_bands.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_Ebands(File_name, file_electron_properties, t0, t_last, 'OUTPUT_bands.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Electron heat capacity:
    File_name  = trim(adjustl(file_path))//'OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
-   call gnu_capacity(File_name, file_electron_properties, t0, t_last, 'OUTPUT_electron_Ce.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_capacity(File_name, file_electron_properties, t0, t_last, 'OUTPUT_electron_Ce.'//trim(adjustl(numpar%fig_extention))) ! below
+
+   ! Electron entropy:
+   File_name  = trim(adjustl(file_path))//'OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
+   call gnu_entropy(File_name, file_electron_entropy, t0, t_last, 'OUTPUT_electron_entropy.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Electron-ion coupling parameter:
    File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
-   call gnu_coupling(File_name, file_electron_properties, t0, t_last, 'OUTPUT_coupling.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_coupling(File_name, file_electron_properties, t0, t_last, 'OUTPUT_coupling.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Volume:
    File_name  = trim(adjustl(file_path))//'OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_volume(File_name, file_supercell, t0, t_last, 'OUTPUT_volume.'//trim(adjustl(g_numpar%fig_extention))) ! below
+   call gnu_volume(File_name, file_supercell, t0, t_last, 'OUTPUT_volume.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Energy levels:
-   if (g_numpar%save_Ei) then
+   if (numpar%save_Ei) then
       ! Find order of the number, and set number of tics as tenth of it:
       call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
       File_name  = trim(adjustl(file_path))//'OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-      call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 0.2d0, x_tics, 'Energy levels', 'Time (fs)', 'Energy levels (eV)', 'OUTPUT_energy_levels.'//trim(adjustl(g_numpar%fig_extention)), g_numpar%path_sep, setkey=4)
+      call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 0.2d0, x_tics, 'Energy levels', 'Time (fs)', 'Energy levels (eV)', 'OUTPUT_energy_levels.'//trim(adjustl(numpar%fig_extention)), numpar%path_sep, setkey=4)
       
       call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_energy_levels.dat')
       call write_gnuplot_script_ending(FN, File_name, 1)
@@ -1221,25 +1526,38 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    ! Mulliken charges:
    if (numpar%Mulliken_model >= 1) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
-      call gnu_Mulliken_charges(File_name, file_electron_properties, t0, t_last, 'OUTPUT_Mulliken_charges.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_Mulliken_charges(File_name, file_electron_properties, t0, t_last, 'OUTPUT_Mulliken_charges.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
    
    ! Nearest neighbors:
    if (numpar%save_NN) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
-      call gnu_nearest_neighbors(File_name, file_NN, t0, t_last, 'OUTPUT_nearest_neighbors.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_nearest_neighbors(File_name, file_NN, t0, t_last, 'OUTPUT_nearest_neighbors.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
    
    ! Distribution function of electrons:
-   if (g_numpar%save_fe) then
-      ! Find order of the number, and set number of tics as tenth of it:
-      call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+   if (numpar%save_fe) then
+      !! Find order of the number, and set number of tics as tenth of it:
+      !call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
+      ! Distribution function can only be plotted as animated gif:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-      call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_electron_distribution.'//trim(adjustl(g_numpar%fig_extention)), g_numpar%path_sep, setkey=4)
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 5.0d0, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_electron_distribution.gif', numpar%path_sep, setkey=0)
+      !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
+      call write_distribution_gnuplot(FN, Scell, numpar, 'OUTPUT_electron_distribution.dat')   ! below
+      call write_gnuplot_script_ending(FN, File_name, 1)
+      close(FN)
+   endif
 
-      call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
+   ! Distribution function of all electrons on the grid:
+   if (numpar%save_fe_grid) then
+      ! Distribution function can only be plotted as animated gif:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 10.0d0, 'Distribution', 'Energy (eV)', 'Electron density (1/(V*E))', 'OUTPUT_electron_distribution_on_grid.gif', numpar%path_sep, setkey=0)
+      !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
+      call write_distribution_on_grid_gnuplot(FN, Scell, numpar, 'OUTPUT_electron_distribution_on_grid.dat')   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
    endif
@@ -1247,10 +1565,10 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    ! Optical coefficients
    if (numpar%do_drude) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
-      call gnu_optical_coefficients(File_name, file_optics, t0, t_last, 'OUTPUT_optical_coefficients.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_optical_coefficients(File_name, file_optics, t0, t_last, 'OUTPUT_optical_coefficients.'//trim(adjustl(numpar%fig_extention))) ! below
       ! also n and k:
       File_name  = trim(adjustl(file_path))//'OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
-      call gnu_n_and_k(File_name, file_optics, t0, t_last, 'OUTPUT_optical_n_and_k.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_n_and_k(File_name, file_optics, t0, t_last, 'OUTPUT_optical_n_and_k.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
 
    !ccccccccccccccccccccccccccccc
@@ -1258,70 +1576,74 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    CONV:if (Scell(1)%eps%tau > 0.0d0) then ! convolved files too:
       ! Energies:
       File_name  = trim(adjustl(file_path))//'OUTPUT_energies_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_energies(File_name, trim(adjustl(file_energies(1:len(trim(adjustl(file_energies)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_energies_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_energies(numpar, File_name, trim(adjustl(file_energies(1:len(trim(adjustl(file_energies)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_energies_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Temepratures:
       File_name  = trim(adjustl(file_path))//'OUTPUT_temperatures_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_temperatures(File_name, trim(adjustl(file_temperatures(1:len(trim(adjustl(file_temperatures)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_temepratures_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_temperatures(numpar, File_name, trim(adjustl(file_temperatures(1:len(trim(adjustl(file_temperatures)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_temepratures_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       
       ! Mean displacement:
       File_name  = trim(adjustl(file_path))//'OUTPUT_mean_displacement_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
       call gnu_MSD(File_name, trim(adjustl(file_temperatures(1:len(trim(adjustl(file_temperatures)))-4)))//'_CONVOLVED.dat', t0, t_last, &
-            'OUTPUT_mean_displacement_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention)), g_numpar%MSD_power) ! below
+            'OUTPUT_mean_displacement_CONVOLVED.'//trim(adjustl(numpar%fig_extention)), numpar%MSD_power) ! below
       
       ! Pressure:
       File_name  = trim(adjustl(file_path))//'OUTPUT_pressure_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_pressure(File_name, trim(adjustl(file_pressure(1:len(trim(adjustl(file_pressure)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_pressure_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_pressure(File_name, trim(adjustl(file_pressure(1:len(trim(adjustl(file_pressure)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_pressure_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Stress tensor:
       File_name  = trim(adjustl(file_path))//'OUTPUT_stress_tensor_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_stress(File_name, trim(adjustl(file_pressure(1:len(trim(adjustl(file_pressure)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_pressure_tensor_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_stress(File_name, trim(adjustl(file_pressure(1:len(trim(adjustl(file_pressure)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_pressure_tensor_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       
       ! Numbers of particles:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electrons_and_holes_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_numbers(File_name, trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electrons_holes_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_numbers(File_name, trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electrons_holes_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Numbers of CB electrons:
       File_name  = trim(adjustl(file_path))//'OUTPUT_CB_electrons_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_CB_electrons(File_name, trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_CB_electrons_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention)))
+      call gnu_CB_electrons(File_name, trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_CB_electrons_CONVOLVED.'//trim(adjustl(numpar%fig_extention)))
 
       ! Numbers of deep-shell holes:
       File_name  = trim(adjustl(file_path))//'OUTPUT_deep_shell_holes_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_holes(File_name, trim(adjustl(file_deep_holes(1:len(trim(adjustl(file_deep_holes)))-4)))//'_CONVOLVED.dat', t0, t_last, matter, 'OUTPUT_deep_shell_holes_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_holes(File_name, trim(adjustl(file_deep_holes(1:len(trim(adjustl(file_deep_holes)))-4)))//'_CONVOLVED.dat', t0, t_last, matter, 'OUTPUT_deep_shell_holes_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Chemical potential and band gap:
       File_name  = trim(adjustl(file_path))//'OUTPUT_mu_and_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_Egap(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_mu_and_Egap_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_Egap(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_mu_and_Egap_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       
       ! Boundaries of the bands:
       File_name  = trim(adjustl(file_path))//'OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_Ebands(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_bands_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_Ebands(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_bands_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Electron heat capacity:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_capacity(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electron_Ce_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_capacity(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electron_Ce_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+      ! Electron entropy:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
+      call gnu_entropy(File_name,      trim(adjustl(file_electron_entropy(1:len(trim(adjustl(file_electron_entropy)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electron_entropy_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Electron-ion coupling parameter:
       File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_coupling(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_coupling_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_coupling(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_coupling_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Volume:
       File_name  = trim(adjustl(file_path))//'OUTPUT_volume_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_volume(File_name, trim(adjustl(file_supercell(1:len(trim(adjustl(file_supercell)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_volume_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+      call gnu_volume(File_name, trim(adjustl(file_supercell(1:len(trim(adjustl(file_supercell)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_volume_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       
       ! Mulliken charges:
       if (numpar%Mulliken_model >= 1) then
          File_name  = trim(adjustl(file_path))//'OUTPUT_Mulliken_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         call gnu_Mulliken_charges(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_Mulliken_charges_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+         call gnu_Mulliken_charges(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_Mulliken_charges_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       endif
       
       if (numpar%do_drude) then
          ! optical coefficients:
          File_name  = trim(adjustl(file_path))//'OUTPUT_optical_coefficients_CONVOLVED'//trim(adjustl(sh_cmd))
-         call gnu_optical_coefficients(File_name, trim(adjustl(file_optics(1:len(trim(adjustl(file_optics)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_optical_coefficients_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+         call gnu_optical_coefficients(File_name, trim(adjustl(file_optics(1:len(trim(adjustl(file_optics)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_optical_coefficients_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
          ! also n and k:
          File_name  = trim(adjustl(file_path))//'OUTPUT_optical_n_and_k_CONVOLVED'//trim(adjustl(sh_cmd))
-         call gnu_n_and_k(File_name, trim(adjustl(file_optics(1:len(trim(adjustl(file_optics)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_optical_n_and_k_CONVOLVED.'//trim(adjustl(g_numpar%fig_extention))) ! below
+         call gnu_n_and_k(File_name, trim(adjustl(file_optics(1:len(trim(adjustl(file_optics)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_optical_n_and_k_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       endif
    endif CONV
 end subroutine create_gnuplot_scripts
@@ -1343,7 +1665,8 @@ end subroutine call_vs_slash
 
 
 
-subroutine gnu_energies(File_name, file_energies, t0, t_last, eps_name)
+subroutine gnu_energies(numpar, File_name, file_energies, t0, t_last, eps_name)
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    character(*), intent(in) :: File_name   ! file to create
    character(*), intent(in) :: file_energies ! input file
    real(8), intent(in) :: t0, t_last	! time instance [fs]
@@ -1358,9 +1681,9 @@ subroutine gnu_energies(File_name, file_energies, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics,  'Energies', 'Time (fs)', 'Energy (eV/atom)',  trim(adjustl(eps_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics,  'Energies', 'Time (fs)', 'Energy (eV/atom)',  trim(adjustl(eps_name)), numpar%path_sep, 1)	! module "Gnuplotting"
    
-   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+   if (numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_energies)), ' "u 1:4 w l lw LW title "Potential energy" ,\'
       write(FN, '(a,a,a)') ' "', trim(adjustl(file_energies)), ' "u 1:6 w l lw LW title "Atomic energy" ,\'
       write(FN, '(a,a,a)') ' "', trim(adjustl(file_energies)), ' "u 1:7 w l lw LW title "Energy of atoms and electrons" ,\'
@@ -1376,7 +1699,8 @@ subroutine gnu_energies(File_name, file_energies, t0, t_last, eps_name)
 end subroutine gnu_energies
 
 
-subroutine gnu_temperatures(File_name, file_temperatures, t0, t_last, eps_name)
+subroutine gnu_temperatures(numpar, File_name, file_temperatures, t0, t_last, eps_name)
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    character(*), intent(in) :: File_name   ! file to create
    character(*), intent(in) :: file_temperatures ! input file
    real(8), intent(in) :: t0, t_last ! time instance [fs]
@@ -1391,12 +1715,12 @@ subroutine gnu_temperatures(File_name, file_temperatures, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3, 'Temperatures','Time (fs)', 'Temperatures (K)', trim(adjustl(file_path))//'OUTPUT_temepratures.'//trim(adjustl(g_numpar%fig_extention)))
+   !call write_gnuplot_script_header(FN, 1, 3, 'Temperatures','Time (fs)', 'Temperatures (K)', trim(adjustl(file_path))//'OUTPUT_temepratures.'//trim(adjustl(numpar%fig_extention)))
    !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Temperatures','Time (fs)', 'Temperatures (K)', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Temperatures', 'Time (fs)', 'Temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics, 'Temperatures', 'Time (fs)', 'Temperature (K)', trim(adjustl(eps_name)), numpar%path_sep, 0)	! module "Gnuplotting"
    
    if (g_matter%N_KAO == 1) then
-      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      if (numpar%path_sep .EQ. '\') then	! if it is Windows
          write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_temperatures)), ' "u 1:2 w l lw LW title "Electrons" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(file_temperatures)), ' "u 1:3 w l lw LW title "Atoms" '
 !          write(FN, '(a,a,a)') ' "', trim(adjustl(file_temperatures)), ' "u 1:3 w l lw LW title "Atoms (Tkin)" ,\'
@@ -1408,7 +1732,7 @@ subroutine gnu_temperatures(File_name, file_temperatures, t0, t_last, eps_name)
 !          write(FN, '(a,a,a)') '\"', trim(adjustl(file_temperatures)), '\"u 1:4 w l lt rgb \"#0000FF\" lw  \"$LW\" title \"Atoms (Tconfig)\" '
       endif
    else ! more than one element:
-       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+       if (numpar%path_sep .EQ. '\') then	! if it is Windows
          write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_temperatures)), ' "u 1:2 w l lw LW title "Electrons" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(file_temperatures)), ' "u 1:3 w l lw LW title "Atoms average" ,\'
          do i = 1, g_matter%N_KAO - 1
@@ -1703,16 +2027,16 @@ subroutine gnu_CB_electrons(File_name, file_numbers, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3, 'CB_electrons','Time (fs)', 'Electrons (%)', trim(adjustl(file_path))//'OUTPUT_CB_electrons.'//trim(adjustl(g_numpar%fig_extention)))
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'CB_electrons','Time (fs)', 'Electrons (%)', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'CB_electrons','Time (fs)', 'Electrons (%)', trim(adjustl(eps_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'CB_electrons','Time (fs)', 'Electrons (per atom)', trim(adjustl(eps_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_numbers)), ' "u 1:($3/4*100) w l lw LW title "CB electrons" ,\'
-      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_numbers)), ' "u 1:($7*1e3) w l lw LW title "Photons"'
+      !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_numbers)), ' "u 1:($3/4*100) w l lw LW title "CB electrons" ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_numbers)), ' "u 1:($3) w l lw LW title "CB electrons" ,\'
+      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_numbers)), ' "u 1:($7) w l lw LW title "Photons"'
    else
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_numbers)), '\"u 1:(\$3/4*100) w l lw \"$LW\" title \"CB electrons\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_numbers)), '\"u 1:(\$7*1e3) w l lw \"$LW\" title \"Photons\"'
+      !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_numbers)), '\"u 1:(\$3/4*100) w l lw \"$LW\" title \"CB electrons\" ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_numbers)), '\"u 1:(\$3) w l lw \"$LW\" title \"CB electrons\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_numbers)), '\"u 1:(\$7) w l lw \"$LW\" title \"Photons\"'
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -1725,25 +2049,45 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
    real(8), intent(in) :: t0, t_last	 ! time instance [fs]
    type(Solid), intent(in) :: matter
    character(*), intent(in) :: eps_name ! name of the figure
-   integer :: FN, counter, Nshl, i, j, Na
-   character(100) :: chtemp
+   integer :: FN, counter, Nshl, i, j, Na, N_sh_max, font_siz, N_sh_tot
+   character(100) :: chtemp, ch_temp
    character(11) :: chtemp11
    real(8) :: x_tics
    character(8) :: temp, time_order
+   logical :: first_line
    
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
    
     ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3, 'Holes','Time (fs)', 'Particles per atoms (arb.units)', trim(adjustl(file_path))//'OUTPUT_deep_shell_holes.'//trim(adjustl(g_numpar%fig_extention)))
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Holes','Time (fs)', 'Particles per atoms (arb.units)', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Holes','Time (fs)', 'Particles (per atoms)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   ! Find how many shells we have for plotting:
+   Na = size(matter%Atoms)
+   N_sh_max = size(matter%Atoms(1)%Ip)
+   do i = 1, size(matter%Atoms) ! for all atoms
+      Nshl = size(matter%Atoms(i)%Ip)
+      if (N_sh_max < Nshl) N_sh_max = Nshl ! to find the maximal value
+   enddo
+   N_sh_tot = Na*N_sh_max  ! estimate the total amount of shells
+   if (N_sh_tot > 70) then ! make tiny font
+      font_siz = 8
+   elseif (N_sh_tot > 45) then ! make very small font
+      font_siz = 10
+   elseif (N_sh_tot > 26) then ! make small font
+      font_siz = 12
+   else  ! standard font
+      font_siz = 14
+   endif
+
+   ! prepare gnuplot header:
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Holes','Time (fs)', 'Particles (total)', &
+         trim(adjustl(eps_name)), g_numpar%path_sep, setkey=0, fontsize=font_siz)  ! module "Gnuplotting"
    
-   counter = 0
+   counter = 0 ! to start with
+   first_line = .true.  ! to start from the first line
    W_vs_L:if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
      ATOMS0:do i = 1, size(matter%Atoms) ! for all atoms
-         Na = size(matter%Atoms)
+         write(ch_temp,'(a,i0)') "dashtype ", i ! to set line type
          Nshl = size(matter%Atoms(i)%Ip)
          SHELLS0:do j = 1, Nshl ! for all shells of this atom
             if ((i .NE. 1) .or. (j .NE. Nshl)) then ! atomic shell:
@@ -1752,10 +2096,14 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                write(chtemp,'(a,a,a)') trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(chtemp11))
                select case(size(matter%Atoms))
                case (1)
-                  if ((i == 1) .and. (j == 1)) then
-                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), ' "u 1:', 1+j ,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
+                  !if ((i == 1) .and. (j == 1)) then
+                  if (first_line) then
+                     first_line = .false. ! first line is done, don't repeat it
+                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), &
+                        '" u 1:', 1+j ,' w l lw LW '//trim(adjustl(ch_temp))//' title "', trim(adjustl(chtemp))  ,'"'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), ' "u 1:', 1+j ,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), '" u 1:', 1+j ,' w l lw LW '// &
+                        trim(adjustl(ch_temp))//' title "', trim(adjustl(chtemp))  ,'"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl-1)) then
                      write(FN, '(a)') ',\'
@@ -1763,10 +2111,14 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                      write(FN, '(a)') ''
                   endif
                case default
-                  if ((i == 1) .and. (j == 1)) then
-                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), ' "u 1:', 1+counter,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
+                  !if ((i == 1) .and. (j == 1)) then
+                  if (first_line) then
+                     first_line = .false. ! first line is done, don't repeat it
+                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] "' , trim(adjustl(file_deep_holes)), &
+                        ' "u 1:', 1+counter,' w l lw LW '//trim(adjustl(ch_temp))//' title " ', trim(adjustl(chtemp))  ,' "'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), ' "u 1:', 1+counter,' w l lw LW title " ', trim(adjustl(chtemp))  ,' "'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), '" u 1:', 1+counter, &
+                        ' w l lw LW '//trim(adjustl(ch_temp))//' title "', trim(adjustl(chtemp))  ,'"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl)) then
                      write(FN, '(a)') ',\'
@@ -1782,6 +2134,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
       enddo ATOMS0
    else W_vs_L ! It is linux
       ATOMS:do i = 1, size(matter%Atoms) ! for all atoms
+         write(ch_temp,'(a,i0)') "dashtype ", i ! to set line type
          Nshl = size(matter%Atoms(i)%Ip)
          SHELLS:do j = 1, Nshl ! for all shells of this atom
             if ((i .NE. 1) .or. (j .NE. Nshl)) then ! atomic shell:
@@ -1790,10 +2143,14 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                write(chtemp,'(a,a,a)') trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(chtemp11))
                select case(size(matter%Atoms))
                case (1)
-                  if ((i == 1) .and. (j == 1)) then
-                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), '\"u 1:', 1+j ,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
+!                   if ((i == 1) .and. (j == 1)) then
+                  if (first_line) then
+                     first_line = .false. ! first line is done, don't repeat it
+                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), &
+                        '\"u 1:', 1+j ,' w l lw \"$LW\" '//trim(adjustl(ch_temp))//' title \" ', trim(adjustl(chtemp))  ,'\"'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+j ,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+j , &
+                        ' w l lw \"$LW\" '//trim(adjustl(ch_temp))//' title \" ', trim(adjustl(chtemp))  ,'\"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl-1)) then
                      write(FN, '(a)') ',\'
@@ -1801,10 +2158,14 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                      write(FN, '(a)') ''
                   endif
                case default
-                  if ((i == 1) .and. (j == 1)) then
-                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
+!                   if ((i == 1) .and. (j == 1)) then
+                  if (first_line) then
+                     first_line = .false. ! first line is done, don't repeat it
+                     write(FN, '(a,es25.16,a,a,a,i3,a,a,a)', ADVANCE = "NO") 'p [', t0, ':][] \"' , trim(adjustl(file_deep_holes)), &
+                        '\"u 1:', 1+counter,' w l lw \"$LW\" '//trim(adjustl(ch_temp))//' title \" ', trim(adjustl(chtemp))  ,'\"'
                   else
-                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter,' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))  ,' \"'
+                     write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter, &
+                        ' w l lw \"$LW\" '//trim(adjustl(ch_temp))//' title \" ', trim(adjustl(chtemp))  ,'\"'
                   endif
                   if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl)) then
                      write(FN, '(a)') ',\'
@@ -1838,8 +2199,6 @@ subroutine gnu_Egap(File_name, file_electron_properties, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3, 'mu and Egap','Time (fs)', 'Energy (eV)', trim(adjustl(file_path))//'OUTPUT_mu_and_Egap.'//trim(adjustl(g_numpar%fig_extention)))
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'mu and Egap','Time (fs)', 'Energy (eV)', trim(adjustl(eps_name)))
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'mu and Egap','Time (fs)', 'Energy (eV)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
    
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
@@ -1916,6 +2275,34 @@ subroutine gnu_capacity(File_name, file_electron_properties, t0, t_last, eps_nam
 end subroutine gnu_capacity
 
 
+subroutine gnu_entropy(File_name, file_electron_entropy, t0, t_last, eps_name)
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_electron_entropy ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron entropy','Time (fs)', 'Electron entropy (eV/K)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
+
+   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_entropy)), '" u 1:3 w l lw LW title "Equilibrium" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), '" u 1:2 w l lw LW title "Nonequilibrium" '
+   else ! It is linux
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_entropy)), '\" u 1:3 w l lw \"$LW\" title \"Equilibrium\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), '\" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" '
+   endif
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_entropy
+
+
 subroutine gnu_coupling(File_name, file_electron_properties, t0, t_last, eps_name)
    character(*), intent(in) :: File_name   ! file to create
    character(*), intent(in) :: file_electron_properties ! input file
@@ -1930,13 +2317,15 @@ subroutine gnu_coupling(File_name, file_electron_properties, t0, t_last, eps_nam
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Coupling parameter','Time (fs)', 'Coupling parameter (W/(m^3 K))', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Coupling parameter','Time (fs)', 'Coupling parameter (W/(m^3 K))', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Coupling parameter','Time (fs)', &
+      'Coupling parameter (W/(m^3 K))', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
    
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_properties)), ' "u 1:6 w l lw LW title "Electron-ion coupling" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_properties)), &
+         ' "u 1:6 w l lw LW title "Electron-ion coupling" '
    else ! It is linux
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_properties)), '\"u 1:6 w l lw \"$LW\" title \"Electron-ion coupling\" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_properties)), &
+         '\"u 1:6 w l lw \"$LW\" title \"Electron-ion coupling\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -1957,14 +2346,13 @@ subroutine gnu_volume(File_name, file_supercell, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3, 'Volume','Time (fs)', 'Volume (A^3)', trim(adjustl(file_path))//'OUTPUT_volume.'//trim(adjustl(g_numpar%fig_extention)))
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Volume','Time (fs)', 'Volume (A^3)', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Volume','Time (fs)', 'Volume (A^3)', trim(adjustl(eps_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Volume','Time (fs)', 'Volume (A^3)', &
+      trim(adjustl(eps_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
    
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_supercell)), ' "u 1:2 w l lw LW title "Supercell volume" '
    else ! It is linux
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_supercell)), '\"u 1:2 w l lw \"$LW\" title \"Supercell volume\" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"', trim(adjustl(file_supercell)), '\"u 1:2 w l lw \"$LW\" title \"Supercell volume\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -1985,8 +2373,8 @@ subroutine gnu_optical_coefficients(File_name, file_optics, t0, t_last, eps_name
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Optical coefficients','Time (fs)', 'Optical coefficients', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Optical coefficients','Time (fs)', 'Optical coefficients', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Optical coefficients','Time (fs)', &
+      'Optical coefficients', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
       
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_optics)), ' "u 1:2 w l lw LW title "Reflectivity" ,\'
@@ -2016,8 +2404,8 @@ subroutine gnu_n_and_k(File_name, file_optics, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Optical n and k','Time (fs)', 'Optical parameters', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Optical n and k','Time (fs)', 'Optical parameters', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Optical n and k','Time (fs)', &
+      'Optical parameters', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
    
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_optics)), ' "u 1:5 w l lw LW title "n" ,\'
@@ -2032,114 +2420,6 @@ end subroutine gnu_n_and_k
 
 
 
-subroutine write_gnuplot_script_header(FN, ind, LW, labl, xlabl, ylabl, Out_file, setkey)
-   integer, intent(in) :: FN, ind
-   real(8), intent(in) :: LW
-   integer, intent(in), optional :: setkey
-   character(*), intent(in) :: labl, xlabl, ylabl, Out_file
-   if (present(setkey)) then
-      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-         call write_gnuplot_script_header_windows(FN, ind, LW, labl, xlabl, ylabl, Out_file, setkey)
-      else ! it is linux
-         call write_gnuplot_script_header_linux(FN, ind, LW, labl, xlabl, ylabl, Out_file, setkey)
-      endif
-   else
-      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-         call write_gnuplot_script_header_windows(FN, ind, LW, labl, xlabl, ylabl, Out_file)
-      else ! it is linux
-         call write_gnuplot_script_header_linux(FN, ind, LW, labl, xlabl, ylabl, Out_file)
-      endif
-   endif
-end subroutine write_gnuplot_script_header
-
-
-subroutine write_gnuplot_script_header_linux(FN, ind, LW, labl, xlabl, ylabl, Out_file, setkey)
-   integer, intent(in) :: FN, ind
-   real(8), intent(in) :: LW
-   integer, intent(in), optional :: setkey
-   character(*), intent(in) :: labl, xlabl, ylabl, Out_file
-   select case (ind)
-   case(:1)	! eps
-      write(FN, '(a)') '#!/bin/bash'
-      write(FN, '(a)') ''
-      write(FN, '(a)') 'NAME='//trim(adjustl(Out_file))
-   end select
-   write(FN, '(a,f3.1)') 'LW=', LW
-   write(FN, '(a)') 'LABL="'//trim(adjustl(labl))//'"'
-   write(FN, '(a)') 'TICSIZ=50'
-   write(FN, '(a)') 'echo " '
-   select case (ind)
-      case (:1)
-      write(FN, '(a)') 'set terminal postscript enhanced \"Helvetica\" 16 color '
-      write(FN, '(a)') 'set output \"$NAME\"'
-      case (2:)
-      write(FN, '(a)') 'set terminal x11 persist'
-      write(FN, '(a)') 'unset label'
-   endselect
-   write(FN, '(a)') 'set xlabel \"'//trim(adjustl(xlabl))//' \"        font \"Helvetica,20\" '
-   write(FN, '(a)') 'set ylabel \"'//trim(adjustl(ylabl))//' \"      font \"Helvetica,20\" '
-   !write(FN, '(a)') 'set label \"$LABL\" at 150,-8 font \"Helvetica,22\" '
-   if (present(setkey)) then
-      select case(setkey)
-      case (1)
-         write(FN, '(a)') 'set key right bottom '
-      case (2)
-         write(FN, '(a)') 'set key left top '
-      case (3)
-         write(FN, '(a)') 'set key left bottom '
-      case (4)
-         write(FN, '(a)') 'unset key '
-      case default
-         write(FN, '(a)') 'set key right top '
-      endselect
-   else
-      write(FN, '(a)') 'set key right top '
-   endif
-   write(FN, '(a)') 'set xtics \"$TICSIZ\" '
-end subroutine write_gnuplot_script_header_linux
-
-
-
-subroutine write_gnuplot_script_header_windows(FN, ind, LW, labl, xlabl, ylabl, Out_file, setkey)
-   integer, intent(in) :: FN, ind
-   real(8), intent(in) :: LW
-   integer, intent(in), optional :: setkey
-   character(*), intent(in) :: labl, xlabl, ylabl, Out_file
-   select case (ind)
-   case(:1)	! eps
-      write(FN, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
-   end select
-   write(FN, '(a,f3.1)') 'LW=', LW
-
-   select case (ind)
-      case (:1)
-      write(FN, '(a)') 'set terminal postscript enhanced "Helvetica" 16 color '
-      write(FN, '(a)') 'set output "'//trim(adjustl(Out_file))//'"'
-      case (2:)
-      write(FN, '(a)') 'set terminal x11 persist'
-      write(FN, '(a)') 'unset label'
-   endselect
-   write(FN, '(a)') 'set xlabel "'//trim(adjustl(xlabl))//' "        font "Helvetica,20" '
-   write(FN, '(a)') 'set ylabel "'//trim(adjustl(ylabl))//' "      font "Helvetica,20" '
-   !write(FN, '(a)') 'set label \"$LABL\" at 150,-8 font \"Helvetica,22\" '
-   if (present(setkey)) then
-      select case(setkey)
-      case (1)
-         write(FN, '(a)') 'set key right bottom '
-      case (2)
-         write(FN, '(a)') 'set key left top '
-      case (3)
-         write(FN, '(a)') 'set key left bottom '
-      case (4)
-         write(FN, '(a)') 'unset key '
-      case default
-         write(FN, '(a)') 'set key right top '
-      endselect
-   else
-      write(FN, '(a)') 'set key right top '
-   endif
-   write(FN, '(a)') 'set xtics 50'
-end subroutine write_gnuplot_script_header_windows
 
 
 subroutine write_gnuplot_script_ending(FN, File_name, ind)
@@ -2147,7 +2427,7 @@ subroutine write_gnuplot_script_ending(FN, File_name, ind)
    character(*), intent(in) :: File_name
    character(100) :: command
    integer :: iret
-   
+
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       ! no need to add anything here
    else ! it is linux
@@ -2158,7 +2438,7 @@ subroutine write_gnuplot_script_ending(FN, File_name, ind)
          !call system('chmod +x '//trim(adjustl(File_name))) ! make the output-script executable
          command = 'chmod +x '//trim(adjustl(File_name))
          iret = system(command)
-      
+
          !call system(trim(adjustl(File_name))) ! execute the prepared script
       case (2:)
          write(FN, '(a)') 'reset'
@@ -2210,29 +2490,126 @@ subroutine write_energy_levels_gnuplot(FN, Scell, file_Ei)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    character(*), intent(in) :: file_Ei  ! file with energy levels
    integer i, M, NSC
-   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-      do NSC = 1, size(Scell)
-         M = size(Scell(NSC)%Ei)
-         write(FN, '(a,a,a,i5,a)') 'p "', trim(adjustl(file_Ei)), '"u 1:', 2, ' pt 7 ps 0.2 ,\'
+   character(30) :: ch_temp
+
+   do NSC = 1, size(Scell)
+      M = size(Scell(NSC)%Ei)
+      ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
+      write(ch_temp,'(f)') 25.0d0      ! Scell(NSC)%E_top
+
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a,a,a,i5,a)') 'p [][:'//trim(adjustl(ch_temp))//'] "', trim(adjustl(file_Ei)), '"u 1:', 2, ' pt 7 ps 0.2 ,\'
          do i = 3, M
             write(FN, '(a,a,a,i5,a)') ' "', trim(adjustl(file_Ei)), '"u 1:', i, ' pt 7 ps 0.2 ,\'
          enddo
          write(FN, '(a,a,a,i5,a)') ' "', trim(adjustl(file_Ei)), '"u 1:', M+1, ' pt 7 ps 0.2'
-      enddo
-   else
-      do NSC = 1, size(Scell)
-         M = size(Scell(NSC)%Ei)
-         write(FN, '(a,a,a,i5,a)') 'p\"', trim(adjustl(file_Ei)), '\"u 1:', 2, ' pt 7 ps \"$LW\" ,\'
+      else
+         write(FN, '(a,a,a,i5,a)') 'p [][:'//trim(adjustl(ch_temp))//'] \"', trim(adjustl(file_Ei)), &
+                                       '\"u 1:', 2, ' pt 7 ps \"$LW\" ,\'
          do i = 3, M
             write(FN, '(a,a,a,i5,a)') '\"', trim(adjustl(file_Ei)), '\"u 1:', i, ' pt 7 ps \"$LW\" ,\'
          enddo
          write(FN, '(a,a,a,i5,a)') '\"', trim(adjustl(file_Ei)), '\"u 1:', M+1, ' pt 7 ps \"$LW\"'
-      enddo
-   endif
+      endif
+   enddo
 end subroutine write_energy_levels_gnuplot
 
 
+subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
+   integer, intent(in) :: FN            ! file to write into
+   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   character(*), intent(in) :: file_fe  ! file with electronic distribution function
+   !-----------------------
+   integer :: i, M, NSC
+   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
+   logical :: do_fe_eq
 
+   do NSC = 1, size(Scell)
+      ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
+      write(ch_temp,'(f)') 25.0d0      ! Scell(NSC)%E_top
+      write(ch_temp2,'(f)') numpar%t_start
+      write(ch_temp3,'(f)') numpar%dt_save
+
+      select case (numpar%el_ion_scheme)
+         case (3:4)
+            do_fe_eq = .true.
+         case default
+            do_fe_eq = .false.
+      endselect
+      ! minimal energy grid:
+      write(ch_temp4,'(f)') -25.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
+
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+         !if (do_fe_eq) then  ! plot also equivalent Fermi distribution
+
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:3 w l lw 2 lt rgb "grey" title "Equivalent Fermi" ,\'
+            write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+         !else
+         !   write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
+         !         '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
+         !         trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+         !endif
+      else  ! Linux
+         write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+         !if (do_fe_eq) then ! plot also equivalent Fermi distribution
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:3 w l lw 2 lt rgb \"grey\" title \"Equivalent Fermi\" ,\'
+            write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+         !else
+         !   write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
+         !         '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
+         !         trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+         !endif
+      endif
+      write(FN, '(a)') '}'
+   enddo
+end subroutine write_distribution_gnuplot
+
+
+subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
+   integer, intent(in) :: FN            ! file to write into
+   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   character(*), intent(in) :: file_fe  ! file with electronic distribution function
+   !-----------------------
+   integer :: i, M, NSC
+   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
+
+   do NSC = 1, size(Scell)
+      ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
+      write(ch_temp,'(f)') 100.0d0      ! Scell(NSC)%E_top
+      write(ch_temp2,'(f)') numpar%t_start
+      write(ch_temp3,'(f)') numpar%dt_save
+
+      ! minimal energy grid:
+      write(ch_temp4,'(f)') -25.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
+         write(FN, '(a)') 'set logscale y'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+      else  ! Linux
+         write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
+         write(FN, '(a)') 'set logscale y'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
+                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+      endif
+      write(FN, '(a)') '}'
+   enddo
+end subroutine write_distribution_on_grid_gnuplot
 
 
 subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err)
@@ -2266,16 +2643,32 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
       goto 9999
    endif
    numpar%FN_parameters = FN ! save this file number with parameters
-   call Print_title(FN,Scell, matter,laser,numpar)
+#ifdef OMP_inside
+   call Print_title(FN, Scell, matter, laser, numpar, 1) ! below
+#else
+   call Print_title(FN, Scell, matter, laser, numpar, 4) ! below
+#endif
    !close(FN)
    inquire(file=trim(adjustl(File_name)),opened=file_opened)
    if (file_opened) then
       write(FN, '(a)') 'Atomic data used for '//trim(adjustl(matter%Name))//' are:'
+
       do i = 1, matter%N_KAO
+         write(FN,'(a)') trim(adjustl(m_dashline))
          write(chtemp(1), '(i12)') i
          write(chtemp(2), '(f6.2)') matter%Atoms(i)%percentage
-         write(FN, '(a,$)') 'Element #'//trim(adjustl(chtemp(1)))//' is '//trim(adjustl(matter%Atoms(i)%Name))//' contributing to the compound with '//trim(adjustl(chtemp(2)))
+         write(FN, '(a,$)') 'Element #'//trim(adjustl(chtemp(1)))//' is '//trim(adjustl(matter%Atoms(i)%Name))// &
+            ' contributing to the compound with '//trim(adjustl(chtemp(2)))
          write(FN, '(a)') ''
+         write(chtemp(1), '(i4)') INT(matter%Atoms(i)%Z)
+         write(chtemp(2), '(es25.5)') matter%Atoms(i)%Ma
+         write(FN, '(a,a,a,a,a)') 'Atomic number: ', trim(adjustl(chtemp(1))), ', mass: ', trim(adjustl(chtemp(2))), ' [kg]'
+
+         write(chtemp(1), '(f12.2)') dble(matter%Atoms(i)%NVB)
+         write(chtemp(2), '(f12.2)') dble(Scell(1)%Ne/Scell(1)%Na)
+         write(FN, '(a,a,a,a,a)') 'Number of valence electrons: ', trim(adjustl(chtemp(1))), ' (band: ', &
+                                    trim(adjustl(chtemp(2))), '/atom)'
+
          write(FN, '(a)') 'Shell#	Designator	Ne	Ip [eV]	Ek [eV]	Auger [fs]	'
          Nshl = size(matter%Atoms(i)%Ip)
          do j = 1, Nshl
@@ -2287,13 +2680,16 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
             if (matter%Atoms(i)%Auger(j) .LT. 1d10) then
                write(chtemp(6), '(es14.3)') matter%Atoms(i)%Auger(j)
             else
-               write(chtemp(6),*) matter%Atoms(i)%Auger(j)
+               write(chtemp(6), '(es14.5)') matter%Atoms(i)%Auger(j)
             endif
-            write(FN, '(a,$)') trim(adjustl(chtemp(1)))//'	', trim(adjustl(chtemp(2)))//'	', trim(adjustl(chtemp(3)))//'	', trim(adjustl(chtemp(4)))//'	', trim(adjustl(chtemp(5)))//'	', trim(adjustl(chtemp(6)))
+            write(FN, '(a,$)') trim(adjustl(chtemp(1)))//'	', trim(adjustl(matter%Atoms(i)%Shell_name(j)))//' 	', &
+                                 trim(adjustl(chtemp(2)))//'	', trim(adjustl(chtemp(3)))//'	', &
+                                 trim(adjustl(chtemp(4)))//'	', trim(adjustl(chtemp(5)))//'	', trim(adjustl(chtemp(6)))
             write(FN, '(a)') ''
          enddo !j
       enddo !i
-      write(FN,'(a)') '*************************************************************'
+      !write(FN,'(a)') '*************************************************************'
+      write(FN,'(a)') trim(adjustl(m_starline))
    endif
 9999 continue
 end subroutine output_parameters_file
@@ -2306,9 +2702,16 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    integer i, iret
-   character(200) :: File_name, File_name2, command
+   character(200) :: File_name, File_name2, command, matter_name
    character(100) :: ch1, ch2, ch3, ch4
    logical :: file_exist
+
+   ! Check embedding in water:
+   if (numpar%embed_water) then ! if material embedded in water, add it to the name
+      matter_name = trim(adjustl(matter%Name))//'_in_water'
+   else  ! just material name
+      matter_name = trim(adjustl(matter%Name))
+   endif
 
    LAS:if (maxval(laser(:)%F) .GT. 0.0d0) then
       write(ch1,'(f7.1)') (laser(1)%hw)	! photon energy
@@ -2322,16 +2725,20 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
       if (numpar%path_sep .EQ. '\') then	! if it is Windows
          if (size(laser) .GT. 1) then
             write(ch4,'(i2)') size(laser)
-            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_hw_', trim(adjustl(ch1)), '_t_', trim(adjustl(ch2)), '_F_', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
+            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw_', trim(adjustl(ch1)), '_t_', &
+                  trim(adjustl(ch2)), '_F_', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
          else ! singe pulse
-            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_hw_', trim(adjustl(ch1)), '_t_', trim(adjustl(ch2)), '_F_', trim(adjustl(ch3))
+            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw_', trim(adjustl(ch1)), '_t_', &
+                  trim(adjustl(ch2)), '_F_', trim(adjustl(ch3))
          endif
       else ! it is linux
          if (size(laser) .GT. 1) then
             write(ch4,'(i2)') size(laser)
-            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_hw=', trim(adjustl(ch1)), '_t=', trim(adjustl(ch2)), '_F=', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
+            write(File_name,'(a,a,a,a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw=', trim(adjustl(ch1)), '_t=', &
+               trim(adjustl(ch2)), '_F=', trim(adjustl(ch3)), '_', trim(adjustl(ch4)), '_pulses'
          else ! singe pulse
-            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_hw=', trim(adjustl(ch1)), '_t=', trim(adjustl(ch2)), '_F=', trim(adjustl(ch3))
+            write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_hw=', trim(adjustl(ch1)), '_t=', &
+               trim(adjustl(ch2)), '_F=', trim(adjustl(ch3))
          endif
       endif 
    else LAS
@@ -2345,7 +2752,8 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
          else
             write(ch3,'(a)') 'no_coupling'
          endif
-         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_Te_', trim(adjustl(ch1)), '_Ta_', trim(adjustl(ch2)), '_', trim(adjustl(ch3))
+         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_Te_', trim(adjustl(ch1)), '_Ta_', &
+            trim(adjustl(ch2)), '_', trim(adjustl(ch3))
       else ! it is linux
          do i = 1,size(Scell)
             write(ch1,'(f8.1)') Scell(i)%Te ! electron temperature [K]
@@ -2356,7 +2764,8 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
          else
             write(ch3,'(a)') 'no_coupling'
          endif
-         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name)), '_Te=', trim(adjustl(ch1)), '_Ta=', trim(adjustl(ch2)), '_', trim(adjustl(ch3))
+         write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_Te=', trim(adjustl(ch1)), '_Ta=', &
+            trim(adjustl(ch2)), '_', trim(adjustl(ch3))
       endif
    endif LAS
 
@@ -2385,59 +2794,46 @@ subroutine communicate(FN, time, numpar, matter)
    integer, intent(in) :: FN ! file number to read from
    real(8), intent(in) :: time ! current time [fs]
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
-   type(Solid), intent(in) :: matter ! parameters of the material
-   integer Reason, i, MOD_TIM
+   type(Solid), intent(inout) :: matter ! parameters of the material
+   integer :: Reason, i, MOD_TIM, sz
    character(200) :: readline, given_line, File_name
    real(8) given_num
-   logical :: read_well, read_well_2, file_openeed
+   logical :: read_well, read_well_2, file_opened
    
-   File_name = trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt'
-   if (numpar%path_sep .EQ. '\') then	! if it is Windows
-      inquire(UNIT=FN,opened=file_opened)
-      if (file_opened) close(FN) ! for windows, we have to close the file to let the user write into it
-      ! Check if the file was modified since the last time:
-      call get_file_stat(trim(adjustl(File_name)), Last_modification_time=MOD_TIM) ! module 'Dealing_with_files'
+   File_name = numpar%Filename_communication
+   inquire(UNIT=FN,opened=file_opened)
+   if (file_opened) close(FN) ! for windows, we have to close the file to let the user write into it
+   ! Check if the file was modified since the last time:
+   call get_file_stat(trim(adjustl(File_name)), Last_modification_time=MOD_TIM) ! module 'Dealing_with_files'
    
-      if (MOD_TIM /= numpar%MOD_TIME) then ! open file again only if it was modified by the user
-         numpar%MOD_TIME = MOD_TIM ! save new time of the last modification
-!          print*, MOD_TIM, numpar%MOD_TIME
-         open(UNIT=FN,FILE=trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt',ERR=7777)
+   if (MOD_TIM /= numpar%MOD_TIME) then ! open file again only if it was modified by the user
+      numpar%MOD_TIME = MOD_TIM ! save new time of the last modification
+      open(UNIT=FN,FILE=trim(adjustl(File_name)),ERR=7777)
 7777     continue ! in case if the program could not open the file
-      endif
-   else ! it is linux
-      inquire(UNIT=FN,opened=file_opened)
-      if (.not.file_opened) open(UNIT=FN,FILE=trim(adjustl(numpar%output_path))//numpar%path_sep//'Comunication.txt',ERR=7778)
-7778     continue ! in case if the program could not open the file
    endif
    
    inquire(UNIT=FN,opened=file_opened)
+
    COM_OPEN:if (file_opened) then ! read it
-      ! read the first line
-      read(FN,'(a)',IOSTAT=Reason) readline
-      call read_file(Reason, i, read_well)
-      if (read_well) then
-         call pars_comunications(trim(adjustl(readline)), given_line, given_num, read_well_2)
-         call act_on_comunication(read_well_2, given_line, given_num, numpar, matter, time)
-         i = 1
-         do while (Reason .EQ. 0) ! read all lines if there is more than one
-            i = i + 1
-            read(FN,'(a)',IOSTAT=Reason) readline
-            call read_file(Reason, i, read_well)
-            if (Reason .NE. 0) exit
-            call pars_comunications(trim(adjustl(readline)), given_line, given_num, read_well_2)
-            call act_on_comunication(read_well_2, given_line, given_num, numpar, matter, time)
-         enddo
-         rewind(FN)
-         write(FN,'(a)') ''
-         rewind(FN)
+      rewind(FN,IOSTAT=Reason)  ! to start reading from the start
+      i = 1 ! to start with
+      read_well = .true.   ! to start with
+      Reason = 1  ! to start with
+      do while (Reason >= 0) ! read all lines if there is more than one
+         call pars_comunications_file(FN, i, given_line, given_num, Reason) ! below
+         if (Reason == 0) call act_on_comunication(given_line, given_num, numpar, matter, time)   ! below
+      enddo
+      rewind(FN,IOSTAT=Reason)
+      write(FN,'(a)',IOSTAT=Reason) ''
+      rewind(FN,IOSTAT=Reason)
+
+      call get_file_stat(trim(adjustl(File_name)), Last_modification_time=MOD_TIM) ! module 'Dealing_with_files'
+      if (MOD_TIM /= numpar%MOD_TIME) then ! if it was modified by the user, then
+         numpar%MOD_TIME = MOD_TIM         ! save new time of the last modification
       endif
-      if (numpar%path_sep .EQ. '\') then	! if it is Windows
-         call get_file_stat(trim(adjustl(File_name)), Last_modification_time=MOD_TIM) ! module 'Dealing_with_files'
-         if (MOD_TIM /= numpar%MOD_TIME) then ! if it was modified by the user, then
-            numpar%MOD_TIME = MOD_TIM         ! save new time of the last modification
-         endif
-         close(FN) ! for windows, we have to close the file to let the user write into it
-      endif 
+
+      close(FN,ERR=7778) ! we have to close the file to let the user write into it
+7778  continue ! in case if the program could not close the file
    endif COM_OPEN
 end subroutine communicate
 
@@ -2463,16 +2859,20 @@ subroutine save_duration(matter, numpar, chtext)
    endif
    !write(FN,'(a)') '-----------------------------------------------------------'
    write(FN,'(a,a)') 'Duration of execution of program: ', trim(adjustl(chtext))
-   write(FN,'(a)') '*************************************************************'
+   !write(FN,'(a)') '*************************************************************'
+   write(FN,'(a)') trim(adjustl(m_starline))
 end subroutine save_duration
 
 
 
-subroutine reset_dt(numpar, tim_cur)
-   real(8), intent(in) :: tim_cur        ! current time step of the simulation
+subroutine reset_dt(numpar, matter, tim_cur)
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
+   type(Solid), intent(inout) :: matter ! parameters of the material
+   real(8), intent(in) :: tim_cur        ! current time step of the simulation
    real(8) :: est
    est = 1.0d-6 ! precision
+
+   ! Simulation time step:
    if ((numpar%i_dt > 0) .and. (numpar%i_dt <= size(numpar%dt_MD_grid))) then   ! only if there is an option to change dt
       if (tim_cur >= numpar%dt_MD_reset_grid(numpar%i_dt)-est) then ! time to change dt
          numpar%dt = numpar%dt_MD_grid(numpar%i_dt)              ! to this value
@@ -2486,6 +2886,48 @@ subroutine reset_dt(numpar, tim_cur)
       numpar%dt = numpar%dt_MD_grid(1)           ! to start from
       call reset_support_times(numpar)   ! below
    endif
+
+   ! Atomic thermostat parameters:
+   if (allocated(numpar%At_bath_reset_grid) .and. (numpar%i_At_bath_dt <= size(numpar%At_bath_grid_Ta)) ) then
+      if (tim_cur >= numpar%At_bath_reset_grid(numpar%i_At_bath_dt)-est) then ! time to change dt
+
+         matter%T_bath = numpar%At_bath_grid_Ta(numpar%i_At_bath_dt) ! new bath temperature [K]
+         matter%T_bath = matter%T_bath/g_kb  ! [eV] thermostat temperature for atoms
+
+         matter%tau_bath = numpar%At_bath_grid_tau(numpar%i_At_bath_dt) ! new characteristic time [fs]
+         if (matter%tau_bath > 1.0d14) then  ! there is no bath, too slow to couple
+            numpar%Transport = .false. ! excluded
+            print*, 'Atomic thermostat is off'
+         else
+            numpar%Transport = .true.	 ! included
+            print*, 'Atomic thermostat parameters are changed to', &
+                  matter%T_bath*g_kb, matter%tau_bath
+         endif
+
+         numpar%i_At_bath_dt = numpar%i_At_bath_dt + 1 ! next step to read from
+      endif
+   endif
+
+   ! Electronic thermostat  parameters:
+   if (allocated(numpar%El_bath_reset_grid) .and. (numpar%i_El_bath_dt <= size(numpar%El_bath_grid_Ta)) ) then
+      if (tim_cur >= numpar%El_bath_reset_grid(numpar%i_El_bath_dt)-est) then ! time to change dt
+
+         matter%T_bath_e = numpar%El_bath_grid_Ta(numpar%i_El_bath_dt) ! new bath temperature [K]
+         matter%T_bath_e = matter%T_bath_e/g_kb  ! [eV] thermostat temperature for atoms
+
+         matter%tau_bath_e = numpar%El_bath_grid_tau(numpar%i_El_bath_dt) ! new characteristic time [fs]
+         if (matter%tau_bath_e > 1.0d14) then  ! there is no bath, too slow to couple
+            numpar%Transport_e = .false. ! excluded
+            print*, 'Electronic thermostat is off'
+         else
+            numpar%Transport_e = .true.	 ! included
+            print*, 'Electronic thermostat parameters are changed to', &
+                  matter%T_bath_e*g_kb, matter%tau_bath_e
+         endif
+
+         numpar%i_El_bath_dt = numpar%i_El_bath_dt + 1 ! next step to read from
+      endif
+   endif
 end subroutine reset_dt
 
 
@@ -2498,27 +2940,25 @@ pure subroutine reset_support_times(numpar)
 end subroutine reset_support_times
 
 
-subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter, time)
-   logical, intent(in) :: read_well ! did we read something meaningful from the comunication file?
+subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
+   !logical, intent(in) :: read_well ! did we read something meaningful from the comunication file?
    character(*), intent(in) :: given_line ! line read from the file
    real(8), intent(in) :: given_num  ! number read from the file
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
-   type(Solid), intent(in) :: matter ! parameters of the material
+   type(Solid), intent(inout) :: matter ! parameters of the material
    real(8), intent(in) :: time ! current time [fs]
    integer FN, noth, lngt
-   logical file_opened
+   logical file_opened, read_well
    character(200) :: File_name, temp1, temp2, given_line_processed
    character(1) path_sep
+
+   read_well = .true.   ! by default, we could read everything well; change later if problem
    path_sep = trim(adjustl(numpar%path_sep))
-
-
    lngt = LEN(trim(adjustl(given_line)))    ! length of the line
-   !print*, trim(adjustl(given_line)), LEN(trim(adjustl(given_line)))
+
    ! Check if the last character is TAB:
    if (given_line(lngt:lngt) == char(9) ) then  ! remove the TAB from the line
-      !print*, 'It is a TAB character'
       given_line_processed = given_line(1:lngt-1)
-      !print*, trim(adjustl(given_line_processed)), LEN(trim(adjustl(given_line_processed))) , 'processed'
    else
       given_line_processed = given_line
    endif
@@ -2533,26 +2973,40 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
       endif
 
       select case(trim(adjustl(given_line_processed)))
+      case ('verbose', 'VERBOSE', 'Verbose')
+         numpar%verbose = .true.
+         write(6,'(a)') 'Verbose option on: XTANT will print a lot of markers for testing and debugging'
+         write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' verbose option was switched on'
+      !-------------------
+      case ('verbose_off', 'VERBOSE_OFF', 'Verbose_off', 'no_verbose', 'noverbose', 'no-verbose')
+         numpar%verbose = .false.
+         write(6,'(a)') 'Verbose option off: XTANT will not print markers'
+         write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' verbose option was switched off'
+
+      !-------------------
       case ('time', 'TIME', 'Time', 'TIme', 'TIMe', 'tIme', 'emit', 'Vremya')
          numpar%t_total = given_num ! total duration of simulation [fs]
-         print*, 'Duration of simulation is changed to', given_num
+         write(6,'(a,f10.3)') 'Duration of simulation is changed to', given_num
          write(FN,'(a,f10.3,a,f10.3)') 'At time instance of ', time, ' duration of simulation is changed to ', given_num
 
-      case ('MDdt', 'dtMD', 'mddt', 'dtmd', 'MDDT', 'DTMD')
+      !-------------------
+      case ('MDdt', 'dtMD', 'mddt', 'dtmd', 'MDDT', 'DTMD', 'MD_dt', 'md_dt')
          numpar%dt = given_num ! Time step for MD [fs]
          call reset_support_times(numpar)   ! above
          !numpar%halfdt = numpar%dt/2.0d0      ! dt/2, often used
          !numpar%dtsqare = numpar%dt*numpar%halfdt ! dt*dt/2, often used
          !numpar%dt3 = numpar%dt**3/6.0d0            ! dt^3/6, often used
          !numpar%dt4 = numpar%dt*numpar%dt3/8.0d0    ! dt^4/48, often used
-         print*, 'Time-step of MD simulation is changed to', given_num
+         write(6,'(a,f9.3)') 'Time-step of MD simulation is changed to', given_num
          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' time-step of MD simulation is changed to ', given_num 
 
-      case ('SAVEdt', 'savedt', 'dtsave', 'dtSAVE', 'Savedt', 'SaveDT', 'SaveDt')
+      !-------------------
+      case ('SAVEdt', 'savedt', 'dtsave', 'dtSAVE', 'Savedt', 'SaveDT', 'SaveDt', 'SAVE_dt', 'Save_dt', 'save_dt')
          numpar%dt_save = given_num ! save data into files every 'dt_save_time' [fs]
-         print*, 'Time-step of saving output files is changed to', given_num
+         write(6,'(a,f9.3)') 'Time-step of saving output files is changed to', given_num
          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' time-step of saving output files is changed to ', given_num
       
+      !-------------------
       case ('OMP', 'omp', 'NOMP', 'nomp', 'Nomp', 'N_OMP', 'n_omp')
          ! Reset the OpenMP parallelization options:
          numpar%NOMP = given_num
@@ -2563,9 +3017,11 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
          noth = OMP_GET_MAX_THREADS()   ! to chech if the function worked
          call set_OMP_number( numpar%NOMP, .true., 6, 'Reset number of threads in OpenMP to '//trim(adjustl(temp2)) )    ! below
          if ( noth /= OMP_GET_MAX_THREADS() ) then
-            write(FN,'(a,a,a,a)') 'At time instant of ',  trim(adjustl(temp1)), '[fs], number of threads in OpenMP is changed to ',  trim(adjustl(temp2))
+            write(FN,'(a,a,a,a)') 'At time instant of ',  trim(adjustl(temp1)), '[fs], number of threads in OpenMP is changed to ', &
+               trim(adjustl(temp2))
          else
-            write(FN,'(a,a,a,a)') 'At time instant of ',  trim(adjustl(temp1)), '[fs]: unsuccessful attempt to change number of threads in OpenMP to ',  trim(adjustl(temp2))
+            write(FN,'(a,a,a,a)') 'At time instant of ',  trim(adjustl(temp1)), &
+               '[fs]: unsuccessful attempt to change number of threads in OpenMP to ',  trim(adjustl(temp2))
             write(6,'(a)') 'Number of threads in OpenMP is unchanged: ',  trim(adjustl(temp2))
          endif
 #else
@@ -2573,15 +3029,64 @@ subroutine act_on_comunication(read_well, given_line, given_num, numpar, matter,
          write(6,'(a)') 'The code compiled without OpenMP, cannot set parallelization'
 #endif
 
-      case ('Te', 'te', 'TE') ! DO NOT USE: this option is not finished yet!
-!          print*, 'Time-step of saving output files is changed to', given_num
-!          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' electronic temperature is changed to ', given_num
-      case ('pulse', 'PULSE', 'Pulse') ! DO NOT USE: this option is not finished yet!
-!          print*, 'Parameters of the pulse number', int(given_num), 'are changed'
-!          write(FN,'(a,f10.3,a,i4,a)') 'At time instance of ', time, ' parameters of the pulse number ', int(given_num), ' are changed'
+      !-------------------
+      case ('Thermostat_dt_a', 'THERMOSTAT_DT_A', 'thermostat_dt_a')
+         if (given_num < 0.0d0) then
+            numpar%Transport = .false. ! excluded atomic thermostat
+            write(6,'(a)') 'Atomic thermostat is switched off'
+            write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' atomic thermostat is switched off'
+         else
+            numpar%Transport = .true. ! included atomic thermostat
+            matter%tau_bath = given_num   ! [fs] time constant of cooling for atoms
+            write(6,'(a,f12.3)') 'Atomic thermostat time is changed to', given_num
+            write(FN,'(a,f10.3,a,f12.3)') 'At time instance of ', time, ' atomic thermostat time is changed to ', given_num
+         endif
+      !-------------------
+      case ('Thermostat_Ta', 'THERMOSTAT_Ta', 'thermostat_Ta')
+         if (given_num < 0.0d0) then
+            numpar%Transport = .false. ! excluded atomic thermostat
+            write(6,'(a)') 'Atomic thermostat is switched off'
+            write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' atomic thermostat is switched off'
+         else
+            numpar%Transport = .true. ! included atomic thermostat
+            matter%T_bath = given_num   ! [K] bath temperature for atoms
+            matter%T_bath = matter%T_bath/g_kb  ! [eV] thermostat temperature
+            write(6,'(a,f12.3)') 'Atomic thermostat temperature is changed to', given_num
+            write(FN,'(a,f10.3,a,f12.3)') 'At time instance of ', time, ' atomic thermostat temperature is changed to ', given_num
+         endif
+
+      !-------------------
+      case ('Thermostat_dt_e', 'THERMOSTAT_DT_E', 'thermostat_dt_e')
+         if (given_num < 0.0d0) then
+            numpar%Transport_e = .false. ! excluded atomic thermostat
+            write(6,'(a)') 'Electronic thermostat is switched off'
+            write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' electronic thermostat is switched off'
+         else
+            numpar%Transport_e = .true. ! included atomic thermostat
+            matter%tau_bath_e = given_num   ! [fs] time constant of cooling for atoms
+            write(6,'(a,f10.3)') 'Electronic thermostat time is changed to', given_num
+            write(FN,'(a,f10.3,a,f12.3)') 'At time instance of ', time, ' electronic thermostat time is changed to ', given_num
+         endif
+      !-------------------
+      case ('Thermostat_Te', 'THERMOSTAT_Te', 'thermostat_Te')
+         if (given_num < 0.0d0) then
+            numpar%Transport_e = .false. ! excluded atomic thermostat
+            write(6,'(a)') 'Electronic thermostat is switched off'
+            write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' electronic thermostat is switched off'
+         else
+            numpar%Transport_e = .true. ! included atomic thermostat
+            matter%T_bath_e = given_num   ! [K] bath temperature for atoms
+            matter%T_bath_e = matter%T_bath_e/g_kb  ! [eV] thermostat temperature
+            write(6,'(a,f12.3)') 'Electronic thermostat temperature is changed to', given_num
+            write(FN,'(a,f10.3,a,f12.3)') 'At time instance of ', time, ' electronic thermostat temperature is changed to ', given_num
+         endif
+
+      !-------------------
       case default
          print*, 'Could not interpret what is read from the file: ', trim(adjustl(given_line)), given_num
       end select
+   else
+      print*, 'Could not read well from the file: ', trim(adjustl(given_line)), given_num
    endif
 end subroutine act_on_comunication
 
@@ -2622,280 +3127,104 @@ end subroutine set_OMP_number
 
 
 
+subroutine pars_comunications_file(FN, i, out_line, out_num, Reason)
+   integer, intent(in) :: FN
+   integer, intent(inout) :: i
+   character(*), intent(out) :: out_line
+   real(8), intent(out) :: out_num
+   integer, intent(out) :: Reason
+   !---------------------------------
+   character(200) :: read_line
+   logical :: read_well
+   read_well = .false.
+   out_line = ''
+   out_num = 0.0d0
+
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   call pars_comunications(read_line, out_line, out_num, read_well)  ! below
+end subroutine pars_comunications_file
+
+
 subroutine pars_comunications(readline, out_line, out_num, read_well)
    character(*), intent(in) :: readline
    character(*), intent(out) :: out_line
    real(8), intent(out) :: out_num
    logical, intent(out) :: read_well
-   character(LEN(readline)) partline, lastpart
-   real(8) :: newnum
-   integer :: i, leng, firstnum, coun, Reason
-   character(*), parameter :: numbers = '0123456789'
-   character(*), parameter :: plusminus = '-+'
-   logical :: allowpoint, allowminus, allowed
+   !---------------------------------
+   integer :: Reason, i
    read_well = .false.
    out_line = ''
    out_num = 0.0d0
-   allowpoint = .true.
-   allowminus = .true.
-   allowed = .true.
-   leng = LEN(trim(adjustl(readline))) ! how many characters are in the line
 
-   !print*, readline, trim(adjustl(readline)), leng
-   if (leng .GT. 0) then
-      partline = ''
-      LENGT:do i = 1,leng ! compare all name character by character
-         if (verify(trim(adjustl(readline(i:i))),trim(adjustl(numbers))) == 0) then ! it's an integer number
-            firstnum = i
-            exit LENGT
-         endif
-      enddo LENGT
-      if (firstnum .LT. 2) goto 1111 !skip everything, there is no command to interpret
-      partline(1:firstnum-1) = readline(1:firstnum-1) ! part of line with text
-      if (firstnum .LT. leng) then ! there is some number, apparently
-         lastpart = ''
-         coun = 1
-         LENGT2:do i = firstnum-2,leng ! compare all name character by character
-            if (trim(adjustl(readline(i:i))) == ' ') goto 1112
-             if (verify(trim(adjustl(readline(i:i))),trim(adjustl(numbers))) == 0) then ! it's a number
-               lastpart(coun:coun) = readline(i:i) ! part of line with numbers
-               coun = coun + 1
-               if (.not.allowed) then
-                  allowpoint = .false. ! only one is allowed
-               endif
-               allowminus = .false. ! only one is allowed
-             else ! it's not a number, but may be a correct symbol:
-               select case(trim(adjustl(readline(i:i))))
-               case ('.') ! decimal point
-                  if (allowpoint) then
-                     lastpart(coun:coun) = readline(i:i) ! part of line with numbers
-                     coun = coun + 1
-                     allowpoint = .false. ! only one is allowed
-                     allowminus = .false. ! only one is allowed
-                  endif
-               case ('-', '+') ! exp format
-                  if (i .LT.leng) then ! after the minus/plus must be a number:
-                     if ((allowminus) .AND. ((verify(trim(adjustl(readline(i+1:i+1))),trim(adjustl(numbers))) == 0) .OR. (trim(adjustl(readline(i+1:i+1))) .EQ. '.'))) then
-                        lastpart(coun:coun) = readline(i:i) ! part of line with numbers
-                        coun = coun + 1
-                        allowminus = .false. ! only one is allowed
-                     endif
-                  endif
-               case ('e', 'd', 'E', 'D') ! exp format
-                  if ((i .LT. leng) .AND. (len(trim(adjustl(lastpart))) .GT. 0) ) then ! after the E must be a number, or a minus:
-                     if ((allowed) .AND. (verify(trim(adjustl(readline(i+1:i+1))),trim(adjustl(numbers))) == 0)) then
-                        lastpart(coun:coun) = '0' ! set 0 before any 'e' or 'd'
-                        lastpart(coun+1:coun+1) = readline(i:i) ! part of line with numbers
-                        coun = coun + 2
-                        allowed = .false. ! only one is allowed
-                     else if (i .LT. leng - 1) then ! may be first minus/plus, and then the number:
-                        if ((allowed) .AND. ((verify(trim(adjustl(readline(i+1:i+1))),trim(adjustl(plusminus))) == 0) .AND. (verify(trim(adjustl(readline(i+2:i+2))),trim(adjustl(numbers))) == 0) )) then
-                           lastpart(coun:coun) = '0' ! set 0 before any 'e' or 'd'
-                           lastpart(coun+1:coun+1) = readline(i:i) ! part of line with numbers
-                           coun = coun + 2
-                           allowed = .false. ! only one is allowed
-                           allowminus = .true. ! one more minus is allowed in the exponent 
-                        endif
-                     endif
-                  endif
-               end select
-             endif
-            1112 continue
-         enddo LENGT2
-      endif
-
-      if (LEN(trim(adjustl(lastpart))) <= 0) then ! no need to even try reading it
-         Reason = -1
-      else
-         read(lastpart,'(es25.16)',IOSTAT=Reason) newnum
-      endif
-      if (Reason .EQ. 0) then
-         read_well = .true. ! we read something meaningfull from the file
-         out_line = trim(adjustl(partline)) ! get the meaningful line out
-         if (ABS(newnum) <= 1.0d-10) then
-            read(lastpart,*) newnum
-         endif
-         out_num = newnum ! get the number out
-         !print*, 'The number read is', out_num
-      else if (Reason .LT. 0) then
-         print*, 'No number found in the comunication file'
-      else if (Reason .GT. 0) then
-         print*, 'Given number interpreted as', trim(adjustl(lastpart)), ', it does not match the variable type'
-      endif
-   else 
-      !print*, 'EMPTY FILE'
+   i = 1    ! to start with
+   read(readline, *, IOSTAT=Reason) out_line, out_num
+   !print*, 'Reason', Reason, out_line, out_num
+   if (Reason /= 0) then ! try again but with one variable
+      read(readline, *, IOSTAT=Reason) out_line
+      !print*, 'Reason2', Reason, out_line
    endif
-1111 continue
+   call read_file(Reason, i, read_well)  ! module "Dealing_with_files"
+   if (Reason .LT. 0) then
+      print*, 'No descriptor or value found in the communication file'
+   else if (Reason .GT. 0) then
+      print*, 'Given number interpreted as', out_num, ', it does not match the variable type'
+   endif
+   if (.not.read_well) then
+      print*, 'Wrong format of input in Comunication, could not interpret.'
+   endif
 end subroutine pars_comunications
 
 
-! Reads additional data from the command line passed along with the XTANT:
-subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose)
-   character(1), intent(inout) :: path_sep
-   logical, intent(inout), optional :: change_size
-   logical, intent(out), optional :: contin
-   logical, intent(out), optional :: allow_rotate
-   logical, intent(out), optional :: verbose
-   !---------------
-   character(1000) :: read_string, string, printline, ch_temp
-   character(200) :: char1, command, starline, file_name
-   integer :: iret, i_arg, FN, Reason, Reason_arg, count_lines, count_args, N_arg
-   logical yesno, read_text_well, read_well, file_exists, file_opened
 
-   starline = '*******************************************************'
-
-   ! Default values:
-   if (present(change_size)) change_size = .false. ! don't do changing size
-   if (present(verbose)) verbose = .false.   ! don't print a lot of stuff
-
-
-   ! Identify the OS by the system-used path separator:
-   call Path_separator(path_sep) ! module "Dealing_with_files"
-
-   ! Count how many arguments the user provided:
-   N_arg = COMMAND_ARGUMENT_COUNT() ! Fortran intrinsic function
-
-   read_well = .true.   ! to start with
-   count_args = 0 ! to start with
-
-   ALLARG:do i_arg = 1, N_arg ! read all the arguments passed
-      ! Read the argument provided:
-      call GET_COMMAND_ARGUMENT(i_arg,string)  ! intrinsic
-
-      select case (trim(adjustl(string)))
-      case ('verbose', '-verbose', 'VERBOSE', '-VERBOSE', 'Verbose', '-Verbose')
-         print*, 'XTANT will print a lot of markers for testing and debugging'
-         if (present(verbose)) verbose = .true.
-         write(*,'(a)') trim(adjustl(starline))
-
-      case ('-allow_rotation', '-allow_rotate', '-no_ang_removal', 'allow_rotation', 'allow_rotate', 'no_ang_removal')
-         print*, 'The angular momenta of the sample will not be removed'
-         if (present(allow_rotate)) allow_rotate = .true. ! don't remove angular momentum from initial conditions
-         write(*,'(a)') trim(adjustl(starline))
-
-      case ('-size', '-Size', '-SIZE', 'size', 'Size', 'SIZE')
-         print*, 'Supercell size variation will be performed to plot potential energy curve'
-         if (present(change_size)) change_size = .true. ! do changing size
-         write(*,'(a)') trim(adjustl(starline))
-
-      case ('-test', 'test', 'TEST', 'Test')
-         print*, 'Wow, it really works!'
-         !if (present(contin)) contin = .false.
-         write(*,'(a)') trim(adjustl(starline))
-
-      case ('-help', '-HELP', '-Help', 'help', 'HELP', 'Help')
-         ! Filename with help:
-         file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_HELP_file))
-
-         inquire(file=trim(adjustl(file_name)),exist=file_exists)
-         if (.not.file_exists) then ! no file, cannot print help
-            write(*,'(a)') 'Could not find file ', trim(adjustl(file_name))
-            write(*,'(a)') 'Cannot help, sorry. Read the manual.'
-         else ! (.not.file_exists)
-            FN=200
-            open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'old', action='READ')
-            inquire(file=trim(adjustl(file_name)),opened=file_opened)
-            if (.not.file_opened) then
-               write(*,'(a)') 'Could not open file ', trim(adjustl(file_name))
-               write(*,'(a)') 'Cannot help, sorry. Read the manual.'
-            else ! (.not.file_opened)
-               read_text_well = .true. ! to start with
-               count_lines = 0   ! to start with
-               do while (read_text_well)
-                  read(FN,'(a)',IOSTAT=Reason) printline
-                  call read_file(Reason, count_lines, read_text_well)   ! module "Dealing_with_files"
-                  if (Reason > 0) then   ! something wrong in the line
-                     write(*,'(a)') 'Problem reading file '//trim(adjustl(file_name))
-                     write(ch_temp, '(i)') count_lines
-                     write(*,'(a)') 'in line '//trim(adjustl(ch_temp))
-                     read_well = .false.
-                  elseif (Reason < 0) then ! end of file reached ...
-                     close(FN)
-                  else
-                     write(*,'(A)') trim(adjustl(printline))
-                  endif
-               enddo
-            endif ! (.not.file_opened)
-         endif ! (.not.file_exists)
-
-         write(*,'(a)') trim(adjustl(starline))
-         if (present(contin)) contin = .true.  ! stop calculations, user only wanted some help
-      case ('-info', '-INFO', '-Info', 'info', 'INFO', 'Info')
-         ! Filename with help:
-         file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_INFO_file))
-
-         inquire(file=trim(adjustl(file_name)),exist=file_exists)
-         if (.not.file_exists) then ! no file, cannot print help
-            write(*,'(a)') 'Could not find file ', trim(adjustl(file_name))
-            write(*,'(a)') 'Cannot help, sorry. Read the manual.'
-         else ! (.not.file_exists)
-            FN=201
-            open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'old', action='READ')
-            inquire(file=trim(adjustl(file_name)),opened=file_opened)
-            if (.not.file_opened) then
-               write(*,'(a)') 'Could not open file ', trim(adjustl(file_name))
-               write(*,'(a)') 'Cannot help, sorry. Read the manual.'
-            else ! (.not.file_opened)
-               read_text_well = .true. ! to start with
-               count_lines = 0   ! to start with
-               do while (read_text_well)
-                  read(FN,'(a)',IOSTAT=Reason) printline
-                  call read_file(Reason, count_lines, read_text_well)   ! module "Dealing_with_files"
-                  if (Reason > 0) then   ! something wrong in the line
-                     write(*,'(a)') 'Problem reading file '//trim(adjustl(file_name))
-                     write(ch_temp, '(i)') count_lines
-                     write(*,'(a)') 'in line '//trim(adjustl(ch_temp))
-                     read_well = .false.
-                  elseif (Reason < 0) then ! end of file reached ...
-                     close(FN)
-                  else
-                     write(*,'(A)') trim(adjustl(printline))
-                  endif
-               enddo
-            endif ! (.not.file_opened)
-         endif ! (.not.file_exists)
-
-         write(*,'(a)') trim(adjustl(starline))
-         if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
-      case default
-      end select
-   enddo ALLARG
-end subroutine get_add_data
-
-
-subroutine Print_title(print_to, Scell, matter, laser, numpar)
+subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    integer, intent(in) :: print_to ! the screen, or file
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter ! material parameters
    type(Pulse), dimension(:), intent(in) :: laser ! Laser pulse parameters
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
+   integer, intent(in) :: label_ind ! which label to print
    !type(TB_repulsive), dimension(:), intent(in) :: TB_Repuls  ! parameters of the repulsive part of TB
    !type(TB_Hamiltonian), dimension(:), intent(in) ::  TB_Hamil ! parameters of the Hamiltonian of TB
-   integer i 
-   character(100) :: text, text1, text2, text3, starline
+   !--------------
+   integer :: i, j
+   character(100) :: text, text1, text2, text3
+   logical :: optional_output
 
-   starline = '*************************************************************'
-
-   write(print_to,'(a)') trim(adjustl(starline))
-   write(print_to,'(a)') '*  XTANT: X-ray-induced Thermal And Nonthermal Transitions  *'
-   write(print_to,'(a)') trim(adjustl(starline))
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   call XTANT_label(print_to, label_ind) ! below
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '*  XTANT: X-ray-induced Thermal And Nonthermal Transitions  '
+   write(print_to,'(a,a)') '*  Current version of the code: ', trim(adjustl(m_XTANT_version))
+   write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  A hybrid approach consisting of: '
    write(print_to,'(a)') ' (1) Monte Carlo '
-   write(print_to,'(a)') ' (2) Transferable Tight Binding '
-   write(print_to,'(a)') ' (3) Molecular Dynamics '
-   write(print_to,'(a)') ' (4) Boltzmann collision integrals '
-   write(print_to,'(a,a)') ' Applied for ', trim(adjustl(matter%Name))
-   write(print_to,'(a)') trim(adjustl(starline))
-   write(print_to,'(a)') ' Chemical formula of target material interpreted as: '
+   write(print_to,'(a)') ' (2) Boltzmann collision integrals '
+   write(print_to,'(a)') ' (3) Transferable Tight Binding '
+   write(print_to,'(a)') ' (4) Molecular Dynamics '
+
+   write(print_to,'(a)') trim(adjustl(m_starline))
+
+   write(print_to,'(a)') '  Calculations performed for the following parameters:'
+   write(print_to,'(a,a)') ' Target material: ', trim(adjustl(matter%Name))
+   write(print_to,'(a)') ' Chemical formula interpreted as: '
    do i = 1, size(matter%Atoms)
       write(text,'(f12.6)') matter%Atoms(i)%percentage
       write(text1,'(i3)') INT(matter%Atoms(i)%Z)
-      write(print_to,'(a,a,a,a,a)') ' '//trim(adjustl(text)), ' of ', trim(adjustl(matter%Atoms(i)%Name)), ' (element #', trim(adjustl(text1))//')'
+      write(print_to,'(a,a,a,a,a)') ' '//trim(adjustl(text)), ' of ', trim(adjustl(matter%Atoms(i)%Name)), &
+         ' (element #', trim(adjustl(text1))//')'
    enddo
 
-   write(print_to,'(a,a,a)') ' Calculations performed for the following parameters:'
+   if (numpar%embed_water) then
+      write(text1,'(i6)') numpar%N_water_mol
+      write(print_to,'(a)') ' (Note that the material was embedded in water with # of molecules: '//trim(adjustl(text1))//')'
+   endif
+
    do i = 1, size(Scell)
-      write(print_to,'(a,f12.3,a)') ' Initial electron temperature	' , Scell(i)%Te, ' [K]'
+      if (numpar%fe_input_exists) then
+         write(print_to,'(a,a)') ' Initial electron distribution read from file: ', trim(adjustl(numpar%fe_filename))
+      else
+         write(print_to,'(a,f12.3,a)') ' Initial electron temperature	' , Scell(i)%Te, ' [K]'
+      endif
       write(print_to,'(a,f12.3,a)') ' Initial atomic temperature	' , Scell(i)%Ta, ' [K]'
    enddo
    if ((size(laser) == 0) .or. (maxval(laser(:)%t) <= 0.0d0) .or. (maxval(laser(:)%hw) <= 0.0d0) .or. (maxval(laser(:)%F) <= 0.0d0)) then
@@ -2929,23 +3258,27 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       case (1)	! within the Drude model
          write(print_to,'(a)') ' Probe-pulse is calculated within Drude model'
          write(print_to,'(a)') ' with the following parameters of the probe:'
-         write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, '[nm]; Angle:', Scell(i)%eps%teta/g_Pi*(180.0d0), '[degrees]'
+         write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, '[nm]; Angle:', &
+            Scell(i)%eps%teta/g_Pi*(180.0d0), '[degrees]'
          write(print_to,'(a, f7.1, a)') ' Thickness of the sample: ', Scell(i)%eps%dd, ' [nm]'
          write(print_to,'(a, es12.3, es12.3)') ' Effective mass of electron and hole: ', Scell(i)%eps%me_eff, Scell(i)%eps%mh_eff
          write(print_to,'(a, es12.3, es12.3)') ' Effective scattering time of electron and of hole: ', Scell(i)%eps%tau_e, Scell(i)%eps%tau_h
       case (2:3)	! Trani model
          write(print_to,'(a)') ' Probe-pulse is calculated within Trani approach  [PRB 72, 075423 (2005)]'
          write(print_to,'(a)') ' with the following parameters of the probe:'
-         write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', Scell(i)%eps%teta/g_Pi*(180.0d0), '    [degrees]'
+         write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', &
+            Scell(i)%eps%teta/g_Pi*(180.0d0), '    [degrees]'
          write(print_to,'(a, f7.1, a)') ' Thickness of the sample: ', Scell(i)%eps%dd, ' [nm]'
          if (numpar%optic_model .EQ. 2) then
             write(text1, '(i10)') numpar%ixm
             write(text2, '(i10)') numpar%iym
             write(text3, '(i10)') numpar%izm
              if (allocated(numpar%k_grid)) then
-               write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on user-defined grid): ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+               write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on user-defined grid): ', &
+                  trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
             else
-               write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on Monkhorst Pack grid): ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+               write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on Monkhorst Pack grid): ', &
+                  trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
             endif
          else
             write(print_to,'(a)') ' Calculations are performed for Gamma-point'
@@ -2961,7 +3294,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
          endif
       endif
    enddo SCL
-   write(print_to,'(a)') trim(adjustl(starline))
+
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '  The model parameters used are:'
    write(text, '(f15.5)') numpar%t_total
    write(print_to,'(a,a,a)') ' Duration of modelling ' , trim(adjustl(text)), ' [fs]'
 
@@ -3060,24 +3395,50 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
 
       
       if (allocated(Scell(1)%TB_Waals)) then ! if we have vdW potential defined
-         write(print_to,'(a,a)') ' van der Waals energy: ', trim(adjustl(Scell(1)%TB_Waals(1,1)%Param))
+         ! Find (first awailable) name of vdW parameterization:
+         VDWP:do i = 1, size(Scell(1)%TB_Waals,1)
+            do j = 1, size(Scell(1)%TB_Waals,2)
+               text1 = trim(adjustl(Scell(1)%TB_Waals(i,j)%Param))
+               if (LEN(trim(adjustl(text1))) > 0) exit VDWP ! found some name
+            enddo
+         enddo VDWP
+         write(print_to,'(a,a)') ' van der Waals energy: ', trim(adjustl(text1))
       else !For this material vdW class is undefined
          write(print_to,'(a,a)') ' No van der Waals potential was defined'
       endif
       if (allocated(Scell(1)%TB_Coul)) then ! if we have Coulomb potential defined
          write(print_to,'(a,a)') ' Coulomb energy: ', trim(adjustl(Scell(1)%TB_Coul(1,1)%Param))
       else !For this material vdW class is undefined
-         write(print_to,'(a,a)') ' No Coulomb potential was defined or unballanced charge allowed'
+         write(print_to,'(a,a)') ' No Coulomb potential was defined or unbalanced charge allowed'
       endif
       if (allocated(Scell(1)%TB_Expwall)) then ! if we have exponential wall potential defined
-         write(print_to,'(a,a)') ' Exponential wall energy: ', trim(adjustl(Scell(1)%TB_Expwall(1,1)%Param))
+         FPN:do i = 1, size(Scell(1)%TB_Expwall,1)
+            do j = 1, size(Scell(1)%TB_Expwall,2)
+               if (LEN(trim(adjustl(Scell(1)%TB_Expwall(i,j)%Param))) > 0) then
+                  write(text1, '(a)') trim(adjustl(Scell(1)%TB_Expwall(i,j)%Param))
+                  exit FPN
+               endif
+            enddo
+         enddo FPN
+         write(print_to,'(a,a)') ' Short-range repulsion (exponential wall): ', trim(adjustl(text1))
       else !For this material exponential wall class is undefined
-         write(print_to,'(a,a)') ' No exponential wall potential was defined for close interatomic distances'
+         write(print_to,'(a,a)') ' No additional short-range repulsion was defined for close interatomic distances'
       endif
-      write(text1, '(i10)') matter%cell_x
-      write(text2, '(i10)') matter%cell_y
-      write(text3, '(i10)') matter%cell_z 
-      write(print_to,'(a,a,a,a,a,a)') ' Super-cell size in unit-cells: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+
+      ! What kind of supercell is used:
+      select case (numpar%save_files_used)
+      case default ! constructed from unit cells
+         write(text1, '(i10)') matter%cell_x
+         write(text2, '(i10)') matter%cell_y
+         write(text3, '(i10)') matter%cell_z
+         write(print_to,'(a,a,a,a,a,a)') ' Super-cell size in unit-cells: ', &
+            trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+      case (1)  ! save files are used
+         write(print_to,'(a)') ' Super-cell parameters are set in SAVE files'
+      case (2)  ! path coordinate
+         write(print_to,'(a)') ' Coordinate path calculations are performed, defined by PATH files'
+      endselect
+
       write(text1, '(i10)') Scell(1)%Na
       write(print_to,'(a,a)') ' Number of atoms in the supercell: ', trim(adjustl(text1))
       if (numpar%r_periodic(1)) then		! periodic (not free surface) along X
@@ -3097,9 +3458,16 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       endif
    endif
    write(print_to,'(a,a)') ' Electron cross sections used are from: ', trim(adjustl(numpar%At_base))
-   write(print_to,'(a,f10.3,a)') ' Density of the material (used in MC cross sections): ', matter%dens,' [g/cm^3]'
-   write(print_to,'(a,es12.3,a)') ' Which corresponds to the atomic density: ', matter%At_dens, ' [1/cm^3]'
-   write(print_to,'(a)') ' The following numerical parameters are used:'
+   if (matter%dens < 1e6) then   ! real density:
+      write(print_to,'(a,f10.3,a)') ' Density of the material: ', matter%dens,' [g/cm^3]'
+      write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
+   else  ! in artificial cases, the dnsity may be wild:
+      write(print_to,'(a,es25.3,a)') ' Density of the material: ', matter%dens,' [g/cm^3]'
+      write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
+   endif
+
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '  The following numerical parameters are used:'
    write(print_to,'(a,i6)') ' Number of iterations in the MC module: ', numpar%NMC
    if (numpar%do_elastic_MC) then ! allow elastic scattering of electrons on atoms within MC module
       write(print_to,'(a)') ' Elastic high-energy-electron scattering is included in MC via Motts cross section'
@@ -3134,20 +3502,32 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       else ! V=const
          write(print_to,'(a)') ' Constant volume simulation (NVE)'
       endif
-      write(print_to,'(a)') ' Scheme used for electron modelling: '
-      select case (numpar%el_ion_scheme)
-      case (0)
-         write(print_to,'(a)') ' Decoupling electrons from atoms (separate energy conservation)'
-      case (1)
-         write(print_to,'(a)') ' Enforced total energy conservation'
-      case (2)
-         write(print_to,'(a)') ' Enforced constant temperature of electrons'
-      case (3)
-         write(print_to,'(a)') ' True Born-Oppenheimer (constant electron populations)'
-      end select
    else AT_MOVE
       write(print_to,'(a)') ' Atoms were FROZEN instead of moving in MD!'
    endif AT_MOVE
+
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '  The schemes for electron populations used are:'
+
+   write(print_to,'(a)') ' Scheme used for low-energy electrons relaxation: '
+   select case (numpar%el_ion_scheme)
+   case (0)
+      write(print_to,'(a)') ' Decoupled electrons and atoms (instant electron thermalization)'
+   case (1)
+      write(print_to,'(a)') ' Enforced total energy conservation'
+   case (2)
+      write(print_to,'(a)') ' Enforced constant temperature of electrons'
+   case (3)
+      write(print_to,'(a)') ' True Born-Oppenheimer (constant electron populations)'
+   case (4)
+      if (numpar%tau_fe < 1e6) then
+         write(text1, '(f13.6)') numpar%tau_fe
+      else
+         write(text1, '(es16.6)') numpar%tau_fe
+      endif
+      write(print_to,'(a)') ' Relaxation-time approximation for electron thermalization'
+      write(print_to,'(a)') ' with the characteristic time '//trim(adjustl(text1))//' [fs]'
+   end select
 
    write(print_to,'(a)') ' Scheme used for electron-ion (electron-phonon) coupling: '
    if (numpar%NA_kind == 0) then
@@ -3165,7 +3545,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       end select
       write(print_to,'(a, f7.1, a)') ' switched on at: ', numpar%t_NA, ' [fs]'
       write(print_to,'(a, f7.1, a)') ' with the acceptance window: ', numpar%acc_window, ' [eV]'
-      write(print_to,'(a, f8.5, a)') ' degeneracy tollerance: ', numpar%degeneracy_eV, ' [eV]'
+      write(print_to,'(a, f8.5, a)') ' degeneracy tolerance: ', numpar%degeneracy_eV, ' [eV]'
       write(print_to,'(a, f8.5)') ' and scaling factor of: ', numpar%M2_scaling
    endif
 
@@ -3176,15 +3556,22 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
       write(print_to,'(a)') ' No quenching of atoms for resolidification'
    endif
 
-   if (g_numpar%Transport_e) then ! for electrons
+   if (allocated(numpar%El_bath_reset_grid)) then
+      write(print_to,'(a)') ' Berendsen thermostat is used for electrons'
+      write(print_to,'(a)') ' with parameters set in the file: '//trim(adjustl(numpar%El_bath_step_grid_file))
+   elseif (g_numpar%Transport_e) then ! for electrons
       write(text,'(f10.1)') matter%T_bath_e*g_kb
       write(text1,'(f10.1)') matter%tau_bath_e
-      write(print_to,'(a)') ' Berendsen thermostat is used for electnros'
+      write(print_to,'(a)') ' Berendsen thermostat is used for electrons'
       write(print_to,'(a)') ' Electronic bath temperature: '//trim(adjustl(text))//' [K], time constant: '//trim(adjustl(text1))//' [fs]'
    else
       write(print_to,'(a)') ' No electronic thermostat is used'
    endif
-   if (g_numpar%Transport) then ! for atoms
+
+   if (allocated(numpar%At_bath_reset_grid)) then
+      write(print_to,'(a)') ' Berendsen thermostat is used for atoms'
+      write(print_to,'(a)') ' with parameters set in the file: '//trim(adjustl(numpar%At_bath_step_grid_file))
+   elseif (g_numpar%Transport) then ! for atoms
       write(text,'(f10.1)') matter%T_bath*g_kb
       write(text1,'(f10.1)') matter%tau_bath
       write(print_to,'(a)') ' Berendsen thermostat is used for atoms'
@@ -3194,6 +3581,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
    endif
 
    write(print_to,'(a, f7.1, a)') ' Electron energy cut-off, separating high-energy- from low-energy-electrons: ', numpar%E_cut, ' [eV]'
+   select case (numpar%el_ion_scheme)
+   case (3:4)
+      write(print_to,'(a)') ' But it maybe dynamically adjusted to the top of CB (nonequilibrium simulation)'
+   endselect
+
    if (numpar%E_work >= 1.0d25) then
       write(print_to,'(a)') ' No electron emission is allowed in the calculation'
    else if (numpar%E_work >= 0.0d0) then
@@ -3201,43 +3593,169 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar)
    else ! < 0, => number of collisions is the conduction, instead of work function
       write(print_to,'(a, f2.0, a)') ' Electron is considerred to be emitted after ', ABS(numpar%E_work), ' collisions'
    endif
+
+
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   optional_output = .false.  ! to start with
+   write(print_to,'(a)') '  Optional output:'
+
    if (numpar%save_Ei) then
-      write(print_to,'(a)') ' Calculated energy levels are saved in output file'
-   endif
-   if (numpar%save_DOS) then
-      write(print_to,'(a, f7.5, a)') ' Calculated DOS is saved in output file; smearing used: ', numpar%Smear_DOS, ' [eV]'
-      select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma
-         case (2)	! multiple k points
-            write(text1, '(i10)') numpar%ixm
-            write(text2, '(i10)') numpar%iym
-            write(text3, '(i10)') numpar%izm
-            if (allocated(numpar%k_grid)) then
-               write(print_to,'(a,a,a,a,a,a)') ' It is calculated on the user-defined grid for points: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))   
-            else
-               write(print_to,'(a,a,a,a,a,a)') ' It is calculated on Monkhorst Pack grid for points: ', trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))   
-            endif
-         case default	! gamma point
-            write(print_to,'(a)') ' It is calculated at the Gamma point'
-         end select
-   endif
-   if (numpar%save_fe) then
-      write(print_to,'(a)') ' Calculated electron electron distributions are saved in output file'
-   endif
-   if (numpar%save_PCF) then
-      write(print_to,'(a)') ' Calculated atomic pair correlation functions are saved in output file'
-   endif
-   if (numpar%save_XYZ) then
-      write(print_to,'(a)') ' Calculated atomic positions in XYZ-format are saved in output file'
-   endif
-   if (numpar%save_CIF) then
-      write(print_to,'(a)') ' Calculated atomic positions in CIF-format are saved in output file'
-   endif
-   if (numpar%save_NN) then
-      write(text1, '(f6.2)') numpar%NN_radius
-      write(print_to,'(a,a,a)') ' Nearest neighbors numbers within the radius of ', trim(adjustl(text1)), ' [A] are saved'
+      write(print_to,'(a)') ' Electron energy levels (molecular orbitals)'
    endif
 
-9999   write(print_to,'(a)') trim(adjustl(starline))
+   if (numpar%save_DOS) then
+      write(print_to,'(a, f7.5, a)') ' Density of states (DOS); smearing used: ', numpar%Smear_DOS, ' [eV]'
+      select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma
+      case (2)	! multiple k points
+         write(text1, '(i10)') numpar%ixm
+         write(text2, '(i10)') numpar%iym
+         write(text3, '(i10)') numpar%izm
+         if (allocated(numpar%k_grid)) then
+            write(print_to,'(a,a,a,a,a,a)') ' сalculated on the user-defined grid for points: ', &
+               trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+         else
+            write(print_to,'(a,a,a,a,a,a)') ' сalculated on Monkhorst-Pack grid for points: ', &
+               trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+         endif
+      case default	! gamma point
+         write(print_to,'(a)') ' calculated at the Gamma point'
+      end select
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%Mulliken_model >= 1) then
+      write(print_to,'(a)') ' Average Mulliken charges on various elements'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_fe) then
+      write(print_to,'(a)') ' Electron distribution on energy levels'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_fe_grid) then
+      write(print_to,'(a)') ' Electron distribution on the grid'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_PCF) then
+      write(print_to,'(a)') ' Atomic pair correlation function'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_XYZ) then
+      write(print_to,'(a)') ' Atomic coordinates in XYZ-format'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_CIF) then
+      write(print_to,'(a)') ' Atomic coordinates in CIF-format'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_raw) then
+      write(print_to,'(a)') ' Atomic coordinates and velocities (raw data)'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_NN) then
+      write(text1, '(f6.2)') numpar%NN_radius
+      write(print_to,'(a,a,a)') ' Nearest neighbors numbers within the radius of ', trim(adjustl(text1)), ' [A]'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%do_kappa) then
+      write(print_to,'(a)') ' Electronic heat conductivity'
+      optional_output = .true.   ! there is at least some optional output
+   !else
+   !   write(print_to,'(a)') ' No calculation of electronic heat conductivity'
+   endif
+
+   if (.not.optional_output) then ! there ws no optional output, report it
+      write(print_to,'(a)') ' none requested by the user'
+   endif
+
+9999   write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine Print_title
+
+
+subroutine XTANT_label(print_to, ind)
+   integer, intent(in) :: print_to ! the screen, or file number to print to
+   integer, intent(in) :: ind    ! which label to print
+   select case (ind)
+   case default   ! regular
+      call XTANT_label_bold(print_to)  ! below
+   case (-1)       ! none
+      ! Print nothing
+   case (0)       ! small
+      call XTANT_label_small(print_to) ! below
+   case (2)       ! shaded
+      call XTANT_label_shade(print_to) ! below
+   case (3)       ! filled
+      call XTANT_label_filled(print_to) ! below
+   case (4)       ! starred
+      call XTANT_label_starred(print_to) ! below
+   endselect
+end subroutine XTANT_label
+
+
+subroutine XTANT_label_small(print_to)
+   integer, intent(in) :: print_to ! the screen, or file
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '       __    __  _______    __      __   _   _______ '
+   write(print_to,'(a)') '       \ \  / / |__   __|  /  \    |  \ | | |__   __|'
+   write(print_to,'(a)') '        \ \/ /     | |    / /\ \   |   \| |    | |   '
+   write(print_to,'(a)') '        / /\ \     | |   / ___  \  | |\   |    | |   '
+   write(print_to,'(a)') '       /_/  \_\    |_|  /_/    \_\ |_| \__|    |_|   '
+   write(print_to,'(a)') ' '
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine XTANT_label_small
+
+subroutine XTANT_label_bold(print_to)
+   integer, intent(in) :: print_to ! the screen, or file
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '     __    __  _______     __       __    _   _______ '
+   write(print_to,'(a)') '     \ \  / / |__   __|   /  \     |  \  | | |__   __|'
+   write(print_to,'(a)') '      \ \/ /     | |     / /\ \    |   \ | |    | |   '
+   write(print_to,'(a)') '       )  (      | |    / /__\ \   | |\ \| |    | |   '
+   write(print_to,'(a)') '      / /\ \     | |   / ______ \  | | \   |    | |   '
+   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \_\ |_|  \__|    |_|   '
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine XTANT_label_bold
+
+subroutine XTANT_label_shade(print_to)
+   integer, intent(in) :: print_to ! the screen, or file
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '     __    __  _______     __       __    _   _______ '
+   write(print_to,'(a)') '     \ \  /// |__   _||   / \\     |  \  ||| |__   _||'
+   write(print_to,'(a)') '      \ \///     | |     / /\\\    |   \ |||    | |   '
+   write(print_to,'(a)') '       ) |(      | |    / /__\\\   | |\ \|||    | |   '
+   write(print_to,'(a)') '      / /\\\     | |   / ______\\  | | \  ||    | |   '
+   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \\\ |_|  \__|    |_|   '
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine XTANT_label_shade
+
+subroutine XTANT_label_filled(print_to)
+   integer, intent(in) :: print_to ! the screen, or file
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '     __    __  _______     __       __    _   _______ '
+   write(print_to,'(a)') '     \*\  /*/ |__***__|   /**\     |**\  |*| |__***__|'
+   write(print_to,'(a)') '      \*\/*/     |*|     /*/\*\    |***\ |*|    |*|   '
+   write(print_to,'(a)') '       )**(      |*|    /*/__\*\   |*|\*\|*|    |*|   '
+   write(print_to,'(a)') '      /*/\*\     |*|   /*______*\  |*| \***|    |*|   '
+   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \_\ |_|  \__|    |_|   '
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine XTANT_label_filled
+
+subroutine XTANT_label_starred(print_to)
+   integer, intent(in) :: print_to ! the screen, or file
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '     **   ** ********   **     ***   ** ******** '
+   write(print_to,'(a)') '      ** **     **     ****    ****  **    **    '
+   write(print_to,'(a)') '       ***      **    **  **   ** ** **    **    '
+   write(print_to,'(a)') '      ** **     **   ********  **  ****    **    '
+   write(print_to,'(a)') '     **   **    **  **      ** **   ***    **    '
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine XTANT_label_starred
 
 END MODULE Dealing_with_output_files

@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -34,15 +34,21 @@ use BS_Spherical_Gaussians, only: find_TM_size
 use Algebra_tools, only : double_factorial
 
 ! For OpenMP external library
-USE OMP_LIB
+#ifdef OMP_inside
+   USE OMP_LIB, only : omp_get_wtime
+#endif
+
 
 
 implicit none
+PRIVATE
 
 character(50) :: m_basis_sets_folder
 
 ! Where do we keep all the basis sets:
-parameter(m_basis_sets_folder = 'BASIS_SETS')
+parameter(m_basis_sets_folder = '!BASIS_SETS')
+
+public :: set_xTB_AO
 
  
  contains
@@ -821,6 +827,8 @@ subroutine print_elapsed_time(start, text)
    character(*), intent(in), optional :: text	! text to print out
    character(200) :: string
    real(8) :: finish
+
+#ifdef OMP_inside
    finish = omp_get_wtime ( ) ! OMP provided subroutine
    if (present(text)) then
       string = trim(adjustl(text))
@@ -829,6 +837,7 @@ subroutine print_elapsed_time(start, text)
    endif
    write(*,'(a,es12.2,a)')  trim(adjustl(string))//'	', finish - start, ' [sec]'
    start = finish
+#endif
 end subroutine print_elapsed_time
 
 

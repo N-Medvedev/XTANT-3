@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -25,15 +25,25 @@
 
 MODULE TB_Koster_Slater
 
-use Algebra_tools, only: Kronecker_delta
+use Algebra_tools, only: Kronecker_delta, Heavyside_tau, get_factorial
 
 implicit none
+PRIVATE
 
 ! Modular parameters:
-real(8) :: m_sqrt3, m_sqrt3_half
+real(8) :: m_sqrt_inv_2, m_sqrt3, m_sqrt3_half
 
+parameter (m_sqrt_inv_2 = 1.0d0 / sqrt(2.0d0))
 parameter (m_sqrt3 = sqrt(3.0d0))
 parameter (m_sqrt3_half = m_sqrt3*0.5d0)
+
+
+public :: KS_s, KS_ss_hetero, KS_sp3_hetero, KS_sp3d5_hetero, drij_dska, ddija_dskb_kd, &
+         d_KS_s, d_KS_sp3_hetero, d_KS_sp3d5_hetero, dda_dhgd, drij_dhab, drij_drka, &
+         ddija_drkb, d2dija_drkb2, m_sqrt3, t_s_dab, t_s_dx2_y2, t_s_dz2_r2, t_s_s, t_pa_pa, &
+         t_dab_dab, t_dx2_y2_dx2_y2, t_d3z2_r2_d3z2_r2, KS_sp3_hetero_TEST, KS_sp3d5_hetero_TEST, &
+         KS_sp3d5, d_KS_sp3d5, d_KS_sp3d5_TEST
+
 
  contains
 
@@ -190,7 +200,7 @@ pure function ddija_drkb(i, j, k, alpha, beta, rija, rijb, rij)
    ! Delta-symbols:
    dik = Kronecker_delta(i,k) 	! module "Algebra_tools"
    djk = Kronecker_delta(j,k) 	! module "Algebra_tools"
-   dab= Kronecker_delta(alpha, beta)	! module "Algebra_tools"
+   dab = Kronecker_delta(alpha, beta)	! module "Algebra_tools"
    ddija_drkb = (dik - djk)/rij*(dab - rija*rijb/(rij*rij))
 end function ddija_drkb
 
@@ -234,7 +244,119 @@ end function d2dija_drkb2
 
 
 !---------------------------------------------------------------------
-! All Koster-Slater hopping integrals as individual functions:
+! Koster-Slater rotational functions for arbitrary (n,l,m), following
+! [A.V. Podolskiy and P. Vogl, Phys. Rev. B. 69, 233101 (2004)]
+
+! Computes rotational matrix elements according to Eq.(7):
+pure function coefs_dlmm(N, l, m1, m2) result(dlmm)
+   real(8) :: dlmm
+   real(8), intent(in) :: N ! directional cosine relative to z-axis
+   integer, intent(in) :: l, m1, m2 ! orbital and magnetic quantum numbers
+   !---------------------
+   integer :: t
+   real(8) :: prefN, prefR, summ
+   real(8) :: fact_1, fact_2, fact_3, fact_4
+
+   ! Prefactors with factorials:
+   if (abs(N) < 1.0d0) then
+      prefN = (0.5d0 + 0.5d0*N)**l * ((1.0d0 - N)/(1.0d0 + N))**(0.5d0*(m1 - m2))
+
+      ! Get factorials:
+      fact_1 = get_factorial(l + m2)  ! module "Algebra_tools"
+      fact_2 = get_factorial(l - m2)  ! module "Algebra_tools"
+      fact_3 = get_factorial(l + m1)  ! module "Algebra_tools"
+      fact_4 = get_factorial(l - m1)  ! module "Algebra_tools"
+      prefR = sqrt(fact_1 * fact_2 * fact_3 * fact_4)
+
+      summ = 0.0d0   ! to start with
+      do t = 0, (2*l + 1)
+         if ((0 <= l + m2 - t) .and. (0 <= l - m1 - t) .and. (0 <= t + m1 - m2)) then
+            fact_1 = get_factorial(l + m2 - t)  ! module "Algebra_tools"
+            fact_2 = get_factorial(l - m1 - t)  ! module "Algebra_tools"
+            fact_3 = get_factorial(t)  ! module "Algebra_tools"
+            fact_4 = get_factorial(t + m1 - m2)  ! module "Algebra_tools"
+            summ = summ + (-1.0d0)**t*((1.0d0 - N)/(1.0d0 + N))**t / (fact_1*fact_2*fact_3*fact_4)
+         endif
+      enddo
+   else ! along Z, no contribution
+      prefN = 1.0d0
+      prefR = 1.0d0
+      summ = 0.0d0
+   endif
+
+   ! Collect the terms:
+   dlmm = prefR * prefN * summ
+end function coefs_dlmm
+
+
+! Coefficients of S and T from Eqs.(24,25):
+pure subroutine coefs_S_T()
+   ! UNFINISHED
+end subroutine coefs_S_T
+
+
+! Both Am abd Bm coefficients from Eq.(21):
+pure subroutine coefs_Am_Bm(m, gam, Am, Bm)
+   integer, intent(in) :: m
+   real(8), intent(in) :: gam
+   real(8), intent(out) :: Am, Bm  ! Eq.(21)
+   !----------------------
+   real(8) :: abs_m, tau_p, tau_m, prefac, sin_m, cos_m
+   if (m == 0) then
+      Am = m_sqrt_inv_2
+      Bm = 0.0d0  ! added for convenience of Eq.(23-25)
+   else
+      abs_m = abs(m)
+      tau_p = Heavyside_tau(m)   ! module "Algebra_tools"
+      tau_m = Heavyside_tau(-m)  ! module "Algebra_tools"
+      prefac = (-1.0d0)**abs_m
+      sin_m = sin(abs_m * gam)
+      cos_m = cos(abs_m * gam)
+      Am = prefac * (tau_p * cos_m - tau_m * sin_m)
+      Bm = prefac * (tau_p * sin_m + tau_m * cos_m)
+   endif
+end subroutine coefs_Am_Bm
+
+
+! Am and Bm as individual functions:
+pure function coef_Am(m, gam) result(Am)
+   real(8) Am  ! Eq.(21)
+   integer, intent(in) :: m
+   real(8), intent(in) :: gam
+   !---------------
+   real(8) :: abs_m, tau_p, tau_m
+   if (m == 0) then
+      Am = m_sqrt_inv_2
+   else
+      abs_m = abs(m)
+      tau_p = Heavyside_tau(m)  ! module "Algebra_tools"
+      tau_m = Heavyside_tau(-m)  ! module "Algebra_tools"
+      Am = (-1.0d0)**abs_m * (tau_p * cos(abs_m * gam) - tau_m * sin(abs_m * gam))
+   endif
+end function coef_Am
+
+
+pure function coef_Bm(m, gam) result(Bm)
+   real(8) Bm  ! Eq.(21), with added case Bm(m=0)
+   integer, intent(in) :: m
+   real(8), intent(in) :: gam
+   !---------------
+   real(8) :: abs_m, tau_p, tau_m
+   if (m == 0) then
+      Bm = 0.0d0  ! added for convenience of Eq.(23-25)
+   else
+      abs_m = abs(m)
+      tau_p = Heavyside_tau(m)  ! module "Algebra_tools"
+      tau_m = Heavyside_tau(-m)  ! module "Algebra_tools"
+      Bm = (-1.0d0)**abs_m * (tau_p * sin(abs_m * gam) + tau_m * cos(abs_m * gam))
+   endif
+end function coef_Bm
+
+
+!---------------------------------------------------------------------
+! Individual Koster-Slater hopping integrals as individual functions:
+! Following the original work [Slater and Koster, PRB 94, 1498 (1954)]
+
 ! 1) 
 pure function t_s_s(Vss_sigma) result (Ecc)
    real(8) :: Ecc
@@ -646,7 +768,7 @@ end function d_t_pz_d3z2_r2
 
 
 ! 15)
-pure function d_t_dab_dab(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dab_dab(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: l2, m2, l2m2, dl2m2
@@ -661,7 +783,7 @@ end function d_t_dab_dab
 
 
 ! 16)
-pure function d_t_dab_dbg(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dab_dbg(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: ln, m2, dm2, temp, temp1
@@ -679,7 +801,7 @@ end function d_t_dab_dbg
 
 
 ! 17)
-pure function d_t_dxy_dx2_y2(l, dl, m, dm, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dxy_dx2_y2(l, dl, m, dm, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: lm, l2m2
@@ -691,7 +813,7 @@ end function d_t_dxy_dx2_y2
 
 
 ! 18)
-pure function d_t_dyz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dyz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: mn, l2m2, dl2m2, temp, temp1
@@ -706,7 +828,7 @@ end function d_t_dyz_dx2_y2
 
 
 ! 19)
-pure function d_t_dxz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dxz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: ln, l2m2, dl2m2, temp, temp1
@@ -721,7 +843,7 @@ end function d_t_dxz_dx2_y2
 
 
 ! 20)
-pure function d_t_dxy_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dxy_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: lm, l2m2, n2, dl2m2, temp, temp1, dn2
@@ -738,7 +860,7 @@ end function d_t_dxy_d3z2_r2
 
 
 ! 21)
-pure function d_t_dyz_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dyz_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: mn, l2m2, n2, temp, temp1, dn2, dl2m2
@@ -756,7 +878,7 @@ end function d_t_dyz_d3z2_r2
 
 
 ! 22)
-pure function d_t_dxz_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dxz_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: ln, l2m2, n2, temp, temp1, dn2, dl2m2
@@ -774,7 +896,7 @@ end function d_t_dxz_d3z2_r2
 
 
 ! 23)
-pure function d_t_dx2_y2_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dx2_y2_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: l2m2, l2_m2, l2_m2_2, n2, dl2m2, dl2_m2_2, l2, m2, ldl, mdm, dn2
@@ -796,7 +918,7 @@ end function d_t_dx2_y2_dx2_y2
 
 
 ! 24)
-pure function d_t_dx2_y2_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_dx2_y2_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: l2m2, l2_m2, n2, dn2, l2, m2, dl2, dm2, dl2m2, dl2_m2, temp, temp1
@@ -819,7 +941,7 @@ end function d_t_dx2_y2_d3z2_r2
 
 
 ! 25)
-pure function d_t_d3z2_r2_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc) ! only px or py
+pure function d_t_d3z2_r2_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: l2m2, dl2m2, n2, temp, dtemp, dn2

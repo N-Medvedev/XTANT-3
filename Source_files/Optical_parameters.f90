@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -24,7 +24,6 @@
 MODULE Optical_parameters
 use Universal_constants
 use Objects
-use Variables
 use Algebra_tools, only : sym_diagonalize
 use Electron_tools, only : get_number_of_CB_electrons, set_Fermi, set_Erf_distribution
 use TB_Fu, only : Complex_Hamil_tot_F
@@ -36,6 +35,11 @@ use TB, only : k_point_choice, construct_complex_Hamiltonian
 use Little_subroutines, only : deallocate_array
 
 implicit none
+PRIVATE
+
+public :: get_optical_parameters
+
+
  contains
 
 

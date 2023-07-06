@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2022 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -37,18 +37,21 @@
 MODULE Coulomb
 use Universal_constants
 use Objects
-use Variables
-use Little_subroutines
-use Atomic_tools
+use Little_subroutines, only : count_3d
+use Atomic_tools, only : get_number_of_image_cells, distance_to_given_cell
 
 implicit none
-
+PRIVATE
 
 real(8) :: m_k, m_2Pi2, m_sqrtPi
 
 parameter(m_k = g_ke * g_e * 1.0d10)  ! Constant in the Coulomb law, converting potential into [eV]
 parameter(m_2Pi2 = g_2Pi*g_2Pi)     ! 2*Pi^2
 parameter(m_sqrtPi = sqrt(g_Pi))    ! sqrt(Pi)
+
+public :: get_Coulomb_Wolf_s, f_cut_L_C, d_f_cut_L_C, m_sqrtPi, Coulomb_Wolf_pot, Coulomb_Wolf_self_term, cut_off_distance, &
+m_k, Construct_B_C, get_Coulomb_s, d_Coulomb_Wolf_pot
+
 
 
  contains
@@ -215,6 +218,10 @@ subroutine get_mirror_cell_num_C(Scell, NSC, TB_Coul, atoms, Nx, Ny, Nz)
    R_cut = TB_Coul(1,1)%dm ! [A] cut-off distance
    call get_number_of_image_cells(Scell, NSC, atoms, R_cut, Nx, Ny, Nz) ! module "Atomic_tools"
 
+   ! It has to be at least one image cell:
+   if (Nx < 1) Nx = 1
+   if (Ny < 1) Ny = 1
+   if (Nz < 1) Nz = 1
 end subroutine get_mirror_cell_num_C
 
 
@@ -443,9 +450,7 @@ subroutine Construct_B_C(TB_Coul, Scell, NSC, atoms, Bij, A_rij, XijSupce, YijSu
                         SXij(coun_cell,i1,j1) = sx
                         SYij(coun_cell,i1,j1) = sy
                         SZij(coun_cell,i1,j1) = sz
-!                         XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
-!                         YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
-!                         ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
+
                         XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(2,1) + z*Scell(NSC)%supce(3,1)
                         YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,2) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(3,2)
                         ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,3) + y*Scell(NSC)%supce(2,3) + z*Scell(NSC)%supce(3,3)

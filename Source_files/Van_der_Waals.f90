@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -26,11 +26,14 @@
 MODULE Van_der_Waals
 use Universal_constants
 use Objects
-use Variables
-use Little_subroutines
-use Atomic_tools
+use Little_subroutines, only : fast_pow, count_3d, Fermi_function, d_Fermi_function
+use Atomic_tools, only : get_interplane_indices, shortest_distance, get_near_neighbours, get_number_of_image_cells, &
+            distance_to_given_cell
 
 implicit none
+PRIVATE
+
+public :: Construct_B, get_vdW_s, get_vdW_s_D, get_vdW_interlayer
 
  contains
 
@@ -43,6 +46,8 @@ subroutine test_vdW(TB_Waals)
          print*, 'type is TB_vdW_Girifalco'
       type is (TB_vdW_Dumitrica)
          print*, 'type is TB_vdW_Dumitrica'
+      type is (TB_vdW_LJ_cut)
+         print*, 'type is TB_vdW_LJ_cut'
       end select
       pause 'test_vdW'
    else
@@ -55,7 +60,7 @@ end subroutine test_vdW
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Girifalco type of van der Waals forces:
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
+!
 subroutine get_vdW_interlayer(TB_Waals, Scell, NSC, matter, numpar, a)   ! vdW energy
 ! This subroutine is only used for comparison of the interlayer vdW energy with other works
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
@@ -96,10 +101,10 @@ subroutine get_vdW_interlayer(TB_Waals, Scell, NSC, matter, numpar, a)   ! vdW e
 end subroutine get_vdW_interlayer
 
 
-subroutine get_mirror_cell_num(Scell, NSC, TB_Waals, numpar, atoms, Nx, Ny, Nz)
+subroutine get_mirror_cell_num(Scell, NSC, numpar, atoms, Nx, Ny, Nz)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
+   !type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
    integer, intent(out) :: Nx, Ny, Nz ! number of super-cells images that contribute to total energy
@@ -110,32 +115,42 @@ subroutine get_mirror_cell_num(Scell, NSC, TB_Waals, numpar, atoms, Nx, Ny, Nz)
    call get_near_neighbours(Scell, numpar, include_vdW=.true., dm=R_cut) ! module "Atomic_tools"
    
    call get_number_of_image_cells(Scell, NSC, atoms, R_cut, Nx, Ny, Nz) ! module "Atomic_tools"
+
+   ! It has to be at least one image cell:
+   if (Nx < 1) Nx = 1
+   if (Ny < 1) Ny = 1
+   if (Nz < 1) Nz = 1
+!    !Test
+!    Nx = 0
+!    Ny = 0
+!    Nz = 0
 end subroutine get_mirror_cell_num
 
 
 subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
 ! This subroutine calcualtes the full vdW energy
-   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
+   !type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
+   class(TB_vdW), dimension(:,:), allocatable, intent(in)   :: TB_Waals ! van der Waals parameters within TB
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a
    !=====================================================
-   real(8) :: sum_a, a_r
+   real(8) :: sum_a, a_r, V_vdW
    integer :: Nx, Ny, Nz, zb(3)
    INTEGER(4) i1, j1, m, atom_2, x_cell, y_cell, z_cell
    logical :: origin_cell
+   integer, pointer :: KOAi, KOAj
    
    ! Find how many image cells along each direction we need to include:
-   call get_mirror_cell_num(Scell, NSC, TB_Waals, numpar, Scell(NSC)%MDatoms, Nx, Ny, Nz) ! subroutine above
+   call get_mirror_cell_num(Scell, NSC, numpar, Scell(NSC)%MDatoms, Nx, Ny, Nz) ! subroutine above
    
    sum_a = 0.0d0
-   !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell)
+   !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell) shared(NSC)
    !$omp do reduction( + : sum_a)
    XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
       YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
          ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
-            !zb = (/dble(Nx),dble(Ny),dble(Nx)/) ! vector of image of the super-cell
             zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
             origin_cell = ALL(zb==0) ! if it is the origin cell
             do i1 = 1, Scell(NSC)%Na ! all atoms
@@ -143,7 +158,8 @@ subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
                   if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
                      !call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
                      call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
-                     sum_a = sum_a + vdW_Girifalco(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
+                     !sum_a = sum_a + vdW_Girifalco(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
+                     sum_a = sum_a + vdW_energy(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
                   endif ! (j1 .NE. i1)
                enddo ! j1
             enddo ! i1
@@ -152,8 +168,340 @@ subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
    enddo XC
    !$omp end do
    !$omp end parallel
-   a = sum_a
+   a = sum_a * 0.5d0 ! compensate for the double counting
+   !pause 'get_vdW_s pause'
 end subroutine get_vdW_s
+
+
+! Construct matrices of multipliers often used later to calculate derivatives of vdW:
+subroutine Construct_B(TB_Waals, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, &
+                       Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz)
+   !type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
+   class(TB_vdW), dimension(:,:), allocatable, intent(in)   :: TB_Waals ! van der Waals parameters within TB
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
+   real(8), dimension(:,:,:), allocatable, intent(out) :: Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij ! intermediate calculations matrices
+   integer, intent(out) :: Nx, Ny, Nz ! number of super-cell images to consider
+   !-----------------------------
+   real(8) :: x, y, z, sx, sy, sz
+   integer :: x_cell, y_cell, z_cell, coun_cell
+   integer :: i1, j1, n
+
+   n = size(atoms) ! total number of atoms
+
+   ! Find how many image cells along each direction we need to include:
+   call get_mirror_cell_num(Scell, NSC, numpar, atoms, Nx, Ny, Nz) ! subroutine above
+
+   coun_cell = (2*Nx+1)*(2*Ny+1)*(2*Nz+1) ! total number of image cells
+
+   if (.not.allocated(Bij))   allocate(Bij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(A_rij)) allocate(A_rij(coun_cell,n,n), source=1.0d30)
+   if (.not.allocated(Xij))   allocate(Xij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(Yij))   allocate(Yij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(Zij))   allocate(Zij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(SXij))   allocate(SXij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(SYij))   allocate(SYij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(SZij))   allocate(SZij(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(XijSupce))   allocate(XijSupce(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(YijSupce))   allocate(YijSupce(coun_cell,n,n), source=0.0d0)
+   if (.not.allocated(ZijSupce))   allocate(ZijSupce(coun_cell,n,n), source=0.0d0)
+
+   ! Fill the arrays that were already allocated:
+   call cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n) ! below
+
+end subroutine Construct_B
+
+
+subroutine cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n)
+   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   class(TB_vdW), dimension(:,:), allocatable, intent(in) :: TB_Waals ! van der Waals parameters within TB
+   real(8), dimension(:,:,:), intent(inout) :: Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij
+   integer, intent(in) :: Nx, Ny, Nz ! number of super-cell images to consider
+   integer, intent(in) :: n ! number of atoms
+   !-------------------------
+   real(8) :: x, y, z, sx, sy, sz
+   integer :: x_cell, y_cell, z_cell, coun_cell
+   integer :: i1, j1
+   integer, dimension(3) :: zb
+   logical :: origin_cell
+
+
+   !$omp PARALLEL private(i1,j1,x,y,z,sx,sy,sz,x_cell,y_cell,z_cell,zb,origin_cell,coun_cell)
+   !$omp do
+   XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
+      YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+         ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+            coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
+            zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+            origin_cell = ALL(zb==0) ! if it is the origin cell
+            do i1 = 1,n
+               do j1 = 1,n
+                  if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+                     call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, A_rij(coun_cell,i1,j1), &
+                                                x=x, y=y, z=z, sx=sx, sy=sy, sz=sz) ! module "Atomic_tools"
+
+                     ! Save necessary elements:
+                     Xij(coun_cell,i1,j1) = x
+                     Yij(coun_cell,i1,j1) = y
+                     Zij(coun_cell,i1,j1) = z
+                     SXij(coun_cell,i1,j1) = sx
+                     SYij(coun_cell,i1,j1) = sy
+                     SZij(coun_cell,i1,j1) = sz
+                     XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
+                     YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
+                     ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
+
+                     Bij(coun_cell,i1,j1) = dvdW(TB_Waals, Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA, A_rij(coun_cell,i1,j1)) ! below
+                  else ! No self-interaction
+                     A_rij(coun_cell,i1,j1) = 1.0d30
+                     Xij(coun_cell,i1,j1) = 0.0d0
+                     Yij(coun_cell,i1,j1) = 0.0d0
+                     Zij(coun_cell,i1,j1) = 0.0d0
+                     Bij(coun_cell,i1,j1) = 0.0d0
+                  endif
+               enddo ! j1
+            enddo ! i1
+         enddo ZC
+      enddo YC
+   enddo XC
+   !$omp end do
+   !$omp end parallel
+end subroutine cell_cycle_B
+
+
+
+
+
+function vdW_energy(Scell, NSC, TB_Waals, i1, j1, a_r) result(V)   ! vdW potential in various forms
+   real(8) V ! van der Waals potential energy [eV]
+   type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   class(TB_vdW), dimension(:,:), allocatable, intent(in) :: TB_Waals ! van der Waals parameters within TB
+   integer, intent(in) :: i1, j1 ! atoms
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
+   !====================================
+   integer, pointer :: KOAi, KOAj
+
+   select type (TB_Waals)
+   type is (TB_vdW_Girifalco)
+      V = vdW_Girifalco(Scell, NSC, TB_Waals, i1, j1, a_r)  ! below
+
+   type is (TB_vdW_LJ_cut)
+      KOAi => Scell(NSC)%MDatoms(i1)%KOA ! kind of first atom
+      KOAj => Scell(NSC)%MDatoms(j1)%KOA ! kind of second atom
+      V = double_truncated_LJ(TB_Waals(KOAi,KOAj), a_r) ! below
+
+   type is (TB_vdW_Dumitrica) ! UNFINISHED, DO NOT USE
+      V = 0.0d0
+
+   end select
+
+   nullify(KOAi, KOAj)
+end function vdW_energy
+
+
+
+function dvdW(TB_Waals, KOA1, KOA2, a_r) result(dV)
+   real(8) :: dV  ! derivative of the LJ potential with cut-offs included
+   class(TB_vdW), intent(in), dimension(:,:), allocatable :: TB_Waals   ! parameters of the repulsive part of TB-H
+   integer, intent(in) :: KOA1, KOA2   ! kind of atom #1 and #2
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
+   !-------------
+   ! Select the vdW potential:
+   select type (TB_Waals)
+   type is (TB_vdW_Girifalco)
+      dV = d_vdW_Girifalco(TB_Waals(KOA1,KOA2), a_r)  ! below
+
+   type is (TB_vdW_LJ_cut)
+      dV = d_double_truncated_LJ(TB_Waals(KOA1,KOA2), a_r) ! below
+
+   type is (TB_vdW_ILJ_cut)
+      dV = d_ILJ(TB_Waals(KOA1,KOA2), a_r) ! below
+
+   type is (TB_vdW_Dumitrica) ! UNFINISHED, DO NOT USE
+      dV = 0.0d0
+   end select
+end function dvdW
+
+
+
+pure function double_truncated_LJ(TB_Waals, a_r) result(V)
+   real(8) V   ! [eV] potential
+   type(TB_vdW_LJ_cut), intent(in) :: TB_Waals   ! LJ parameters
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
+   !----------------------------
+   real(8) :: V_LJ, f_short, f_long
+   ! Pure LJ potential:
+   V_LJ = General_LJ_potential(TB_Waals%eps, TB_Waals%r0, TB_Waals%n, a_r) ! below
+   ! Long-range cutoff:
+   f_long = large_range_cutoff(TB_Waals%d0_cut, TB_Waals%dd_cut, a_r) ! below
+   ! Short-range cutoff:
+   f_short = short_range_cutoff(TB_Waals%d0_short, TB_Waals%dd_short, a_r) ! below
+   ! collect terms:
+   V = V_LJ * f_short * f_long   ! [eV]
+   !if ((f_short < 1.0d0) .and. (f_long < 1.0d0)) print*, a_r, V_LJ, f_short, f_long
+end function double_truncated_LJ
+
+
+
+pure function d_double_truncated_LJ(TB_Waals, a_r) result(V)
+   real(8) V   ! [eV] potential
+   type(TB_vdW_LJ_cut), intent(in) :: TB_Waals   ! LJ parameters
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
+   !----------------------------
+   real(8) :: V_LJ, f_short, f_long, d_V_LJ, d_f_short, d_f_long
+   ! Pure LJ potential and its derivative:
+   V_LJ = General_LJ_potential(TB_Waals%eps, TB_Waals%r0, TB_Waals%n, a_r) ! below
+   d_V_LJ = d_General_LJ_potential(TB_Waals%eps, TB_Waals%r0, TB_Waals%n, a_r) ! below
+   ! Long-range cutoff and its derivative:
+   f_long = large_range_cutoff(TB_Waals%d0_cut, TB_Waals%dd_cut, a_r) ! below
+   d_f_long = d_large_range_cutoff(TB_Waals%d0_cut, TB_Waals%dd_cut, a_r) ! below
+   ! Short-range cutoff and its derivative:
+   f_short = short_range_cutoff(TB_Waals%d0_short, TB_Waals%dd_short, a_r) ! below
+   d_f_short = d_short_range_cutoff(TB_Waals%d0_short, TB_Waals%dd_short, a_r) ! below
+   ! collect terms:
+   V = V_LJ*(d_f_short*f_long + f_short*d_f_long) + d_V_LJ*(f_short*f_long)   ! [eV]
+end function d_double_truncated_LJ
+
+
+
+
+pure function ILJ(TB_Waals, a_r) result(V)
+   real(8) V   ! [eV] potential
+   type(TB_vdW_ILJ_cut), intent(in) :: TB_Waals   ! LJ parameters
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
+   !----------------------------
+   real(8) :: V_LJ, f_short, f_long
+   ! Pure LJ potential:
+   V_LJ = Improved_LJ_potential(TB_Waals%eps, TB_Waals%r0, TB_Waals%n, TB_Waals%m, a_r) ! below
+   ! Long-range cutoff:
+   f_long = large_range_cutoff(TB_Waals%d0_cut, TB_Waals%dd_cut, a_r) ! below
+   ! Short-range cutoff:
+   f_short = short_range_cutoff(TB_Waals%d0_short, TB_Waals%dd_short, a_r) ! below
+   ! collect terms:
+   V = V_LJ * f_short * f_long   ! [eV]
+   !if ((f_short < 1.0d0) .and. (f_long < 1.0d0)) print*, a_r, V_LJ, f_short, f_long
+end function ILJ
+
+
+pure function d_ILJ(TB_Waals, a_r) result(V)
+   real(8) V   ! [eV] potential
+   type(TB_vdW_ILJ_cut), intent(in) :: TB_Waals   ! LJ parameters
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
+   !----------------------------
+   real(8) :: V_LJ, f_short, f_long, d_V_LJ, d_f_short, d_f_long
+   ! Pure LJ potential and its derivative:
+   V_LJ = Improved_LJ_potential(TB_Waals%eps, TB_Waals%r0, TB_Waals%n, TB_Waals%m, a_r) ! below
+   d_V_LJ = d_Improved_LJ_potential(TB_Waals%eps, TB_Waals%r0, TB_Waals%n, TB_Waals%m, a_r) ! below
+   ! Long-range cutoff and its derivative:
+   f_long = large_range_cutoff(TB_Waals%d0_cut, TB_Waals%dd_cut, a_r) ! below
+   d_f_long = d_large_range_cutoff(TB_Waals%d0_cut, TB_Waals%dd_cut, a_r) ! below
+   ! Short-range cutoff and its derivative:
+   f_short = short_range_cutoff(TB_Waals%d0_short, TB_Waals%dd_short, a_r) ! below
+   d_f_short = d_short_range_cutoff(TB_Waals%d0_short, TB_Waals%dd_short, a_r) ! below
+   ! collect terms:
+   V = V_LJ*(d_f_short*f_long + f_short*d_f_long) + d_V_LJ*(f_short*f_long)   ! [eV]
+end function d_ILJ
+
+
+
+pure function General_LJ_potential(eps, r0, n, r) result(V)
+   real(8) :: V   ! LJ potential in Mie form
+   real(8), intent(in) :: eps, r0, n   ! [eV], {A], [-] : potential minimum, position of minimum, power
+   real(8), intent(in) :: r   ! [A] interatomic distance
+   !------------------
+   real(8) :: r0r, r0rn
+   if (r > 0.0d0) then
+      r0r = r0/r
+      r0rn = r0r**n
+      V = eps * (r0rn - 2.0d0)*r0rn
+   else
+      V = 0.0d0
+   endif
+end function General_LJ_potential
+
+
+pure function d_General_LJ_potential(eps, r0, n, r) result(V)
+   real(8) :: V   ! LJ potential in Mie form
+   real(8), intent(in) :: eps, r0, n   ! [eV], {A], [-] : potential minimum, position of minimum, power
+   real(8), intent(in) :: r   ! [A] interatomic distance
+   !------------------
+   real(8) :: r0r, r0rn
+   if (r > 0.0d0) then
+      r0r = r0/r
+      r0rn = r0r**n
+      V = -eps * 2.0d0*n/r * r0rn * (r0rn - 1.0d0)
+   else
+      V = 0.0d0
+   endif
+end function d_General_LJ_potential
+
+
+
+pure function Improved_LJ_potential(eps, r0, n, m, r) result(V)
+   ! Improved Lennard-Jones: https://www.mdpi.com/1420-3049/26/13/3906
+   ! V=eps*( m/(n-m)*(r0/r)^(n) - n/(n-m)*(r0/r)^m )
+   ! reducing to LJ for n=12, m=6
+   real(8) :: V   ! LJ potential in Mie form
+   real(8), intent(in) :: eps, r0, n, m   ! [eV], {A], [-] : potential minimum, position of minimum, powers
+   real(8), intent(in) :: r   ! [A] interatomic distance
+   !------------------
+   real(8) :: r0r, n_m
+   if (r > 0.0d0) then
+      r0r = r0/r
+      n_m = n - m
+      V = eps * (m/n_m*r0r**n - n/n_m*r0r**m)
+   else
+      V = 0.0d0
+   endif
+end function Improved_LJ_potential
+
+
+pure function d_Improved_LJ_potential(eps, r0, n, m, r) result(V)
+   real(8) :: V   ! LJ potential in Mie form
+   real(8), intent(in) :: eps, r0, n, m  ! [eV], {A], [-] : potential minimum, position of minimum, powers
+   real(8), intent(in) :: r   ! [A] interatomic distance
+   !------------------
+   real(8) :: r0r, n_m
+   if (r > 0.0d0) then
+      r0r = r0/r
+      n_m = n - m
+      V = -eps*(r0r**n - r0r**m)*n*m/(n_m*r)
+   else
+      V = 0.0d0
+   endif
+end function d_Improved_LJ_potential
+
+
+
+
+pure function large_range_cutoff(d0, dd, r) result(fl)
+   real(8) fl
+   real(8), intent(in) :: d0, dd, r ! [A], cutoff distance, its width, interatomic distance
+   fl = Fermi_function(d0, dd, r)   ! module "Little_sobroutine"
+end function large_range_cutoff
+
+pure function d_large_range_cutoff(d0, dd, r) result(fl)
+   real(8) fl
+   real(8), intent(in) :: d0, dd, r ! [A], cutoff distance, its width, interatomic distance
+   fl = d_Fermi_function(d0, dd, r)   ! module "Little_sobroutine"
+end function d_large_range_cutoff
+
+
+pure function short_range_cutoff(d0, dd, r) result(fsh)
+   real(8) fsh
+   real(8), intent(in) :: d0, dd, r ! [A], cutoff distance, its width, interatomic distance
+   fsh = 1.0d0 - Fermi_function(d0, dd, r)   ! module "Little_sobroutine"
+end function short_range_cutoff
+
+pure function d_short_range_cutoff(d0, dd, r) result(fsh)
+   real(8) fsh
+   real(8), intent(in) :: d0, dd, r ! [A], cutoff distance, its width, interatomic distance
+   fsh = -d_Fermi_function(d0, dd, r)   ! module "Little_sobroutine"
+end function d_short_range_cutoff
 
 
 
@@ -168,11 +516,6 @@ function vdW_Girifalco(Scell, NSC, TB_Waals, i1, j1, a_r) ! function according t
    !====================================
    real(8), pointer :: C12	! [eV*A^12] Lenard-Jones C12
    real(8), pointer :: C6	! [eV*A^6] Lenard-Jones C6
-!    real(8), pointer :: r_L	! [A] cut-off radius at large distances
-!    real(8), pointer :: d_L	! [A] cut-off range at large distances
-!    real(8), pointer :: r_S	! [A] cut-off radius at small distances
-!    real(8), pointer :: d_S	! [A] cut-off range at small distances
-!    real(8), pointer :: r_LJ	! [A] shift of coordinate to reproduce equilibrium distance
    real(8), pointer :: dm 	! [A] radius where to switch to polinomial
    real(8), pointer :: d_cut 	! [A] cut-off radius at large r
    real(8), pointer :: a	! fitting polinomial coefficients: a*x^3+b*x^2+c*x+d
@@ -221,28 +564,20 @@ function vdW_Girifalco(Scell, NSC, TB_Waals, i1, j1, a_r) ! function according t
       a_r4 = a_r2*a_r2
       vdW_Girifalco = as*a_r4*a_r + bs*a_r4 + cs*a_r2*a_r + ds*a_r2 + es*a_r + fs
    else ! at shorter distances we use proper potential:
-!       f_cut_large = f_cut_L(a_r, r_L, d_L) ! function below
-!       f_cut_small = f_cut_S(a_r, r_S, d_S) ! function below
       r = a_r !+ r_LJ
-      vdW_Girifalco = LJ_potential(C12, C6, r) !*f_cut_small*f_cut_large
+      vdW_Girifalco = LJ_potential(C12, C6, r)
    endif
 
    nullify(KOAi, KOAj, C6, C12, dm, d_cut, a, b, c, d, dsm, ds_cut, as, bs, cs, ds, es, fs)
 end function vdW_Girifalco
 
 
-
-function dvdW(TB_Waals,a_r)
+function d_vdW_Girifalco(TB_Waals, a_r) result(dvdW)
    real(8) :: dvdW ! derivative of the LJ potential with cut-offs included
    type(TB_vdW_Girifalco), intent(in), target :: TB_Waals   ! parameters of the repulsive part of TB-H
-   real(8) :: a_r ! [A] distance between the atoms
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
    real(8), pointer :: C12	! [eV*A^12] Lenard-Jones C12
    real(8), pointer :: C6	! [eV*A^6] Lenard-Jones C6
-!    real(8), pointer :: r_L	! [A] cut-off radius at large distances
-!    real(8), pointer :: d_L	! [A] cut-off range at large distances
-!    real(8), pointer :: r_S	! [A] cut-off radius at small distances
-!    real(8), pointer :: d_S	! [A] cut-off range at small distances
-!    real(8), pointer :: r_LJ	! [A] shift of coordinate to reproduce equilibrium distance
    real(8), pointer :: dm 	! [A] radius where to switch to polinomial
    real(8), pointer :: d_cut 	! [A] cut-off radius
    real(8), pointer :: a		! fitting polinomial coefficients: a*x^3+b*x^2+c*x+d
@@ -263,11 +598,6 @@ function dvdW(TB_Waals,a_r)
    
    C6 => TB_Waals%C6
    C12 => TB_Waals%C12
-!    r_L = TB_Waals%r_L
-!    d_L = TB_Waals%d_L
-!    r_S = TB_Waals%r_S
-!    d_S = TB_Waals%d_S
-!    r_LJ = TB_Waals%r_LJ
    dm => TB_Waals%dm
    d_cut => TB_Waals%d_cut
    a => TB_Waals%a
@@ -292,23 +622,17 @@ function dvdW(TB_Waals,a_r)
       a_r4 = a_r2*a_r2
       dvdW = 5.0d0*as*a_r4 + 4.0d0*bs*a_r2*a_r + 3.0d0*cs*a_r2 + 2.0d0*ds*a_r + es
    else ! at shorter distances we use proper potential:
-!       f_cut_large = f_cut_L(a_r, r_L, d_L) ! function above
-!       f_cut_small = f_cut_S(a_r, r_S, d_S) ! function above
       r = a_r !+ r_LJ
-!       E_vdW = LJ_potential(C12, C6, r)     ! LJ part of the potential
       d_E_vdW = d_LJ_potential(C12, C6, r) ! derivative of  LJ part of the potential
-!       d_f_small = d_f_cut_S(a_r, r_S, d_S) ! derivative of cut-off function, function above
-!       d_f_large = d_f_cut_L(a_r, r_L, d_L) ! derivative of cut-off function, function above
-      dvdW = d_E_vdW !*f_cut_small*f_cut_large           ! full derivative as 
-      !dvdW = dvdW + E_vdW*(d_f_small*f_cut_large + d_f_large*f_cut_small) ! a SUM of three terms
+      dvdW = d_E_vdW
    endif
    nullify(C12, C6, dm, d_cut, a, b, c, d, dsm, ds_cut, as, bs, cs, ds, es, fs)
-end function dvdW
+end function d_vdW_Girifalco
 
 
 function LJ_potential(C12, C6, r) ! Lenard-Jones potential
    real(8) :: LJ_potential
-   real(8) :: C12, C6, r
+   real(8), intent(in) :: C12, C6, r
    real(8) :: a_r6, a_r12
    a_r6 = fast_pow(r,6) ! function from module "Little_subroutines"
    a_r12 = a_r6*a_r6
@@ -318,7 +642,7 @@ end function LJ_potential
 
 function d_LJ_potential(C12, C6, r) ! derivative of Lenard-Jones potential
    real(8) :: d_LJ_potential
-   real(8) :: C12, C6, r
+   real(8), intent(in) :: C12, C6, r
    real(8) :: a_r6, a_r7, a_r13
    a_r6 = fast_pow(r,6) ! function from module "Little_subroutines"
    a_r7 = a_r6*r
@@ -327,16 +651,18 @@ function d_LJ_potential(C12, C6, r) ! derivative of Lenard-Jones potential
 end function d_LJ_potential
 
 
-function f_cut_L(a_r, r_L, d_L) ! cut-off function at large distances
+pure function f_cut_L(a_r, r_L, d_L) ! cut-off function at large distances
    real(8) :: f_cut_L
-   real(8) :: a_r, r_L, d_L
+   real(8), intent(in) :: a_r, r_L, d_L
    f_cut_L = 1.0d0/(1.0d0 + dexp((a_r - r_L)/d_L))
 end function f_cut_L
 
 
-function d_f_cut_L(a_r, r_L, d_L) ! derivative of cut-off function at large distances
+pure function d_f_cut_L(a_r, r_L, d_L) ! derivative of cut-off function at large distances
    real(8) :: d_f_cut_L
-   real(8) :: a_r, r_L, d_L, exp_r, exp_r2, arg
+   real(8), intent(in) :: a_r, r_L, d_L
+   !------------------
+   real(8) :: exp_r, exp_r2, arg
    arg = (a_r - r_L)/d_L
    if (arg >= log(HUGE(a_r))) then
       d_f_cut_L = 0.0d0
@@ -348,17 +674,19 @@ function d_f_cut_L(a_r, r_L, d_L) ! derivative of cut-off function at large dist
 end function d_f_cut_L
 
 
-function f_cut_S(a_r, r_S, d_S) ! cut-off function at small distances
+pure function f_cut_S(a_r, r_S, d_S) ! cut-off function at small distances
    real(8) :: f_cut_S
-   real(8) :: a_r, r_S, d_S, small_f
+   real(8), intent(in) :: a_r, r_S, d_S
+   real(8) :: small_f
    small_f = 1.0d0 + dexp(-(a_r - r_S)/d_S)
    f_cut_S = 1.0d0/(small_f*small_f)
 end function f_cut_S
 
 
-function d_f_cut_S(a_r, r_S, d_S) ! derivative of cut-off function at small distances
+pure function d_f_cut_S(a_r, r_S, d_S) ! derivative of cut-off function at small distances
    real(8) :: d_f_cut_S
-   real(8) :: a_r, r_S, d_S, small_f, exp_r, arg
+   real(8), intent(in) :: a_r, r_S, d_S
+   real(8) :: small_f, exp_r, arg
    arg = -(a_r - r_S)/d_S
    if (arg >= log(HUGE(a_r))) then
       d_f_cut_S = 0.0d0
@@ -370,104 +698,15 @@ function d_f_cut_S(a_r, r_S, d_S) ! derivative of cut-off function at small dist
 end function d_f_cut_S
 
 
-! Construct matrices of multipliers often used later to calculate derivatives of vdW:
-subroutine Construct_B(TB_Waals, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz)
-   type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
-   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
-   real(8), dimension(:,:,:), allocatable, intent(out) :: Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij ! intermediate calculations matrices
-   integer, intent(out) :: Nx, Ny, Nz ! number of super-cell images to consider
-   real(8) :: x, y, z, sx, sy, sz
-   integer :: x_cell, y_cell, z_cell, coun_cell
-   integer :: i1, j1, n
-   integer, DIMENSION(3) :: zb
-   logical :: origin_cell
-   
-   n = size(atoms) ! total number of atoms
-   
-   ! Find how many image cells along each direction we need to include:
-   call get_mirror_cell_num(Scell, NSC, TB_Waals, numpar, atoms, Nx, Ny, Nz) ! subroutine above
 
-   coun_cell = (2*Nx+1)*(2*Ny+1)*(2*Nz+1) ! total number of image cells
 
-   if (.not.allocated(Bij))   allocate(Bij(coun_cell,n,n))
-   if (.not.allocated(A_rij)) allocate(A_rij(coun_cell,n,n))
-   if (.not.allocated(Xij))   allocate(Xij(coun_cell,n,n))
-   if (.not.allocated(Yij))   allocate(Yij(coun_cell,n,n))
-   if (.not.allocated(Zij))   allocate(Zij(coun_cell,n,n))
-   if (.not.allocated(SXij))   allocate(SXij(coun_cell,n,n))
-   if (.not.allocated(SYij))   allocate(SYij(coun_cell,n,n))
-   if (.not.allocated(SZij))   allocate(SZij(coun_cell,n,n))
-   if (.not.allocated(XijSupce))   allocate(XijSupce(coun_cell,n,n))
-   if (.not.allocated(YijSupce))   allocate(YijSupce(coun_cell,n,n))
-   if (.not.allocated(ZijSupce))   allocate(ZijSupce(coun_cell,n,n))
-   Bij = 0.0d0
-   A_rij = 1.0d30 
-   Xij = 0.0d0
-   Yij = 0.0d0
-   Zij = 0.0d0
-   SXij = 0.0d0
-   SYij = 0.0d0
-   SZij = 0.0d0
-   XijSupce = 0.0d0
-   YijSupce = 0.0d0
-   ZijSupce = 0.0d0
 
-   !$omp PARALLEL private(i1,j1,x,y,z,sx,sy,sz,x_cell,y_cell,z_cell,zb,origin_cell,coun_cell)
-   !$omp do
-   do i1 = 1,n
-      do j1 = 1,n
-         XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
-            YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
-               ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
-                  coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
-                  zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
-                  origin_cell = ALL(zb==0) ! if it is the origin cell
-                  if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
-                     call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, A_rij(coun_cell,i1,j1), x=x, y=y, z=z, sx=sx,sy=sy,sz=sz) ! module "Atomic_tools"
-                     !call shortest_distance(Scell, NSC, atoms, i1, j1, A_rij(coun_cell,i1,j1), x1=x, y1=y, z1=z, sx1=sx, sy1=sy, sz1=sz) ! module "Atomic_tools"
-
-                     ! Save necessary elements:
-                     Xij(coun_cell,i1,j1) = x
-                     Yij(coun_cell,i1,j1) = y
-                     Zij(coun_cell,i1,j1) = z
-                     SXij(coun_cell,i1,j1) = sx
-                     SYij(coun_cell,i1,j1) = sy
-                     SZij(coun_cell,i1,j1) = sz
-!                      XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
-!                      YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
-!                      ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
-                     XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(2,1) + z*Scell(NSC)%supce(3,1)
-                     YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,2) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(3,2)
-                     ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,3) + y*Scell(NSC)%supce(2,3) + z*Scell(NSC)%supce(3,3)
-                     
-                     Bij(coun_cell,i1,j1) = dvdW(TB_Waals(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),A_rij(coun_cell,i1,j1)) ! function above
-!                      print*, 'TEST', coun_cell,i1,j1, Xij(coun_cell,i1,j1), Yij(coun_cell,i1,j1), Zij(coun_cell,i1,j1), A_rij(coun_cell,i1,j1), Bij(coun_cell,i1,j1)
-                  else ! No self-interaction
-                     A_rij(coun_cell,i1,j1) = 1.0d30
-                     Xij(coun_cell,i1,j1) = 0.0d0
-                     Yij(coun_cell,i1,j1) = 0.0d0
-                     Zij(coun_cell,i1,j1) = 0.0d0
-                     Bij(coun_cell,i1,j1) = 0.0d0
-                  endif
-               enddo ZC
-            enddo YC
-         enddo XC
-      enddo ! j1
-   enddo ! i1
-   !$omp end do
-   !$omp end parallel
-   
-!    pause 'Construct_B'
-end subroutine Construct_B
-
+!OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+! Obsolete and outdated subroutines
 
 ! Derivatives of the vdW energy by s:
-subroutine dvdWdr_s(TB_Waals, atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, Ny, Nz) 
-   !type(TB_Rep_Molteni), dimension(:,:), intent(in)   :: TB_Repuls ! repulsive TB parameters
-   type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
+subroutine dvdWdr_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, Ny, Nz)
+   !type(TB_vdW), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
@@ -519,7 +758,7 @@ subroutine dvdWdr_s(TB_Waals, atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Z
                            b = Bij(coun_cell,i1,j1) ! dvdW(TB_Waals(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),A_rij(coun_cell,i1,j1))
                            a_r = A_rij(coun_cell,i1,j1) ! call shortest_distance(Scell, NSC, atoms, i1, j1, A_rij(coun_cell,i1,j1), x1=x, y1=y, z1=z, sx1=sx, sy1=sy, sz1=sz) 
 
-                           ddlta = real(dik - djk)/a_r
+                           ddlta = dble(dik - djk)/a_r
                            b_delta = b*ddlta
                            dpsi(1) = dpsi(1) + b_delta*x1(1) ! X, Eq.(F21), H.Jeschke PhD Thesis
                            dpsi(2) = dpsi(2) + b_delta*x1(2) ! Y, Eq.(F21), H.Jeschke PhD Thesis
@@ -549,8 +788,8 @@ END subroutine dvdWdr_s
 
 
 ! Derivatives of the vdW energy by h:
-subroutine dvdWdr_Pressure_s(TB_Waals, atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) 
-   type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
+subroutine dvdWdr_Pressure_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz)
+   !type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
@@ -616,13 +855,9 @@ subroutine dvdWdr_Pressure_s(TB_Waals, atoms, Scell, NSC, numpar, Bij, A_rij, Xi
 end subroutine dvdWdr_Pressure_s
 
 
-!OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
-! Obsolete and outdated subroutines
-
-
 subroutine dvdWdr_s_OLD(TB_Waals, atoms, Scell, NSC, numpar) ! derivatives of the repulsive energy by s
    !type(TB_Rep_Molteni), dimension(:,:), intent(in)   :: TB_Repuls ! repulsive TB parameters
-   type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
+   class(TB_vdW), dimension(:,:), allocatable, intent(in)   :: TB_Waals ! van der Waals parameters within TB
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
@@ -671,7 +906,7 @@ subroutine dvdWdr_s_OLD(TB_Waals, atoms, Scell, NSC, numpar) ! derivatives of th
                   x1(3) = x*Scell(NSC)%supce(1,3) + y*Scell(NSC)%supce(2,3) + z*Scell(NSC)%supce(3,3)
 
 !                   b = dphi_M(TB_Repuls(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA),a_r,1)
-                  b = dvdW(TB_Waals(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA),a_r)
+                  b = dvdW(TB_Waals, Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA, a_r)
 
                   ddlta = real(dik - djk)/a_r
                   b_delta = b*ddlta
@@ -698,7 +933,7 @@ END subroutine dvdWdr_s_OLD
 
 subroutine dvdWdr_Pressure_s_OLD(TB_Waals, atoms, Scell, NSC, numpar)! derivatives of the repulsive energy by h
 !    type(TB_Rep_Molteni), dimension(:,:), intent(in) :: TB_Repuls ! repulsive TB parameters
-   type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
+   class(TB_vdW), dimension(:,:), allocatable, intent(in)   :: TB_Waals ! van der Waals parameters within TB
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Atom), dimension(:), intent(in) :: atoms ! array of atoms in the supercell
@@ -729,7 +964,7 @@ subroutine dvdWdr_Pressure_s_OLD(TB_Waals, atoms, Scell, NSC, numpar)! derivativ
                scur(2) = Scell(NSC)%Near_neighbor_dist_s(i,atom_2,2) ! at this distance, SY
                scur(3) = Scell(NSC)%Near_neighbor_dist_s(i,atom_2,3) ! at this distance, SZ
 
-               dpsy = dvdW(TB_Waals(Scell(NSC)%MDatoms(j)%KOA, Scell(NSC)%MDatoms(i)%KOA),r)
+               dpsy = dvdW(TB_Waals, Scell(NSC)%MDatoms(j)%KOA, Scell(NSC)%MDatoms(i)%KOA, r)
                
                do k = 1,3 ! supce indices: a,b,c
                   do l = 1,3  ! supce indices: x,y,z

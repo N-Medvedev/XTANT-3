@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -29,16 +29,13 @@ MODULE TB_NRL
 use Universal_constants
 use TB_Koster_Slater
 use Objects
-use Variables
-! use Algebra_tools
+use Little_subroutines, only : print_time_step
 use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_hermiticity
-use Little_subroutines
-use Atomic_tools
-use Electron_tools
-use Nonadiabatic
+use Atomic_tools, only : get_near_neighbours, get_number_of_image_cells, distance_to_given_cell, shortest_distance, Reciproc_rel_to_abs
+use Electron_tools, only : find_band_gap
 
 implicit none
-
+PRIVATE
 
 ! ! this interface finds by itself which of the two subroutine to use depending on the array passed:
 ! interface test_orthogonalization
@@ -46,15 +43,18 @@ implicit none
 !    module procedure test_orthogonalization_c	! complex version
 ! end interface test_orthogonalization
 
-
-! public :: test_orthogonalization
-
 ! Modular parameters:
 real(8) :: m_one_third, m_two_third, m_four_third
 
 parameter (m_one_third = 1.0d0/3.0d0)
 parameter (m_two_third = 2.0d0/3.0d0)
 parameter (m_four_third = 2.0d0*m_two_third)
+
+!public :: test_orthogonalization
+public :: construct_TB_H_NRL, get_dHij_drij_NRL, dErdr_s_NRL, Construct_Vij_NRL, Complex_Hamil_NRL, get_Erep_s_NRL, &
+         dErdr_Pressure_s_NRL, Loewdin_Orthogonalization, Loewdin_Orthogonalization_c, Attract_TB_Forces_Press_NRL, &
+         test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c
+public :: m_one_third, m_two_third, m_four_third
 
  contains
 
@@ -280,7 +280,7 @@ subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err
    !-----------------------------------
    ! 4) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
 !    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, check_M=.true.)
-   call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript)
+   call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript) ! module "Algebra_tools"
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Subroutine Hamil_tot_NRL: '//trim(adjustl(Error_descript))
       call Save_error_details(Err, 6, Error_descript)
@@ -801,7 +801,7 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
    CHij_orth = dcmplx(0.0d0,0.0d0)	! to start with
    
    call Reciproc(Scell(NSC)%supce, Scell(NSC)%k_supce) ! create reciprocal super-cell, module "Algebra_tools"
-   call Reciproc_rel_to_abs(ksx, ksy, ksz, Scell, NSC, kx, ky, kz) ! get absolute k-values
+   call Reciproc_rel_to_abs(ksx, ksy, ksz, Scell, NSC, kx, ky, kz) ! get absolute k-values, module "Atomic_tools"
 
    ! 1) Construct complex Hamiltonian and overlap:
    !$omp parallel
@@ -912,7 +912,7 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
                   k = (i-1)*norb+i1
                   if (i == j) then ! contribution of the same atom, according to Trani:
 
-                     write(*,'(a,i5,i5,i5,i5)') 'SH_1: ', k, l, i, j
+                     !write(*,'(a,i5,i5,i5,i5)') 'SH_1: ', k, l, i, j
 
                      if (j1 == i1) then
                         ! Skip the same orbital, no overlap
@@ -923,7 +923,7 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
                         SH_1 = DCMPLX(1.1d0,0.0d0) * CHij_orth(k,l)
                         ! Testing orthogonal expression (Trani):
                         !SH_1 = DCMPLX(temp*0.270d0,0.0d0)*CHij_non(k,l)
-                        print*, k, l, SH_1
+                        !print*, k, l, SH_1
 
                         Scell(NSC)%cPRRx(k,l) = SH_1
                         Scell(NSC)%cPRRy(k,l) = SH_1

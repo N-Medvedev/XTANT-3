@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -29,9 +29,9 @@ module BS_Spherical_Gaussians
 
 use Universal_constants
 use Objects, only: Basis_set
-!use Algebra_tools
 
 implicit none
+PRIVATE
 
 real(8) :: m_sqrt2, m_sqrt3, m_sqrt5, m_sqrt6, m_sqrt7, m_sqrt10, m_sqrt14, m_sqrt21, m_sqrt30, m_sqrt35, m_sqrt70, m_sqrt105
 real(8) :: m_sqrt_1_Pi, m_sqrt_3_4Pi, m_sqrt_15_Pi
@@ -54,6 +54,8 @@ parameter(m_sqrt_3_4Pi = sqrt(3.0d0/(4.0d0*g_Pi)) )
 parameter(m_sqrt_15_Pi = sqrt(15.0d0/g_Pi) )
 
  
+public :: find_TM_size
+
  contains
  
 !=======================================================

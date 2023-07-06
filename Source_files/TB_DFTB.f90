@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -28,16 +28,23 @@
 MODULE TB_DFTB
 
 use Universal_constants
-use TB_Koster_Slater
 use Objects
+use TB_Koster_Slater
 use Little_subroutines, only : linear_interpolation, Fermi_function, d_Fermi_function, Find_in_array_monoton
 use Electron_tools, only : find_band_gap
-use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization, Loewdin_Orthogonalization_c
+use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization, &
+                     Loewdin_Orthogonalization_c
 use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_hermiticity
 use Atomic_tools, only : Reciproc_rel_to_abs
 
 
 implicit none
+PRIVATE
+
+public :: Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_drij_DFTB, &
+          Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB, &
+          identify_DFTB_orbitals_per_atom, identify_DFTB_basis_size, Get_overlap_S_matrix_DFTB, &
+          Hopping_DFTB, get_Erep_s_DFTB_no, dErdr_s_DFTB_no, dErdr_Pressure_s_DFTB_no
 
  contains
  
@@ -741,6 +748,7 @@ subroutine Attract_TB_forces_DFTB(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Eelectr_s, 
    nullify(m, j1)
 end subroutine Attract_TB_forces_DFTB
 
+
 !ddddddddddddddddddddddddddddddddddddddddddddddddddd
 ! Derivatives:
 subroutine d_Hamilton_one_DFTB(basis_ind, k, Scell, NSC, i, j, atom_2, dH, M_Vij, M_dVij, M_lmn, dS, M_SVij, M_dSVij)
@@ -1332,7 +1340,24 @@ end subroutine Complex_Hamil_DFTB
 !RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR
 ! Repulsive part:
 
-subroutine get_Erep_s_DFTB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_Pettifor"
+
+subroutine get_Erep_s_DFTB_no(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy
+   type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(TB_Rep_DFTB_no), dimension(:,:), intent(in) :: TB_Repuls
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   real(8), intent(out) :: a    ! [eV] total repulsive energy
+   !=====================================================
+   integer :: i1, m, atom_2, j1
+   integer, pointer :: KOA1, KOA2
+   real(8), pointer :: r
+
+   a = 0.0d0   ! no repulsive
+end subroutine get_Erep_s_DFTB_no
+
+
+
+subroutine get_Erep_s_DFTB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy
    type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_Rep_DFTB), dimension(:,:), intent(in) :: TB_Repuls
@@ -1419,7 +1444,7 @@ end function DFTB_polinomial
       rr03 = rr02 * rr0
       F = c(Nsiz,1) + c(Nsiz,2)*rr0 + c(Nsiz,3)*rr02 + c(Nsiz,4)*rr03 + c(Nsiz,5)*rr02*rr02 + c(Nsiz,6)*rr03*rr02
    elseif (r_dist <= R(1)) then  ! "exponential wall"
-      F = exp(-a(1)*r_dist + a(2)) + a(3)    ! [eV]
+      F = exp(-a(1)*r_dist + a(2))*g_au2ev + a(3)    ! [eV]
    else ! spline
       ! This works only for equidistant arrays:
       !i_array = CEILING((r_dist-R(1))/(R(2)-R(1)))   ! index of the nearest radial grid point for the equally-spaced grid
@@ -1443,6 +1468,23 @@ end function DFTB_spline
 
 !RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR
 ! Forces for the repulsive part:
+
+subroutine dErdr_s_DFTB_no(TB_Repuls, Scell, NSC) ! derivatives of the repulsive energy by s
+   type(TB_Rep_DFTB_no), dimension(:,:), intent(in)   :: TB_Repuls ! repulsive TB parameters
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   !---------------------------------------
+   integer :: ian, n
+   n = Scell(NSC)%Na ! number of atoms
+   !$omp PARALLEL private(ian)
+   !$omp DO
+   do ian = 1, n  ! Forces for all atoms
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
+   enddo ! ian
+   !$omp end do
+   !$omp end parallel
+END subroutine dErdr_s_DFTB_no
+
 
 subroutine dErdr_s_DFTB(TB_Repuls, Scell, NSC) ! derivatives of the repulsive energy by s
    type(TB_Rep_DFTB), dimension(:,:), intent(in)   :: TB_Repuls ! repulsive TB parameters
@@ -1487,9 +1529,13 @@ subroutine dErdr_s_DFTB(TB_Repuls, Scell, NSC) ! derivatives of the repulsive en
                   y => Scell(NSC)%Near_neighbor_dist(i1,atom_2,2) ! at this distance, Y
                   z => Scell(NSC)%Near_neighbor_dist(i1,atom_2,3) ! at this distance, Z
                   
-                  x1(1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
+                  x1(1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3) ! correct
                   x1(2) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
                   x1(3) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
+
+                  !x1(1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(2,1) + z*Scell(NSC)%supce(3,1)   ! incorrect
+                  !x1(2) = x*Scell(NSC)%supce(1,2) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(3,2)
+                  !x1(3) = x*Scell(NSC)%supce(1,3) + y*Scell(NSC)%supce(2,3) + z*Scell(NSC)%supce(3,3)
                   
                   a_r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4) ! at this distance, R
                   b =d_DFTB_repulsive_one(TB_Repuls(KOA1, KOA2), a_r) ! below
@@ -1644,6 +1690,19 @@ subroutine dErdr_Pressure_s_DFTB(TB_Repuls, Scell, NSC, numpar) ! derivatives of
    endif
    nullify(KOA1, KOA2, m, j)
 end subroutine dErdr_Pressure_s_DFTB
+
+
+subroutine dErdr_Pressure_s_DFTB_no(TB_Repuls, Scell, NSC, numpar) ! derivatives of the repulsive energy by h
+   type(TB_Rep_DFTB_no), dimension(:,:), intent(in) :: TB_Repuls ! repulsive TB parameters
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
+   !===============================================
+
+   if (numpar%p_const) then ! calculate this for P=const Parrinello-Rahman MD
+      Scell(NSC)%SCforce%rep = 0.0d0    ! to start with
+   endif
+end subroutine dErdr_Pressure_s_DFTB_no
 
 
 

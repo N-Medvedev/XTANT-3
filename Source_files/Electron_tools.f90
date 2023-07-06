@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -24,14 +24,110 @@
 MODULE Electron_tools
 use Universal_constants
 use Objects
-use Variables
-use Algebra_tools
-use Atomic_tools
-use Little_subroutines
+use Algebra_tools, only : Two_Vect_Matr
+use Little_subroutines, only : Find_in_array_monoton, Fermi_interpolation, linear_interpolation, &
+                        Find_in_monotonous_1D_array, Gaussian, print_progress
+use MC_cross_sections, only : TotIMFP
 
 implicit none
+PRIVATE
+
+public :: get_low_e_energy, find_band_gap, get_DOS_sort, Diff_Fermi_E, get_number_of_CB_electrons, set_Fermi
+public :: set_Erf_distribution, update_fe, Electron_thermalization, get_glob_energy, update_cross_section
+public :: Do_relaxation_time, set_initial_fe, find_mu_from_N_T, set_total_el_energy, Electron_Fixed_Etot
+public :: get_new_global_energy, get_electronic_heat_capacity, get_total_el_energy, electronic_entropy
+public :: get_low_energy_distribution, set_high_DOS
+
  contains
 
+
+
+subroutine get_low_energy_distribution(Scell, numpar) ! On the grid, if requested
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar   ! numerical parameters, including lists of earest neighbors
+   !--------------------
+   integer :: Nsiz, Nei, i, j, Nlev
+
+   if (numpar%save_fe_grid) then  ! only user requested
+      ! Count number of steps, over which the distribution is averaged:
+      numpar%fe_aver_num = numpar%fe_aver_num + 1
+
+      ! Recalculate the low-energy part of the distribution:
+      if (numpar%save_fe_grid) then  ! only user requested
+         Nsiz = size(Scell%E_fe_grid)
+         Nei = size(Scell%Ei)
+         ! Fill in the distribution function:
+         i = 1 ! to start with
+         SRTL:do j = 1, Nsiz ! all energy intervals
+            Nlev = 0 ! count levels within this grid interval
+            do while (Scell%Ei(i) < Scell%E_fe_grid(j)) ! all energy levels below the given one in this step
+               Scell%fe_on_grid(j) = Scell%fe_on_grid(j) + Scell%fe(i)
+               !print*, j, i, Scell%E_fe_grid(j), Scell%fe_on_grid(j), Scell%fe(i)
+               Nlev = Nlev + 1
+               Scell%fe_norm_on_grid(j) = Scell%fe_on_grid(j)/Nlev
+               i = i + 1
+               if (i > Nei) exit SRTL
+            enddo
+         enddo SRTL
+      endif
+   endif
+end subroutine get_low_energy_distribution
+
+
+subroutine set_high_DOS(Scell, numpar)
+   type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
+   !-----------------------
+   integer :: Nsiz, i
+   real(8) :: eps, k, coef, prefac
+
+   eps = 1.0d-12
+   Nsiz = size(numpar%high_DOS)
+
+   if (numpar%high_DOS(Nsiz) <= eps) then ! DOS is not set, so set it:
+      k = 2.0d0*g_me/g_h**2
+      coef = g_e*sqrt(g_e)/(1.0d30*2.0d0*g_Pi**2)
+      prefac = coef * k**(1.5d0) * Scell%V
+      do i = 1, Nsiz
+         numpar%high_DOS(i) = prefac * sqrt( abs(Scell%E_fe_grid(i)) )  ! Free-electron DOS [1/(A^3 * eV)]
+         !print*, i, Scell%E_fe_grid(i), numpar%high_DOS(i)
+      enddo
+   endif
+end subroutine set_high_DOS
+
+
+
+subroutine update_cross_section(Scell, matter)
+   type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
+   type(solid), intent(inout) :: matter	! materil parameters
+   integer :: Nshl, i, N_Te
+   real(8) :: dT, T_left
+   ! Get the mean free paths vs Te:
+   Nshl = size(matter%Atoms(1)%Ip)
+   select case (matter%Atoms(1)%TOCS(Nshl)) ! Valence band and CDF only
+   case (1) ! CDF
+      if (Scell%Te > 100.0d0) then  ! recalculate:
+         ! Temperature (grid defined in subroutine get_MFPs as Te_temp = dble((i-1)*1000)):
+         dT = 1000.0d0 ! [K] grid step
+         T_left = FLOOR(Scell%Te/1000)*1000
+         N_Te = CEILING(Scell%Te/1000)
+         if (N_Te > size(matter%Atoms(1)%El_MFP_vs_T)) N_Te = size(matter%Atoms(1)%El_MFP_vs_T)   ! maximal energy set
+         ! Interpolate valence band MFP for the given temperature:
+         if (N_Te == 1) then
+            matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) + &
+          (matter%Atoms(1)%El_MFP_vs_T(N_Te+1)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:))/dT * (Scell%Te-T_left)
+         else
+            matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) + &
+          (matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te-1)%L(:))/dT * (Scell%Te-T_left)
+         endif
+      else ! no need to recalculate, the tempereature is too small:
+         N_Te = 1
+         matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:)
+      endif
+   endselect
+
+!    print*, 'Te=', Scell%Te, matter%Atoms(1)%El_MFP(Nshl)%L(1), matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(1)
+end subroutine update_cross_section
 
 
 subroutine find_band_gap(wr, Scell, matter, numpar)
@@ -39,7 +135,9 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(solid), intent(inout) :: matter	! materil parameters
    type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
-   integer i, sumNe, siz
+   !-----------
+   real(8) :: L, Ele
+   integer :: i, sumNe, siz, j, Nshl, N_grid, k
 
    siz = size(wr)
    
@@ -58,24 +156,68 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
 
    Scell%E_gap = ABS(wr(i+1) - wr(i))	! bandgap [eV]
    Scell%E_bottom = wr(i+1)	! bottom of the CB [eV]
-   Scell%E_top = wr(siz)		! [eV] current top of the conduction band
+   ! If top energy level is excluded (in parameterization, or just too high due to convergence issues)
+   j = siz  ! start from the last one
+   Scell%E_top = wr(j)		! [eV] current top of the (meaningful) conduction band
+   do while (wr(j)>=79.0d0)
+      j = j - 1
+      Scell%E_top = wr(j)		! [eV] current top of the (meaningful) conduction band
+   enddo
    Scell%E_VB_bottom = wr(1)	! [eV] current bottom of the valence band
    Scell%E_VB_top = wr(i)		! [eV] current top of the valence band
    
    ! Set MC high-energy electron cut-off energy equal to the uppermost level of CB:
-   if (numpar%E_cut_dynamic) numpar%E_cut = wr(siz) - Scell%E_bottom ! [eV]
-   
+   if (numpar%E_cut_dynamic) numpar%E_cut = Scell%E_top - Scell%E_bottom ! [eV]
+
+   ! For noneuqilibrium distributions (BO or relaxation time), threshold cannot be higher than
+   ! the topmost level of CB, otherwise, there is no way to place an incomming electron:
+   select case (numpar%el_ion_scheme)
+   case (3:4)
+      if ( (numpar%verbose) .and. (numpar%E_cut > (Scell%E_top-Scell%E_bottom) ) ) then
+         print*, 'E_cut > E_CB, which is impossible in nonequilibrium simulation,', &
+         ' resetting it to E_cut=', Scell%E_top-Scell%E_bottom
+      endif
+      numpar%E_cut = min(numpar%E_cut, Scell%E_top-Scell%E_bottom) ! [eV]
+
+      ! Also ionization potential and the cross-section may need to be adjusted:
+      Nshl = size(matter%Atoms(1)%Ip)  ! last shell, corresponding to bandgap
+      if (matter%Atoms(1)%Ip(Nshl) > (Scell%E_top-Scell%E_bottom) ) then
+         if (numpar%verbose) then
+            print*, 'Ionization potential is smaller than CB width,', ' it will be reset to Ip=', Scell%E_top-Scell%E_bottom
+            print*, 'Note that it will affect the cross-section'
+         endif
+         matter%Atoms(1)%Ip(Nshl) = Scell%E_top-Scell%E_bottom ! change it to the width of CB
+         N_grid = size( matter%Atoms(1)%El_MFP(Nshl)%E )
+         do k = 1, N_grid  ! recalculate the cross-section of scattering on CB
+            Ele = matter%Atoms(1)%El_MFP(Nshl)%E(k) ! [eV] energy
+            call TotIMFP(Ele, matter, Scell%TeeV, 1, Nshl, L)  ! module "MC_cross_sections"
+            matter%Atoms(1)%El_MFP(Nshl)%L(k) = L ! [A] MFP
+            if (numpar%verbose) call print_progress('Progress:', k, N_grid)    ! module "Little_subroutines"
+         enddo
+      endif
+   endselect
+
    ! In case we have a very wide gap material, cut-off cannot be smaller than the gap:
-   if (numpar%E_cut < Scell%E_gap) numpar%E_cut = Scell%E_gap
+   if (numpar%E_cut < Scell%E_gap) then
+      if (numpar%verbose) print*, 'Potential problem: E_cut < E_gap, resetting it'
+      numpar%E_cut = Scell%E_gap
+   endif
 
    select case (matter%Atoms(1)%TOCS(size(matter%Atoms(1)%TOCS))) ! which inelastic cross section to use (BEB vs CDF):
       case (1) ! CDF cross section
          matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) = Scell%E_gap ! [eV] ionization potential of the valence band
       case default  ! BEB:
-         if (numpar%E_cut < matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) ) numpar%E_cut = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+         ! Renormalization is optional:
+         if (numpar%E_cut < matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) ) then
+            if (numpar%verbose) print*, 'Electron cut-off energy cannot be smaller than the highest ionization otential,', &
+            'resetting it to E_cut=', matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+            numpar%E_cut = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+         endif
    end select
    
 !    print*, 'numpar%E_cut =', numpar%E_cut , Scell%E_gap , matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+!    print*, 'Ne:', Scell%Ne_low, Scell%Ne, Scell%Na
+!    print*, 'E :', Scell%E_gap, Scell%E_VB_top, Scell%E_bottom
 end subroutine find_band_gap
 
 
@@ -97,13 +239,13 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
    logical, intent(in), optional :: do_E_tot  ! total energy is given or temperature?
    !=========================================
    real(8) :: E_tot, mu_cur, Te_cur
-   integer NSC
+   integer :: NSC, i_fe
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
       do NSC = 1, size(Scell)
          ! Which scheme to use:
          ! 0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO
          select case (numpar%el_ion_scheme)
-         case (1) ! Enforced energy conservation:
+         case (1) ! Enforced energy conservation (Etot = Ee + Eat = const):
             if (t .GT. numpar%t_Te_Ee) then ! Total energy is fixed:
                !call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! (SLOW) below
                call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! (FAST) below
@@ -112,8 +254,9 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
             endif
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+            Scell(NSC)%fe_eq = Scell(NSC)%fe ! instanteneous thermalization means both functions are the same
 
-         case (2) ! Fixed temperature:
+         case (2) ! Fixed temperature (Te=const):
 !             if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
 !                call Electron_Fixed_Te(Scell(NSC)%Ei_scc_part, Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! below
 !             else
@@ -121,16 +264,42 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
 !             endif
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+            Scell(NSC)%fe_eq = Scell(NSC)%fe ! instanteneous thermalization means both functions are the same
 
          case (3) ! Born-Oppenheimer:
             ! Do nothing with fe!
+            ! Only get the kinetic temperature of electrons (out-of-equilibrium):
+            call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
+                                          Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
+            Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
 
-         case (4) ! Nonequilibrium distribution dynamics: Boltzmann electron-electron collision integral:
-            if (t > -8.5d0) then ! testing, unfnishd
+            ! Construct Fermi function with the given transient parameters (equivalent Te and mu):
+            i_fe = size(Scell(NSC)%fe)   ! number of grid points in distribution function
+            if (.not.allocated(Scell(NSC)%fe_eq)) allocate(Scell(NSC)%fe_eq(i_fe))
+            call set_Fermi(Scell(NSC)%Ei, Scell(NSC)%TeeV, Scell(NSC)%mu, Scell(NSC)%fe_eq)   ! below
+
+         case (4) ! Relaxation-time approximation [ df/dt=(f-f0)/tau ]:
+            ! Relaxing electrons via rate equation with given characteristic time:
+            !call Do_relaxation_time(Scell(NSC), numpar)  ! below
+            ! We only update it once per simulation step, not every time this subroutine called!
+
+         case (50) ! Boltzmann electron-electron collision integral (NOT READY, DO NOT USE!):
+            if (t > -8.5d0) then ! testing, unfnished
                call test_evolution_of_fe(Scell(NSC)%Ei, Scell(NSC)%fe, t) ! see below
             endif
 
-         case default ! Decoupled electrons and ions:
+            ! Only get the kinetic temperature of electrons (out-of-equilibrium):
+            call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
+                                          Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
+            Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
+
+            ! Construct Fermi function with the given transient parameters (equivalent Te and mu):
+            i_fe = size(Scell(NSC)%fe)   ! number of grid points in distribution function
+            if (.not.allocated(Scell(NSC)%fe_eq)) allocate(Scell(NSC)%fe_eq(i_fe))
+            call set_Fermi(Scell(NSC)%Ei, Scell(NSC)%TeeV, Scell(NSC)%mu, Scell(NSC)%fe_eq)   ! below
+
+
+         case default ! Decoupled electrons and ions (Ee = const; instant thermalization of electrons):
             !call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%E_tot) ! get the total electron energy
 !             if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
 !                ! get the total electron energy:
@@ -150,6 +319,8 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
 
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
+            if (.not.allocated(Scell(NSC)%fe_eq)) allocate(Scell(NSC)%fe_eq(i_fe))
+            Scell(NSC)%fe_eq = Scell(NSC)%fe ! instanteneous thermalization means both functions are the same
 
          end select
 
@@ -161,7 +332,99 @@ end subroutine update_fe
 
 
 !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-! Nonequilibrium electron kinetics (UNFINISHED DUE TO PROBLEMS WITH ENERGY CONSERVATION):
+! Nonequilibrium electron kinetics
+
+subroutine Electron_thermalization(Scell, numpar, skip_thermalization)
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
+   logical, intent(in), optional :: skip_thermalization
+   !----------------------
+   select case (numpar%el_ion_scheme)
+   case (4)    ! relaxation-time approximation
+      if (present(skip_thermalization)) then
+         call Do_relaxation_time(Scell(1), numpar, skip_thermalization)  ! below
+      else
+         call Do_relaxation_time(Scell(1), numpar)  ! below
+      endif
+   endselect
+end subroutine Electron_thermalization
+
+
+
+! Relaxation time approximation:
+subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
+   logical, intent(in), optional :: skip_thermalization
+   !----------------------
+   real(8) :: exp_dttau, extra_dt, extra_tau
+   integer :: i_fe, i, i_cycle, N_cycle
+   logical :: skip_step, extra_cycle
+
+   if (present(skip_thermalization)) then
+      skip_step = skip_thermalization
+   else
+      skip_step = .false.
+   endif
+
+   ! Get the equivalent (kinetic) temperature and chemical potential:
+   call Electron_Fixed_Etot(Scell%Ei, Scell%Ne_low, Scell%nrg%El_low, Scell%mu, Scell%TeeV, .true.) ! below (FAST)
+   Scell%Te = Scell%TeeV*g_kb ! save also in [K]
+
+   ! Construct Fermi function with the given transient parameters:
+   i_fe = size(Scell%fe)   ! number of grid points in distribution function
+   if (.not.allocated(Scell%fe_eq)) allocate(Scell%fe_eq(i_fe))
+   call set_Fermi(Scell%Ei, Scell%TeeV, Scell%mu, Scell%fe_eq)   ! below
+
+   ! Solve rate equation:
+   if (.not.skip_step) then ! do the thermalization step:
+      if (numpar%tau_fe < numpar%dt/30.0d0) then ! it's basically instantaneous
+         exp_dttau = 0.0d0
+      else  ! finite time relaxation
+         exp_dttau = dexp(-numpar%dt / numpar%tau_fe)
+      endif
+      do i = 1, i_fe ! for all grid points (MO energy levels)
+         Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
+      enddo
+
+      !--------------------------
+      ! Extra check for smoothening unphysical artefacts that may be present after MC:
+      extra_cycle = .false.   ! by default, assume no artifact
+      do i = 1, i_fe ! for all grid points (MO energy levels)
+         if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
+            extra_cycle = .true.   ! some artefacts present, do extra thermalization to get rid of them
+            print*, 'Extra thermalization step needed:', i, Scell%fe(i)
+            exit
+         endif
+      enddo
+      if (extra_cycle) then   ! do extra thermalization
+         extra_dt = numpar%dt*0.1d0 ! use this small step to minimize the effect of extra smoothing
+         extra_tau = min(numpar%tau_fe, 10.0d0) ! artificial thermalization steps
+         N_cycle = 10000 ! limit for the cycles
+         i_cycle = 0 ! to start
+         do while (extra_cycle)
+            i_cycle = i_cycle + 1
+            extra_cycle = .false.   ! assume the problem is solved
+            if (numpar%tau_fe < extra_dt/30.0d0) then ! it's basically instantaneous
+               exp_dttau = 0.0d0
+            else  ! finite time relaxation
+               exp_dttau = dexp(-extra_dt / extra_tau)
+            endif
+            do i = 1, i_fe ! for all grid points (MO energy levels)
+               Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
+               if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
+                  !print*, 'Step:', i, Scell%fe(i)
+                  if (i_cycle < N_cycle) extra_cycle = .true.   ! artefacts still present, do another cycle of extra thermalization
+               endif
+            enddo ! i = 1, i_fe
+         enddo ! while (extra_cycle)
+      endif ! (extra_cycle)
+   endif ! (.not.skip_step)
+end subroutine Do_relaxation_time
+
+
+
+! Electron-electron collision integral (UNFINISHED DUE TO PROBLEMS WITH ENERGY CONSERVATION):
 subroutine Boltzmann_e_e_IN(Ev, fe, M_ee, dt) ! calculates change of distribution function via Boltzmann collision integral
 ! See examples of Boltzmann equation in energy space e.g. in 
 ! [B. Rethfeld, A. Kaiser, M. Vicanek and G. Simon, Phys.Rev.B 65, 214303, (2002)]
@@ -439,14 +702,18 @@ end subroutine share_energy
 ! General subroutines that are often used:
 
 subroutine electronic_entropy(fe, Se, norm_fe)
-   real(8), dimension(:), intent(inout) :: fe ! electron distribution function
-   real(8), intent(out) :: Se ! self-expanatory
+   real(8), dimension(:), intent(in) :: fe ! electron distribution function
+   real(8), intent(out) :: Se ! self-explanatory
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
    ! Se = -kB * int [ DOS*( f * ln(f) + (1-f) * ln(1-f) ) ]
    ! E.G. [https://doi.org/10.1103/PhysRevB.50.14686]
    !----------------------------
    real(8), dimension(size(fe)) :: f_lnf
-   real(8) :: f_norm
+   real(8) :: f_norm, eps
+   integer :: i
+
+   eps = 1.0d-12  ! precision
+
    if (present(norm_fe)) then   ! user provided
       f_norm = norm_fe
    else ! by default, not spin resolved
@@ -455,13 +722,21 @@ subroutine electronic_entropy(fe, Se, norm_fe)
    Se = 0.0d0
    f_lnf = 0.0d0
    ! First term of the total entropy:
-   where (fe(:) > 0.0d0) f_lnf(:) = fe(:)*log(fe(:)/f_norm) ! our f is normalized to f_norm, which means it includes DOS in it, so divide by f_norm where needed
+   where (fe(:) > eps) f_lnf(:) = fe(:)*log(fe(:)/f_norm) ! our f is normalized to f_norm, which means it includes DOS in it, so divide by f_norm where needed
+!    do i = 1, size(fe)
+!       if (fe(i) > 0.0d0) then
+!          if (fe(i)/f_norm < 1.0d-10) print*, i, fe(i), f_norm
+!          f_lnf(i) = fe(i)*log(fe(i)/f_norm)
+!          if (fe(i)/f_norm < 1.0d-10) print*, i, 'done'
+!       endif
+!    enddo
    Se = SUM(f_lnf(:))
    f_lnf = 0.0d0
    ! Second term of the total entropy:
-   where (fe(:) < f_norm) f_lnf(:) = (f_norm - fe(:))*log((f_norm - fe(:))/f_norm)
+   where (fe(:) < f_norm-eps) f_lnf(:) = (f_norm - fe(:))*log((f_norm - fe(:))/f_norm)
    Se = Se + SUM(f_lnf(:))
-   Se = -g_kb*Se
+   !Se = -g_kb*Se
+   Se = -g_kb_EV*Se  ! [eV/K]
 end subroutine  electronic_entropy
 
 
@@ -498,17 +773,17 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
       partial_DOS_sum = 0.0d0
    endif
    
-!    print*, 'get_DOS_sort test 1', Ngridsiz
+!     print*, 'get_DOS_sort test 1', Ngridsiz
    
    !$omp PARALLEL private(i, j_center, j, Gaus, i_at, i_types, temp)
    !$omp do schedule(dynamic) reduction( + : DOS_sum, partial_DOS_sum)
    do i = 1, Ngridsiz	! for all grid points
       ! Do the summation in two parts:
-!       print*, 'get_DOS_sort test 1.5'
+!        print*, 'get_DOS_sort test 1.5'
       
       call Find_in_monotonous_1D_array(Ei, DOS(1,i), j_center)	! module "Little_subroutines"
       
-!       print*, 'get_DOS_sort test 2'
+!        print*, 'get_DOS_sort test 2'
       
       ! 1) Contribution from the levels above the chosen point:
       if (j_center <= Nsiz) then
@@ -523,23 +798,23 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
                      do i_at = 1, N_at
                         do i_types = 1, N_types
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j)/temp, MASK = masks_DOS(i_at, i_types, :))
-!                            print*, 'get_DOS_sort test 3a'
+!                             print*, 'get_DOS_sort test 3a'
                            partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
-!                            print*, 'get_DOS_sort test 4a'
+!                             print*, 'get_DOS_sort test 4a'
                         enddo
                      enddo
                   endif
                elseif (present(CHij)) then
-!                   temp = SUM( dconjg(CHij(:,j)) * CHij(:,j) )
+                  !temp = SUM( dconjg(CHij(:,j)) * CHij(:,j) )
                   temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dconjg(CHij(:,j))*CHij(:,j)/temp, MASK = masks_DOS(i_at, i_types, :))
 !                            partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dconjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
-!                            print*, 'get_DOS_sort test 3b'
+!                             print*, 'get_DOS_sort test 3b'
                            partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
-!                            print*, 'get_DOS_sort test 4b'
+!                             print*, 'get_DOS_sort test 4b'
                         enddo
                      enddo
                   endif
@@ -547,7 +822,7 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
             endif
          enddo EL
       endif ! (j_center <= Nsiz)
-      ! 2) Contribution from the leves below the given point:
+      ! 2) Contribution from the levels below the given point:
       if (j_center > 1) then
          EL2:do j = (j_center-1), 1, -1	! for all energy levels below, down to the first one
             call Gaussian(Ei(j), sigma, DOS(1,i), Gaus)	! module "Little_subroutines"
@@ -588,14 +863,14 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
    !$omp end do
    !$omp end parallel
    
-!    print*, 'get_DOS_sort test 5'
+!     print*, 'get_DOS_sort test 5'
    
    DOS(2,:) = DOS_sum(:)
    if (do_partial) partial_DOS(:,:,:) = partial_DOS_sum(:,:,:)
    
    deallocate(DOS_sum)
    if (allocated(partial_DOS_sum)) deallocate(partial_DOS_sum)
-!    print*, 'get_DOS_sort test 6'
+!     print*, 'get_DOS_sort test 6'
 end subroutine get_DOS_sort
 
 
@@ -677,12 +952,12 @@ subroutine get_low_e_energy(Scell, matter, numpar)
    do NSC = 1, size(Scell)
       if (present(numpar)) then  ! there may be SCC calculations involved
          if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
-            call set_total_el_energy(Scell(NSC)%Ei_scc_part, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+            call set_total_el_energy(Scell(NSC)%Ei_scc_part, Scell(NSC)%fe, Scell(NSC)%nrg%El_low) ! below
          else ! non-SCC:
-            call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+            call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low) ! below
          endif
       else
-         call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low)
+         call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%El_low) ! below
       endif
    enddo
 end subroutine get_low_e_energy
@@ -874,10 +1149,13 @@ end subroutine set_Erf_distribution
 
 
 
-subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
-   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, Ce_partial, norm_fe)
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   real(8), intent(out) :: Ce	! current electron heat capacity [eV]
+   real(8), intent(out) :: Ce ! current electron heat capacity [J/(m^3 K)]
+   logical, intent(in) :: do_kappa  ! if kappa calculations are requested
+   real(8), dimension(:,:,:), intent(in), optional :: DOS_weights ! weigths of the particular type of orbital on each energy level
+   real(8), dimension(:), intent(out), allocatable, optional :: Ce_partial ! band-resolved Ce [J/(m^3 K)]
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
    real(8) :: Ntot	! number of electrons
    real(8) :: nat   ! number of atoms
@@ -887,6 +1165,16 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
    real(8) :: Dens	 ! atomic density
    real(8) :: coef   ! conversion coefficients with units
    real(8) :: C1, C2
+   logical :: do_partial
+   real(8), dimension(size(Scell(NSC)%Ei)) :: Ce_i
+
+    if (present(DOS_weights) .and. present(Ce_partial)) then ! partial contributions required:
+       do_partial = .true.
+       if (.not.allocated(Ce_partial)) allocate(Ce_partial(size(Scell(NSC)%G_ei_partial,1)))
+    else
+       do_partial = .false.
+    endif
+
    dTe = 10.0d0/g_kb	! [eV] -> [K]
    Ntot = dble(Scell(NSC)%Ne)
    nat = dble(Scell(NSC)%Na) ! number of atoms
@@ -900,10 +1188,18 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
       call Electron_Fixed_Te(Scell(NSC)%Ei, Ntot, mu0, Te+dTe) ! in case if the electron temperature is given
    endif
    dmu = (mu0 - mu)/dTe
-   if (present(norm_fe)) then
-      call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, norm_fe)
-   else
-      call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce)
+   if (present(norm_fe)) then ! normalization of fe provided:
+      if (do_partial) then
+         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, DOS_weights, Ce_partial, norm_fe)
+      else  ! no partial contributions required:
+         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, norm_fe=norm_fe)
+      endif
+   else  ! default normalization of fe:
+      if (do_partial) then
+         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, DOS_weights, Ce_partial)
+      else  ! no partial contributions required:
+         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce)
+      endif
    endif
 
    !Dens = Scell(NSC)%Ne_low/(Scell(NSC)%V)*1d24 ! [1/cm^3]
@@ -913,40 +1209,80 @@ subroutine get_electron_heat_capacity(Scell, NSC, Ce, norm_fe)
    coef = 1.0d30*g_e/g_kb  ! [eV/A^3] -> [J/m^3/K]
    Dens = 1.0d0/(Scell(NSC)%V) ! [1/A^3]
    Ce = Ce * Dens*coef  ! [J/(m^3 K)]
-!    C1 = Ce
+   if (do_partial) then
+      Ce_partial = Ce_partial * Dens*coef  ! [J/(m^3 K)]
+   endif
+
+   ! Save energy-level-resolved heat capacities, if needed:
+   if (do_kappa) then
+      Scell(NSC)%Ce_i = Ce_i/g_kb   ! [eV/K]
+   endif
 
    ! 2) High-energy electrons from MC:
    C2 = Scell(NSC)%Ne_high * Dens*coef
    Ce = Ce + C2
-!    print*, 'Ce:', C1, C2, Scell(NSC)%Ne_high
+
+   if (do_partial) then ! For simplicity, distribute the high-energy electrons equally:
+      Ce_partial = Ce_partial + C2/dble(size(Ce_partial))
+   endif
 
    if (isnan(Ce) .or. abs(Ce) >= 1d30) Ce = 0.0d0 ! if undefined or infinite
-end subroutine get_electron_heat_capacity
+
+end subroutine get_electronic_heat_capacity
 
 
-subroutine Get_Ce(Ei, Te, mu, dmu, C, norm_fe)
-    real(8), dimension(:) :: Ei
-    real(8) Te, mu, dmu, C
+subroutine Get_Ce(Ce_i, Ei, Te, mu, dmu, C, DOS_weights, Ce_partial, norm_fe)
+    real(8), dimension(:), intent(out) :: Ce_i
+    real(8), dimension(:), intent(in) :: Ei
+    real(8), intent(in) :: Te, mu, dmu
+    real(8), intent(out) :: C ! heat capacity
+    real(8), dimension(:,:,:), intent(in), optional :: DOS_weights ! weigths of the particular type of orbital on each energy level
+    real(8), dimension(:), intent(out), optional :: Ce_partial ! band-resolved Ce [J/(m^3 K)]
     real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
-    real(8) dfdT, E
-    integer i, N
+    !------------------------
+    real(8) :: dfdT, E, C_temp
+    integer :: i, N, N_at, N_types, i_at, i_types, i_G1
+    logical :: do_partial
+
+    if (present(DOS_weights) .and. present(Ce_partial)) then ! partial contributions required:
+       do_partial = .true.
+       Ce_partial = 0.0d0 ! to start with
+    else
+       do_partial = .false.
+    endif
+
+    if (do_partial) then
+      N_at = size(DOS_weights,1)    ! number of kinds of atoms
+      N_types = size(DOS_weights,2) ! number of atomic shells (basis set size)
+    endif
     N = size(Ei)
     C = 0.0d0
-    do i = 1, N
+    do i = 1, N   ! all energy levels
         E = Ei(i)
         if (present(norm_fe)) then
            dfdT = Diff_Fermi_Te(Te, mu, dmu, E, norm_fe)
         else
            dfdT = Diff_Fermi_Te(Te, mu, dmu, E)
         endif
-        C = C + dfdT*(E-mu) ! correct definition from Cv = T*dS/dT; S=entropy
+        C_temp = dfdT*(E-mu)  ! correct definition from Cv = T*dS/dT; S=entropy
+        C = C + C_temp     ! total
+        Ce_i(i) = C_temp   ! save for output
+
+        if (do_partial) then ! partial contributions required:
+           do i_at = 1, N_at ! all elements
+              do i_types = 1, N_types  ! all shells of each element
+                 i_G1 = (i_at-1) * N_types + i_types
+                 Ce_partial(i_G1) = Ce_partial(i_G1) + C_temp * DOS_weights(i_at, i_types, i)
+              enddo ! i_types
+           enddo ! i_at
+        endif ! do_partial
     enddo
 end subroutine
 
 
 pure function Diff_Fermi_Te(Te, mu, dmu, E, norm_fe)
    real(8), intent(in) :: Te, mu, dmu, E   ! [eV], temperature, chem.potential, and energy
-   real(8) :: Diff_Fermi_Te   ! Derivative of the Fermi-function
+   real(8) :: Diff_Fermi_Te   ! Derivative of the Fermi-function by temperature Te
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
    real(8) F, buf
    real(8) :: f_norm
@@ -970,6 +1306,34 @@ pure function Diff_Fermi_Te(Te, mu, dmu, E, norm_fe)
       endif
    endif
 end function Diff_Fermi_Te
+
+
+
+pure function Diff_Fermi_E(Te, mu, E, norm_fe) result(dfdE)
+   real(8), intent(in) :: Te, mu, E   ! [eV], temperature, chem.potential, and energy
+   real(8) :: dfdE   ! Derivative of the Fermi-function by energy
+   real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
+   real(8) F, buf
+   real(8) :: f_norm
+
+   if (present(norm_fe)) then    ! user provided
+      f_norm = norm_fe
+   else  ! by default, spin degenerate
+      f_norm = 2.0d0
+   endif
+
+   if (((E - mu)/Te) >= log(HUGE(mu))) then ! dealing with the problem of large and small numbers
+      dfdE = 0.0d0
+   else
+      buf = dexp((E - mu)/Te)
+      if ( buf > 1.0d30) then ! dealing with the problem of large and small numbers
+         dfdE = -f_norm/(buf*Te)
+      else  ! in case everything is ok
+         F = 1.0d0/(1.0d0 + buf)
+         dfdE = -f_norm*buf*F*F/Te
+      endif
+   endif
+end function Diff_Fermi_E
 
 
 
@@ -999,6 +1363,54 @@ subroutine Electron_Fixed_Te(wrD, Netot, mu, Te, norm_fe) ! in case if the elect
       if (ABS(a-b) .LT. 1d-12) exit ! it's too close anyway...
    enddo ! while
 end subroutine Electron_Fixed_Te
+
+
+
+function get_N_partial(fe, i_start, i_end) result(Ne)
+   real(8) Ne  ! number of electrons in the given inteval according to distribution function
+   real(8), dimension(:), intent(in) :: fe   ! given distribution function
+   integer, intent(in) :: i_start, i_end  ! starting and ending levels to include
+   !----------------------
+   Ne = SUM(fe(i_start:i_end))   ! total number of electrons in the givel interval
+end function get_N_partial
+
+function get_E_partial(wr, fe, i_start, i_end) result(Ee)
+   real(8) Ee  ! energy of electrons in the given inteval according to distribution function
+   real(8), dimension(:), intent(in) :: wr, fe   ! given energy levels and distribution function
+   integer, intent(in) :: i_start, i_end  ! starting and ending levels to include
+   !----------------------
+   Ee = SUM(wr(i_start:i_end) * fe(i_start:i_end))   ! total energy of electrons in the givel interval
+end function get_E_partial
+
+
+function get_N_partial_Fermi(wr, mu, Te, i_start, i_end) result(Ne)
+   real(8) Ne  ! number of electrons in the given inteval according to Fermi distribution
+   real(8), dimension(:), intent(in) :: wr   ! given energy levels
+   real(8), intent(in) :: Te ! electron temperature [eV]
+   real(8), intent(in) ::  mu ! chem.potential [eV]
+   integer, intent(in) :: i_start, i_end  ! starting and ending levels to include
+   !----------------------
+   if (Te > 1.0d-6) then
+      Ne = 2.0d0 * SUM(1.0d0/(1.0d0 + dexp((wr(:) - mu)/Te))) ! Fermi-function
+   else
+      Ne = 2.0d0 * dble(COUNT(wr(i_start:i_end) <= mu)) ! Fermi-function at T=0
+   endif
+end function get_N_partial_Fermi
+
+function get_E_partial_Fermi(wr, mu, Te, i_start, i_end) result(Ee)
+   real(8) Ee  ! energy of electrons in the given inteval according to Fermi distribution
+   real(8), dimension(:), intent(in) :: wr   ! given energy levels
+   real(8), intent(in) :: Te ! electron temperature [eV]
+   real(8), intent(in) ::  mu ! chem.potential [eV]
+   integer, intent(in) :: i_start, i_end  ! starting and ending levels to include
+   !----------------------
+   if (Te > 1.0d-6) then
+      Ee = 2.0d0 * SUM(wr(i_start:i_end)/(1.0d0 + dexp((wr(i_start:i_end) - mu)/Te))) ! Fermi-function
+   else
+      Ee = 2.0d0 * SUM(wr(i_start:i_end)) ! Fermi-function at T=0
+   endif
+end function get_E_partial_Fermi
+
 
 
 

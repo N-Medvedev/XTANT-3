@@ -3,7 +3,7 @@
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! This file is part of XTANT
 !
-! Copyright (C) 2012-2022 Nikita Medvedev
+! Copyright (C) 2012-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -49,41 +49,53 @@
 PROGRAM XTANT
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! Initiate modules with all the 'use' statements collected in a separate file:
-include 'Use_statements.f90'   	! include part of the code from an external file
+include 'Use_statements.f90'  ! include part of the code from an external file
 
 implicit none
+
+
+!MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+! Print XTANT label on the screen
+#ifdef OMP_inside
+   call XTANT_label(6, 1)   ! module "Dealing_with_output_files"
+#else ! if you set to use OpenMP in compiling: 'make OMP=no'
+   call XTANT_label(6, 4)   ! module "Dealing_with_output_files"
+#endif
 
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 g_numpar%which_input = 0 ! starting with the default input files
 g_numpar%allow_rotate = .false. ! do not allow rotation of the target, remove angular momentum from initial conditions
 1984 g_Err%Err = .false.
-g_Err%Err_descript = ''	! start with an empty string
+g_Err%Err_descript = '' ! start with an empty string
 g_Err%File_Num = 99
-open(UNIT = g_Err%File_Num, FILE = 'OUTPUT_Error_log.dat')
+!open(UNIT = g_Err%File_Num, FILE = 'OUTPUT_Error_log.dat')
+open(UNIT = g_Err%File_Num, FILE = trim(adjustl(m_Error_log_file)))
 
 ! Check if the user needs any additional info (by setting the flags):
 call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_Err%Err, &
-                  allow_rotate=g_numpar%allow_rotate, verbose=g_numpar%verbose) ! module "Dealing_with_output_files"
+                  allow_rotate=g_numpar%allow_rotate, verbose=g_numpar%verbose) ! module "Read_input_data"
 
 if (g_Err%Err) goto 2016     ! if the USER does not want to run the calculations
 ! Otherwise, run the calculations:
 call random_seed() ! standard FORTRAN seeding of random numbers
 call date_and_time(values=g_c1) ! standard FORTRAN time and date
-g_ctim=g_c1	! save the timestamp
+g_ctim=g_c1 ! save the timestamp
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
+
+call print_time('Attempting to start XTANT at', ind=0) ! prints out the current time, module "Little_subroutines"
 
 ! Set all the initial data, read and create files:
 ! Read input files:
 if (g_numpar%which_input > 0) then ! it's not the first run
    print*, '# It is run for input files number:', g_numpar%which_input
-   call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err, g_numpar%which_input) ! module "Read_input"
+   call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err, g_numpar%which_input) ! module "Read_input_data"
 else ! it is the first run:
    print*, '# It is the first run'
-   call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err) ! module "Read_input"
+   call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err) ! module "Read_input_data"
 endif
-if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
+if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
 ! Printout additional info, if requested:
-if (g_numpar%verbose) print*, 'Input files read succesfully'
+if (g_numpar%verbose) call print_time_step('Input files read succesfully:', msec=.true.)
 
 ! if you set to use OpenMP in compiling: "make"
 #ifdef OMP_inside
@@ -97,27 +109,32 @@ if (g_numpar%verbose) print*, 'Input files read succesfully'
 ! Starting time, to give enough time for system to thermalize before the pulse:
 call set_starting_time(g_laser, g_time, g_numpar%t_start, g_numpar%t_NA, g_numpar%t_Te_Ee) ! module "Little_subroutines"
 ! And check if user wants to reset it:
-call reset_dt(g_numpar, 0.0d0)   ! module "Dealing_with_output_files"
-
+call reset_dt(g_numpar, g_matter, g_time)   ! module "Dealing_with_output_files"
 
 ! Print the title of the program and used parameters on the screen:
-call Print_title(6,g_Scell,g_matter,g_laser,g_numpar) ! module "Dealing_with_output_files"
-call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
+!call Print_title(6,g_Scell,g_matter,g_laser,g_numpar) ! module "Dealing_with_output_files"
+! call print_time('Attempting to start at', ind=0) ! prints out the current time, module "Little_subroutines"
 
 ! Prepare initial conditions (read supercell and atomic positions from the files):
 call set_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err) ! module "Initial_configuration"
-if (g_Err%Err) goto 2012	! if there was an error in preparing the initial configuration, cannot continue, go to the end...
-if (g_numpar%verbose) print*, 'Initial configuration set succesfully'
+if (g_Err%Err) goto 2012   ! if there was an error in preparing the initial configuration, cannot continue, go to the end...
+if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true.)
+
+
+! Print the title of the program and used parameters on the screen:
+call Print_title(6, g_Scell, g_matter, g_laser, g_numpar, -1) ! module "Dealing_with_output_files"
+call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
+
 
 ! Read (or create) electronic mean free paths (both, inelastic and elastic):
-call get_MFPs(g_matter, g_laser, g_numpar, g_Err) ! module "MC_cross_sections"
-if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
-if (g_numpar%verbose) print*, 'Electron mean free paths set succesfully'
+call get_MFPs(g_Scell, 1, g_matter, g_laser, g_numpar, g_Scell(1)%TeeV, g_Err) ! module "MC_cross_sections"
+if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
+if (g_numpar%verbose) call print_time_step('Electron mean free paths set succesfully:', msec=.true.)
 
 ! Read (or create) photonic mean free paths:
 call get_photon_attenuation(g_matter, g_laser, g_numpar, g_Err) ! module "MC_cross_sections"
-if (g_Err%Err) goto 2012	! if there was an error in the input files, cannot continue, go to the end...
-if (g_numpar%verbose) print*, 'Photon attenuation lengths set succesfully'
+if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
+if (g_numpar%verbose) call print_time_step('Photon attenuation lengths set succesfully:', msec=.true.)
 
 if (.not.g_numpar%do_path_coordinate) then  ! only for real calculations, not for coordinate path
    call save_last_timestep(g_Scell) ! save atomic before making next time-step, module "Atomic_tools"
@@ -125,8 +142,8 @@ endif
 
 ! Create the folder where output files will be storred, and prepare the files:
 call prepare_output_files(g_Scell,g_matter, g_laser, g_numpar, g_Scell(1)%TB_Hamil(1,1), g_Scell(1)%TB_Repuls(1,1), g_Err) ! module "Dealing_with_output_files"
-if (g_Err%Err) goto 2012 	! if there was an error in preparing the output files, cannot continue, go to the end...
-if (g_numpar%verbose) print*, 'Output directory prepared succesfully'
+if (g_Err%Err) goto 2012   ! if there was an error in preparing the output files, cannot continue, go to the end...
+if (g_numpar%verbose) call print_time_step('Output directory prepared succesfully:', msec=.true.)
 
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Project-specific analysis of C60:
@@ -154,39 +171,50 @@ endif
 
 ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
 call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 1, g_Err, g_time) ! module "TB"
-if (g_numpar%verbose) print*, 'Initial Hamiltonian prepared succesfully'
+if (g_numpar%verbose) call print_time_step('Initial Hamiltonian prepared succesfully:', msec=.true.)
+
+! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
+call Electron_thermalization(g_Scell, g_numpar, skip_thermalization=.true.) ! module "Electron_tools"
 
 ! Get global energy of the system at the beginning:
 call get_glob_energy(g_Scell, g_matter) ! module "Electron_tools"
-if (g_numpar%verbose) print*, 'Initial energy prepared succesfully'
+if (g_numpar%verbose) call print_time_step('Initial energy prepared succesfully:', msec=.true.)
 
 ! Get initial optical coefficients:
 call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
-if (g_numpar%verbose) print*, 'Optical parameters prepared succesfully'
+if (g_numpar%verbose) call print_time_step('Optical parameters prepared succesfully:', msec=.true.)
 
 ! Get initial DOS:
 call get_DOS(g_numpar, g_matter, g_Scell, g_Err)	! module "TB"
-if (g_numpar%verbose) print*, 'DOS calculated succesfully'
+if (g_numpar%verbose) call print_time_step('DOS calculated succesfully:', msec=.true.)
 
 ! Get current Mulliken charges, if required:
 call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
                   g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne) ! module "TB"
-if (g_numpar%verbose) print*, 'Mulliken charges calculated succesfully'
-      
+if (g_numpar%verbose) call print_time_step('Mulliken charges calculated succesfully:', msec=.true.)
+
 ! Get the pressure in the atomic system:
 call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure,  g_Scell(1)%Stress)	! module "TB"
-if (g_numpar%verbose) print*, 'Pressure calculated succesfully'
+if (g_numpar%verbose) call print_time_step('Pressure calculated succesfully:', msec=.true.)
 
 ! Calculate the mean square displacement of all atoms:
 call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
-if (g_numpar%verbose) print*, 'Mean displacement calculated succesfully'
+if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true.)
+
+! Calculate electron heat capacity, entropy:
+call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
+
+! And save the (low-energy part of the) distribution on the grid, if required
+! (its high-energy part is inside of MC_Propagate subroutine):
+call get_low_energy_distribution(g_Scell(1), g_numpar) ! module "Electron_tools"
+
 
 ! Calculate configurational temperature:
 ! call Get_configurational_temperature(g_Scell, g_numpar, g_Scell(1)%Tconf)	! module "TB"
-   
+
 ! Save initial step in output:
 call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
-if (g_numpar%verbose) print*, 'Initial output files set succesfully'
+if (g_numpar%verbose) call print_time_step('Initial output files set succesfully:', msec=.true.)
 
 !DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD
 ! Now we can proceed with time:
@@ -198,81 +226,20 @@ g_dt_save = 0.0d0
 do while (g_time .LT. g_numpar%t_total)
    i_test = i_test + 1
    ! If there is a grid for changing time-step, change it:
-   call reset_dt(g_numpar, g_time)  ! module "Dealing_with_output_files"
+   call reset_dt(g_numpar, g_matter, g_time)  ! module "Dealing_with_output_files"
 
    AT_MOVE_1:if (g_numpar%do_atoms) then ! atoms are allowed to be moving:
       !1111111111111111111111111111111111111111111111111111111111
       ! Update atomic data on previous timestep and move further:
       call save_last_timestep(g_Scell) ! module "Atomic_tools"
-      ! Choose which MD propagator to use:
-      select case(g_numpar%MD_algo)
-      !00000000000000000000000000000000000000000
-      case default  ! velocity Verlet (2d order):
-         ! Atomic Verlet step:
-         call make_time_step_atoms(g_Scell, g_matter, g_numpar, 2)    ! module "Atomic_tools"
-         ! Supercell Verlet step:
-         call make_time_step_supercell(g_Scell, g_matter, g_numpar, 2) ! supercall Verlet step, module "Atomic_tools"
-         ! Update Hamiltonian after the atomic and supercell motion:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-      !11111111111111111111111111111111111111111
-      case (1)  ! Yoshida (4th order)
-         ! First step of Yoshida for atomic coordinates and for supercell vectors:
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 1, 1)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 1, 1) ! supercall Verlet step, module "Atomic_tools"
-         ! Update forces/accelerations after the first coordinates step:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-         ! First step of Yoshida for velosities:
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 1, 2)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 1, 2) ! supercall Verlet step, module "Atomic_tools"
-         
-         ! Second step of Yoshida
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 2, 1)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 2, 1) ! supercall Verlet step, module "Atomic_tools"
-         ! Update forces/accelerations after the first coordinates step:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-         ! Second step of Yoshida for velosities:
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 2, 2)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 2, 2) ! supercall Verlet step, module "Atomic_tools"
-         
-         ! Third step of Yoshida
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 3, 1)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 3, 1) ! supercall Verlet step, module "Atomic_tools"
-         ! Update forces/accelerations after the first coordinates step:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-         ! Third step of Yoshida for velosities:
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 3, 2)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 3, 2) ! supercall Verlet step, module "Atomic_tools"
-         
-         ! Fourth step of Yoshida
-         call make_time_step_atoms_Y4(g_Scell, g_matter, g_numpar, 4, 1)    ! module "Atomic_tools"
-         call make_time_step_supercell_Y4(g_Scell, g_matter, g_numpar, 4, 1) ! supercall Verlet step, module "Atomic_tools"
-         ! Update forces/accelerations after the first coordinates step:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-         ! Fourth step of Yoshida for velosities is absent, V4=V3.
-      !22222222222222222222222222222222222222222
-      case (2)  ! Martyna algorithm (4th order):
-         ! a) New coordinate:
-         call make_time_step_atoms_M(g_Scell, g_matter, g_numpar, 1)    ! module "Atomic_tools"
-         ! b) New potential:
-         call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 2, g_Err, g_time) ! module "TB"
-         ! c) New velocity:
-         call make_time_step_atoms_M(g_Scell, g_matter, g_numpar, 2)    ! module "Atomic_tools"
-         ! d) New effective force:
-         call make_time_step_atoms_M(g_Scell, g_matter, g_numpar, 3)    ! module "Atomic_tools"
-         ! e) New effective force velocity:
-         call make_time_step_atoms_M(g_Scell, g_matter, g_numpar, 4)    ! module "Atomic_tools"
-         ! f) New effective force acceleration:
-         call make_time_step_atoms_M(g_Scell, g_matter, g_numpar, 5)    ! module "Atomic_tools"
-         
-         ! For Supercell, use Verlet:
-         call make_time_step_supercell(g_Scell, g_matter, g_numpar, 2) ! supercall Verlet step, module "Atomic_tools"
-      endselect
-      if (g_numpar%verbose) print*, 'First step of MD step succesful'
+      ! Make the MD timestep (first part, in the case of Verlet):
+      call MD_step(g_Scell, g_matter, g_numpar, g_time, g_Err)  ! module "TB"
+      if (g_numpar%verbose) call print_time_step('First step of MD step succesful:', g_time, msec=.true.)
       
       !2222222222222222222222222222222222222222222222222222222
       ! Nonadiabatic electron-ion coupling:
       call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
-      if (g_numpar%verbose) print*, 'Electron_ion_coupling succesful'
+      if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true.)
 
       ! Quenching of atoms (zero-temperature MD):
       call Cooling_atoms(g_numpar, g_matter, g_Scell, g_time, g_numpar%at_cool_dt, g_numpar%at_cool_start, g_numpar%do_cool) ! module "Atomic_tools"
@@ -281,20 +248,28 @@ do while (g_time .LT. g_numpar%t_total)
       if (g_numpar%Transport_e) then ! for electrons
          ! Include Berendsen thermostat in the electronic system:
          call Electron_transport(1, g_time, g_Scell, g_numpar, g_matter, g_numpar%dt, g_matter%tau_bath_e, g_Err) ! module "Transport"
-         if (g_numpar%verbose) print*, 'Electron Berendsen thermostat succesful'
+         if (g_numpar%verbose) call print_time_step('Electron Berendsen thermostat succesful:', g_time, msec=.true.)
       endif
       if (g_numpar%Transport) then ! for atoms
          ! Include Berendsen thermostat in the atomic system:
          call Atomic_heat_transport(1, g_Scell, g_matter, g_numpar%dt, g_matter%tau_bath) ! module "Transport"
          ! Include change of the affected layer for calculation of optical constants:
          call Change_affected_layer(1, g_Scell(1)%eps%dd, g_Scell, g_numpar%dt, g_matter%tau_bath)  ! module "Transport"
-         if (g_numpar%verbose) print*, 'Atomic Berendsen thermostat succesful'
+         if (g_numpar%verbose) call print_time_step('Atomic Berendsen thermostat succesful:', g_time, msec=.true.)
+
       endif
    endif AT_MOVE_1
 
    ! Monte-Carlo for photons, high-energy electrons, and core holes:
    call MC_Propagate(g_MC, g_numpar, g_matter, g_Scell, g_laser, g_time, g_Err) ! module "Monte_Carlo"
-   if (g_numpar%verbose) print*, 'Monte Carlo model executed succesfully'
+   if (g_numpar%verbose) call print_time_step('Monte Carlo model executed succesfully:', g_time, msec=.true.) ! module "Little_subroutines"
+
+   ! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
+   call Electron_thermalization(g_Scell, g_numpar) ! module "Electron_tools"
+
+   ! And save the (low-energy part of the) distribution on the grid, if required
+   ! (its high-energy part is inside of MC_Propagate subroutine):
+   call get_low_energy_distribution(g_Scell(1), g_numpar) ! module "Electron_tools"
 
    ! Update corresponding energies of the system:
    call update_nrg_after_change(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
@@ -312,7 +287,7 @@ do while (g_time .LT. g_numpar%t_total)
          call make_time_step_supercell(g_Scell, g_matter, g_numpar, 1) ! supercell Verlet step, module "Atomic_tools"
          ! Update corresponding energies of the system:
          call get_new_energies(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
-      case (1)  ! Youshida (4th order)
+      case (1)  ! Yoshida (4th order)
          ! No divided steps, all of them are performed above
       case (2)  ! Martyna (4th order)
          ! No divided steps for atoms, but use Verlet for supercell:
@@ -324,7 +299,7 @@ do while (g_time .LT. g_numpar%t_total)
          call get_new_energies(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
       endselect
    endif AT_MOVE_2
-   if (g_numpar%verbose) print*, 'Second step of MD step succesful'
+   if (g_numpar%verbose) call print_time_step('Second step of MD step succesful:', g_time, msec=.true.) ! module "Little_subroutines"
 
    !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
    g_time = g_time + g_numpar%dt        ! [fs] next time-step
@@ -346,6 +321,9 @@ do while (g_time .LT. g_numpar%t_total)
       call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
       ! Calculate the mean square displacement of all atoms:
       call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD, g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
+      ! Calculate electron heat capacity, entropy:
+      call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
+
       ! Calculate configurational temperature:
 !       call Get_configurational_temperature(g_Scell, g_numpar, g_Scell(1)%Tconf)	! module "TB"
       ! Save current output data:
@@ -354,14 +332,14 @@ do while (g_time .LT. g_numpar%t_total)
       call communicate(g_numpar%FN_communication, g_time, g_numpar, g_matter) ! module "Dealing_with_output_files"
       g_dt_save = 0.0d0
 
-      if (g_numpar%verbose) print*, 'Output files written succesfully'
+      if (g_numpar%verbose) call print_time_step('Output files written succesfully:', g_time, msec=.true.)   ! module "Little_subroutines"
    endif
    !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
 enddo
 
 !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 ! Finish execution of the program:
-call close_file('delete', FN=g_numpar%FN_communication) ! module "Dealing_with_files"
+call close_file('delete', FN=g_numpar%FN_communication, File_name=g_numpar%Filename_communication) ! module "Dealing_with_files"
 2012 continue
 
 INQUIRE(UNIT = g_Err%File_Num, opened=file_opened, name=chtest)
@@ -377,7 +355,7 @@ endif
 call close_save_files()           ! module "Dealing_with_files"
 call close_output_files(g_Scell, g_numpar) ! module "Dealing_with_files"
 
-if (g_numpar%verbose) print*, 'Opened files closed succesfully'
+if (g_numpar%verbose) call print_time_step('Opened files closed succesfully', msec=.true.)
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 ! Convolve output files with finite duration of the probe pulse:
@@ -391,44 +369,69 @@ endif
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Printing out the duration of the program, starting and ending time and date:
-call date_and_time(values=g_c1)	    ! For calculation of the time of execution of the program
-g_as1=dble(24.0d0*60.0d0*60.0d0*(g_c1(3)-g_ctim(3))+3600.0d0*(g_c1(5)-g_ctim(5))+60.0d0*(g_c1(6)-g_ctim(6))+(g_c1(7)-g_ctim(7))+(g_c1(8)-g_ctim(8))*0.001d0)	! sec
-print*, '   '
-call parse_time(g_as1,chtest) ! module "Little_subroutines"
+call parse_time(chtest, c0_in=g_ctim) ! module "Little_subroutines"
 write(*,'(a,a)') 'Duration of execution of program: ', trim(adjustl(chtest))
 
 call save_duration(g_matter, g_numpar, trim(adjustl(chtest))) ! module "Dealing_with_output_files"
 
 call print_time('Started  at', ctim=g_ctim) ! module "Little_subroutines"
 call print_time('Finished at') ! module "Little_subroutines"
-!print*, '   '
+write(*,'(a)') trim(adjustl(m_starline))
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 write(*,'(a)')  'Executing gnuplot scripts to create plots...'
 call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
-if (g_numpar%verbose) print*, 'Gnuplot calles executed succesfully'
+if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully', msec=.true.)
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !Check if there is another set of input files to run next simulation:
  g_numpar%which_input = g_numpar%which_input + 1
- chtest = 'INPUT_DATA'//g_numpar%path_sep//'INPUT_MATERIAL'
+ chtest = trim(adjustl(m_INPUT_directory))//g_numpar%path_sep//trim(adjustl(m_INPUT_MATERIAL))
  write(chtest2,'(i3)') g_numpar%which_input
  write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
  inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
+ if (.not.file_exists) then ! check if the short-name file is present
+   chtest = trim(adjustl(m_INPUT_directory))//g_numpar%path_sep//trim(adjustl(m_INPUT_ALL))
+   write(chtest2,'(i3)') g_numpar%which_input
+   write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
+   inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
+ endif
+
  if (file_exists) then ! one file exists
-    chtest = 'INPUT_DATA'//g_numpar%path_sep//'NUMERICAL_PARAMETERS'
-    write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
-    inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
-    if (file_exists) then ! second input file exists
-       write(*,'(a,a)')  'Another set of input parameter files exists: ', trim(adjustl(chtest))
-       write(*,'(a)')    'Running XTANT again for these new parameters...'
-       call deallocate_all() ! module "Variables"
-       goto 1984 ! go to the beginning and run the program again for the new input files
-    else
+
+    write(*,'(a)') trim(adjustl(m_starline))
+    write(*,'(a,a)')  'Another set of input parameter files exists: '
+    print*, trim(adjustl(chtest))
+
+    if (.not.g_numpar%numpar_in_input) then ! a separate file with NumPar is required
+      chtest = trim(adjustl(m_INPUT_directory))//g_numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))
+      write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
+      inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
+      if (file_exists) then ! second input file exists
+         print*, 'and ', trim(adjustl(chtest))
+      else ! Maybe reuse the original file, if identical parameters are required:
+         print*, 'File ', trim(adjustl(chtest)), ' not found'
+         chtest = trim(adjustl(m_INPUT_directory))//g_numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+         inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
+         print*, 'File ', trim(adjustl(chtest)), ' will be reused'
+      endif
+    endif ! (.not.g_numpar%numpar_in_input)
+
+    if (.not.g_numpar%numpar_in_input .and. .not.file_exists) then ! second input file required but does not exist:
+       write(*,'(a)') trim(adjustl(m_starline))
        write(*,'(a,a,a)')  'File ', trim(adjustl(chtest)), ' could not be found.'
        write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
+    else ! file either not required, or it exists, we can continue
+       write(*,'(a)')    'Running XTANT again for these new parameters...'
+       call deallocate_all() ! module "Variables"
+       write(*,'(a)') trim(adjustl(m_starline))
+       goto 1984 ! go to the beginning and run the program again for the new input files
     endif
  else
+    write(*,'(a)') trim(adjustl(m_starline))
     write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
  endif
+ write(*,'(a)') trim(adjustl(m_starline))
 
 2016 continue
 
@@ -524,6 +527,8 @@ subroutine coordinate_path( )
        
        call write_energies(6, g_time, g_Scell(1)%nrg)   ! module "Dealing_with_output_files"
        call write_energies(100, g_time, g_Scell(1)%nrg)   ! module "Dealing_with_output_files"
+       call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
+
        ! Save initial step in output:
        call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
        
@@ -544,12 +549,18 @@ end subroutine coordinate_path
 subroutine vary_size(do_forces, Err)
    integer, optional, intent(in) :: do_forces
    logical, intent(out), optional :: Err
-   real(8) :: r_sh, x, y, z, E_vdW_interplane, g_time_save, z_sh, z_sh0, temp
-   integer i
+   real(8) :: r_sh, x, y, z, E_vdW_interplane, g_time_save, z_sh, z_sh0, temp, E_ZBL
+   real(8) :: d_i, i_min, i_max, rescale_factor
+   integer i, j, at1, at2, N_points
    character(13) :: char1
    logical yesno
-   open(UNIT = 100, FILE = 'OUTPUT_Energy.dat') !<-
-   
+   open(UNIT = 100, FILE = 'OUTPUT_Energy.dat')
+   if (present(do_forces)) then
+      write(100,'(a)') '#Distance   E_total  E_rep El_low   F_rep F_att'
+   else
+      write(100,'(a)') '#Distance   E_total  E_rep El_low   E_vdW E_ZBL Z_size'
+   endif
+
    g_time_save = g_time
    z_sh0 = 0.0d0
    
@@ -565,11 +576,23 @@ subroutine vary_size(do_forces, Err)
 !    enddo
 !    !----------------------------------------------
    
-   do i_test = 1,300 !<-
+   ! Set grid points:
+   i_min = g_numpar%change_size_min
+   i_max = g_numpar%change_size_max
+   N_points = g_numpar%change_size_step-1
+   d_i = (i_max - i_min)/dble(N_points)   ! step size in units of Supce
+
+   !print*, 'vary_size:', i_min, i_max, N_points, d_i
+
+   !do i_test = 1,300 !<-
+   do i_test = 1, g_numpar%change_size_step+1
       !----------------------------------------------
       ! General feature, changing size:
       
-       g_Scell(1)%supce = g_Scell(1)%supce0*(0.7d0 + dble(i_test)/200.0d0) !<-
+       !g_Scell(1)%supce = g_Scell(1)%supce0*(0.7d0 + dble(i_test)/200.0d0) !<-
+       rescale_factor = i_min  +  d_i*dble(i_test-1) !<-
+       g_Scell(1)%supce = g_Scell(1)%supce0 * rescale_factor   !<-
+       !print*, g_Scell(1)%supce0(1,1)*(0.7d0 + dble(i_test)/200.0d0), g_Scell(1)%supce(1,1)
       
 !       print*, 'g_Scell0', g_Scell(1)%supce0
 !       print*, 'g_Scell', g_Scell(1)%supce
@@ -594,27 +617,29 @@ subroutine vary_size(do_forces, Err)
 !       z_sh0 = z_sh
 !       !----------------------------------------------
 
-!        print*, 'Test 0'
-      call Det_3x3(g_Scell(1)%supce,g_Scell(1)%V) !<-
-      !g_time = g_Scell(1)%supce(3,3)/real(g_matter%cell_x)*0.25d0*sqrt(3.0d0)  !<- ZnS
-      !g_time = g_Scell(1)%supce(2,2)/real(g_matter%cell_x)*(r_sh)
-      
+      call Det_3x3(g_Scell(1)%supce,g_Scell(1)%V) !<- modlue "Algebra_tools"
+
       call Coordinates_rel_to_abs(g_Scell, 1, if_old=.true.)	! from the module "Atomic_tools"!<-
       
-!        print*, 'Test 1'
-      
-      g_time = 1d9
-      r_sh = 1d10
-      do i = 2,size(g_Scell(1)%MDatoms) ! find the nearest neighbour
-         call shortest_distance(g_Scell, 1, g_Scell(1)%MDatoms, 1, i, r_sh) ! module 'Atomic_tools'
-         if (g_time > r_sh) g_time = r_sh ! [A] nearest neighbor distance
+      g_time = 1d9   ! to start with
+      r_sh = 1d10    ! to start with
+      at1 = 1  ! to start with
+      at2 = 2  ! to start with
+      do j = 1,size(g_Scell(1)%MDatoms)-1 ! find the nearest neighbour
+         do i = j+1,size(g_Scell(1)%MDatoms) ! find the nearest neighbour
+            call shortest_distance(g_Scell, 1, g_Scell(1)%MDatoms, j, i, r_sh) ! module 'Atomic_tools'
+            if (g_time > r_sh) then
+               g_time = r_sh ! [A] nearest neighbor distance
+               at1 = j
+               at2 = i
+            endif
+         enddo
       enddo
       !call change_r_cut_TB_Hamiltonian(1.70d0*(g_Scell(1)%supce(3,3)*0.25d0)/1.3d0, TB_Waals=g_Scell(1)%TB_Waals) !<-
-!       print*, 'Test 2'
-      
+
       ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
       call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 1, g_Err, g_time) ! module "TB"
-!       print*, 'Test 2.5'
+      if (g_numpar%verbose) call print_time_step('Hamiltonian constructed and diagonalized', msec=.true.)
 
       ! Get global energy of the system at the beginning:
       call get_glob_energy(g_Scell, g_matter) ! module "Electron_tools"
@@ -622,37 +647,42 @@ subroutine vary_size(do_forces, Err)
       ! Get initial optical coefficients:
       call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
       
-!        print*, 'Test 3'
-      
       ! Get initial DOS:
       call get_DOS(g_numpar, g_matter, g_Scell, g_Err)	! module "TB"
 
       call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
                             g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne) ! module "TB"
+      call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
       ! Save initial step in output:
       call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
 
-!        print*, 'Test 5'
-      
       ! Get interplane energy for vdW potential:
       E_vdW_interplane = vdW_interplane(g_Scell(1)%TB_Waals, g_Scell, 1, g_numpar, g_matter)/dble(g_Scell(1)%Na) !module "TB"
 
+      ! Get ZBL potential is requested:
+      call get_total_ZBL(g_Scell, 1, g_matter, E_ZBL) ! module "ZBL_potential"
+      E_ZBL = E_ZBL/dble(g_Scell(1)%Na)   ! [eV] => [eV/atom]
+
       if (present(do_forces)) then
-         !print*, 'Supercell size:', i_test, g_Scell(1)%supce(1,1)/real(g_matter%cell_x), g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot !<-
-         print*, 'Supercell size:', i_test, g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW !<-
-         !write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_Scell(1)%supce(1,1)/real(g_matter%cell_x), g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%MDatoms(do_forces)%forces%rep(:), g_Scell(1)%MDatoms(do_forces)%forces%att(:) !<-
-         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%MDatoms(do_forces)%forces%rep(:), g_Scell(1)%MDatoms(do_forces)%forces%att(:) !<-
+         write(*,'(a,X1i0,a,X1i0,f14.6,f14.6,f14.6)') 'Supercell size:', i_test-1, &
+         ' '//trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
+         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)) , rescale_factor, g_time, &
+         g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
+         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') &
+               g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, &
+               g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%MDatoms(do_forces)%forces%rep(:), &
+               g_Scell(1)%MDatoms(do_forces)%forces%att(:)
       else
-         print*, 'Supercell size:', i_test, g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW !<-
-         !write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%nrg%E_vdW, g_Scell(1)%supce(3,3)*0.25d0 !<-
-         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, E_vdW_interplane, g_Scell(1)%supce(3,3)*0.25d0 !<-
+         write(*,'(a,X1i0,a,X1i0,X1i0,f14.6,f14.6,f14.6)') 'Supercell size:', i_test-1, &
+         ' '//trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
+         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)), at1, at2, rescale_factor, g_time, &
+         g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
+         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, &
+               g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, &
+               g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, E_vdW_interplane, E_ZBL, g_Scell(1)%supce(3,3)
       endif
-      
-!        print*, 'Test 6'
-      
-   enddo !<-
-   !g_time = -100.0d0
+   enddo
    g_time = g_time_save
    g_Scell(1)%supce = g_Scell(1)%supce0
 

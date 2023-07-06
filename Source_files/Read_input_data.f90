@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -26,34 +26,52 @@
 MODULE Read_input_data
 use Objects
 use Universal_constants
-use Variables
-use Little_subroutines
-use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file
+use Little_subroutines, only : print_time_step
+use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file, get_file_extension
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
-use Dealing_with_DFTB, only : m_DFTB_directory, construct_skf_filename, read_skf_file, same_or_different_atom_types, idnetify_basis_size
+use Dealing_with_DFTB, only : m_DFTB_directory, construct_skf_filename, read_skf_file, same_or_different_atom_types, &
+                           idnetify_basis_size, m_DFTB_norep_directory, read_skf_file_no_rep
 use Dealing_with_BOP, only : m_BOP_directory, m_BOP_file, read_BOP_parameters, idnetify_basis_size_BOP, &
                             read_BOP_repulsive, check_if_repulsion_exists
 use Dealing_with_3TB, only : m_3TB_directory, m_3TB_onsite_data, read_3TB_onsite_file , construct_3TB_filenames, &
                             read_3TB_2bdy_file, read_3TB_3bdy_file
-
 use Dealing_with_xTB, only : m_xTB_directory, read_xTB_parameters, identify_basis_size_xTB, identify_AOs_xTB
 use Periodic_table, only : Decompose_compound
 
-! For OpenMP
-USE OMP_LIB
+! Open_MP related modules from external libraries:
+#ifdef OMP_inside
+   USE IFLPORT, only : system
+   USE OMP_LIB, only : omp_get_max_threads
+#endif
 
 implicit none
+PRIVATE
+
 
 ! Modular parameters:
-character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
+character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_MINIMUM, m_INPUT_ALL, m_Atomic_parameters, &
+                  m_Hubbard_U, m_Communication
 
+character(70), parameter :: m_starline = '*************************************************************'
+character(70), parameter :: m_dashline = '-------------------------------------------------------------'
 
-parameter (m_INPUT_directory = 'INPUT_DATA')
-parameter (m_INPUT_MATERIAL = 'INPUT_MATERIAL')
-parameter (m_NUMERICAL_PARAMETERS = 'NUMERICAL_PARAMETERS')
-parameter (m_Atomic_parameters = 'Atomic_parameters')
-parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat')
+character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
+character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT info
+character(15), parameter :: m_HELP_file = 'HELP.txt'  ! file with the helpful info
+character(25), parameter :: m_List_ofmaterials = 'List_of_materials.txt'  ! list of materials existing
 
+parameter (m_INPUT_directory = 'INPUT_DATA')    ! directory with all the input data
+parameter (m_INPUT_MATERIAL = 'INPUT_MATERIAL') ! old format, material and pulse parameters
+parameter (m_NUMERICAL_PARAMETERS = 'NUMERICAL_PARAMETERS') ! old format, numerical parameters
+parameter (m_INPUT_MINIMUM = 'INPUT_MINIMUM') ! format with only parameters different from default (to be depricated)
+parameter (m_INPUT_ALL = 'INPUT') ! new format with all parameters together
+parameter (m_Atomic_parameters = 'Atomic_parameters') ! data-file with atomic parameters
+parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat') ! data-file with Hubbard-U parameters (for SCC calculations)
+parameter (m_Communication = 'Communication.txt')  ! file for comunication with the user
+
+public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
+public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL
+public :: Read_Input_Files, get_add_data, m_Communication, m_dashline
 
  contains
 
@@ -68,9 +86,15 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    integer :: N
    ! Here we set default values, in case some of them are not given by the user:
    matter%Name = '' ! Material name
+   numpar%Cell_filename = ''  ! no name given, defaults are hardcoded in nodule "Initial_configuration"
    matter%Chem = '' ! chemical formula of the compound
    if (.not.allocated(Scell)) allocate(Scell(1)) ! So far we only use 1 supercell
-   numpar%lin_scal = 0   ! do not use linear scaling TB
+   numpar%numpar_in_input = .false.    ! assume separate file with the numerical parameters
+   numpar%change_size_min = 0.7d0   ! default starting point for vary_size
+   numpar%change_size_max = 2.1d0   ! default ending point for vary_size
+   numpar%change_size_step = 300    ! default number of points for vary_size
+
+   numpar%lin_scal = 0   ! do not use linear scaling TB (NOT READY)
    Scell(1)%Te = 300.0d0 ! initial electron temperature [K]
    Scell(1)%TeeV = Scell(1)%Te/g_kb ! [eV] electron temperature
    Scell(1)%Ta = 300.0d0 ! initial atomic temperature [K]
@@ -121,11 +145,13 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%t_Te_Ee = 1.0d-3	! when to start coupling
    numpar%NA_kind = 1	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
    numpar%Nonadiabat = .true.  ! included
+   numpar%tau_fe = 1.0d0   ! Characteristic electron relaxation time [fs]
    numpar%scc = .true.  ! included
    numpar%scc_gam_ind = 0  ! Wolf's Coulomb model
    numpar%scc_mix = 1.0d0  ! maximal mixing
    numpar%t_NA = 1.0d-3	! [fs] start of the nonadiabatic
    numpar%acc_window = 5.0d0	! [eV] acceptance window for nonadiabatic coupling:
+   numpar%do_kappa = .false.  ! electron heat conductivity calculation
    numpar%do_cool = .false.	! quenching excluded
    numpar%at_cool_start = 2500.0	! starting from when [fs]
    numpar%at_cool_dt = 40.0	! how often [fs]
@@ -144,6 +170,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%save_DOS = .false.	! excluded calculation and printout of DOS
    numpar%Smear_DOS = 0.05d0	! [eV] default smearing for DOS calculations
    numpar%save_fe = .false.	! excluded printout distribution function
+   numpar%save_fe_grid = .false.	! excluded printout distribution function on the grid
    numpar%save_PCF = .false.	! excluded printout pair correlation function
    numpar%save_XYZ = .true.	! included printout atomic coordinates in XYZ format
    numpar%save_CIF = .true.	! included printout atomic coordinates in CIF format
@@ -151,8 +178,11 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%NN_radius = 0.0d0 ! radius of nearest neighbors defined by the user [A]
    numpar%MSD_power = 1     ! by default, print out mean displacement [A^1]
    numpar%save_NN = .false. ! do not print out nearest neighbors numbers
-   numpar%do_elastic_MC = .true.	! allow elastic scattering of electrons on atoms within MC module
-   numpar%r_periodic(:) = .true.	! use periodic boundaries along each direction of the simulation box
+   numpar%do_elastic_MC = .true. ! allow elastic scattering of electrons on atoms within MC module
+   numpar%r_periodic(:) = .true. ! use periodic boundaries along each direction of the simulation box
+   ! Setting supercell for biomolecules, embedding in water:
+   numpar%embed_water = .false.  ! no water added
+   numpar%N_water_mol = 100      ! default number of water molecules
    ! number of k-points in each direction (used only for Trani-k!):
    numpar%ixm = 1
    numpar%iym = 1
@@ -196,6 +226,7 @@ subroutine initialize_default_single_laser(laser, i) ! Must be already allocated
    integer, intent(in) :: i	! number of the pulse
    laser(i)%F = 0.0d0  ! ABSORBED DOSE IN [eV/atom]
    laser(i)%hw = 100.0d0  ! PHOTON ENERGY IN [eV]
+   laser(i)%FWHM_hw = 0.0d0  ! distribution of photon energies [eV]
    laser(i)%t = 10.0d0	  ! PULSE FWHM-DURATION IN
    laser(i)%KOP = 1  	  ! type of pulse: 0=rectangular, 1=Gaussian, 2=SASE
    !laser(i)%t = laser(i)%t/2.35482	! make a gaussian parameter out of it
@@ -247,17 +278,17 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
 !    class(TB_Hamiltonian), dimension(:), allocatable, intent(out) ::  TB_Hamil ! parameters of the Hamiltonian of TB
    type(Error_handling), intent(inout) :: Err	! error save
    integer, intent(in), optional :: Numb ! number of input files to use
-
+   !-----------------------------
+   type(User_overwrite_data) :: user_data
    real(8) temp
    integer FN, Reason, count_lines, N, i
-   logical file_exist, file_opened, read_well
-   character(100) Error_descript, Folder_name, File_name
+   logical :: file_exist, file_opened, read_well, new_format_exists
+   character(100) Error_descript, Folder_name, File_name, File_name_NEW
    character(3) chnum
    
    !--------------------------------------------------------------------------
    ! In case the user didn't define something, the default values will be used
-   ! So, the user does not have to define everything every time. 
-   ! Set default values:
+   ! Set the default values:
    call initialize_default_values(matter, numpar, laser, Scell)
    !--------------------------------------------------------------------------
    ! Now, read the input file:
@@ -266,19 +297,23 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep
    numpar%input_path = Folder_name ! save the address with input files
 
-   ! New input file format:
+   ! File in minimum-format:
    if (.not.present(Numb)) then ! first run, use default files:
-      File_name = trim(adjustl(Folder_name))//'INPUT.txt'
+      File_name = trim(adjustl(Folder_name))//trim(adjustl(m_INPUT_MINIMUM))//'.txt'
    else ! it's not the first run, use next set of parameters:
-      File_name = trim(adjustl(Folder_name))//'INPUT'
+      File_name = trim(adjustl(Folder_name))//trim(adjustl(m_INPUT_MINIMUM))
       write(chnum,'(i3)') Numb
       write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
    endif
-   inquire(file=trim(adjustl(File_name)),exist=file_exist)
+   inquire(file=trim(adjustl(File_name)),exist=new_format_exists)
    
-   NEW_FORMAT:if (file_exist) then ! read parameters from the new file format
+   !-------------------------------
+   ! Read input parameters in various formats:
+   NEW_FORMAT:if (new_format_exists) then ! minimum format (inconvenient, to be deprecated)
       call read_input_txt(File_name, Scell, matter, numpar, laser, Err) ! see above
-      if (g_Err%Err) goto 3416
+      if (Err%Err) goto 3416
+
+   !-------------------------------
    else NEW_FORMAT ! Then use old format of two files
       ! First read material and pulse parameters:
       if (.not.present(Numb)) then ! first run, use default files:
@@ -291,9 +326,22 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
       endif
       inquire(file=trim(adjustl(File_name)),exist=file_exist)
+
+      ! Check the short name of the file, if needed:
+      TWO_OR_ONE_FILE:if (.not.file_exist) then ! try the short name:
+         if (.not.present(Numb)) then ! first run, use default files:
+            File_name = trim(adjustl(Folder_name))//trim(adjustl(m_INPUT_ALL))//'.txt'
+         else ! it's not the first run, use next set of parameters:
+            File_name = trim(adjustl(Folder_name))//trim(adjustl(m_INPUT_ALL))
+            write(chnum,'(i3)') Numb
+            write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
+         endif
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      endif TWO_OR_ONE_FILE
+
       INPUT_MATERIAL:if (file_exist) then
-         call read_input_material(File_name, Scell, matter, numpar, laser, Err) ! see below
-         if (g_Err%Err) goto 3416
+         call read_input_material(File_name, Scell, matter, numpar, laser, user_data, Err) ! see below
+         if (Err%Err) goto 3416
       else
          write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
          call Save_error_details(Err, 1, Error_descript)
@@ -301,29 +349,39 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          goto 3416
       endif INPUT_MATERIAL
 
-
       ! Read numerical parameters:
-      if (.not.present(Numb)) then ! first run, use default files:
-         !File_name = trim(adjustl(Folder_name))//'NUMERICAL_PARAMETERS.txt'
-         File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
-      else ! it's not the first run, use next set of parameters:
-      !File_name = trim(adjustl(Folder_name))//'NUMERICAL_PARAMETERS'
-      File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))
-         write(chnum,'(i3)') Numb
-         write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
-      endif
-      inquire(file=trim(adjustl(File_name)),exist=file_exist)
-      NUMERICAL_PARAMETERS:if (file_exist) then
-         call read_numerical_parameters(File_name, matter, numpar, laser, Scell, Err) ! see below
-         if (g_Err%Err) goto 3416
-      else
-         write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
-         call Save_error_details(Err, 1, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3416
-      endif NUMERICAL_PARAMETERS
-   endif NEW_FORMAT
+      if (.not.numpar%numpar_in_input) then ! if the parameters were not provided in the INPUT-file, try a separate file:
+         if (.not.present(Numb)) then ! first run, use default files:
+            File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+         else ! it's not the first run, use next set of parameters:
+            File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))
+            write(chnum,'(i3)') Numb
+            write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
+         endif
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         ! Maybe reuse the default one, if identical parameters are to be used:
+         if (.not.file_exist) then
+            File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         endif
 
+         NUMERICAL_PARAMETERS:if (file_exist) then
+            call read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err) ! see below
+            if (Err%Err) goto 3416
+         else
+            write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
+            call Save_error_details(Err, 1, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3416
+         endif NUMERICAL_PARAMETERS
+      endif ! (.not.numpar%numpar_in_input)
+   endif NEW_FORMAT
+   !-------------------------------
+
+   ! Check if the molecule needs to be embedded in water (as requested in input file):
+   if (numpar%embed_water) then
+      call add_water_to_chemical_formulae(matter, numpar)   ! below
+   endif
 
    if (.not.allocated(Scell)) allocate(Scell(1)) ! for the moment, only one super-cell
 
@@ -335,13 +393,19 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       Scell(i)%N_Egap = -1	! just to start with something
       ! Read TB parameters:
       if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
-         call read_TB_parameters(matter, numpar, Scell(i)%TB_Repuls, Scell(i)%TB_Hamil, Scell(i)%TB_Waals, Scell(i)%TB_Coul, Scell(i)%TB_Expwall, Err)
+         call read_TB_parameters(matter, numpar, Scell(i)%TB_Repuls, Scell(i)%TB_Hamil, &
+                           Scell(i)%TB_Waals, Scell(i)%TB_Coul, Scell(i)%TB_Expwall, Err) ! below
       else ! do only MC part
           ! Run it like XCASCADE
       endif
    enddo
-   !if (matter%dens < 0.0d0) matter%dens = ABS(matter%dens) ! just in case there was no better given density (no cdf file was used)
-   matter%At_dens = matter%dens/(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3)   ! atomic density [1/cm^3]
+
+   ! Check if the user provided atomic data to overwrite the default values:
+   call overwrite_atomic_data(user_data, matter)   ! below
+
+   ! Atomic density [1/cm^3] (may be overwritten in the module "Initial_configuration", if negative):
+   matter%At_dens = matter%dens/(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3)
+
 
    ! Check k-space grid file:
    call read_k_grid(matter, numpar, Err)	! below
@@ -370,6 +434,66 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
 
 3416 continue !exit in case if input files could not be read
 end subroutine Read_Input_Files
+
+
+
+subroutine add_water_to_chemical_formulae(matter, numpar)   ! below
+   type(Solid), intent(inout) :: matter   ! all material parameters
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   !-----------------------------
+   character(200) :: Folder_name, error_message
+   character(100) :: chem_form, temp
+   character(3) :: atom_elem
+   integer :: N_at, i_H, i_O, INFO, i, N_SC
+   integer, dimension(:), allocatable :: at_numbers
+   real(8), dimension(:), allocatable :: at_percentage
+   character(3), dimension(:), allocatable :: at_short_names ! name of the element
+   logical :: H_exists, O_exists
+
+!     print*, 'Chemical formula old: ', trim(adjustl(matter%Chem))
+
+   ! Check if the atoms from the water molecule are already present:
+   chem_form = trim(adjustl(matter%Chem)) ! save chemical formula
+   Folder_name = trim(adjustl(numpar%input_path))//trim(adjustl(m_Atomic_parameters))   !'Atomic_parameters'
+
+   call Decompose_compound(Folder_name, chem_form, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, at_percentage, at_short_names) ! molude 'Periodic_table'
+
+   if (INFO == 0) then
+      H_exists = .false.   ! to start with
+      O_exists = .false.   ! to start with
+
+      N_SC = INT(matter%cell_x*matter%cell_y*matter%cell_z) ! number of molecules in the supercell
+      matter%Chem = ''  ! to start with
+      do i = 1, size(at_short_names)
+         if (trim(adjustl(at_short_names(i))) == 'H') then
+            ! That's how many hyhdrogens there are in total (molecule + water):
+            write(temp,'(i6)') INT(at_percentage(i))*N_SC + numpar%N_water_mol*2
+            matter%Chem = trim(adjustl(matter%Chem))//'H'//trim(adjustl(temp))
+            H_exists = .true. ! found it, added into the chemical formula
+         elseif (trim(adjustl(at_short_names(i))) == 'O') then
+            ! That's how many oxygens there are in total (molecule + water):
+            write(temp,'(i6)') INT(at_percentage(i))*N_SC + numpar%N_water_mol
+            matter%Chem = trim(adjustl(matter%Chem))//'O'//trim(adjustl(temp))
+            O_exists = .true. ! found it, added into the chemical formula
+         else  ! all other elements just write back as they are (x number of unit cells)
+            write(temp,'(i6)') INT(at_percentage(i))*N_SC
+            matter%Chem = trim(adjustl(matter%Chem))//trim(adjustl(at_short_names(i)))//trim(adjustl(temp))
+         endif
+      enddo
+      ! Add at the end H or O, if they were not in the formula:
+      if (.not.H_exists) then
+         write(temp,'(i6)') numpar%N_water_mol*2
+         matter%Chem = trim(adjustl(matter%Chem))//'H'//trim(adjustl(temp))
+      endif
+      if (.not.O_exists) then
+         write(temp,'(i6)') numpar%N_water_mol
+         matter%Chem = trim(adjustl(matter%Chem))//'O'//trim(adjustl(temp))
+      endif
+   endif ! (INFO .NE. 0)
+!     print*, 'Chemical formula new: ', trim(adjustl(matter%Chem))
+!     pause 'Chem done'
+end subroutine add_water_to_chemical_formulae
+
 
 
 subroutine read_SCC_Hubbard(File_name, matter, SCC)
@@ -423,7 +547,7 @@ subroutine read_SCC_Hubbard(File_name, matter, SCC)
          if ( trim(adjustl(El_name)) == trim(adjustl(matter%Atoms(i)%Name)) ) then
             found_el = .true.
             !matter%Atoms(i)%Hubbard_U = U_read * 0.5d0   ! alternative definition with 1/2
-            matter%Atoms(i)%Hubbard_U = U_read
+            matter%Atoms(i)%Hubbard_U = U_read  ! [eV]
 
             rewind(FN)  ! start the search for the next element
             exit SFE ! found element, go to the next one
@@ -599,7 +723,7 @@ subroutine get_CDF_data(matter, numpar, Err)
       read(FN,*,IOSTAT=Reason)	! skip first line with the name of the material
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript))
          goto 3420
@@ -608,7 +732,7 @@ subroutine get_CDF_data(matter, numpar, Err)
       read(FN,*,IOSTAT=Reason) matter%Chem ! chemical formula of the material
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript))
          goto 3420
@@ -616,7 +740,8 @@ subroutine get_CDF_data(matter, numpar, Err)
 
       !Folder_name2 = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))//'Atomic_parameters'
       Folder_name2 = trim(adjustl(numpar%input_path))//trim(adjustl(m_Atomic_parameters))  ! 'Atomic_parameters'
-      call Decompose_compound(Folder_name2, matter%Chem, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, at_percentage, at_short_names, at_names, at_masses, at_NVE) ! molude 'Dealing_with_EADL'
+      call Decompose_compound(Folder_name2, matter%Chem, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, &
+                  at_percentage, at_short_names, at_names, at_masses, at_NVE) ! molude 'Periodic_table'
       if (INFO .NE. 0) then
          call Save_error_details(Err, INFO, error_message)
          print*, trim(adjustl(error_message))
@@ -630,13 +755,14 @@ subroutine get_CDF_data(matter, numpar, Err)
          matter%Atoms(i)%Ma = at_masses(i)*g_Mp ! [kg]
          matter%Atoms(i)%percentage = at_percentage(i)
          matter%Atoms(i)%NVB = at_NVE(i)
-!          print*, matter%Atoms(i)%Name, matter%Atoms(i)%Ma, matter%Atoms(i)%NVB
+          !print*, matter%Atoms(i)%Name, matter%Atoms(i)%Ma, matter%Atoms(i)%NVB
+          !pause 'get_CDF_data'
       enddo
 
       read(FN,*,IOSTAT=Reason) retemp ! skip this line - density is given elsewhere
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript))
          goto 3420
@@ -647,7 +773,7 @@ subroutine get_CDF_data(matter, numpar, Err)
          read(FN,*,IOSTAT=Reason) matter%Atoms(i)%sh	! number of shells in this element
          call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
-            write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
             call Save_error_details(Err, 3, Error_descript)
             print*, trim(adjustl(Error_descript))
             goto 3420
@@ -678,15 +804,16 @@ subroutine get_CDF_data(matter, numpar, Err)
             read(FN,*,IOSTAT=Reason) matter%Atoms(i)%N_CDF(j), matter%Atoms(i)%Shl_dsgnr(j), matter%Atoms(i)%Ip(j), matter%Atoms(i)%Ne_shell(j), matter%Atoms(i)%Auger(j)
             call read_file(Reason, count_lines, read_well)
             if (.not. read_well) then
-               write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+               write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                call Save_error_details(Err, 3, Error_descript)
                print*, trim(adjustl(Error_descript))
                goto 3420
             endif
+            matter%Atoms(i)%Shell_name(j) = ''  ! no name yet, to be defined  in the next subroutine
 
-            call check_atomic_data(matter, numpar, Err, i, j, matter%Atoms(i)%sh) 
+            call check_atomic_data(matter, numpar, Err, i, j, matter%Atoms(i)%sh)   ! below
 
-            DOCDF:if (matter%Atoms(i)%N_CDF(j) .GT. 0) then ! do this shell with CDF
+            DOCDF:if (matter%Atoms(i)%N_CDF(j) .GT. 0) then ! do this shell with provided CDF coefficients
                matter%Atoms(i)%TOCS(j) = 1 ! CDF cross-section
                allocate(matter%Atoms(i)%CDF(j)%A(matter%Atoms(i)%N_CDF(j)))
                allocate(matter%Atoms(i)%CDF(j)%E0(matter%Atoms(i)%N_CDF(j)))
@@ -696,12 +823,13 @@ subroutine get_CDF_data(matter, numpar, Err)
                   read(FN,*,IOSTAT=Reason) matter%Atoms(i)%CDF(j)%E0(k), matter%Atoms(i)%CDF(j)%A(k), matter%Atoms(i)%CDF(j)%G(k)
 !                   write(*,*) matter%Atoms(i)%CDF(j)%E0(k), matter%Atoms(i)%CDF(j)%A(k), matter%Atoms(i)%CDF(j)%G(k)
                   if (.not. read_well) then
-                     write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+                     write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                      call Save_error_details(Err, 3, Error_descript)
                      print*, trim(adjustl(Error_descript))
                      goto 3420
                   endif
                enddo
+
             else DOCDF
                matter%Atoms(i)%TOCS(j) = 0 ! BEB cross-section
             endif DOCDF
@@ -730,6 +858,7 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot)
    integer FN, INFO, j, Z, imax, imin, N_shl
    real(8), dimension(:), allocatable :: Nel   ! number of electrons in each shell
    integer, dimension(:), allocatable :: Shl_num ! shell designator
+   character(11), dimension(:), allocatable :: Shell_name
    logical :: file_exist, file_opened
 
    ! Open eadl.all database:
@@ -762,9 +891,21 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot)
    select case (INFO)
    case (0)
       Z =  matter%Atoms(i)%Z ! atomic number
+
+      ! Shell name:
+      if (LEN(trim(adjustl(matter%Atoms(i)%Shell_name(cur_shl)))) < 1) then ! take if from EADL-database
+         if ( matter%Atoms(i)%Shl_dsgnr(cur_shl) >= 63 ) then
+            matter%Atoms(i)%Shell_name(cur_shl) = 'Valence'
+         else ! core shell
+            call READ_EADL_TYPE_FILE_int(FN, File_name, Z, 912, INFO, error_message=Error_descript, N_shl=N_shl, &
+                  Nel=Nel, Shell_name=Shell_name)    ! module "Dealing_with_EADL"
+            matter%Atoms(i)%Shell_name(cur_shl) = Shell_name(cur_shl)
+         endif
+      endif
       ! Number of electrons in this shell:
       if (matter%Atoms(i)%Ne_shell(cur_shl) .LT. 0) then ! take if from EADL-database
-         call READ_EADL_TYPE_FILE_int(FN, File_name, Z, 912, INFO, error_message=Error_descript, N_shl=N_shl, Nel=Nel, Shl_num=Shl_num) ! module "Dealing_with_EADL"
+         call READ_EADL_TYPE_FILE_int(FN, File_name, Z, 912, INFO, error_message=Error_descript, N_shl=N_shl, &
+                  Nel=Nel, Shl_num=Shl_num) ! module "Dealing_with_EADL"
          if (INFO .NE. 0) then
             call Save_error_details(Err, INFO, Error_descript)
             print*, trim(adjustl(Error_descript))
@@ -781,13 +922,17 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot)
       endif
       ! Ionization potential:
       if (matter%Atoms(i)%Ip(cur_shl) .LT. 0.0d0) then ! take if from EADL-database
-         call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 913, matter%Atoms(i)%Ip, cur_shl=cur_shl, shl_tot=shl_tot, Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! read auger-times, module "Dealing_with_EADL"
+         ! Read auger-times:
+         call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 913, matter%Atoms(i)%Ip, cur_shl=cur_shl, shl_tot=shl_tot, &
+               Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! module "Dealing_with_EADL"
          if (INFO .NE. 0) then
             call Save_error_details(Err, INFO, Error_descript)
             print*, trim(adjustl(Error_descript))
             goto 9999
          endif
-         call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 914, matter%Atoms(i)%Ek, cur_shl=cur_shl, shl_tot=shl_tot, Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! read kinetic energies, module "Dealing_with_EADL"
+         ! Read kinetic energies:
+         call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 914, matter%Atoms(i)%Ek, cur_shl=cur_shl, shl_tot=shl_tot, &
+               Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! module "Dealing_with_EADL"
          if (INFO .NE. 0) then
             call Save_error_details(Err, INFO, Error_descript)
             print*, trim(adjustl(Error_descript))
@@ -797,7 +942,9 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot)
       endif
       ! Auger-decay time:
       if (matter%Atoms(i)%Auger(cur_shl).LT. 0.0d0) then ! take if from EADL-database
-        call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 922, matter%Atoms(i)%Auger, cur_shl=cur_shl, shl_tot=shl_tot, Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! read auger-times, module "Dealing_with_EADL"
+        ! Read auger-times:
+        call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 922, matter%Atoms(i)%Auger, cur_shl=cur_shl, shl_tot=shl_tot, &
+               Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! module "Dealing_with_EADL"
         if (INFO .NE. 0) then
             call Save_error_details(Err, INFO, Error_descript)
             print*, trim(adjustl(Error_descript))
@@ -844,8 +991,8 @@ subroutine get_EADL_data(matter, numpar, Err)
    do i = 1, matter%N_KAO ! for all sorts of atoms
       matter%Atoms(i)%Z = at_numbers(i)
       matter%Atoms(i)%Name = at_short_names(i)
-      !matter%Atoms(i)%Ma = at_masses(i)
-      matter%Atoms(i)%Ma = at_masses(i)*g_Mp ! [kg]
+      !matter%Atoms(i)%Ma = at_masses(i)*g_Mp ! [kg]
+      matter%Atoms(i)%Ma = at_masses(i)*g_amu ! [kg]
       matter%Atoms(i)%percentage = at_percentage(i)
       matter%Atoms(i)%NVB = at_NVE(i)
    enddo
@@ -890,7 +1037,7 @@ subroutine get_EADL_data(matter, numpar, Err)
 
 
       ! Then correct it to exclude VB:
-      call exclude_BV(i, matter%Atoms(i)%sh, matter%Atoms(i)%Ne_shell, matter%Atoms(i)%NVB, mod_shl_num)
+      call exclude_VB(i, matter%Atoms(i)%sh, matter%Atoms(i)%Ne_shell, matter%Atoms(i)%NVB, mod_shl_num)
       old_shl_num = matter%Atoms(i)%sh ! save old uppermost level to use as initial band gap
       matter%Atoms(i)%sh = mod_shl_num ! new number of shells
 !       print*, 'itest', i, matter%Atoms(i)%sh , mod_shl_num 
@@ -961,11 +1108,12 @@ subroutine get_EADL_data(matter, numpar, Err)
          matter%Atoms(i)%Ip(mod_shl_num) = E_gap ! VB only for 1st kind of atoms
          matter%Atoms(i)%Ek(mod_shl_num) = 0.0d0 ![eV]
          matter%Atoms(i)%Auger(mod_shl_num) = 1d23 ! [fs] no Auger-decays of VB
+         matter%Atoms(i)%Ne_shell(mod_shl_num) = matter%Atoms(i)%NVB ! number of valence electrons
       endif
-!        print*, 'Total numbert of shells:', matter%Atoms(i)%sh
-!        do j = 1, matter%Atoms(i)%sh
-!           print*, 'Names:', trim(adjustl(matter%Atoms(i)%Shell_name(j)))
-!        enddo
+!       print*, 'Total numbert of shells:', matter%Atoms(i)%sh
+!       do j = 1, matter%Atoms(i)%sh
+!          print*, 'Names:', trim(adjustl(matter%Atoms(i)%Shell_name(j)))
+!       enddo
 !       print*, 'Shl_dsgnr:', matter%Atoms(i)%Shl_dsgnr
 !       print*, 'Ne_shell:', matter%Atoms(i)%Ne_shell
 !       print*, 'Ip:', matter%Atoms(i)%Ip
@@ -987,7 +1135,7 @@ subroutine get_EADL_data(matter, numpar, Err)
 end subroutine get_EADL_data
 
 
-subroutine exclude_BV(NOA, sh, Ne_shell, NVB, mod_shl_num, N_shl)
+subroutine exclude_VB(NOA, sh, Ne_shell, NVB, mod_shl_num, N_shl)
    integer, intent(in) :: NOA   ! number of atom in the compound
    integer, intent(inout) :: sh ! number of shells of the element
    real(8), dimension(:), allocatable, intent(inout) :: Ne_shell ! number of electron in each shell
@@ -1017,7 +1165,7 @@ subroutine exclude_BV(NOA, sh, Ne_shell, NVB, mod_shl_num, N_shl)
 
 !    print*, NVB, mod_shl_num, sh
 !    print*, Ne_shell(:)
-!    pause 'exclude_BV - 0'
+!    pause 'exclude_VB - 0'
 
    if (size(Ne_shell) /= mod_shl_num) then ! redefine it:
       Ne_temp = Ne_shell
@@ -1030,10 +1178,10 @@ subroutine exclude_BV(NOA, sh, Ne_shell, NVB, mod_shl_num, N_shl)
    endif
 
 
-!    print*, NVB, mod_shl_num, sh
-!    print*, Ne_shell(:)
-!    pause 'exclude_BV'
-end subroutine exclude_BV 
+!     print*, NVB, mod_shl_num, sh
+!     print*, Ne_shell(:)
+!     pause 'exclude_VB'
+end subroutine exclude_VB
 
 
 
@@ -1049,7 +1197,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
    type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
    integer FN, count_lines, Reason, INFO, i, j !, N
-   character(200) :: Error_descript, Folder_name, File_name, Path, ch_temp
+   character(500) :: Error_descript, Folder_name, File_name, Path, ch_temp
    logical file_exists, file_opened, read_well
    !Folder_name = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))
    Folder_name = trim(adjustl(numpar%input_path))
@@ -1057,25 +1205,21 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
    
    do_first:do i = 1, matter%N_KAO
       do_second:do j = 1, matter%N_KAO
+
+         !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
          ! First read Hamiltonian (hopping integrals) parametrization:
          write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
          write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Hamiltonian_parameters.txt'
          inquire(file=trim(adjustl(File_name)),exist=file_exists)
-         !print*, trim(adjustl(File_name)), file_exists
-!          if (.not.file_exists) then ! try inverse combination of atoms in the file-name:
-!             write(ch_temp,'(a)') trim(adjustl(matter%Atoms(j)%Name))//'_'//trim(adjustl(matter%Atoms(i)%Name))//'_'
-!             write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Hamiltonian_parameters.txt'
-!             inquire(file=trim(adjustl(File_name)),exist=file_exists)
-!          endif
+
          if (.not.file_exists) then ! try general name used for multiple species at once:
-            write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
+            if (numpar%verbose) write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
             write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), 'TB_Hamiltonian_parameters.txt'
-            write(*,'(a)') 'Trying '//trim(adjustl(File_name))//' file instead.'
+            if (numpar%verbose) write(*,'(a)') 'Trying '//trim(adjustl(File_name))//' file instead.'
             inquire(file=trim(adjustl(File_name)),exist=file_exists)
          endif
          
          if (file_exists) then
-            !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             FN=106
             open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -1092,14 +1236,14 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             read(FN,*,IOSTAT=Reason) ch_temp
             call read_file(Reason, count_lines, read_well)
             if (.not. read_well) then
-               write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+               write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                call Save_error_details(Err, 3, Error_descript)
                print*, trim(adjustl(Error_descript))
                goto 3421
             endif
             if (j .GT. 1) then
                if (trim(adjustl(ch_temp)) .NE. trim(adjustl(TB_Hamil(1,1)%Param)) ) then
-                  write(Error_descript,'(a,$)') 'Format of TB-Hamiltonian parameters "', trim(adjustl(ch_temp)), '" does not coinside with parameters in the first file "'//trim(adjustl(TB_Hamil(1,1)%Param))//'" .Inconsistent parameterization is not allowed.'
+                  write(Error_descript,'(a)') 'Format of TB-Hamiltonian parameters "'//trim(adjustl(ch_temp))//'" does not coinside with parameters in the first file "'//trim(adjustl(TB_Hamil(1,1)%Param))//'". Inconsistent parameterization is not allowed.'
                   call Save_error_details(Err, 5, Error_descript)
                   print*, trim(adjustl(Error_descript))
                   goto 3421
@@ -1146,6 +1290,19 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endif
                TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
 
+            case ('DFTB_no_repulsion', 'DFTB_no_repulsive', 'DFTB_no_rep')
+               if (.not.allocated(TB_Hamil)) then
+                  allocate(TB_H_DFTB::TB_Hamil(matter%N_KAO,matter%N_KAO)) ! make it for DFTB parametrization
+                  TB_Hamil%Param = ''
+               endif
+               TB_Hamil(i,j)%Param = trim(adjustl(ch_temp))
+               ! DFTB skf files does not contain Repulsive potential, allocate special case:
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_DFTB_no::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for DFTB parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+
             case ('3TB')
                if (.not.allocated(TB_Hamil)) then
                   allocate(TB_H_3TB::TB_Hamil(matter%N_KAO,matter%N_KAO)) ! make it for 3TB parametrization
@@ -1159,6 +1316,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Error_descript))
                   goto 3421
                endif
+
             case ('BOP')
                if (.not.allocated(TB_Hamil)) then
                   allocate(TB_H_BOP::TB_Hamil(matter%N_KAO,matter%N_KAO)) ! make it for BOP parametrization
@@ -1195,7 +1353,6 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             select type (TB_Hamil)
             type is (TB_H_Pettifor)
                Error_descript = ''
-               !call read_Pettifor_TB_Hamiltonian(FN, numpar%El_num_ij(i,j), TB_Hamil, Error_descript, INFO)
                call read_Pettifor_TB_Hamiltonian(FN, i,j, TB_Hamil, Error_descript, INFO)
                if (INFO .NE. 0) then
                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
@@ -1203,7 +1360,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
-!                print*, trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//' TB_Hamil ', TB_Hamil(i,j)
+
             type is (TB_H_Molteni)
                Error_descript = ''
                call read_Molteni_TB_Hamiltonian(FN, i,j, TB_Hamil, Error_descript, INFO)
@@ -1213,7 +1370,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
-!                print*, trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//' TB_Hamil ', TB_Hamil(i,j)
+
              type is (TB_H_Fu)
                Error_descript = ''
                !call read_Pettifor_TB_Hamiltonian(FN, numpar%El_num_ij(i,j), TB_Hamil, Error_descript, INFO)
@@ -1236,8 +1393,10 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             type is (TB_H_DFTB) !in this case, read both Hamiltonian and Repulsive parts together:
                Error_descript = ''
                select type (TB_Repuls)  ! to confirm that repulsive part is consistent with the Hamiltonian
-               type is (TB_Rep_DFTB)
+               type is (TB_Rep_DFTB)   ! repulsive parameters provided in the skf-file
                   call read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Error_descript, INFO) ! below
+               type is (TB_Rep_DFTB_no)   ! no repulsive parameters in skf-file
+                  call read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Error_descript, INFO) ! below
                endselect
                if (INFO .NE. 0) then
                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
@@ -1293,22 +1452,16 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
          write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
          write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Repulsive_parameters.txt'
          inquire(file=trim(adjustl(File_name)),exist=file_exists)
-!          print*, trim(adjustl(File_name)), file_exists
-!          if (.not.file_exists) then ! try inverse combination of atoms in the file-name:
-!             write(ch_temp,'(a)') trim(adjustl(matter%Atoms(j)%Name))//'_'//trim(adjustl(matter%Atoms(i)%Name))//'_'
-!             write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Repulsive_parameters.txt'
-!             inquire(file=trim(adjustl(File_name)),exist=file_exists)
-!             !print*, trim(adjustl(File_name)), file_exists
-!          endif
+
          if (.not.file_exists) then ! try general name used for multiple species at once:
-            write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
+
+            if (numpar%verbose) write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
             write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), 'TB_Repulsive_parameters.txt'
-            write(*,'(a)') 'Trying '//trim(adjustl(File_name))//' file instead.'
+            if (numpar%verbose) write(*,'(a)') 'Trying '//trim(adjustl(File_name))//' file instead.'
             inquire(file=trim(adjustl(File_name)),exist=file_exists)
          endif
 
          if (file_exists) then
-            !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             FN=107
             open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -1325,7 +1478,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             read(FN,*,IOSTAT=Reason) ch_temp
             call read_file(Reason, count_lines, read_well)
             if (.not. read_well) then
-               write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+               write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                call Save_error_details(Err, 3, Error_descript)
                print*, trim(adjustl(Error_descript))
                goto 3421
@@ -1369,6 +1522,12 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             case ('DFTB')
                if (.not.allocated(TB_Repuls)) then
                   allocate(TB_Rep_DFTB::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for DFTB parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+            case ('DFTB_no_repulsion', 'DFTB_no_repulsive', 'DFTB_no_rep')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_DFTB_no::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for DFTB parametrization
                   TB_Repuls%Param = ''
                endif
                TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
@@ -1429,12 +1588,6 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             type is (TB_Rep_NRL)
                Error_descript = ''
                ! There is no repulsive part in NRL
-!                if (INFO .NE. 0) then
-!                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
-!                   call Save_error_details(Err, INFO, Err%Err_descript)
-!                   print*, trim(adjustl(Err%Err_descript))
-!                   goto 3421
-!                endif
             type is (TB_Rep_DFTB)
                Error_descript = ''
                call read_DFTB_TB_repulsive(FN, i,j, TB_Repuls, Error_descript, INFO)    ! below
@@ -1444,6 +1597,9 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
+            type is (TB_Rep_DFTB_no)
+               Error_descript = ''
+               ! Nothing to read, since repulsive potential is not provided in skf-file
             type is (TB_Rep_3TB)
                Error_descript = ''
                ! There is no repulsive part in 3TB
@@ -1472,7 +1628,6 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
          inquire(file=trim(adjustl(File_name)),exist=file_exists)
          
          if (file_exists) then
-            !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             FN=108
             open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -1489,7 +1644,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             read(FN,*,IOSTAT=Reason) ch_temp
             call read_file(Reason, count_lines, read_well)
             if (.not. read_well) then
-               write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+               write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                call Save_error_details(Err, 3, Error_descript)
                print*, trim(adjustl(Error_descript))
                goto 3422
@@ -1500,40 +1655,111 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             case ('Girifalco')
                if (.not.allocated(TB_Waals)) then
                   allocate(TB_vdW_Girifalco::TB_Waals(matter%N_KAO,matter%N_KAO)) ! make it for Girifalco parametrization
+                  ! Default values:
                   TB_Waals%Param = ''
+                  TB_Waals%d0_cut = 0.0d0
+                  TB_Waals%dd_cut = 0.0d0
                endif
                TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
+
+            case('LJ', 'Lennar-Jones', 'Lennard_Jones', 'lj', 'Lj', 'LENNARD-JONES', 'LENNARD_JONES', 'lennard-jones', 'lennard_jones')
+               if (.not.allocated(TB_Waals)) then
+                  allocate(TB_vdW_LJ_cut::TB_Waals(matter%N_KAO,matter%N_KAO)) ! make it for LJ parametrization
+                  ! Default values:
+                  TB_Waals%Param = ''
+                  TB_Waals%d0_cut = 0.0d0
+                  TB_Waals%dd_cut = 0.0d0
+                  select type (TB_Waals)
+                  type is (TB_vdW_LJ_cut)
+                     TB_Waals%eps = 0.0d0
+                     TB_Waals%r0 = 0.0d0
+                     TB_Waals%n = 1.0d0
+                     TB_Waals%d0_short = 0.0d0
+                     TB_Waals%dd_short = 0.0d0
+                  end select
+               endif
+               TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
+
+            case('ILJ', 'ilj', 'Improved_LJ', 'Ilj', 'improved_lj', 'I_LJ', 'i_lj')
+               if (.not.allocated(TB_Waals)) then
+                  allocate(TB_vdW_ILJ_cut::TB_Waals(matter%N_KAO,matter%N_KAO)) ! make it for LJ parametrization
+                  ! Default values:
+                  TB_Waals%Param = ''
+                  TB_Waals%d0_cut = 0.0d0
+                  TB_Waals%dd_cut = 0.0d0
+                  select type (TB_Waals)
+                  type is (TB_vdW_ILJ_cut)
+                     TB_Waals%eps = 0.0d0
+                     TB_Waals%r0 = 0.0d0
+                     TB_Waals%n = 12.0d0
+                     TB_Waals%m = 6.0d0
+                     TB_Waals%d0_short = 0.0d0
+                     TB_Waals%dd_short = 0.0d0
+                  end select
+               endif
+               TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
+
             case ('Dumitrica') ! UNFINISHED, DO NOT USE
                if (.not.allocated(TB_Waals)) then
                   allocate(TB_vdW_Dumitrica::TB_Waals(matter%N_KAO,matter%N_KAO)) ! make it for Dumitrica parametrization
+                  ! Default values:
                   TB_Waals%Param = ''
+                  TB_Waals%d0_cut = 0.0d0
+                  TB_Waals%dd_cut = 0.0d0
                endif
                TB_Waals(i,j)%Param = trim(adjustl(ch_temp))
             case default
-               write(Error_descript,'(a,a,a,$)') 'Unknown TB-vdW parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
-!                call Save_error_details(Err, 4, Error_descript)
+               write(Error_descript,'(a,a,a,$)') 'Unknown TB-vdW parametrization class '// &
+                     trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
                print*, trim(adjustl(Error_descript))
                print*, 'Proceeding without van der Waals forces'
                close(FN) ! close file
                goto 3422
             end select
             
-            ! Prior to use TB parameters, we now always have to find out which class the belong to:
+            ! Read the parameters of the dispersion correction (vdW-type additional potential):
             select type (TB_Waals)
             type is (TB_vdW_Girifalco)
                Error_descript = ''
-               !call read_Pettifor_TB_repulsive(FN, numpar%El_num_ij(i,j), TB_Repuls, Error_descript, INFO)
-               call read_vdW_Girifalco_TB(FN, i,j, TB_Waals, Error_descript, INFO)
+               call read_vdW_Girifalco_TB(FN, i,j, TB_Waals, Error_descript, INFO)  ! below
                if (INFO .NE. 0) then
                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
                   call Save_error_details(Err, INFO, Err%Err_descript)
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3422
                endif
+               ! Set default values:
+               TB_Waals(i,j)%d0_cut = TB_Waals(i,j)%d_cut   ! long-range cutoff radius [A]
+               TB_Waals(i,j)%dd_cut = 0.0d0  ! long-range cutoff width [A]
+
+            type is (TB_vdW_LJ_cut) ! Lennard-Jones (smoothly cut at short and large sitances)
+               Error_descript = ''
+               call read_vdW_LJ_TB(FN, i,j, TB_Waals, Error_descript, INFO)   ! below
+               if (INFO .NE. 0) then
+                  Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name))
+                  call Save_error_details(Err, INFO, Err%Err_descript)
+                  print*, trim(adjustl(Err%Err_descript))
+                  goto 3422
+               endif
+               if (numpar%verbose) write(*,'(a,f,f)') 'LJ: vdW minimum: ', TB_Waals(i,j)%eps, TB_Waals(i,j)%r0
+
+            type is (TB_vdW_ILJ_cut) ! Improved Lennard-Jones (smoothly cut at short and large sitances)
+               Error_descript = ''
+               call read_vdW_ILJ_TB(FN, i,j, TB_Waals, Error_descript, INFO)   ! below
+               if (INFO .NE. 0) then
+                  Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name))
+                  call Save_error_details(Err, INFO, Err%Err_descript)
+                  print*, trim(adjustl(Err%Err_descript))
+                  goto 3422
+               endif
+               if (numpar%verbose) write(*,'(a,f,f)') 'ILJ: vdW minimum: ', TB_Waals(i,j)%eps, TB_Waals(i,j)%r0
+
             type is (TB_vdW_Dumitrica) ! UNFINISHED, DO NOT USE
                Error_descript = ''
-               !call read_Pettifor_TB_repulsive(FN, numpar%El_num_ij(i,j), TB_Repuls, Error_descript, INFO)
-               call read_vdW_Dumitrica_TB(FN, i,j, TB_Waals, Error_descript, INFO)
+               ! Set default values:
+               TB_Waals(i,j)%d0_cut = 0.0d0   ! long-range cutoff radius [A]
+               TB_Waals(i,j)%dd_cut = 0.0d0  ! long-range cutoff width [A]
+               call read_vdW_Dumitrica_TB(FN, i,j, TB_Waals, Error_descript, INFO)  ! below
                if (INFO .NE. 0) then
                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
                   call Save_error_details(Err, INFO, Err%Err_descript)
@@ -1543,10 +1769,12 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             end select
             close(FN)
          else
-            print*, 'No van der Waals file found, go on without van der Waals forces'
+            if (numpar%verbose) print*, 'No van der Waals file found, go on without van der Waals forces'
          endif !(file_exists)
 3422     continue
 
+
+         !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
          ! Now read Coulomb parameterization:
          write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
          write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Coulomb.txt'
@@ -1568,7 +1796,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             read(FN,*,IOSTAT=Reason) ch_temp
             call read_file(Reason, count_lines, read_well)
             if (.not. read_well) then
-               write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+               write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                call Save_error_details(Err, 3, Error_descript)
                print*, trim(adjustl(Error_descript))
                goto 3423
@@ -1589,15 +1817,14 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endif
                TB_Coul(i,j)%Param = trim(adjustl(ch_temp))
             case default
-               write(Error_descript,'(a,a,a,$)') 'Unknown Coulomb parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
-!                call Save_error_details(Err, 4, Error_descript)
+               write(Error_descript,'(a,a,a,$)') 'Unknown Coulomb parametrization class '// &
+                  trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
                print*, trim(adjustl(Error_descript))
                print*, 'Proceeding without Coulomb forces from unballanced charge'
                close(FN) ! close file
                goto 3423
             end select
             
-            ! Prior to use Coulomb parameters, we now always have to find out which class the belong to:
             select type (TB_Coul)
             type is (TB_Coulomb_cut)
                Error_descript = ''
@@ -1615,17 +1842,34 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             end select
             close(FN)
          else
-            print*, 'No Coulomb parameterization file found, or no unbalanced charge possible'
-            print*, 'go on without Coulomb forces'
+            if (numpar%verbose) then
+               print*, 'No Coulomb parameterization file found, or no unbalanced charge possible'
+               print*, 'go on without Coulomb forces'
+            endif
          endif
 3423     continue
          
 
-         ! Now read Exponential wall parameterization:
+         !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
+         ! Now read additional short-range repulsive (exponential wall) parameterization:
          write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
          write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_wall.txt'
          inquire(file=trim(adjustl(File_name)),exist=file_exists)
-         
+         if (.not.file_exists) then ! try the new name
+            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_short.txt'
+            inquire(file=trim(adjustl(File_name)),exist=file_exists)
+         endif
+         ! try the other order of elements:
+         if (.not.file_exists) then
+            write(ch_temp,'(a)') trim(adjustl(matter%Atoms(j)%Name))//'_'//trim(adjustl(matter%Atoms(i)%Name))//'_'
+            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_wall.txt'
+            inquire(file=trim(adjustl(File_name)),exist=file_exists)
+         endif
+         if (.not.file_exists) then ! try the new name
+            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_short.txt'
+            inquire(file=trim(adjustl(File_name)),exist=file_exists)
+         endif
+
          if (file_exists) then
             FN=110
             open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
@@ -1642,7 +1886,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             read(FN,*,IOSTAT=Reason) ch_temp
             call read_file(Reason, count_lines, read_well)
             if (.not. read_well) then
-               write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+               write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                call Save_error_details(Err, 3, Error_descript)
                print*, trim(adjustl(Error_descript))
                goto 3425
@@ -1650,17 +1894,24 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             
             ! Make the exponential wall  parameters of a selected class, depending on what is read in the file:
             select case (trim(adjustl(ch_temp)))
-            case ('Simple_wall')
+            case ('Simple_wall', 'SIMPLE_WALL', 'simple_wall')
                if (.not.allocated(TB_Expwall)) then
                   allocate(TB_Exp_wall_simple::TB_Expwall(matter%N_KAO,matter%N_KAO)) ! make it for exponential wall  parametrization
                   TB_Expwall%Param = ''
                endif
                TB_Expwall(i,j)%Param = trim(adjustl(ch_temp))
+               !print*, i, j, TB_Expwall(i,j)%Param, trim(adjustl(ch_temp))
+            case ('General', 'general', 'GENERAL')
+               if (.not.allocated(TB_Expwall)) then
+                  allocate(TB_Short_Rep::TB_Expwall(matter%N_KAO,matter%N_KAO)) ! make it for exponential wall  parametrization
+                  TB_Expwall%Param = ''
+               endif
+               TB_Expwall(i,j)%Param = trim(adjustl(ch_temp))
+               !print*, i, j, TB_Expwall(i,j)%Param, trim(adjustl(ch_temp))
             case default
-               write(Error_descript,'(a,a,a,$)') 'Unknown exponential wall parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
-!                call Save_error_details(Err, 4, Error_descript)
+               write(Error_descript,'(a,a,a,$)') 'Unknown short-range (exponential wall) parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
                print*, trim(adjustl(Error_descript))
-               print*, 'Proceeding without exponential wall  forces from unballanced charge'
+               print*, 'Proceeding without additional short-range (exponential wall) forces'
                close(FN) ! close file
                goto 3425
             end select
@@ -1669,9 +1920,18 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             select type (TB_Expwall)
             type is (TB_Exp_wall_simple)
                Error_descript = ''
-               call read_Exponential_wall_TB(FN, i,j, TB_Expwall, Error_descript, INFO)
+               call read_Exponential_wall_TB(FN, i,j, TB_Expwall, Error_descript, INFO)   ! below
                if (INFO .NE. 0) then
                   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
+                  call Save_error_details(Err, INFO, Err%Err_descript)
+                  print*, trim(adjustl(Err%Err_descript))
+                  goto 3425
+               endif
+            type is (TB_Short_Rep)
+               Error_descript = ''
+               call read_Short_Rep_TB(FN, i,j, TB_Expwall, Error_descript, INFO)   ! below
+               if (INFO .NE. 0) then
+                  Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name))
                   call Save_error_details(Err, INFO, Err%Err_descript)
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3425
@@ -1679,8 +1939,10 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             end select
             close(FN)
          else
-            print*, 'No exponential wall parameterization file found'
-            print*, 'go on without an exponential wall at short distances'
+            if (numpar%verbose) then
+               print*, 'No exponential wall parameterization file found'
+               print*, 'go on without an exponential wall at short distances'
+            endif
          endif
 3425     continue
 
@@ -1689,24 +1951,138 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
 
    ! For 3TB parameterization, compounds requires rewriting on-site terms:
    select type (TB_Hamil)
-   type is (TB_H_3TB)
+   type is (TB_H_3TB)   ! UNFINISHED
       if (matter%N_KAO > 1) then
          ! [OS 0] :
-         TB_Hamil(1,1)%Hhavg = TB_Hamil(1,2)%Hhavg
-         TB_Hamil(1,1)%Hhcf = TB_Hamil(1,2)%Hhcf
-         TB_Hamil(2,2)%Hhavg = TB_Hamil(2,1)%Hhavg
-         TB_Hamil(2,2)%Hhcf = TB_Hamil(2,1)%Hhcf
+!          TB_Hamil(1,1)%Hhavg = TB_Hamil(1,2)%Hhavg
+!          TB_Hamil(1,1)%Hhcf = TB_Hamil(1,2)%Hhcf
+!          TB_Hamil(2,2)%Hhavg = TB_Hamil(2,1)%Hhavg
+!          TB_Hamil(2,2)%Hhcf = TB_Hamil(2,1)%Hhcf
          ! [OS 1] :
-!          TB_Hamil(1,1)%Hhavg = TB_Hamil(2,1)%Hhavg
-!          TB_Hamil(1,1)%Hhcf = TB_Hamil(2,1)%Hhcf
-!          TB_Hamil(2,2)%Hhavg = TB_Hamil(1,2)%Hhavg
-!          TB_Hamil(2,2)%Hhcf = TB_Hamil(1,2)%Hhcf
+         TB_Hamil(1,1)%Hhavg = TB_Hamil(2,1)%Hhavg
+         TB_Hamil(1,1)%Hhcf = TB_Hamil(2,1)%Hhcf
+         TB_Hamil(2,2)%Hhavg = TB_Hamil(1,2)%Hhavg
+         TB_Hamil(2,2)%Hhcf = TB_Hamil(1,2)%Hhcf
       endif
    endselect
 
 
 3421 continue
 end subroutine read_TB_parameters
+
+
+
+subroutine read_Short_Rep_TB(FN, i,j, TB_Expwall, Error_descript, INFO)   ! below
+   integer, intent(in) :: FN ! file number where to read from
+   integer, intent(in) :: i, j ! numbers of pair of elements for which we read the data
+   type(TB_Short_Rep), dimension(:,:), intent(inout) ::  TB_Expwall ! parameters of the exponential wall potential
+   character(*), intent(out) :: Error_descript	! error save
+   integer, intent(out) :: INFO	! error description
+   !------------------------
+   integer :: count_lines, Reason
+   logical :: read_well
+   character(30) :: text
+   count_lines = 1
+   INFO = 0
+
+   ! Set default values:
+   TB_Expwall(i,j)%f_exp%use_it = .false.       ! no exp by default
+   TB_Expwall(i,j)%f_inv_exp%use_it = .false.   ! no inverse exp by default
+   TB_Expwall(i,j)%f_ZBL%use_it = .false.       ! no ZBL potential by default
+   TB_Expwall(i,j)%f_cut_inv%use_it = .false.   ! no short-range cutoff by default
+   TB_Expwall(i,j)%f_cut%d0 = 0.0d0 ! cut off at zero, no repulsion by default
+   TB_Expwall(i,j)%f_cut%dd = 0.01d0 ! short cut-off by default
+
+   read_well = .true.   ! to start with
+   RD: do while (read_well)
+      read(FN,*,IOSTAT=Reason) text
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) exit RD  ! end of file, stop reading
+
+      call interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwall(i,j), INFO, Error_descript) ! below
+      if (.not. read_well) exit RD  ! end of file, stop reading
+!       print*, 'o:', i, j, text, TB_Expwall(i,j)%f_inv_exp%use_it
+   enddo RD
+!
+!    print*, i, j, TB_Expwall(:,:)%f_inv_exp%use_it
+!    pause 'read_Short_Rep_TB'
+end subroutine read_Short_Rep_TB
+
+
+subroutine interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwall, INFO, Error_descript)
+   integer, intent(in) :: FN ! file number where to read from
+   integer, intent(inout) :: count_lines
+   logical, intent(inout) :: read_well
+   character(*), intent(in) :: text
+   type(TB_Short_Rep), intent(inout) ::  TB_Expwall ! parameters of the exponential wall potential
+   integer, intent(inout) :: INFO   ! error description
+   character(*), intent(inout) :: Error_descript   ! error save
+   !-------------------------------------
+   integer :: N_pow, i, Reason
+
+   select case (trim(adjustl(text)))
+   case ('CUTOFF', 'Cutoff', 'cutoff', 'CUT_OFF', 'Cut_off', 'cut_off', 'CUT-OFF', 'Cut-off', 'cut-off', 'FERMI', 'Fermi', 'fermi')
+      read(FN,*,IOSTAT=Reason) TB_Expwall%f_cut%d0, TB_Expwall%f_cut%dd
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         return   ! exit the function if there is nothing else to do
+      endif
+
+   case ('CUTOFF_SHORT', 'Cutoff_short', 'cutoff_short', 'CUT_OFF_SHORT', 'Cut_off_short', 'cut_off_short', &
+         'CUT-OFF_short', 'Cut-off_short', 'cut-off_short', 'FERMI_INV', 'Fermi_inv', 'fermi_inv')
+      read(FN,*,IOSTAT=Reason) TB_Expwall%f_cut_inv%d0, TB_Expwall%f_cut_inv%dd
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         return   ! exit the function if there is nothing else to do
+      endif
+
+   case ('EXP', 'Exp', 'exp', 'Exponential', 'exponential', 'EXPONENTIAL')
+      TB_Expwall%f_exp%use_it = .true.
+      read(FN,*,IOSTAT=Reason) TB_Expwall%f_exp%Phi, TB_Expwall%f_exp%r0, TB_Expwall%f_exp%a
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         TB_Expwall%f_exp%use_it = .false. ! not to use
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         return   ! exit the function if there is nothing else to do
+      endif
+
+   case ('INVEXP', 'InvExp', 'invexp', 'Invexp', 'INV_EXP', 'Inv_Exp', 'Inv_exp', 'inv_exp')
+      TB_Expwall%f_inv_exp%use_it = .true.
+      read(FN,*,IOSTAT=Reason) TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         TB_Expwall%f_inv_exp%use_it = .false.   ! not to use
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         return   ! exit the function if there is nothing else to do
+      endif
+
+   case ('POWER', 'Power', 'power', 'POW', 'Pow', 'pow')
+      read(FN,*,IOSTAT=Reason) N_pow   ! number of power-functions
+      allocate(TB_Expwall%f_pow(N_pow))
+      TB_Expwall%f_pow(:)%use_it = .true.
+      do i = 1, N_pow   ! read for all functions
+         read(FN,*,IOSTAT=Reason) TB_Expwall%f_pow(i)%Phi, TB_Expwall%f_pow(i)%r0, TB_Expwall%f_pow(i)%m
+!          print*, TB_Expwall%f_pow%Phi, TB_Expwall%f_pow%r0, TB_Expwall%f_pow%m
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            deallocate(TB_Expwall%f_pow)   ! not to use
+            write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+            INFO = 3
+            return   ! exit the function if there is nothing else to do
+         endif
+      enddo
+
+   case ('ZBL', 'zbl')
+      TB_Expwall%f_ZBL%use_it = .true.
+
+   end select
+end subroutine interpret_short_range_data
 
 
 
@@ -1972,6 +2348,145 @@ subroutine read_vdW_Girifalco_TB(FN, i,j, TB_Waals, Error_descript, INFO)
 
 3423 continue
 end subroutine read_vdW_Girifalco_TB
+
+
+subroutine read_vdW_LJ_TB(FN, i,j, TB_Waals, Error_descript, INFO)
+   integer, intent(in) :: FN ! file number where to read from
+   integer, intent(in) :: i, j ! numbers of pair of elements for which we read the data
+   type(TB_vdW_LJ_cut), dimension(:,:), intent(inout) ::  TB_Waals ! parameters of the Hamiltonian of TB
+   character(*), intent(out) :: Error_descript	! error save
+   integer, intent(out) :: INFO  ! error description
+   !---------------------------
+   character(20) :: LJ_type
+   character(200) :: read_line
+   real(8) :: A, B, n
+   integer count_lines, Reason
+   logical read_well
+   count_lines = 1
+
+   ! Form of LJ:
+   read(FN,*,IOSTAT=Reason) LJ_type
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      goto 3430
+   endif
+
+   ! LJ coefficients:
+   read(FN,'(a)',IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) A, B, n   ! try to read it from the text line
+   if (Reason /= 0) then   ! try to read two coefficients
+      read(read_line,*,IOSTAT=Reason) A, B   ! try to read it into only 2 variables
+      n = 6.0d0 ! default value
+   endif
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      goto 3430
+   endif
+
+   ! Various forms of LJ potential are supported
+   ! https://en.wikipedia.org/wiki/Lennard-Jones_potential
+   select case (trim(adjustl(LJ_type)))
+   case ('SE', 'Se', 'se', 'sE', 'Segma-E', 'sigma-e', 'SIGMA-E') ! Sigma-epsylon form
+      TB_Waals(i,j)%eps = A/8.0d0         ! [eV] prefactor
+      TB_Waals(i,j)%r0  = sqrt(2.0d0)*B   ! [A] radius
+   case ('AB', 'Ab', 'ab', 'aB') ! AB form
+      TB_Waals(i,j)%eps = B**2/(4.0d0*A)        ! [eV] prefactor
+      TB_Waals(i,j)%r0  = (A/B)**(1.0d0/6.0d0)  ! [A] radius
+   case ('n-exp', 'N-exp', 'N-Exp', 'N-EXP') ! n-exp form
+      TB_Waals(i,j)%eps = A   ! [eV] prefactor
+      TB_Waals(i,j)%r0  = B   ! [A] radius
+   end select
+   TB_Waals(i,j)%n   = n   ! power
+
+   ! Short-range cutoff parameters:
+   read(FN,*,IOSTAT=Reason) TB_Waals(i,j)%d0_short, TB_Waals(i,j)%dd_short ! [A] cutoff radiues, [A] cutoff width
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      goto 3430
+   endif
+
+   ! Long-range cutoff parameters:
+   read(FN,*,IOSTAT=Reason) TB_Waals(i,j)%d0_cut, TB_Waals(i,j)%dd_cut ! [A] cutoff radiues, [A] cutoff width
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      goto 3430
+   endif
+
+3430 continue
+end subroutine read_vdW_LJ_TB
+
+
+
+subroutine read_vdW_ILJ_TB(FN, i,j, TB_Waals, Error_descript, INFO)
+   ! Improved Lennard-Jones: https://www.mdpi.com/1420-3049/26/13/3906
+   ! V=eps*( m/(n-m)*(r0/r)^(n) - n/(n-m)*(r0/r)^m )
+   ! reducing to LJ for n=12, m=6
+   integer, intent(in) :: FN ! file number where to read from
+   integer, intent(in) :: i, j ! numbers of pair of elements for which we read the data
+   type(TB_vdW_ILJ_cut), dimension(:,:), intent(inout) ::  TB_Waals ! parameters of the Hamiltonian of TB
+   character(*), intent(out) :: Error_descript	! error save
+   integer, intent(out) :: INFO  ! error description
+   !---------------------------
+   character(20) :: LJ_type
+   character(200) :: read_line
+   real(8) :: A, B, n, m
+   integer count_lines, Reason
+   logical read_well
+   count_lines = 1
+
+   ! ILJ coefficients:
+   read(FN,'(a)',IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) A, B, n, m   ! try to read it from the text line
+   if (Reason /= 0) then   ! try to read two coefficients
+      read(read_line,*,IOSTAT=Reason) A, B, n   ! try to read it into only 3 variables
+      if (Reason /= 0) then   ! try to read two coefficients
+         read(read_line,*,IOSTAT=Reason) A, B   ! try to read it into only 2 variables
+         n = 12.0d0  ! default value to reduce to standard LJ
+         m = 6.0d0   ! default value to reduce to standard LJ
+      else
+         m = 6.0d0   ! default value to reduce to standard LJ
+      endif
+   endif
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      goto 3430
+   endif
+
+   TB_Waals(i,j)%eps = A   ! [eV] prefactor
+   TB_Waals(i,j)%r0  = B   ! [A] radius
+   TB_Waals(i,j)%n   = n   ! power of first term
+   TB_Waals(i,j)%m   = m   ! power of second term
+
+   ! Short-range cutoff parameters:
+   read(FN,*,IOSTAT=Reason) TB_Waals(i,j)%d0_short, TB_Waals(i,j)%dd_short ! [A] cutoff radiues, [A] cutoff width
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      goto 3430
+   endif
+
+   ! Long-range cutoff parameters:
+   read(FN,*,IOSTAT=Reason) TB_Waals(i,j)%d0_cut, TB_Waals(i,j)%dd_cut ! [A] cutoff radiues, [A] cutoff width
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      goto 3430
+   endif
+
+3430 continue
+end subroutine read_vdW_ILJ_TB
 
 
 subroutine read_vdW_Dumitrica_TB(FN, i,j, TB_Waals, Error_descript, INFO)
@@ -2486,7 +3001,7 @@ subroutine read_DFTB_TB_repulsive(FN, i,j, TB_Repuls, Error_descript, INFO)
    logical read_well
    count_lines = 1
 
-   ! Skip first two lines as they are already defined within the Hamiltonian file
+   ! Skip first line as it are already defined within the Hamiltonian file
    read(FN,*,IOSTAT=Reason)
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
@@ -3430,19 +3945,37 @@ subroutine read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Err
    character(*), intent(out) :: Error_descript	! error save
    integer, intent(out) :: INFO	! error description
    !------------------------------------------------------
-   character(100) :: Folder_name, File_name
+   character(200) :: Folder_name, File_name
+   character(200) :: path_to_skf
    integer count_lines, Reason, i_cur, ind, FN_skf, ToA, N_basis_siz
    logical file_exist, file_opened, read_well
    INFO = 0
    count_lines = 2
    
-   read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%param_name    ! name of the directory with skf files
+   read(FN,*,IOSTAT=Reason) path_to_skf
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
        write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
        INFO = 3
        goto 3426
    endif
+
+   ! Define the path to the skf file:
+   select case (trim(adjustl(path_to_skf)))  ! how to set it
+   case ('PATH', 'Path', 'path') ! then specify exactly the path to the skf file
+      read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%param_name  ! read the full path
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         goto 3426
+      endif
+      Folder_name = trim(adjustl(TB_Hamil(i,j)%param_name))    ! folder with chosen parameters sets
+   case default   ! it is a parameterization within the predefined directory 'DFTB'
+      TB_Hamil(i,j)%param_name = trim(adjustl(path_to_skf)) ! name of the directory with skf files
+      Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_DFTB_directory))//numpar%path_sep ! default folder
+      Folder_name = trim(adjustl(Folder_name))//trim(adjustl(TB_Hamil(i,j)%param_name))    ! folder with chosen parameters sets
+   endselect
 
    read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%rcut, TB_Hamil(i,j)%d  ! [A] cut off, and width of cut-off region [A]
    call read_file(Reason, count_lines, read_well)
@@ -3452,12 +3985,16 @@ subroutine read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Err
        goto 3426
    endif
 
-   Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_DFTB_directory))//numpar%path_sep ! folder with all DFTB data
-   Folder_name = trim(adjustl(Folder_name))//trim(adjustl(TB_Hamil(i,j)%param_name))    ! folder with chosen parameters sets
-   
-   ! Construct name of the skf file:
-   call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), File_name)    ! module "Dealing_with_DFTB"
-   File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+   ! Assume it is a file name:
+   inquire(file=trim(adjustl(Folder_name)),exist=file_exist)
+   if (file_exist) then ! such a file exists, use it
+      File_name = trim(adjustl(Folder_name))
+   else  ! no file => assume it is a directory name, and use default file name:
+      ! Construct name of the skf file:
+      call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
+                                 File_name)    ! module "Dealing_with_DFTB"
+      File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+   endif
 
    ! Check if such DFTB parameterization exists:
    inquire(file=trim(adjustl(File_name)),exist=file_exist)
@@ -3496,6 +4033,121 @@ end subroutine read_DFTB_TB_Params
 
 
 
+subroutine read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Error_descript, INFO)
+   integer, intent(in) :: FN ! file number where to read from
+   integer, intent(in) :: i, j  ! numbers of pair of elements for which we read the data
+   type(TB_H_DFTB), dimension(:,:), intent(inout) ::  TB_Hamil ! parameters of the Hamiltonian of TB
+   type(TB_Rep_DFTB_no), dimension(:,:), intent(inout) ::  TB_Repuls ! parameters of the Hamiltonian of TB
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Solid), intent(in) :: matter	! all material parameters
+   character(*), intent(out) :: Error_descript	! error save
+   integer, intent(out) :: INFO	! error description
+   !------------------------------------------------------
+   character(200) :: Folder_name, File_name, Inner_folder_name, path_to_skf
+   integer count_lines, Reason, i_cur, ind, FN_skf, ToA, N_basis_siz
+   logical file_exist, file_opened, read_well
+   INFO = 0
+   count_lines = 2
+
+   read(FN,*,IOSTAT=Reason) path_to_skf    ! name of the directory with skf files
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+       write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+       INFO = 3
+       goto 3426
+   endif
+
+
+   ! Define the path to the skf file:
+   select case (trim(adjustl(path_to_skf)))  ! how to set it
+   case ('PATH', 'Path', 'path') ! then specify exactly the path to the skf file
+      read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%param_name  ! read the full path
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         goto 3426
+      endif
+      Folder_name = trim(adjustl(TB_Hamil(i,j)%param_name))    ! folder with chosen parameters sets
+   case default   ! it is a parameterization within the predefined directory 'DFTB'
+      TB_Hamil(i,j)%param_name = trim(adjustl(path_to_skf)) ! name of the directory with skf files
+      ! folder with all DFTB data:
+      Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_DFTB_norep_directory))//numpar%path_sep
+      Folder_name = trim(adjustl(Folder_name))//trim(adjustl(TB_Hamil(i,j)%param_name))
+   endselect
+
+   ! folder with chosen parameters sets:
+   select case (trim(adjustl(TB_Hamil(i,j)%param_name)))
+   case default ! e.g. '1element'
+      ! no inner folders, just skf-files
+   case ('2elements')
+      read(FN,*,IOSTAT=Reason) Inner_folder_name   ! read the inner folder name
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         goto 3426
+      endif
+      Folder_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(Inner_folder_name))
+      TB_Hamil(i,j)%param_name = trim(adjustl(TB_Hamil(i,j)%param_name))//numpar%path_sep//trim(adjustl(Inner_folder_name))
+   endselect
+
+   read(FN,*,IOSTAT=Reason) TB_Hamil(i,j)%rcut, TB_Hamil(i,j)%d  ! [A] cut off, and width of cut-off region [A]
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+       write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+       INFO = 3
+       goto 3426
+   endif
+
+   ! Assume it is a file name:
+   inquire(file=trim(adjustl(Folder_name)),exist=file_exist)
+   if (file_exist) then ! such a file exists, use it
+      File_name = trim(adjustl(Folder_name))
+   else  ! no file => assume it is a directory name, and use default file name:
+      ! Construct name of the skf file:
+      call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
+                                 File_name, '_no_repulsion')   ! module "Dealing_with_DFTB"
+      File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+   endif
+
+   ! Check if such DFTB parameterization exists:
+   inquire(file=trim(adjustl(File_name)),exist=file_exist)
+   if (.not.file_exist) then
+      Error_descript = 'File '//trim(adjustl(File_name))//' not found, the program terminates'
+      INFO = 1
+      goto 3426
+   endif
+   FN_skf=111
+   open(UNIT=FN_skf, FILE = trim(adjustl(File_name)), status = 'old', action='read')
+   inquire(file=trim(adjustl(File_name)),opened=file_opened)
+   if (.not.file_opened) then
+      Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
+      INFO = 2
+      goto 3426
+   endif
+
+   ToA = same_or_different_atom_types(trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name))) ! module "Dealing_with_DFTB"
+   call read_skf_file_no_rep(FN_skf, TB_Hamil(i,j), TB_Repuls(i,j), ToA, Error_descript)    ! module "Dealing_with_DFTB"
+   if (LEN(trim(adjustl(Error_descript))) > 0) then
+      INFO = 5
+      goto 3426
+   endif
+
+   ! Check which basis set is used: 0=s, 1=sp3, 2=sp3d5:
+   if ((i == matter%N_KAO) .and. (j == matter%N_KAO)) then  ! only when all parameters for all elements are read from files:
+      call idnetify_basis_size(TB_Hamil, N_basis_siz)  ! module "Dealing_with_DFTB"'
+      numpar%N_basis_size = max(numpar%N_basis_size,N_basis_siz)
+   endif
+
+3426 continue
+   ! Close files that have been read through:
+   call close_file('close', FN=FN_skf) ! module "Dealing_with_files"
+   call close_file('close', FN=FN) ! module "Dealing_with_files"
+end subroutine read_DFTB_TB_Params_no_rep
+
+
+
 subroutine read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript, INFO)
    integer, intent(in) :: FN ! file number where to read from
    integer, intent(in) :: i, j  ! numbers of pair of elements for which we read the data
@@ -3508,7 +4160,7 @@ subroutine read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript
    character(100) :: Folder_name, File_name
    character(200) :: Filename_onsite, Filename_2body, Filename_3body
    integer count_lines, Reason, FN_onsite, FN_2bdy, FN_3bdy, N_basis_siz
-   logical file_exist, file_opened, read_well
+   logical file_exist, file_opened, read_well, file_exists
 
    ! To start with:
    INFO = 0
@@ -3810,36 +4462,49 @@ end subroutine read_xTB_Params
 
 
 
-subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Err)
+subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err, add_data)
    character(*), intent(in) :: File_name
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Pulse), dimension(:), allocatable, intent(inout) :: laser	! Laser pulse parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(User_overwrite_data), intent(inout) :: user_data   ! atomic data provided by the user
    type(Error_handling), intent(inout) :: Err	! error save
+   logical, intent(in), optional :: add_data   ! read stricktly numpar data, no additional data
    !---------------------------------
    integer FN, N, Reason, count_lines, i, NSC, temp1, temp2, temp3
-   logical file_opened, read_well
+   logical file_opened, read_well, old_file, add_data_present
    character(100) Error_descript, temp_ch
 
    NSC = 1 ! for now, we only have 1 supercell...
+   if (present(add_data)) then
+      add_data_present = add_data ! user defines whether to read additional data
+   else
+      add_data_present = .true. ! by default, read possible additional data
+   endif
 
-   !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old')
-   FN=108
-   open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read')
-   inquire(file=trim(adjustl(File_name)),opened=file_opened)
-   if (.not.file_opened) then
-      Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
-      call Save_error_details(Err, 2, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
+   !inquire(file=trim(adjustl(File_name)),opened=file_opened)
+   inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN) ! if file is opened, use its number
+   if (file_opened) then ! file is already opened, continue reading from it
+      old_file = .true. ! mark that this file was laready opened
+   else ! file is not open, open and read from it:
+      old_file = .false. ! mark that this file was not opened yet
+      FN=108
+      open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read')
+      inquire(file=trim(adjustl(File_name)),opened=file_opened)
+      if (.not.file_opened) then
+         Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
+         call Save_error_details(Err, 2, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3418
+      endif
    endif
 
    ! number of unit-cells in X,Y,Z:
    read(FN,*,IOSTAT=Reason) matter%cell_x, matter%cell_y, matter%cell_z 
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -3849,7 +4514,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) temp1, temp2, temp3
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -3863,7 +4528,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) numpar%At_base
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -3873,7 +4538,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) matter%dens
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -3883,27 +4548,31 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) numpar%NMC
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
    endif
+   if (numpar%NMC < 0) numpar%NMC = 0  ! by default, no MC
 
    ! number of threads for OPENMP:
    read(FN,*,IOSTAT=Reason) numpar%NOMP
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
+   endif
+   if (numpar%NOMP < 1) then ! use default: maximum number of available threads
+      numpar%NOMP = omp_get_max_threads() ! number of processors available by default
    endif
    
    ! MD algorithm (0=Verlet, 2d order; 1=Yoshida, 4th order)
    read(FN,*,IOSTAT=Reason) numpar%MD_algo
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -3913,7 +4582,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) N
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -3928,12 +4597,12 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) matter%W_PR
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
    endif
-
+   if (matter%W_PR < 0.0d0) matter%W_PR = 1.0d0 ! use default value
 
    ! Time step for MD [fs]:
    read(FN,*,IOSTAT=Reason) numpar%MD_step_grid_file ! file with time grid, or timestep for md [fs]
@@ -3941,7 +4610,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    ! If read well, interpret it and set timestep or time-grid:
    call set_MD_step_grid(numpar%MD_step_grid_file, numpar, read_well, Error_descript)    ! below
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -3952,7 +4621,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) numpar%dt_save  ! save data into files every 'dt_save_time' [fs]
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -3962,7 +4631,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) N	! It's = 0 if P=const, or = 1 if V=const
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -3977,7 +4646,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) matter%p_ext  ! External pressure [Pa] (0 = normal atmospheric pressure)
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -3988,28 +4657,41 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) numpar%scc, numpar%scc_gam_ind, numpar%scc_mix
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
    endif
 
 
-   ! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO); when to start coupling
-   read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee
+   ! 3 numbers:
+   ! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO; 4=relaxation time);
+   ! when to start coupling [fs];
+   ! Characteristic relaxation time [fs];
+   read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee, numpar%tau_fe
    call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
+   if (Reason /= 0) then   ! probably only two number are given (legacy format)
+      numpar%tau_fe = 1.0d0   ! [fs]
+      print*, 'Relaxation time is not provided, assuming default value:', numpar%tau_fe, '[fs]'
+      ! Trying to read the first 2 numbers from the same line:
+      backspace(FN)  ! back one line
+      count_lines = count_lines - 1 ! renumber it to continue from the same line
+      read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee  ! try reading it again
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3418
+      endif
    endif
+
 
    ! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
    read(FN,*,IOSTAT=Reason) numpar%NA_kind
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4024,7 +4706,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) numpar%t_NA, numpar%M2_scaling ! [fs] start of the nonadiabatic coupling; scaling factor
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4034,17 +4716,32 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) numpar%acc_window, numpar%degeneracy_eV
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
    endif
 
-   ! atoms super-cooling (0=no, 1=yes); starting from when [fs]; how often [fs]:
+   ! calculate electornic heat conductivity (0=no, 1=yes): -- DOES NOT WORK, EXCLUDED UNTIL SOLVED
+!    read(FN,*,IOSTAT=Reason) N
+!    call read_file(Reason, count_lines, read_well)
+!    if (.not. read_well) then
+!       write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+!       call Save_error_details(Err, 3, Error_descript)
+!       print*, trim(adjustl(Error_descript))
+!       goto 3418
+!    endif
+!    if (N .EQ. 1) then
+!       numpar%do_kappa = .true.	! included
+!    else
+!       numpar%do_kappa = .false.	! excluded
+!    endif
+
+   ! atoms quenching (0=no, 1=yes); starting from when [fs]; how often [fs]:
    read(FN,*,IOSTAT=Reason) N, numpar%at_cool_start, numpar%at_cool_dt ! include atomic cooling? When to start? How often?
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4058,40 +4755,71 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    ! 0=no heat transport, 1=include heat transport; thermostat temperature for ATOMS [K]:
    read(FN,*,IOSTAT=Reason) N, matter%T_bath, matter%tau_bath
    call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
+   if (read_well) then
+      if (N .EQ. 1) then
+         numpar%Transport = .true.	 ! included
+      else
+         numpar%Transport = .false. ! excluded
+      endif
+      matter%T_bath = matter%T_bath/g_kb	! [eV] thermostat temperature for atoms
+   else ! maybe there is a filename given to read from instead of numbers:
+      backspace(FN)  ! go back and try to read the line again
+      read(FN,*,IOSTAT=Reason) numpar%At_bath_step_grid_file  ! name of file with parameters
+      call read_file(Reason, count_lines, read_well)
+      !print*, numpar%At_bath_step_grid_file, Reason
+      if (.not. read_well) then
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3418
+      endif
+      ! If read well, try to interpret it and set parameters on time-grid:
+      call set_Bath_grid_atoms(numpar, read_well, Error_descript)    ! below
+      if (.not. read_well) then
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3418
+      endif
    endif
-   if (N .EQ. 1) then
-      numpar%Transport = .true.	 ! included
-   else
-      numpar%Transport = .false. ! excluded
-   endif
-   matter%T_bath = matter%T_bath/g_kb	! [eV] thermostat temperature for atoms
 
    ! 0=no heat transport, 1=include heat transport; thermostat temperature for ELECTRONS [K]:
    read(FN,*,IOSTAT=Reason) N, matter%T_bath_e, matter%tau_bath_e
    call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
-   if (N .EQ. 1) then
-      numpar%Transport_e = .true.	 ! included
+   if (read_well) then
+      if (N .EQ. 1) then
+         numpar%Transport_e = .true.	 ! included
+      else
+         numpar%Transport_e = .false. ! excluded
+      endif
+      matter%T_bath_e = matter%T_bath_e/g_kb	! [eV] thermostat temperature for electrons
    else
-      numpar%Transport_e = .false. ! excluded
+      ! maybe there is a filename given to read from instead of numbers:
+      backspace(FN)  ! go back and try to read the line again
+      read(FN,*,IOSTAT=Reason) numpar%El_bath_step_grid_file  ! name of file with parameters
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3418
+      endif
+      ! If read well, try to interpret it and set parameters on time-grid:
+      call set_Bath_grid_electrons(numpar, read_well, Error_descript)    ! below
+      if (.not. read_well) then
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3418
+      endif
    endif
-   matter%T_bath_e = matter%T_bath_e/g_kb	! [eV] thermostat temperature for electrons
+
 
    ! [eV] cut-off energy, separating low-energy-electrons from high-energy-electrons:
    read(FN,*,IOSTAT=Reason) numpar%E_cut  ! [eV] cut-off energy for high-energy-electrons
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4106,7 +4834,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) numpar%E_work  ! [eV] work function for electron emission
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4121,7 +4849,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) N  ! save electron energy levels (1) or not (0)
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4132,51 +4860,65 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
       numpar%save_Ei = .false.	! excluded
    endif
    
-   ! save DOS (1) or not (0):
+   ! save DOS (1=Gamma; 2=k-points) or not (0):
    read(FN,*,IOSTAT=Reason) N, numpar%Smear_DOS, numpar%DOS_splitting ! save DOS (1) or not (0), smearing width, do partial DOS or no
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
    endif
-   if (N .EQ. 1) then
-      numpar%save_DOS = .true.	! included
-   else
-      numpar%save_DOS = .false.	! excluded
+   if (abs(N) == 2) then
+      ! if the user wanted complex k-points, leave it be, otherwise, overwrite it with the option of complex k for DOS
+      ! * Note that it SWITCHES OFF the probe-pulse calculations in this case
+      ! which means it is currently not possible to get gamma-point probe pulse, and multiple-k-points for DOS.
+      ! They are connected: either both are calculated for multiple (and the same) k-points,
+      ! or DOS calculation takes precedence, and probe is switched off:
+      if (numpar%optic_model /= 2) then
+         numpar%optic_model = -2    ! complex, for given number of k-points for DOS calculations
+      endif
+      numpar%save_DOS = .true.   ! included
+   elseif (N == 1) then ! calculate with the same model used for the probe pulse (gamma-point or multiple k-points)
+      numpar%save_DOS = .true.   ! included
+   else ! no DOS output requested
+      numpar%save_DOS = .false.  ! excluded
    endif
+!    print*, 'DOS_in:', numpar%save_DOS, numpar%optic_model
    
    ! save Mulliken or not, and within which model: (0) no; (1) for atom types; 
    read(FN,*,IOSTAT=Reason) numpar%Mulliken_model
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
    endif
 
    ! save electron electron distribution (1) or not (0):
-   read(FN,*,IOSTAT=Reason) N  ! save electron distribution function (1) or not (0)
+   !read(FN,*,IOSTAT=Reason) N  ! save electron distribution function (1) or not (0)
+   read(FN,'(a)',IOSTAT=Reason) temp_ch   ! read parameters to interpret them in a subroutine
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
    endif
-   if (N .EQ. 1) then
-      numpar%save_fe = .true.	! included
-   else
-      numpar%save_fe = .false.	! excluded
+   call interprete_distribution_input(temp_ch, numpar, Scell(1), read_well) ! below
+   if (.not. read_well) then
+      write(Error_descript,'(a,i5,a,$)') 'Could not interprete line ', count_lines, ' in file '//trim(adjustl(File_name))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 3418
    endif
 
    ! save atomic pair correlation function (1) or not (0):
    read(FN,*,IOSTAT=Reason) N  ! save atomic pair correlation function (1) or not (0)
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4191,7 +4933,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) N  ! save atomic positions in XYZ (1) or not (0)
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4206,7 +4948,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) N  ! save atomic positions in CIF (1) or not (0)
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4221,7 +4963,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) N
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4236,7 +4978,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) numpar%MSD_power
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4246,7 +4988,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) numpar%NN_radius
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4261,7 +5003,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
    read(FN,*,IOSTAT=Reason) numpar%fig_extention
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3418
@@ -4284,55 +5026,423 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, Er
       numpar%ind_fig_extention = 1
    end select
    
-   
-!    OPT_PARAM:if (numpar%optic_model .GT. 0) then ! if calculate optical coefficients:
-      ! number of k-points in each direction (used only for Trani-k!):
-      read(FN,*,IOSTAT=Reason) numpar%ixm, numpar%iym, numpar%izm
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
-      endif
+   ! number of k-points in each direction (used only for Trani-k!):
+   read(FN,*,IOSTAT=Reason) numpar%ixm, numpar%iym, numpar%izm
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      goto 3418
+   endif
 
+   !----------------------------------------
+   ! Read optional data provided by the user (e.g., to overwrite default atomic data):
+   if (add_data_present) then
+      call read_user_additional_data(FN, count_lines, matter, Scell, NSC, user_data)   ! below
+   endif
+
+   ! Close this file only if it was opened within this subroutine:
+3418 continue
+   if (.not.old_file .and. file_opened) close(FN)
+end subroutine read_numerical_parameters
+
+
+
+subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
+   character(*), intent(in) :: temp_ch ! line read from the input file
+   type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   logical, intent(inout) :: read_well
+   !--------------------
+   integer :: count_lines, Reason, N, Nsiz, i
+   real(8) :: dE, Emax, Emin, dE_min
+
+   count_lines = 0
+   read_well = .true.   ! to start with
+   ! Default values:
+   numpar%save_fe = .false.
+   numpar%save_fe_grid = .false.
+   dE_min = 1.0d-4   ! [eV] minimal allowed grid step
+   dE = 0.1d0  ! [eV] energy grid step
+   Emin = -30.0d0 ! [eV] energy grid start
+   Emax = 100.0d0 ! [eV] energy grid end
+
+   read(temp_ch,*,IOSTAT=Reason) N, dE, Emax
+   call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
+   if (.not. read_well) then ! something wrong with the user-defined grid
+      ! try reading just the first flag, no grid parameters
+      read(temp_ch,*,IOSTAT=Reason) N
+      call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
+      if (.not. read_well) then ! something wrong with the user-defined grid
+         print*, 'Trouble reading the line with electronic distribution parameters, fe will not be printed out!'
+         N = 0 ! by default, no printing out
+      endif
+   else
+      if ((dE < dE_min) .and. (abs(N) == 2)) then
+         dE = dE_min
+         print*, 'Energy grid step for fe is too small, using the default value:', dE_min
+      endif
+   endif
+
+   select case (N)
+   case (1) ! printout distribution on TB energy levels
+      numpar%save_fe = .true.
+   case (2) ! printout distribution on TB energy levels and on the user-defined grid
+      numpar%save_fe = .true.
+      numpar%save_fe_grid = .true.
+   case (-2) ! printout distribution on the user-defined grid, but not on TB energy levels
+      numpar%save_fe_grid = .true.
+   end select
+
+   if (numpar%save_fe_grid) then
+      ! Now we know the grid parameters:
+      Nsiz = INT((Emax-Emin)/dE)
+      ! Set the default grids:
+      allocate(Scell%E_fe_grid(Nsiz), source=0.0d0)
+      allocate(Scell%fe_on_grid(Nsiz), source=0.0d0)
+      allocate(Scell%fe_high_on_grid(Nsiz), source=0.0d0)
+      allocate(numpar%high_DOS(Nsiz), source=0.0d0)
+      allocate(Scell%fe_norm_on_grid(Nsiz), source=0.0d0)
+      allocate(Scell%fe_norm_high_on_grid(Nsiz), source=0.0d0)
+      ! Create the grid:
+      Scell%E_fe_grid(1) = Emin
+      do i = 2, Nsiz
+         Scell%E_fe_grid(i) = Scell%E_fe_grid(i-1) + dE
+      enddo
+   endif
+end subroutine interprete_distribution_input
+
+
+
+subroutine set_Bath_grid_electrons(numpar, read_well_out, Error_descript)
+   type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
+   logical, intent(inout) :: read_well_out
+   character(*), intent(inout) :: Error_descript
+   !-----------------------------------------
+   character(200) :: Path, full_file_name
+   logical :: file_exist, read_well
+   integer :: FN, Nsiz, count_lines, Reason, i
+
+   read_well_out = .false.   ! to start with
+   numpar%Transport_e = .false. ! to start with
+
+   Path = trim(adjustl(m_INPUT_directory))//numpar%path_sep    ! where to find the file with the data
+   full_file_name = trim(adjustl(Path))//trim(adjustl(numpar%El_bath_step_grid_file))   ! to read the file from the INPUT_DATA directory
+   inquire(file=trim(adjustl(full_file_name)),exist=file_exist) ! check if input file is there
+   if (file_exist) then ! try to read it, if there is a grid provided
+      open(newunit = FN, FILE = trim(adjustl(full_file_name)), status = 'old', action='read')
+      ! Find the grid size from the file:
+      call Count_lines_in_file(FN, Nsiz) ! module "Dealing_with_files"
+      ! Knowing the size, create the grid-array and read from the file:
+      if (allocated(numpar%El_bath_reset_grid)) deallocate(numpar%El_bath_reset_grid) ! make sure it's possible to allocate
+      allocate(numpar%El_bath_reset_grid(Nsiz)) ! allocate it
+      if (allocated(numpar%El_bath_grid_Ta)) deallocate(numpar%El_bath_grid_Ta) ! make sure it's possible to allocate
+      allocate(numpar%El_bath_grid_Ta(Nsiz)) ! allocate it
+      if (allocated(numpar%El_bath_grid_tau)) deallocate(numpar%El_bath_grid_tau) ! make sure it's possible to allocate
+      allocate(numpar%El_bath_grid_tau(Nsiz)) ! allocate it
+
+      ! Read data on the grid from the file:
+      count_lines = 0   ! just to start counting lines in the file
+      do i = 1, Nsiz    ! read grid line by line from the file
+         read(FN,*,IOSTAT=Reason) numpar%El_bath_reset_grid(i), numpar%El_bath_grid_Ta(i), numpar%El_bath_grid_tau(i)
+         call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
+         if (.not. read_well) then ! something wrong with the user-defined grid
+            write(Error_descript,'(a,i3)') 'In the file '//trim(adjustl(numpar%El_bath_step_grid_file))//' could not read line ', count_lines
+            goto 9997  ! couldn't read the data, exit the cycle
+         endif
+      enddo
+      numpar%i_El_bath_dt = 1 ! to start from
+      read_well_out = .true.     ! we read the grid from the file well
+
+9997 call close_file('close', FN=FN) ! module "Dealing_with_files"
+   endif ! file_exist
+end subroutine set_Bath_grid_electrons
+
+
+subroutine set_Bath_grid_atoms(numpar, read_well_out, Error_descript)
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   logical, intent(inout) :: read_well_out
+   character(*), intent(inout) :: Error_descript
+   !-----------------------------------------
+   character(200) :: Path, full_file_name
+   logical :: file_exist, read_well
+   integer :: FN, Nsiz, count_lines, Reason, i
+
+   read_well_out = .false.   ! to start with
+   numpar%Transport = .false. ! to start with
+
+   Path = trim(adjustl(m_INPUT_directory))//numpar%path_sep    ! where to find the file with the data
+   full_file_name = trim(adjustl(Path))//trim(adjustl(numpar%At_bath_step_grid_file))   ! to read the file from the INPUT_DATA directory
+   inquire(file=trim(adjustl(full_file_name)),exist=file_exist) ! check if input file is there
+   if (file_exist) then ! try to read it, if there is a grid provided
+      open(newunit = FN, FILE = trim(adjustl(full_file_name)), status = 'old', action='read')
+      ! Find the grid size from the file:
+      call Count_lines_in_file(FN, Nsiz) ! module "Dealing_with_files"
+      ! Knowing the size, create the grid-array and read from the file:
+      if (allocated(numpar%At_bath_reset_grid)) deallocate(numpar%At_bath_reset_grid) ! make sure it's possible to allocate
+      allocate(numpar%At_bath_reset_grid(Nsiz)) ! allocate it
+      if (allocated(numpar%At_bath_grid_Ta)) deallocate(numpar%At_bath_grid_Ta) ! make sure it's possible to allocate
+      allocate(numpar%At_bath_grid_Ta(Nsiz)) ! allocate it
+      if (allocated(numpar%At_bath_grid_tau)) deallocate(numpar%At_bath_grid_tau) ! make sure it's possible to allocate
+      allocate(numpar%At_bath_grid_tau(Nsiz)) ! allocate it
+
+      ! Read data on the grid from the file:
+      count_lines = 0   ! just to start counting lines in the file
+      do i = 1, Nsiz    ! read grid line by line from the file
+         read(FN,*,IOSTAT=Reason) numpar%At_bath_reset_grid(i), numpar%At_bath_grid_Ta(i), numpar%At_bath_grid_tau(i)
+         call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
+         if (.not. read_well) then ! something wrong with the user-defined grid
+            write(Error_descript,'(a,i3)') 'In the file '//trim(adjustl(numpar%At_bath_step_grid_file))//' could not read line ', count_lines
+            goto 9998  ! couldn't read the data, exit the cycle
+         endif
+      enddo
+      numpar%i_At_bath_dt = 1 ! to start from
+      read_well_out = .true.     ! we read the grid from the file well
+
+9998 call close_file('close', FN=FN) ! module "Dealing_with_files"
+   endif ! file_exist
+end subroutine set_Bath_grid_atoms
+
+
+
+subroutine read_user_additional_data(FN, count_lines, matter, Scell, NSC, user_data)
+   integer, intent(in) :: FN  ! file to read from
+   integer, intent(inout) :: count_lines  ! line we are reading
+   type(Solid), intent(in) :: matter   ! all material parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(User_overwrite_data), intent(inout) :: user_data ! data to be read
+   !--------------------------
+   logical :: read_well
+   integer :: Reason
+   character(100) :: text
+
+   ! Default values:
+   user_data%do_overwrite = .false. ! to start with, no data to use
+
+   read_well = .true.   ! to start with
+   RD: do while (read_well)
+      read(FN,*,IOSTAT=Reason) text
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) exit RD  ! end of file, stop reading
+
+      call interpret_user_data(FN, count_lines, read_well, text, matter, Scell, NSC, user_data) ! below
+      if (.not. read_well) exit RD  ! end of file, stop reading
+   enddo RD
+
+end subroutine read_user_additional_data
+
+
+subroutine interpret_user_data(FN, count_lines, read_well, text, matter, Scell, NSC, user_data)
+   integer, intent(in) :: FN  ! file to read from
+   integer, intent(inout) :: count_lines  ! line we are reading
+   logical, intent(inout) :: read_well ! marker if the line read well
+   character(*), intent(in) :: text ! what was read in the previous line
+   type(Solid), intent(in) :: matter	! all material parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(User_overwrite_data), intent(inout) :: user_data ! data to be read
+   !-------------------------
+   real(8) :: temp
+   integer :: Nat, Nsh, i, temp_int(2), Reason
+   character(3) :: temp_ch
+   character(150) :: Error_descript
+
+   ! Nat = size(matter%Atoms) ! number of atoms is unknown yet, use just some large value here:
+   Nat = 100
+   ! Find the maximal number of shells:
+   Nsh = 0  ! to start with
+   do i = 1, Nat
+      !Nsh = max(Nsh, size(matter%Atoms(i)%Ip)) ! numer of shells is undefined yet!
+      Nsh = 50
+   enddo
+
+   select case (trim(adjustl(text)))
+   !--------------------------------
+   case ('DRUDE', 'Drude', 'drude')
       ! initial n and k of unexcited material (used for DRUDE model only!):
       read(FN,*,IOSTAT=Reason) Scell(NSC)%eps%n, Scell(NSC)%eps%k	! initial n and k coeffs
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
+         print*, 'Could not read line (#1)', count_lines, ' under "DRUDE" option'
+         print*, 'Default values are used: n,k=', Scell(1)%eps%n, Scell(1)%eps%k
       endif
 
       ! [me] effective mass of CB electron and VB hole:
       read(FN,*,IOSTAT=Reason) Scell(NSC)%eps%me_eff, Scell(NSC)%eps%mh_eff
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
+         print*, 'Could not read line (#2)', count_lines, ' under "DRUDE" option'
+         print*, 'Default values are used: me,mh=', Scell(1)%eps%me_eff, Scell(1)%eps%mh_eff
+      else
+         Scell(NSC)%eps%me_eff = Scell(NSC)%eps%me_eff*g_me	! [kg]
+         Scell(NSC)%eps%mh_eff = Scell(NSC)%eps%mh_eff*g_me	! [kg]
       endif
-      Scell(NSC)%eps%me_eff = Scell(NSC)%eps%me_eff*g_me	! [kg]
-      Scell(NSC)%eps%mh_eff = Scell(NSC)%eps%mh_eff*g_me	! [kg]
 
       ! [fs] mean scattering times of electrons and holes:
-      read(FN,*,IOSTAT=Reason) Scell(NSC)%eps%tau_e, Scell(NSC)%eps%tau_h	
+      read(FN,*,IOSTAT=Reason) Scell(NSC)%eps%tau_e, Scell(NSC)%eps%tau_h
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
+         print*, 'Could not read line (#3)', count_lines, ' under "DRUDE" option'
+         print*, 'Default values are used: te,th=', Scell(1)%eps%tau_e, Scell(1)%eps%tau_h
       endif
-!    endif OPT_PARAM
 
-   ! Close this file, it has been read through:
-3418 if (file_opened) close(FN)
-end subroutine read_numerical_parameters
+   !--------------------------------
+   case ('NAME', 'Name', 'name')
+      read(FN,*,IOSTAT=Reason) temp_int(1), temp_ch
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%name)) then
+            allocate(user_data%name(Nat))
+            user_data%name = ''  ! to start with
+         endif
+         user_data%name(temp_int(1)) = temp_ch
+         user_data%do_overwrite = .true.
+      endif
 
+   !--------------------------------
+   case ('MASS', 'Mass', 'mass')
+      read(FN,*,IOSTAT=Reason) temp_int(1), temp
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%mass)) allocate(user_data%mass(Nat), source = -1.0d0)
+         user_data%mass(temp_int(1)) = temp
+         user_data%do_overwrite = .true.
+      endif
+
+   !--------------------------------
+   case ('NO_AUGER', 'No_Auger', 'no_auger', 'Exclude_Auger', 'exclude_auger', 'EXCLUDE_AUGER')
+      if (.not.allocated(user_data%auger)) allocate(user_data%auger(Nat,Nsh), source = 1.0d30)
+      user_data%auger = 1.0d30   ! exclude Auger by setting time to infinity
+      user_data%do_overwrite = .true.
+
+   !--------------------------------
+   case ('AUGER', 'Auger', 'auger')
+      read(FN,*,IOSTAT=Reason) temp_int(:), temp
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%auger)) allocate(user_data%auger(Nat,Nsh), source = -1.0d30)
+         user_data%auger(temp_int(1),temp_int(2)) = temp
+         user_data%do_overwrite = .true.
+      endif
+!       print*, 'AUGER', temp_int(1), temp_int(2), user_data%auger(temp_int(1),temp_int(2))
+!       print*, 'SIZE:', size(user_data%auger,1), size(user_data%auger,2), Nat, Nsh
+!       print*, 'ALL:', allocated(user_data%auger), user_data%auger(:,:)
+!       pause 'AUGER'
+
+   !--------------------------------
+   case ('IP', 'Ip', 'ip', 'ionization_potential', 'Ionization_potential', 'IONIZATION_POTENTIAL')
+      read(FN,*,IOSTAT=Reason) temp_int(:), temp
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%Ip)) allocate(user_data%Ip(Nat,Nsh), source = -1.0d30)
+         user_data%Ip(temp_int(1),temp_int(2)) = temp
+         user_data%do_overwrite = .true.
+      endif
+
+   !--------------------------------
+   case ('Ne', 'ne', 'NE', 'NUMBER_OF_ELECTRONS', 'Number_of_electrons', 'Population')
+      read(FN,*,IOSTAT=Reason) temp_int(:), temp
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%Ne_shell)) allocate(user_data%Ne_shell(Nat,Nsh), source = -1.0d0)
+         user_data%Ne_shell(temp_int(1),temp_int(2)) = temp
+         user_data%do_overwrite = .true.
+      endif
+
+   !--------------------------------
+   case ('Ek', 'ek', 'EK', 'Kinetic_energy', 'KINETIC_ENERGY', 'kinetic_energy')
+      read(FN,*,IOSTAT=Reason) temp_int(:), temp
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         if (.not.allocated(user_data%Ek)) allocate(user_data%Ek(Nat,Nsh), source = -1.0d30)
+         user_data%Ek(temp_int(1),temp_int(2)) = temp
+         user_data%do_overwrite = .true.
+      endif
+   end select
+
+end subroutine interpret_user_data
+
+
+subroutine overwrite_atomic_data(user_data, matter)
+   type(User_overwrite_data), intent(in) :: user_data ! data to be read
+   type(Solid), intent(inout) :: matter	! all material parameters
+   !----------------------------
+   integer :: i, Nat, j, Nsh
+
+   ! Check if the user overwrite atomic data:
+   if (user_data%do_overwrite) then
+      Nat = size(matter%Atoms) ! number of atoms
+
+      ! Element name:
+      if (allocated(user_data%Name)) then
+         do i = 1, Nat   ! check for all elements
+            if (LEN(trim(adjustl(user_data%Name(i)))) > 0) then ! overwrite the name
+               matter%Atoms(i)%Name = user_data%Name(i)
+            endif
+         enddo
+      endif
+
+      ! Mass:
+      if (allocated(user_data%mass)) then
+         do i = 1, Nat   ! check for all elements
+            if (user_data%mass(i) > 0.0d0) then ! overwrite the mass
+               matter%Atoms(i)%Ma = user_data%mass(i) * g_amu ! [kg]
+            endif
+         enddo
+      endif
+
+      ! Auger decay times:
+      if (allocated(user_data%auger)) then
+         do i = 1, Nat
+            Nsh = size(matter%Atoms(i)%Ip)   ! number of shells
+            do j = 1, Nsh
+               if (user_data%Auger(i,j) > 0.0d0) then ! overwrite the auger decay time
+                  matter%Atoms(i)%Auger(j) = user_data%auger(i,j) ! [fs]
+               endif
+            enddo ! j
+         enddo ! i
+      endif
+
+      ! Ionization potentials:
+      if (allocated(user_data%Ip)) then
+         do i = 1, Nat
+            Nsh = size(matter%Atoms(i)%Ip)   ! number of shells
+            do j = 1, Nsh
+               if (user_data%Ip(i,j) > 0.0d0) then ! overwrite the ionization potential
+                  matter%Atoms(i)%Ip(j) = user_data%Ip(i,j) ! [eV]
+               endif
+            enddo ! j
+         enddo ! i
+      endif
+
+      ! Kinetic energies of electronic in atomic shells:
+      if (allocated(user_data%Ip)) then
+         do i = 1, Nat
+            Nsh = size(matter%Atoms(i)%Ek)   ! number of shells
+            do j = 1, Nsh
+               if (user_data%Ek(i,j) > 0.0d0) then ! overwrite the kinetic energy
+                  matter%Atoms(i)%Ek(j) = user_data%Ek(i,j) ! [eV]
+               endif
+            enddo ! j
+         enddo ! i
+      endif
+
+      ! Number of electrons in the atomic shell:
+      if (allocated(user_data%Ip)) then
+         do i = 1, Nat
+            Nsh = size(matter%Atoms(i)%Ek)   ! number of shells
+            do j = 1, Nsh
+               if (user_data%Ne_shell(i,j) >= 0.0d0) then ! overwrite the electron population
+                  matter%Atoms(i)%Ne_shell(j) = user_data%Ne_shell(i,j)
+               endif
+            enddo ! j
+         enddo ! i
+      endif
+
+   endif ! (user_data%do_overwrite)
+end subroutine overwrite_atomic_data
 
 
 subroutine set_MD_step_grid(File_name, numpar, read_well_out, Error_descript)
@@ -4396,17 +5506,18 @@ end subroutine set_MD_step_grid
 
 
 
-subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
+subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_data, Err)
    type(Super_cell), dimension(:), allocatable, intent(inout) :: Scell ! suoer-cell with all the atoms inside
    character(*), intent(in) :: File_name
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Pulse), dimension(:), allocatable, intent(inout) :: laser	! Laser pulse parameters
+   type(User_overwrite_data), intent(inout) :: user_data
    type(Error_handling), intent(inout) :: Err	! error save
    real(8) read_var(3) ! just to read variables from file
    integer FN, N, Reason, count_lines, i
    logical file_opened, read_well
-   character(100) Error_descript
+   character(100) Error_descript, text
 
    !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old')
    FN=109
@@ -4419,21 +5530,29 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
       goto 3417
    endif
 
-   ! Material name:
-   read(FN,*,IOSTAT=Reason) matter%Name
+   ! Material name (and possibly the file name with coordinates):
+   read(FN,*,IOSTAT=Reason) matter%Name, numpar%Cell_filename
+   if (Reason /= 0) then ! try to read just single variable:
+      numpar%Cell_filename = ''  ! nullify it
+      read(FN,*,IOSTAT=Reason) matter%Name
+      if (numpar%verbose) write(*,'(a)') 'No valid filename with coordinates provided, assuming default'
+   else
+      call check_coordinates_filename(numpar%Cell_filename, numpar%verbose) ! see below
+   endif
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3417
    endif
+   !print*, trim(adjustl(matter%Name)), ' : ', trim(adjustl(numpar%Cell_filename))
 
    ! chemical formula of the compound (used in MC in case of EADL parameters):
    read(FN,*,IOSTAT=Reason) matter%Chem
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3417
@@ -4441,14 +5560,30 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
 
    if (.not.allocated(Scell)) allocate(Scell(1)) ! just for start, 1 supercell
    do i = 1, size(Scell) ! for all supercells
-      ! initial electron temperature [K]:
+
+      ! initial electron temperature [K] or filename with the distribution function:
       read(FN,*,IOSTAT=Reason) Scell(i)%Te
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
+      if (Reason == 0) then ! there was a number, interpret it as electronic temperature
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3417
+         endif
+         numpar%fe_filename = '' ! user provided no filename for distribution (use Fermi with given tempreature instead)
+      else ! maybe there was a name of the file with electronic distribution:
+         Scell(i)%Te = -1.0d0 ! Just to indicate nonequilibrium distribution
+         backspace(FN)  ! get back and try to read the line again:
+         count_lines = count_lines - 1
+         read(FN,*,IOSTAT=Reason) numpar%fe_filename  ! read filename
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3417
+         endif
       endif
       Scell(i)%TeeV = Scell(i)%Te/g_kb ! [eV] electron temperature
 
@@ -4456,7 +5591,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
       read(FN,*,IOSTAT=Reason) Scell(i)%Ta	
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript))
          goto 3417
@@ -4468,7 +5603,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
    read(FN,*,IOSTAT=Reason) numpar%t_start
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3417
@@ -4478,7 +5613,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
    read(FN,*,IOSTAT=Reason) numpar%t_total	
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3417
@@ -4488,7 +5623,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
    read(FN,*,IOSTAT=Reason) N		! How many pulses
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3417
@@ -4498,19 +5633,44 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
     if (allocated(laser)) deallocate(laser)
     allocate(laser(N))  ! that's how many pulses
     do i = 1, N         ! read parameters for all pulses
-      read(FN,*,IOSTAT=Reason) laser(i)%F	  ! ABSORBED DOSE IN [eV/atom]
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
+      read_var = 0.0d0 ! to start with
+      read(FN,*,IOSTAT=Reason) read_var(:)
+      if (Reason == 0) then ! three numbers are given, set few inputs with varying dose:
+         call read_file(Reason, count_lines, read_well)  ! to keep proper counting of lines, do this
+         if (.not. read_well) then
+            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3417
+         endif
+         ! For this simulation run, use the first value given:
+         laser(i)%F = read_var(1)   ! ABSORBED DOSE IN [eV/atom]
+         ! For other simulation runs, create the input files accordingly:
+         call prepare_multiple_inputs(numpar, File_name, read_var)  ! below
+
+      else ! probably, there weren't three parameters in the line, so read just the fluence
+         backspace(FN)  ! get back and try to read the line again:
+         count_lines = count_lines - 1
+         read(FN,*,IOSTAT=Reason) laser(i)%F	  ! ABSORBED DOSE IN [eV/atom]
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3417
+         endif
       endif
 
-      read(FN,*,IOSTAT=Reason) laser(i)%hw  ! PHOTON ENERGY IN [eV]
-      call read_file(Reason, count_lines, read_well)
+      read(FN,*,IOSTAT=Reason) laser(i)%hw, laser(i)%FWHM_hw  ! photon energy in [eV], and FWHM width of distribution [eV]
+      if (Reason /= 0) then ! probably only energy provided, not the distribution width, so assume FWHM_hw=0
+         laser(i)%FWHM_hw = 0.0d0
+         backspace(FN)  ! get back and try to read the line again:
+         count_lines = count_lines - 1
+         read(FN,*,IOSTAT=Reason) laser(i)%hw  ! photon energy in [eV] only, no distribution
+         call read_file(Reason, count_lines, read_well)
+      endif
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript))
          goto 3417
@@ -4519,7 +5679,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
       read(FN,*,IOSTAT=Reason) laser(i)%t	  ! PULSE FWHM-DURATION IN [fs]
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript))
          goto 3417
@@ -4528,7 +5688,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
       read(FN,*,IOSTAT=Reason) laser(i)%KOP ! type of pulse: 0=rectangular, 1=Gaussian, 2=SASE
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript))
          goto 3417
@@ -4537,7 +5697,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
       read(FN,*,IOSTAT=Reason) laser(i)%t0  ! POSITION OF THE MAXIMUM OF THE PULSE IN [fs]
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript))
          goto 3417
@@ -4547,57 +5707,35 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, Err)
      enddo ! have read parameters for all pulses
    endif PULS
    
-   ! Calculate optical parameters, and with which model:
-   read(FN,*,IOSTAT=Reason) numpar%optic_model, N, read_var
-   if (.not. read_well) then
-      write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3417
-   endif
-   SCL:do i = 1, size(Scell) ! for all supercells
-      if (numpar%optic_model .GT. 0) then ! yes, calculate optical coefficients:
-         numpar%do_drude = .true.	! included
-         Scell(i)%eps%KK = .false.	! no K-K relations
-         if (N == 2) then	! use Kramers Kronig relations for spectrum
-            Scell(i)%eps%KK = .true.
-            Scell(i)%eps%all_w = .true.
-         elseif (N == 1) then	! calculate spectrum, but directly, without using Kramers Kronig relations
-            Scell(i)%eps%all_w = .true.
-         else
-            Scell(i)%eps%all_w = .false.
-         endif
-      else 
-         numpar%do_drude = .false.	! not included
-      endif
-      
-      Scell(i)%eps%E_min = read_var(1) ! starting point of the grid of energy [eV]
-      Scell(i)%eps%E_max = read_var(2) ! ending point of the grid of energy [eV]
-      Scell(i)%eps%dE = read_var(3)    ! grid step of energy [eV]
 
-      ! Absorbtion of how many rays (0=exclude, 1=1st ray, (>1)=sum all); probe-pulse wavelength [nm]; probe duration FWHM [fs]
-      read(FN,*,IOSTAT=Reason) numpar%drude_ray, Scell(i)%eps%l, Scell(i)%eps%tau
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
-      endif
-      !if (.not.numpar%do_drude) Scell(i)%eps%tau = -0.0d0 ! to exclude convolution if there is no probe pulse
-      Scell(i)%eps%ReEps0 = 0.0d0	! to start with
-      Scell(i)%eps%ImEps0 = 0.0d0	! to start with
-      Scell(i)%eps%w = 2.0d0*g_Pi*g_cvel/(Scell(i)%eps%l*1d-9) ! [1/sec] frequency
+   !------------------------------------------------
+   ! Check if there are additional options provided:
+   read_well = .true.   ! to start with
+   RDID: do while (read_well)
+      read(FN,*,IOSTAT=Reason) text
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) exit RDID  ! end of file, stop reading
 
-      ! Angle of prob-pulse with respect to normal [degrees]; material thickness [nm]:
-      read(FN,*,IOSTAT=Reason) Scell(i)%eps%teta, Scell(i)%eps%dd
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
-      endif
-      Scell(i)%eps%teta = Scell(i)%eps%teta*g_Pi/(180.0d0) !c [radians]
-   enddo SCL
+      ! Check if additional INPUT options are provided:
+      call interpret_user_data_INPUT(FN, trim(adjustl(File_name)), count_lines, text, Scell, numpar, Err) ! below
+      if (Err%Err) exit RDID  ! end of file, stop reading
+
+      ! Check if optional numerical or model data provided by the user (e.g., to overwrite default atomic data):
+      call interpret_user_data(FN, count_lines, read_well, text, matter, Scell, 1, user_data) ! below
+      if (.not. read_well) exit RDID  ! end of file, stop reading
+
+      ! Check if the numerical parameters are provided in this file:
+      select case (trim(adjustl(text)))
+      case ('NUMPAR', 'NumPar', 'numpar', &
+            'NUMERICAL_PARAMETERS', 'Numerical_Parameters', 'numerical_parameters', &
+            'NUMERICS', 'Numerics', 'numerics')
+         numpar%numpar_in_input = .true.  ! mark that the num.parameters were read from here
+         call read_numerical_parameters(trim(adjustl(File_name)), matter, numpar, laser, Scell, user_data, Err, add_data=.false.) ! below
+         if (Err%Err) exit RDID  ! end of file, stop reading
+      end select
+   enddo RDID
+
+   if (numpar%verbose) call print_time_step('Verbose option is on, XTANT is going to be a chatterbox', msec=.true.) ! modlue "Little_subroutines"
 
    ! Close this file, it has been read through:
 3417  if (file_opened) close(FN)
@@ -4605,7 +5743,560 @@ end subroutine read_input_material
 
 
 
-!---------------------------------------------
+subroutine check_coordinates_filename(Cell_filename, verbose)  ! check if the name has correct extension
+   character(*), intent(inout) :: Cell_filename
+   logical, intent(in) :: verbose
+   !------------------
+   character(200) :: filename_extension
+
+   call get_file_extension(trim(adjustl(Cell_filename)), filename_extension)  ! module "Dealing_with_files"
+
+   if (LEN(trim(adjustl(filename_extension))) <= 0) then ! it contains a dot
+      Cell_filename = ''
+      if (verbose) write(*,'(a)') 'No valid filename with coordinates provided, using default'
+   endif
+end subroutine check_coordinates_filename
+
+
+
+subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, numpar, Err)
+   integer, intent(in) :: FN  ! file to read from
+   character(*), intent(in) :: File_name
+   integer, intent(inout) :: count_lines  ! line we are reading
+   character(*), intent(in) :: string ! what was read in the previous line
+   type(Super_cell), dimension(:), allocatable, intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !--------------------------
+   real(8), dimension(3) :: read_var   ! fluence: starting, ending, step; all in [eV/atom]
+   integer :: Reason, num_phon, i, N
+   real(8) :: i_min, i_max
+   logical :: read_well
+   character(200) :: Error_descript, temp_ch
+   character(20) :: temp_ch1, temp_ch2, temp_ch3
+
+   read_well = .true.   ! to start with
+   read_var = 0.0d0     ! unused variable in this case
+
+   select case (trim(adjustl(string)))
+   case ('el-ph', 'EL-PH', 'El-Ph', 'Coupling', 'COUPLING', 'coupling')
+      read(FN,*,IOSTAT=Reason) num_phon   ! number of simulations for average electron-phonon coupling parameter
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then ! pass the number of simulations
+         call prepare_multiple_inputs(numpar, File_name, read_var, .true., num_phon, string=trim(adjustl(string)))   ! below
+      else ! use default nuber of iterations
+         call prepare_multiple_inputs(numpar, File_name, read_var, .true., string=trim(adjustl(string))) ! below
+      endif
+
+   case ('WATER', 'EMBED_WATER', 'EMBED_IN_WATER', 'Water', 'water', 'embed_water', 'Embed_Water', 'Embed_in_water')
+      numpar%embed_water = .true.   ! save the flag for water embedding
+      read(FN,*,IOSTAT=Reason) numpar%N_water_mol   ! number of water molecules to use
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         numpar%N_water_mol = 100 ! use default
+      elseif (numpar%N_water_mol < 0) then   ! don't use water
+         numpar%embed_water = .false.
+         numpar%N_water_mol = 0
+      endif
+
+   case ('PROBE', 'Probe', 'probe')
+
+      ! Calculate optical parameters, and with which model:
+      read(FN,*,IOSTAT=Reason) numpar%optic_model, N, read_var
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         return
+      endif
+      SCL:do i = 1, size(Scell) ! for all supercells
+         if (numpar%optic_model .GT. 0) then ! yes, calculate optical coefficients:
+            numpar%do_drude = .true.	! included
+            Scell(i)%eps%KK = .false.	! no K-K relations
+            if (N == 2) then	! use Kramers Kronig relations for spectrum
+               Scell(i)%eps%KK = .true.
+               Scell(i)%eps%all_w = .true.
+            elseif (N == 1) then	! calculate spectrum, but directly, without using Kramers Kronig relations
+               Scell(i)%eps%all_w = .true.
+            else
+               Scell(i)%eps%all_w = .false.
+            endif
+         else
+            numpar%do_drude = .false.	! not included
+         endif
+
+         Scell(i)%eps%E_min = read_var(1) ! starting point of the grid of energy [eV]
+         Scell(i)%eps%E_max = read_var(2) ! ending point of the grid of energy [eV]
+         Scell(i)%eps%dE = read_var(3)    ! grid step of energy [eV]
+
+         ! Absorbtion of how many rays (0=exclude, 1=1st ray, (>1)=sum all); probe-pulse wavelength [nm]; probe duration FWHM [fs]
+         read(FN,*,IOSTAT=Reason) numpar%drude_ray, Scell(i)%eps%l, Scell(i)%eps%tau
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            return
+         endif
+         !if (.not.numpar%do_drude) Scell(i)%eps%tau = -0.0d0 ! to exclude convolution if there is no probe pulse
+         Scell(i)%eps%ReEps0 = 0.0d0	! to start with
+         Scell(i)%eps%ImEps0 = 0.0d0	! to start with
+         Scell(i)%eps%w = 2.0d0*g_Pi*g_cvel/(Scell(i)%eps%l*1d-9) ! [1/sec] frequency
+
+         ! Angle of prob-pulse with respect to normal [degrees]; material thickness [nm]:
+         read(FN,*,IOSTAT=Reason) Scell(i)%eps%teta, Scell(i)%eps%dd
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            return
+         endif
+         Scell(i)%eps%teta = Scell(i)%eps%teta*g_Pi/(180.0d0) !c [radians]
+      enddo SCL
+
+   case ('size', 'Size', 'SIZE')
+      print*, 'Supercell size variation will be performed to plot potential energy curve'
+      numpar%change_size = .true. ! do changing size
+      ! Optional number of points for vary_size:
+      read(FN,*,IOSTAT=Reason) i_min, i_max, N
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then ! save and use it later
+         numpar%change_size_min = i_min
+         numpar%change_size_max = i_max
+         numpar%change_size_step = N
+         write(temp_ch1, '(f12.2)') numpar%change_size_min
+         write(temp_ch2, '(f12.2)') numpar%change_size_max
+         write(temp_ch3,'(i8)') numpar%change_size_step
+         write(temp_ch, '(a)') trim(adjustl(temp_ch1))//' : '//trim(adjustl(temp_ch2))//' : '//trim(adjustl(temp_ch3))
+         print*, 'With parameters of the supercell (min, max, grid): '//trim(adjustl(temp_ch))
+      else ! reread the line next time, if it was not an integer number
+         BACKSPACE(FN)
+         print*, 'With default parameters of the supercell min, max, and step'
+      endif
+      !write(*,'(a)') trim(adjustl(m_starline))
+
+   case default
+      ! Check if the user needs any additional info (by setting the flags):
+      call interprete_additional_data(string, numpar%path_sep, change_size=numpar%change_size, contin=Err%Err, &
+                  allow_rotate=numpar%allow_rotate, verbose=numpar%verbose) ! module "Read_input_data"
+
+   endselect
+end subroutine interpret_user_data_INPUT
+
+
+
+subroutine prepare_multiple_inputs(numpar, File_name, read_var, do_eph, num_phon, string)
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   character(*), intent(in) :: File_name  ! given filename
+   real(8), dimension(3), intent(in) :: read_var   ! fluence: starting, ending, step; all in [eV/atom]
+   logical, intent(in), optional :: do_eph  ! for electron-phonon coupling, it requires special multiple input
+   integer, intent(in), optional :: num_phon ! how many simulation for average electron-phonon coupling
+   character(*), intent(in), optional :: string
+   !-----------------------------------
+   real(8) :: dose_cur, RN, x_cur, x_0, pulse
+   integer :: N, i, FN, FN2, file_len, count_lines, j, N_lines, Reason, sz
+   character(250) :: Save_file, Cur_file, Num_par_file
+   character(250), allocatable, dimension(:) :: File_content
+   character(5) :: chtest2
+   character(25) :: chtest
+   logical :: read_well, do_el_phon, file_exists
+
+   ! Check, if user requested average electron-phonon coupling calculations:
+   if (present(do_eph)) then
+      do_el_phon = do_eph
+   else  ! not average electron-phonon calculations
+      do_el_phon = .false.
+   endif
+
+   ! Check, if it is fluence grid, or electron-phonon grid:
+   if (do_el_phon) then
+      if (present(num_phon)) then   ! user provided number of points
+         N = num_phon-1
+         if (N < 1) N = 0
+      else  ! use default value:
+         N = 10
+      endif
+   else ! then must be the fluence points:
+      ! Get the total number of fluence points:
+      N = ceiling(abs(read_var(2) - read_var(1))/abs(read_var(3)))
+   endif
+
+   ! Set the name of the numerical_parameters file:
+   Num_par_file = trim(adjustl(numpar%input_path))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+
+   ! Set temporary file name:
+   file_len = LEN(trim(adjustl(File_name)))  ! length of the string
+   Save_file = trim(adjustl(File_name(1:file_len-4)))//'_SAVE.txt'
+
+   ! Create the temporary save file
+   if (numpar%path_sep .EQ. '\') then	! if it is Windows
+      call copy_file(File_name, Save_file, 1, add_com='* /YQ') ! module "Dealing_with_files"
+   else
+      call copy_file(File_name, Save_file) ! module "Dealing_with_files"
+   endif
+
+   ! Open the file:
+   FN=4000
+   open(UNIT=FN, FILE = trim(adjustl(Save_file)), status = 'old', action='read')
+   call Count_lines_in_file(FN, N_lines)  ! module "Dealing_with_files"
+   ! Knowing the size, allocate the array:
+   allocate(File_content(N_lines))
+   ! Read the saved file:
+   count_lines = 0   ! to start with
+   do j = 1, N_lines
+      read(FN, '(a)', IOSTAT=Reason) File_content(j)   ! read the current line
+      call read_file(Reason, count_lines, read_well)   ! modlue "Dealing_with_files"
+      if ( (.not.read_well) .and. (numpar%path_sep == '/') ) then ! if it is Linux
+         backspace(FN)  ! to reread the line
+         count_lines = count_lines - 1 ! reread the same line, don't count it as the next one
+         read(FN, '(a)', IOSTAT=Reason) File_content(j)(1:sz) ! read it again, now knowing the size
+         call read_file(Reason, count_lines, read_well) ! modlue "Dealing_with_files"
+      endif
+      if (.not.read_well) then
+         print*, 'Problem in prepare_multiple_inputs: cannot read line ', count_lines, ' in file '//trim(adjustl(Cur_file))
+         goto 3440
+      endif
+   enddo
+   ! Close files:
+   call close_file('delete', FN=FN) ! module "Dealing_with_files"
+
+   ! Make a new copy of the input file with the changed fluence only:
+   do i = 1, N
+      ! Set the new dose:
+      !dose_cur = min(read_var(1),read_var(2)) + dble(i)*abs(read_var(3))
+      dose_cur = read_var(1) + dble(i) * sign( read_var(3), (read_var(2)-read_var(1)) )
+
+      ! Set the new file name:
+      FN2=FN+i
+      write(chtest2,'(i5)') i
+      Cur_file = trim(adjustl(File_name(1:file_len-4)))//'_'//trim(adjustl(chtest2))//'.txt'
+      open(UNIT=FN2, FILE = trim(adjustl(Cur_file)))
+
+      ! Copy data into this new file, accept for the fluence line:
+      do j = 1, N_lines
+
+         if (do_el_phon) then ! it is electron-phonon calculations, requires changing a few parameters:
+            select case (j)
+            case default
+               if (present(string)) then
+                  if (trim(adjustl(File_content(j))) /= string) then ! don't make extra copies of the file
+                     write(FN2, '(a)') trim(adjustl(File_content(j)))   ! just copy this line
+                  endif
+               else
+                  write(FN2, '(a)') trim(adjustl(File_content(j)))   ! just copy this line
+               endif
+            case (5) ! start of simulation [fs]
+               ! Get the user-provided simulation time:
+               read( File_content(j), *, IOSTAT=Reason) x_0
+               ! Sample randomly simulation starting time:
+               call random_number(RN)  ! [0:1]
+               x_cur = x_0 * (1.0d0 + 0.2d0*(RN-0.5d0))
+               write(chtest, '(f16.5)') x_cur
+               write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! start of simulation [fs]'
+            case (6) ! end of simulation [fs]
+               ! Get the user-provided simulation time:
+               read( File_content(j), *, IOSTAT=Reason) x_0
+               ! Sample randomly simulation starting time:
+               call random_number(RN)  ! [0:1]
+               x_cur = x_0 * (1.0d0 + 0.5d0*(RN-0.5d0))
+               pulse = x_cur  ! save it for later, to set pulse duration equal to this value
+               write(chtest, '(f16.5)') x_cur
+               write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! end of simulation time [fs]'
+            case (8) ! absorbed dose per this pulse [eV/atom] (min, max, step)
+               ! Get the user-provided simulation time:
+               read( File_content(j), *, IOSTAT=Reason) x_0
+               ! Sample randomly simulation starting time:
+               call random_number(RN)  ! [0:1]
+               x_cur = x_0 * (1.0d0 + 0.2d0*(RN-0.5d0))
+               write(chtest, '(f16.5)') x_cur
+               write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! absorbed dose per this pulse [eV/atom]'
+            case (10)   ! pulse FWHM-duration [fs]
+               write(chtest, '(f16.5)') pulse
+               write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! pulse FWHM-duration [fs]'
+            end select
+
+         else ! it is fluence grid:
+            if (j == 8) then  ! dose is set in the line #8
+               write(chtest, '(f16.5)') dose_cur
+               write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! absorbed dose [eV/atom]'
+            else  ! not the dose
+               if (present(string)) then
+                  if (trim(adjustl(File_content(j))) /= string) then ! don't make extra copies of the file
+                     write(FN2, '(a)') trim(adjustl(File_content(j)))   ! just copy this line
+                  endif
+               else
+                  write(FN2, '(a)') trim(adjustl(File_content(j)))   ! just copy this line
+               endif
+            endif
+         endif ! (do_el_phon)
+      enddo ! j = 1, N_lines
+
+      call close_file('close', FN=FN2) ! module "Dealing_with_files"
+
+      ! Also, make a copy of the numerical_parameters file:
+!       Cur_file = trim(adjustl(numpar%input_path))//trim(adjustl(m_NUMERICAL_PARAMETERS))
+!       write(Cur_file,'(a,a,a,a)') trim(adjustl(Cur_file)), '_', trim(adjustl(chtest2)), '.txt'
+!       inquire(file=trim(adjustl(Cur_file)),exist=file_exist) ! check if input file is there
+!       if (file_exist) then ! Create the second file:
+!          if (numpar%path_sep .EQ. '\') then	! if it is Windows
+!             call copy_file(Num_par_file, Cur_file, 1, add_com='* /YQ') ! module "Dealing_with_files"
+!          else
+!             call copy_file(Num_par_file, Cur_file) ! module "Dealing_with_files"
+!          endif
+!       endif
+   enddo
+
+3440 continue
+end subroutine prepare_multiple_inputs
+
+
+
+
+
+
+! Reads additional data from the command line passed along with the XTANT:
+subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose)
+   character(1), intent(inout) :: path_sep
+   logical, intent(inout) :: change_size
+   logical, intent(out) :: contin
+   logical, intent(out) :: allow_rotate
+   logical, intent(out) :: verbose
+   !---------------
+   character(1000) :: string
+   integer :: i_arg, count_args, N_arg
+   logical :: read_well
+
+   ! Default values:
+   change_size = .false. ! don't do changing size
+   verbose = .false.   ! don't print a lot of stuff
+
+   ! Identify the OS by the system-used path separator:
+   call Path_separator(path_sep) ! module "Dealing_with_files"
+
+   ! Count how many arguments the user provided:
+   N_arg = COMMAND_ARGUMENT_COUNT() ! Fortran intrinsic function
+
+   read_well = .true.   ! to start with
+   count_args = 0 ! to start with
+
+   ALLARG:do i_arg = 1, N_arg ! read all the arguments passed
+      ! Read the argument provided:
+      call GET_COMMAND_ARGUMENT(i_arg,string)  ! intrinsic
+
+      ! Act on the command passed:
+      call interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose)  ! below
+
+   enddo ALLARG
+end subroutine get_add_data
+
+
+subroutine interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose)
+   character(*), intent(in) :: string
+   character(1), intent(inout) :: path_sep
+   logical, intent(inout), optional :: change_size
+   logical, intent(out), optional :: contin
+   logical, intent(out), optional :: allow_rotate
+   logical, intent(out), optional :: verbose
+   !---------------
+   character(1000) :: read_string, printline, ch_temp, string_read
+   character(200) :: file_name
+   integer :: FN, Reason, count_lines
+   logical :: file_opened, read_text_well, read_well, file_exists
+
+   string_read = trim(adjustl(string))
+   ! Trim minus signs if present (for legacy reasons):
+   do while (string_read(1:1) == '-')
+      string_read = string_read(2:)
+   enddo
+
+   ! Interpret the command:
+   select case (trim(adjustl(string_read)))
+   case ('verbose', 'VERBOSE', 'Verbose')
+      print*, 'Verbose on: XTANT will print markers for testing and debugging'
+      if (present(verbose)) verbose = .true.
+      write(*,'(a)') trim(adjustl(m_starline))
+
+   case ('allow_rotation', 'allow_rotate', 'no_ang_removal')
+      print*, 'The angular momenta of the sample will not be removed'
+      if (present(allow_rotate)) allow_rotate = .true. ! don't remove angular momentum from initial conditions
+      write(*,'(a)') trim(adjustl(m_starline))
+
+   case ('size', 'Size', 'SIZE')
+      print*, 'Supercell size variation will be performed to plot potential energy curve'
+      if (present(change_size)) change_size = .true. ! do changing size
+      write(*,'(a)') trim(adjustl(m_starline))
+
+   case ('test', 'TEST', 'Test')
+      print*, 'Wow, it really works!'
+      !if (present(contin)) contin = .false.
+      write(*,'(a)') trim(adjustl(m_starline))
+
+   case ('Matter', 'matter', 'MATTER', 'Materials', 'materials', 'list', 'LIST', 'List')
+      write(*,'(a)') trim(adjustl(m_starline))
+      ! Create file with list of available materials:
+      call Get_list_of_materials(path_sep)  ! below
+
+      write(*,'(a)') trim(adjustl(m_starline))
+      if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
+
+   case ('help', 'HELP', 'Help')
+      ! Filename with help:
+      file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_HELP_file))
+
+      inquire(file=trim(adjustl(file_name)),exist=file_exists)
+      if (.not.file_exists) then ! no file, cannot print help
+         write(*,'(a)') 'Could not find file ', trim(adjustl(file_name))
+         write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+      else ! (.not.file_exists)
+         FN=200
+         open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'old', action='READ')
+         inquire(file=trim(adjustl(file_name)),opened=file_opened)
+         if (.not.file_opened) then
+            write(*,'(a)') 'Could not open file ', trim(adjustl(file_name))
+            write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+         else ! (.not.file_opened)
+            read_text_well = .true. ! to start with
+            count_lines = 0   ! to start with
+            do while (read_text_well)
+               read(FN,'(a)',IOSTAT=Reason) printline
+               call read_file(Reason, count_lines, read_text_well)   ! module "Dealing_with_files"
+               if (Reason > 0) then   ! something wrong in the line
+                  write(*,'(a)') 'Problem reading file '//trim(adjustl(file_name))
+                  write(ch_temp, '(i)') count_lines
+                  write(*,'(a)') 'in line '//trim(adjustl(ch_temp))
+                  read_well = .false.
+               elseif (Reason < 0) then ! end of file reached ...
+                  close(FN)
+               else
+                  write(*,'(A)') trim(adjustl(printline))
+               endif
+            enddo
+         endif ! (.not.file_opened)
+      endif ! (.not.file_exists)
+
+      write(*,'(a)') trim(adjustl(m_starline))
+      if (present(contin)) contin = .true.  ! stop calculations, user only wanted some help
+   case ('info', 'INFO', 'Info')
+      ! Filename with help:
+      file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_INFO_file))
+
+      inquire(file=trim(adjustl(file_name)),exist=file_exists)
+      if (.not.file_exists) then ! no file, cannot print help
+         write(*,'(a)') 'Could not find file ', trim(adjustl(file_name))
+         write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+      else ! (.not.file_exists)
+         FN=201
+         open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'old', action='READ')
+         inquire(file=trim(adjustl(file_name)),opened=file_opened)
+         if (.not.file_opened) then
+            write(*,'(a)') 'Could not open file ', trim(adjustl(file_name))
+            write(*,'(a)') 'Cannot help, sorry. Read the manual.'
+         else ! (.not.file_opened)
+            read_text_well = .true. ! to start with
+            count_lines = 0   ! to start with
+            do while (read_text_well)
+               read(FN,'(a)',IOSTAT=Reason) printline
+               call read_file(Reason, count_lines, read_text_well)   ! module "Dealing_with_files"
+               if (Reason > 0) then   ! something wrong in the line
+                  write(*,'(a)') 'Problem reading file '//trim(adjustl(file_name))
+                  write(ch_temp, '(i)') count_lines
+                  write(*,'(a)') 'in line '//trim(adjustl(ch_temp))
+                  read_well = .false.
+               elseif (Reason < 0) then ! end of file reached ...
+                  close(FN)
+               else
+                  write(*,'(A)') trim(adjustl(printline))
+               endif
+            enddo
+         endif ! (.not.file_opened)
+      endif ! (.not.file_exists)
+
+      write(*,'(a)') trim(adjustl(m_starline))
+      if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
+   case default
+   end select
+end subroutine interprete_additional_data
+
+
+subroutine Get_list_of_materials(path_sep)
+   character(*), intent(in) :: path_sep ! file name
+   !--------------------
+   integer :: FN_temp, FN, count_lines, Reason, i, open_status, iret
+   character(200) :: Error_descript, File_name, read_line, command, File_scratch
+   logical :: file_opened, file_exist
+
+   File_scratch = trim(adjustl(m_INPUT_directory))//path_sep//'Scratch.txt'
+   File_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_List_ofmaterials))
+
+   ! Make a list of the materials available:
+   if (path_sep == '\') then	! if it is Windows
+      command = 'dir '//trim(adjustl(m_INPUT_directory))//' /b > '//trim(adjustl(File_scratch))
+   else ! linux:
+      command = "ls -t "//trim(adjustl(m_INPUT_directory))//" > "//trim(adjustl(File_scratch))
+   endif
+#ifdef OMP_inside
+   iret = system(trim(adjustl(command)))   ! execute the command to save file names in the temp file
+#else
+   call system(trim(adjustl(command))) ! execute the command to save file names in the temp file
+#endif
+
+   FN=200
+   open(UNIT=FN, FILE = trim(adjustl(File_name)))
+   inquire(file=trim(adjustl(File_name)),opened=file_opened)
+   if (.not.file_opened) then
+      write(*,'(a)') 'Could not open file ', trim(adjustl(File_name))
+      write(*,'(a)') 'Cannot help, sorry. Check materials manually.'
+      goto 9992
+   endif
+
+   ! Open the files with directory names:
+   open(NEWUNIT=FN_temp, file=trim(adjustl(File_scratch)), iostat=open_status, action='read')
+   if ( open_status /= 0 ) then
+      print *, 'Could not open ',trim(adjustl(File_scratch)),' for listing.', ' Unit = ', FN_temp
+      write(*,'(a)') 'Cannot help, sorry. Check materials manually.'
+      goto 9992
+   endif
+
+   ! Printout the list of materials:
+   write(*,'(a)') ' Materials already available in XTANT:'
+   count_lines = 0   ! to start with
+   RDLST:do
+      read(FN_temp,'(a)',IOSTAT=Reason) read_line
+      count_lines = count_lines + 1
+      if (Reason < 0) then ! end of file
+         exit RDLST
+      else  ! line in the fil
+         ! Check if the line is commented out:
+         if (trim(adjustl(read_line(1:1))) == '!') then ! it is a comment
+            ! ignor this folder / file
+         else ! don't ignore this name
+            ! Check if it is a directory:
+            inquire(DIRECTORY=trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(read_line)), exist=file_exist)
+            if (file_exist) then ! if it is a directory, it means it can be a material:
+               select case ( trim(adjustl(read_line)) )  ! check if it is material or just forled
+               case (m_Atomic_parameters, m_INFO_directory, m_HELP_file, m_DFTB_directory, m_DFTB_norep_directory, &
+                  m_3TB_directory, m_BOP_directory, m_xTB_directory) ! work directory, not a material
+                  ! skip this line
+               case default   ! material name
+                  write(FN,'(a)') trim(adjustl(read_line))  ! save in the file
+                  write(*,'(a)') trim(adjustl(read_line))   ! print on the screen
+               endselect
+            endif ! (file_exist)
+         endif ! (trim(adjustl(read_line)) == '!')
+      endif ! (Reason < 0)
+   enddo RDLST
+
+9992 continue
+   call close_file('delete', trim(adjustl(File_scratch)))   ! module "Dealing_with_files"
+   call close_file('close', FN=FN)  ! module "Dealing_with_files"
+end subroutine Get_list_of_materials
+
+
+
+!OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+! Obsolete format, to be deprecated
 ! Alternative format of input file:
 
 subroutine read_input_txt(File_name, Scell, matter, numpar, laser, Err)
@@ -4639,7 +6330,7 @@ subroutine read_input_txt(File_name, Scell, matter, numpar, laser, Err)
       if (Reason < 0) then ! end of file
          exit
       elseif (Reason > 0) then ! couldn't read the line
-         write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         write(Error_descript,'(a,i5,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript))
          exit
@@ -4681,7 +6372,7 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          matter%Name = trim(adjustl(read_next_line)) ! material name
       endif
@@ -4692,7 +6383,7 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          matter%Chem = trim(adjustl(read_next_line)) ! chemical formula of the compound
       endif
@@ -4703,11 +6394,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) Scell(1)%Te ! initial electron temperature [K]
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read Te from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read Te from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default value instead...'
             Scell(1)%Te = 300.0d0 ! initial electron temperature [K]
          endif
@@ -4720,11 +6411,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) Scell(1)%Ta ! initial atomic temperature [K]
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read Ta from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read Ta from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default value instead...'
             Scell(1)%Ta = 300.0d0 ! initial electron temperature [K]
          endif
@@ -4737,11 +6428,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,'(e25.16)', IOSTAT=Reason) numpar%t_total ! total duration of simulation [fs]
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read DURATION from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read DURATION from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default value instead...'
             numpar%t_total = 1000.0d0 ! [fs]
          endif
@@ -4753,11 +6444,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason)  N ! How many pulses by default
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read NUMBER OF PULSES from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read NUMBER OF PULSES from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default value instead...'
          else
             call extend_laser(laser, N) ! see above
@@ -4770,11 +6461,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason)  N, temp ! How many pulses by default
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read FLUENCE from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read FLUENCE from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default value instead...'
          else
             ! if it's a new pulse, not mentioned before, first create an array element for it with default values:
@@ -4789,11 +6480,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason)  N, temp ! How many pulses by default
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read PHOTON_ENERGY from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read PHOTON_ENERGY from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default value instead...'
          else
             ! if it's a new pulse, not mentioned before, first create an array element for it with default values:
@@ -4808,11 +6499,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason)  N, temp ! How many pulses by default
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read PULSE_DURATION from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read PULSE_DURATION from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default value instead...'
          else
             ! if it's a new pulse, not mentioned before, first create an array element for it with default values:
@@ -4827,11 +6518,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason)  N, temp_ch
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read PULSE_SHAPE from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read PULSE_SHAPE from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default value instead...'
          else
             ! if it's a new pulse, not mentioned before, first create an array element for it with default values:
@@ -4855,11 +6546,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason)  N, temp ! How many pulses by default
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read PULSE_CENTER from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read PULSE_CENTER from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default value instead...'
          else
             ! if it's a new pulse, not mentioned before, first create an array element for it with default values:
@@ -4874,7 +6565,7 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          select case (trim(adjustl(read_next_line)))
          case ('T', 't', 'TRUE', 'True', 'true', '.true.', '1')
@@ -4891,7 +6582,7 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          select case (trim(adjustl(read_next_line))) ! optical coefficients: 0=no, 1=Drude, 2=Trani-k, 3=Trani gamma
          case ('1', 'DRUDE', 'Drude', 'drude')
@@ -4915,7 +6606,7 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          select case (trim(adjustl(read_next_line))) ! Absorbtion of how many rays (0=exclude, 1=1st ray, 2=sum all)
          case ('1', 'ONE', 'One', 'one', 'SINGLE', 'Single', 'single')
@@ -4936,11 +6627,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%E_min, Scell(1)%eps%E_max, Scell(1)%eps%dE
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read PROBE_SPECTRUM parameters from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read PROBE_SPECTRUM parameters from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             Scell(1)%eps%E_min = 0.05d0 ! starting point of the grid of energy [eV]
             Scell(1)%eps%E_max = 50.0d0 ! ending point of the grid of energy [eV]
@@ -4954,11 +6645,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%l ! probe-pulse wavelength [nm]
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read PROBE wavelength from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read PROBE wavelength from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             Scell(1)%eps%l = 800.0d0	! probe-pulse wavelength [nm]
          endif
@@ -4971,11 +6662,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%tau ! probe duration FWHM [fs]
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read PROBE_DURATION from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read PROBE_DURATION from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             Scell(1)%eps%tau = -10.0d0	! probe duration FWHM [fs]
          endif
@@ -4987,11 +6678,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%teta ! Angle of prob-pulse with respect to normal [degrees]
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read PROBE_ANGLE from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read PROBE_ANGLE from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             Scell(1)%eps%teta = 0.0d0	! Angle of prob-pulse with respect to normal [degrees]
          endif
@@ -5004,11 +6695,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%dd	! material thickness [nm]
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read LAYER THICKNESS from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read LAYER THICKNESS from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             Scell(1)%eps%dd = 100.0d0	! material thickness [nm]
          endif
@@ -5020,11 +6711,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) matter%cell_x, matter%cell_y, matter%cell_z ! number of unit-cells in X,Y,Z
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read SUPERCELL from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read SUPERCELL from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
              matter%cell_x = 1
              matter%cell_y = 1
@@ -5038,11 +6729,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) temp1, temp2, temp3	! periodic or not
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read PERIODIC from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read PERIODIC from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%r_periodic(:) = .true.
          else
@@ -5070,15 +6761,15 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          selectcase (trim(adjustl(read_next_line)))
          case ('CDF', 'cdf', 'Cdf')
             numpar%At_base = 'CDF' ! where to take atomic data from (EADL, CDF, XATOM...)
-         case ('eald', 'EADL', 'Eadl')
+         case ('eald', 'EADL', 'Eadl', 'BEB', 'Beb', 'beb')
             numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, XATOM...)
          case default
-            write(*,'(a,i3,a)') 'Could not interpret ATOMIC_DATA from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not interpret ATOMIC_DATA from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, XATOM...)
          endselect
@@ -5090,11 +6781,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) matter%dens
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read MC_DENSITY from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read MC_DENSITY from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             matter%dens = -1.0d0 ! [g/cm^3] density of the material (negative = use MD supercell to evaluate it)
          endif
@@ -5106,11 +6797,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%NMC
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read MC_ITERATIONS from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read MC_ITERATIONS from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%NMC = 30000	! number of iterations in the MC module
          endif
@@ -5125,11 +6816,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%NOMP
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read OMP_threads from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read OMP_threads from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
 #ifdef OMP_inside
             numpar%NOMP = omp_get_max_threads()	! number of processors available by default
@@ -5148,11 +6839,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) matter%W_PR
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read Parinello_Rahman_MASS from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read Parinello_Rahman_MASS from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             matter%W_PR = 25.5d0  ! Parinello-Rahman super-vell mass coefficient
          endif
@@ -5164,11 +6855,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%dt
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read MD_TIMESTEP from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read MD_TIMESTEP from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%dt = 0.01d0 	! Time step for MD [fs]
          endif
@@ -5184,11 +6875,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%dt_save
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read SAVE_DT from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read SAVE_DT from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%dt_save = 1.0d0	! save data into files every [fs]
          endif
@@ -5206,11 +6897,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) matter%p_ext
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read PRESSURE from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read PRESSURE from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using atmospheric pressure instead...'
             matter%p_ext = g_P_atm	! External pressure [Pa] (0 = normal atmospheric pressure)
          else
@@ -5224,11 +6915,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) N
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read EL_ION_SCHEME from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read EL_ION_SCHEME from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%el_ion_scheme = 0	! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO)
          else
@@ -5247,11 +6938,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%t_Te_Ee ! time when we switch from Te=const, to Ee=const [fs] 
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read START_NVE from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read START_NVE from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%t_Te_Ee = 1.0d-3	! time when we switch from Te=const, to Ee=const [fs] 
          endif
@@ -5263,7 +6954,7 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          selectcase (trim(adjustl(read_next_line)))
          case ('0', 'NO', 'No', 'Exclude', 'EXCLUDE', 'exclude')
@@ -5284,7 +6975,7 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          selectcase (trim(adjustl(read_next_line)))
          case ('0', 'NO', 'No', 'Exclude', 'EXCLUDE', 'exclude')
@@ -5302,11 +6993,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%t_NA
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read START_COUPLING from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read START_COUPLING from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%t_NA = 1.0d-3	! [fs] start of the nonadiabatic coupling
          endif
@@ -5318,11 +7009,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%acc_window
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read ACCEPTANCE_WINDOW from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read ACCEPTANCE_WINDOW from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%acc_window = 5.0d0	! [eV] acceptance window for nonadiabatic coupling:
          endif
@@ -5334,11 +7025,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%at_cool_start, numpar%at_cool_dt ! starting from when [fs] and how often [fs]
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read QUENCHING parameteres from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read QUENCHING parameteres from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%at_cool_start = 2500.0	! starting from when [fs]
             numpar%at_cool_dt = 40.0	! how often [fs]
@@ -5354,11 +7045,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) matter%T_bath, matter%tau_bath ! [K] bath temperature? [fs] time constant of cooling
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read TRANSPORT parameteres from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read TRANSPORT parameteres from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             matter%T_bath = 300.0d0	! [K] bath temperature
             matter%T_bath = matter%T_bath/g_kb	! [eV] thermostat temperature
@@ -5376,7 +7067,7 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          selectcase (trim(adjustl(read_next_line)))
          case ('DYNAMIC', 'Dynamic', 'dynamic', 'DYNAMICAL', 'Dynamical', 'dynamical')
@@ -5385,7 +7076,7 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
          case default
             read(read_next_line,*, IOSTAT=Reason) numpar%E_cut ! [K] bath temperature? [fs] time constant of cooling
             if (Reason /= 0) then
-               write(*,'(a,i3,a)') 'Could not read MC CUT_OFF parameteres from line ', count_lines, ' in file input file after line: '//read_line
+               write(*,'(a,i5,a)') 'Could not read MC CUT_OFF parameteres from line ', count_lines, ' in file input file after line: '//read_line
                write(*,'(a)') 'Using default values instead...'
                numpar%E_cut = 10.0d0 ! [eV] cut-off energy for high
                numpar%E_cut_dynamic = .false. ! do not change E_cut
@@ -5401,11 +7092,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%E_work ! [K] bath temperature? [fs] time constant of cooling
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read WORK FUNCTION parameteres from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read WORK FUNCTION parameteres from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%E_work = 1.0d30 ! [eV] work function (exclude electron emission)
          endif
@@ -5417,11 +7108,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%E_work ! [K] bath temperature? [fs] time constant of cooling
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read EMISSION_COLLISIONS parameteres from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read EMISSION_COLLISIONS parameteres from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using NO EMISSION instead...'
             numpar%E_work = 1.0d30 ! [eV] work function (exclude electron emission)
          else
@@ -5441,11 +7132,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%Smear_DOS ! [eV] smearing function for DOS
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read SMEARING DOS parameter from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read SMEARING DOS parameter from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             numpar%Smear_DOS = 0.05d0	! [eV]
          endif
@@ -5478,11 +7169,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%n, Scell(1)%eps%k	! initial n and k coeffs
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read OPTICAL_N_K parameteres from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read OPTICAL_N_K parameteres from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             Scell(1)%eps%n = 1.0d0
             Scell(1)%eps%k = 0.0d0	! initial n and k coeffs
@@ -5495,11 +7186,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) numpar%ixm, numpar%iym, numpar%izm 
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read K_POINTS from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read K_POINTS from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             ! number of k-points in each direction (used only for Trani-k!):
             numpar%ixm = 1
@@ -5514,11 +7205,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%me_eff, Scell(1)%eps%mh_eff
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read EFFECTIVE_MASSES from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read EFFECTIVE_MASSES from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             ! [me] effective mass of CB electron and VB hole:
             Scell(1)%eps%me_eff = 1.0d0
@@ -5534,11 +7225,11 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       if (Reason < 0) then ! end of file
          write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
       elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i3,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
+         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%tau_e, Scell(1)%eps%tau_h
          if (Reason /= 0) then
-            write(*,'(a,i3,a)') 'Could not read EFFECTIVE_MASSES from line ', count_lines, ' in file input file after line: '//read_line
+            write(*,'(a,i5,a)') 'Could not read EFFECTIVE_MASSES from line ', count_lines, ' in file input file after line: '//read_line
             write(*,'(a)') 'Using default values instead...'
             ! [fs] mean scattering times of electrons and holes:
             Scell(1)%eps%tau_e = 1.0d0

@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2022 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -26,6 +26,7 @@ MODULE Algebra_tools
 use Universal_constants
 
 implicit none
+PRIVATE
 
 ! Interface to automatically chose from the bubble array-sorting subroutines
 interface sort_array
@@ -60,7 +61,10 @@ interface check_Ha
 end interface check_Ha
 
 !private  ! hides items not listed on public statement
-public :: sym_diagonalize, nonsym_diagonalize, check_Ha, Kronecker_delta, sort_array
+public :: sym_diagonalize, nonsym_diagonalize, check_Ha, Kronecker_delta, sort_array, Invers_3x3, Transpose_M
+public :: double_factorial, Heavyside_tau, get_factorial, Two_Vect_Matr, Det_3x3, Cross_Prod, Matrix_Vec_Prod
+public :: mkl_matrix_mult, Reciproc, check_hermiticity, Laguerre_up_to_6, d_Laguerre_up_to_6, check_symmetry
+public :: d_detH_d_h_a_b, Two_Matr_mult, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points
 
  contains
  
@@ -129,6 +133,87 @@ pure subroutine d_Laguerre_up_to_6(d, L, ind_max)
    L(6) = 1.0d0/120.0d0*(-5.0d0*d4 + 100.0d0*d3 - 600.0d0*d2 + 1200.0d0*d - 600.0d0)
    !if (ind > 6) L(7) = 1.0d0/720.0d0*(6.0d0*d5 - 180.0d0*d4 + 1800.0d0*d3 - 7200.0d0*d2 + 10800.0d0*d - 4320.0d0)
 end subroutine d_Laguerre_up_to_6
+
+
+
+pure function Moivre_cos(m, gamm) result(cos_mg)
+   real(8) :: cos_mg
+   integer, intent(in) :: m   ! coefficient
+   real(8), intent(in) :: gamm ! variable
+   !-------------------
+   integer :: k, m2, k2
+   real(8) :: summ, bcoef, cos_gam, sin_gam
+
+   if (m == 0) then
+      cos_mg = 1.0d0
+   else
+      m2 = FLOOR(abs(m)/2.0d0)
+      cos_gam = cos(gamm)
+      sin_gam = sin(gamm)
+      summ = 0.0d0 ! to start with
+      do k = 0, m2
+         k2 = 2*k
+         bcoef = binomial_coef(m, k2)   ! below
+         summ = summ + (-1)**k * bcoef * cos_gam**(abs(m)-k2) * sin_gam**k2
+      enddo
+      cos_mg = summ
+   endif
+end function Moivre_cos
+
+
+
+pure function Moivre_sin(m, gamm) result(sin_mg)
+   real(8) :: sin_mg
+   integer, intent(in) :: m   ! coefficient
+   real(8), intent(in) :: gamm ! variable
+   !-------------------
+   integer :: k, m2, k2
+   real(8) :: summ, bcoef, cos_gam, sin_gam
+
+   if (m == 0) then
+      sin_mg = 0.0d0
+   else
+      m2 = FLOOR((abs(m)-1)/2.0d0)
+      cos_gam = cos(gamm)
+      sin_gam = sin(gamm)
+      summ = 0.0d0 ! to start with
+      do k = 0, m2
+         k2 = 2*k
+         bcoef = binomial_coef(m, k2+1)   ! below
+         summ = summ + (-1)**k * bcoef * cos_gam**(abs(m)-k2-1) * sin_gam**(k2+1)
+      enddo
+      sin_mg = summ
+   endif
+end function Moivre_sin
+
+
+
+pure function binomial_coef(n, k) result(bc)
+   real(8) :: bc  ! binomial coefficient
+   integer, intent(in) :: k, n
+   integer :: nk, i
+   real(8) :: nk_f, k_f, n_f
+
+   if ((n <= k) .or. (k <= 0))then
+      bc = 1
+   else
+      nk = n - k
+      k_f = 1.0d0    ! to start with
+      nk_f = 1.0d0   ! to start with
+      n_f = 1.0d0    ! to start with
+      do i = 2, n
+         n_f = n_f*dble(i) ! factorial
+         if (i == k) then ! save this factorial
+            k_f = n_f
+         endif
+         if (i == nk) then ! save this factorial
+            nk_f = n_f
+         endif
+      enddo
+      ! Collect the terms of the binomial coefficient:
+      bc = n_f/(k_f * nk_f)
+   endif
+end function binomial_coef
 
 
 
@@ -214,6 +299,20 @@ pure function Kronecker_delta(i, j) result(delta)
 end function Kronecker_delta
 
 
+pure function Heavyside_tau(m) result(tau)
+   real(8) :: tau
+   integer, intent(in) :: m
+   if (m >= 0) then
+      tau = 1.0d0
+   else
+      tau = 0.0d0
+   endif
+end function Heavyside_tau
+
+
+
+
+
 subroutine nonsym_diagonalize_r(M, Ev, Error_descript, print_Ei, check_M)
    real(8), dimension(:,:), intent(inout) :: M	! matrix
    real(8), dimension(:), intent(out) :: Ev	! eigenvalues
@@ -240,7 +339,7 @@ subroutine nonsym_diagonalize_r(M, Ev, Error_descript, print_Ei, check_M)
    M_save = M ! save matrix before diagonalization just in case
    !$OMP END WORKSHARE
 
-   call DGEEV('N','V', N, M, N, Ev, Im_Ev, VL, 1, VR, N, WORK, LWORK, INFO)
+   call DGEEV('N','V', N, M, N, Ev, Im_Ev, VL, 1, VR, N, WORK, LWORK, INFO) ! library MKL (or LAPACK)
 
    !$OMP WORKSHARE
    M = VR ! save eigenvectors in the former matrix (Hamiltonian) assuming real values
@@ -1136,7 +1235,8 @@ subroutine Two_Matr_mult(M1,M2,Mout)
    Mout = 0.0d0
    do i = 1,l2
       do j = 1,l
-         Mout(i,j) = Mout(i,j) + SUM(M1(i,:)*M2(:,j))
+         !Mout(i,j) = Mout(i,j) + SUM(M1(i,:)*M2(:,j)) ! incorrect
+         Mout(i,j) = Mout(i,j) + SUM(M1(:,i)*M2(j,:)) ! correct
       enddo ! j
    enddo ! i
 end subroutine Two_Matr_mult ! checked!

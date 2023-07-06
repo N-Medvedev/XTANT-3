@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -24,9 +24,9 @@
 module Little_subroutines
 use Universal_constants
 use Objects
-use Variables
-use Dealing_with_files
+use Dealing_with_files, only : Count_columns_in_file, Count_lines_in_file
 implicit none
+PRIVATE
 
 ! this interface finds by itself which of the two subroutine to use depending on the parameters passed:
 interface extend_array_size ! extend array size
@@ -60,11 +60,19 @@ interface deallocate_array
    module procedure deallocate_array_r2
    module procedure deallocate_array_r3
    module procedure deallocate_array_ch1
+   module procedure deallocate_array_c1
+   module procedure deallocate_array_c2
 end interface deallocate_array   
 
 
 ! private :: ! hides items not listed on public statement 
-public :: Find_in_array, Find_in_array_monoton, extend_array_size, deallocate_array
+public :: Find_in_array, Find_in_array_monoton, extend_array_size, deallocate_array, Find_monotonous_LE, Fermi_interpolation, &
+linear_interpolation, Find_in_monotonous_1D_array, Gaussian, print_time_step, fast_pow, count_3d, print_progress, &
+interpolate_data_on_grid, number_of_types_of_orbitals, name_of_orbitals, order_of_time, set_starting_time, convolution, &
+sample_gaussian, Fermi_function, d_Fermi_function, print_time, parse_yes_no, parse_time
+
+
+
 
  contains
  
@@ -103,6 +111,16 @@ subroutine deallocate_array_ch1(X)
    character(*), dimension(:), allocatable, intent(inout) :: X
    if (allocated(X)) deallocate(X)
 end subroutine deallocate_array_ch1
+
+ subroutine deallocate_array_c1(X)
+   complex, dimension(:), allocatable, intent(inout) :: X
+   if (allocated(X)) deallocate(X)
+end subroutine deallocate_array_c1
+
+subroutine deallocate_array_c2(X)
+   complex, dimension(:,:), allocatable, intent(inout) :: X
+   if (allocated(X)) deallocate(X)
+end subroutine deallocate_array_c2
 
  
  
@@ -190,20 +208,14 @@ subroutine set_starting_time(laser, tim, t_start, t_NA, t_Te_Ee)
    type(Pulse), dimension(:), intent(in) :: laser ! Laser pulse parameters
    real(8), intent(in) :: t_start   ! user-provided value for the starting time [fs]
    real(8), intent(inout) :: tim    ! defined starting time step [fs]
-   real(8), intent(inout), optional :: t_Te_Ee ! time when we switch from Te=const, to Ee=const [fs] / negative value, when not using it
+   real(8), intent(inout), optional :: t_Te_Ee ! time when we switch from Te=const, to Ee=const [fs] (<0 if unused)
    real(8), intent(inout), optional :: t_NA ! time when we switch on nonadiabatic terms [fs]
-   if (maxval(laser(:)%F) .GT. 0.0d0) then
-      tim = -50.0d0 + dble(CEILING(min(minval(laser(:)%t0-laser(:)%t*2.35d0), 0.0d0)))  ! [fs]
-      if (present(t_NA)) t_NA = tim + t_NA + 1d-3           ! [fs]
-      if (present(t_Te_Ee)) t_Te_Ee = tim + t_Te_Ee         ! [fs]
-   else
-      tim = 0.0d0 ! [fs]
-      if (present(t_NA)) t_NA = t_NA + 1d-3 ! [fs]
-      if (present(t_Te_Ee)) t_Te_Ee = tim + t_Te_Ee ! [fs]
-   endif
+   tim = t_start !-50.0d0 + dble(CEILING(min(minval(laser(:)%t0-laser(:)%t*2.35d0), 0.0d0)))  ! [fs]
+   if (present(t_NA)) t_NA = tim + t_NA + 1d-6           ! [fs]
+   if (present(t_Te_Ee)) t_Te_Ee = tim + t_Te_Ee         ! [fs]
    tim = min(tim,t_start)    ! check what user set
 end subroutine set_starting_time
- 
+
  
 pure function Fermi_function(rcut, d, r) result(F)
    real(8) F
@@ -361,8 +373,8 @@ subroutine convolution(FN, Gaus_conv)
    exists:if (file_opened .and. file_named) then
       ! Input file:
       rewind(FN) ! start reading file from the first line
-      call Count_columns_in_file(FN, M, 2)
-      call Count_lines_in_file(FN, N)
+      call Count_columns_in_file(FN, M, 2)   ! module "Dealing_with_files"
+      call Count_lines_in_file(FN, N)  ! module "Dealing_with_files"
       N = N - 2
       allocate(Spectr(N,M))
       allocate(Conv_Spectr(N,M))
@@ -438,13 +450,13 @@ subroutine order_of_time(tim, text, gnu_text, x_tics)
    integer :: time_ord
    time_ord = find_order_of_number(tim) ! module "Little_subroutines"
    if (present(x_tics)) then
-      x_tics = 10**(time_ord) ! set tics for gnuplot
+      x_tics = 10.0d0**(time_ord) ! set tics for gnuplot
       if (tim/dble(x_tics) > 0.5) then
-         x_tics = 10**(time_ord-1) ! set tics for gnuplot
+         x_tics = 10.0d0**(time_ord-1) ! set tics for gnuplot
       else if (tim/dble(x_tics) > 0.2) then
-         x_tics = 0.5*10**(time_ord-1) ! set tics for gnuplot
+         x_tics = 0.5d0*10.0d0**(time_ord-1) ! set tics for gnuplot
       else
-         x_tics = 10**(time_ord-2) ! set tics for gnuplot
+         x_tics = 10.0d0**(time_ord-2) ! set tics for gnuplot
       endif
    endif
 
@@ -487,11 +499,26 @@ pure function find_order_of_number_int(num)
 end function find_order_of_number_int
 
 
-subroutine parse_time(sec,chtest)
-   real(8), intent(inout) :: sec ! time interval in [sec]
+subroutine parse_time(chtest, sec_in, c0_in, c1_in)
    character(*), intent(out) :: chtest ! split it into miuns, hours, days...
+   real(8), intent(inout), optional :: sec_in   ! time interval in [sec]
+   integer, dimension(8), intent(inout), optional :: c1_in, c0_in ! time stamp
+   !-------------------------
    character(100) temp
-   real(8) days, hours, mins
+   integer, dimension(8) :: c1 ! time stamp
+   real(8) days, hours, mins, sec
+
+   if (present(sec_in)) then  ! data provided in total number of seconds
+      sec = sec_in
+   elseif (present(c1_in) .and. present(c0_in)) then   ! data provided in fortran time-stamp format
+      sec = get_seconds_from_timestamp(c0_in, c1_in)   ! below
+   elseif (present(c0_in)) then
+      call date_and_time(values=c1) ! current time
+      sec = get_seconds_from_timestamp(c0_in, c1)   ! below
+   else
+      sec = 0.0d0 ! no data provided, nothing to printout
+   endif
+
    days = 0.0d0
    hours = 0.0d0
    mins = 0.0d0
@@ -535,6 +562,18 @@ subroutine parse_time(sec,chtest)
 end subroutine parse_time
 
 
+pure function get_seconds_from_timestamp(c0, c1) result(Sec)
+   real(8) Sec
+   integer, dimension(8), intent(in) :: c1, c0 ! timestamp, current and starting
+   Sec = dble(24.0d0*3600.0d0*(c1(3)-c0(3)) + &    ! days
+               3600.0d0*(c1(5)-c0(5)) + &          ! hours
+               60.0d0*(c1(6)-c0(6)) + &            ! minutes
+               (c1(7)-c0(7)) + &                   ! seconds
+               (c1(8)-c0(8))*0.001d0)              ! milliseconds
+end function get_seconds_from_timestamp
+
+
+
 subroutine print_progress(string,ndone,ntotal)
     implicit none
     character*(*) string
@@ -571,6 +610,29 @@ pure subroutine Gaussian(mu, sigma, x, Gaus, normalized_max) ! at the time x acc
       Gaus = 1.0d0/(sqrt(2.0d0*Pi)*sigma)*exp(-(x-mu)*(x-mu)/(2.0d0*sigma*sigma)) ! it will be normalized to integral=1
    endif
 end subroutine Gaussian
+
+
+function sample_gaussian(x0, sigma, if_FWHM) result(x_out)
+   real(8) x_out
+   real(8), intent(in) :: x0, sigma ! gaussian mean and sigma (by default, it's not FWHM)
+   logical, intent(in), optional :: if_FWHM   ! if given sigma is FWHM (instead of standard deviation)
+   !---------------------
+   real(8), parameter :: Pi = 3.1415926535897932384626433832795d0
+   real(8) :: rvt1, rvt2, t0, s0
+
+   s0 = sigma
+   if (present(if_FWHM)) then ! check if it is FWHM instead of sigma
+      if (if_FWHM) s0 = sigma/( 2.0d0*sqrt( 2.0d0*log(2.0d0) ) )
+   endif
+
+   t0 = -10.0d0 * s0 ! to start with
+   do while (abs(t0) > 3.0e0*s0) ! accept only within 3*sigma interval
+      call random_number(rvt1)   ! Random value 1 for generated time t0
+      call random_number(rvt2)   ! Random value 2 for generated time t0
+      t0 = s0 * COS(2.0d0*Pi*rvt2)*SQRT(-2.0d0*LOG(rvt1))    ! Gaussian distribution for t0 around 0
+      x_out = x0 + t0   ! around the given mean value x0
+   enddo
+end function sample_gaussian
 
 
 

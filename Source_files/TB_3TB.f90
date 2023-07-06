@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2022 Nikita Medvedev
+! Copyright (C) 2022-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -24,6 +24,7 @@
 ! This module contains subroutines to deal with 3TB hamiltonian: https://github.com/usnistgov/ThreeBodyTB.jl
 ! [1] https://arxiv.org/pdf/2112.11585.pdf
 ! [2] https://github.com/usnistgov/ThreeBodyTB.jl/blob/master/src/CalcTB_laguerre.jl
+! So far, without the 3-body-terms; 2-body-terms are included, but problematic (not recommended to use)
 
 MODULE TB_3TB
 
@@ -42,11 +43,12 @@ use Dealing_with_3TB, only: find_3bdy_ind
 
 
 implicit none
-
+PRIVATE
 
 real(8), parameter :: m_a = 2.0d0   ! exponential decay parameter according to [1]
 
-
+public :: get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, Attract_TB_Forces_Press_3TB, &
+          Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors, get_dHij_drij_3TB
 
  contains
 
@@ -2720,7 +2722,7 @@ subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SV
                H_cf(k1,4,1) = H_cf(k1,1,4)
 
                ! Diagonal part is excluded (no self-interaction of orbitals):
-               if (TB(KOA1,KOA1)%nullify_diag_cf) then
+               if (TB(KOA1,KOA2)%nullify_diag_cf) then
                   H_cf(k1,2,2) = 0.0d0
                   H_cf(k1,3,3) = 0.0d0
                   H_cf(k1,4,4) = 0.0d0
@@ -2771,7 +2773,7 @@ subroutine d_Onsite_Press_3TB(i, Scell, TB, basis_ind, norb, M_Vij, M_dVij, M_SV
 
 
                   ! Diagonal terms:
-                  if (TB(KOA1,KOA1)%nullify_diag_cf) then
+                  if (TB(KOA1,KOA2)%nullify_diag_cf) then
                      H_cf(k1,5,5) = 0.0d0  ! dxy-s * dxy-s
                      H_cf(k1,6,6) = 0.0d0  ! dxz-s * dxz-s
                      H_cf(k1,7,7) = 0.0d0  ! dyz-s * dyz-s

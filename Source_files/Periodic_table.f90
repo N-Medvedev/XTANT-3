@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -21,10 +21,15 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
+! This module reads and interpretes the data from an external file with the Periodic Table.
+! The fioe must be provided
 
 MODULE Periodic_table
 
 implicit none
+PRIVATE
+
+character(30), parameter :: m_INPUT_atomic_data = 'INPUT_atomic_data.dat'
 
 !==============================================
 ! For reading atomic data from our periodic table:
@@ -34,17 +39,22 @@ type Atomic_data    ! our internal atomic database "INPUT_atomic_data.dat"
    character(15) :: Full_Name   ! Full atomic name
    character(3) :: El_Name         ! element name 
    real(8) :: Nvb   ! number of valence electrons
+   real(8) :: r_cov ! covalent radius [A]
+   real(8) :: EN    ! electronegativity
 endtype Atomic_data
 !==============================================
+
+public :: Atomic_data, Decompose_compound
 
  contains
 
 ! Find which elements constitute given chemical formula:
-subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_num, at_numbers, at_percentage, at_short_names, at_names, at_masses, at_NVB)
+subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_num, at_numbers, at_percentage, at_short_names, at_names, at_masses, at_NVB, at_r_cov, at_EN)
    character(*), intent(in) :: Path ! path to the folder with 'INPUT_atomic_data.dat'
    character(*), intent(in) :: El_Name ! compound name (SiO2, Al2O3, etc.)
    character(*), intent(in) :: path_sep ! path separator
    integer, intent(inout) :: INFO  ! 0=file read well; 1=no file; 2=couldn't open; 3=error while reading
+   character(100), intent(inout) :: error_message
    integer, intent(out) :: at_num ! how many different elements are in this compound
    integer, dimension(:), allocatable, intent(out), optional :: at_numbers
    real(8), dimension(:), allocatable, intent(out), optional :: at_percentage
@@ -52,11 +62,12 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
    character(*), dimension(:), allocatable, intent(out), optional :: at_names ! full name of the element
    real(8), dimension(:), allocatable, intent(out), optional :: at_masses ! mass of each element [Mp]
    integer, dimension(:), allocatable, intent(out), optional :: at_NVB ! number of valence electrons
-   character(100) :: error_message
+   real(8), dimension(:), allocatable, intent(out), optional :: at_r_cov ! covalent radius [A]
+   real(8), dimension(:), allocatable, intent(out), optional :: at_EN ! electronegativity
    !==============================================
    type(atomic_data), dimension(:), allocatable :: Periodic_table ! this is an internal module variable
    integer FN, Reason, leng, i, cur, N, num, coun, NVB
-   real(8) C
+   real(8) C, R_cov, EN
    character(3), dimension(100) :: ElEl_Names ! all elements in the compound, assuming they are not more then 100
    real(8), dimension(100) :: ElPersent     ! persentage of this element in the compound
    integer, dimension(100) :: ElNumbers     ! numbers of elements in the compound
@@ -65,13 +76,21 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
    real(8) :: M
    character(3) :: El
    character(*), parameter :: numbers = '0123456789'
-   CHARACTER(*), PARAMETER :: LowCase = 'abcdefghijklmnopqrstuvwxyz'
-   CHARACTER(*), PARAMETER :: UpCase  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+   CHARACTER(*), parameter :: LowCase = 'abcdefghijklmnopqrstuvwxyz'
+   CHARACTER(*), parameter :: UpCase  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
    logical :: file_exists, num_vs_char, found_atom, file_opened, devide
    INFO = 0 ! start with no error
-   !Folder_name = 'INPUT_DATA'//trim(adjustl(path_sep))//'EADL_parameters'  ! here we keep databases
+   error_message = ''
+
    Folder_name = trim(adjustl(Path))
-   File_name = trim(adjustl(Folder_name))//trim(adjustl(path_sep))//'INPUT_atomic_data.dat' ! fixed name of the database
+   if (LEN(trim(adjustl(Folder_name))) > 0) then   ! it is in a folder
+      !File_name = trim(adjustl(Folder_name))//trim(adjustl(path_sep))//'INPUT_atomic_data.dat' ! fixed name of the database
+      File_name = trim(adjustl(Folder_name))//trim(adjustl(path_sep))//trim(adjustl(m_INPUT_atomic_data))
+   else ! it is in the same folder
+      !File_name = 'INPUT_atomic_data.dat' ! fixed name of the database
+      File_name = trim(adjustl(m_INPUT_atomic_data))
+   endif
+
    inquire(file=trim(adjustl(File_name)),exist=file_exists) ! check if input file is there
    exists:if (file_exists) then   
       FN = 101
@@ -83,7 +102,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
          if (.not.allocated(Periodic_table)) allocate(Periodic_table(N-1))
          read(FN,*,IOSTAT=Reason) ! skip first line with names
          do i = 1, N-1
-            read(FN,*,IOSTAT=Reason) Periodic_table(i)%Z, Periodic_table(i)%Full_name, Periodic_table(i)%El_Name, Periodic_table(i)%Mass, Periodic_table(i)%Nvb
+            read(FN,*,IOSTAT=Reason) Periodic_table(i)%Z, Periodic_table(i)%Full_name, Periodic_table(i)%El_Name, Periodic_table(i)%Mass, Periodic_table(i)%Nvb, Periodic_table(i)%r_cov, Periodic_table(i)%EN
             !print*, Periodic_table(i)%Z, Periodic_table(i)%Full_name, Periodic_table(i)%El_Name, Periodic_table(i)%Mass, Periodic_table(i)%Nvb
             if (Reason /= 0) exit
          enddo
@@ -213,15 +232,33 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
             allocate(at_NVB(at_num))
          endif
       endif
+      if (present(at_r_cov)) then ! covalent radius [A]
+         if (.not.allocated(at_r_cov)) then
+            allocate(at_r_cov(at_num))
+         else
+            deallocate(at_r_cov)
+            allocate(at_r_cov(at_num))
+         endif
+      endif
+      if (present(at_EN)) then ! electronegativity
+         if (.not.allocated(at_EN)) then
+            allocate(at_EN(at_num))
+         else
+            deallocate(at_EN)
+            allocate(at_EN(at_num))
+         endif
+      endif
 
       do i = 1, num
-         call find_atomic_number(ElEl_Names(i), ElNumbers(i), NVB, Full_name, M, Periodic_table, INFO, error_message)
+         call find_atomic_number(ElEl_Names(i), ElNumbers(i), NVB, Full_name, M, R_cov, EN, Periodic_table, INFO, error_message) ! below
          if (present(at_numbers)) at_numbers(i) = ElNumbers(i)  ! element number, Z
          if (present(at_percentage)) at_percentage(i) = ElPersent(i) ! percentage
          if (present(at_short_names)) at_short_names(i) = ElEl_Names(i) ! name of the element
          if (present(at_names)) at_names(i) = Full_Name  ! full name of the element
          if (present(at_masses)) at_masses(i) = M  ! mass of the element in the proton-mass units
          if (present(at_NVB)) at_NVB(i) = NVB      ! number of valence electrons
+         if (present(at_r_cov)) at_r_cov(i) = R_cov   ! covalent radius [A]
+         if (present(at_EN)) at_EN = EN            ! electronegativity
       enddo
 
    else exists
@@ -237,13 +274,14 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
 end subroutine Decompose_compound
 
 
-subroutine find_atomic_number(El_Name, Z, NVB, Full_name, M, Periodic_table, INFO, error_message)
+subroutine find_atomic_number(El_Name, Z, NVB, Full_name, M, R_cov, EN, Periodic_table, INFO, error_message)
    character(*), intent(in) :: El_Name ! element abbreviation
    integer, intent(out) :: Z        ! atomic number
    integer, intent(out) :: NVB      ! number of valence electrons
    type(atomic_data), dimension(:), intent(in) :: Periodic_table ! this is an internal module variable
    character(15), intent(out), optional :: Full_name ! element name
    real(8), intent(out), optional  :: M ! mass
+   real(8), intent(out), optional  :: R_cov, EN
    integer, intent(inout) :: INFO  ! 0=file read well; 1=no file; 2=couldn't open; 3=error while reading
    character(100) :: error_message
    integer N, i
@@ -254,10 +292,12 @@ subroutine find_atomic_number(El_Name, Z, NVB, Full_name, M, Periodic_table, INF
          NVB = Periodic_table(i)%Nvb
          if (present(Full_name)) Full_name = Periodic_table(i)%Full_name
          if (present(M)) M = Periodic_table(i)%Mass
+         if (present(R_cov)) R_cov = Periodic_table(i)%r_cov
+         if (present(EN)) EN = Periodic_table(i)%EN
          exit
       endif
       if (i .GE. N) then
-         write(error_message,*) 'Element ', trim(adjustl(El_Name)), ' was not found in the database: INPUT_atomic_data.dat'
+         write(error_message,*) 'Element ', trim(adjustl(El_Name)), ' was not found in the database: '//trim(adjustl(m_INPUT_atomic_data))
          INFO = 4
       endif
    enddo

@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -24,21 +24,25 @@
 ! This module contains subroutines to deal with TB hamiltonian in the BOP parametrization
 ! This parameterization is described in:
 ! [1] https://arxiv.org/abs/1909.04561
+! (Only TB part, without the repulsive terms; must be added manualy!)
 
 MODULE TB_BOP
 
 use Universal_constants
-use TB_Koster_Slater
 use Objects
+use TB_Koster_Slater, only : t_s_s, t_pa_pa, t_dab_dab, t_dx2_y2_dx2_y2, t_d3z2_r2_d3z2_r2, KS_s, KS_sp3_hetero, KS_sp3d5_hetero
 use Electron_tools, only : find_band_gap
-use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization, Loewdin_Orthogonalization_c
+use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization, &
+                  Loewdin_Orthogonalization_c
 use TB_DFTB, only : identify_DFTB_basis_size, identify_DFTB_orbitals_per_atom, Hopping_DFTB, Get_overlap_S_matrix_DFTB
 use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_hermiticity
 use Atomic_tools, only : Reciproc_rel_to_abs
 use Little_subroutines, only : linear_interpolation, Find_in_array_monoton
 
 implicit none
+PRIVATE
 
+public :: Construct_Vij_BOP, construct_TB_H_BOP, get_Erep_s_BOP
  
  contains
 

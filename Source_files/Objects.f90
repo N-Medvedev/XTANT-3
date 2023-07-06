@@ -1,7 +1,7 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2021 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -42,6 +42,7 @@ end type
 ! van der Waals within TB parametrization
 type :: TB_vdW ! parent type
    character(25) :: Param ! name of parametrization
+   real(8) :: d0_cut, dd_cut  ! [A] [A] cutoff radius and smoothing distance
 end type
 ! Coulomb potential:
 type :: TB_Coulomb ! parent type
@@ -129,7 +130,7 @@ end type TB_Rep_BOP
 
 type, EXTENDS (TB_repulsive) :: TB_Rep_DFTB	! repulsive potential coefficients:
    ! www.dftb.org
-   character(20) :: param_name  ! name of parameterization used
+   character(200) :: param_name  ! name of parameterization used
    integer :: ToP   ! type of parameterization: 0=polinomial, 1=spline
    ! Polinomial coefficients:
    real(8), dimension(8) :: c   ! [eV] c2, . . . , c9 are the polynomial coefficients
@@ -140,6 +141,17 @@ type, EXTENDS (TB_repulsive) :: TB_Rep_DFTB	! repulsive potential coefficients:
    real(8), dimension(:), allocatable :: R  ! [A] distance
    real(8), dimension(:,:), allocatable :: V_rep  ! [eV] parameterized repulsive potential for spline
 end type TB_Rep_DFTB
+
+
+type, EXTENDS (TB_repulsive) :: TB_Rep_DFTB_no  ! repulsive potential coefficients:
+   ! Testing construction of the repulsive potential:
+   character(200) :: param_name  ! name of parameterization used
+   integer :: ToP   ! type of parameterization: 0=polinomial, 1=spline
+   ! In case there is no repulsive terms, this potential is reconstructed from ZBL repulsive potential:
+   ! https://en.wikipedia.org/wiki/Stopping_power_(particle_radiation)#Repulsive_interatomic_potentials
+   real(8), dimension(:), allocatable :: R  ! [A] distance
+   real(8), dimension(:), allocatable :: V_rep  ! [eV] parameterized repulsive potential
+end type TB_Rep_DFTB_no
 
 
 type, EXTENDS (TB_repulsive) :: TB_Rep_3TB	! repulsive potential coefficients:
@@ -189,9 +201,10 @@ end type TB_H_NRL
 
 type, EXTENDS (TB_Hamiltonian) :: TB_H_DFTB ! hamiltonian coefficients:
    ! http://www.dftb.org
-   character(20) :: param_name  ! name of parameterization used
+   character(200) :: param_name  ! name of parameterization used (or a path to it)
    real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-like cut-off [A]
    real(8) :: Ed, Ep, Es    ! Ed, Ep and Es are the on-site energies for the angular momenta d, p and s for the given atom
+   real(8) :: Ud, Up, Us    ! Hubbard U for the angular momenta d, p and s for the given atom
    real(8), dimension(:), allocatable :: Rr ! Radial grid [A]
    real(8), dimension(:,:), allocatable :: Vr ! Hopping integrals [eV]
    real(8), dimension(:,:), allocatable :: Sr ! Overlaps
@@ -274,7 +287,7 @@ end type TB_H_BOP
 
 type, EXTENDS (TB_Hamiltonian) :: TB_H_xTB ! hamiltonian coefficients:
    ! [1] R.F. Stewart, The Journal of Chemical Physics 52, 431 (1970); doi: 10.1063/1.1672702
-   character(10) :: param_name  ! name of parameterization used
+   character(200) :: param_name  ! name of parameterization used
    character(10) :: AO_names    ! orbitals descriptor
    real(8) :: rcut, d  ! cut-off radius [A] and smoothing distance for Fermi-lik cut-off [A]
    integer :: Nprim     ! number of primitive gaussian-type orbitals (GTO) in Slater-type orb. (STO) (can be from 1 to 6 [1])
@@ -314,11 +327,33 @@ type, EXTENDS (TB_vdW) :: TB_vdW_Girifalco
    real(8) :: fs
 end type TB_vdW_Girifalco
 
-type, EXTENDS (TB_vdW) :: TB_vdW_Dumitrica ! UNFINISHED, SINCE DIDN'T SEEM TO WORK!
+type, EXTENDS (TB_vdW) :: TB_vdW_Dumitrica ! UNFINISHED
    ! [A. Carlson and T. Dumitrica, Nanotechnology 18 (2007) 065706]
    real(8) :: C6	! [eV*A^6]
    real(8) :: alpha	! [1/A]
 end type TB_vdW_Dumitrica
+
+type, EXTENDS (TB_vdW) :: TB_vdW_LJ_cut
+   ! Mie potential, generalized LJ in n-exp form: V=eps*( (r0/r)^(2*n) + (r0/r)^n )
+   ! reducing to LJ for n=6
+   real(8) :: eps    ! [eV*A^12] Lennard-Jones C12
+   real(8) :: r0     ! [eV*A^6] Lennard-Jones C6
+   real(8) :: n      ! power
+   real(8) :: d0_short, dd_short ! [A] [A] cutoff radius and width at short distances
+end type TB_vdW_LJ_cut
+
+
+type, EXTENDS (TB_vdW) :: TB_vdW_ILJ_cut
+   ! Improved Lennard-Jones: https://www.mdpi.com/1420-3049/26/13/3906
+   ! V=eps*( m/(n-m)*(r0/r)^(n) - n/(n-m)*(r0/r)^m )
+   ! reducing to LJ for n=12, m=6
+   real(8) :: eps    ! [eV*A^12] Lennard-Jones C12
+   real(8) :: r0     ! [eV*A^6] Lennard-Jones C6
+   real(8) :: n, m   ! powers
+   real(8) :: d0_short, dd_short ! [A] [A] cutoff radius and width at short distances
+end type TB_vdW_ILJ_cut
+
+
 
 ! d) Coulomb energy contribution:
 type, EXTENDS (TB_Coulomb) :: TB_Coulomb_cut
@@ -330,6 +365,72 @@ type, EXTENDS (TB_Coulomb) :: TB_Coulomb_cut
    real(8) :: alpha  ! Wolf's truncation parameter
 end type TB_Coulomb_cut
 
+
+
+!+111111111111111111111111111111111111111111111
+! Short-range repulsion in various functional formats:
+
+! Enveloping Fermi-like function: f_cut = 1/(1+exp((r-d0)/dd))
+type :: Fermi_cutoff
+   real(8) :: d0  ! [A] cut-off radius
+   real(8) :: dd  ! [A] cut-off smoothing distance
+end type Fermi_cutoff
+
+! Enveloping inverse Fermi-like function: f_cut' = 1 - 1/(1+exp((r-d0)/dd))
+type :: Fermi_cutoff_inv
+   logical :: use_it ! flag to use this function or not
+   real(8) :: d0  ! [A] cut-off radius
+   real(8) :: dd  ! [A] cut-off smoothing distance
+end type Fermi_cutoff_inv
+
+! Exponential of 1/r: C*exp(1/(r-r0))
+type :: Rep_inv_exp
+   logical :: use_it  ! flag to use this function or not
+   real(8) :: C   ! [eV] energy of the "wall"
+   real(8) :: r0  ! [A] "wall" position
+   !logical :: use_short_cutoff ! flag to use short-range cutoff or not
+end type Rep_inv_exp
+
+! Exponential of r: Phi*exp(-(r-r0)/a)
+type :: Rep_exp
+   logical :: use_it ! flag to use this function or not
+   real(8) :: Phi    ! [eV] energy of the "wall"
+   real(8) :: r0     ! [A] "wall" position
+   real(8) :: a   ! [A] width
+   !logical :: use_short_cutoff ! flag to use short-range cutoff or not
+end type Rep_exp
+
+! Power of r: Phi*(r/r0)^m
+type :: Rep_pow
+   logical :: use_it ! flag to use this function or not
+   real(8) :: Phi    ! [eV] energy of the "wall"
+   real(8) :: r0     ! [A] position
+   real(8) :: m      ! [-] power
+   !logical :: use_short_cutoff ! flag to use short-range cutoff or not
+end type Rep_pow
+
+! ZBL potential - see separate module
+type :: Rep_ZBL
+   logical :: use_it
+end type Rep_ZBL
+
+! Combined functions together:
+type, EXTENDS (TB_Exp_wall) :: TB_Short_Rep
+   ! 1) Enveloping Fermi function (cut off at large distances):
+   type(Fermi_cutoff) :: f_cut
+   ! 1.5) Enveloping inverse Fermi function (cut off at short distances):
+   type(Fermi_cutoff_inv) :: f_cut_inv
+   ! 2) Inverse exponential:
+   type(Rep_inv_exp) :: f_inv_exp
+   ! 3) Exponential:
+   type(Rep_exp) :: f_exp
+   ! 4) Power (array to be able to construct arbitrary polynomial):
+   type(Rep_pow), dimension(:), allocatable  :: f_pow
+   ! 5) ZBL:
+   type(Rep_ZBL) :: f_ZBL
+end type TB_Short_Rep
+
+
 ! e) Exponential wall at short distances:
 type, EXTENDS (TB_Exp_wall) :: TB_Exp_wall_simple
 ! Exponential wall with smooth cut-off at lond distances:
@@ -340,6 +441,9 @@ type, EXTENDS (TB_Exp_wall) :: TB_Exp_wall_simple
    real(8) :: d0	! [A] cut-off radius: f_cut = 1/(1+exp((r-d0)/dd))
    real(8) :: dd	! [A] cut-off smoothing distance
 end type TB_Exp_wall_simple
+
+
+
 
 !+111111111111111111111111111111111111111111111
 type, EXTENDS (TB_Coulomb) :: Cutie
@@ -434,7 +538,7 @@ type :: MC_atoms ! to treat holes in each shell of each atom
 end type MC_atoms
 
 !==============================================
-! Subcells for linear scaling TB:
+! Subcells for linear scaling TB (NOT READY):
 type Sub_cell
    real(8), dimension(:), allocatable :: fe ! low-energy electron distribution
    real(8) :: mu	! [eV] electron chemical potential
@@ -487,7 +591,18 @@ type Super_cell
    real(8), dimension(:), allocatable :: MSDP	! [A^2] mean square displacements for atoms of different sorts
    real(8) :: mu	! [eV] electron chemical potential
    real(8), dimension(:), allocatable :: fe ! low-energy electron distribution
+   real(8), dimension(:), allocatable :: fe_eq ! equivalent Fermi electron distribution
+   real(8) :: Se, Se_eq  ! electron entropy [K/eV], and equivalent equilibrium entropy
+   ! grid for electron distribution; distribution on this grid; high-energy electrons distribution on grid:
+   real(8), dimension(:), allocatable :: E_fe_grid, fe_on_grid, fe_high_on_grid  ! electron spectrum on grid (fe*DOS)
+   real(8), dimension(:), allocatable :: fe_norm_on_grid, fe_norm_high_on_grid   ! electron distribution on grid (fe)
+   real(8), dimension(:), allocatable :: I_ij ! electron-ion collision integral [1/s]
    real(8), dimension(:), allocatable :: Norm_WF ! Normalization of wave functions
+   real(8) :: Ce  ! electron heat capacity [J/(m^3 K)]
+   real(8), dimension(:), allocatable :: Ce_part   ! band-resolved electron heat capacity [J/(m^3 K)]
+   real(8), dimension(:), allocatable :: Ce_i   ! energy level resolved electron heat capacity [J/(m^3 K)]
+   real(8) :: kappa_e  ! electron heat conductivity [W/(m K)]
+   real(8), dimension(:), allocatable :: kappa_e_part   ! band-resolved electron heat conductivity [W/(m K)]
    ! Atoms:
    type(Atom), dimension(:), allocatable :: MDAtoms ! all atoms in MD
    type(Energies) :: nrg		! [eV] energies in the super-cell
@@ -509,11 +624,11 @@ type Super_cell
    complex, dimension(:,:,:,:,:), allocatable :: CHa	! Complex hamiltonian matrix for each (kx, ky, kz) points
    complex, dimension(:,:,:,:,:), allocatable :: CHa0	! Complex hamiltonian matrix on the last step
    ! Parameters of TB:
-   class(TB_repulsive), allocatable, dimension(:,:)   :: TB_Repuls	! parameters of the repulsive part of TB (shape to be defined)
-   class(TB_Hamiltonian), allocatable, dimension(:,:) :: TB_Hamil	! parameters of the Hamiltonian of TB (shape to be defined)
-   class(TB_vdW), allocatable, dimension(:,:) :: TB_Waals		! parameters of the van der Waals for TB (shape to be defined)
-   class(TB_Coulomb), allocatable, dimension(:,:) :: TB_Coul		! parameters of the Coulomb together with TB (shape to be defined)
-   class(TB_Exp_wall), allocatable, dimension(:,:) :: TB_Expwall	! parameters of the exponential wall potential for TB (shape to be defined)
+   class(TB_repulsive), allocatable, dimension(:,:)   :: TB_Repuls   ! parameters of the repulsive part of TB (shape to be defined)
+   class(TB_Hamiltonian), allocatable, dimension(:,:) :: TB_Hamil ! parameters of the Hamiltonian of TB (shape to be defined)
+   class(TB_vdW), allocatable, dimension(:,:) :: TB_Waals         ! parameters of the van der Waals for TB (shape to be defined)
+   class(TB_Coulomb), allocatable, dimension(:,:) :: TB_Coul      ! parameters of the Coulomb together with TB (shape to be defined)
+   class(TB_Exp_wall), allocatable, dimension(:,:) :: TB_Expwall  ! parameters of the exponential wall potential (shape to be defined)
    ! Forces:
    type(Supce_force) :: SCforce ! forces acting on the supercell
    ! Super-cell size and velocities (used within Parrinello-Rahman):
@@ -590,6 +705,7 @@ type At_data
    real(8), dimension(:), allocatable :: Nh_shell	! current number of deep-shell holes in each shell
    type(MFP), dimension(:), allocatable :: El_MFP	! electron inelastic mean free paths for each shell (inversed [1/A])
    type(MFP), dimension(:), allocatable :: Ph_MFP	! photon mean free paths for each shell (inversed [1/A])
+   type(MFP), dimension(:), allocatable :: El_MFP_vs_T ! electron MFP for (inversed [1/A]) for different Te
    type(MFP) :: El_EMFP ! electron elastic mean free paths (inversed [1/A])
 end type At_data
 
@@ -617,12 +733,25 @@ end type Solid
 type Pulse
    integer :: KOP	! kind of pulse: 0 = flat-top, 1 = Gaussian, 2 = SASE
    real(8) :: hw	! [eV] photon energy
+   real(8) :: FWHM_hw   ! [eV] distribution of photon energy spectrum (assumed gaussian)
    real(8) :: t		! [fs] pulse duration
    real(8) :: t0	! [fs] pulse maximum position
    real(8) :: F		! [eV/atom] absorbed fluence
    real(8) :: Fabs	! [eV] total absorbed energy per simulation box
    real(8) :: Nph	! number of absorbed photons
 end type Pulse
+
+
+! Atomic parameters provided by the user, to overwrite the default values
+type User_overwrite_data
+   logical :: do_overwrite
+   character(3), dimension(:), allocatable :: name ! element name
+   real(8), dimension(:), allocatable :: mass   ! [a.m.u.] atomic mass
+   real(8), dimension(:,:), allocatable :: Ip   ! [eV] ionization potentials for all shells
+   real(8), dimension(:,:), allocatable :: Ek   ! [eV] mean kinetic energy of all shells
+   real(8), dimension(:,:), allocatable :: Ne_shell   ! number of electron in each shell
+   real(8), dimension(:,:), allocatable :: auger   ! [fs] Auger decay times
+endtype User_overwrite_data
 
 
 type Numerics_param
@@ -633,6 +762,13 @@ type Numerics_param
    ! Other parameters:
    integer :: which_input ! number of input file used (for using more then one sequentially)
    logical :: verbose
+   ! Electronic distribution function parameters:
+   logical :: fe_input_exists ! flag to use the distribution from a file
+   character(100) :: fe_filename ! file name with user-provided initial electronic distribution
+   real(8), dimension(:), allocatable :: fe_input  ! initial distribution function
+   real(8), dimension(:), allocatable :: high_DOS  ! DOS for high-energy electron distribution, if required
+   integer :: fe_aver_num  ! number of time-steps over which to average the distribution on the grid
+   real(8) :: tau_fe ! [fs] characteristic time (used for the relaxation time approximation)
    ! MD:
    real(8) :: dt	      ! [fs] time-step for MD
    real(8) :: halfdt      ! dt/2, often used
@@ -644,6 +780,18 @@ type Numerics_param
    real(8), dimension(:), allocatable :: dt_MD_grid         ! grid, which MD timestep to use
    integer :: i_dt        ! which timestep from the array "dt_MD_grid" to use now
    character(100) :: MD_step_grid_file   ! filename with MD time step grid
+   !-----------------
+   real(8), dimension(:), allocatable :: At_bath_reset_grid   ! grid, when to change the Atomic bath parameters
+   real(8), dimension(:), allocatable :: At_bath_grid_Ta         ! Atomic bath temperatures array [K]
+   real(8), dimension(:), allocatable :: At_bath_grid_tau        ! Atomic bath characteristic times array [fs]
+   integer :: i_At_bath_dt        ! which timestep from the array to use now
+   character(100) :: At_bath_step_grid_file   ! filename with Atomic bath parameters
+   real(8), dimension(:), allocatable :: El_bath_reset_grid   ! grid, when to change the Electronic bath parameters
+   real(8), dimension(:), allocatable :: El_bath_grid_Ta         ! Electronic bath temperatures array [K]
+   real(8), dimension(:), allocatable :: El_bath_grid_tau        ! Electronic bath characteristic times array [fs]
+   integer :: i_El_bath_dt        ! which timestep from the array to use now
+   character(100) :: El_bath_step_grid_file   ! filename with Electronic bath parameters
+   !-----------------
    real(8) :: t_start	  ! [fs] starting time of simulation
    real(8) :: t_total	  ! [fs] total time of simulation
    real(8) :: t_Te_Ee	  ! time when we switch from Te=const, to Ee=const [fs] / negative value, when not using it
@@ -681,10 +829,13 @@ type Numerics_param
    character(200) :: output_path	! output folder address
    character(1) :: path_sep	! path separator
    character(5) :: At_base	! where to take atomic data from (EADL, CDF, XATOM...)
+   ! Setting supercell for biomolecules, embedding in water:
+   logical :: embed_water  ! flag for embedding in water
+   integer :: N_water_mol  ! how many water molecules to use
    ! numbers of files:
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
-   integer :: FN_coupling, FN_neighbors
+   integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_Se, FN_fe_on_grid
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
    integer :: el_ion_scheme
@@ -692,15 +843,22 @@ type Numerics_param
    real(8), dimension(:,:), allocatable :: k_grid	! for the case of user-provided grid for k-space (for CDF and DOS calculations)
    logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
    ! Different output, what to save:
-   logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate, do_elastic_MC, do_path_coordinate
+   logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate, save_fe_grid
+   logical :: do_elastic_MC, do_path_coordinate, do_kappa
    logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN
    integer :: Mulliken_model
-   integer :: ind_fig_extention
+   integer :: ind_fig_extention, change_size_step
+   real(8) :: change_size_max, change_size_min
    character(4) :: fig_extention
    ! BOP parameters creation:
    logical :: create_BOP_repulse
-   character(200) :: BOP_Folder_name
+   character(200) :: BOP_Folder_name, Filename_communication
    real(8) :: BOP_bond_length   ! [A]
+   ! Initial cell data file:
+   character(200) :: Cell_filename
+   ! General flags:
+   integer :: save_files_used ! to mark for the output printing out, whether SAVE-files are used or unit cell
+   logical :: numpar_in_input ! numpar were already read from the single file, no need for separate file reading
 end type Numerics_param
 !==============================================
 
@@ -743,7 +901,7 @@ type Error_handling
    LOGICAL Err		! indicates that an error occured
    integer Err_Num	! assign a number to an error
    integer File_Num		! number of the file with error log
-   character(200) Err_descript	! describes more details about the error
+   character(300) Err_descript	! describes more details about the error
 end type
 !==============================================
 
