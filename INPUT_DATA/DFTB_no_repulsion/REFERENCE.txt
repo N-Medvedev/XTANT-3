@@ -1,0 +1,5 @@
+Parameters taken from:
+https://github.com/by-student-2017/Slater-Koster-parameters-no-repulsion_v1
+
+
+Note that they have NO REPULSION in skf-files, so for MD runs, short-range repulsive potentials MUST be added manually (see the manual)

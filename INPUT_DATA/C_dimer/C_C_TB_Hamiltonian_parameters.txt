@@ -1,0 +1,2 @@
+3TB
+5.0d0	0.1d0			! cut-off radius and smoothing distance [A]
