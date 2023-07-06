@@ -1,0 +1,22 @@
+Simple_wall
+0.1e0		! C [eV]
+0.0d0		! r0 [A]
+0.935d0			! d0 [A]
+0.002d0			! dd [A]
+
+
+Save correct:
+Simple_wall
+1.0d2		! C [eV]
+0.0d0		! r0 [A]
+1.165d0			! d0 [A]
+0.01d0			! dd [A]
+
+
+TESTING:
+Simple_wall
+1.0d2		! C [eV]
+0.0d0		! r0 [A]
+1.165d0			! d0 [A]
+0.1d0			! dd [A]
+

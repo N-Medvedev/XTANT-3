@@ -80,8 +80,6 @@ O
 Os
 Overdence_aC
 Pb
-Pb-I
-PbI2
 Pd
 Pentaheptite
 PMMA
@@ -98,7 +96,6 @@ Ru
 Ruthenium
 Ru_bcc
 Ru_NP
-Ru_on_Si
 Ru_test
 SarsCov2_spike_protein
 Sc

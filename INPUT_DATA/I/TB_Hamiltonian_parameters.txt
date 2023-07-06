@@ -1,4 +1,4 @@
 DFTB_no_repulsion
-2elements					! DFTB parameterization without repulsion			
-Pb-X_mod					! inner folder with parameters
-5.0d0	0.1d0				! cut-off radius and smoothing distance [A]
+2elements				! DFTB parameterization without repulsion			
+Pb-X_mod						! inner folder with parameters
+5.0d0	0.1d0			! cut-off radius and smoothing distance [A]

@@ -1,2 +1,5 @@
-BOP
-6.0e0	0.5e0		! rcut [A], dcut [A]
+3TB
+9.0	0.1				! cut off [A], smoothing [A]
+1.3					! rc, rescaling coefficient
+F					! include 3-body terms or not (true, false)
+T					! exclude diagonal part of crystal field

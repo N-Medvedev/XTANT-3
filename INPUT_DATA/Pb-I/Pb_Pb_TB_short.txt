@@ -1,14 +1,14 @@
 General
 
 Cut-off
-3.3d0	0.1d0		! d0 [A]; dd [A]
+2.10d0	0.1d0		! d0 [A]; dd [A]
 
 Pow
 5
-16844.446d0	1.0d0	0.0			! Energy [eV]; Characteristic radius [A]; power
--16088.17d0	1.0d0	1.0			! Energy [eV]; Characteristic radius [A]; power
-5702.668d0	1.0d0	2.0			! Energy [eV]; Characteristic radius [A]; power
--884.498d0	1.0d0	3.0			! Energy [eV]; Characteristic radius [A]; power
-50.2102d0	1.0d0	4.0			! Energy [eV]; Characteristic radius [A]; power
+-4494.409d0	1.0d0	0.0			! Energy [eV]; Characteristic radius [A]; power
+12874.646d0	1.0d0	1.0			! Energy [eV]; Characteristic radius [A]; power
+-11392.808d0	1.0d0	2.0			! Energy [eV]; Characteristic radius [A]; power
+4082.241d0	1.0d0	3.0			! Energy [eV]; Characteristic radius [A]; power
+-519.675d0	1.0d0	4.0			! Energy [eV]; Characteristic radius [A]; power
 
 ZBL

@@ -1,4 +1,4 @@
-Simple_wall
+Simple_wall:exclude
 1.0d2		! C [eV]
 0.0d0		! r0 [A]
 2.9d0			! d0 [A]

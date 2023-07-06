@@ -1,6 +1,6 @@
-*************************************************************
-  XTANT-3: X-ray-induced Thermal And Nonthermal Transitions
-*************************************************************
+*******************************************************
+XTANT-3: X-ray-induced Thermal And Nonthermal Transitions
+*******************************************************
 The hybrid code XTANT is written by
 Dr. Nikita Medvedev
 as a part of research at
@@ -10,7 +10,7 @@ Institute of Physics of CAS, Prague, Czechia 2016-2023
 
 Should you have any questions, contact the author: nikita.medvedev@fzu.cz
 Or by private email: n.a.medvedev@gmail.com
-*************************************************************
+*******************************************************
 It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matter. The code combines the following methods into one model with feed-backs:
  a) Monte Carlo (MC) method for modeling X-ray-induced electron kinetics
  b) tight binding molecular dynamics (TBMD) for tracing atomic responce to modification of the interatomic potential due to electronic excitation
@@ -19,14 +19,14 @@ It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matte
  - dynamical coupling for nonadiabatic electron-ion (electron-phonon) coupling
  d) random phase approximation (RPA) for calculation of the optical properties of the material
 
-*************************************************************
+*******************************************************
 DISCLAIMER
 
 Although we endeavour to ensure that the code XTANT and results delivered are correct, no warranty is given as to its accuracy. We assume no responsibility for possible errors or omissions. We shall not be liable for any damage arising from the use of this code or its parts or any results produced with it, or from any action or decision taken as a result of using this code or any related material.
 
 This code is distributed as is for non-commercial peaceful purposes only, such as research and education. It is explicitly prohibited to use the code, its parts, its results or any related material for military-related and other than peaceful purposes.
 
-*************************************************************
+*******************************************************
 HOW TO CITE
 
 By using this code or its materials, you agree with these terms and conditions. The use of the code is at your own risk. Should you chose to use it, an appropriate citation is mandatory:
