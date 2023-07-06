@@ -1,0 +1,49 @@
+C2H4n              ! material name; file with supercell and atomic coordinates
+C2H4                ! chemical formula
+273.0               ! initial electron temperature [K]
+273.0               ! initial atomic temperature [K]
+0.0                 ! start of simulation [fs]
+1000.0              ! end of simulation [fs]
+1                   ! number of FEL-pulses
+0.0e0   !1.0d0  0.5e0   ! absorbed dose per this pulse [eV/atom] (min, max, step)
+100.0e0  0.0          ! hw, mean photon energy [eV], FWHM of the distribution of hw [eV]
+10.0e0              ! pulse FWHM-duration [fs]
+1                   ! type of pulse to be analysed: 0 = rectangular, 1 = Gaussian, 2 = SASE
+0.0e0               ! position of the maximum of the laser pulse [fs]
+
+NUMERICAL_PARAMETERS
+2   3   4       ! number of unit-cells in X,Y,Z
+1   1   1       ! periodicity along X,Y,Z directions (1=yes, 0=no)
+BEB             ! where to take material parameters from (EADL, CDF)
+-1.0d0          ! [g/cm^3] density of the material (used in MC in case of EADL parameters), if <0 uses data from MD supercell
+10000           ! number of MC iterations
+-1              ! number of threads for OPENMP (<1 = max threads available)
+2               ! MD algorithm: 0=Verlet (2d order); 1=Yoshida (4th order, slow); 2=Martyna (4th order, fast)
+1               ! frozen atoms (=0), or moving normally (=1)
+25.5d0          ! Parinello-Rahman super-cell mass coefficient
+dt_grid.txt     ! time step for MD [fs] (or a file name with the variable time-grid)
+1.0d0           ! printout data into files every 'dt_save_time' [fs]
+1               ! it's = 1 if P=const, or = 0 if V=const
+0.0d0           ! external pressure [Pa]
+F   0   0.35    ! include SCC (True, False), model of gamma (default 0); mixing factor (default 0.35)
+4   1d-3  10.0   ! scheme (0=decoupled; 1=E_tot=const; 2=T=const; 3=BO; 4=Relaxation time); coupling start [fs]; relaxation tau [fs]
+-1               ! -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule
+-1.0d+3    4.0d0    ! [fs] when to switch on the nonadiabatic coupling; scaling factor (if needed; default=4.0)
+5.0d0   0.001d0     ! [eV] acceptance window for nonadiabatic coupling; [eV] tolerance for quasidegenerate levels
+1   -50.0   5.0     ! quenching (0=no, 1=yes); starting from when [fs]; how often [fs]
+0   150.0   10.0    ! Berendsen thermostat for atoms (0=no, 1=yes); bath temperature [K]; cooling time [fs]
+0   150.0   10.0    ! Berendsen thermostat for electrons (0=no, 1=yes); bath temperature [K]; cooling time [fs]
+15.0d0          ! [eV] cut-off energy in MC (<0 means Ecut=top of CB)
+1.0d30          ! [eV] work function, for electron emission (>0 eV; <0 - number of collisions)
+1               ! printout electron energy levels (1) or not (0)
+0   0.1   1     ! printout DOS (0=no,1=Gamma,2=k-points); smearing of gaussian; print PDOS yes (1) or no (0)
+1       ! printout Mulliken charges for types of atoms
+0       ! printout electron distribution (1) or not (0)
+0       ! printout atomic pair correlation function (1) or not (0)
+1       ! printout atomic positions in XYZ (1) or not (0)
+0       ! printout atomic positions in CIF (1) or not (0)
+0       ! printout raw data file OUTPUT_coordinates_and_velosities.dat (1) or not (0)
+1       ! power of mean displacement to print out (set integer N: <[R(t)-R(t=0)]^N>)
+1.75e0  ! printout numbers of nearest neighbors within the given radius (<=0 No, >0 = radius in [A])
+png     ! which format to use to plot figures: eps, jpeg, gif, png, pdf
+9   9   9    ! number of k-points in each direction (used only for Trani-k!)
