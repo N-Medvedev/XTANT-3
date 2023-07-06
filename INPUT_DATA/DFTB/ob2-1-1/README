@@ -1,0 +1,37 @@
+======================================================================
+ob2-1-1
+======================================================================
+
+(c) 2017, Marcus Elstner, Karlsruher Institut für Technologie
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting
+works.
+
+
+Description
+===========
+
+This set of parameters is part of the Parametrization for Organic and Biological
+Molecules (OB2) has been specifically designed for Long-range Corrected Density
+Functional Tight Binding (LC-DFTB2).  Comprehensive benchmark tests for C-H-N-O
+can be found in J. Chem. Theory Comput., 2018, 14 (1), pp 115–12. Please also
+consult the paper for the details and use cases of the various sets (base,
+shift, split).
+
+The elements should be used with following maximal angular momenta:
+
+H:s, C: p, N: p, O: p
+
+
+PUBLICATIONS TO BE CITED
+[JCTC2018]   J. Chem. Theory Comput., 2018, 14 (1), pp 115–12, 
+             DOI: http://dx.doi.org/10.1021/acs.jctc.7b00947

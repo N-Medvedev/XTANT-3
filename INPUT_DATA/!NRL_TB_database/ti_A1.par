@@ -1,0 +1,104 @@
+NN00000                           (Old style Overlap Parameters)
+Titanium (Ti) -- Dimitris' November 19, 1998 fit to fcc and bcc GGA energies
+1                                 (One atom type in this file)
+16.5   0.5                        (RCUT and SCREENL for 1-1 interactions)
+9                                 (Orbitals for atom 1)
+47.90                             (Atomic Weight of Atom 1)
+ 2.0  0.0  2.0                    (formal spd valence occupancy for atom 1)
+   .119715733654E+01   0   11 Ti    exp         TiAl
+   .246385047336E+00   0   22 Ti s              TiAl
+   .101180622525E+01   0   33                   TiAl
+   .406656312571E+03   0   44                   TiAl
+   .286436724043E+02   0   55                   TiAl
+   .274076773693E+00   0   66 Ti p              TiAl
+   .178280388725E+02   0   77                   TiAl
+   .124957147100E+03   0   88                   TiAl
+  -.279200280439E+04   0   99                   TiAl
+   .152214429463E+00   0  100 Ti d (t_2g)       TiAl
+   .455716283196E+00   0  111                   TiAl
+   .294150160823E+02   0  122                   TiAl
+  -.201874633777E+02   0  133                   TiAl
+   .152214429463E+00   1  144 Ti d (e_g)        TiAl
+   .455716283196E+00   1  155                   TiAl
+   .294150160823E+02   1  166                   TiAl
+  -.201874633777E+02   1  177                   TiAl
+   .195424993487E+02   0  188 Ti   sss  A-A     TiAl
+  -.936501238375E+01   0  199                   TiAl
+   .942996115345E-02   0  200                   TiAl
+   .104713593973E+01   0  218     sss exp Ti    TiAl
+  -.175190593407E+01   0  221 Ti   sps          TiAl
+   .109552954904E+01   0  232                   TiAl
+  -.129676127452E-01   0  243                   TiAl
+   .819992870102E+00   0  259     sps exp Ti    TiAl
+   .135514903013E+01   0  264 Ti   pps          TiAl
+  -.849814735315E-02   0  275                   TiAl
+  -.383151881462E-03   0  286                   TiAl
+   .613418197309E+00   0  290     pps exp Ti    TiAl
+   .201807379583E+02   0  307 Ti   ppp          TiAl
+   .296546648603E+02   0  318                   TiAl
+   .881018872223E+01   0  329                   TiAl
+   .140507163727E+01   0  331     ppp exp Ti    TiAl
+   .158737592642E+00   0  340 Ti   sds          TiAl
+  -.101249092625E+00   0  351                   TiAl
+  -.130490160944E-02   0  362                   TiAl
+   .833211171006E+00   0  372     sds exp Ti    TiAl
+   .577530142746E-01   0  383 Ti   pds          TiAl
+  -.896141051589E-01   0  394                   TiAl
+   .548691162049E-03   0  405                   TiAl
+   .655277239463E+00   0  413     pds exp Ti    TiAl
+   .593504767390E+00   0  426 Ti   pdp          TiAl
+  -.502641415498E-01   0  437                   TiAl
+   .712223369452E-03   0  448                   TiAl
+   .664947297795E+00   0  454     pdp exp Ti    TiAl
+  -.869280417257E-01   0  469 Ti   dds          TiAl
+  -.160831780500E+00   0  470                   TiAl
+   .615793956173E-03   0  481                   TiAl
+   .761793887502E+00   0  495     dds exp Ti    TiAl
+   .148340817059E+01   0  502 Ti   ddp          TiAl
+   .132893191463E+00   0  513                   TiAl
+   .347489929379E-03   0  524                   TiAl
+   .869580887420E+00   0  536     ddp exp Ti    TiAl
+   .516817917523E+00   0  545 Ti   ddd          TiAl
+  -.217205135347E+01   0  556                   TiAl
+   .157825882214E-01   0  567                   TiAl
+   .115100707139E+01   0  577     ddd exp Ti    TiAl
+   .180124701970E+01   0  588   Ti sss   ov     TiAl
+  -.560109886179E+00   0  599                   TiAl
+   .195562540919E+00   0  600                   TiAl
+   .973975648261E+00   0  618  sss exp ov Ti    TiAl
+  -.371460254315E+01   0  621   Ti sps   ov     TiAl
+   .319571119147E+01   0  632                   TiAl
+  -.159703845398E+01   0  643                   TiAl
+   .103088034183E+01   0  659  sps exp ov Ti    TiAl
+  -.779478548533E+01   0  664   Ti pps   ov     TiAl
+   .473904324191E+01   0  675                   TiAl
+  -.141021350531E+01   0  686                   TiAl
+   .122274708673E+01   0  690  pps exp ov Ti    TiAl
+   .103440510933E+02   0  707   Ti ppp   ov     TiAl
+  -.388691619951E+01   0  718                   TiAl
+   .158939098092E+01   0  729                   TiAl
+   .109795729738E+01   0  731  ppp exp ov Ti    TiAl
+   .508537058699E+00   0  740   Ti sds   ov     TiAl
+  -.118321626986E+01   0  751                   TiAl
+   .152354793410E+01   0  762                   TiAl
+   .102012694392E+01   0  772  sds exp ov Ti    TiAl
+   .728955627920E+01   0  783   Ti pds   ov     TiAl
+  -.747087407152E+01   0  794                   TiAl
+   .215593911199E+01   0  805                   TiAl
+   .113338784824E+01   0  813  pds exp ov Ti    TiAl
+  -.370226751935E+01   0  826   Ti pdp   ov     TiAl
+  -.621316339886E+01   0  837                   TiAl
+  -.778716846136E+00   0  848                   TiAl
+   .136765730046E+01   0  854  pdp exp ov Ti    TiAl
+   .144336475014E+02   0  869   Ti dds   ov     TiAl
+  -.117857318089E+02   0  870                   TiAl
+   .276665390336E+01   0  881                   TiAl
+   .110162865325E+01   0  895  dds exp ov Ti    TiAl
+   .232062049664E+01   0  902   Ti ddp   ov     TiAl
+  -.978748186082E+00   0  913                   TiAl
+  -.201528730972E+00   0  924                   TiAl
+   .994296877135E+00   0  936  ddp exp ov Ti    TiAl
+   .846312010163E+02   0  945   Ti ddd   ov     TiAl
+   .300438472174E+02   0  956                   TiAl
+   .135390223662E+02   0  967                   TiAl
+   .144907483876E+01   0  977  ddd exp ov Ti    TiAl

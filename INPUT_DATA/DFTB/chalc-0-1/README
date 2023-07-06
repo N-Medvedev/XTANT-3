@@ -1,0 +1,50 @@
+(c) 2017, Thomas Frauenheim, Universität Bremen
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+SVN repository information:
+---------------------------
+$Id: README 2204 2006-11-27 13:35:58Z niehaus $
+$URL: svn+ssh://svn/slako/tags/skful/chalc-0-1/README $
+
+
+This special parametrization was used to investigate defects in chlacogenide
+glasses (amorphous As2S3) and extends the earlier parametrization of the As-S-H 
+hyb-0-1 set by using d-orbitals on As. This was necessary in order to get a 
+qualitative correct picture for overcoordinated As defects in these systems.
+
+Warning: This set was not optimized for the calculation of reaction and binding
+energies. It delivers correct electronics and geometries and can be used for
+TD-DFTB calculaions. A general validation wrt to molecules/surfaces/bulk was
+_not_ performed.
+
+Requires the mio-0-1 set
+
+ Relevant Publications
+----------------------
+
+[1] S.I. Simdyankin, S.R. Elliott, T.A. Niehaus, and T. Frauenheim,
+    in Computational Modeling and Simulation of Materials III ,
+    edited by P. Vincenzini, A. Lami, and F. Zerbetto 
+    (Techna Group s.r.l., Faenza, Italy, 2004) vol. A, pp. 149.
+[2] S.I. Simdyankin, S.R. Elliott, Z. Hajnal, T.A. Niehaus,
+    and T. Frauenheim, Phys. Rev. B vol. 69, art.no. 144202, 2004. 
+[3] S.I. Simdyankin, T.A. Niehaus, G. Natarajan, Th. Frauenheim,
+    and S.R. Elliott, Phys. Rev. Lett. vol. 94, art.no. 086401, 2005. 
+    
+Required references
+-------------------
+[1] S.I. Simdyankin, S.R. Elliott, T.A. Niehaus, and T. Frauenheim,
+    in Computational Modeling and Simulation of Materials III ,
+    edited by P. Vincenzini, A. Lami, and F. Zerbetto 
+    (Techna Group s.r.l., Faenza, Italy, 2004) vol. A, pp. 149.

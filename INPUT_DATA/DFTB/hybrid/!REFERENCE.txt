@@ -1,0 +1,5 @@
+https://github.com/dftbplus/testparams/tree/main/hybrid/lc/GaAs
+
+
+
+https://github.com/dftbplus/testparams/tree/main/hybrid/global/HC

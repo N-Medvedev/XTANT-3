@@ -1,0 +1,1 @@
+Panosetti, Chiara, 2022, "Dataset for GAP and GPrep training for Ru and RuO; dftb parameters for Ru and RuO", https://doi.org/10.17617/3.CRSJQV, Edmond, V1

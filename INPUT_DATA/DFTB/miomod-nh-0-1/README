@@ -1,0 +1,47 @@
+(c) 2017, Marcus Elstner, Karlsruher Institut für Technologie
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+SPECIFIC PURPOSE PARAMETER SETS
+
+name   requires    elements    
+nhmod       mio       N-H
+
+short description
+NHmod for stronger NH binding
+        
+
+detailed description:
+
+In previous studies [JACS04,TCA06] consistent errors of about
+10 kcal/mol were found specifically for proton affinities of sp3
+hybridized nitrogen atoms. Therefore, a modified parameter set
+“NHmod” was introduced in which the N-H repulsive potential
+was shifted to correct for these errors. However, since sp2
+hybridized nitrogen atoms seem to be described correctly, this
+correction has only to be applied for a certain electronic
+configuration of N. Therefore, similar to the situation in force
+fields, different “atom types” for N have to be introduced at the
+moment, which clearly limits DFTB’s applicability since these
+atom types are not allowed to change during a reaction.
+For benchmarks see [JPCA07,JCTC11].
+Geometrical properties are very similar to the original mio N-H parameter set.
+
+RELEVANT PUBLICATIONS
+[JACS04] J. Am. Chem. Soc. 2004, 126, 14668-14677.
+[TCA06]  Theor. Chem. Acc. 2006, 116, 316-325.
+[JPCA07] J. Phys. Chem. A 2007, 111, 10861-10873.
+[JCTC2011]    J. Chem. Theory Comput. 2011,7,931-948.
+
+REQUIRED REFERENCES
+N-H-mod       [JACS04] J. Am. Chem. Soc. 2004, 126, 14668-14677.

@@ -1,0 +1,8 @@
+Molteni
+3		! NP, type of potential
+263.2d0		! a
+-1027.5d0	! b
+2631.8d0	! c
+2.35d0		! r0
+1.3d0		! N; rcut = N*r0
+0.2d0		! d

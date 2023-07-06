@@ -1,0 +1,44 @@
+==============================
+SPECIFIC PURPOSE PARAMETER SET
+==============================
+
+(c) 2017, Marcus Elstner, Karlsruher Institut für Technologie
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+name            requires    elements
+3obmod:freq     3ob         C-C|C-N|C-O
+
+short description:
+modified 3ob-parameters for vibrational frequencies
+
+detailed description:
+This extension improves vibrational stretch frequencies for the
+C-C, C-N, and C-O interactions, however, energetics are described
+not as good as the general purpose set 3ob. Note the complete
+compatibility with 3ob, i.e. either all 3ob-freq parameters might
+be used in combination with 3ob, or only one single interaction 
+(e.g. only C-N.skf and N-C.skf).
+
+Zeta and Hubbard derivative parameters remain the same as for 3ob.
+
+RELEVANT PUBLICATIONS
+[JCTC2012]   J. Chem. Theory Comput., 2013, 9 (1), pp 338–354.
+             DOI: http://dx.doi.org/10.1021/ct300849w
+
+REQUIRED REFERENCES
+[JCTC2012]   J. Chem. Theory Comput., 2013, 9 (1), pp 338–354.
+             DOI: http://dx.doi.org/10.1021/ct300849w
+
+Required set:
+3ob

@@ -1,0 +1,2 @@
+# parameters for Grimme's D4 dispersion correction: s6, s8, a1, a2
+grimme_d4_params: 1.0 2.1667394 0.5646391 4.9576353

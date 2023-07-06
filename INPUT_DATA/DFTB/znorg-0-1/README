@@ -1,0 +1,38 @@
+(c) 2017, Thomas Frauenheim, Universität Bremen
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+Description
+===========
+
+The set has been developed for simulating Zn interactions with H,C,N,O, S
+and Zn in both solid state and molecular environments. The parameters have
+been tested for bulk solids (hcp-Zn, zb-ZnS and w-ZnO), ZnO surfaces (clean
+and with small adsorbates), ZnO nanostructures and Zn-containing molecular
+complexes [JCTC09].
+
+The parameters have showed good results in comparison with DFT methods. Bond
+length accuracies have been found better than 0.1 Å and bond angles better
+than 10°. Binding energies have been consistently overestimated
+(~0.5eV/bond). This parametrization has also furnished reliable electronic
+band structures for ZnO, including reasonable descriptions for the
+conduction band and band gap of ~4.1 eV.
+
+More details about this parametrization can be found in [JCTC09].
+
+
+Required references
+-------------------
+
+[JCTC09] Moreira, N. H., Dolgonos, G., Aradi, B., da Rosa, A.L. and
+Frauenheim Th. J. Chem. Theory and Comput., 5(3),  605-614 (2009).

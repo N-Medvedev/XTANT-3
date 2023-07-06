@@ -1,0 +1,3 @@
+0.1d0	0.1e0	! [eV] Energy convolution parameter (Gaussian width) / set <0 to exclude; grid for fe [eV]
+Gauss_to_convolve.dat	2		! File with weights to average over time; column in this file to use
+1.0e-8		! limit, below which data should be excluded from plotting

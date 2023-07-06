@@ -1,0 +1,12 @@
+"Small training data set based SCC-DFTB repulsive parameter fitting study"
+Osvalds Verners
+Riga Technical University
+May 2023
+DOI: 10.13140/RG.2.2.28507.54564
+
+
+http://dx.doi.org/10.13140/RG.2.2.28507.54564
+
+
+
+https://www.researchgate.net/publication/370676591_Small_training_data_set_based_SCC-DFTB_repulsive_parameter_fitting_study?channel=doi&linkId=645cf962f43b8a29ba44d708&showFulltext=true

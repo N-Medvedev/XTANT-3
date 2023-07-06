@@ -1,0 +1,8 @@
+Files:
+https://zenodo.org/record/5636280
+
+
+Paper:
+"Accessing Structural, Electronic, Transport and Mesoscale Properties of Li-GICs via a Complete DFTB Model with Machine-Learned Repulsion Potential"
+Anniés,,Panosetti,,Voronenko, Mauth, Rahe, Scheurer, Materials 2021, 14(21), 6633
+https://doi.org/10.3390/ma14216633

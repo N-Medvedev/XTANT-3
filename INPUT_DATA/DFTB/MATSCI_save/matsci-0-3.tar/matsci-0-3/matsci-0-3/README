@@ -1,0 +1,121 @@
+########################################################################
+#                                                                      #
+# Semi-relativistic, self-consistent  charge Slater-Koster tables for  #
+# density-functional based tight-binding (DFTB) for materials science  #
+# simulations." TU-Dresden                              (c) 2004-2010  #
+#                                                                      # 
+# version: 1.00.04                                                     # 
+#                                                                      # 
+#          Johannes Frenzel    (johannes.frenzel@chemie.tu-dresden.de) #
+#          Augusto F. Oliveira               (augustof.chem@gmail.com) #
+#          Nicolas  Jardillier                  (jardillier@gmail.com) #
+#          Thomas Heine            (thomas.heine@chemie.tu-dresden.de) #
+#          Gotthard Seifert    (gotthard.seifert@chemie.tu-dresden.de) #
+#                                                                      #
+########################################################################
+
+(c) 2016, Gotthard Seifert, Technische Universität Dresden
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+Required references
+-------------------
+
+Complete set: 
+[1] 
+   J. Frenzel, A. F. Oliveira N. Jardillier, T.Heine & G Seifert
+   "Semi-relativistic, self-consistent charge Slater-Koster tables for
+   density-functional based tight-binding (DFTB) for materials
+   science simulations."  TU-Dresden 2004-2009.
+
+Al-O-H: 
+[2]
+   Frenzel, J., Oliveira, A. F., Duarte, H. A., Heine, T. & Seifert, G.
+   "Structural and electronic properties of bulk gibbsite and gibbsite,
+   surfaces", Zeitschrift für anorganische und allgemeine Chemie, 631, 
+   2005, 1267-1271            
+   http://dx.doi.org/10.1002/zaac.200500051
+
+Al-Si-O-H: 
+[3]
+   Guimaraes, L., Enyashin, A. N., Frenzel, J., Heine, T., Duarte, H. A.
+   & Seifert, G., "Imogolite Nanotubes: Stability, electronic and 
+   mechanical properties", Nano, 2007, 1, 362-368    
+   http://dx.doi.org/10.1021/nn700184k
+
+Al-O-P-C-H:
+[4]
+   Luschtinetz, R., Oliveira, A. F., Frenzel, J., Joswig, J., Seifert, G.
+   & Duarte, H. A., "Adsorption of phosphonic and ethylphosphonic acid on 
+   aluminum oxide surfaces", Surface Science, 2008, 602, 1347-1359
+   http://dx.doi.org/10.1016/j.susc.2008.01.035
+
+Al-O-P-C-H:
+[5] Luschtinetz, R., Frenzel, J., Milek, T., & Seifert, G.,
+    "Adsorption of phosphonic acid at the TiO2 anatase (101)
+     and rutile (110) surface",  J. Phys. Chem. C, 2009, 113, 5730-5740.
+    http://dx.doi.org/10.1021/jp8110343
+
+Ti-P-O-N-C-H:
+[6] Enyashin, A., Frenzel, J., Gemming, S. and Seifert, G.,
+    "Adsorption of nucleotides on the rutile (110) surfac", Int. J. Mat. Res.
+    accepted 2009 Dez.
+
+Cu-Si-Al-Na-O-H:
+[2,3,7]       
+
+Cu-Si, Cu-O, Cu-H, Cu-Na, Na-H, Na-Si, Na-O 
+[7] N. Jardillier, PhD Thesis, UNIVERSITE MONTPELLIER II, 2006
+    online:http://nicolas.jardillier.free.fr
+
+
+Authors:
+--------
+
+JF:        All interactions not listed in "contributing authors".
+
+
+contributing authors:
+
+AFO:       (P-Al, P-O, P-C, P-H) 
+           made to work for phosphonic acids 
+
+NJ:        (Cu-Si, Cu-O, Cu-H, Cu-Na, Na-H, Na-Si, Na-O)  
+           made to work for Zeolites
+
+
+Details of the atomic calculations:
+----------------------------------- 
+
+DFT, semi-relativistic, V_xc=Ceperly-Alder, potential super-position,
+STO basis-functions with 5 values for xi and i=0,1,2,3
+(Seifert,Phys.Chem.A,111(26),5609-5613,2007) 
+additional harmonic potential (r/r0)^n0 with n0=2 and r0(H)=1.3,
+r0(C,O,N)=2.7, r0(P)=3.8, r0(Al)=4.8 and r0(Si)=4.2 for s,p functions
+and r0(Si)=2.1 for d-functions (r0 in atomic units).
+
+Repulsive potentials are fitted to work with the following systems: 
+------------------------------------------------------------------
+
+P1)  Al-O-H          (Ref [2])      alumina (bulk, surface), gibbsite (bulk,
+                                     surfaces, clusters)
+P2)  Al-Si-O-H       (Ref. [3])     imogilite nanotubes
+P3)  Al-P-O-C-H      (Ref. [4])     phosphonic and ethylphosphonic acid @
+                                     aluminum oxide surfaces
+P4)  Cu-Si-Al-Na-O-H (Ref. [2,3,7]) zeolites
+P5)  Ti-P-O-C-H      (Ref. [5])     phosphonic acids @ TiO surfaces
+P6)  Ti-P-O-N-C-H    (Ref.[6])      DNA@TiO2 tubes
+
+U4)  O-N-C-B-H       (unpub.)        BN, B-O-C-H frameworks
+U5)  Al-O-C-H        (unpubl.)       Al-MIL
+U7)  N-P-Si-O-C-H    (unpub.)        

@@ -1,0 +1,2 @@
+Parameters taken from:
+https://doi.org/10.1039/C9NR10487A

@@ -1,0 +1,35 @@
+(c) 2017, Thomas Frauenheim, Universität Bremen
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+SK set for titanium oxide with organic molecules
+================================================
+
+This Slater-Koster file set had been created to handle bulk titanium
+oxide, titanium oxide surfaces and the interaction of titanium oxide
+with organic molecules within the DFTB-approach. The set extends the
+biological mio set, which proved to be very successful in describing
+the properties of biological molecules. It has been tested on bulk Ti,
+bulk TiO2 (rutile and anatase), various molecules containing Ti and C,
+N, H, S or O, and on TiO2 surface interacting with water (see
+Ref. [1]). It improves the trans3d set by ensuring the proper
+description of bulk Ti and bulk TiO2, while giving comparable accuracy
+for Ti in organic molecules.
+
+
+Required references
+-------------------
+
+[1] Grygoriy Dolgonos, Bálint Aradi, Ney H. Moreira and Thomas
+Frauenheim, J. Chem. Theory Comput., 2010, 6 (1), pp 266–278
+DOI: 10.1021/ct900422c

@@ -1,0 +1,91 @@
+$system:
+ncpus    16
+dftb     lctddftb+
+skgen    skgennode
+#onecent  hfatom
+onecent  hfatom_spin
+twocent  sktwocnt_lr
+outfile  gasefit.log
+libdir   ../libskf
+omega    0.3
+power    4
+dgrid    0.02
+ngrid    500
+grids    grids
+dftb_inp dftb_inp
+rep.in   rep.in
+gasrepfit gasrepfit
+$end
+
+$addHamiltonian:
+  MaxAngularMomentum = {
+    H  = "s"
+    C  = "p"
+    N  = "p"
+    O  = "p"
+  }
+  RangeSep = {
+     Enable = Yes
+     Algorithm = tr{
+       Threshold = 1e-16
+     }
+  }
+$end
+
+$genetic_algrithm:
+ga              1
+popsize         16  
+ngen            1 
+pmut            0.3 
+pcross          0.9
+score_type      1 
+seed            0
+runtest         0
+readr           1
+$end
+
+$atom_types:# name, opt type, lmax, denr (min, guess, max, precision), wr_s (min, guess, max, precision), wr_p (min, guess, max, precision),
+H  1  0  7.7  7.7  7.7  1  2.1  2.1  2.1  1  
+C  2  1  6.1  6.1  6.1  1  2.9  2.9  2.9  1  2.9  2.9  2.9  1  
+N  1  1  4.3  4.3  4.3  1  2.0  2.0  2.0  1  2.9  2.9  2.9  1  
+O  2  1  3.8  3.8  3.8  1  2.8  2.8  2.8  1  2.8  2.8  2.8  1  
+$end
+
+$compounds:#  str, charge, charge type, cweight, cfile, start, end, ref, evweight, evfile
+  ../../../geom_bnl0.3/h2.xyz            0 1 0   ../../../geom_bnl0.3/h2.chg          -1 -1 0 4   ../../../geom_bnl0.3/h2_-1_-1.eig        
+  ../../../geom_bnl0.3/ch4.xyz           0 1 0   ../../../geom_bnl0.3/ch4.chg         -3 -1 0 2   ../../../geom_bnl0.3/ch4_-3_-1.eig       
+  ../../../geom_bnl0.3/hcch.xyz          0 1 0   ../../../geom_bnl0.3/hcch.chg        -4 -1 0 1   ../../../geom_bnl0.3/hcch_-4_-1.eig      
+  ../../../geom_bnl0.3/h2cchch3.xyz      0 1 0   ../../../geom_bnl0.3/h2cchch3.chg    -4 -1 0 1   ../../../geom_bnl0.3/h2cchch3_-4_-1.eig  
+  ../../../geom_bnl0.3/h3cch2ch3.xyz     0 1 0   ../../../geom_bnl0.3/h3cch2ch3.chg   -4 -1 0 1   ../../../geom_bnl0.3/h3cch2ch3_-4_-1.eig 
+  ../../../geom_bnl0.3/h3cch3.xyz        0 1 0   ../../../geom_bnl0.3/h3cch3.chg      -4 -1 0 1   ../../../geom_bnl0.3/h3cch3_-4_-1.eig    
+  ../../../geom_bnl0.3/c6h6.xyz          0 1 0   ../../../geom_bnl0.3/c6h6.chg        -4 -1 0 1   ../../../geom_bnl0.3/c6h6_-4_-1.eig      
+  ../../../geom_bnl0.3/h2cch2.xyz        0 1 0   ../../../geom_bnl0.3/h2cch2.chg      -4 -1 0 1   ../../../geom_bnl0.3/h2cch2_-4_-1.eig    
+  ../../../geom_bnl0.3/n2.xyz            0 1 0   ../../../geom_bnl0.3/n2.chg          -4 -1 0 1   ../../../geom_bnl0.3/n2_-4_-1.eig        
+  ../../../geom_bnl0.3/hcn.xyz           0 1 0   ../../../geom_bnl0.3/hcn.chg         -4 -1 0 1   ../../../geom_bnl0.3/hcn_-4_-1.eig       
+  ../../../geom_bnl0.3/nh3.xyz           0 1 0   ../../../geom_bnl0.3/nh3.chg         -3 -1 0 2   ../../../geom_bnl0.3/nh3_-3_-1.eig       
+  ../../../geom_bnl0.3/hn_ch3_2.xyz      0 1 0   ../../../geom_bnl0.3/hn_ch3_2.chg    -4 -1 0 1   ../../../geom_bnl0.3/hn_ch3_2_-4_-1.eig  
+  ../../../geom_bnl0.3/n_ch3_3.xyz       0 1 0   ../../../geom_bnl0.3/n_ch3_3.chg     -4 -1 0 1   ../../../geom_bnl0.3/n_ch3_3_-4_-1.eig   
+  ../../../geom_bnl0.3/h2nnh2.xyz        0 1 0   ../../../geom_bnl0.3/h2nnh2.chg      -4 -1 0 1   ../../../geom_bnl0.3/h2nnh2_-4_-1.eig    
+  ../../../geom_bnl0.3/hnnh.xyz          0 1 0   ../../../geom_bnl0.3/hnnh.chg        -4 -1 0 1   ../../../geom_bnl0.3/hnnh_-4_-1.eig      
+  ../../../geom_bnl0.3/hnch2.xyz         0 1 0   ../../../geom_bnl0.3/hnch2.chg       -4 -1 0 1   ../../../geom_bnl0.3/hnch2_-4_-1.eig     
+  ../../../geom_bnl0.3/h2nch3.xyz        0 1 0   ../../../geom_bnl0.3/h2nch3.chg      -4 -1 0 1   ../../../geom_bnl0.3/h2nch3_-4_-1.eig    
+  ../../../geom_bnl0.3/pyridine.xyz      0 1 0   ../../../geom_bnl0.3/pyridine.chg    -4 -1 0 1   ../../../geom_bnl0.3/pyridine_-4_-1.eig  
+  ../../../geom_bnl0.3/hoch3.xyz         0 1 0   ../../../geom_bnl0.3/hoch3.chg       -4 -1 0 1   ../../../geom_bnl0.3/hoch3_-4_-1.eig     
+  ../../../geom_bnl0.3/h3coch3.xyz       0 1 0   ../../../geom_bnl0.3/h3coch3.chg     -4 -1 0 1   ../../../geom_bnl0.3/h3coch3_-4_-1.eig   
+  ../../../geom_bnl0.3/h2noch3.xyz       0 1 0   ../../../geom_bnl0.3/h2noch3.chg     -4 -1 0 1   ../../../geom_bnl0.3/h2noch3_-4_-1.eig   
+  ../../../geom_bnl0.3/hcooh.xyz         0 1 0   ../../../geom_bnl0.3/hcooh.chg       -4 -1 0 1   ../../../geom_bnl0.3/hcooh_-4_-1.eig     
+  ../../../geom_bnl0.3/h2o.xyz           0 1 0   ../../../geom_bnl0.3/h2o.chg         -3 -1 0 2   ../../../geom_bnl0.3/h2o_-3_-1.eig       
+  ../../../geom_bnl0.3/co.xyz            0 1 0   ../../../geom_bnl0.3/co.chg          -4 -1 0 1   ../../../geom_bnl0.3/co_-4_-1.eig        
+  ../../../geom_bnl0.3/d24.xyz           0 1 0   ../../../geom_bnl0.3/d24.chg         -4 -1 0 1   ../../../geom_bnl0.3/d24_-4_-1.eig       
+  ../../../geom_bnl0.3/o2.xyz            0 1 0   ../../../geom_bnl0.3/o2.chg          -4 -1 0 1   ../../../geom_bnl0.3/o2_-4_-1.eig        
+  ../../../geom_bnl0.3/h3cno2.xyz        0 1 0   ../../../geom_bnl0.3/h3cno2.chg      -4 -1 0 1   ../../../geom_bnl0.3/h3cno2_-4_-1.eig    
+  ../../../geom_bnl0.3/hno2.xyz          0 1 0   ../../../geom_bnl0.3/hno2.chg        -4 -1 0 1   ../../../geom_bnl0.3/hno2_-4_-1.eig      
+  ../../../geom_bnl0.3/hcooch3.xyz       0 1 0   ../../../geom_bnl0.3/hcooch3.chg     -4 -1 0 1   ../../../geom_bnl0.3/hcooch3_-4_-1.eig   
+  ../../../geom_bnl0.3/hooh.xyz          0 1 0   ../../../geom_bnl0.3/hooh.chg        -4 -1 0 1   ../../../geom_bnl0.3/hooh_-4_-1.eig      
+  ../../../geom_bnl0.3/co2.xyz           0 1 0   ../../../geom_bnl0.3/co2.chg         -4 -1 0 1   ../../../geom_bnl0.3/co2_-4_-1.eig       
+  ../../../geom_bnl0.3/h2co.xyz          0 1 0   ../../../geom_bnl0.3/h2co.chg        -4 -1 0 1   ../../../geom_bnl0.3/h2co_-4_-1.eig      
+  ../../../geom_bnl0.3/h3ccooh.xyz       0 1 0   ../../../geom_bnl0.3/h3ccooh.chg     -4 -1 0 1   ../../../geom_bnl0.3/h3ccooh_-4_-1.eig   
+  ../../../geom_bnl0.3/hno3.xyz          0 1 0   ../../../geom_bnl0.3/hno3.chg        -4 -1 0 1   ../../../geom_bnl0.3/hno3_-4_-1.eig      
+  ../../../geom_bnl0.3/n2o.xyz           0 1 0   ../../../geom_bnl0.3/n2o.chg         -4 -1 0 1   ../../../geom_bnl0.3/n2o_-4_-1.eig       
+  ../../../geom_bnl0.3/h3cooh.xyz        0 1 0   ../../../geom_bnl0.3/h3cooh.chg      -4 -1 0 1   ../../../geom_bnl0.3/h3cooh_-4_-1.eig       
+$end

@@ -1,0 +1,77 @@
+(c) 2017, Marcus Elstner, Karlsruher Institut für Technologie
+[original mio set, halogen additions]
+
+(c) 2017, Thomas Frauenheim, Universität Bremen
+[original pbc set, halogen additions]
+
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+DESCRIPTION: 
+
+This parametrization for Cl, Br and I is compatible with previous
+parametrizations for
+
+- organic molecules (H, C, N, O, P, S) - mio-1-1
+- fluorine - pbc-0-3
+
+Repulsive potentials were parametrized for bonds X-C, X-H, X-O, X-N as well as
+interhalogen bonding.
+
+Note that no repulsive potentials were developed for interactions X-P and X-S;
+therefore, molecules with such covalent bonds cannot be described with the
+current parametrization.
+
+Focus is on the description of halogenated organic molecules.
+While the C-X interactions have been parametrized on single molecules CH3-X,
+testing shows that the performance is good for a wide range of organic molecules
+containing halogen atoms.
+
+Diatomic molecules of halogens are described well, however featuring large
+overbinding of up to 30-40 kcal/mol.
+
+Molecules containing halogens and oxygen feature a quite large overbinding, too.
+Still, the geometries are good except for e.g. HXO2. For details, see the
+referenced article.
+
+Vibrational frequencies are acceptable as well.  Although a basis set composed
+of s- and p-orbitals only is used for halogens, the description of these
+hypervalent molecules is fair, although the atomic charges are overestimated
+largely.
+
+The performance for molecules containing halogens and nitrogen is slightly
+better than for the halogen oxides and oxoacids, with an exception being
+constituted by molecules containing both nitrogen and oxygen atoms.
+
+RELEVANT PUBLICATIONS
+
+[PRB98] Phys. Rev. B 58, 7260 (1998).
+[JMS01] J. Mol. Struc. (THEOCHEM) 541, 185 (2001).
+[JCTC2011] J. Chem. Theor. Comput. 7, 931 (2011).
+[JCTC2013] J. Chem. Theor. Comput. 9, 2939 (2013).
+
+REQUIRED REFERENCES
+
+O-N-C-H	     	[PRB98]
+S-(O,N,C,H,S) 	[JMS01]
+P-(O,N,C,H,S,P)	[JCTC2011]
+(Br,Cl,I,F)-*	[JCTC2013]
+
+
+IMPORTANT: The parameters excluding the halogens are generated as in the
+original mio-1-1 and pbc-0-3 sets. Nevertheless, perform calculations using
+exclusively parameter files contained in this package, even for pairs of
+chemical elements for which corresponding parameter files are available in the
+original sets.  Combination of parameter files from the current set and any
+previous ones could lead to difficulties in the diagonalizer routine due to
+different sign convention and small numerical differences in the integrals.

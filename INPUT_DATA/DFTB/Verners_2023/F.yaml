@@ -1,0 +1,8 @@
+# atomic magnetic Hubbard parameter [Hartree]
+magnetic_hubbard: -0.0298
+# (value NOT from DFTB.org; calculated by Augusto for the QUASINANO parameter set)
+
+# shell-resolved magnetic Hubbard parameter [Hartree]
+magnetic_hubbard_ldep: >
+    -0.0370 -0.0312
+    -0.0312 -0.0299

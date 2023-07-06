@@ -1,0 +1,48 @@
+===============================================
+Extension of MIO-1-1 (and PBC-0-3) for halogens
+===============================================
+
+The Slater--Koster tables were generated with the slateratom/sktwocent suite.
+The basis set is specified in the referenced article (DOI: 10.1021/ct4001922)
+Number of integration points (radial, inclination): 300 100
+The new scaled-scalar relativistic (ZORA) implementation in slateratom
+was used for the calculations of bromine and iodine atoms in the parametrization.
+
+===========================================
+Parametrization of the repulsive potentials
+===========================================
+
+--------------------------------------
+Bonds X-C, X-H and X-Y (inter-halogen)
+--------------------------------------
+
+The fitting was performed on the optimized geometry of a single molecule.
+The molecules chosen were CH3X, HX and XY.
+
+The Erepfit program was used, and the repulsive function was first obtained
+as a spline of fourth order, with a grid formed by 4 points:
+ 1. optimal distance - 0.1 bohr
+ 2. optimal distance + 0.1 bohr
+ 3. cut-off distance - 0.04 or 0.05 bohr
+ 4. cut-off distance
+
+The cut-off distance was based on the optimal bonding distance and
+a typical 1--3 (second-neighbor) distance.
+(For example, a typical 1--3 distance for the Cl--C potential
+is the distance between the chlorine and the methyl-carbon in CH3CH2Cl.)
+The cut-off distance was obtained as:
+  R(cut-off) = R(opt) + 0.7 * ( R(1--3) - R(opt) )
+
+In the fitting, the target atomization energy was adjusted so that
+the stretching vibrational frequency matches the reference.
+A certain overbinding was introduced in this way, as described in the article.
+  
+-----------------
+Bonds X-O and X-N
+-----------------
+
+The fitting was done with the recently developed automated procedure
+introduced in a previous article (DOI: 10.1021/ct200327s).
+The list of molecules used for fitting and further details
+are presented in the current article.
+

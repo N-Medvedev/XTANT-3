@@ -1,0 +1,43 @@
+(c) 2017, Marcus Elstner, Karlsruher Institut für Technologie
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting works.
+
+
+SPECIFIC PURPOSE PARAMETER SETS
+
+name   requires    elements    
+hhmod     mio          H-H 
+
+short description
+hhmod for proper description of H2
+        
+
+detailed description:
+
+When fitting the repulsive energy to a reference atomization energy of the 
+H2 molecule the H-H potentials turns out to be negative for certain 
+interatomic distances. This might cause trouble in molecular dynamics 
+simulation. If two hydrogen atoms come very close to each other they might 
+irreversibly form a covalent bond within DFTB. Therefore, within the mio-set 
+the H-H repulsive potential is shifted to be positive for all interatomic 
+distances. This solves the molecular dynamics problem but causes a wrong 
+description of H-H covalent bonds (which is only relevant for e.g. the H2 molecule). 
+The "HHmod" parameters are specifically parameterized for the correct 
+description of the H2 molecule with respect to atomization energy, bond length and
+vibrational frequency.
+
+
+RELEVANT PUBLICATIONS
+[PRB98]   Phys. Rev. B 58 (1998) 7260.
+
+REQUIRED REFERENCES
+H-H-mod       [PRB98]  	Phys. Rev. B 58 (1998) 7260

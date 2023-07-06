@@ -1,0 +1,6 @@
+Structure taken from:
+https://www.rcsb.org/3d-view/1N9V
+
+
+Angiotensin_II     ! material name
+C50H71N13O12       ! chemical formula of the compound

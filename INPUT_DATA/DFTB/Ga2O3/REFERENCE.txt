@@ -1,0 +1,6 @@
+https://doi.org/10.1063/1.5088941
+
+
+Jonghoon Lee; Sabyasachi Ganguli; Ajit K. Roy; Stefan C. Badescu
+"Density functional tight binding study of β-Ga2O3: Electronic structure, surface energy, and native point defects"
+J. Chem. Phys. 150, 174706 (2019)

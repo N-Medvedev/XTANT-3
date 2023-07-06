@@ -1,0 +1,3 @@
+Coulomb_cut:exclude
+6.0d0	! dm
+0.1d0	! dd
