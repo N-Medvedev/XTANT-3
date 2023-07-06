@@ -1,5 +1,0 @@
-1) Download sk-parameters files from https://dftb.org/parameters/download
-2) Save them in this directory
-3) When using them in XTANT-3, in the Hamiltonain and Repulsive files set the directory names with the parameters used
-
-For details, please refer to the manual of the XTANT-3
