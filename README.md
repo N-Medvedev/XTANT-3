@@ -23,15 +23,15 @@ This code is distributed _as is_ for non-commercial peaceful purposes only, such
 
 By using this code or its materials, you agree with these terms and conditions. The use of the code is at your own risk. Should you chose to use it, an appropriate citation is mandatory. The manual and the code can be cited as:
 
-N. Medvedev “XTANT-3: X-ray-induced Thermal And Nonthermal Transitions in Matter: theory, numerical details, user manual” (2023) https://github.com/N-Medvedev/XTANT-3
+* N. Medvedev “XTANT-3: X-ray-induced Thermal And Nonthermal Transitions in Matter: theory, numerical details, user manual” (2023) https://github.com/N-Medvedev/XTANT-3
 
 Journal citations may be used as follows: 
 
-N. Medvedev, V. Tkachenko, V. Lipp, Z. Li, B. Ziaja, Various damage mechanisms in carbon and silicon materials under femtosecond x-ray irradiation, 4open. 1 (2018) 3. https://doi.org/10.1051/fopen/2018003
+* N. Medvedev, V. Tkachenko, V. Lipp, Z. Li, B. Ziaja, Various damage mechanisms in carbon and silicon materials under femtosecond x-ray irradiation, 4open. 1 (2018) 3. https://doi.org/10.1051/fopen/2018003
 
 Should you use electron-phonon coupling in the calculations, the following citation should be included in addition to the abovementioned one:
 
-N. Medvedev, I. Milov, Electron-phonon coupling in metals at high electronic temperatures, Phys. Rev. B. 102 (2020) 064302. https://doi.org/10.1103/PhysRevB.102.064302 
+* N. Medvedev, I. Milov, Electron-phonon coupling in metals at high electronic temperatures, Phys. Rev. B. 102 (2020) 064302. https://doi.org/10.1103/PhysRevB.102.064302 
 
 In a publication, at least the following parameters should be mentioned for reproducibility of the results:
 Material, its initial structure, the number of atoms in the supercell, the initial conditions (atomic and electronic temperatures), an ensemble used, a type of boundary conditions, a scheme of low-energy electron thermalization (and value of thermalization type is nonequilibrium scheme is used), a type of cross sections in Monte Carlo simulation, a type of tight binding parametrization, whether the electron emission was included or not (if yes, whether Coulomb potential for atoms was accounted for and what model for electron emission was used), whether an additional short-range repulsive potential was used (and what type), time step of MD simulation, parameters of the incoming laser pulse (its photon energy, deposited dose, duration).
