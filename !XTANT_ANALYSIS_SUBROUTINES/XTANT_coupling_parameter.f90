@@ -8,13 +8,13 @@ PROGRAM Coupling_parameter
 ! ifort.exe /F9999999999 /O3 /Qipo /fpp /Qopenmp /heap-arrays XTANT_coupling_parameter.f90 -o XTANT_coupling_parameter.exe /link /stack:9999999999
 !
 ! To execute:
-! XTANT_coupling_parameter.exe time
+! XTANT_coupling_parameter.exe time Te_max
 ! where "time" is an optional argument meaning the time from which to start averaging the coupling parameter (used to exclude early time where atoms are not equilibrated yet)
 !<===========================================
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT
 !
-! Copyright (C) 2016-2022 Nikita Medvedev
+! Copyright (C) 2016-2023 Nikita Medvedev
 !
 ! XTANT is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
@@ -56,6 +56,18 @@ integer :: FN1, FN2, FN3, FN4, FN5, FN6, FN7, FN8
 integer :: FN_out, FN_out2, FN_out3, FN_out4, FN_out5, FN_out6  ! file number
 integer :: Reason, i, j, siz, Tsiz, N_arg, i_arg
 logical :: read_well, file_exist, file_exist2
+
+
+!---------------------------------------
+print*, '******************************************************************************'
+print*, 'For analysis of coulping, call it with the options:'
+print*, 'XTANT_coupling_parameter.exe t0 Te_max'
+print*, 'where you set numbers: t0, Te_max'
+print*, 't0 is the starting time [fs] (default t0=-10e10 fs)'
+print*, 'Te_max is the maximal electron temerature [K] (default Te_max=25000 K)'
+print*, '******************************************************************************'
+
+
 
 call Path_separator(path_sep)  ! Objects_and_types
 
