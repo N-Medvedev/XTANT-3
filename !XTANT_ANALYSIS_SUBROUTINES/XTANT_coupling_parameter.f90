@@ -137,7 +137,7 @@ enddo ALLARG
 call collect_all_output(Folders_with_data)	! below
 
 ! Read the factor for G rescaling set by the user:
-call read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, File_INPUT, scaling_G, Matter_name)  ! below
+call read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, File_INPUT, scaling_G, starting_time, Matter_name)  ! below
 File_name_out6 = 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce_G.dat'
 
 
@@ -463,19 +463,20 @@ end subroutine gnu_plot
 
 
 
-subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, File_INPUT, scaling_G, Matter_name)
+subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, File_INPUT, &
+                            scaling_G, starting_time, Matter_name)
    character(*), dimension(:), intent(in) :: Folders_with_data
    character(1), intent(in) :: path_sep
    integer, intent(in) :: FN7, FN8
    character(*), intent(inout) :: File_numpar, File_matter, File_INPUT
-   real(8), intent(out) :: scaling_G
+   real(8), intent(inout) :: scaling_G, starting_time
    character(*), intent(out) :: Matter_name
    !------------------
    character(300) :: File_name, File_name2, string
    character(10) :: temp, temp2
    logical :: file_exists, short_named
    integer :: open_status, v, i, Reason
-   real(8) :: r_temp
+   real(8) :: r_temp, t0, t_FWHM
 
    scaling_G = 4.0d0 ! to start with, no known scaling
    short_named = .false.   ! to start with
@@ -525,7 +526,21 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
 
    ! Read material name:
    read(FN8,*) Matter_name
-   !print*, scaling_G, trim(adjustl(Matter_name))
+   do i = 2, 12   ! read some more to get the  pulse start
+      read(FN8,*) string
+      if (i == 10) then ! line for pulse duration:
+         read(string, *) t_FWHM
+      endif
+      if (i == 12) then ! line for pulse center:
+         read(string, *) t0
+      endif
+   enddo
+   if (starting_time < -1.0d10) then ! user did not provide the starting time, use automatic estimation
+      starting_time = t0 - 2.0d0*t_FWHM
+   endif
+   !print*, scaling_G, trim(adjustl(Matter_name)), starting_time
+   print*, 'Scaling factor used: ', scaling_G
+   print*, 'Staring time used: ', starting_time
 
    ! Read the file with numpar to find the sacling factor:
    if (.not.short_named) then
