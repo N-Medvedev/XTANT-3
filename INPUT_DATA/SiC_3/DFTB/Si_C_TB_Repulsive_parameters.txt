@@ -1,3 +1,0 @@
-DFTB
-matsci-0-3		! DFTB parameterization
-1			! type of potential

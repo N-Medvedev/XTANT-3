@@ -63,7 +63,7 @@ print*, '***********************************************************************
 print*, 'For analysis of coulping, call it with the options:'
 print*, 'XTANT_coupling_parameter.exe t0 Te_max'
 print*, 'where you set numbers: t0, Te_max'
-print*, 't0 is the starting time [fs] (default t0=-10e10 fs)'
+print*, 't0 is the starting time [fs] (default t=t0-2*FWHM fs)'
 print*, 'Te_max is the maximal electron temerature [K] (default Te_max=25000 K)'
 print*, '******************************************************************************'
 
