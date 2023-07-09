@@ -5,11 +5,13 @@ It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matte
 
  a) Monte Carlo (MC) method for modeling X-ray-induced electron kinetics
  
- b) tight binding molecular dynamics (TBMD) for tracing atomic responce to modification of the interatomic potential due to electronic excitation
+ b) Boltzmann equation for low-energy electrons: relaxation-time approximation (RTA) for electron-electron scattering; Boltzmann collision integrals (BCI) for nonadiabatic electron-ion (electron-phonon) coupling
  
- c) Boltzmann equation for low-energy electrons: relaxation-time approximation (RTA) for electron-electron scattering; Boltzmann collision integrals (BCI) for nonadiabatic electron-ion (electron-phonon) coupling
+ c) Transferable tight binding (TB) for tracing electronic structure and interatomic forces
  
- d) random phase approximation (RPA) for calculation of the change of the optical properties of the material
+ d) Molecular dynamics (MD) for tracing atomic responce to modification of the interatomic potential due to electronic excitation
+ 
+ e) Random phase approximation (RPA) for calculation of the change of the optical properties of the material
 
 ## Disclamer
 
