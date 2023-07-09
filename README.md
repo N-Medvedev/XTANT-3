@@ -19,9 +19,11 @@ Although we endeavour to ensure that the code XTANT and results delivered are co
 
 This code is distributed _as is_ for non-commercial peaceful purposes only, such as research and education. It is __explicitly prohibited__ to use the code, its parts, its results or any related material for military-related or other than peaceful purposes.
 
+By using this code or its materials, you agree with these terms and conditions. 
+
 ## How to cite
 
-By using this code or its materials, you agree with these terms and conditions. The use of the code is at your own risk. Should you chose to use it, an appropriate citation is mandatory. The manual and the code can be cited as:
+The use of the code is at your own risk. Should you chose to use it, an appropriate citation is mandatory. The manual and the code can be cited as:
 
 * N. Medvedev “XTANT-3: X-ray-induced Thermal And Nonthermal Transitions in Matter: theory, numerical details, user manual” (2023) https://github.com/N-Medvedev/XTANT-3
 
