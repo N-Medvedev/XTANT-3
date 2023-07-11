@@ -27,7 +27,7 @@ By using this code or its materials, you agree with these terms and conditions.
 
 The use of the code is at your own risk. Should you chose to use it, an appropriate citation is mandatory. The manual and the code can be cited as:
 
-* N. Medvedev “XTANT-3: X-ray-induced Thermal And Nonthermal Transitions in Matter: theory, numerical details, user manual” (2023) https://github.com/N-Medvedev/XTANT-3
+* N. Medvedev “XTANT-3: X-ray-induced Thermal And Nonthermal Transitions in Matter: theory, numerical details, user manual” (2023) https://doi.org/10.48550/arXiv.2307.03953; https://github.com/N-Medvedev/XTANT-3
 
 Journal citations may be used as follows: 
 
