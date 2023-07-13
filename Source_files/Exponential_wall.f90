@@ -28,6 +28,7 @@ use Universal_constants
 use Objects
 use Coulomb, only : f_cut_L_C, d_f_cut_L_C
 use ZBL_potential, only : ZBL_pot, d_ZBL_pot
+use Little_subroutines, only : Find_monotonous_LE, linear_interpolation
 
 implicit none
 PRIVATE
@@ -83,7 +84,7 @@ function Shortrange_pot(TB_Expwall, a_r, Z1, Z2) result(Pot)
    real(8), intent(in) :: a_r ! [A] distance between the atoms
    real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL)
    !------------------------
-   real(8) :: f_cut_large, f_pow, f_exp, f_invexp, f_ZBL
+   real(8) :: f_cut_large, f_pow, f_exp, f_invexp, f_ZBL, f_tab
 
    Pot = 0.0d0 ! to start with
    if (a_r < TB_Expwall%f_cut%d0 + TB_Expwall%f_cut%dd*10.0d0) then ! only at close range
@@ -107,11 +108,15 @@ function Shortrange_pot(TB_Expwall, a_r, Z1, Z2) result(Pot)
          f_ZBL = 0.0d0
       endif
 
+      ! Contribution of tabulated potential:
+      f_tab = tabulated_potential(a_r, TB_Expwall%f_tab) ! below
+
+
       !print*, 'Shortrange_pot-1:', a_r, f_invexp, f_exp, f_pow, f_ZBL, f_cut_large
       !print*, 'Shortrange_pot-2:', a_r, TB_Expwall%f_inv_exp%use_it, TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0
 
       ! Combine all:
-      Pot = f_invexp + f_exp + f_pow + f_ZBL
+      Pot = f_invexp + f_exp + f_pow + f_ZBL + f_tab
       ! Augment with the cut-off function:
       Pot = Pot * f_cut_large  ! [eV]
    endif
@@ -127,6 +132,7 @@ function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
    real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL)
    !------------------------
    real(8) :: f_cut_large, d_f_large, f_exp, d_f_exp, f_invexp, d_f_invexp, f_pow, d_f_pow, Pot, d_Pot, f_ZBL, d_f_ZBL
+   real(8) :: f_tab, d_f_tab
 
    dPot = 0.0d0   ! to start with
    if (a_r < TB_Expwall%f_cut%d0 + TB_Expwall%f_cut%dd*10.0d0) then ! only at close range
@@ -168,9 +174,15 @@ function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
       endif
 
       !------------------
+      ! Contribution of tabulated potential:
+      f_tab = tabulated_potential(a_r, TB_Expwall%f_tab) ! below
+      d_f_tab = d_tabulated_potential(a_r, TB_Expwall%f_tab) ! below
+
+
+      !------------------
       ! Combine all:
-      Pot = f_invexp + f_exp + f_pow + f_ZBL
-      d_Pot = d_f_invexp + d_f_exp + d_f_pow + d_f_ZBL
+      Pot = f_invexp + f_exp + f_pow + f_ZBL + f_tab
+      d_Pot = d_f_invexp + d_f_exp + d_f_pow + d_f_ZBL + d_f_tab
 
       !------------------
       ! Augment the potential with the cut-off function (and its derivative):
@@ -318,6 +330,56 @@ end subroutine d_Short_range_Pressure_s
 
 
 
+!----------------------------------
+! Functions:
+
+function tabulated_potential(r, f_tab) result(Pot)
+   real(8) Pot ! [eV] Repulsive potential
+   real(8), intent(in) :: r   ! [A] distance
+   type(Rep_tab), intent(in) :: f_tab
+   !---------------------------
+   integer :: i_closest, Nsiz
+   real(8) :: E
+
+   Nsiz = size(f_tab%R)
+
+   ! Find the value of radius in the array:
+   if (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
+      E = 0.0d0
+   else
+      call Find_monotonous_LE(f_tab%R, r, i_closest) ! module "Little_subroutines"
+      ! Interpolate between the grid points:
+      call linear_interpolation(f_tab%R, f_tab%E, r, E, i_closest)   ! module "Little_subroutines"
+   endif
+
+   Pot = E ! [eV] potential
+end function tabulated_potential
+
+function d_tabulated_potential(r, f_tab) result(Pot)
+   real(8) Pot ! [eV/A] Derivative of the repulsive potential
+   real(8), intent(in) :: r   ! [A] distance
+   type(Rep_tab), intent(in) :: f_tab
+   !---------------------------
+   integer :: i_closest, Nsiz
+   real(8) :: E
+
+   Nsiz = size(f_tab%R)
+
+   ! Find the value of radius in the array:
+   if (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
+      E = 0.0d0
+   else
+      call Find_monotonous_LE(f_tab%R, r, i_closest) ! module "Little_subroutines"
+      ! Numerical derivative of lineaar function:
+      if (i_closest >= Nsiz) then
+         E = (f_tab%E(i_closest) - f_tab%E(i_closest-1)) / (f_tab%R(i_closest) - f_tab%R(i_closest-1))
+      else
+         E = (f_tab%E(i_closest+1) - f_tab%E(i_closest)) / (f_tab%R(i_closest+1) - f_tab%R(i_closest))
+      endif
+   endif
+
+   Pot = E ! [eV/A] derivative of the potential
+end function d_tabulated_potential
 
 
 pure function power_function(r, f_pow) result(Pot)

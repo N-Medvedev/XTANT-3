@@ -414,6 +414,14 @@ type :: Rep_ZBL
    logical :: use_it
 end type Rep_ZBL
 
+! Tabulated potential read from file:
+type :: Rep_tab
+   logical :: use_it ! flag to use this function or not
+   real(8), dimension(:), allocatable :: R      ! [A] array of interatomic distances
+   real(8), dimension(:), allocatable :: E      ! [eV/atom] array of repulsive energies
+end type Rep_tab
+
+
 ! Combined functions together:
 type, EXTENDS (TB_Exp_wall) :: TB_Short_Rep
    ! 1) Enveloping Fermi function (cut off at large distances):
@@ -428,6 +436,8 @@ type, EXTENDS (TB_Exp_wall) :: TB_Short_Rep
    type(Rep_pow), dimension(:), allocatable  :: f_pow
    ! 5) ZBL:
    type(Rep_ZBL) :: f_ZBL
+   ! 6) Tabulated potential:
+   type(Rep_tab) :: f_tab
 end type TB_Short_Rep
 
 
