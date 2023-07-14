@@ -181,7 +181,7 @@ function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
 
       !------------------
       ! Combine all:
-      Pot = f_invexp + f_exp + f_pow + f_ZBL + f_tab
+      Pot   = f_invexp + f_exp + f_pow + f_ZBL + f_tab
       d_Pot = d_f_invexp + d_f_exp + d_f_pow + d_f_ZBL + d_f_tab
 
       !------------------
@@ -341,15 +341,23 @@ function tabulated_potential(r, f_tab) result(Pot)
    integer :: i_closest, Nsiz
    real(8) :: E
 
-   Nsiz = size(f_tab%R)
+   if (f_tab%use_it) then  ! and only then
 
-   ! Find the value of radius in the array:
-   if (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
-      E = 0.0d0
-   else
-      call Find_monotonous_LE(f_tab%R, r, i_closest) ! module "Little_subroutines"
-      ! Interpolate between the grid points:
-      call linear_interpolation(f_tab%R, f_tab%E, r, E, i_closest)   ! module "Little_subroutines"
+      Nsiz = size(f_tab%R)
+
+      ! Find the value of radius in the array:
+      if (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
+         E = 0.0d0
+      else
+         call Find_monotonous_LE(f_tab%R, r, i_closest) ! module "Little_subroutines"
+         i_closest = i_closest + 1  ! set upper point for interpolation between i-1 and i
+         ! Interpolate between the grid points:
+         call linear_interpolation(f_tab%R, f_tab%E, r, E, i_closest)   ! module "Little_subroutines"
+         !print*, 'tabulated_potential', r, f_tab%R(i_closest-1), f_tab%R(i_closest), f_tab%E(i_closest-1), f_tab%E(i_closest), E
+
+      endif
+   else  ! no potential to use
+      E = 0
    endif
 
    Pot = E ! [eV] potential
@@ -363,19 +371,26 @@ function d_tabulated_potential(r, f_tab) result(Pot)
    integer :: i_closest, Nsiz
    real(8) :: E
 
-   Nsiz = size(f_tab%R)
+   if (f_tab%use_it) then  ! and only then
+      Nsiz = size(f_tab%R)
 
-   ! Find the value of radius in the array:
-   if (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
-      E = 0.0d0
-   else
-      call Find_monotonous_LE(f_tab%R, r, i_closest) ! module "Little_subroutines"
-      ! Numerical derivative of lineaar function:
-      if (i_closest >= Nsiz) then
-         E = (f_tab%E(i_closest) - f_tab%E(i_closest-1)) / (f_tab%R(i_closest) - f_tab%R(i_closest-1))
+      ! Find the value of radius in the array:
+      if (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
+         E = 0.0d0
       else
-         E = (f_tab%E(i_closest+1) - f_tab%E(i_closest)) / (f_tab%R(i_closest+1) - f_tab%R(i_closest))
+         call Find_monotonous_LE(f_tab%R, r, i_closest) ! module "Little_subroutines"
+         i_closest = i_closest + 1  ! set upper point for interpolation between i-1 and i
+         ! Numerical derivative of lineaar function:
+         if (i_closest > Nsiz) then
+            E = 0.0d0
+         elseif (i_closest == 1) then
+            E = (f_tab%E(i_closest+1) - f_tab%E(i_closest)) / (f_tab%R(i_closest+1) - f_tab%R(i_closest))
+         else
+            E = (f_tab%E(i_closest) - f_tab%E(i_closest-1)) / (f_tab%R(i_closest) - f_tab%R(i_closest-1))
+         endif
       endif
+   else  ! no potenital => no force
+      E = 0.0d0
    endif
 
    Pot = E ! [eV/A] derivative of the potential

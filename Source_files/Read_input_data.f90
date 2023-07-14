@@ -392,6 +392,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    do i = 1, size(Scell)
       ! Read atomic data:
       call read_atomic_parameters(matter, numpar, Err) ! below
+      if (Err%Err) goto 3416  ! exit if something went wrong
       Scell(i)%E_gap = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))	! [eV] band gap at the beginning
       Scell(i)%N_Egap = -1	! just to start with something
       ! Read TB parameters:
