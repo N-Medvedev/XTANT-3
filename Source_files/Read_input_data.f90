@@ -69,6 +69,9 @@ parameter (m_Atomic_parameters = 'Atomic_parameters') ! data-file with atomic pa
 parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat') ! data-file with Hubbard-U parameters (for SCC calculations)
 parameter (m_Communication = 'Communication.txt')  ! file for comunication with the user
 
+character(25), parameter :: m_short_pot = 'TB_short.txt'  ! filename for short-range potential
+character(25), parameter :: m_wall_pot = 'TB_wall.txt'  ! obsolete filename for short-range potential
+
 public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
 public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL
 public :: Read_Input_Files, get_add_data, m_Communication, m_dashline
@@ -389,6 +392,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    do i = 1, size(Scell)
       ! Read atomic data:
       call read_atomic_parameters(matter, numpar, Err) ! below
+      if (Err%Err) goto 3416  ! exit if something went wrong
       Scell(i)%E_gap = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))	! [eV] band gap at the beginning
       Scell(i)%N_Egap = -1	! just to start with something
       ! Read TB parameters:
@@ -1853,20 +1857,28 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
          !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
          ! Now read additional short-range repulsive (exponential wall) parameterization:
          write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
-         write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_wall.txt'
+         !write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_wall.txt'
+         write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), &
+                                     trim(adjustl(ch_temp))//trim(adjustl(m_wall_pot))
          inquire(file=trim(adjustl(File_name)),exist=file_exists)
          if (.not.file_exists) then ! try the new name
-            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_short.txt'
+            !write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_short.txt'
+            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), &
+                                        trim(adjustl(ch_temp))//trim(adjustl(m_short_pot))
             inquire(file=trim(adjustl(File_name)),exist=file_exists)
          endif
          ! try the other order of elements:
          if (.not.file_exists) then
             write(ch_temp,'(a)') trim(adjustl(matter%Atoms(j)%Name))//'_'//trim(adjustl(matter%Atoms(i)%Name))//'_'
-            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_wall.txt'
+            !write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_wall.txt'
+            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), &
+                                     trim(adjustl(ch_temp))//trim(adjustl(m_wall_pot))
             inquire(file=trim(adjustl(File_name)),exist=file_exists)
          endif
          if (.not.file_exists) then ! try the new name
-            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_short.txt'
+            !write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_short.txt'
+            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), &
+                                        trim(adjustl(ch_temp))//trim(adjustl(m_short_pot))
             inquire(file=trim(adjustl(File_name)),exist=file_exists)
          endif
 
@@ -1992,6 +2004,7 @@ subroutine read_Short_Rep_TB(FN, i,j, TB_Expwall, Error_descript, INFO)   ! belo
    TB_Expwall(i,j)%f_cut_inv%use_it = .false.   ! no short-range cutoff by default
    TB_Expwall(i,j)%f_cut%d0 = 0.0d0 ! cut off at zero, no repulsion by default
    TB_Expwall(i,j)%f_cut%dd = 0.01d0 ! short cut-off by default
+   TB_Expwall(i,j)%f_tab%use_it = .false.       ! no tabulated potential by default
 
    read_well = .true.   ! to start with
    RD: do while (read_well)
@@ -2064,22 +2077,53 @@ subroutine interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwa
 
    case ('POWER', 'Power', 'power', 'POW', 'Pow', 'pow')
       read(FN,*,IOSTAT=Reason) N_pow   ! number of power-functions
-      allocate(TB_Expwall%f_pow(N_pow))
-      TB_Expwall%f_pow(:)%use_it = .true.
-      do i = 1, N_pow   ! read for all functions
-         read(FN,*,IOSTAT=Reason) TB_Expwall%f_pow(i)%Phi, TB_Expwall%f_pow(i)%r0, TB_Expwall%f_pow(i)%m
-!          print*, TB_Expwall%f_pow%Phi, TB_Expwall%f_pow%r0, TB_Expwall%f_pow%m
-         call read_file(Reason, count_lines, read_well)
-         if (.not. read_well) then
-            deallocate(TB_Expwall%f_pow)   ! not to use
-            write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
-            INFO = 3
-            return   ! exit the function if there is nothing else to do
-         endif
-      enddo
+      call read_file(Reason, count_lines, read_well)
+      if (read_well) then
+         allocate(TB_Expwall%f_pow(N_pow))
+         TB_Expwall%f_pow(:)%use_it = .true.
+         do i = 1, N_pow   ! read for all functions
+            read(FN,*,IOSTAT=Reason) TB_Expwall%f_pow(i)%Phi, TB_Expwall%f_pow(i)%r0, TB_Expwall%f_pow(i)%m
+!           print*, TB_Expwall%f_pow%Phi, TB_Expwall%f_pow%r0, TB_Expwall%f_pow%m
+            call read_file(Reason, count_lines, read_well)
+            if (.not. read_well) then
+               deallocate(TB_Expwall%f_pow)   ! not to use
+               write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+               INFO = 3
+               return   ! exit the function if there is nothing else to do
+            endif
+         enddo
+      else
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         return   ! exit the function if there is nothing else to do
+      endif ! (read_well)
 
    case ('ZBL', 'zbl')
       TB_Expwall%f_ZBL%use_it = .true.
+
+   case ('TAB', 'Tab', 'tab', 'TABLE', 'Table', 'table', 'TABULATED', 'Tabulated', 'tabulated')
+      read(FN,*,IOSTAT=Reason) N_pow   ! number of power-functions
+      if (read_well) then
+         TB_Expwall%f_tab%use_it = .true.
+         allocate(TB_Expwall%f_tab%R(N_pow), source = 0.0d0)
+         allocate(TB_Expwall%f_tab%E(N_pow), source = 0.0d0)
+         do i = 1, N_pow   ! read for all functions
+            read(FN,*,IOSTAT=Reason) TB_Expwall%f_tab%R(i), TB_Expwall%f_tab%E(i)
+            call read_file(Reason, count_lines, read_well)
+            if (.not. read_well) then
+               TB_Expwall%f_tab%use_it = .false.
+               deallocate(TB_Expwall%f_tab%R, TB_Expwall%f_tab%E)   ! not to use
+               write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+               INFO = 3
+               return   ! exit the function if there is nothing else to do
+            endif
+         enddo
+
+      else
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         return   ! exit the function if there is nothing else to do
+      endif
 
    end select
 end subroutine interpret_short_range_data

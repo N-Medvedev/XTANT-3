@@ -662,11 +662,11 @@ end subroutine interpolate_data_on_grid
 
 
 
-subroutine linear_interpolation(xarray, yarray, x, y, i, x0, y0, replac)
+pure subroutine linear_interpolation(xarray, yarray, x, y, i, x0, y0, replac)
    real(8), dimension(:), intent(in) :: xarray, yarray	! x-array, y-array
-   real(8), intent(in) :: x	! input
-   real(8), intent(out) :: y	! output
-   integer, intent(in) :: i	! index for x-array
+   real(8), intent(in) :: x   ! input
+   real(8), intent(out) :: y  ! output
+   integer, intent(in) :: i   ! index for x-array
    real(8), intent(in), optional :: x0, y0 ! assume initial value for i = 1
    logical, intent(in), optional :: replac ! replace x0 by the given one independantly on which i is it?
    REDO: if (.not.present(replac)) then

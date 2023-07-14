@@ -39,8 +39,8 @@ character(20) :: m_DFTB_norep_directory
 parameter (m_DFTB_directory = 'DFTB')
 parameter (m_DFTB_norep_directory = 'DFTB_no_repulsion')
 
-public :: read_skf_file, same_or_different_atom_types, m_DFTB_directory, construct_skf_filename, idnetify_basis_size, m_DFTB_norep_directory, &
-read_skf_file_no_rep
+public :: read_skf_file, same_or_different_atom_types, m_DFTB_directory, construct_skf_filename, idnetify_basis_size, &
+m_DFTB_norep_directory, read_skf_file_no_rep
 
  contains
 
