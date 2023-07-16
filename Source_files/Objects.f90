@@ -146,11 +146,11 @@ end type TB_Rep_DFTB
 type, EXTENDS (TB_repulsive) :: TB_Rep_DFTB_no  ! repulsive potential coefficients:
    ! Testing construction of the repulsive potential:
    character(200) :: param_name  ! name of parameterization used
-   integer :: ToP   ! type of parameterization: 0=polinomial, 1=spline
-   ! In case there is no repulsive terms, this potential is reconstructed from ZBL repulsive potential:
-   ! https://en.wikipedia.org/wiki/Stopping_power_(particle_radiation)#Repulsive_interatomic_potentials
-   real(8), dimension(:), allocatable :: R  ! [A] distance
-   real(8), dimension(:), allocatable :: V_rep  ! [eV] parameterized repulsive potential
+!    integer :: ToP   ! type of parameterization: 0=polinomial, 1=spline
+!    ! In case there is no repulsive terms, this potential is reconstructed from ZBL repulsive potential:
+!    ! https://en.wikipedia.org/wiki/Stopping_power_(particle_radiation)#Repulsive_interatomic_potentials
+!    real(8), dimension(:), allocatable :: R  ! [A] distance
+!    real(8), dimension(:), allocatable :: V_rep  ! [eV] parameterized repulsive potential
 end type TB_Rep_DFTB_no
 
 
@@ -419,6 +419,9 @@ type :: Rep_tab
    logical :: use_it ! flag to use this function or not
    real(8), dimension(:), allocatable :: R      ! [A] array of interatomic distances
    real(8), dimension(:), allocatable :: E      ! [eV/atom] array of repulsive energies
+   logical :: use_spline
+   ! natural cubic spline parameters: a + b*x + c*x^2 + d*x^3
+   real(8), dimension(:), allocatable :: a, b, c, d
 end type Rep_tab
 
 

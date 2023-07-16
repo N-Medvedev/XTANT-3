@@ -65,9 +65,113 @@ public :: sym_diagonalize, nonsym_diagonalize, check_Ha, Kronecker_delta, sort_a
 public :: double_factorial, Heavyside_tau, get_factorial, Two_Vect_Matr, Det_3x3, Cross_Prod, Matrix_Vec_Prod
 public :: mkl_matrix_mult, Reciproc, check_hermiticity, Laguerre_up_to_6, d_Laguerre_up_to_6, check_symmetry
 public :: d_detH_d_h_a_b, Two_Matr_mult, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points
+public :: make_natural_cubic_splines, cubic_function, d_cubic_function
 
  contains
  
+
+subroutine make_natural_cubic_splines(x_array, y_array, a, b, c, d)
+   ! https://en.wikipedia.org/wiki/Spline_(mathematics)#Algorithm_for_computing_natural_cubic_splines
+   real(8), dimension(:), intent(in) :: x_array, y_array   ! array of data to construct splines for
+   real(8), dimension(:), allocatable, intent(inout) :: a, b, c, d  ! spline coefficients for the given array
+   !-----------------------------
+   integer :: Nsiz, i
+   real(8), dimension(:), allocatable :: h, mu, l, alpha, z, h3
+   real(8), parameter :: eps = 1.0d-12
+
+   Nsiz = size(x_array)
+   if (Nsiz > 1) then ! it makes sense to cobic-spline the array:
+      ! Ensure that size of arrays is correct:
+      if (allocated(a)) then
+         if (size(a) /= Nsiz) deallocate(a)
+      endif
+      if (allocated(b)) then
+         if (size(b) /= Nsiz) deallocate(b)
+      endif
+      if (allocated(c)) then
+         if (size(c) /= Nsiz) deallocate(c)
+      endif
+      if (allocated(d)) then
+         if (size(d) /= Nsiz) deallocate(d)
+      endif
+      allocate(a(Nsiz), source = y_array)
+      allocate(b(Nsiz), source = 0.0d0)
+      allocate(c(Nsiz), source = 0.0d0)
+      allocate(d(Nsiz), source = 0.0d0)
+
+      ! Create supporting arrays:
+      allocate(h(Nsiz), source = 0.0d0)
+      allocate(l(Nsiz), source = 0.0d0)
+      allocate(mu(Nsiz), source = 0.0d0)
+      allocate(alpha(Nsiz), source = 0.0d0)
+      allocate(z(Nsiz), source = 0.0d0)
+      allocate(h3(Nsiz), source = 0.0d0)
+
+      l(1) = 1.0d0
+      l(Nsiz) = 1.0d0
+
+      ! array with finite difference:
+      do i = 1, Nsiz-1
+         h(i) = x_array(i+1) - x_array(i)
+      enddo
+
+      where (abs(h(:)) > eps)
+         h3 = 3.0d0/h
+      elsewhere
+         h3 = 3.0d0/eps
+      endwhere
+
+      do i = 2, Nsiz-1
+         alpha(i) = h3(i)*(a(i+1)-a(i)) - h3(i-1)*(a(i)-a(i-1))
+
+         l(i) = 2.0d0*(x_array(i+1)-x_array(i)) - h(i-1)*mu(i-1)
+
+         if(abs(l(i)) > eps) then
+            mu(i) = h(i)/l(i)
+            z(i) = (alpha(i) - h(i-1)*z(i-1))/l(i)
+         else
+            mu(i) = h(i)/eps
+            z(i) = (alpha(i) - h(i-1)*z(i-1))/eps
+         endif
+      enddo
+
+      ! Now get the coefficients:
+      do i = Nsiz-1, 1, -1
+         c(i) = z(i) - mu(i)*c(i+1)
+         b(i) = (a(i+1)-a(i))/h(i) - h(i)*(c(i+1)+2.0d0*c(i))/3.0d0
+         d(i) = (c(i+1) - c(i))/(3.0d0*h(i))
+      enddo
+
+      ! Cleanup supporting arrays:
+      deallocate(h, mu, l, alpha, z, h3)
+   else ! does not make sence to cubic-spline it
+      if (allocated(a)) deallocate(a)
+      if (allocated(b)) deallocate(b)
+      if (allocated(c)) deallocate(c)
+      if (allocated(d)) deallocate(d)
+   endif
+end subroutine make_natural_cubic_splines
+
+
+pure function cubic_function(x, a, b, c, d) result(f)
+   real(8) f
+   real(8), intent(in) :: x, a, b, c, d
+   !---------------------
+   real(8) :: x2
+   x2 = x*x
+   f = a + b*x + c*x2 + d*x*x2
+end function cubic_function
+
+
+pure function d_cubic_function(x, b, c, d) result(f)
+   real(8) f
+   real(8), intent(in) :: x, b, c, d
+   !---------------------
+   real(8) :: x2
+   x2 = x*x
+   f = b + 2.0d0*c*x + 3.0d0*d*x2
+end function d_cubic_function
+
 
 
 pure subroutine Laguerre_up_to_6(d, L, ind_max)
