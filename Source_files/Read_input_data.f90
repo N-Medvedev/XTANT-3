@@ -37,6 +37,7 @@ use Dealing_with_3TB, only : m_3TB_directory, m_3TB_onsite_data, read_3TB_onsite
                             read_3TB_2bdy_file, read_3TB_3bdy_file
 use Dealing_with_xTB, only : m_xTB_directory, read_xTB_parameters, identify_basis_size_xTB, identify_AOs_xTB
 use Periodic_table, only : Decompose_compound
+use Algebra_tools, only : make_cubic_splines, cubic_function
 
 ! Open_MP related modules from external libraries:
 #ifdef OMP_inside
@@ -2102,31 +2103,84 @@ subroutine interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwa
       TB_Expwall%f_ZBL%use_it = .true.
 
    case ('TAB', 'Tab', 'tab', 'TABLE', 'Table', 'table', 'TABULATED', 'Tabulated', 'tabulated')
-      read(FN,*,IOSTAT=Reason) N_pow   ! number of power-functions
-      if (read_well) then
-         TB_Expwall%f_tab%use_it = .true.
-         allocate(TB_Expwall%f_tab%R(N_pow), source = 0.0d0)
-         allocate(TB_Expwall%f_tab%E(N_pow), source = 0.0d0)
-         do i = 1, N_pow   ! read for all functions
-            read(FN,*,IOSTAT=Reason) TB_Expwall%f_tab%R(i), TB_Expwall%f_tab%E(i)
-            call read_file(Reason, count_lines, read_well)
-            if (.not. read_well) then
-               TB_Expwall%f_tab%use_it = .false.
-               deallocate(TB_Expwall%f_tab%R, TB_Expwall%f_tab%E)   ! not to use
-               write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
-               INFO = 3
-               return   ! exit the function if there is nothing else to do
-            endif
-         enddo
-
-      else
-         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
-         INFO = 3
-         return   ! exit the function if there is nothing else to do
-      endif
+      call Process_tabulated_potential(FN, TB_Expwall, count_lines, read_well, INFO, Error_descript)   ! below
+      if (INFO /= 0) return
 
    end select
 end subroutine interpret_short_range_data
+
+
+
+subroutine Process_tabulated_potential(FN, TB_Expwall, count_lines, read_well, INFO, Error_descript)
+   integer, intent(in) :: FN  ! file number to read from
+   type(TB_Short_Rep), intent(inout) ::  TB_Expwall ! parameters of the exponential wall potential
+   integer, intent(inout) :: count_lines
+   logical, intent(inout) :: read_well
+   integer, intent(inout) :: INFO   ! error description
+   character(*), intent(inout) :: Error_descript   ! error save
+   !-------------------------------------
+   integer :: N_pow, i, Reason
+   character(100) :: text_line, ch_var
+
+   INFO = 0 ! no error to start with
+   read_well = .true.   ! to start with
+   TB_Expwall%f_tab%use_spline = .false.   ! by default, use finite difference
+
+   read(FN, '(a)', IOSTAT=Reason) text_line
+   call read_file(Reason, count_lines, read_well)
+   read(text_line,*,IOSTAT=Reason) N_pow, ch_var    ! number of power-functions; type of
+   if (Reason == 0) then   ! read the marker of potential
+      select case (trim(adjustl(ch_var)))
+      case ('diff', 'difference', 'findif', 'fin_dif')
+         TB_Expwall%f_tab%use_spline = .false.   ! use finite difference
+      case ('spline', 'SPLINE')
+         TB_Expwall%f_tab%use_spline = .true.    ! use spline
+      case default   ! use spline
+         TB_Expwall%f_tab%use_spline = .false.   ! be default, use finite difference
+      end select
+   else  ! try to read just one number
+      read(text_line,*,IOSTAT=Reason) N_pow  ! number of power-functions
+      count_lines = count_lines - 1 ! interpreting the same line again
+      call read_file(Reason, count_lines, read_well)
+   endif
+
+   if (read_well) then
+      TB_Expwall%f_tab%use_it = .true.
+      allocate(TB_Expwall%f_tab%R(N_pow), source = 0.0d0)
+      allocate(TB_Expwall%f_tab%E(N_pow), source = 0.0d0)
+      do i = 1, N_pow   ! read for all functions
+         read(FN,*,IOSTAT=Reason) TB_Expwall%f_tab%R(i), TB_Expwall%f_tab%E(i)
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            TB_Expwall%f_tab%use_it = .false.
+            deallocate(TB_Expwall%f_tab%R, TB_Expwall%f_tab%E)   ! not to use
+            write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+            INFO = 3
+            return   ! exit the function if there is nothing else to do
+         endif
+      enddo
+
+      ! Create cubic splines:
+      !call make_natural_cubic_splines(TB_Expwall%f_tab%R, TB_Expwall%f_tab%E, &
+      !      TB_Expwall%f_tab%a, TB_Expwall%f_tab%b, TB_Expwall%f_tab%c, TB_Expwall%f_tab%d)  ! module "Algebra_tools"
+      call make_cubic_splines(TB_Expwall%f_tab%R, TB_Expwall%f_tab%E, &
+            TB_Expwall%f_tab%a, TB_Expwall%f_tab%b, TB_Expwall%f_tab%c, TB_Expwall%f_tab%d)  ! module "Algebra_tools"
+
+      ! Test spline:
+!       do i = 1, N_pow-1
+!          write(*,'(a, i4, f, es, es, es, es)') 'Spline:', i, TB_Expwall%f_tab%R(i), TB_Expwall%f_tab%E(i), cubic_function(0.0d0,TB_Expwall%f_tab%a(i), TB_Expwall%f_tab%b(i), TB_Expwall%f_tab%c(i), TB_Expwall%f_tab%d(i)), &
+!          cubic_function((TB_Expwall%f_tab%R(i+1)-TB_Expwall%f_tab%R(i))*0.5d0,TB_Expwall%f_tab%a(i), TB_Expwall%f_tab%b(i), TB_Expwall%f_tab%c(i), TB_Expwall%f_tab%d(i)), &
+!          cubic_function((TB_Expwall%f_tab%R(i+1)-TB_Expwall%f_tab%R(i)),TB_Expwall%f_tab%a(i), TB_Expwall%f_tab%b(i), TB_Expwall%f_tab%c(i), TB_Expwall%f_tab%d(i))
+!       enddo
+!       pause 'Process_tabulated_potential'
+
+   else
+      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+      INFO = 3
+      return   ! exit the function if there is nothing else to do
+   endif
+end subroutine Process_tabulated_potential
+
 
 
 

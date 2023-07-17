@@ -60,14 +60,169 @@ interface check_Ha
     module procedure check_Ha_cc
 end interface check_Ha
 
+
+real(8), parameter :: m_34 = 3.0d0/4.0d0
+real(8), parameter :: m_16 = 1.0d0/6.0d0
+
+
 !private  ! hides items not listed on public statement
 public :: sym_diagonalize, nonsym_diagonalize, check_Ha, Kronecker_delta, sort_array, Invers_3x3, Transpose_M
 public :: double_factorial, Heavyside_tau, get_factorial, Two_Vect_Matr, Det_3x3, Cross_Prod, Matrix_Vec_Prod
 public :: mkl_matrix_mult, Reciproc, check_hermiticity, Laguerre_up_to_6, d_Laguerre_up_to_6, check_symmetry
 public :: d_detH_d_h_a_b, Two_Matr_mult, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points
+public :: make_cubic_splines, cubic_function, d_cubic_function
+!=======================================
 
  contains
- 
+
+
+subroutine make_cubic_splines(x_array, y_array, a, b, c, d)
+   ! The subroutine for creating an array of cubic splines on arbitrary (non necesserely equidistant) grid
+   ! (the grid, however, must be orderred and cannot contain degeneracies [i.e., x(i)/=x(i+1), for any i)]
+   ! https://en.wikipedia.org/wiki/Spline_(mathematics)
+   real(8), dimension(:), intent(in) :: x_array, y_array   ! array of data to construct splines for
+   real(8), dimension(:), allocatable, intent(inout) :: a, b, c, d  ! spline coefficients for the given array
+   !-----------------------------
+   integer :: Nsiz, i
+   real(8), dimension(size(x_array)) :: h, h_inv, f_prime, f_prime2
+
+   Nsiz = size(x_array)
+   if (Nsiz > 1) then ! it makes sense to cobic-spline the array:
+      ! Define the difference:
+      do i = 1, Nsiz-1
+         h(i) = x_array(i+1) - x_array(i)
+      enddo
+      h(Nsiz) = h(Nsiz - 1)
+      h_inv = 1.0d0/h
+
+      ! Define the first and second derivatives:
+      do i = 1, Nsiz
+         f_prime(i) = get_first_derivative(x_array, y_array, i)   ! below
+         f_prime2(i) = get_second_derivative(x_array, y_array, i) ! below
+      enddo
+
+      ! Ensure that size of arrays is correct:
+      if (allocated(a)) then
+         if (size(a) /= Nsiz) deallocate(a)
+      endif
+      if (allocated(b)) then
+         if (size(b) /= Nsiz) deallocate(b)
+      endif
+      if (allocated(c)) then
+         if (size(c) /= Nsiz) deallocate(c)
+      endif
+      if (allocated(d)) then
+         if (size(d) /= Nsiz) deallocate(d)
+      endif
+      allocate(a(Nsiz), source = y_array) ! a-coefficients are defined
+      allocate(b(Nsiz), source = 0.0d0)
+      allocate(c(Nsiz), source = 0.0d0)
+      allocate(d(Nsiz), source = 0.0d0)
+
+      ! Define b-coefficients:
+      b(Nsiz) = f_prime(Nsiz)
+      b(Nsiz-1) = f_prime(Nsiz-1)
+      do i = Nsiz-2, 1, -1
+         b(i) = f_prime(i+1) + m_34 * f_prime2(i+1)*h(i)
+      enddo
+
+      ! Define c-coefficients:
+      do i = Nsiz-2, 1, -1
+         c(i) = h_inv(i) * ( f_prime(i+1) - b(i) - 0.5d0 *h(i)* f_prime2(i+1) )
+      enddo
+
+      ! Define d-coefficients:
+      do i = Nsiz-2, 1, -1
+         d(i) = m_16*h_inv(i) * ( f_prime2(i+1) - 2.0d0*c(i) )
+      enddo
+
+   else ! does not make sence to cubic-spline it
+      if (allocated(a)) deallocate(a)
+      if (allocated(b)) deallocate(b)
+      if (allocated(c)) deallocate(c)
+      if (allocated(d)) deallocate(d)
+   endif
+end subroutine make_cubic_splines
+
+
+pure function get_first_derivative(x_array, y_array, i) result(df)
+   real(8) df
+   real(8), dimension(:), intent(in) :: x_array, y_array
+   integer, intent(in) :: i   ! index
+   !-----------------------
+   integer :: Nsiz, j
+
+   ! Find the index for the derivative (including exceptional cases):
+   if (i <= 1) then ! too small
+      j = 1
+   else ! (i <= 1)
+      ! Define the size:
+      Nsiz = size(x_array)
+      if (size(y_array) < Nsiz) Nsiz = size(y_array)
+
+      if (i >= Nsiz) then  ! too large
+         j = Nsiz - 1
+      else
+         j = i
+      endif ! (i >= Nsiz)
+   endif ! (i <= 1)
+
+   ! Get the first derivative:
+   df = (y_array(j+1) - y_array(j))/(x_array(j+1)-x_array(j))
+end function get_first_derivative
+
+
+pure function get_second_derivative(x_array, y_array, i) result(df)
+   real(8) df
+   real(8), dimension(:), intent(in) :: x_array, y_array
+   integer, intent(in) :: i   ! index
+   !-----------------------
+   integer :: Nsiz, j
+   real(8) :: xnn1, xn1n2, xnn2
+
+   ! Find the index for the derivative (including exceptional cases):
+   if (i <= 2) then ! too small
+      j = 2
+   else ! (i <= 2)
+      ! Define the size:
+      Nsiz = size(x_array)
+      if (size(y_array) < Nsiz) Nsiz = size(y_array)
+
+      if (i >= Nsiz-1) then  ! too large
+         j = Nsiz - 1
+      else
+         j = i
+      endif ! (i >= Nsiz)
+   endif ! (i <= 1)
+
+   ! Get the second derivative:
+   xnn1 = x_array(j+1) - x_array(j)
+   xn1n2 = x_array(j) - x_array(j-1)
+   xnn2 = x_array(j+1) - x_array(j-1)
+   df = 2.0d0*(y_array(j+1)*xn1n2 - y_array(j)*xnn2 + y_array(j-1)*xnn1)/(xnn2*xn1n2*xnn1)
+end function get_second_derivative
+
+
+
+pure function cubic_function(x, a, b, c, d) result(f)
+   real(8) f
+   real(8), intent(in) :: x, a, b, c, d
+   !---------------------
+   real(8) :: x2
+   x2 = x*x
+   f = a + b*x + c*x2 + d*x*x2
+end function cubic_function
+
+
+pure function d_cubic_function(x, b, c, d) result(f)
+   real(8) f
+   real(8), intent(in) :: x, b, c, d
+   !---------------------
+   real(8) :: x2
+   x2 = x*x
+   f = b + 2.0d0*c*x + 3.0d0*d*x2
+end function d_cubic_function
+
 
 
 pure subroutine Laguerre_up_to_6(d, L, ind_max)
