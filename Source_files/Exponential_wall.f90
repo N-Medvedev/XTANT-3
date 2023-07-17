@@ -352,15 +352,18 @@ function tabulated_potential(r, f_tab) result(Pot)
          call Find_monotonous_LE(f_tab%R, r, i_closest) ! module "Little_subroutines"
 
          if (f_tab%use_spline) then  ! use cubic spline instead of the finite difference
-            !print*, '0:', f_tab%R(i_closest), f_tab%R(i_closest+1), r
+
+            ! For spline, only the interval N-1 is defined, so use it for too large distances:
+            if (i_closest == Nsiz) i_closest = Nsiz - 1
+
             E = cubic_function(r-f_tab%R(i_closest), f_tab%a(i_closest), f_tab%b(i_closest), &
                                f_tab%c(i_closest), f_tab%d(i_closest))  ! module "Algebra_tools"
-            !print*, '1:', r, E
+
          else ! use finite diference
             i_closest = i_closest + 1  ! set upper point for interpolation between i-1 and i
             ! Interpolate between the grid points:
             call linear_interpolation(f_tab%R, f_tab%E, r, E, i_closest)   ! module "Little_subroutines"
-            !print*, 'tabulated_potential', r, f_tab%R(i_closest-1), f_tab%R(i_closest), f_tab%E(i_closest-1), f_tab%E(i_closest), E
+
          endif ! (f_tab%use_spline)
       endif ! (r > f_tab%R(Nsiz))
    else  ! no potential to use
@@ -385,35 +388,29 @@ function d_tabulated_potential(r, f_tab) result(Pot)
       ! Find the value of radius in the array:
       if (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
          E = 0.0d0
-         print*, '2d:', r, E, cubic_function(r-f_tab%R(i_closest), f_tab%a(i_closest), f_tab%b(i_closest), &
-                               f_tab%c(i_closest), f_tab%d(i_closest))  ! module "Algebra_tools"
       else  ! (r > f_tab%R(Nsiz))
          call Find_monotonous_LE(f_tab%R, r, i_closest) ! module "Little_subroutines"
          if (i_closest == 1) then
             E = (f_tab%E(i_closest+1) - f_tab%E(i_closest)) / (f_tab%R(i_closest+1) - f_tab%R(i_closest))
-            print*, '2c:', r, E, cubic_function(r-f_tab%R(i_closest), f_tab%a(i_closest), f_tab%b(i_closest), &
-                               f_tab%c(i_closest), f_tab%d(i_closest))  ! module "Algebra_tools"
          else
             if (f_tab%use_spline) then  ! use cubic spline instead of the finite difference
-               !print*, '0:', f_tab%R(i_closest), f_tab%R(i_closest+1), r
+
+               ! For spline, only the interval N-1 is defined, so use it for too large distances:
+               if (i_closest == Nsiz) i_closest = Nsiz - 1
+
                E = d_cubic_function(r-f_tab%R(i_closest), f_tab%b(i_closest), &
                                f_tab%c(i_closest), f_tab%d(i_closest))  ! module "Algebra_tools"
 
-               print*, '2:', r, E, cubic_function(r-f_tab%R(i_closest), f_tab%a(i_closest), f_tab%b(i_closest), &
-                               f_tab%c(i_closest), f_tab%d(i_closest))  ! module "Algebra_tools"
             else ! use finite diference
                i_closest = i_closest + 1  ! set upper point for interpolation between i-1 and i
                ! Numerical derivative of lineaar function:
                E = (f_tab%E(i_closest) - f_tab%E(i_closest-1)) / (f_tab%R(i_closest) - f_tab%R(i_closest-1))
-               print*, '2a:', r, E, cubic_function(r-f_tab%R(i_closest), f_tab%a(i_closest), f_tab%b(i_closest), &
-                               f_tab%c(i_closest), f_tab%d(i_closest))  ! module "Algebra_tools"
+
             endif ! (f_tab%use_spline)
          endif ! (i_closest == 1)
       endif ! (f_tab%use_spline)
    else  ! no potenital => no force
       E = 0.0d0
-      print*, '2b:', r, E, cubic_function(r-f_tab%R(i_closest), f_tab%a(i_closest), f_tab%b(i_closest), &
-                               f_tab%c(i_closest), f_tab%d(i_closest))  ! module "Algebra_tools"
    endif ! (f_tab%use_it)
 
    Pot = E ! [eV/A] derivative of the potential

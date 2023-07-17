@@ -37,7 +37,7 @@ use Dealing_with_3TB, only : m_3TB_directory, m_3TB_onsite_data, read_3TB_onsite
                             read_3TB_2bdy_file, read_3TB_3bdy_file
 use Dealing_with_xTB, only : m_xTB_directory, read_xTB_parameters, identify_basis_size_xTB, identify_AOs_xTB
 use Periodic_table, only : Decompose_compound
-use Algebra_tools, only : make_natural_cubic_splines, cubic_function
+use Algebra_tools, only : make_cubic_splines, cubic_function
 
 ! Open_MP related modules from external libraries:
 #ifdef OMP_inside
@@ -2161,7 +2161,9 @@ subroutine Process_tabulated_potential(FN, TB_Expwall, count_lines, read_well, I
       enddo
 
       ! Create cubic splines:
-      call make_natural_cubic_splines(TB_Expwall%f_tab%R, TB_Expwall%f_tab%E, &
+      !call make_natural_cubic_splines(TB_Expwall%f_tab%R, TB_Expwall%f_tab%E, &
+      !      TB_Expwall%f_tab%a, TB_Expwall%f_tab%b, TB_Expwall%f_tab%c, TB_Expwall%f_tab%d)  ! module "Algebra_tools"
+      call make_cubic_splines(TB_Expwall%f_tab%R, TB_Expwall%f_tab%E, &
             TB_Expwall%f_tab%a, TB_Expwall%f_tab%b, TB_Expwall%f_tab%c, TB_Expwall%f_tab%d)  ! module "Algebra_tools"
 
       ! Test spline:
