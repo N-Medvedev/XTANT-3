@@ -40,7 +40,7 @@ use Universal_constants
 character(200) :: File_electron, File_temperatures, File_coupling_partial, File_pressure, File_energies, File_Ce_partial
 character(200) :: File_name1, File_name2, File_name3, File_name4, File_name5, File_name6, char_var
 character(200) :: File_name_out, File_name_out2, File_name_out3, File_name_out4, File_name_out5, File_name_out6
-character(50) :: File_numpar, File_matter, Matter_name, File_INPUT
+character(200) :: File_numpar, File_matter, Matter_name, File_INPUT
 character(200), dimension(:), allocatable :: Folders_with_data
 character(200) :: gnu_script, gnu_fig
 character(10) :: call_slash, sh_cmd
@@ -54,7 +54,7 @@ real(8), dimension(:,:), allocatable :: G_part_ave, Ce_part_ave
 real(8), dimension(:), allocatable :: mu_ave, Ce_ave, E_ave, P_ave, Grun_ave
 integer :: FN1, FN2, FN3, FN4, FN5, FN6, FN7, FN8
 integer :: FN_out, FN_out2, FN_out3, FN_out4, FN_out5, FN_out6  ! file number
-integer :: Reason, i, j, siz, Tsiz, N_arg, i_arg
+integer :: Reason, i, j, siz, Tsiz, N_arg, i_arg, INFO
 logical :: read_well, file_exist, file_exist2
 
 
@@ -67,6 +67,7 @@ print*, 't0 is the starting time [fs] (default t=t0-2*FWHM fs)'
 print*, 'Te_max is the maximal electron temerature [K] (default Te_max=25000 K)'
 print*, '******************************************************************************'
 
+INFO = 0 ! to start with
 
 
 call Path_separator(path_sep)  ! Objects_and_types
@@ -137,7 +138,11 @@ enddo ALLARG
 call collect_all_output(Folders_with_data)	! below
 
 ! Read the factor for G rescaling set by the user:
-call read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, File_INPUT, scaling_G, starting_time, Matter_name)  ! below
+call read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, File_INPUT, scaling_G, &
+                        starting_time, Matter_name, INFO)  ! below
+! If something went wrong, cannot execute the analysis:
+if (INFO /= 0) goto 2012   ! go to the exit
+
 File_name_out6 = 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce_G.dat'
 
 
@@ -341,7 +346,7 @@ close (FN_out4)
 if (allocated(G_mean_part)) close (FN_out3)
 if (allocated(Ce_mean_part)) close (FN_out5)
 
-print*, 'XTANT: analysis with Coupling_parameter is executed'
+2012  print*, 'XTANT: analysis with Coupling_parameter is executed'
 
 
 !---------------------
@@ -464,13 +469,14 @@ end subroutine gnu_plot
 
 
 subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, File_matter, File_INPUT, &
-                            scaling_G, starting_time, Matter_name)
+                            scaling_G, starting_time, Matter_name, INFO)
    character(*), dimension(:), intent(in) :: Folders_with_data
    character(1), intent(in) :: path_sep
    integer, intent(in) :: FN7, FN8
    character(*), intent(inout) :: File_numpar, File_matter, File_INPUT
    real(8), intent(inout) :: scaling_G, starting_time
    character(*), intent(out) :: Matter_name
+   integer, intent(inout) :: INFO   ! error flag
    !------------------
    character(300) :: File_name, File_name2, string
    character(10) :: temp, temp2
@@ -480,6 +486,7 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
 
    scaling_G = 4.0d0 ! to start with, no known scaling
    short_named = .false.   ! to start with
+   INFO = 0 ! to start with, no error
 
    ! Find filename for NUMPAR:
    file_exists = .false.
@@ -521,6 +528,11 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
 
    File_matter = trim(adjustl(File_name2))
    inquire(file=trim(adjustl(File_matter)),exist=file_exists)
+   if (.not.file_exists) then
+      print*, 'File not found: ', trim(adjustl(File_matter))
+      INFO = -1   ! file not found
+      goto 2015
+   endif
    open(UNIT=FN8, file=trim(adjustl(File_matter)), iostat=open_status, action='read')
    !print*, 'Matter:', trim(adjustl(File_matter)), file_exists, open_status
 
@@ -549,6 +561,8 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
       enddo
       ! read line with scaling factor:
       read(FN7,*) r_temp, scaling_G
+      close(FN7)
+      close(FN8)
    else ! short-named inupt file:
       RDFL:do
          read(FN8,'(a)',IOSTAT=Reason) string
@@ -570,6 +584,7 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
       enddo RDFL
       ! read line with scaling factor:
       read(FN8,*) r_temp, scaling_G
+      close(FN8)
    endif
 
    ! Use the default value to renormalize it:
