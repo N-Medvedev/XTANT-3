@@ -9,11 +9,11 @@ It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matte
  
  c) Transferable tight binding (TB) for tracing electronic structure and interatomic forces
  
- d) Molecular dynamics (MD) for tracing atomic responce to modification of the interatomic potential due to electronic excitation
+ d) Molecular dynamics (MD) for tracing atomic response to modification of the interatomic potential due to electronic excitation
  
  e) Random phase approximation (RPA) for calculation of the change of the optical properties of the material
 
-## Disclamer
+## Disclaimer
 
 _This code is work in progress, anything might change without a notice, bugfixes and patches are expected!_
 
@@ -33,7 +33,7 @@ Journal citations may be used as follows:
 
 * N. Medvedev, V. Tkachenko, V. Lipp, Z. Li, B. Ziaja, Various damage mechanisms in carbon and silicon materials under femtosecond x-ray irradiation, 4open. 1 (2018) 3. https://doi.org/10.1051/fopen/2018003
 
-Should you use electron-phonon coupling in the calculations, the following citation should be included in addition to the abovementioned one:
+Should you use electron-phonon coupling in the calculations, the following citation should be included in addition to the above-mentioned one:
 
 * N. Medvedev, I. Milov, Electron-phonon coupling in metals at high electronic temperatures, Phys. Rev. B. 102 (2020) 064302. https://doi.org/10.1103/PhysRevB.102.064302 
 
