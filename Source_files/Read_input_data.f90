@@ -27,7 +27,8 @@ MODULE Read_input_data
 use Objects
 use Universal_constants
 use Little_subroutines, only : print_time_step
-use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file, get_file_extension
+use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file, get_file_extension, &
+                              ensure_correct_path_separator
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
 use Dealing_with_DFTB, only : m_DFTB_directory, construct_skf_filename, read_skf_file, same_or_different_atom_types, &
                            idnetify_basis_size, m_DFTB_norep_directory, read_skf_file_no_rep
@@ -1904,7 +1905,49 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                print*, trim(adjustl(Error_descript))
                goto 3425
             endif
-            
+            !print*, 'test 0:', trim(adjustl(ch_temp))
+
+            ! Check if there is a path to another file to be read:
+            select case (trim(adjustl(ch_temp)))
+               case ('PATH', 'Path', 'path')
+               read(FN,'(a)',IOSTAT=Reason) ch_temp
+               call ensure_correct_path_separator(ch_temp, numpar%path_sep)  ! module "Dealing_with_files"
+               inquire(file=trim(adjustl(ch_temp)),exist=file_exists)
+               !print*, 'test 1:', trim(adjustl(ch_temp)), file_exists
+
+               if (.not.file_exists) then
+                  write(Error_descript,'(a,a,a,$)') 'Path in short-range (exponential wall) file '// &
+                     trim(adjustl(File_name))//' not found: '//trim(adjustl(ch_temp))
+                  print*, trim(adjustl(Error_descript))
+                  print*, 'Proceeding without additional short-range (exponential wall) forces'
+                  close(FN) ! close file
+                  goto 3425
+               else
+                  close(FN) ! close file, to open the other one
+                  write(File_name, '(a,a,a)') trim(adjustl(ch_temp))
+                  open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
+                  inquire(file=trim(adjustl(File_name)),opened=file_opened)
+
+                  if (.not. file_opened) then
+                     write(Error_descript,'(a,a,a,$)') 'File in short-range (exponential wall) file '// &
+                     trim(adjustl(ch_temp))//' could not be opened: '//trim(adjustl(File_name))
+                     print*, trim(adjustl(Error_descript))
+                     print*, 'Proceeding without additional short-range (exponential wall) forces'
+                     close(FN) ! close file
+                     goto 3425
+                  else
+                     read(FN,*,IOSTAT=Reason) ch_temp
+                     call read_file(Reason, count_lines, read_well)
+                     if (.not. read_well) then
+                        write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+                        call Save_error_details(Err, 3, Error_descript)
+                        print*, trim(adjustl(Error_descript))
+                        goto 3425
+                     endif ! (.not. read_well)
+                  endif ! (.not. file_opened)
+               endif ! (.not.file_exists)
+            end select ! (trim(adjustl(ch_temp)))
+
             ! Make the exponential wall  parameters of a selected class, depending on what is read in the file:
             select case (trim(adjustl(ch_temp)))
             case ('Simple_wall', 'SIMPLE_WALL', 'simple_wall')
@@ -4083,6 +4126,9 @@ subroutine read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Err
        goto 3426
    endif
 
+   ! Make sure the slash is correct:
+   call ensure_correct_path_separator(Folder_name, numpar%path_sep)  ! module "Dealing_with_files"
+
    ! Assume it is a file name:
    inquire(file=trim(adjustl(Folder_name)),exist=file_exist)
    if (file_exist) then ! such a file exists, use it
@@ -4173,6 +4219,9 @@ subroutine read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matt
       Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_DFTB_norep_directory))//numpar%path_sep
       Folder_name = trim(adjustl(Folder_name))//trim(adjustl(TB_Hamil(i,j)%param_name))
    endselect
+
+   ! Make sure the slash is correct:
+   call ensure_correct_path_separator(Folder_name, numpar%path_sep)  ! module "Dealing_with_files"
 
    ! folder with chosen parameters sets:
    select case (trim(adjustl(TB_Hamil(i,j)%param_name)))

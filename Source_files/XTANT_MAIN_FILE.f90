@@ -541,9 +541,9 @@ subroutine coordinate_path( )
    write(6, '(a)') 'XTANT is terminating now...'
    g_Err%Err = .true.   ! not to continue with the real calculations
 end subroutine coordinate_path
- 
- 
- 
+
+
+
 !TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
 ! Use this for testing and finding potential energy minimum as a function of supercell size:
 subroutine vary_size(do_forces, Err)
