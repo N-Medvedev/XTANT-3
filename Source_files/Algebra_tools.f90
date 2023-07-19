@@ -78,7 +78,7 @@ public :: make_cubic_splines, cubic_function, d_cubic_function
 
 subroutine make_cubic_splines(x_array, y_array, a, b, c, d)
    ! The subroutine for creating an array of cubic splines on arbitrary (non necesserely equidistant) grid
-   ! (the grid, however, must be orderred and cannot contain degeneracies [i.e., x(i)/=x(i+1), for any i)]
+   ! (the grid, however, must be orderred and cannot contain degeneracies [i.e., x(i)/=x(i+1), for any i])
    ! https://en.wikipedia.org/wiki/Spline_(mathematics)
    real(8), dimension(:), intent(in) :: x_array, y_array   ! array of data to construct splines for
    real(8), dimension(:), allocatable, intent(inout) :: a, b, c, d  ! spline coefficients for the given array
@@ -146,9 +146,11 @@ end subroutine make_cubic_splines
 
 
 pure function get_first_derivative(x_array, y_array, i) result(df)
+   ! The subroutine for calculation of the finite-difference derivative on arbitrary (non necesserely equidistant) grid
+   ! (the grid, however, must be orderred and cannot contain degeneracies [i.e., x(i)/=x(i+1), for any i])
    real(8) df
    real(8), dimension(:), intent(in) :: x_array, y_array
-   integer, intent(in) :: i   ! index
+   integer, intent(in) :: i   ! index of the point, where to take derivative
    !-----------------------
    integer :: Nsiz, j
 
@@ -173,9 +175,11 @@ end function get_first_derivative
 
 
 pure function get_second_derivative(x_array, y_array, i) result(df)
+   ! The subroutine for calculation of the finite-difference second derivative on arbitrary (non necesserely equidistant) grid
+   ! (the grid, however, must be orderred and cannot contain degeneracies [i.e., x(i)/=x(i+1), for any i])
    real(8) df
    real(8), dimension(:), intent(in) :: x_array, y_array
-   integer, intent(in) :: i   ! index
+   integer, intent(in) :: i   ! index of the point, where to take derivative
    !-----------------------
    integer :: Nsiz, j
    real(8) :: xnn1, xn1n2, xnn2

@@ -30,9 +30,45 @@ implicit none
 PRIVATE
 
 public :: get_file_stat, Count_columns_in_file, Count_lines_in_file, read_file, close_file, Path_separator, copy_file, &
-          get_file_extension, number_of_columns
+          get_file_extension, number_of_columns, ensure_correct_path_separator
 
  contains
+
+
+subroutine ensure_correct_path_separator(Path, path_sep_in)
+   character(*), intent(inout) :: Path
+   character(len=1), intent(in), optional :: path_sep_in
+   !------------------------------
+   character(500) :: work_path
+   character(1) :: path_sep, wrong_path_sep
+   integer :: i
+
+   ! Check the operating system:
+   if (present(path_sep_in)) then
+      path_sep = path_sep_in
+   else
+      call Path_separator(path_sep)
+   endif
+
+   ! Ensure correct separator for the given OS:
+   select case (path_sep)
+   case ('/')  ! Unix-based OS
+      wrong_path_sep = '\'
+   case ('\')  ! Windows OS
+      wrong_path_sep = '/'
+   case default   !Unknown OS
+       print*, 'Unknown OS, cannot make sure path is correct'
+       wrong_path_sep = ''
+   end select
+
+   ! Find if there is a backslash (where the slash should be)
+   i = index(Path, wrong_path_sep)   ! intrinsic
+   do while (i /= 0)
+      Path = Path(1:i-1)//path_sep//Path(i+1:)
+      i = index(Path, wrong_path_sep)   ! intrinsic
+   enddo
+end subroutine ensure_correct_path_separator
+
 
 
 subroutine get_file_stat(File_name, device_ID, Inode_number, File_mode, Number_of_links, O_uid, O_gid, where_located, &
