@@ -1,4 +1,4 @@
-*******************************************************
+*************************************************************
 The following flags are supported in XTANT:
 
 1) Help -- this very note
@@ -8,7 +8,7 @@ The following flags are supported in XTANT:
 5) Matter -- prints out list of already available materials
 6) Verbose -- prints out a lot of extra information useful for debugging
 
-*******************************************************
+*************************************************************
 The list of known errors (to check in the file OUTPUT_Error_log.dat if exists):
 Error #1: file not found
 Error #2: file could not be opened
@@ -19,14 +19,22 @@ Error #6: diagonalization subroutine with LAPACK failed (uses MKL library)
 Error #7: some errors in low-energy electrons (probably in tempereature or chem.potential calculation)
 Error #8: error in optical coefficients (probably in complex Hamiltonian)
 
-*******************************************************
+*************************************************************
 You can communicate with the program on-the-fly
 Type in the file "Communication.txt" (in the OUTPUT folder created) one of the following options:
-1) time "number" : to change total duration of the program (give new number in [fs])
-2) MDdt "number" : to change time-step of MD (give new number in [fs])
-3) SAVEdt "number" : to change how often outputs are saved (give new number in [fs])
-4) OMP "number" : to change the number of OpenMP threads (integer); a negative number sets it to the maximum number of threads on your machine
+1) time "number" : to change the total duration of the simulation (number in [fs])
+2) SAVEdt "number" : to change how often outputs are saved (number in [fs]).
+3) MDdt "number" : to change the timestep of MD simulation (number in [fs]).
+4) OMP "number" : to change the number of OpenMP threads in the parallel calculations (integer). Setting here a zero or negative number will set the number of threads equal to the maximum number of threads on your machine.
+5) Thermostat_Ta "number" : to change the temperature of the atomic Berendsen thermostat. The number sets the new atomic temperature in [K]. A negative number switches off the atomic thermostat.
+6) Thermostat_dt_a "number" : to change the characteristic time of the atomic Berendsen thermostat. The number sets the new characteristic time of the thermostat in [fs]. A negative number switches off the atomic thermostat.
+7) Thermostat_Te "number" : to change the temperature of the electronic Berendsen thermostat. The number sets the new atomic temperature in [K]. The negative number switches off the electronic thermostat.
+8) Thermostat_dt_e "number" : to change the characteristic time of the electronic Berendsen thermostat. The number sets the new characteristic time of the thermostat in [fs]. The negative number switches off the electronic thermostat.
+9) Verbose : switches the verbose option on.
+10) verbose_off : switches the verbose option off.
 
-*******************************************************
+*************************************************************
 Also, read the manual for details on how to run XTANT:
 !XTANT_3_manual.pdf   or   !XTANT_3_manual.docx
+that can be found at https://doi.org/10.48550/arXiv.2307.03953
+or together with the code at https://github.com/N-Medvedev/XTANT-3
