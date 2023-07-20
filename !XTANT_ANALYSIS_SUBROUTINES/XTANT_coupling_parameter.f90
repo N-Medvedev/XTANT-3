@@ -519,11 +519,35 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
          exit
       endif
    enddo
+
+
    ! Once correct file found, save the name:
    if (.not.short_named) then
       File_numpar = trim(adjustl(File_name))
       ! Open file:
       open(UNIT=FN7, file=trim(adjustl(File_numpar)), iostat=open_status, action='read')
+
+      ! Check the matter-file-name:
+      inquire(file=trim(adjustl(File_name2)),exist=file_exists)
+      v = 0
+      do while (.not.file_exists)
+         if (v > 0) then
+            write(temp2, '(i6)') v
+            write(temp, '(a)') '_'//trim(adjustl(temp2))//'.txt'
+         else
+            write(temp, '(a)') '.txt'
+         endif
+
+         File_name2 = trim(adjustl(Folders_with_data(1)))//path_sep//trim(adjustl(File_matter))//trim(adjustl(temp))
+         inquire(file=trim(adjustl(File_name2)),exist=file_exists)
+         ! If not:
+         v = v + 1   ! to check the next number
+         if (v > 100) then
+            print*, 'File not found: ', trim(adjustl(File_matter))
+            INFO = -1   ! file not found
+            goto 2015
+         endif
+      enddo
    endif
 
    File_matter = trim(adjustl(File_name2))
