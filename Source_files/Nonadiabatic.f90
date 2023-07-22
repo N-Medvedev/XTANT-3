@@ -184,12 +184,14 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
       !E_tot_cur = SUM(distre_temp(:)*wr(:))
 
       if (ABS(N_tot_cut - Scell%Ne_low)/Scell%Ne_low > eps_N) then
-         N_steps = INT(N_steps*2.0d0)
-         print*, 'Trouble in Electron_ion_collision_int:'
-         print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (2):'
-         print*, N_tot_cut, Scell%Ne_low
-!          print*, dfdt_e(:)
-         goto 110
+         if (N_steps < 1050) then
+            N_steps = INT(N_steps*2.0d0)
+            print*, 'Trouble in Electron_ion_collision_int:'
+            print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (2):'
+            print*, N_tot_cut, Scell%Ne_low
+!           print*, dfdt_e(:)
+            goto 110
+         endif
       endif
    enddo TIME_STEPS
 

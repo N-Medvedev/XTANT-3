@@ -147,10 +147,12 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%p_const = .false.	! V=const
    matter%p_ext = g_P_atm	! External pressure [Pa] (0 = normal atmospheric pressure)
    numpar%el_ion_scheme = 0	! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO)
-   numpar%t_Te_Ee = 1.0d-3	! when to start coupling
+   numpar%t_Te_Ee = 1.0d-5	! when to start coupling
    numpar%NA_kind = 1	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
    numpar%Nonadiabat = .true.  ! included
    numpar%tau_fe = 1.0d0   ! Characteristic electron relaxation time [fs]
+   numpar%tau_fe_CB = -1.0d0  ! No separate thermalization of CB and VB by default
+   numpar%tau_fe_VB = -1.0d0  ! No separate thermalization of CB and VB by default
    numpar%scc = .true.  ! included
    numpar%scc_gam_ind = 0  ! Wolf's Coulomb model
    numpar%scc_mix = 1.0d0  ! maximal mixing
@@ -1909,7 +1911,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
 
             ! Check if there is a path to another file to be read:
             select case (trim(adjustl(ch_temp)))
-               case ('PATH', 'Path', 'path')
+            case ('PATH', 'Path', 'path')
                read(FN,'(a)',IOSTAT=Reason) ch_temp
                call ensure_correct_path_separator(ch_temp, numpar%path_sep)  ! module "Dealing_with_files"
                inquire(file=trim(adjustl(ch_temp)),exist=file_exists)
@@ -4811,30 +4813,45 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
 
-   ! 3 numbers:
-   ! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO; 4=relaxation time);
-   ! when to start coupling [fs];
-   ! Characteristic relaxation time [fs];
-   read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee, numpar%tau_fe
+   !! 3 numbers :
+   !! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO; 4=relaxation time);
+   !! when to start coupling [fs]; (legacy format, depricated!)
+   !! Characteristic relaxation time [fs];
+   !read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee, numpar%tau_fe (legacy format, depricated!)
+   !call read_file(Reason, count_lines, read_well)
+   !if (Reason /= 0) then   ! probably only two number are given (legacy format)
+   !   numpar%tau_fe = 1.0d0   ! [fs]
+   !   print*, 'Relaxation time is not provided, assuming default value:', numpar%tau_fe, '[fs]'
+   !   ! Trying to read the first 2 numbers from the same line:
+   !   backspace(FN)  ! back one line
+   !   count_lines = count_lines - 1 ! renumber it to continue from the same line
+   !   read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee  ! try reading it again
+   !   call read_file(Reason, count_lines, read_well)
+   !   if (.not. read_well) then
+   !      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+   !      call Save_error_details(Err, 3, Error_descript)
+   !      print*, trim(adjustl(Error_descript))
+   !      goto 3418
+   !   endif
+   !endif
+
+   ! 4 numbers:
+   ! 1) Scheme of propagation of electronic ensemble:
+   ! (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO; 4=relaxation time appeoximation);
+   ! 2) Global characteristic relaxation time of ALL electrons [fs];
+   ! 3) Characteristic relaxation time of electrons in CB (above Fermi-level) [fs];
+   ! 3) Characteristic relaxation time of electrons in VB (below Fermi-level) [fs];
+   read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%tau_fe, numpar%tau_fe_CB, numpar%tau_fe_VB
    call read_file(Reason, count_lines, read_well)
-   if (Reason /= 0) then   ! probably only two number are given (legacy format)
-      numpar%tau_fe = 1.0d0   ! [fs]
-      print*, 'Relaxation time is not provided, assuming default value:', numpar%tau_fe, '[fs]'
-      ! Trying to read the first 2 numbers from the same line:
-      backspace(FN)  ! back one line
-      count_lines = count_lines - 1 ! renumber it to continue from the same line
-      read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee  ! try reading it again
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
-      endif
+   if (.not. read_well) then
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      call Save_error_details(Err, 3, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      print*, 'Maybe old format of input is used, update your INPUT file to the new format'
+      goto 3418
    endif
 
-
-   ! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
+   ! -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule (DO NOT USE!):
    read(FN,*,IOSTAT=Reason) numpar%NA_kind
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then

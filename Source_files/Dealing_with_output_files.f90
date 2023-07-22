@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 19.07.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 22.07.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -3520,13 +3520,40 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    case (3)
       write(print_to,'(a)') ' True Born-Oppenheimer (constant electron populations)'
    case (4)
-      if (numpar%tau_fe < 1e6) then
+      if (numpar%tau_fe < numpar%dt/30.0d0) then ! it's basically instantaneous
+         write(text1, '(f13.6)') 0.0e0
+      elseif (numpar%tau_fe < 1e6) then
          write(text1, '(f13.6)') numpar%tau_fe
       else
          write(text1, '(es16.6)') numpar%tau_fe
       endif
       write(print_to,'(a)') ' Relaxation-time approximation for electron thermalization'
-      write(print_to,'(a)') ' with the characteristic time '//trim(adjustl(text1))//' [fs]'
+      write(print_to,'(a)') ' with the total characteristic time '//trim(adjustl(text1))//' [fs]'
+
+      if ((numpar%tau_fe_CB > -1.0e-7) .and. (numpar%tau_fe_VB > -1.0e-7)) then ! Partial thermalization is on:
+         write(print_to,'(a)') ' Band-resolved relaxation is appplied with characteristic times:'
+
+         if (numpar%tau_fe_VB < numpar%dt/30.0d0) then ! it's basically instantaneous
+            write(text1, '(f13.6)') 0.0e0
+         elseif (numpar%tau_fe_VB < 1e6) then
+            write(text1, '(f13.6)') numpar%tau_fe_VB
+         else
+            write(text1, '(es16.6)') numpar%tau_fe_VB
+         endif
+         write(print_to,'(a)') ' Valence band relaxation time: '//trim(adjustl(text1))//' [fs]'
+
+         if (numpar%tau_fe_CB < numpar%dt/30.0d0) then ! it's basically instantaneous
+            write(text1, '(f13.6)') 0.0e0
+         elseif (numpar%tau_fe_CB < 1e6) then
+            write(text1, '(f13.6)') numpar%tau_fe_CB
+         else
+            write(text1, '(es16.6)') numpar%tau_fe_CB
+         endif
+         write(print_to,'(a)') ' Conduction band relaxation time: '//trim(adjustl(text1))//' [fs]'
+      else
+         write(print_to,'(a)') ' No band-resolved relaxation is used'
+      endif
+
    end select
 
    write(print_to,'(a)') ' Scheme used for electron-ion (electron-phonon) coupling: '

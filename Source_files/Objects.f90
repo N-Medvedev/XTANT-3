@@ -606,6 +606,13 @@ type Super_cell
    real(8), dimension(:), allocatable :: fe ! low-energy electron distribution
    real(8), dimension(:), allocatable :: fe_eq ! equivalent Fermi electron distribution
    real(8) :: Se, Se_eq  ! electron entropy [K/eV], and equivalent equilibrium entropy
+   ! Separate for VB and CB, if needed:
+   real(8) :: Ne_low_CB, Ne_low_VB, El_low_CB, El_low_VB ! number and energy of electrons in VB and CB
+   real(8) :: Te_VB, Te_CB ! [eV] electron temperatures for conduction and valence bands
+   real(8) :: mu_VB, mu_CB ! [eV] electron chemical potentials for conduction and valence bands
+   real(8), dimension(:), allocatable :: fe_eq_CB  ! equivalent Fermi electron distribution in CB
+   real(8), dimension(:), allocatable :: fe_eq_VB  ! equivalent Fermi electron distribution in VB
+   real(8) :: Se_eq_VB, Se_eq_CB  ! equivalent electron entropy in VB and CB [K/eV]
    ! grid for electron distribution; distribution on this grid; high-energy electrons distribution on grid:
    real(8), dimension(:), allocatable :: E_fe_grid, fe_on_grid, fe_high_on_grid  ! electron spectrum on grid (fe*DOS)
    real(8), dimension(:), allocatable :: fe_norm_on_grid, fe_norm_high_on_grid   ! electron distribution on grid (fe)
@@ -781,7 +788,9 @@ type Numerics_param
    real(8), dimension(:), allocatable :: fe_input  ! initial distribution function
    real(8), dimension(:), allocatable :: high_DOS  ! DOS for high-energy electron distribution, if required
    integer :: fe_aver_num  ! number of time-steps over which to average the distribution on the grid
-   real(8) :: tau_fe ! [fs] characteristic time (used for the relaxation time approximation)
+   real(8) :: tau_fe ! [fs] characteristic relaxation time of ALL electrons (used for the relaxation time approximation)
+   real(8) :: tau_fe_CB ! [fs] characteristic relaxation time of CB electrons (used for the relaxation time approximation)
+   real(8) :: tau_fe_VB ! [fs] characteristic relaxation time of VB electrons (used for the relaxation time approximation)
    ! MD:
    real(8) :: dt	      ! [fs] time-step for MD
    real(8) :: halfdt      ! dt/2, often used

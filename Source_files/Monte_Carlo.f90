@@ -134,6 +134,8 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
          ! Also check that the total number of particles is conserved:
          if ( abs(Scell(NSC)%Ne_low - SUM(Scell(NSC)%fe(:))) > 1.0d-6*Scell(NSC)%Ne_low ) then
             print*, 'Error in MC_E1:', Scell(NSC)%Ne_low, SUM(Scell(NSC)%fe(:))
+            print*, 'Avoiding it by updating number of low-energy electron (may lose some!)'
+            Scell(NSC)%Ne_low = SUM(Scell(NSC)%fe(:))
          endif
          ! And the total energy is conserved:
          if ( abs(Scell(NSC)%nrg%El_low - SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:))) > 1.0d-6*abs(Scell(NSC)%nrg%El_low) ) then
@@ -580,7 +582,7 @@ subroutine patch_distribution(fe, Ei, Scell, numpar)
 
    ! Check if there was a situation that electrons could not be redistributed:
    if (trouble_present) then  ! Do thermalization instead, adjust all levels:
-      call Do_relaxation_time(Scell, numpar) ! module "Electron_tools"
+      call Do_relaxation_time(Scell, numpar, skip_partial=.true.) ! module "Electron_tools"
       trouble_present = .false.
       ! And the final check:
       do i = 1, N_siz ! check that there is no problem in distribution function change
