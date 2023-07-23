@@ -612,7 +612,7 @@ type Super_cell
    real(8) :: mu_VB, mu_CB ! [eV] electron chemical potentials for conduction and valence bands
    real(8), dimension(:), allocatable :: fe_eq_CB  ! equivalent Fermi electron distribution in CB
    real(8), dimension(:), allocatable :: fe_eq_VB  ! equivalent Fermi electron distribution in VB
-   real(8) :: Se_eq_VB, Se_eq_CB  ! equivalent electron entropy in VB and CB [K/eV]
+   real(8) :: Se_VB, Se_eq_VB, Se_CB, Se_eq_CB  ! equivalent electron entropy in VB and CB [K/eV]
    ! grid for electron distribution; distribution on this grid; high-energy electrons distribution on grid:
    real(8), dimension(:), allocatable :: E_fe_grid, fe_on_grid, fe_high_on_grid  ! electron spectrum on grid (fe*DOS)
    real(8), dimension(:), allocatable :: fe_norm_on_grid, fe_norm_high_on_grid   ! electron distribution on grid (fe)
@@ -858,7 +858,7 @@ type Numerics_param
    ! numbers of files:
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
-   integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_Se, FN_fe_on_grid
+   integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_Se, FN_fe_on_grid, FN_Te, FN_mu
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
    integer :: el_ion_scheme

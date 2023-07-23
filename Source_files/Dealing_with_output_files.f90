@@ -82,7 +82,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
       if (numpar%save_raw) call write_atomic_relatives(numpar%FN_atoms_S, Scell(NSC)%MDatoms)
       call write_super_cell(numpar%FN_supercell, time, Scell(NSC))
       call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, &
-               numpar%FN_Ce, numpar%FN_kappa, numpar%FN_Se)
+               numpar%FN_Ce, numpar%FN_kappa, numpar%FN_Se, numpar%FN_Te, numpar%FN_mu)
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:))
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time)
       if (numpar%save_Ei) then
@@ -209,6 +209,24 @@ subroutine convolve_output(Scell, numpar)
             open(UNIT=FN, FILE = trim(adjustl(File_name)))
             call convolution(FN, Scell(i)%eps%tau) ! electron entropy
             close(FN)
+         endif
+
+         if (numpar%do_partial_thermal) then
+            File_name = trim(adjustl(file_path))//'OUTPUT_electron_temperatures.dat'
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            if (file_exist) then
+               open(UNIT=FN, FILE = trim(adjustl(File_name)))
+               call convolution(FN, Scell(i)%eps%tau) ! electron entropy
+               close(FN)
+            endif
+
+            File_name = trim(adjustl(file_path))//'OUTPUT_electron_chempotentials.dat'
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            if (file_exist) then
+               open(UNIT=FN, FILE = trim(adjustl(File_name)))
+               call convolution(FN, Scell(i)%eps%tau) ! electron entropy
+               close(FN)
+            endif
          endif
 
          File_name = trim(adjustl(file_path))//'OUTPUT_electron_hole_numbers.dat'
@@ -528,7 +546,7 @@ end subroutine write_atomic_cif
 
 
 
-subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, FN_Ce, FN_kappa, FN_Se)
+subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, FN_Ce, FN_kappa, FN_Se, FN_Te, FN_mu)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: time	! [fs]
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
@@ -536,7 +554,8 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    real(8), dimension(:), intent(in) :: Ei	! energy levels
    type(Solid), intent(in) :: matter	! Material parameters
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   integer, intent(in) :: FN_Ce, FN_kappa, FN_Se  ! file number for band-resolved Ce and kappa, and electron entropy
+   ! File numbers for band-resolved Ce and kappa, electron entropy, electron temperatures and chem.potentials:
+   integer, intent(in) :: FN_Ce, FN_kappa, FN_Se, FN_Te, FN_mu
    !------------------------
    integer i, Nat, n_at, Nsiz, norb, N_types, i_at, i_types, i_G1
 
@@ -581,8 +600,21 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
       write(FN_kappa,'(a)') ''
    endif
 
-   ! Write electron entropy:
-   write(FN_Se, '(es25.16, es25.16, es25.16)') time, Scell(NSC)%Se, Scell(NSC)%Se_eq
+
+   if (numpar%do_partial_thermal) then
+      ! Write electron entropy:
+      write(FN_Se, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, Scell(NSC)%Se, Scell(NSC)%Se_eq, &
+               Scell(NSC)%Se_VB, Scell(NSC)%Se_eq_VB, Scell(NSC)%Se_CB, Scell(NSC)%Se_eq_CB
+      ! Write electron temperatures and chemical potentials:
+      write(FN_Te, '(es25.16, es25.16, es25.16, es25.16)') time, Scell(NSC)%Te, Scell(NSC)%Te_VB, Scell(NSC)%Te_CB
+      write(FN_mu, '(es25.16, es25.16, es25.16, es25.16)') time, Scell(NSC)%mu, Scell(NSC)%mu_VB, Scell(NSC)%mu_CB
+   else
+      ! Write electron entropy:
+      write(FN_Se, '(es25.16, es25.16, es25.16)') time, Scell(NSC)%Se, Scell(NSC)%Se_eq
+!       ! Write electron temperatures and chemical potentials:
+!       write(FN_Te, '(es25.16, es25.16)') time, Scell(NSC)%Te
+!       write(FN_mu, '(es25.16, es25.16)') time, Scell(NSC)%mu
+   endif
 
 end subroutine write_electron_properties
 
@@ -1043,6 +1075,11 @@ subroutine close_output_files(Scell, numpar)
    if (numpar%save_PCF) close(numpar%FN_PCF)
    if (Scell(1)%eps%all_w) close(numpar%FN_all_w)
    if (numpar%save_NN) close(numpar%FN_neighbors)
+   close(numpar%FN_Se)
+   if (numpar%do_partial_thermal) then
+      close(numpar%FN_Te)
+      close(numpar%FN_mu)
+   endif
 end subroutine close_output_files
 
 
@@ -1065,6 +1102,8 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    character(200) :: file_electron_heat_capacity	! band-resolved electron heat capacity
    character(200) :: file_electron_heat_conductivity  ! electron heat conductivity
    character(100) :: file_electron_entropy	! electron entropy
+   character(100) :: file_electron_temperatures ! electron temperatures (for band-resolved calculations)
+   character(100) :: file_electron_chempot ! electron chemical potentials (for band-resolved calculations)
    character(100) :: file_numbers	! total numbers of electrons and holes
    character(100) :: file_deep_holes	! number of deep-shell holes in each shell
    character(100) :: file_Ei		! energy levels
@@ -1117,8 +1156,30 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    file_electron_entropy = trim(adjustl(file_path))//'OUTPUT_electron_entropy.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_entropy)))
    numpar%FN_Se = FN
-   call create_file_header(numpar%FN_Se, '#Time Se  Se_eq')
-   call create_file_header(numpar%FN_electron_properties, '#[fs]  [eV/K]   [eV/K]')
+   if (numpar%do_partial_thermal) then
+      call create_file_header(numpar%FN_Se, '#Time Se  Se_eq   Se_VB Se_eq_VB Se_CB Se_eq_CB')
+      call create_file_header(numpar%FN_Se, '#[fs]  [eV/K]   [eV/K]   [eV/K]   [eV/K]   [eV/K]   [eV/K]')
+   else
+      call create_file_header(numpar%FN_Se, '#Time Se  Se_eq')
+      call create_file_header(numpar%FN_Se, '#[fs]  [eV/K]   [eV/K]')
+   endif
+
+   if (numpar%do_partial_thermal) then
+      file_electron_temperatures = trim(adjustl(file_path))//'OUTPUT_electron_temperatures.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_temperatures)))
+      numpar%FN_Te = FN
+      call create_file_header(numpar%FN_Te, '#Time Te  Te_VB Te_CB')
+      call create_file_header(numpar%FN_Te, '#[fs]  [K]   [K]   [K]')
+
+      file_electron_chempot = trim(adjustl(file_path))//'OUTPUT_electron_chempotentials.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_chempot)))
+      numpar%FN_mu = FN
+      call create_file_header(numpar%FN_mu, '#Time mu  mu_VB mu_CB')
+      call create_file_header(numpar%FN_mu, '#[fs]  [eV]   [eV]   [eV]')
+!    else
+!       call create_file_header(numpar%FN_Te, '#Time Te')
+!       call create_file_header(numpar%FN_Te, '#[fs]  [K]')
+   endif
 
    if (numpar%do_kappa) then
       file_electron_heat_conductivity = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity.dat'
@@ -1246,8 +1307,12 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       endif
    enddo
 
-   call create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, 'OUTPUT_temperatures.dat',  'OUTPUT_pressure_and_stress.dat', 'OUTPUT_energies.dat', file_atoms_R, file_atoms_S, 'OUTPUT_supercell.dat', 'OUTPUT_electron_properties.dat', 'OUTPUT_electron_hole_numbers.dat', 'OUTPUT_deep_shell_holes.dat', 'OUTPUT_optical_coefficients.dat', file_Ei, file_PCF, 'OUTPUT_nearest_neighbors.dat', 'OUTPUT_electron_entropy.dat')  ! below
-   !call create_gnuplot_scripts(matter,numpar,laser, file_path, file_temperatures, file_energies, file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_numbers, file_deep_holes, file_Ei, file_PCF)
+   call create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, 'OUTPUT_temperatures.dat',  'OUTPUT_pressure_and_stress.dat', &
+   'OUTPUT_energies.dat', file_atoms_R, file_atoms_S, 'OUTPUT_supercell.dat', 'OUTPUT_electron_properties.dat', &
+   'OUTPUT_electron_hole_numbers.dat', 'OUTPUT_deep_shell_holes.dat', 'OUTPUT_optical_coefficients.dat', file_Ei, file_PCF, &
+   'OUTPUT_nearest_neighbors.dat', 'OUTPUT_electron_entropy.dat', 'OUTPUT_electron_temperatures.dat', &
+   'OUTPUT_electron_chempotentials.dat')  ! below
+
 end subroutine create_output_files
 
 
@@ -1258,7 +1323,7 @@ subroutine create_file_header(FN, text)
 end subroutine create_file_header
 
 
-subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy)
+subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy, file_Te, file_mu)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -1278,6 +1343,8 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    character(*) :: file_PCF		! pair correlation function
    character(*) :: file_NN      ! nearest neighbors
    character(*) :: file_electron_entropy  ! electron netropy
+   character(*) :: file_Te ! electron temperatures
+   character(*) :: file_mu ! electron chem.potentials
    !----------------
    character(200) :: File_name, File_name2
    real(8) :: t0, t_last, x_tics
@@ -1347,6 +1414,14 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       write(FN, '(a)') 'echo Executing OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
 
+      if (numpar%do_partial_thermal) then
+         write(FN, '(a)') 'echo Executing OUTPUT_electron_temperatures'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') 'call OUTPUT_electron_temperatures'//trim(adjustl(sh_cmd))
+
+         write(FN, '(a)') 'echo Executing OUTPUT_electron_chempotentials'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') 'call OUTPUT_electron_chempotentials'//trim(adjustl(sh_cmd))
+      endif
+
       if (numpar%do_drude) then 
          write(FN, '(a)') 'echo Executing OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
@@ -1393,6 +1468,15 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') 'call OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
+         if (numpar%do_partial_thermal) then
+            write(FN, '(a)') 'call OUTPUT_electron_temperatures_CONVOLVED'//trim(adjustl(sh_cmd))
+            write(FN, '(a)') 'call OUTPUT_electron_chempotentials_CONVOLVED'//trim(adjustl(sh_cmd))
+         endif
+
+         if (numpar%do_partial_thermal) then
+            write(FN, '(a)') 'call OUTPUT_electron_temperatures_CONVOLVED'//trim(adjustl(sh_cmd))
+            write(FN, '(a)') 'call OUTPUT_electron_chempotentials_CONVOLVED'//trim(adjustl(sh_cmd))
+         endif
          if (numpar%Mulliken_model >= 1) then
             write(FN, '(a)') 'call OUTPUT_Mulliken_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          endif
@@ -1414,6 +1498,10 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       write(FN, '(a)') './OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
+      if (numpar%do_partial_thermal) then
+         write(FN, '(a)') './OUTPUT_electron_temperatures'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') './OUTPUT_electron_chempotentials'//trim(adjustl(sh_cmd))
+      endif
       if (numpar%do_drude) then 
          write(FN, '(a)') './OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
@@ -1452,6 +1540,10 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') './OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
+         if (numpar%do_partial_thermal) then
+            write(FN, '(a)') './OUTPUT_electron_temperatures_CONVOLVED'//trim(adjustl(sh_cmd))
+            write(FN, '(a)') './OUTPUT_electron_chempotentials_CONVOLVED'//trim(adjustl(sh_cmd))
+         endif
          if (numpar%Mulliken_model >= 1) then
             write(FN, '(a)') './OUTPUT_Mulliken_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          endif
@@ -1514,6 +1606,17 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    ! Electron entropy:
    File_name  = trim(adjustl(file_path))//'OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
    call gnu_entropy(File_name, file_electron_entropy, t0, t_last, 'OUTPUT_electron_entropy.'//trim(adjustl(numpar%fig_extention))) ! below
+
+   ! Electron temperatures and chemical potential (for band-resolved calculations):
+   if (numpar%do_partial_thermal) then
+      File_name  = trim(adjustl(file_path))//'OUTPUT_electron_temperatures'//trim(adjustl(sh_cmd))
+      call gnu_el_temperatures(File_name, file_Te, t0, t_last, &
+               'OUTPUT_electron_temperatures.'//trim(adjustl(numpar%fig_extention))) ! below
+
+      File_name  = trim(adjustl(file_path))//'OUTPUT_electron_chempotentials'//trim(adjustl(sh_cmd))
+      call gnu_chempots(File_name, file_mu, t0, t_last, &
+               'OUTPUT_electron_chempotentials.'//trim(adjustl(numpar%fig_extention))) ! below
+   endif
 
    ! Electron-ion coupling parameter:
    File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
@@ -1635,7 +1738,18 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
 
       ! Electron entropy:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_entropy(File_name,      trim(adjustl(file_electron_entropy(1:len(trim(adjustl(file_electron_entropy)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electron_entropy_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+      call gnu_entropy(File_name, trim(adjustl(file_electron_entropy(1:len(trim(adjustl(file_electron_entropy)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electron_entropy_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+      ! Electron temperatures and chemical potential (for band-resolved calculations):
+      if (numpar%do_partial_thermal) then
+         File_name  = trim(adjustl(file_path))//'OUTPUT_electron_temperatures_CONVOLVED'//trim(adjustl(sh_cmd))
+         call gnu_el_temperatures(File_name, trim(adjustl(file_Te(1:len(trim(adjustl(file_Te)))-4)))//'_CONVOLVED.dat', &
+               t0, t_last, 'OUTPUT_electron_temperatures_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+         File_name  = trim(adjustl(file_path))//'OUTPUT_electron_chempotentials_CONVOLVED'//trim(adjustl(sh_cmd))
+         call gnu_chempots(File_name, trim(adjustl(file_mu(1:len(trim(adjustl(file_mu)))-4)))//'_CONVOLVED.dat', &
+               t0, t_last, 'OUTPUT_electron_chempotentials_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+      endif
 
       ! Electron-ion coupling parameter:
       File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -2307,14 +2421,94 @@ subroutine gnu_entropy(File_name, file_electron_entropy, t0, t_last, eps_name)
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_entropy)), '" u 1:3 w l lw LW title "Equilibrium" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), '" u 1:2 w l lw LW title "Nonequilibrium" '
+
+      if (g_numpar%do_partial_thermal) then ! partial entropies too
+         write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), '" u 1:2 w l lw LW title "Nonequilibrium" ,\'
+         write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), '" u 1:5 w l lw LW title "Equilibrium VB" ,\'
+         write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), '" u 1:4 w l lw LW title "Nonequilibrium VB" ,\'
+         write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), '" u 1:7 w l lw LW title "Equilibrium CB" ,\'
+         write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), '" u 1:6 w l lw LW title "Nonequilibrium CB" '
+      else  ! only total, no partial
+         write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_electron_entropy)), '" u 1:2 w l lw LW title "Nonequilibrium" '
+      endif
    else ! It is linux
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_entropy)), '\" u 1:3 w l lw \"$LW\" title \"Equilibrium\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), '\" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" '
+
+      if (g_numpar%do_partial_thermal) then ! partial entropies too
+         write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), '\" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" ,\'
+         write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), '\" u 1:5 w l lw \"$LW\" title \"Equilibrium VB\" ,\'
+         write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), '\" u 1:4 w l lw \"$LW\" title \"Nonequilibrium VB\" ,\'
+         write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), '\" u 1:7 w l lw \"$LW\" title \"Equilibrium CB\" ,\'
+         write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), '\" u 1:6 w l lw \"$LW\" title \"Nonequilibrium CB\" '
+      else  ! only total, no partial
+         write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_entropy)), '\" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" '
+      endif
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
 end subroutine gnu_entropy
+
+
+subroutine gnu_el_temperatures(File_name, file_Te, t0, t_last, eps_name)
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_Te ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron tempereature', 'Time (fs)', 'Electron temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
+
+   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Te)), '" u 1:2 w l lw LW title "Total (kinetic)" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Te)), '" u 1:3 w l lw LW title "Valence" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Te)), '" u 1:4 w l lw LW title "Conduction" '
+   else ! It is linux
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Te)), '\" u 1:2 w l lw \"$LW\" title \"Total (kinetic)\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Te)), '\" u 1:3 w l lw \"$LW\" title \"Valence\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Te)), '\" u 1:4 w l lw \"$LW\" title \"Conduction\" '
+   endif
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_el_temperatures
+
+
+
+subroutine gnu_chempots(File_name, file_mu, t0, t_last, eps_name)
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_mu ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Chemical potential', 'Time (fs)', 'Electron chemical potential (eV)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
+
+   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_mu)), '" u 1:2 w l lw LW title "Total" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_mu)), '" u 1:3 w l lw LW title "Valence" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_mu)), '" u 1:4 w l lw LW title "Conduction" '
+   else ! It is linux
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_mu)), '\" u 1:2 w l lw \"$LW\" title \"Total\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_mu)), '\" u 1:3 w l lw \"$LW\" title \"Valence\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_mu)), '\" u 1:4 w l lw \"$LW\" title \"Conduction\" '
+   endif
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_chempots
+
 
 
 subroutine gnu_coupling(File_name, file_electron_properties, t0, t_last, eps_name)
@@ -3571,7 +3765,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          else
             write(text1, '(es16.6)') numpar%tau_fe_VB
          endif
-         write(print_to,'(a)') ' Valence band relaxation time: '//trim(adjustl(text1))//' [fs]'
+         write(print_to,'(a)') ' VB: Valence band relaxation time: '//trim(adjustl(text1))//' [fs]'
 
          if (numpar%tau_fe_CB < numpar%dt/30.0d0) then ! it's basically instantaneous
             write(text1, '(f13.6)') 0.0e0
@@ -3580,7 +3774,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          else
             write(text1, '(es16.6)') numpar%tau_fe_CB
          endif
-         write(print_to,'(a)') ' Conduction band relaxation time: '//trim(adjustl(text1))//' [fs]'
+         write(print_to,'(a)') ' CB: Conduction band relaxation time: '//trim(adjustl(text1))//' [fs]'
       else
          write(print_to,'(a)') ' No band-resolved relaxation is used'
       endif

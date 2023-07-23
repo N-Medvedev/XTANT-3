@@ -1679,7 +1679,15 @@ subroutine get_electronic_thermal_parameters(numpar, Scell, NSC, matter, Err)
    call electronic_entropy(Scell(NSC)%fe, Scell(NSC)%Se) ! module "Electron_tools"
    ! and equivalent equilibrium entropy:
    call electronic_entropy(Scell(NSC)%fe_eq, Scell(NSC)%Se_eq) ! module "Electron_tools"
-
+   ! If needed, get partial ones (band-resolved) too:
+   if (numpar%do_partial_thermal) then
+      ! Valence band:
+      call electronic_entropy(Scell(NSC)%fe, Scell(NSC)%Se_VB, i_end=Scell(NSC)%N_Egap) ! module "Electron_tools"
+      call electronic_entropy(Scell(NSC)%fe_eq_VB, Scell(NSC)%Se_eq_VB, i_end=Scell(NSC)%N_Egap) ! module "Electron_tools"
+      ! Conduction band:
+      call electronic_entropy(Scell(NSC)%fe, Scell(NSC)%Se_CB, i_start=Scell(NSC)%N_Egap+1) ! module "Electron_tools"
+      call electronic_entropy(Scell(NSC)%fe_eq_CB, Scell(NSC)%Se_eq_CB, i_start=Scell(NSC)%N_Egap+1) ! module "Electron_tools"
+   endif
 
    !----------------------------
    ! Electron heat conductivity, if required (does not work well...):
