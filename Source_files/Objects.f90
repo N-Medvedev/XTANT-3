@@ -791,6 +791,7 @@ type Numerics_param
    real(8) :: tau_fe ! [fs] characteristic relaxation time of ALL electrons (used for the relaxation time approximation)
    real(8) :: tau_fe_CB ! [fs] characteristic relaxation time of CB electrons (used for the relaxation time approximation)
    real(8) :: tau_fe_VB ! [fs] characteristic relaxation time of VB electrons (used for the relaxation time approximation)
+   logical :: do_partial_thermal ! flag for band-resolved thermalization
    ! MD:
    real(8) :: dt	      ! [fs] time-step for MD
    real(8) :: halfdt      ! dt/2, often used

@@ -132,8 +132,8 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
          ! Make sure there are no unphysical values (fe<0 or fe>2):
          call patch_distribution(Scell(NSC)%fe, Scell(NSC)%Ei, Scell(NSC), numpar) ! below
          ! Also check that the total number of particles is conserved:
-         if ( abs(Scell(NSC)%Ne_low - SUM(Scell(NSC)%fe(:))) > 1.0d-6*Scell(NSC)%Ne_low ) then
-            print*, 'Error in MC_E1:', Scell(NSC)%Ne_low, SUM(Scell(NSC)%fe(:))
+         if ( abs(Scell(NSC)%Ne_low - SUM(Scell(NSC)%fe(:))) > 1.0d-5*Scell(NSC)%Ne_low ) then
+            print*, 'Error noticed in MC_E1:', Scell(NSC)%Ne_low, SUM(Scell(NSC)%fe(:))
             print*, 'Avoiding it by updating number of low-energy electron (may lose some!)'
             Scell(NSC)%Ne_low = SUM(Scell(NSC)%fe(:))
          endif

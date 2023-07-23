@@ -153,6 +153,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%tau_fe = 1.0d0   ! Characteristic electron relaxation time [fs]
    numpar%tau_fe_CB = -1.0d0  ! No separate thermalization of CB and VB by default
    numpar%tau_fe_VB = -1.0d0  ! No separate thermalization of CB and VB by default
+   numpar%do_partial_thermal = .false. ! no band-resolved thermalization by default
    numpar%scc = .true.  ! included
    numpar%scc_gam_ind = 0  ! Wolf's Coulomb model
    numpar%scc_mix = 1.0d0  ! maximal mixing
@@ -4850,6 +4851,10 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       print*, 'Maybe old format of input is used, update your INPUT file to the new format'
       goto 3418
    endif
+   numpar%do_partial_thermal = ( (numpar%tau_fe_CB > -1.0d-8) .and. (numpar%tau_fe_VB > -1.0d-8) )
+   if (numpar%tau_fe_CB < 0.0d0) numpar%tau_fe_CB = 0.0d0   ! eliminate nigative values (even within precision)
+   if (numpar%tau_fe_VB < 0.0d0) numpar%tau_fe_VB = 0.0d0   ! eliminate nigative values (even within precision)
+
 
    ! -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule (DO NOT USE!):
    read(FN,*,IOSTAT=Reason) numpar%NA_kind

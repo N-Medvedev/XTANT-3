@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 22.07.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 23.07.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -104,7 +104,13 @@ subroutine write_output_files(numpar, time, matter, Scell)
          case (1) ! with partial DOS
          call write_coulping(numpar%FN_coupling, time, Scell, NSC, numpar)
       end select
-      if (numpar%save_fe) call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq)
+      if (numpar%save_fe) then
+         if (numpar%do_partial_thermal) then
+            call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq, Scell(1)%fe_eq_VB, Scell(1)%fe_eq_CB)
+         else
+            call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq)
+         endif
+      endif
       if (numpar%save_fe_grid) call electronic_distribution_on_grid(Scell(1), numpar, time)  ! below
       if (numpar%save_PCF) call write_PCF(numpar%FN_PCF, Scell(1)%MDatoms, matter, Scell, 1)
       if (numpar%do_drude) call write_optical_coefs(numpar%FN_optics, time, Scell(1)%eps)
@@ -359,18 +365,25 @@ subroutine write_PCF(FN, atoms, matter, Scell, NSC)
 end subroutine write_PCF
 
 
-subroutine save_distribution(FN, tim, wr, fe, fe_eq)
+subroutine save_distribution(FN, tim, wr, fe, fe_eq, fe_eq_VB, fe_eq_CB)
    integer, intent(in) :: FN
    real(8), intent(in) :: tim
    real(8), dimension(:), intent(in) :: wr
    real(8), dimension(:), intent(in) :: fe
    real(8), dimension(:), allocatable, intent(in) :: fe_eq
+   real(8), dimension(:), intent(in), optional :: fe_eq_VB, fe_eq_CB ! equivalent distr. in VB and CB
    integer i
    write(FN,'(a,f25.16)') '#', tim
    if (allocated(fe_eq)) then ! there is equivalent-temperature Fermi distribution
-      do i = 1, size(fe)
-         write(FN,'(f25.16,f25.16,f25.16)') wr(i), fe(i), fe_eq(i)
-      enddo
+      if (present(fe_eq_VB) .and. present(fe_eq_CB)) then
+         do i = 1, size(fe)
+            write(FN,'(f25.16,f25.16,f25.16,f25.16,f25.16)') wr(i), fe(i), fe_eq(i), fe_eq_VB(i), fe_eq_CB(i)
+         enddo
+      else  ! without band-resolved part
+         do i = 1, size(fe)
+            write(FN,'(f25.16,f25.16,f25.16)') wr(i), fe(i), fe_eq(i)
+         enddo
+      endif
    else  ! fe is Fermi, no equivalent distribution needed
       do i = 1, size(fe)
          write(FN,'(f25.16,f25.16)') wr(i), fe(i)
@@ -1058,6 +1071,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    character(100) :: file_DOS	! DOS
    character(100) :: file_coupling  ! partial coupling parameter
    character(100) :: file_fe		! electron distribution (low-energy part)
+   !character(100) :: file_fe_partial   ! band-resolved electron distributions (low-energy part)
    character(100) :: file_fe_on_grid   ! electron distribution (full: low- + high-energy)
    character(100) :: file_PCF		! pair correlation function
    character(100) :: file_optics	! optical coefficients
@@ -2547,6 +2561,14 @@ subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
 
             write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
                   '" index (i-1) u 1:3 w l lw 2 lt rgb "grey" title "Equivalent Fermi" ,\'
+
+            if (numpar%do_partial_thermal) then ! add band-resolved equivalent distributions
+               write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:4 w l lw 2 lt rgb "blue" title "Equivalent Fermi in VB" ,\'
+               write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:5 w l lw 2 lt rgb "red" title "Equivalent Fermi in CB" ,\'
+            endif
+
             write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
                   '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
                   trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
@@ -2561,6 +2583,14 @@ subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
          !if (do_fe_eq) then ! plot also equivalent Fermi distribution
             write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:3 w l lw 2 lt rgb \"grey\" title \"Equivalent Fermi\" ,\'
+
+            if (numpar%do_partial_thermal) then ! add band-resolved equivalent distributions
+               write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:4 w l lw 2 lt rgb \"blue\" title \"Equivalent Fermi in VB\" ,\'
+               write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:5 w l lw 2 lt rgb \"red\" title \"Equivalent Fermi in CB\" ,\'
+            endif
+
             write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
                   trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
@@ -3530,7 +3560,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a)') ' Relaxation-time approximation for electron thermalization'
       write(print_to,'(a)') ' with the total characteristic time '//trim(adjustl(text1))//' [fs]'
 
-      if ((numpar%tau_fe_CB > -1.0e-7) .and. (numpar%tau_fe_VB > -1.0e-7)) then ! Partial thermalization is on:
+      !if ((numpar%tau_fe_CB > -1.0e-7) .and. (numpar%tau_fe_VB > -1.0e-7)) then ! Partial thermalization is on:
+      if (numpar%do_partial_thermal) then ! Partial thermalization is on:
          write(print_to,'(a)') ' Band-resolved relaxation is appplied with characteristic times:'
 
          if (numpar%tau_fe_VB < numpar%dt/30.0d0) then ! it's basically instantaneous

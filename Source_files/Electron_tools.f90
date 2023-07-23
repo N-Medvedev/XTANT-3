@@ -357,7 +357,7 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
    logical, intent(in), optional :: skip_thermalization, skip_partial
    !----------------------
-   real(8) :: exp_dttau, extra_dt, extra_tau, eps, Te_CB, Te_VB
+   real(8) :: exp_dttau, extra_dt, extra_tau, eps, Te_CB, Te_VB, Ne, Ne_eq
    integer :: i_fe, i, i_cycle, N_cycle
    logical :: skip_step, extra_cycle, skip_part
 
@@ -389,8 +389,8 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial)
    if (.not.skip_step) then ! do the thermalization step:
       !--------------------------
       ! I. Check partial-band thermalization (separate for VB and CB)
-      eps = -1.0d-6
-      BNDS:if ((numpar%tau_fe_CB > eps) .and. (numpar%tau_fe_VB > eps) .and. (.not.skip_part)) then ! Partial thermalization is on:
+      !BNDS:if ((numpar%tau_fe_CB > eps) .and. (numpar%tau_fe_VB > eps) .and. (.not.skip_part)) then ! Partial thermalization is on:
+      BNDS:if (numpar%do_partial_thermal .and. (.not.skip_part)) then ! Partial thermalization is on:
          ! Get the Fermi function for VB and CB separately:
          ! VB:
          ! Get the number of particles and energy in the band:
@@ -461,6 +461,7 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial)
 
       !--------------------------
       ! III. Extra check for smoothening unphysical artefacts that may be present after MC:
+      eps = 1.0d-6
       extra_cycle = .false.   ! by default, assume no artifact
       do i = 1, i_fe ! for all grid points (MO energy levels)
          if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
@@ -469,6 +470,11 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial)
             exit
          endif
       enddo
+      ! Or, if the number of electrons does not coincide with the initial one:
+      Ne = get_N_partial(Scell%fe, 1, i_fe)  ! current number of electrons
+      Ne_eq = get_N_partial(Scell%fe_eq, 1, i_fe)  ! initial number of electrons
+      if (ABS(Ne - Ne_eq) > eps*Ne_eq) extra_cycle = .true. ! shouldn't be too different
+
       if (extra_cycle) then   ! do extra thermalization
          extra_dt = numpar%dt*0.1d0 ! use this small step to minimize the effect of extra smoothing
          extra_tau = min(numpar%tau_fe, 10.0d0) ! artificial thermalization steps
@@ -489,7 +495,14 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial)
                   if (i_cycle < N_cycle) extra_cycle = .true.   ! artefacts still present, do another cycle of extra thermalization
                endif
             enddo ! i = 1, i_fe
-            !print*, 'Ne_extra=', i_cycle, SUM(Scell%fe), SUM(Scell%fe_eq)
+
+            !print*, 'Ne_extra=', i_cycle, SUM(Scell%fe), SUM(Scell%fe_eq), Scell%Ne_low, extra_cycle
+
+            ! Also a consistency check for the number of electrons:
+            Ne = get_N_partial(Scell%fe, 1, i_fe)
+            Ne_eq = get_N_partial(Scell%fe_eq, 1, i_fe)
+            if (ABS(Ne - Ne_eq) > eps*Ne_eq) extra_cycle = .true.
+            if (i_cycle > N_cycle) exit
          enddo ! while (extra_cycle)
       endif ! (extra_cycle)
    endif ! (.not.skip_step)
@@ -774,41 +787,55 @@ end subroutine share_energy
 !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 ! General subroutines that are often used:
 
-subroutine electronic_entropy(fe, Se, norm_fe)
+subroutine electronic_entropy(fe, Se, norm_fe, i_start, i_end)
    real(8), dimension(:), intent(in) :: fe ! electron distribution function
    real(8), intent(out) :: Se ! self-explanatory
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
+   integer, intent(in), optional :: i_start, i_end  ! starting and ending levels to include
    ! Se = -kB * int [ DOS*( f * ln(f) + (1-f) * ln(1-f) ) ]
    ! E.G. [https://doi.org/10.1103/PhysRevB.50.14686]
    !----------------------------
    real(8), dimension(size(fe)) :: f_lnf
    real(8) :: f_norm, eps
-   integer :: i
-
+   integer :: i, Nsiz, i_low, i_high
+   !============================
    eps = 1.0d-12  ! precision
+   Nsiz = size(fe)
+
+   if (present(i_start)) then
+      i_low = i_start
+   else  ! default, start from 1
+      i_low = 1
+   endif
+
+   if (present(i_end)) then
+      i_high = i_end
+   else  ! default, end at the end
+      i_high = Nsiz
+   endif
 
    if (present(norm_fe)) then   ! user provided
       f_norm = norm_fe
    else ! by default, not spin resolved
       f_norm = 2.0d0
    endif
+
+   ! To start with:
    Se = 0.0d0
    f_lnf = 0.0d0
+
    ! First term of the total entropy:
-   where (fe(:) > eps) f_lnf(:) = fe(:)*log(fe(:)/f_norm) ! our f is normalized to f_norm, which means it includes DOS in it, so divide by f_norm where needed
-!    do i = 1, size(fe)
-!       if (fe(i) > 0.0d0) then
-!          if (fe(i)/f_norm < 1.0d-10) print*, i, fe(i), f_norm
-!          f_lnf(i) = fe(i)*log(fe(i)/f_norm)
-!          if (fe(i)/f_norm < 1.0d-10) print*, i, 'done'
-!       endif
-!    enddo
-   Se = SUM(f_lnf(:))
-   f_lnf = 0.0d0
+   ! (our f is normalized to f_norm, which means it includes DOS in it, so divide by f_norm where needed)
+   where (fe(i_low:i_high) > eps) f_lnf(i_low:i_high) = fe(i_low:i_high)*log(fe(i_low:i_high)/f_norm)
+   ! First term:
+   Se = SUM(f_lnf(i_low:i_high))
+   f_lnf = 0.0d0  ! fill the empty points
    ! Second term of the total entropy:
-   where (fe(:) < f_norm-eps) f_lnf(:) = (f_norm - fe(:))*log((f_norm - fe(:))/f_norm)
-   Se = Se + SUM(f_lnf(:))
-   !Se = -g_kb*Se
+   where (fe(i_low:i_high) < f_norm-eps) f_lnf(i_low:i_high) = (f_norm - fe(i_low:i_high))*log((f_norm - fe(i_low:i_high))/f_norm)
+   ! Assemble the terms:
+   Se = Se + SUM(f_lnf(i_low:i_high))
+
+   ! Make proper units:
    Se = -g_kb_EV*Se  ! [eV/K]
 end subroutine  electronic_entropy
 
