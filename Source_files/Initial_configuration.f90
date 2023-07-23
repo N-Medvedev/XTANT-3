@@ -829,6 +829,12 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             ! No distribution file provided by the user, use Fermi with given temperature instead
          endif
 
+         ! If partial band-specific distributions are required:
+         if ((numpar%tau_fe_CB > -1.0d-8) .and. (numpar%tau_fe_VB > -1.0d-8)) then ! Partial thermalization is on
+            ! Define equivalent distribution functions (Fermi-functions) in VB and CB:
+            if (.not. allocated(Scell(i)%fe_eq_VB)) allocate(Scell(i)%fe_eq_VB(size(Scell(i)%Ei)), source = 0.0d0)
+            if (.not. allocated(Scell(i)%fe_eq_CB)) allocate(Scell(i)%fe_eq_CB(size(Scell(i)%Ei)), source = 0.0d0)
+         endif
 
          if (numpar%do_kappa) then
             if (.not. allocated(Scell(i)%I_ij)) allocate(Scell(i)%I_ij(size(Scell(i)%Ei))) ! scattering integral

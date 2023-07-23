@@ -352,19 +352,25 @@ end subroutine Electron_thermalization
 
 
 ! Relaxation time approximation:
-subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
+subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
-   logical, intent(in), optional :: skip_thermalization
+   logical, intent(in), optional :: skip_thermalization, skip_partial
    !----------------------
-   real(8) :: exp_dttau, extra_dt, extra_tau
+   real(8) :: exp_dttau, extra_dt, extra_tau, eps, Te_CB, Te_VB, Ne, Ne_eq
    integer :: i_fe, i, i_cycle, N_cycle
-   logical :: skip_step, extra_cycle
+   logical :: skip_step, extra_cycle, skip_part
 
    if (present(skip_thermalization)) then
       skip_step = skip_thermalization
    else
       skip_step = .false.
+   endif
+
+   if (present(skip_partial)) then
+      skip_part = skip_partial
+   else
+      skip_part = .false.
    endif
 
    ! Get the equivalent (kinetic) temperature and chemical potential:
@@ -376,8 +382,74 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
    if (.not.allocated(Scell%fe_eq)) allocate(Scell%fe_eq(i_fe))
    call set_Fermi(Scell%Ei, Scell%TeeV, Scell%mu, Scell%fe_eq)   ! below
 
+!    print*, '===================================='
+!    print*, 'Eq=', SUM(Scell%fe_eq), SUM(Scell%fe), Scell%Ne_low
+
    ! Solve rate equation:
    if (.not.skip_step) then ! do the thermalization step:
+      !--------------------------
+      ! I. Check partial-band thermalization (separate for VB and CB)
+      !BNDS:if ((numpar%tau_fe_CB > eps) .and. (numpar%tau_fe_VB > eps) .and. (.not.skip_part)) then ! Partial thermalization is on:
+      BNDS:if (numpar%do_partial_thermal .and. (.not.skip_part)) then ! Partial thermalization is on:
+         ! Get the Fermi function for VB and CB separately:
+         ! VB:
+         ! Get the number of particles and energy in the band:
+         Scell%Ne_low_VB = get_N_partial(Scell%fe, 1, Scell%N_Egap) ! below
+         Scell%El_low_VB = get_E_partial(Scell%Ei, Scell%fe, 1, Scell%N_Egap) ! below
+
+         ! Get the equivalent temperature and chem.potential of the band:
+         call Electron_Fixed_Etot_partial(Scell%Ei, Scell%Ne_low_VB, Scell%El_low_VB, Scell%mu_VB, Te_VB, i_end_in=Scell%N_Egap) ! below
+         Scell%Te_VB = Te_VB*g_kb ! save in [K]
+
+         ! Construct equivalent Fermi distribution:
+         call set_Fermi(Scell%Ei, Te_VB, Scell%mu_VB, Scell%fe_eq_VB, i_end=Scell%N_Egap)  ! below
+
+!          print*, 'Ne0.0=', get_N_partial(Scell%fe, 1, Scell%N_Egap), get_N_partial(Scell%fe_eq_VB, 1, Scell%N_Egap), get_N_partial(Scell%fe, 1, i_fe), SUM(Scell%fe), SUM(Scell%fe(1:i_fe))
+
+         ! Make the thermalization for this band:
+         if (numpar%tau_fe_VB < numpar%dt/30.0d0) then ! it's basically instantaneous
+            exp_dttau = 0.0d0
+         else  ! finite time relaxation
+            exp_dttau = dexp(-numpar%dt / numpar%tau_fe_VB)
+         endif
+         do i = 1, Scell%N_Egap  ! for VB grid points (MO energy levels)
+            Scell%fe(i) = Scell%fe_eq_VB(i) + (Scell%fe(i) - Scell%fe_eq_VB(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
+         enddo
+         !print*, 'Ne0.0=', get_N_partial(Scell%fe, 1, Scell%N_Egap), get_N_partial(Scell%fe_eq_VB, 1, i_fe), get_N_partial(Scell%fe, 1, i_fe), SUM(Scell%fe), SUM(Scell%fe(1:i_fe))
+!          print*, 'Ne0.5=', get_N_partial(Scell%fe, Scell%N_Egap+1, i_fe), get_N_partial(Scell%fe_eq_VB, Scell%N_Egap+1, i_fe), SUM(Scell%fe)
+
+         ! CB:
+         ! Get the number of particles and energy in the band:
+         Scell%Ne_low_CB = get_N_partial(Scell%fe, Scell%N_Egap+1, i_fe) ! below
+         Scell%El_low_CB = get_E_partial(Scell%Ei, Scell%fe,  Scell%N_Egap+1, i_fe) ! below
+
+         ! Get the equivalent temperature and chem.potential of the band:
+         call Electron_Fixed_Etot_partial(Scell%Ei, Scell%Ne_low_CB, Scell%El_low_CB, Scell%mu_CB, Te_CB, i_start_in=Scell%N_Egap+1) ! below
+         Scell%Te_CB = Te_CB*g_kb ! save in [K]
+
+         ! Construct equivalent Fermi distribution:
+         call set_Fermi(Scell%Ei, Te_CB, Scell%mu_CB, Scell%fe_eq_CB, i_start=Scell%N_Egap+1)  ! below
+
+         ! Make the thermalization for this band:
+         if (numpar%tau_fe_CB < numpar%dt/30.0d0) then ! it's basically instantaneous
+            exp_dttau = 0.0d0
+         else  ! finite time relaxation
+            exp_dttau = dexp(-numpar%dt / numpar%tau_fe_CB)
+         endif
+         do i = Scell%N_Egap+1, i_fe ! for CB grid points (MO energy levels)
+            Scell%fe(i) = Scell%fe_eq_CB(i) + (Scell%fe(i) - Scell%fe_eq_CB(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
+         enddo
+
+!          print*, 'Ne=', Scell%Ne_low_VB, Scell%Ne_low_CB, Scell%Ne_low_VB+Scell%Ne_low_CB, Scell%Ne_low
+!          print*, 'Ne2=', get_N_partial(Scell%fe, 1, Scell%N_Egap), get_N_partial(Scell%fe_eq_VB, 1, Scell%N_Egap)
+!          print*, 'Ne3=', get_N_partial(Scell%fe, Scell%N_Egap+1, i_fe), get_N_partial(Scell%fe_eq_CB, Scell%N_Egap+1, i_fe), get_N_partial(Scell%fe, 1, i_fe)
+!          print*, 'Ee=', Scell%El_low_VB, Scell%El_low_CB, Scell%El_low_VB+Scell%El_low_CB, Scell%nrg%El_low
+!          print*, 'Ee2=', get_E_partial(Scell%Ei, Scell%fe, 1, Scell%N_Egap), get_E_partial(Scell%Ei, Scell%fe,  Scell%N_Egap+1, i_fe), get_E_partial(Scell%Ei, Scell%fe, 1, i_fe)
+!          print*, 'Te=', Te_VB, Te_CB, Scell%mu_VB, Scell%mu_CB
+      endif BNDS
+
+      !--------------------------
+      ! II. Do complete thermalization
       if (numpar%tau_fe < numpar%dt/30.0d0) then ! it's basically instantaneous
          exp_dttau = 0.0d0
       else  ! finite time relaxation
@@ -388,15 +460,21 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
       enddo
 
       !--------------------------
-      ! Extra check for smoothening unphysical artefacts that may be present after MC:
+      ! III. Extra check for smoothening unphysical artefacts that may be present after MC:
+      eps = 1.0d-6
       extra_cycle = .false.   ! by default, assume no artifact
       do i = 1, i_fe ! for all grid points (MO energy levels)
          if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
             extra_cycle = .true.   ! some artefacts present, do extra thermalization to get rid of them
-            print*, 'Extra thermalization step needed:', i, Scell%fe(i)
+            print*, 'Extra thermalization step needed:', i, Scell%fe(i), SUM(Scell%fe)
             exit
          endif
       enddo
+      ! Or, if the number of electrons does not coincide with the initial one:
+      Ne = get_N_partial(Scell%fe, 1, i_fe)  ! current number of electrons
+      Ne_eq = get_N_partial(Scell%fe_eq, 1, i_fe)  ! initial number of electrons
+      if (ABS(Ne - Ne_eq) > eps*Ne_eq) extra_cycle = .true. ! shouldn't be too different
+
       if (extra_cycle) then   ! do extra thermalization
          extra_dt = numpar%dt*0.1d0 ! use this small step to minimize the effect of extra smoothing
          extra_tau = min(numpar%tau_fe, 10.0d0) ! artificial thermalization steps
@@ -417,6 +495,14 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization)
                   if (i_cycle < N_cycle) extra_cycle = .true.   ! artefacts still present, do another cycle of extra thermalization
                endif
             enddo ! i = 1, i_fe
+
+            !print*, 'Ne_extra=', i_cycle, SUM(Scell%fe), SUM(Scell%fe_eq), Scell%Ne_low, extra_cycle
+
+            ! Also a consistency check for the number of electrons:
+            Ne = get_N_partial(Scell%fe, 1, i_fe)
+            Ne_eq = get_N_partial(Scell%fe_eq, 1, i_fe)
+            if (ABS(Ne - Ne_eq) > eps*Ne_eq) extra_cycle = .true.
+            if (i_cycle > N_cycle) exit
          enddo ! while (extra_cycle)
       endif ! (extra_cycle)
    endif ! (.not.skip_step)
@@ -701,41 +787,55 @@ end subroutine share_energy
 !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 ! General subroutines that are often used:
 
-subroutine electronic_entropy(fe, Se, norm_fe)
+subroutine electronic_entropy(fe, Se, norm_fe, i_start, i_end)
    real(8), dimension(:), intent(in) :: fe ! electron distribution function
    real(8), intent(out) :: Se ! self-explanatory
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
+   integer, intent(in), optional :: i_start, i_end  ! starting and ending levels to include
    ! Se = -kB * int [ DOS*( f * ln(f) + (1-f) * ln(1-f) ) ]
    ! E.G. [https://doi.org/10.1103/PhysRevB.50.14686]
    !----------------------------
    real(8), dimension(size(fe)) :: f_lnf
    real(8) :: f_norm, eps
-   integer :: i
-
+   integer :: i, Nsiz, i_low, i_high
+   !============================
    eps = 1.0d-12  ! precision
+   Nsiz = size(fe)
+
+   if (present(i_start)) then
+      i_low = i_start
+   else  ! default, start from 1
+      i_low = 1
+   endif
+
+   if (present(i_end)) then
+      i_high = i_end
+   else  ! default, end at the end
+      i_high = Nsiz
+   endif
 
    if (present(norm_fe)) then   ! user provided
       f_norm = norm_fe
    else ! by default, not spin resolved
       f_norm = 2.0d0
    endif
+
+   ! To start with:
    Se = 0.0d0
    f_lnf = 0.0d0
+
    ! First term of the total entropy:
-   where (fe(:) > eps) f_lnf(:) = fe(:)*log(fe(:)/f_norm) ! our f is normalized to f_norm, which means it includes DOS in it, so divide by f_norm where needed
-!    do i = 1, size(fe)
-!       if (fe(i) > 0.0d0) then
-!          if (fe(i)/f_norm < 1.0d-10) print*, i, fe(i), f_norm
-!          f_lnf(i) = fe(i)*log(fe(i)/f_norm)
-!          if (fe(i)/f_norm < 1.0d-10) print*, i, 'done'
-!       endif
-!    enddo
-   Se = SUM(f_lnf(:))
-   f_lnf = 0.0d0
+   ! (our f is normalized to f_norm, which means it includes DOS in it, so divide by f_norm where needed)
+   where (fe(i_low:i_high) > eps) f_lnf(i_low:i_high) = fe(i_low:i_high)*log(fe(i_low:i_high)/f_norm)
+   ! First term:
+   Se = SUM(f_lnf(i_low:i_high))
+   f_lnf = 0.0d0  ! fill the empty points
    ! Second term of the total entropy:
-   where (fe(:) < f_norm-eps) f_lnf(:) = (f_norm - fe(:))*log((f_norm - fe(:))/f_norm)
-   Se = Se + SUM(f_lnf(:))
-   !Se = -g_kb*Se
+   where (fe(i_low:i_high) < f_norm-eps) f_lnf(i_low:i_high) = (f_norm - fe(i_low:i_high))*log((f_norm - fe(i_low:i_high))/f_norm)
+   ! Assemble the terms:
+   Se = Se + SUM(f_lnf(i_low:i_high))
+
+   ! Make proper units:
    Se = -g_kb_EV*Se  ! [eV/K]
 end subroutine  electronic_entropy
 
@@ -1065,35 +1165,56 @@ end function Fermi_distribution
 
 
 
-subroutine set_Fermi(Ei,Te,mu,fe, Error_desript, norm_fe)
+subroutine set_Fermi(Ei,Te,mu,fe, Error_desript, norm_fe, i_start, i_end)
    real(8), dimension(:), intent(in) :: Ei	! energy levels, eigenvalues of the hamiltonian matrix
    real(8), intent(in) :: Te, mu	! temperature [eV], and chemical potential [eV]
    real(8), dimension(:), intent(out) :: fe
    character(*), intent(out), optional :: Error_desript ! description of error if occured
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
-   integer i, n
-   real(8) :: f_norm
+   integer, intent(in), optional :: i_start, i_end
+   integer :: Nsiz, i, n, i_low, i_high
+   real(8) :: f_norm, arg
    
+
+   if (present(i_start)) then
+      i_low = i_start
+   else  ! default, start from 1
+      i_low = 1
+   endif
+   Nsiz = size(Ei)
+   if (present(i_end)) then
+      i_high = i_end
+   else  ! default, end at the end
+      i_high = Nsiz
+   endif
+
    if (present(norm_fe)) then    ! user provided
       f_norm = norm_fe
    else  ! by default, spin degenerate
       f_norm = 2.0d0
    endif
-      
+
+
+   fe(:) = 0.0d0  ! to start with
    if (Te > 0.0d0) then
-      where ((Ei(:) - mu)/Te >= log(HUGE(mu))) ! exp(x) -> infinity
-         fe(:) = 0.0d0
-      else where
-         fe(:) = f_norm/(1.0d0 + exp((Ei(:) - mu)/Te)) ! fermi-function
-      end where
+      !where ((Ei(i_low:i_high) - mu)/Te >= log(HUGE(mu))) ! exp(x) -> infinity
+      !   fe(:) = 0.0d0
+      !else where
+      !   fe(:) = f_norm/(1.0d0 + exp((Ei(i_low:i_high) - mu)/Te)) ! fermi-function
+      !end where
+      do i = i_low, i_high
+         arg = (Ei(i) - mu)/Te
+         if (arg <= log(huge(0.0d0))) then
+            fe(i) = f_norm/(1.0d0 + exp(arg))
+         endif
+      enddo
    elseif (Te == 0.0d0) then
-      where (Ei(:) <= mu)
+      where (Ei(i_low:i_high) <= mu)
          fe(:) = f_norm
       else where
          fe(:) = 0.0d0
       end where
    else  !Te < 0
-      fe(:) = 0.0d0
       if (present(Error_desript)) then
          Error_desript = 'Electron temperature is negative in set_Fermi-subroutine!'
       else
@@ -1337,7 +1458,219 @@ end function Diff_Fermi_E
 
 
 
-subroutine Electron_Fixed_Te(wrD, Netot, mu, Te, norm_fe) ! in case if the electron temperature is given
+subroutine Electron_Fixed_Etot_partial(Ei, Netot, Eetot, mu, Te, i_start_in, i_end_in)
+   real(8), dimension(:), intent(in) ::  Ei  ! eigenvalues of TB-Hamiltonian for electrons
+   real(8), intent(in) :: Netot  ! number of electrons/supercell to normalize the distribution function
+   real(8), intent(in) :: Eetot  ! energy of electrons/supercell to normalize the distribution function
+   real(8), intent(inout) :: Te ! electron temperature [eV]
+   real(8), intent(inout) :: mu ! chem.potential to be found [eV]
+   integer, intent(in), optional :: i_start_in, i_end_in
+   !-------------------------
+   real(8) :: mu_0, mu_1, Te_0, Te_1, mix_fact, eps, mu_diff, Te_diff
+   integer :: Nsiz, i_start, i_end, coun
+   logical :: cycle_continue
+
+   if (present(i_start_in)) then
+      i_start = i_start_in
+   else  ! default, start from 1
+      i_start = 1
+   endif
+   Nsiz = size(Ei)
+   if (present(i_end_in)) then
+      i_end = i_end_in
+   else  ! default, end at the end
+      i_end = Nsiz
+   endif
+
+   mix_fact = 0.35d0   ! empirically chosen mixing parameter for self-consistent cycle
+   eps = 1.0d-7      ! precision
+
+   ! Starting cycle:
+   Te_0 = 1.0d0/g_kb   ! [eV] electron temperature to be calculated
+   ! Get mu:
+   call Electron_Fixed_Te(Ei, Netot, mu_0, Te_0, i_start=i_start, i_end=i_end) ! find partial mu for given Te and Ne
+   mu_1 = mu_0 ! to start with
+   ! Get Te:
+   call Electron_Fixed_mu(Ei, Eetot, mu_1, Te_1, i_start=i_start, i_end=i_end) ! find partial mu for given Te and Ne
+
+   coun = 0 ! to start with
+   !cycle_continue = ( (abs(Te_0-Te_1) > eps*(max(Te_0,Te_1))) .or. (abs(mu_0-mu_1) > eps*(max(mu_0,mu_1))) )
+   mu_diff = abs(mu_0 - mu_1)
+   Te_diff = abs(Te_0 - Te_1)
+   cycle_continue = ( (Te_diff > eps*(max(Te_0,Te_1))) .or. (mu_diff > eps*(max(mu_0,mu_1))) )
+
+   !print*, 'SC', coun, Te_0, Te_1, mu_0, mu_1, cycle_continue, Eetot
+   do while ( cycle_continue )
+      coun = coun + 1
+      mu_0 = mu_1
+      Te_0 = Te_1
+
+      ! Get mu:
+      call Electron_Fixed_Te(Ei, Netot, mu_1, Te_1, i_start=i_start, i_end=i_end) ! find partial mu for given Te and Ne
+      mu_1 = mu_0 * (1.0d0-mix_fact) + mix_fact * mu_1   ! mixing for the next step
+      ! Get Te:
+      call Electron_Fixed_mu(Ei, Eetot, mu_1, Te_1, i_start=i_start, i_end=i_end) ! find partial mu for given Te and Ne
+      Te_1 = Te_0 * (1.0d0-mix_fact) + mix_fact * Te_1   ! mixing for the next step
+
+      ! Check if mixing should be reduced:
+      if (abs(Te_0 - Te_1) > Te_diff) then
+         if (mix_fact > 0.1d0) mix_fact = mix_fact*0.9d0
+         !mu_1 = (mu_0+mu_1)*0.5d0
+         !Te_1 = (Te_0+Te_1)*0.5d0
+      endif
+
+      ! Check if we need to continue the cycle:
+      mu_diff = abs(mu_0 - mu_1)
+      Te_diff = abs(Te_0 - Te_1)
+      cycle_continue = ( (Te_diff > eps*(max(Te_0,Te_1))) .or. (mu_diff > eps*(max(mu_0,mu_1))) )
+
+      !print*, 'SC', coun, Te_0, Te_1, mu_0, mu_1, cycle_continue, mix_fact
+      if (coun > 10000) then
+         if ( Te_diff > 10.0d0 * eps*(max(Te_0,Te_1)) ) then ! printout only if the difference is noticeable
+            print*, 'Too many iterations in Electron_Fixed_Etot_partial:', coun, Te_0, Te_1, mu_0, mu_1
+         endif
+         exit
+      endif
+   enddo
+   ! Output:
+   Te = (Te_0 + Te_1)*0.5d0
+   mu = (mu_0 + mu_1)*0.5d0
+end subroutine Electron_Fixed_Etot_partial
+
+
+
+
+subroutine Electron_Fixed_Etot_partial_1(wrD, Netot, Eetot, mu, Te, i_start_in, i_end_in)
+   REAL(8), DIMENSION(:), INTENT(in) ::  wrD  ! eigenvalues of TB-Hamiltonian for electrons
+   REAL(8), INTENT(in) :: Netot  ! number of electrons/supercell to normalize the distribution function
+   REAL(8), INTENT(in) :: Eetot  ! energy of electrons/supercell to normalize the distribution function
+   REAL(8), INTENT(inout) :: Te ! electron temperature [eV]
+   REAL(8), INTENT(inout) :: mu ! chem.potential to be found [eV]
+   integer, intent(in), optional :: i_start_in, i_end_in
+   real(8) :: a, b, Ncur, Ecur, Elast, muN, muE, Telast, Telast2, popul, che1, che2
+   real(8) :: curMu, minmunmue, dT
+   integer :: Nsiz, i, j, cou, countr, i_start, i_end
+
+   if (present(i_start_in)) then
+      i_start = i_start_in
+   else  ! default, start from 1
+      i_start = 1
+   endif
+   Nsiz = size(wrD)
+   if (present(i_end_in)) then
+      i_end = i_end_in
+   else  ! default, end at the end
+      i_end = Nsiz
+   endif
+
+   !PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP
+   ! precalculations before finding mu and Te
+   dT = 50.0d0    ! temperature step [K]
+   Te = dT/g_kb   ! [eV] electron temperature to be calculated
+   call Electron_Fixed_Te(wrD, Netot, muN, Te, i_start=i_start, i_end=i_end) ! find partial mu for given Te and Ne
+   !PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP
+
+   !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+   ! finding mu and Te
+   countr = 0
+4370 cou = 0
+   Telast = Te
+   Telast2 = Telast + dT/g_kb
+   Te = (Telast+Telast2)/2.0d0
+   Ecur = -1d12
+   che1 = (Ecur-Eetot)  ! checker for finding the crossing point
+   do while ((ABS((Ecur - Eetot)/MAX(ABS(Ecur),ABS(Eetot),1d-9)) .GT. 1d-9) .AND. (ABS((Te - Telast)/MAX(Te,Telast,1d-12)) .GT. 1d-12)) ! main while
+      !write(*,'(a,es,es,f,f)') 'T:', Ecur, Eetot, Te, muN
+      Te = (Telast+Telast2)/2.0d0 ! [eV]
+      if (ABS((Te - Telast)/MAX(Te,Telast,1d-12)) .LT. 1d-12) exit
+
+      ! Finding chem.potential for the neq temperature:
+      call Electron_Fixed_Te(wrD, Netot, muN, Te, i_start=i_start, i_end=i_end) ! find mu for given Te and Ne
+
+      ! Checking, whether this chem.potential and temperature are also solutions for energy:
+      Ecur = get_E_tot(wrD, muN, Te, i_start=i_start, i_end=i_end) ! function from above
+
+      ! if they are, we can stop the calculations:
+      if (ABS((Ecur - Eetot)/MAX(ABS(Ecur),ABS(Eetot),1d-9)) .LT. 1d-9) exit
+
+      ! Otherwise, we have to continue for a new temperature:
+      che2 = (Ecur-Eetot)  ! checker for finding the crossing point
+
+      if (((che1*che2) .GE. 0.0d0) .AND. (cou .EQ. 0)) then ! they are of the same sign => no crossing point in between
+         Telast = Telast2
+         Telast2 = Telast2 + dT/g_kb ! here step must be reduced for fast-oscillating functions muN(Te) and/or muE(Te)
+      else ! if there is a crossing point in between, they change the sign:
+         if (cou .EQ. 0) then
+            Telast = Telast - dT/g_kb
+            cou = 1 ! counter, to never repeat this action more than one time
+         else ! lets find then the crossing point precisely with besiction method:
+            if (che2 .GE. 0.0d0) then
+               Telast2 = Te
+            else
+               Telast = Te
+            endif
+         endif
+      endif
+      Te = (Telast+Telast2)/2.0d0 ! [eV] save for output
+      mu = muN ! [eV] save for output
+      che1 = che2
+   enddo ! main while
+
+   if ((ABS((Ecur - Eetot)/MAX(ABS(Ecur),ABS(Eetot),1d-9)) .GT. 1d-9) .AND. (countr .LT. 100))then
+      countr = countr + 1
+      Te = Te + 2.0d0*dT/g_kb
+      goto 4370 ! just try it over again if it didn't work well the first time...
+   endif
+end subroutine Electron_Fixed_Etot_partial_1
+
+
+
+
+subroutine Electron_Fixed_mu(wrD, Eetot, mu, Te, norm_fe, i_start, i_end) ! For given chemical potential and total energy, find Te
+   real(8), dimension(:), intent(in) ::  wrD  ! eigenvalues of TB-Hamiltonian for electrons
+   REAL(8), INTENT(in) :: Eetot  ! number of electrons/atom to normalize the distribution function
+   REAL(8), INTENT(out) :: Te ! electron temperature [eV]
+   REAL(8), INTENT(in) ::  mu ! chem.potential to be found [eV]
+   real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
+   integer, intent(in), optional :: i_start, i_end
+   !-----------------------
+   real(8) :: a, b, Ecur, Tcur
+   integer :: Nsiz, i, i_low, i_high
+
+   if (present(i_start)) then
+      i_low = i_start
+   else  ! default, start from 1
+      i_low = 1
+   endif
+   Nsiz = size(wrD)
+   if (present(i_end)) then
+      i_high = i_end
+   else  ! default, end at the end
+      i_high = Nsiz
+   endif
+
+   a = 1.0d0/g_kb ! [eV]
+   b = 100.0d0 ! [eV}
+   Ecur = 1.0d10   ! to start with
+   Te = 0.0d0  ! to start with
+
+   do while (ABS(Ecur-Eetot) .GT. Eetot*1d-12)
+      Te = (a+b)/2.0d0
+      Ecur = get_E_tot(wrD, mu, Te, i_start=i_low, i_end=i_high) ! function from below
+      if (Ecur .GT. Eetot) then
+         b = Te
+      else
+         a = Te
+      endif
+      if (ABS(a-b) .LT. 1d-12) exit ! it's too close anyway...
+   enddo ! while
+end subroutine Electron_Fixed_mu
+
+
+
+
+
+subroutine Electron_Fixed_Te(wrD, Netot, mu, Te, norm_fe, i_start, i_end) ! in case if the electron temperature is given
 ! but the total energy can change, then we have to find the chem.potential that conserves 
 ! the given total number of electons Netot
    REAL(8), DIMENSION(:), INTENT(in) ::  wrD  ! eigenvalues of TB-Hamiltonian for electrons
@@ -1345,16 +1678,30 @@ subroutine Electron_Fixed_Te(wrD, Netot, mu, Te, norm_fe) ! in case if the elect
    REAL(8), INTENT(in) :: Te ! electron temperature [eV]
    REAL(8), INTENT(out) ::  mu ! chem.potential to be found [eV]
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
-   real(8) a, b, Ncur
-   integer i
+   integer, intent(in), optional :: i_start, i_end
+   real(8) :: a, b, Ncur
+   integer :: Nsiz, i, i_low, i_high
 
-   a = wrD(1) - 10.0d0
-   b = wrD(size(wrD)) + 5.0d0
+   if (present(i_start)) then
+      i_low = i_start
+   else  ! default, start from 1
+      i_low = 1
+   endif
+   Nsiz = size(wrD)
+   if (present(i_end)) then
+      i_high = i_end
+   else  ! default, end at the end
+      i_high = Nsiz
+   endif
+
+   a = wrD(i_low) - 100.0d0
+   b = wrD(i_high) + 50.0d0
    Ncur = 0.0d0
 
    do while (ABS(Ncur-Netot) .GT. Netot*1d-12) !
       mu = (a+b)/2.0d0
-      Ncur = get_N_tot(wrD, mu, Te) ! function from below
+      !Ncur = get_N_tot(wrD, mu, Te) ! function from below
+      Ncur = get_N_tot(wrD, mu, Te, i_start=i_low, i_end=i_high) ! function from below
       if (Ncur .GT. Netot) then
          b = mu
       else
@@ -1391,7 +1738,7 @@ function get_N_partial_Fermi(wr, mu, Te, i_start, i_end) result(Ne)
    integer, intent(in) :: i_start, i_end  ! starting and ending levels to include
    !----------------------
    if (Te > 1.0d-6) then
-      Ne = 2.0d0 * SUM(1.0d0/(1.0d0 + dexp((wr(:) - mu)/Te))) ! Fermi-function
+      Ne = 2.0d0 * SUM(1.0d0/(1.0d0 + dexp((wr(i_start:i_end) - mu)/Te))) ! Fermi-function
    else
       Ne = 2.0d0 * dble(COUNT(wr(i_start:i_end) <= mu)) ! Fermi-function at T=0
    endif
@@ -1407,29 +1754,41 @@ function get_E_partial_Fermi(wr, mu, Te, i_start, i_end) result(Ee)
    if (Te > 1.0d-6) then
       Ee = 2.0d0 * SUM(wr(i_start:i_end)/(1.0d0 + dexp((wr(i_start:i_end) - mu)/Te))) ! Fermi-function
    else
-      Ee = 2.0d0 * SUM(wr(i_start:i_end)) ! Fermi-function at T=0
+      Ee = 2.0d0 * SUM(wr(i_start:i_end), mask = wr(:) <= mu) ! Fermi-function at T=0
    endif
 end function get_E_partial_Fermi
 
 
 
 
-function get_N_tot(wrD, mu, Te, norm_fe)
+function get_N_tot(wrD, mu, Te, norm_fe, i_start, i_end)
    REAL(8), DIMENSION(:), INTENT(in) ::  wrD  ! eigenvalues of TB-Hamiltonian for electrons
    REAL(8), INTENT(in) :: Te ! electron temperature [eV]
    REAL(8), INTENT(in) ::  mu ! chem.potential to be found [eV]
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
+   integer, intent(in), optional :: i_start, i_end  ! starting and ending levels to include
    real(8) :: get_N_tot ! number of electrons for given band structure and Fermi-function
-   integer i
+   !----------------
    real(8) :: f_norm
+   integer :: i, Nsiz, i_low, i_high
+
+   if (present(i_start)) then
+      i_low = i_start
+   else  ! default, start from 1
+      i_low = 1
+   endif
+   Nsiz = size(wrD)
+   if (present(i_end)) then
+      i_high = i_end
+   else  ! default, end at the end
+      i_high = Nsiz
+   endif
+
    
    if (Te .GT. 1.0d-12) then
-      !get_N_tot = SUM(2.0d0/(1.0d0 + dexp((wrD(:) - mu)/Te))) ! fermi-function
-      !get_N_tot = SUM(2.0d0/(1.0d0 + dexp((wrD(:) - mu)/Te)), mask = (wrD(:) - mu)/Te .LT. log(HUGE(Te))) ! fermi-function
       get_N_tot = 0.0d0
-      DO_SUM:do i = 1, size(wrD)
+      DO_SUM:do i = i_low, i_high
          if ((wrD(i) - mu)/Te .LT. log(HUGE(mu))) then ! exp(x) -> infinity
-            !get_N_tot = get_N_tot + (2.0d0/(1.0d0 + dexp((wrD(i) - mu)/Te))) ! fermi-function
             if (present(norm_fe)) then    ! user provided
                get_N_tot = get_N_tot + Fermi_distribution (wrD(i), mu, Te, norm_fe)  ! function above
             else    ! default
@@ -1443,22 +1802,40 @@ function get_N_tot(wrD, mu, Te, norm_fe)
       else  ! by default, spin degenerate
          f_norm = 2.0d0
       endif
-      get_N_tot = f_norm*COUNT(wrD(:) .LT. mu)
+      get_N_tot = f_norm*COUNT(wrD(i_low:i_high) <= mu)
    endif
 end function get_N_tot
 
-function get_E_tot(wrD, mu, Te, norm_fe)
+
+function get_E_tot(wrD, mu, Te, norm_fe, i_start, i_end)
    REAL(8), DIMENSION(:), INTENT(in) ::  wrD  ! eigenvalues of TB-Hamiltonian for electrons
    REAL(8), INTENT(in) :: Te ! electron temperature [eV]
    REAL(8), INTENT(in) ::  mu ! chem.potential to be found [eV]
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
+   integer, intent(in), optional :: i_start, i_end  ! starting and ending levels to include
    real(8) :: get_E_tot ! number of electrons for given band structure and Fermi-function
-   integer i
+   !------------------------
+   integer i, Nsiz, i_low, i_high
    real(8) :: f_norm
+
+   if (present(i_start)) then
+      i_low = i_start
+   else  ! default, start from 1
+      i_low = 1
+   endif
+   Nsiz = size(wrD)
+   if (present(i_end)) then
+      i_high = i_end
+   else  ! default, end at the end
+      i_high = Nsiz
+   endif
+
+
    if (Te .GT. 1.0d-12) then
       !get_E_tot = 2.0d0*SUM(wrD(:)/(1.0d0 + exp((wrD(:) - mu)/Te)))
+      Nsiz = size(wrD)
       get_E_tot = 0.0d0
-      DO_SUM:do i = 1, size(wrD)
+      DO_SUM:do i = i_low, i_high
          if ((wrD(i) - mu)/Te .LT. log(HUGE(mu))) then ! exp(x) -> infinity
             !get_E_tot = get_E_tot + 2.0d0*wrD(i)/(1.0d0 + dexp((wrD(i) - mu)/Te)) ! fermi-function
             if (present(norm_fe)) then    ! user provided
@@ -1475,7 +1852,7 @@ function get_E_tot(wrD, mu, Te, norm_fe)
          f_norm = 2.0d0
       endif
 !       get_E_tot = 2.0d0*SUM(wrD(:), mask = wrD(:) .LT. mu)
-      get_E_tot = f_norm*SUM(wrD(:), mask = wrD(:) .LT. mu)
+      get_E_tot = f_norm*SUM(wrD(i_low:i_high), mask = wrD(:) <= mu)
    endif
 end function get_E_tot
 
@@ -1691,7 +2068,7 @@ subroutine Electron_Fixed_Etot_1(wrD, Netot, Eetot, mu, Te)
       if (ABS((Te - Telast)/MAX(Te,Telast,1d-12)) .LT. 1d-12) exit
 
       ! Finding chem.potential for the neq temperature:
-      call Electron_Fixed_Te(wrD, Netot, muN, Te) ! find mu for given Te nad Ne
+      call Electron_Fixed_Te(wrD, Netot, muN, Te) ! find mu for given Te and Ne
 
       ! Checking, whether this chem.potential and temperature are also solutions for energy: 
       Ecur = 0.0d0

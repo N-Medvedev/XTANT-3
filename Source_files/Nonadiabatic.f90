@@ -51,7 +51,7 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
    real(8), dimension(:,:), intent(inout) :: G_ei_partial ! partial contributions into coupling from shells of atoms
    !---------------------------------------
    integer :: i, N_orb, N_steps, i_t, i_pc
-   real(8) :: coef, coef_inv, dt_small, N_tot_cut, E_tot_cur, alpha, A_pc, B_pc, AB, A2AB, arg, eps, eps_N
+   real(8) :: coef, coef_inv, dt_small, N_tot_cut, E_tot_cur, alpha, A_pc, B_pc, AB, A2AB, arg, eps, eps_N, Ne
    real(8), dimension(:), allocatable :: dfdt_e ! change of the distribution function
    real(8), dimension(:), allocatable :: dfdt_e2 ! predictotr change of the distribution function
    real(8), dimension(:), allocatable :: distre_temp  ! electron distribution
@@ -59,12 +59,12 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
    real(8), dimension(:), allocatable :: dfdt_A, dfdt_B  ! factors for explicit scheme
    real(8), dimension(:), allocatable :: dfdt_A2, dfdt_B2  ! predictor factors for explicit scheme
 !    real(8), dimension(:), allocatable :: inv_t_e_ph ! inverse electron-phonon scattering time [1/fs]
-   logical :: pc_iterations
+   logical :: pc_iterations, print_error
 
    alpha = 0.35d0  ! mixing parameter in predictor-corrector
    eps = 1.0d-10   ! precision in A-B
    eps_N = 1.0d-6  ! precision in number of electrons
-   
+   Ne = SUM(distre(:))  ! initial number of electrons
    
    N_orb = size(wr) ! how many energy levels
    allocate(dfdt_e(N_orb), source = 0.0d0)
@@ -84,6 +84,7 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
    !coef_inv =g_h/( 2.0d0*g_e)   ! [s]
    coef_inv = numpar%M2_scaling*g_h/(g_e)   ! [s] with scaling factor added (e.g. 2 from d|a|^2/dt)
 110 continue
+   print_error = .true. ! to start with
    dt_small = numpar%dt*(1d-15)/dble(N_steps) ! [s] smaller time-steps to iterate with better precision
    dE_nonadiabat = 0.0d0
    distre_temp = distre ! to start
@@ -183,13 +184,23 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
       N_tot_cut = SUM(distre_temp(:))
       !E_tot_cur = SUM(distre_temp(:)*wr(:))
 
-      if (ABS(N_tot_cut - Scell%Ne_low)/Scell%Ne_low > eps_N) then
-         N_steps = INT(N_steps*2.0d0)
-         print*, 'Trouble in Electron_ion_collision_int:'
-         print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (2):'
-         print*, N_tot_cut, Scell%Ne_low
-!          print*, dfdt_e(:)
-         goto 110
+      !if (ABS(N_tot_cut - Scell%Ne_low)/Scell%Ne_low > eps_N) then
+      if (ABS(N_tot_cut - Ne) > eps_N*Ne) then  ! compare with the initial number of electrons
+         if (N_steps < 1050) then
+            N_steps = INT(N_steps*2.0d0)
+!             print*, 'Trouble noticed in Electron_ion_collision_int:'
+!             print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (2):'
+!             print*, N_tot_cut, Scell%Ne_low
+!           print*, dfdt_e(:)
+            goto 110
+         else
+            if (print_error) then
+               print*, 'Trouble noticed in Electron_ion_collision_int:'
+               print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (2):'
+               print*, N_tot_cut, Scell%Ne_low
+               print_error = .false. ! don't repeat the same error
+            endif
+         endif
       endif
    enddo TIME_STEPS
 
