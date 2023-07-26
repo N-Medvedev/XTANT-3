@@ -26,7 +26,7 @@ dt_grid.txt     ! time step for MD [fs] (or a file name with the variable time-g
 0               ! it's = 1 if P=const, or = 0 if V=const
 0.0d0           ! external pressure [Pa]
 F   0   0.35    ! include SCC (True, False), model of gamma (default 0); mixing factor (default 0.35)
-4   1d-3  10.0   ! scheme (0=decoupled; 1=E_tot=const; 2=T=const; 3=BO; 4=Relaxation time); coupling start [fs]; relaxation tau [fs]
+4   0.0	0.0e0	0.0e0   ! scheme (0=decoupled; 1=E_tot=const; 2=T=const; 3=BO; 4=Relaxation time); global relaxation tau [fs]; tau_CB [fs], tau_VB [fs]
 -1               ! -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule
 -1.0d+3    4.0d0    ! [fs] when to switch on the nonadiabatic coupling; scaling factor (if needed; default=4.0)
 5.0d0   0.001d0     ! [eV] acceptance window for nonadiabatic coupling; [eV] tolerance for quasidegenerate levels
