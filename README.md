@@ -23,6 +23,11 @@ This code is distributed _as is_ for non-commercial peaceful purposes only, such
 
 By using this code or its materials, you agree with these terms and conditions. 
 
+## Tables with calculated electron-phonon coupling
+
+The tables with the results with calculated electron-ion (electron-phonon) coupling (and electronic heat capacity) at high electronic temepratures can be found here:
+https://github.com/N-Medvedev/XTANT-3_coupling_data
+
 ## How to cite
 
 The use of the code is at your own risk. Should you chose to use it, an appropriate citation is mandatory. The manual and the code can be cited as:
