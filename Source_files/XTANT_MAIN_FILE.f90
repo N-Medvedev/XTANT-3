@@ -188,13 +188,9 @@ if (g_numpar%verbose) call print_time_step('Optical parameters prepared succesfu
 call get_DOS(g_numpar, g_matter, g_Scell, g_Err)	! module "TB"
 if (g_numpar%verbose) call print_time_step('DOS calculated succesfully:', msec=.true.)
 
-! Get current Mulliken charges, if required:
-call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
-         g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne, g_matter%Atoms(:)%mulliken_q) ! module "TB"
+! Get current Mulliken charges (average and individual), if required:
+call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)
 if (g_numpar%verbose) call print_time_step('Mulliken charges calculated succesfully:', msec=.true.)
-
-call get_Mulliken_each_atom(g_numpar%Mulliken_model, g_Scell(1), g_matter, g_numpar)   ! module "TB"
-if (g_numpar%verbose) call print_time_step('Atomic Mullikens calculated succesfully:', msec=.true.)
 
 ! Get the pressure in the atomic system:
 call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure,  g_Scell(1)%Stress)	! module "TB"
@@ -314,13 +310,11 @@ do while (g_time .LT. g_numpar%t_total)
       ! Get current optical coefficients:
       call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
       ! Get current DOS:
-      call get_DOS(g_numpar, g_matter, g_Scell, g_Err)	! module "TB"
+      call get_DOS(g_numpar, g_matter, g_Scell, g_Err)   ! module "TB"
       
       ! Get current Mulliken charges, if required:
-      call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
-               g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne, g_matter%Atoms(:)%mulliken_q) ! module "TB"
-      call get_Mulliken_each_atom(g_numpar%Mulliken_model, g_Scell(1), g_matter, g_numpar)   ! module "TB"
-      
+      call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)   ! module "TB"
+
       ! Get current pressure in the system:
       call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
       ! Calculate the mean square displacement of all atoms:
@@ -654,8 +648,7 @@ subroutine vary_size(do_forces, Err)
       ! Get initial DOS:
       call get_DOS(g_numpar, g_matter, g_Scell, g_Err)	! module "TB"
 
-      call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
-                  g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne, g_matter%Atoms(:)%mulliken_q) ! module "TB"
+      call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)   ! module "TB"
       call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
       ! Save initial step in output:

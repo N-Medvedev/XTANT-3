@@ -63,9 +63,9 @@ use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressu
 implicit none
 PRIVATE
 
-public :: get_new_energies, get_DOS, get_Mulliken, Get_pressure, get_electronic_thermal_parameters, &
+public :: get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_parameters, &
          vdW_interplane, Electron_ion_coupling, update_nrg_after_change, get_DOS_masks, k_point_choice, &
-         construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step, get_Mulliken_each_atom
+         construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step, get_Mullikens_all
 
  contains
 
@@ -1614,10 +1614,25 @@ end subroutine get_DOS_masks
 end subroutine get_DOS_weights
 
 
+
+subroutine get_Mullikens_all(Scell, matter, numpar)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Solid), intent(inout) :: matter     ! material parameters
+   type (Numerics_param), intent(in) :: numpar    ! numerical parameters, including drude-function
+   !-------------------------------
+   ! 1) Do the avereage Mullikens:
+   call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell%Ha, &
+         Scell%fe, matter, Scell%MDAtoms, matter%Atoms(:)%mulliken_Ne, matter%Atoms(:)%mulliken_q) ! below
+
+   ! 2) Do the Mullikens for each atom:
+   call get_Mulliken_each_atom(numpar%Mulliken_model, Scell, matter, numpar)   ! below
+end subroutine get_Mullikens_all
+
+
 subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter, MDatoms, mulliken_Ne, mulliken_q)
    integer, intent(in) :: Mulliken_model   ! which model to use
    logical, dimension(:,:,:), intent(in) :: masks_DOS   ! partial DOS made of each orbital type, if required to be constructed
-   real(8), dimension(:,:,:), intent(inout) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
+   real(8), dimension(:,:,:), intent(in) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
    real(8), dimension(:,:), intent(in) :: Hij      ! real eigenvectors
    real(8), dimension(:), intent(in) :: fe    ! electron distribution
    type(Solid), intent(in) :: matter     ! material parameters
@@ -1720,12 +1735,11 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
          do i_at = 1, size(matter%Atoms)
             N_at = COUNT(MASK = (Scell%MDatoms(:)%KOA == i_at))
             if (N_at <= 0) N_at = 1   ! in case there are no atoms of this kind
-            print*, 'get_Mulliken_each_atom: average charge check:', &
+            write(*,'(a,f,f)') 'Mulliken average charge:', &
                      SUM(Scell%MDAtoms(:)%q, MASK = (Scell%MDatoms(:)%KOA == i_at)) / dble(N_at), &
-                     matter%Atoms(:)%mulliken_q
+                     matter%Atoms(i_at)%mulliken_q
          enddo
       endif
-
 
       deallocate(mulliken_Ne)
    else  ! just atomic electrons

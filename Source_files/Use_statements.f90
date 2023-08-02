@@ -15,8 +15,8 @@ use Atomic_tools, only : get_mean_square_displacement, save_last_timestep, Cooli
         make_time_step_atoms, make_time_step_supercell
 use Electron_tools, only : Electron_thermalization, get_glob_energy, get_low_energy_distribution
 use Transport, only : Electron_transport, Atomic_heat_transport, Change_affected_layer
-use TB, only : get_new_energies, get_DOS, get_Mulliken, Get_pressure, get_electronic_thermal_parameters, &
-        vdW_interplane, Electron_ion_coupling, update_nrg_after_change,  get_Hamilonian_and_E, MD_step, get_Mulliken_each_atom
+use TB, only : get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_parameters, &
+        vdW_interplane, Electron_ion_coupling, update_nrg_after_change,  get_Hamilonian_and_E, MD_step, get_Mullikens_all
 use Optical_parameters, only : get_optical_parameters
 use MC_cross_sections, only : get_mfps, get_photon_attenuation
 use Monte_carlo, only : MC_Propagate
