@@ -168,6 +168,8 @@ end subroutine interpret_random_line
 
 
 subroutine interprete_properties_line(prop_block, ind_S, ind_R, ind_V)
+   ! Properties allowed in OVITO (not all supported in XTANT yet):
+   ! https://www.ovito.org/manual/reference/file_formats/input/xyz.html
    character(*), intent(in) :: prop_block
    integer, intent(inout) :: ind_S, ind_R, ind_V
    !------------------------
@@ -208,13 +210,17 @@ subroutine interprete_properties_line(prop_block, ind_S, ind_R, ind_V)
          else
             ind_R = 1   ! Absolute coordinate R is set
          endif
-      case ('Vel','vel')
+      case ('Vel','vel', 'Velo', 'velo')
          if ( (trim(adjustl(read_char)) == 'S' ) .or. &
               (trim(adjustl(read_char)) == 's' ) ) then
             ind_V = 0   ! Relative velocity VS is set
          else
             ind_V = 1   ! Absolute velocity V is set
          endif
+      case ('Mass', 'mass')
+         ! To read user-specified mass (not ready yet)
+      case ('Charge', 'charge')
+         ! To read user-specified charge (not ready yet)
       end select
 
       ! Next colon:

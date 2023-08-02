@@ -544,6 +544,8 @@ type Atom
    real(8), dimension(3) :: A_tild, v_F, v_J, A_tild0, v_F0, v_J0
    ! For linear scaling TB, subcell numbers this atom belongs to:
    integer :: Nx_subcel, Ny_subcel, Nz_subcel
+   ! Additional data:
+   real(8) :: q   ! charge (Mulliken)
 end type Atom
 
 type :: MC_atoms ! to treat holes in each shell of each atom
@@ -867,6 +869,8 @@ type Numerics_param
    logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
    ! Different output, what to save:
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate, save_fe_grid
+   logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
+   ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
    logical :: do_elastic_MC, do_path_coordinate, do_kappa
    logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN
    integer :: Mulliken_model
