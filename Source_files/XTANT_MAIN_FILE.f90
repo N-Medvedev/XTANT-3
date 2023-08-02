@@ -193,6 +193,9 @@ call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weigh
          g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne, g_matter%Atoms(:)%mulliken_q) ! module "TB"
 if (g_numpar%verbose) call print_time_step('Mulliken charges calculated succesfully:', msec=.true.)
 
+call get_Mulliken_each_atom(g_numpar%Mulliken_model, g_Scell(1), g_matter, g_numpar)   ! module "TB"
+if (g_numpar%verbose) call print_time_step('Atomic Mullikens calculated succesfully:', msec=.true.)
+
 ! Get the pressure in the atomic system:
 call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure,  g_Scell(1)%Stress)	! module "TB"
 if (g_numpar%verbose) call print_time_step('Pressure calculated succesfully:', msec=.true.)
@@ -316,6 +319,7 @@ do while (g_time .LT. g_numpar%t_total)
       ! Get current Mulliken charges, if required:
       call get_Mulliken(g_numpar%Mulliken_model, g_numpar%mask_DOS, g_numpar%DOS_weights, g_Scell(1)%Ha, &
                g_Scell(1)%fe, g_matter, g_Scell(1)%MDAtoms, g_matter%Atoms(:)%mulliken_Ne, g_matter%Atoms(:)%mulliken_q) ! module "TB"
+      call get_Mulliken_each_atom(g_numpar%Mulliken_model, g_Scell(1), g_matter, g_numpar)   ! module "TB"
       
       ! Get current pressure in the system:
       call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"

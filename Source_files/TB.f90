@@ -65,7 +65,7 @@ PRIVATE
 
 public :: get_new_energies, get_DOS, get_Mulliken, Get_pressure, get_electronic_thermal_parameters, &
          vdW_interplane, Electron_ion_coupling, update_nrg_after_change, get_DOS_masks, k_point_choice, &
-         construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step
+         construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step, get_Mulliken_each_atom
 
  contains
 
@@ -1659,6 +1659,81 @@ subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter,
       if (present(mulliken_q)) mulliken_q(:) = 0.0d0
    endif ! (Mulliken_model >= 1)
 end subroutine get_Mulliken
+
+
+
+subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
+   integer, intent(in) :: Mulliken_model   ! which model to use
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Solid), intent(in) :: matter     ! material parameters
+   type (Numerics_param), intent(in) :: numpar    ! numerical parameters, including drude-function
+   !-------------------------------
+   real(8), dimension(size(Scell%Ha,1), size(Scell%Ha,2)) :: D
+   real(8), dimension(:), allocatable :: mulliken_Ne
+   integer :: N_at, i_at, i_orb, j, Nsiz, N_orb, k
+
+   if ( (Mulliken_model >= 1) .and. (numpar%save_XYZ_extra(2)) ) then ! get Mulliken populations and charges
+      N_at = size(Scell%MDAtoms) ! total number of atoms
+      Nsiz = size(Scell%Ha,1) ! total number of orbitals
+      N_orb = Nsiz/N_at ! orbitals per atom
+
+      if (allocated(Scell%Sij)) then
+         !$omp PARALLEL private(j, k)
+         !$omp do
+         do j = 1, Nsiz ! for all energy levels
+            do k = 1, Nsiz ! for all energy levels
+               D(k,j) = Scell%Ha(k,j) * SUM(Scell%Ha(:,j) * Scell%Sij(k,:))   ! the density matrix without occupations
+            enddo
+         enddo
+         !$omp end do
+         !$omp end parallel
+      else ! orthogonal
+         !$omp PARALLEL private(j)
+         !$omp do
+         do j = 1, Nsiz ! for all energy levels
+            D(:,j) = Scell%Ha(:,j) * Scell%Ha(:,j)
+         enddo
+         !$omp end do
+         !$omp end parallel
+      endif
+
+
+      allocate(mulliken_Ne(N_at), source = 0.0d0)   ! absolute charges
+
+      !$omp PARALLEL private(i_at, i_orb, j)
+      !$omp do
+      do i_at = 1, N_at ! all atoms
+         do i_orb = 1, N_orb  ! all orbitals of each atom
+            j = (i_at-1)*N_orb + i_orb ! current orbital among all
+            mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(j,:))
+         enddo   ! i_orb
+
+         ! Mulliken charge as a deviation from the normal electron population:
+         Scell%MDAtoms(i_at)%q = matter%Atoms( Scell%MDAtoms(i_at)%KOA )%NVB - mulliken_Ne(i_at)
+         !print*, i_at, Scell%MDAtoms(i_at)%q, matter%Atoms( Scell%MDAtoms(i_at)%KOA )%mulliken_q
+      enddo ! i_at
+      !$omp end do
+      !$omp end parallel
+
+      ! Testing:
+      if (numpar%verbose) then
+         do i_at = 1, size(matter%Atoms)
+            N_at = COUNT(MASK = (Scell%MDatoms(:)%KOA == i_at))
+            if (N_at <= 0) N_at = 1   ! in case there are no atoms of this kind
+            print*, 'get_Mulliken_each_atom: average charge check:', &
+                     SUM(Scell%MDAtoms(:)%q, MASK = (Scell%MDatoms(:)%KOA == i_at)) / dble(N_at), &
+                     matter%Atoms(:)%mulliken_q
+         enddo
+      endif
+
+
+      deallocate(mulliken_Ne)
+   else  ! just atomic electrons
+      ! Mulliken charges:
+      Scell%MDAtoms(:)%q = 0.0d0
+   endif ! (Mulliken_model >= 1)
+end subroutine get_Mulliken_each_atom
+
 
 
 
