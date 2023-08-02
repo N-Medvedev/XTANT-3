@@ -181,6 +181,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%save_fe_grid = .false.	! excluded printout distribution function on the grid
    numpar%save_PCF = .false.	! excluded printout pair correlation function
    numpar%save_XYZ = .true.	! included printout atomic coordinates in XYZ format
+   numpar%save_XYZ_extra = .false.  ! no additional properties to print in XYZ file
    numpar%save_CIF = .true.	! included printout atomic coordinates in CIF format
    numpar%save_raw = .true.	! included printout of raw data for atomic coordinates, relative coordinates, velocities
    numpar%NN_radius = 0.0d0 ! radius of nearest neighbors defined by the user [A]
@@ -4624,7 +4625,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    !---------------------------------
    integer FN, N, Reason, count_lines, i, NSC, temp1, temp2, temp3
    logical file_opened, read_well, old_file, add_data_present
-   character(100) Error_descript, temp_ch
+   character(100) Error_descript, temp_ch, temp_ch2
 
    NSC = 1 ! for now, we only have 1 supercell...
    if (present(add_data)) then
@@ -5098,8 +5099,10 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       numpar%save_PCF = .false.	! excluded
    endif
 
+
    ! save atomic positions in XYZ (1) or not (0):
-   read(FN,*,IOSTAT=Reason) N  ! save atomic positions in XYZ (1) or not (0)
+   !read(FN,*,IOSTAT=Reason) N  ! save atomic positions in XYZ (1) or not (0)
+   read(FN,'(a)',IOSTAT=Reason) temp_ch   ! read parameters to interpret them below
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
       write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
@@ -5107,12 +5110,31 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       print*, trim(adjustl(Error_descript))
       goto 3418
    endif
+   read(temp_ch,*,IOSTAT=Reason) N, temp_ch2
+   count_lines = count_lines - 1 ! reading the same line
+   call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
+   if (.not. read_well) then ! something wrong with the user-defined grid
+      ! try reading just the first flag, no grid parameters
+      read(temp_ch,*,IOSTAT=Reason) N
+      count_lines = count_lines - 1 ! still reading the same line
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3418
+      endif
+      ! And no additional input:
+      temp_ch2 = ''
+   endif
    if (N .EQ. 1) then
       numpar%save_XYZ = .true.	! included
    else
       numpar%save_XYZ = .false.	! excluded
    endif
-   
+   call interpret_additional_XYZ_input(temp_ch2, numpar%save_XYZ_extra) ! below
+
+
    ! save atomic positions in CIF (1) or not (0):
    read(FN,*,IOSTAT=Reason) N  ! save atomic positions in CIF (1) or not (0)
    call read_file(Reason, count_lines, read_well)
@@ -5215,6 +5237,31 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 3418 continue
    if (.not.old_file .and. file_opened) close(FN)
 end subroutine read_numerical_parameters
+
+
+
+subroutine interpret_additional_XYZ_input(temp_ch2, save_XYZ_extra)
+   character(*), intent(in) :: temp_ch2
+   logical, dimension(:), intent(inout) :: save_XYZ_extra
+   !-------------------
+   integer :: i, Nsiz
+   Nsiz = LEN(trim(adjustl(temp_ch2)))
+   save_XYZ_extra = .false. ! to start with, no additional input
+   RAPXYZ:do i = 1, Nsiz
+      !print*, 'interpret_additional_XYZ_input: ', trim(adjustl(temp_ch2(i:i)))
+      select case (trim(adjustl(temp_ch2(i:i))))
+      case ('!')  ! comment line starts, don't read from here on
+         exit RAPXYZ
+      case ('M', 'm')   ! to printout atomic mass
+         save_XYZ_extra(1) = .true.
+      case ('Q', 'q')   ! to printout atomic charge
+         save_XYZ_extra(2) = .true.
+      case ('E', 'e')   ! to printout atomic kinetic energy
+         save_XYZ_extra(3) = .true.
+      end select
+   enddo RAPXYZ
+   !print*, 'save_XYZ_extra=', save_XYZ_extra
+end subroutine interpret_additional_XYZ_input
 
 
 

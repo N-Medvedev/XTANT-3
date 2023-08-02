@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 23.07.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 02.08.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -83,7 +83,8 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_super_cell(numpar%FN_supercell, time, Scell(NSC))
       call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, &
                numpar%FN_Ce, numpar%FN_kappa, numpar%FN_Se, numpar%FN_Te, numpar%FN_mu)
-      if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:))
+      if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:), &
+               print_mass=numpar%save_XYZ_extra(1), print_charge=numpar%save_XYZ_extra(2), print_Ekin=numpar%save_XYZ_extra(3))   ! below
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time)
       if (numpar%save_Ei) then
          if (numpar%scc) then ! Energy levels include SCC term:
@@ -473,22 +474,65 @@ subroutine save_nearest_neighbors(FN, Scell, NSC, tim)
 end subroutine save_nearest_neighbors
 
 
-subroutine write_atomic_xyz(FN, atoms, matter, Supce)
+subroutine write_atomic_xyz(FN, atoms, matter, Supce, print_mass, print_charge, print_Ekin)
    integer, intent(in) :: FN	! file number
    type(Atom), dimension(:), intent(in) :: atoms	! atomic parameters
    type(Solid), intent(in) :: matter	! Material parameters
    real(8), dimension(3,3), intent(in) :: Supce	! [A]  supercell vectors [a(x,y,z),b(x,y,z),c(x,y,z)]
+   logical, intent(in), optional :: print_mass, print_charge, print_Ekin ! flags what to printout
    !-------------------------------------
    integer i
    character(10) :: Numb_out
+   logical :: do_mass, do_charge, do_Ekin
+
+   ! Check for additional properties provided:
+   if (present(print_mass)) then
+      do_mass = print_mass
+   else
+      do_mass = .false.
+   endif
+
+   if (present(print_charge)) then
+      do_charge = print_charge
+   else
+      do_charge = .false.
+   endif
+
+   if (present(print_Ekin)) then
+      do_Ekin = print_Ekin
+   else
+      do_Ekin = .false.
+   endif
+
+
+   ! Write out the data block:
    write(Numb_out, '(i10)') size(atoms)
    write(FN, '(a)') trim(adjustl(Numb_out))
-   !write(FN, '(a)') trim(adjustl(matter%Name)) ! Material name, not needed
-   write(FN, '(a,f,f,f,f,f,f,f,f,f,a)') 'Lattice="', Supce(1,1), Supce(1,2), Supce(1,3), &
+   write(FN, '(a,f,f,f,f,f,f,f,f,f,a)', advance='no') 'Lattice="', Supce(1,1), Supce(1,2), Supce(1,3), &
                                                      Supce(2,1), Supce(2,2), Supce(2,3), &
                                                      Supce(3,1), Supce(3,2), Supce(3,3), '" Properties=species:S:1:pos:R:3'
+
+   ! optional additional data:
+   if (do_mass) then
+      write(FN, '(a)', advance='no') ':mass:R:1'
+   endif
+   if (do_charge) then
+      write(FN, '(a)', advance='no') ':charge:R:1'
+   endif
+   if (do_Ekin) then
+      write(FN, '(a)', advance='no') ':kinetic_energy:R:1'
+   endif
+   write(FN, '(a)') ''  ! to end the line
+
+
+   ! Atomic data block:
    do i = 1, size(atoms)
-      write(FN, '(a,es25.16,es25.16,es25.16)') trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), atoms(i)%R(1), atoms(i)%R(2), atoms(i)%R(3)
+      write(FN, '(a,es25.16,es25.16,es25.16)' , advance='no') trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), &
+                                                               atoms(i)%R(1), atoms(i)%R(2), atoms(i)%R(3)
+      if (do_mass) write(FN, '(es25.16)', advance='no') matter%Atoms(atoms(i)%KOA)%Ma
+      if (do_charge) write(FN, '(es25.16)', advance='no') matter%Atoms(atoms(i)%KOA)%mulliken_q
+      if (do_Ekin) write(FN, '(es25.16)', advance='no') atoms(i)%Ekin
+      write(FN, '(a)') ''  ! to end the line
    enddo
 end subroutine write_atomic_xyz
 
@@ -565,7 +609,8 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
       Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
    Nat = size(matter%Atoms(:)) ! number of elements
    do i = 1, Nat    ! index starting from 11
-      write(FN,'(es25.16)', advance='no') (matter%Atoms(i)%NVB - matter%Atoms(i)%mulliken_Ne)
+      !write(FN,'(es25.16)', advance='no') (matter%Atoms(i)%NVB - matter%Atoms(i)%mulliken_Ne)
+      write(FN,'(es25.16)', advance='no') matter%Atoms(i)%mulliken_q
    enddo
    write(FN,'(a)') ''
 
