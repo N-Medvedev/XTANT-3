@@ -1527,7 +1527,8 @@ subroutine Electron_Fixed_Etot_partial(Ei, Netot, Eetot, mu, Te, i_start_in, i_e
       !print*, 'SC', coun, Te_0, Te_1, mu_0, mu_1, cycle_continue, mix_fact
       if (coun > 10000) then
          if ( Te_diff > 10.0d0 * eps*(max(Te_0,Te_1)) ) then ! printout only if the difference is noticeable
-            print*, 'Too many iterations in Electron_Fixed_Etot_partial:', coun, Te_0, Te_1, mu_0, mu_1
+            write(*,'(a,i0)') 'Too many iterations in Electron_Fixed_Etot_partial: ', coun
+            write(*,'(f,f,f,f)') Te_0, Te_1, mu_0, mu_1
          endif
          exit
       endif

@@ -530,7 +530,8 @@ subroutine write_atomic_xyz(FN, atoms, matter, Supce, print_mass, print_charge, 
       write(FN, '(a,es25.16,es25.16,es25.16)' , advance='no') trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), &
                                                                atoms(i)%R(1), atoms(i)%R(2), atoms(i)%R(3)
       if (do_mass) write(FN, '(es25.16)', advance='no') matter%Atoms(atoms(i)%KOA)%Ma
-      if (do_charge) write(FN, '(es25.16)', advance='no') matter%Atoms(atoms(i)%KOA)%mulliken_q
+      !if (do_charge) write(FN, '(es25.16)', advance='no') matter%Atoms(atoms(i)%KOA)%mulliken_q
+      if (do_charge) write(FN, '(es25.16)', advance='no') atoms(i)%q
       if (do_Ekin) write(FN, '(es25.16)', advance='no') atoms(i)%Ekin
       write(FN, '(a)') ''  ! to end the line
    enddo
