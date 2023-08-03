@@ -47,7 +47,7 @@ Reciproc_rel_to_abs, total_forces, Potential_super_cell_forces, super_cell_force
 get_mean_square_displacement, Cooling_atoms, Coordinates_abs_to_rel, get_Ekin, make_time_step_supercell_Y4, make_time_step_atoms_M, &
 remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_atoms_Y4, check_periodic_boundaries, &
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
-Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance
+Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles
 
 
 !=======================================
@@ -69,6 +69,51 @@ parameter(m_d3 = m_d1)
 
 
  contains
+
+
+
+subroutine cell_vectors_defined_by_angles(a, b, c, alpha, beta, gamm, a_vec, b_vec, c_vec, INFO)
+   ! Definitioin from: http://gisaxs.com/index.php/Unit_cell
+   real(8), intent(in) :: a, b, c   ! absolute values of the supercell vectors
+   real(8), intent(in) :: alpha, beta, gamm   ! angles bebtween the supercell vectors
+   real(8), dimension(3), intent(out) :: a_vec, b_vec, c_vec   ! cell vectors constructed
+   integer, intent(out) :: INFO  ! flag if something is wrong
+   !----------------------
+   real(8) :: cos_alpha, cos_beta, cos_gamma, sin_beta, sin_gamma, eps, arg2, arg
+
+   INFO = 0 ! to start with no errors
+   eps = 1.0d-12  ! precision
+
+   cos_alpha = cos(alpha)
+   cos_beta = cos(beta)
+   cos_gamma = cos(gamm)
+   sin_beta = sin(beta)
+   sin_gamma = sin(gamm)
+
+   if (sin_gamma < eps) then
+      INFO = 1 ! cannot construct two-dimentional cell
+      return   ! exit the subroutine
+   endif
+
+   arg2 = (cos_alpha - cos_beta*cos_gamma)/sin_gamma
+   arg = 1.0d0 - cos_beta**2 - arg2**2
+   if (arg < eps) then
+      INFO = 2 ! cannot construct imaginary cell
+      return   ! exit the subroutine
+   endif
+
+   ! By defenition, let a_vec is aligned along X:
+   a_vec = (/a, 0.0d0, 0.0d0/)
+   ! Vector b is then:
+   b_vec(1) = b*cos_gamma
+   b_vec(2) = b*sin_gamma
+   b_vec(3) = 0.0d0
+   ! Vector c is then:
+   c_vec(1) = c*cos_beta
+   c_vec(2) = c*arg2
+   c_vec(3) = c*sqrt(arg)
+end subroutine cell_vectors_defined_by_angles
+
 
 
 subroutine define_subcells(Scell, numpar)

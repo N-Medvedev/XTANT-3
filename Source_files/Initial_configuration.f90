@@ -42,6 +42,7 @@ use Dealing_with_eXYZ, only : interpret_XYZ_comment_line
 use Periodic_table, only : Decompose_compound
 use Read_input_data, only : m_Atomic_parameters
 use Dealing_with_POSCAR, only : read_POSCAR, get_KOA_from_element
+use Dealing_with_mol2, only : read_mol2
 
 implicit none
 PRIVATE
@@ -278,10 +279,11 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
    type(MC_data), dimension(:), allocatable, intent(inout) :: MC ! all MC parameters
    type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
-   integer i, Nsc, Natoms, FN, FN2, Reason, count_lines, N, j, k, n1, FN3, FN4, FN_XYZ, FN_POSCAR
-   character(200) :: File_name, File_name2, Error_descript, File_name_S1, File_name_S2, File_name_XYZ, File_name_POSCAR, Cell_filename
+   integer i, Nsc, Natoms, FN, FN2, Reason, count_lines, N, j, k, n1, FN3, FN4, FN_XYZ, FN_POSCAR, FN_mol2
+   character(200) :: File_name, File_name2, Error_descript, File_name_S1, File_name_S2, File_name_XYZ, File_name_POSCAR, &
+                     File_name_mol2, Cell_filename
    character(10) :: file_extension
-   logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2, XYZ_file_exists, POSCAR_file_exists
+   logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2, XYZ_file_exists, POSCAR_file_exists, mol2_file_exists
    real(8) RN, temp, Mass, V2, Ta
 
    Nsc = 1 !in the present version of the code, there is always only one super-cell
@@ -314,6 +316,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          call get_file_extension(trim(adjustl(numpar%Cell_filename)), file_extension)  ! module "Dealing_with_files"
          XYZ_file_exists = .false.  ! to start with
          POSCAR_file_exists = .false.  ! to start with
+         mol2_file_exists = .false.  ! to start with
          Cell_filename = ''   ! default
          if (LEN(trim(adjustl(file_extension))) > 0) then ! no filename was provided by the user, use defaults
             Cell_filename = trim(adjustl(numpar%Cell_filename))
@@ -322,10 +325,13 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                XYZ_file_exists = .true.
             case ('POSCAR', 'Poscar', 'poscar', 'PosCar')
                POSCAR_file_exists = .true.
+            case ('mol2', 'MOL2', 'Mol2')
+               mol2_file_exists = .true.
             case default
                write(*,'(a)') 'Extension of provided file '//trim(adjustl(numpar%Cell_filename))//' not supported; using defult instead'
                XYZ_file_exists = .false.  ! to start with
                POSCAR_file_exists = .false.  ! to start with
+               mol2_file_exists = .false.  ! to start with
                Cell_filename = ''   ! default
             end select
          endif
@@ -341,7 +347,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                                          trim(adjustl(Cell_filename))
          inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
 
-         ! Check if there is extended POSCAR-format with the unit/super-cell:
+         ! Check if there is POSCAR-format with the unit/super-cell:
          if (.not.POSCAR_file_exists) then ! there is no name given, use default
             Cell_filename = 'Cell.poscar'   ! default name
          else
@@ -351,6 +357,17 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          write(File_name_POSCAR, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                                             trim(adjustl(Cell_filename))
          inquire(file=trim(adjustl(File_name_POSCAR)),exist=POSCAR_file_exists)
+
+         ! Check if there is mol2-format with the unit/super-cell:
+         if (.not.mol2_file_exists) then ! there is no name given, use default
+            Cell_filename = 'Cell.mol2'   ! default name
+         else
+            Cell_filename = trim(adjustl(numpar%Cell_filename))
+         endif
+         FN_mol2 = 9006
+         write(File_name_mol2, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+                                            trim(adjustl(Cell_filename))
+         inquire(file=trim(adjustl(File_name_mol2)),exist=mol2_file_exists)
 
 
          ! Check if user set to calculate along path coordinate:
@@ -373,7 +390,8 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          ! 2) SAVE-files  (internal XTANT SAVE-files format)
          ! 3) Cell-file  (extended XYZ format)
          ! 4) POSCAR-file (vasp format)
-         ! 5) unit-cell coordinates  (old internal XTANT format)
+         ! 5) mol2-file  (SYBYL molecules format; severely restricted here to the bare minimum!)
+         ! 6) unit-cell coordinates  (old internal XTANT format)
 
          SAVED_SUPCELL:if (numpar%do_path_coordinate) then ! read phase 1 and 2 supercells:
             
@@ -458,6 +476,10 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             ! Will read it together with atomic coordinates from the same file below
 
          !----------------------------
+         elseif (mol2_file_exists) then SAVED_SUPCELL  ! read from mol2 file:
+            ! Will read it together with atomic coordinates from the same file below
+
+         !----------------------------
          else SAVED_SUPCELL   ! no supercell, create from unit cell
             write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), &
                                 trim(adjustl(matter%Name))//trim(adjustl(numpar%path_sep)), 'Unit_cell_equilibrium.txt'
@@ -481,15 +503,16 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                write(*,'(a)') 'No file with supercell was found. The file(s) must be set in one of the formats:'
                write(*,'(a)') '1) Path-coordinates  (in internal XTANT SAVE-files format: PHASE_1_supercell.dat and PHASE_2_supercell.dat)'
                write(*,'(a)') '2) SAVE-files  (internal XTANT SAVE-files format: SAVE_atoms.dat and SAVE_supercell.dat)'
-               write(*,'(a)') '3) Cell-file  (extended XYZ format: Cell.xzy)'
+               write(*,'(a)') '3) XYZ format (default name: Cell.xyz)'
                write(*,'(a)') '4) POSCAR file (default name: Cell.poscar)'
-               write(*,'(a)') '5) Unit-cell coordinates (files Unit_cell_equilibrium.txt and Unit_cell_atom_relative_coordinates.txt)'
+               write(*,'(a)') '5) mol2 file (default name: Cell.mol2)'
+               write(*,'(a)') '6) Unit-cell coordinates (files Unit_cell_equilibrium.txt and Unit_cell_atom_relative_coordinates.txt)'
                goto 3416
             endif INPUT_SUPCELL2
          endif SAVED_SUPCELL
          inquire(file=trim(adjustl(File_name)),opened=file_opened)
          if (file_opened) close (FN)
-        
+
          
          ! Check how to set the atomic coordinates:
          ! a) If user wants path coordinates:
@@ -509,9 +532,10 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          ! In the following priorities:
          ! 1) Path-coordinates  (in internal XTANT SAVE-files format)
          ! 2) SAVE-files  (internal XTANT SAVE-files format)
-         ! 3) Cell-file  (extended XYZ format)
+         ! 3) XYZ file  (extended XYZ format)
          ! 4) POSCAR file
-         ! 5) unit-cell coordinates  (old internal XTANT format)
+         ! 5) mol2 file
+         ! 6) unit-cell coordinates  (old internal XTANT format)
 
          SAVED_ATOMS:if (numpar%do_path_coordinate) then ! read from the files with initial and final configurations to do the path coordinate plots
 
@@ -630,7 +654,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                goto 3416
             endif
 
-            ! 2) Make the supercell, if required:
+            ! 2) Cinstruct the supercell from given cells, if required:
             call get_initial_atomic_coord(FN2, File_name2, Scell, i, 3, matter, numpar, Err) ! below
             if ( trim(adjustl(Err%Err_descript)) /= '' ) then
                goto 3416
@@ -642,6 +666,37 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             inquire(file=trim(adjustl(File_name_POSCAR)),opened=file_opened)
             if (file_opened) close (FN_POSCAR)
 
+          !----------------------------
+          elseif (mol2_file_exists) then SAVED_ATOMS ! mol2 file contains atomic coordinates
+
+            if (numpar%verbose) print*, 'Atomic coordinates from file: ', trim(adjustl(File_name_mol2))
+
+            open(UNIT=FN_mol2, FILE = trim(adjustl(File_name_mol2)), status = 'old', action='read')
+            inquire(file=trim(adjustl(File_name_mol2)),opened=file_opened)
+            if (.not.file_opened) then
+               Error_descript = 'File '//trim(adjustl(File_name_mol2))//' could not be opened, the program terminates'
+               call Save_error_details(Err, 2, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               goto 3416
+            endif
+
+            ! 1) Read the unit cell:
+            call read_mol2(FN_mol2, File_name_mol2, Scell, i, matter, numpar, Err) ! module "Dealing_with_mol2"
+            if ( trim(adjustl(Err%Err_descript)) /= '' ) then
+               goto 3416
+            endif
+
+            ! 2) Cinstruct the supercell from given cells, if required:
+            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 3, matter, numpar, Err) ! below
+            if ( trim(adjustl(Err%Err_descript)) /= '' ) then
+               goto 3416
+            endif
+
+            ! 3) Set initial velocities:
+            call set_initial_velocities(matter, Scell, i, Scell(i)%MDatoms, numpar, numpar%allow_rotate) ! below
+
+            inquire(file=trim(adjustl(File_name_mol2)), opened=file_opened)
+            if (file_opened) close (FN_mol2)
 
          !----------------------------
          else SAVED_ATOMS  ! unit-cell file
@@ -676,9 +731,10 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                print*, 'No file with atomic coordinates was found. The file(s) must be set in one of the formats:'
                print*, '1) Path-coordinates  (in internal XTANT SAVE-files format: PHASE_1_supercell.dat and PHASE_2_supercell.dat)'
                print*, '2) SAVE-files  (internal XTANT SAVE-files format: SAVE_atoms.dat and SAVE_supercell.dat)'
-               print*, '3) Cell-file  (extended XYZ format: Cell.xzy)'
+               print*, '3) XYZ file  (default name: Cell.xyz)'
                print*, '4) POSCAR file (default name: Cell.poscar)'
-               print*, '5) unit-cell coordinates (files Unit_cell_equilibrium.txt and Unit_cell_atom_relative_coordinates.txt)'
+               print*, '5) mol2 file (default name: Cell.mol2)'
+               print*, '6) unit-cell coordinates (files Unit_cell_equilibrium.txt and Unit_cell_atom_relative_coordinates.txt)'
                goto 3416
             endif INPUT_ATOMS
          endif SAVED_ATOMS
