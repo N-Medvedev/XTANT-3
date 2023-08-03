@@ -1687,7 +1687,7 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
    real(8), dimension(:), allocatable :: mulliken_Ne
    integer :: N_at, i_at, i_orb, j, Nsiz, N_orb, k
 
-   if (numpar%save_XYZ_extra(2)) then ! get Mulliken populations and charges
+   if (numpar%save_XYZ .and. numpar%save_XYZ_extra(2)) then ! get Mulliken populations and charges
       N_at = size(Scell%MDAtoms) ! total number of atoms
       Nsiz = size(Scell%Ha,1) ! total number of orbitals
       N_orb = Nsiz/N_at ! orbitals per atom
@@ -1735,7 +1735,7 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
          do i_at = 1, size(matter%Atoms)
             N_at = COUNT(MASK = (Scell%MDatoms(:)%KOA == i_at))
             if (N_at <= 0) N_at = 1   ! in case there are no atoms of this kind
-            write(*,'(a,f,f)') 'Mulliken average charge:', &
+            write(*,'(a,f,f)') 'Mulliken average charge: '//trim(adjustl(matter%Atoms(i_at)%Name))//':', &
                      SUM(Scell%MDAtoms(:)%q, MASK = (Scell%MDatoms(:)%KOA == i_at)) / dble(N_at), &
                      matter%Atoms(i_at)%mulliken_q
          enddo
