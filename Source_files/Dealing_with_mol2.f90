@@ -123,7 +123,7 @@ subroutine read_mol2(FN, File_name, Scell, SCN, matter, numpar, Err) ! basic mol
                ! Get the internal element number:
                call get_KOA_from_element(El_name, matter, KOA) ! module "Dealing_with_POSCAR"
                if (KOA <= 0) then
-                  write(Error_descript,'(a,i3,a,$)') 'In the target, there is no element ', trim(adjustl(El_name)), &
+                  write(Error_descript,'(a,a,a,$)') 'In the target, there is no element ', trim(adjustl(El_name)), &
                                                       ' from file '//trim(adjustl(File_name))
                   call Save_error_details(Err, 3, Error_descript)
                   print*, trim(adjustl(Error_descript))
@@ -220,7 +220,7 @@ subroutine trim_element_name(El_name_read, El_name)
          counter = counter + 1
          El_name(counter:counter) = trim(adjustl(El_name_read(i:i)))
       else ! it is a number
-         ! skip it
+         return   ! that terminates the element name input
       endif
    enddo
 end subroutine trim_element_name
