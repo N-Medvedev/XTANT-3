@@ -218,9 +218,11 @@ subroutine interprete_properties_line(prop_block, ind_S, ind_R, ind_V)
             ind_V = 1   ! Absolute velocity V is set
          endif
       case ('Mass', 'mass')
-         ! To read user-specified mass (not ready yet)
+         ! To read user-specified mass (unused)
       case ('Charge', 'charge')
-         ! To read user-specified charge (not ready yet)
+         ! To read user-specified charge (unused)
+      case ('kinetic_energy')
+         ! To read user-specified charge (unused)
       end select
 
       ! Next colon:

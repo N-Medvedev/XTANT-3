@@ -180,7 +180,7 @@ IF /I %arg1%==DEBUG (
 ifort.exe -c %Compile_options% %List_of_files%
 
 :: Assemble the code from all created obj-files
-ifort.exe %Compile_options% *.obj /exe:%Name_of_exe%
+ifort.exe %Compile_options% XTANT_fragmentation.obj /exe:%Name_of_exe%
 
 echo %Starline%
 ::   echo Completed: %date% %time%

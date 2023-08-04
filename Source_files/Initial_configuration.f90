@@ -40,7 +40,7 @@ use TB_xTB, only : identify_xTB_orbitals_per_atom
 use Little_subroutines, only : linear_interpolation, Find_in_array_monoton, deallocate_array
 use Dealing_with_eXYZ, only : interpret_XYZ_comment_line
 use Periodic_table, only : Decompose_compound
-use Read_input_data, only : m_Atomic_parameters
+use Read_input_data, only : m_Atomic_parameters, m_dashline
 use Dealing_with_POSCAR, only : read_POSCAR, get_KOA_from_element
 use Dealing_with_mol2, only : read_mol2
 
@@ -270,6 +270,21 @@ end subroutine create_BOP_repulsive
 
 
 
+subroutine print_message_about_input_files(Error_descript)
+   character(200), intent(in), optional :: Error_descript
+   write(*,'(a)') trim(adjustl(m_dashline))
+   if (present(Error_descript)) write(*,'(a)') trim(adjustl(Error_descript))
+   write(*,'(a)') 'No file with supercell was found. The file(s) must be set in one of the formats:'
+   write(*,'(a)') '1) Path-coordinates (in internal XTANT SAVE-files format: PHASE_1_supercell.dat and PHASE_2_supercell.dat)'
+   write(*,'(a)') '2) SAVE-files  (internal XTANT SAVE-files format: SAVE_atoms.dat and SAVE_supercell.dat)'
+   write(*,'(a)') '3) XYZ format (default name: Cell.xyz)'
+   write(*,'(a)') '4) POSCAR file (default name: Cell.poscar)'
+   write(*,'(a)') '5) mol2 file (default name: Cell.mol2)'
+   write(*,'(a)') '6) Unit-cell coordinates (files Unit_cell_equilibrium.txt and Unit_cell_atom_relative_coordinates.txt)'
+   write(*,'(a)') trim(adjustl(m_dashline))
+end subroutine print_message_about_input_files
+
+
 
 subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
    type(Super_cell), dimension(:), allocatable, intent(inout) :: Scell ! suoer-cell with all the atoms inside
@@ -328,7 +343,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             case ('mol2', 'MOL2', 'Mol2')
                mol2_file_exists = .true.
             case default
-               write(*,'(a)') 'Extension of provided file '//trim(adjustl(numpar%Cell_filename))//' not supported; using defult instead'
+               write(*,'(a)') 'Extension of provided file '//trim(adjustl(numpar%Cell_filename))//' not supported; using default instead'
                XYZ_file_exists = .false.  ! to start with
                POSCAR_file_exists = .false.  ! to start with
                mol2_file_exists = .false.  ! to start with
@@ -499,14 +514,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             else INPUT_SUPCELL2
                write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
                call Save_error_details(Err, 1, Error_descript)
-               write(*,'(a)') trim(adjustl(Error_descript))
-               write(*,'(a)') 'No file with supercell was found. The file(s) must be set in one of the formats:'
-               write(*,'(a)') '1) Path-coordinates  (in internal XTANT SAVE-files format: PHASE_1_supercell.dat and PHASE_2_supercell.dat)'
-               write(*,'(a)') '2) SAVE-files  (internal XTANT SAVE-files format: SAVE_atoms.dat and SAVE_supercell.dat)'
-               write(*,'(a)') '3) XYZ format (default name: Cell.xyz)'
-               write(*,'(a)') '4) POSCAR file (default name: Cell.poscar)'
-               write(*,'(a)') '5) mol2 file (default name: Cell.mol2)'
-               write(*,'(a)') '6) Unit-cell coordinates (files Unit_cell_equilibrium.txt and Unit_cell_atom_relative_coordinates.txt)'
+               call print_message_about_input_files(Error_descript)  ! above
                goto 3416
             endif INPUT_SUPCELL2
          endif SAVED_SUPCELL
@@ -727,14 +735,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             else INPUT_ATOMS
                write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name2))//' could not be found, the program terminates'
                call Save_error_details(Err, 1, Error_descript)
-               print*, trim(adjustl(Error_descript))
-               print*, 'No file with atomic coordinates was found. The file(s) must be set in one of the formats:'
-               print*, '1) Path-coordinates  (in internal XTANT SAVE-files format: PHASE_1_supercell.dat and PHASE_2_supercell.dat)'
-               print*, '2) SAVE-files  (internal XTANT SAVE-files format: SAVE_atoms.dat and SAVE_supercell.dat)'
-               print*, '3) XYZ file  (default name: Cell.xyz)'
-               print*, '4) POSCAR file (default name: Cell.poscar)'
-               print*, '5) mol2 file (default name: Cell.mol2)'
-               print*, '6) unit-cell coordinates (files Unit_cell_equilibrium.txt and Unit_cell_atom_relative_coordinates.txt)'
+               call print_message_about_input_files(Error_descript)  ! above
                goto 3416
             endif INPUT_ATOMS
          endif SAVED_ATOMS

@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 03.08.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 04.08.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -513,14 +513,14 @@ subroutine write_atomic_xyz(FN, atoms, matter, Supce, print_mass, print_charge, 
                                                      Supce(3,1), Supce(3,2), Supce(3,3), '" Properties=species:S:1:pos:R:3'
 
    ! optional additional data:
-   if (do_mass) then
-      write(FN, '(a)', advance='no') ':mass:R:1'
-   endif
    if (do_charge) then
       write(FN, '(a)', advance='no') ':charge:R:1'
    endif
    if (do_Ekin) then
       write(FN, '(a)', advance='no') ':kinetic_energy:R:1'
+   endif
+   if (do_mass) then
+      write(FN, '(a)', advance='no') ':mass:R:1'
    endif
    write(FN, '(a)') ''  ! to end the line
 

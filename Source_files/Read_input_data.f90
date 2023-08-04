@@ -5734,6 +5734,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
    integer FN, N, Reason, count_lines, i
    logical file_opened, read_well
    character(100) Error_descript, text
+   character(500) read_line
 
    !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old')
    FN=109
@@ -5747,12 +5748,17 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
    endif
 
    ! Material name (and possibly the file name with coordinates):
-   read(FN,*,IOSTAT=Reason) matter%Name, numpar%Cell_filename
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) matter%Name, numpar%Cell_filename
    if (Reason /= 0) then ! try to read just single variable:
       numpar%Cell_filename = ''  ! nullify it
-      read(FN,*,IOSTAT=Reason) matter%Name
+      !read(FN,*,IOSTAT=Reason) matter%Name
+      read(read_line,*,IOSTAT=Reason) matter%Name
       if (numpar%verbose) write(*,'(a)') 'No valid filename with coordinates provided, assuming default'
    else
+      ! Make sure that, if there is a path, the separator is correct:
+      call ensure_correct_path_separator(numpar%Cell_filename, numpar%path_sep) ! module "Dealing_with_files"
+      ! Check if such a file exists:
       call check_coordinates_filename(numpar%Cell_filename, numpar%verbose) ! see below
    endif
    call read_file(Reason, count_lines, read_well)
@@ -5967,7 +5973,7 @@ subroutine check_coordinates_filename(Cell_filename, verbose)  ! check if the na
 
    call get_file_extension(trim(adjustl(Cell_filename)), filename_extension)  ! module "Dealing_with_files"
 
-   if (LEN(trim(adjustl(filename_extension))) <= 0) then ! it contains a dot
+   if (LEN(trim(adjustl(filename_extension))) <= 0) then ! not a valid filename
       Cell_filename = ''
       if (verbose) write(*,'(a)') 'No valid filename with coordinates provided, using default'
    endif

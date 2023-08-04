@@ -21,11 +21,15 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
+! This module reads and interpretes the data from an external file with the Periodic Table.
+! The fioe must be provided
 
 MODULE Periodic_table
 
 implicit none
 PRIVATE
+
+character(30), parameter :: m_INPUT_atomic_data = 'INPUT_atomic_data.dat'
 
 !==============================================
 ! For reading atomic data from our periodic table:
@@ -33,7 +37,7 @@ type Atomic_data    ! our internal atomic database "INPUT_atomic_data.dat"
    integer :: Z     ! atomic number
    real(8) :: Mass  ! atomic mass [atomic units]
    character(15) :: Full_Name   ! Full atomic name
-   character(3) :: El_Name         ! element name
+   character(3) :: El_Name         ! element name 
    real(8) :: Nvb   ! number of valence electrons
    real(8) :: r_cov ! covalent radius [A]
    real(8) :: EN    ! electronegativity
@@ -50,6 +54,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
    character(*), intent(in) :: El_Name ! compound name (SiO2, Al2O3, etc.)
    character(*), intent(in) :: path_sep ! path separator
    integer, intent(inout) :: INFO  ! 0=file read well; 1=no file; 2=couldn't open; 3=error while reading
+   character(100), intent(inout) :: error_message
    integer, intent(out) :: at_num ! how many different elements are in this compound
    integer, dimension(:), allocatable, intent(out), optional :: at_numbers
    real(8), dimension(:), allocatable, intent(out), optional :: at_percentage
@@ -59,7 +64,6 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
    integer, dimension(:), allocatable, intent(out), optional :: at_NVB ! number of valence electrons
    real(8), dimension(:), allocatable, intent(out), optional :: at_r_cov ! covalent radius [A]
    real(8), dimension(:), allocatable, intent(out), optional :: at_EN ! electronegativity
-   character(100) :: error_message
    !==============================================
    type(atomic_data), dimension(:), allocatable :: Periodic_table ! this is an internal module variable
    integer FN, Reason, leng, i, cur, N, num, coun, NVB
@@ -72,18 +76,24 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
    real(8) :: M
    character(3) :: El
    character(*), parameter :: numbers = '0123456789'
-   CHARACTER(*), PARAMETER :: LowCase = 'abcdefghijklmnopqrstuvwxyz'
-   CHARACTER(*), PARAMETER :: UpCase  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+   CHARACTER(*), parameter :: LowCase = 'abcdefghijklmnopqrstuvwxyz'
+   CHARACTER(*), parameter :: UpCase  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
    logical :: file_exists, num_vs_char, found_atom, file_opened, devide
    INFO = 0 ! start with no error
+   Reason = 0  ! to start with
+   error_message = ''
+
    Folder_name = trim(adjustl(Path))
    if (LEN(trim(adjustl(Folder_name))) > 0) then   ! it is in a folder
-      File_name = trim(adjustl(Folder_name))//trim(adjustl(path_sep))//'INPUT_atomic_data.dat' ! fixed name of the database
+      !File_name = trim(adjustl(Folder_name))//trim(adjustl(path_sep))//'INPUT_atomic_data.dat' ! fixed name of the database
+      File_name = trim(adjustl(Folder_name))//trim(adjustl(path_sep))//trim(adjustl(m_INPUT_atomic_data))
    else ! it is in the same folder
-      File_name = 'INPUT_atomic_data.dat' ! fixed name of the database
+      !File_name = 'INPUT_atomic_data.dat' ! fixed name of the database
+      File_name = trim(adjustl(m_INPUT_atomic_data))
    endif
+
    inquire(file=trim(adjustl(File_name)),exist=file_exists) ! check if input file is there
-   exists:if (file_exists) then
+   exists:if (file_exists) then   
       FN = 101
       open (unit=FN, file=trim(adjustl(File_name)))
       !open (newunit=FN, file=trim(adjustl(File_name)))
@@ -141,7 +151,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
             coun = 0         ! to start
             devide = .false. ! to start
             El = '   '       ! start a new name
-            El = trim(adjustl(El))//El_Name(i:i)   ! write it's name
+            El = trim(adjustl(El))//El_Name(i:i)   ! write it's name 
          else if (verify(trim(adjustl(El_Name(i:i))),trim(adjustl(LowCase))) == 0) then ! it's a lower-case latine letter
          ! the element name still goes on
             if (i == 1) then ! it's the first symbol, it must be an element!
@@ -156,7 +166,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
                INFO = 4
                goto 911
             endif
-            devide =.true.
+            devide =.true. 
          else ! it's another symbol
          ! no idea what that might be...
             write(error_message,*) 'Symbol ', trim(adjustl(El_Name(i:i))), ' in the compound formula could not be identified'
@@ -288,7 +298,7 @@ subroutine find_atomic_number(El_Name, Z, NVB, Full_name, M, R_cov, EN, Periodic
          exit
       endif
       if (i .GE. N) then
-         write(error_message,*) 'Element ', trim(adjustl(El_Name)), ' was not found in the database: INPUT_atomic_data.dat'
+         write(error_message,*) 'Element ', trim(adjustl(El_Name)), ' was not found in the database: '//trim(adjustl(m_INPUT_atomic_data))
          INFO = 4
       endif
    enddo
@@ -302,7 +312,7 @@ subroutine Count_lines(File_num, N, skip_lines)
     integer i
     if (present(skip_lines)) then
        do i=1,skip_lines
-          read(File_num,*, end=604)
+          read(File_num,*, end=604) 
        enddo
        604 continue
     endif
