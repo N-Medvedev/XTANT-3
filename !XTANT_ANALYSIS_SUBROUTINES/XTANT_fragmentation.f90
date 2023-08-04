@@ -7,7 +7,7 @@ PROGRAM Fragmentation
 ! for DEBUG:
 ! ifort.exe -c /debug:all /check:all /check:bounds /fp:precise /fpe-all:0 /Qopenmp /Qftz- /Qfp-stack-check /Od /Zi /traceback /gen-interfaces /warn:all /warn:nounused /fpp /Qtrapuv /dbglibs XTANT_fragmentation.f90 /link /stack:9999999999
 !
-! ifort.exe /debug:all /check:all /check:bounds /fp:precise /fpe-all:0 /Qopenmp /Qftz- /Qfp-stack-check /Od /Zi /traceback /gen-interfaces /warn:all /warn:nounused /fpp /Qtrapuv /dbglibs *.obj -o XTANT_fragmentation.exe /link /stack:9999999999
+! ifort.exe /debug:all /check:all /check:bounds /fp:precise /fpe-all:0 /Qopenmp /Qftz- /Qfp-stack-check /Od /Zi /traceback /gen-interfaces /warn:all /warn:nounused /fpp /Qtrapuv /dbglibs XTANT_fragmentation.obj -o XTANT_fragmentation.exe /link /stack:9999999999
 !
 !
 ! for RELEASE:
@@ -56,9 +56,10 @@ type Instant_data
    real(8), dimension(:,:), allocatable :: S    ! relative coordinates for all atoms
    real(8), dimension(3,3) :: Supce
    real(8), dimension(:), allocatable :: M    ! Atomic mass [a.m.u.]
+   real(8), dimension(:), allocatable :: q    ! Atomic charge [electron charge]
 end type Instant_data
 
-character(200) :: error_message, File_XYZ, File_supce
+character(400) :: error_message, File_XYZ, File_supce, read_line
 character(200) :: File_fragments, Gnu_script, Gnu_file, command
 character(100) :: ChemFormula
 character(32), dimension(10) :: char_var
@@ -206,7 +207,13 @@ do i = 1, Tsiz ! time steps
 enddo
 
 ! Printout:
-write(FN_out, '(f)', advance='no') 0.0e0  ! corner
+!write(FN_out, '(f)', advance='no') 0.0e0  ! corner
+if (Tsiz > 1) then
+   write(FN_out, '(f)', advance='no') Step(1)%Tim - (Step(2)%Tim - Step(1)%Tim)  ! step "-1"
+else
+   write(FN_out, '(f)', advance='no') Step(1)%Tim  ! step "-1"
+endif
+
 do i = 1, Tsiz ! time steps
    write(FN_out, '(f)', advance='no') Step(i)%Tim  ! time grid as columns
 enddo
@@ -410,6 +417,10 @@ subroutine read_time_step(FN, FN2, Step, time_print)
    real(8), intent(in) :: time_print
    integer :: Reason, Nsiz, Nat, i, j, counter
    real(8) eps, temp, cur_t, Vol
+   character(500) :: read_line
+   logical :: there_is_q
+
+   there_is_q = .false.
    eps = 1.0d-6
    call Count_lines_in_file(FN, Nsiz)  ! below
    Nsiz = Nsiz - 2  ! skip first two lines with comments
@@ -446,14 +457,41 @@ subroutine read_time_step(FN, FN2, Step, time_print)
 
          ! Read the atomic coordinates (in XYZ format):
          read(FN2,*,IOSTAT=Reason) Nat
-         ! Allocate the coordinates array:
-         if (.not.allocated(Step(counter)%name)) allocate(Step(counter)%name(Nat))
-         if (.not.allocated(Step(counter)%R)) allocate(Step(counter)%R(3,Nat))
-         if (.not.allocated(Step(counter)%S)) allocate(Step(counter)%S(3,Nat))
-         if (.not.allocated(Step(counter)%M)) allocate(Step(counter)%M(Nat))
          read(FN2,*,IOSTAT=Reason) ! skip comment line
+         ! Allocate the coordinates array:
+         if (.not.allocated(Step(counter)%name)) then
+            allocate(Step(counter)%name(Nat))
+            if (.not.allocated(Step(counter)%R)) allocate(Step(counter)%R(3,Nat))
+            if (.not.allocated(Step(counter)%S)) allocate(Step(counter)%S(3,Nat))
+            if (.not.allocated(Step(counter)%M)) allocate(Step(counter)%M(Nat))
+            if (.not.allocated(Step(counter)%q)) allocate(Step(counter)%q(Nat), source = -1.0d10)
+            ! Check if there is charge state provided:
+            there_is_q = .true.  ! mark the first step
+
+            read(FN2,'(a)',IOSTAT=Reason) read_line
+            read(read_line,*,IOSTAT=Reason) Step(counter)%name(1), Step(counter)%R(:,1), Step(counter)%q(1)
+            if (Reason /= 0) then   ! there is no
+               there_is_q = .false. ! there is no q in the file
+               if (allocated(Step(counter)%q)) deallocate(Step(counter)%q)
+            endif
+            backspace(FN2) ! to reread the line below
+         endif
+
          do j = 1, Nat
-            read(FN2,*,IOSTAT=Reason) Step(counter)%name(j), Step(counter)%R(:,j)
+            read(FN2,'(a)',IOSTAT=Reason) read_line
+            if (there_is_q) then ! there is q
+               read(read_line,*,IOSTAT=Reason) Step(counter)%name(j), Step(counter)%R(:,j), Step(counter)%q(j)
+               if (Reason /= 0) then
+                  there_is_q = .false. ! there is no q in the file
+                  read(read_line,*,IOSTAT=Reason) Step(counter)%name(j), Step(counter)%R(:,j)
+               endif
+!                ! Test:
+!                print*, j, Step(counter)%q(j)
+            else  ! there is no q
+               read(read_line,*,IOSTAT=Reason) Step(counter)%name(j), Step(counter)%R(:,j)
+!                ! Test:
+!                print*, j, 'no q'
+            endif
          enddo
 
          ! Get the relative coordinates too:
