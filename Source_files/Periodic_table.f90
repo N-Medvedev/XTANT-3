@@ -80,6 +80,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
    CHARACTER(*), parameter :: UpCase  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
    logical :: file_exists, num_vs_char, found_atom, file_opened, devide
    INFO = 0 ! start with no error
+   Reason = 0  ! to start with
    error_message = ''
 
    Folder_name = trim(adjustl(Path))
