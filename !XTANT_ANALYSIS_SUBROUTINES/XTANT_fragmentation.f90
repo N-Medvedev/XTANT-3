@@ -60,7 +60,7 @@ type Instant_data
 end type Instant_data
 
 character(400) :: error_message, File_XYZ, File_supce, read_line
-character(200) :: File_fragments, Gnu_script, Gnu_file, command
+character(200) :: File_fragments, Gnu_script, Gnu_file, command, File_m_over_z
 character(100) :: ChemFormula
 character(32), dimension(10) :: char_var
 character(10) :: temp_ch
@@ -68,16 +68,16 @@ character(1) :: path_sep
 
 type(Instant_data), dimension(:), allocatable :: Step           ! All data and parameters at this timestep
 
-real(8) :: cut_r, time_dt, cur_t, dt, time_print, cur_mass
+real(8) :: cut_r, time_dt, cur_t, dt, time_print, cur_mass, cur_q
 
 character(3), dimension(:), allocatable :: at_short_names ! name of the element
 real(8), dimension(:), allocatable :: at_masses ! mass of each element [a.m.u.]
 
 integer, dimension(:), allocatable :: indices
-real(8), dimension(:), allocatable :: fragment_masses
+real(8), dimension(:), allocatable :: fragment_masses, fragment_m_over_z
 real(8), dimension(:), allocatable :: mass_grid
-real(8), dimension(:,:), allocatable :: output_fragment_array
-integer :: FN1, FN2, FN_out, FN_out1	! file number
+real(8), dimension(:,:), allocatable :: output_fragment_array, output_m_over_z_array
+integer :: FN1, FN2, FN_out, FN_out1, FN_out_mz, FN_out2 ! file number
 integer :: INFO, Reason, i, j, Tsiz, Nat, existing_elem, at_num, cur_j, iret
 logical :: read_well
 
@@ -86,13 +86,15 @@ call Path_separator(path_sep)  ! Objects_and_types
 ! Set defaults:
 INFO = 0
 FN_out = 1000
+FN_out_mz = 1001
 FN1 = 9999
 FN2 = 9998
 
 
 File_supce = 'OUTPUT_supercell.dat'	! defaul name of XTANT out file with supercell sizes
 File_XYZ = 'OUTPUT_atomic_coordinates.xyz'
-File_fragments = 'OUT_fragments_spectrum.dat'	! default name, for start
+File_fragments = 'OUT_fragments_spectrum.dat'   ! default name, for start
+File_m_over_z = 'OUT_m_over_z_spectrum.dat'     ! default name, for start
 
 ! Default values:
 cut_r = 5.0d0     ! [A] default cut off radius for separation of fragments
@@ -108,7 +110,6 @@ print*, 'r is the cut off radius in [A] (default r=5 A)'
 print*, 'dt is the printout timesteps [fs] (default dt=100 fs)'
 print*, '******************************************************************************'
 
-
 ! Get r and timestep, if user defined it:
 do i = 1, iargc()
    call getarg(i, char_var(i), status=Reason)	! read only the first one
@@ -118,9 +119,10 @@ do i = 1, iargc()
    case (2)
        read(char_var(i),*) time_print  ! timestep for calculation of fragments [fs]
    case default
-      write(*,'(a)') char_var(i)
+       write(*,'(a)') char_var(i)
    endselect
 end do
+print*, cut_r, time_print
 
 !-----------------------------------
 ! Get the time grid from the file:
@@ -173,6 +175,7 @@ do i = 1, Nat  ! save mass of each atom:
 enddo
 allocate(mass_grid( CEILING( SUM( Step(1)%M(:) ) ) ) , source=0.0d0)
 allocate(fragment_masses( CEILING( SUM( Step(1)%M(:) ) ) ) , source=0.0d0)
+allocate(fragment_m_over_z( CEILING( SUM( Step(1)%M(:) ) ) ) , source=0.0d0)
 ! Create mass grid:
 do i = 1, size(mass_grid)
    mass_grid(i) = dble(i)
@@ -182,15 +185,18 @@ enddo
 !-----------------------------------
 ! Output file:
 open (unit=FN_out, file=trim(adjustl(File_fragments)))
+open (unit=FN_out_mz, file=trim(adjustl(File_m_over_z)))
 
 ! Set the output array:
 allocate(output_fragment_array(Tsiz, size(mass_grid)))
+allocate(output_m_over_z_array(Tsiz, size(mass_grid)))
 
 !-----------------------------------
 ! Analyse fragments:
 cur_t = Step(1)%Tim    ! start from here
 do i = 1, Tsiz ! time steps
    fragment_masses = 0.0d0 ! reset for each timestep
+   fragment_m_over_z = 0.0d0  ! reset for each timestep
 
    ! Get the number of fragments and their indices:
    call get_fragments_indices(Step, i, cut_r, indices)  ! below
@@ -198,40 +204,54 @@ do i = 1, Tsiz ! time steps
 
    ! Sort atoms to fragments, and save the fragments parametes:
    do j = 1, maxval(indices)  ! all fragments
-      cur_mass = SUM(Step(1)%M(:), MASK=( indices(:) == j ) )
+      cur_mass = SUM(Step(1)%M(:), MASK=( indices(:) == j ) )  ! mass of the fragment
       fragment_masses(ANINT(cur_mass)) = fragment_masses(ANINT(cur_mass)) + 1
+
+      if (allocated(Step(i)%q)) then
+         cur_q = SUM(Step(i)%q(:), MASK=( indices(:) == j ) )  ! charge of the fragment
+         call sort_fragment_m_over_z(cur_mass, cur_q, fragment_m_over_z) ! below
+      endif
    enddo
 
    ! Save for output:
    output_fragment_array(i, :) = fragment_masses(:)
+   if (allocated(Step(i)%q)) output_m_over_z_array(i, :) = fragment_m_over_z(:)
 enddo
 
 ! Printout:
 !write(FN_out, '(f)', advance='no') 0.0e0  ! corner
 if (Tsiz > 1) then
    write(FN_out, '(f)', advance='no') Step(1)%Tim - (Step(2)%Tim - Step(1)%Tim)  ! step "-1"
+   if (allocated(Step(1)%q)) write(FN_out_mz, '(f)', advance='no') Step(1)%Tim - (Step(2)%Tim - Step(1)%Tim)  ! step "-1"
 else
    write(FN_out, '(f)', advance='no') Step(1)%Tim  ! step "-1"
+   if (allocated(Step(1)%q)) write(FN_out_mz, '(f)', advance='no') Step(1)%Tim   ! step "-1"
 endif
 
 do i = 1, Tsiz ! time steps
    write(FN_out, '(f)', advance='no') Step(i)%Tim  ! time grid as columns
+   if (allocated(Step(1)%q)) write(FN_out_mz, '(f)', advance='no') Step(i)%Tim  ! time grid as columns
 enddo
 write(FN_out, '(a)') ''
+if (allocated(Step(1)%q)) write(FN_out_mz, '(a)') ''
 
 do j = 1, size(fragment_masses) ! Save output file
    write(FN_out, '(f10.2)', advance='no') mass_grid(j)
+   if (allocated(Step(1)%q)) write(FN_out_mz, '(f10.2)', advance='no') (mass_grid(j)-1.0d0)
    do i = 1, Tsiz ! time steps
       write(FN_out, '(f10.2)', advance='no') output_fragment_array(i,j)
+      if (allocated(Step(1)%q)) write(FN_out_mz, '(f10.2)', advance='no') output_m_over_z_array(i,j)
    enddo
    write(FN_out, '(a)') ''
+   if (allocated(Step(1)%q)) write(FN_out_mz, '(a)') ''
 enddo
 
 close(FN_out)
+if (allocated(Step(1)%q)) close(FN_out_mz)
 
 
 !-------------------------
-! Make gnuplot script:
+! Make gnuplot script for mass spectrum:
 FN_out1 = 9997
 Gnu_script = 'OUT_fragments'
 Gnu_file = 'OUT_fragments.png'
@@ -295,11 +315,105 @@ else ! linux:
    iret = system(command)
 endif
 
+
+
+!-------------------------
+! Make gnuplot script for m/z spectrum:
+FN_out2 = 9996
+Gnu_script = 'OUT_m_over_z'
+Gnu_file = 'OUT_m_over_z.png'
+if (path_sep .EQ. '\') then	! if it is Windows
+   open (unit=FN_out2, file=trim(adjustl(Gnu_script))//'.cmd')
+   write(FN_out2, '(a,a,a)') '@echo off & call gnuplot.exe -e "echo=', "'#';", 'set macros" "%~f0" & goto :eof'
+   write(FN_out2, '(a)') 'LABL="Fragments mass spectrum m/z"'
+   write(FN_out2, '(a)') 'set terminal png font arial'
+   write(FN_out2, '(a)') 'set output "OUT_m_over_z.png"'
+   write(FN_out2, '(a)') 'set xlabel "Time (fs)"'
+   write(FN_out2, '(a)') 'set ylabel "Mass spectrum (m/z)"'
+   write(FN_out2, '(a)') 'set autoscale xfix'
+   write(FN_out2, '(a)') 'set autoscale cbfix'
+   write(FN_out2, '(a)') 'set palette defined (0 "white",\'
+   write(FN_out2, '(a)') '0.01 "blue",\'
+   write(FN_out2, '(a)') '0.4 "purple",\'
+   write(FN_out2, '(a)') '0.6 "red",\'
+   write(FN_out2, '(a)') '0.8 "yellow",\'
+   write(FN_out2, '(a)') '1.0 "light-green",\'
+   write(FN_out2, '(a)') '1.2 "green")'
+   write(FN_out2, '(a)') "plot[][0:50] 'OUT_m_over_z_spectrum.dat' matrix nonuniform with image"//' title"Fragments mass spectrum m/z"'
+else ! it is linux
+   open (unit=FN_out2, file=trim(adjustl(Gnu_script))//'.sh')
+   write(FN_out2, '(a)') '#!/bin/bash'
+   write(FN_out2, '(a)') ''
+   write(FN_out2, '(a)') 'NAME='//trim(adjustl(Gnu_file))
+   write(FN_out2, '(a)') 'LABL="Fragments mass spectrum m/z"'
+   write(FN_out2, '(a)') ' echo "'
+   write(FN_out2, '(a)') 'set terminal png font arial'
+   write(FN_out2, '(a)') 'set output \"$NAME\"'
+   write(FN_out2, '(a)') 'set xlabel \"Time (fs) \" '
+   write(FN_out2, '(a)') 'set ylabel \"Mass spectrum (m/z) \" '
+   write(FN_out2, '(a)') 'set autoscale xfix'
+   write(FN_out2, '(a)') 'set autoscale cbfix'
+   write(FN_out2, '(a)') 'set palette defined (0 "white",\'
+   write(FN_out2, '(a)') '0.01 "blue",\'
+   write(FN_out2, '(a)') '0.4 "purple",\'
+   write(FN_out2, '(a)') '0.6 "red",\'
+   write(FN_out2, '(a)') '0.8 "yellow",\'
+   write(FN_out2, '(a)') '1.0 "light-green",\'
+   write(FN_out2, '(a)') '1.2 "green")'
+   write(FN_out2, '(a)') "plot[][0:50] 'OUT_m_over_z_spectrum.dat' matrix nonuniform with image title"//'\"Fragments mass spectrum m/z\"'
+   write(FN_out2, '(a)') 'reset'
+   write(FN_out2, '(a)') '" | gnuplot '
+   !call system('chmod +x '//trim(adjustl(Gnu_script))//'.sh') ! make the output-script executable
+   !command = 'chmod +x '//trim(adjustl(File_name))
+   command = 'chmod +x '//trim(adjustl(Gnu_script))//'.sh'
+   iret = system(command)
+endif
+close(FN_out2)
+
+if (path_sep .EQ. '\') then	! if it is Windows
+   !call system(trim(adjustl(Gnu_script))//'.cmd')
+!    command = "OUTPUT_Gnuplot_all.cmd"
+   command = trim(adjustl(Gnu_script))//'.cmd'
+   iret = system(command)
+else ! linux:
+   !call system(trim(adjustl(Gnu_script))//'.sh')
+!    command = "./OUTPUT_Gnuplot_all.sh"
+   command = trim(adjustl(Gnu_script))//'.sh'
+   iret = system(command)
+endif
+
+
+
 2012 continue   ! to exit the program
 STOP
 !---------------------
  contains
 
+
+subroutine sort_fragment_m_over_z(cur_mass, cur_q, fragment_m_over_z)
+   real(8), intent(in) :: cur_mass, cur_q  ! average mass and charge of given fragment
+   real(8), dimension(:), intent(inout) :: fragment_m_over_z
+   !----------------------
+   integer :: Nsiz, i1, i2
+   real(8) :: floor_q, ceiling_q
+
+   Nsiz = size(fragment_m_over_z)
+
+   if (cur_q < 0.0d0) then ! neutral or negative, save here:
+      fragment_m_over_z(1) = fragment_m_over_z(1) + 1
+   else  ! positive ion:
+      floor_q = dble(FLOOR(cur_q))
+      ceiling_q = dble(ceiling(cur_q))
+      i2 = dble(ANINT(cur_mass)) / ceiling_q
+      if (floor_q <= 0.5d0) then ! neutrals present:
+         i1 = 1
+      else  ! only charges:
+         i1 = dble(ANINT(cur_mass)) / floor_q
+      endif
+      fragment_m_over_z(i1) = fragment_m_over_z(i1) + ( ceiling_q - cur_q )
+      fragment_m_over_z(i2) = fragment_m_over_z(i2) + ( cur_q - floor_q )
+   endif
+end subroutine sort_fragment_m_over_z
 
 
 subroutine get_fragments_indices(Step, i_step, cut_r, indices)
@@ -430,10 +544,11 @@ subroutine read_time_step(FN, FN2, Step, time_print)
    counter = 0
    do i = 1, Nsiz
       read(FN,*,IOSTAT=Reason) temp ! time step
-      if (temp > cur_t) then
+      if (temp > cur_t-1.0d-6) then
          cur_t = temp + time_print
          counter = counter + 1   ! count printable steps
       endif
+      !print*, 'temp=', i, temp
    enddo
    rewind(FN)
 
@@ -447,7 +562,7 @@ subroutine read_time_step(FN, FN2, Step, time_print)
    counter = 0
    do i = 1, Nsiz
       read(FN,*,IOSTAT=Reason) temp ! time step
-      if (temp > cur_t) then
+      if (temp > cur_t-1.0d-6) then
          cur_t = temp + time_print
          counter = counter + 1   ! count printable steps
          backspace(FN) ! to reread the same line, but with supercell parameters:
