@@ -2228,7 +2228,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
    character(11) :: chtemp11
    real(8) :: x_tics
    character(8) :: temp, time_order
-   logical :: first_line
+   logical :: first_line, last_atom_no_shells
    
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
    
@@ -2238,7 +2238,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
    ! Find how many shells we have for plotting:
    Na = size(matter%Atoms)
    N_sh_max = size(matter%Atoms(1)%Ip)
-   do i = 1, size(matter%Atoms) ! for all atoms
+   do i = 1, Na !size(matter%Atoms) ! for all atoms
       Nshl = size(matter%Atoms(i)%Ip)
       if (N_sh_max < Nshl) N_sh_max = Nshl ! to find the maximal value
    enddo
@@ -2259,8 +2259,9 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
    
    counter = 0 ! to start with
    first_line = .true.  ! to start from the first line
+   last_atom_no_shells = .false.   ! to start with
    W_vs_L:if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-     ATOMS0:do i = 1, size(matter%Atoms) ! for all atoms
+     ATOMS0:do i = 1, Na ! size(matter%Atoms) ! for all atoms
          write(ch_temp,'(a,i0)') "dashtype ", i ! to set line type
          Nshl = size(matter%Atoms(i)%Ip)
          SHELLS0:do j = 1, Nshl ! for all shells of this atom
@@ -2268,7 +2269,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                counter = counter + 1
                call define_PQN(matter%Atoms(i)%Shl_dsgnr(j), chtemp11) ! module "Dealing_with_EADL"
                write(chtemp,'(a,a,a)') trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(chtemp11))
-               select case(size(matter%Atoms))
+               select case(Na)
                case (1)
                   !if ((i == 1) .and. (j == 1)) then
                   if (first_line) then
@@ -2279,7 +2280,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                      write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), '" u 1:', 1+j ,' w l lw LW '// &
                         trim(adjustl(ch_temp))//' title "', trim(adjustl(chtemp))  ,'"'
                   endif
-                  if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl-1)) then
+                  if ((i .NE. Na) .OR. (j .LT. Nshl-1)) then
                      write(FN, '(a)') ',\'
                   else
                      write(FN, '(a)') ''
@@ -2294,7 +2295,20 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                      write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") ' "', trim(adjustl(file_deep_holes)), '" u 1:', 1+counter, &
                         ' w l lw LW '//trim(adjustl(ch_temp))//' title "', trim(adjustl(chtemp))  ,'"'
                   endif
-                  if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl)) then
+
+                  ! Check if the next element is last, and if it has any shells:
+                  if (i+1 .EQ. Na) then
+                     ! check if it has any shells:
+                     if (matter%Atoms(Na)%Z < 3) then ! element H and He have no core shells, exclude from plotting
+                        last_atom_no_shells = .true.
+                     else
+                        last_atom_no_shells = .false.
+                     endif
+                  else
+                     last_atom_no_shells = .false.
+                  endif
+
+                  if ( ((i .NE. Na) .OR. (j .LT. Nshl)) .and. .not.last_atom_no_shells ) then
                      write(FN, '(a)') ',\'
                   else
                      write(FN, '(a)') ''
@@ -2307,7 +2321,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
          enddo SHELLS0
       enddo ATOMS0
    else W_vs_L ! It is linux
-      ATOMS:do i = 1, size(matter%Atoms) ! for all atoms
+      ATOMS:do i = 1, Na   ! size(matter%Atoms) ! for all atoms
          write(ch_temp,'(a,i0)') "dashtype ", i ! to set line type
          Nshl = size(matter%Atoms(i)%Ip)
          SHELLS:do j = 1, Nshl ! for all shells of this atom
@@ -2315,7 +2329,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                counter = counter + 1
                call define_PQN(matter%Atoms(i)%Shl_dsgnr(j), chtemp11) ! module "Dealing_with_EADL"
                write(chtemp,'(a,a,a)') trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(chtemp11))
-               select case(size(matter%Atoms))
+               select case(Na)
                case (1)
 !                   if ((i == 1) .and. (j == 1)) then
                   if (first_line) then
@@ -2326,7 +2340,7 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                      write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+j , &
                         ' w l lw \"$LW\" '//trim(adjustl(ch_temp))//' title \" ', trim(adjustl(chtemp))  ,'\"'
                   endif
-                  if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl-1)) then
+                  if ((i .NE. Na) .OR. (j .LT. Nshl-1)) then
                      write(FN, '(a)') ',\'
                   else
                      write(FN, '(a)') ''
@@ -2341,7 +2355,21 @@ subroutine gnu_holes(File_name, file_deep_holes, t0, t_last, matter, eps_name)
                      write(FN, '(a,a,a,i3,a,a,a)', ADVANCE = "NO") '\"', trim(adjustl(file_deep_holes)), '\"u 1:', 1+counter, &
                         ' w l lw \"$LW\" '//trim(adjustl(ch_temp))//' title \" ', trim(adjustl(chtemp))  ,'\"'
                   endif
-                  if ((i .NE. size(matter%Atoms)) .OR. (j .LT. Nshl)) then
+
+                  ! Check if the next element is last, and if it has any shells:
+                  if (i+1 .EQ. Na) then
+                     ! check if it has any shells:
+                     if (matter%Atoms(Na)%Z < 3) then ! element H and He have no core shells, exclude from plotting
+                        last_atom_no_shells = .true.
+                     else
+                        last_atom_no_shells = .false.
+                     endif
+                  else
+                     last_atom_no_shells = .false.
+                  endif
+
+                  !if ((i .NE. Na) .OR. (j .LT. Nshl)) then
+                  if ( ((i .NE. Na) .OR. (j .LT. Nshl)) .and. .not.last_atom_no_shells ) then
                      write(FN, '(a)') ',\'
                   else
                      write(FN, '(a)') ''
