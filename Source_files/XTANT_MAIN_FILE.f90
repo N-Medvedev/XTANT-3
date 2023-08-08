@@ -140,6 +140,10 @@ if (.not.g_numpar%do_path_coordinate) then  ! only for real calculations, not fo
    call save_last_timestep(g_Scell) ! save atomic before making next time-step, module "Atomic_tools"
 endif
 
+! Process the laser pulse parameters:
+call process_laser_parameters(g_Scell(1), g_matter, g_laser, g_numpar) ! module "MC_cross_sections"
+if (g_numpar%verbose) call print_time_step('Laser pulse parameters converted succesfully:', msec=.true.)
+
 ! Create the folder where output files will be storred, and prepare the files:
 call prepare_output_files(g_Scell,g_matter, g_laser, g_numpar, g_Scell(1)%TB_Hamil(1,1), g_Scell(1)%TB_Repuls(1,1), g_Err) ! module "Dealing_with_output_files"
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the output files, cannot continue, go to the end...

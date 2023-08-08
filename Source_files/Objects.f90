@@ -753,14 +753,15 @@ end type Solid
 
 
 type Pulse
-   integer :: KOP	! kind of pulse: 0 = flat-top, 1 = Gaussian, 2 = SASE
-   real(8) :: hw	! [eV] photon energy
+   integer :: KOP    ! kind of pulse: 0 = flat-top, 1 = Gaussian, 2 = SASE
+   real(8) :: hw     ! [eV] photon energy
    real(8) :: FWHM_hw   ! [eV] distribution of photon energy spectrum (assumed gaussian)
-   real(8) :: t		! [fs] pulse duration
-   real(8) :: t0	! [fs] pulse maximum position
-   real(8) :: F		! [eV/atom] absorbed fluence
-   real(8) :: Fabs	! [eV] total absorbed energy per simulation box
-   real(8) :: Nph	! number of absorbed photons
+   real(8) :: t      ! [fs] pulse duration
+   real(8) :: t0     ! [fs] pulse maximum position
+   real(8) :: F_in   ! [J/cm^2]  incoming fluence
+   real(8) :: F      ! [eV/atom] absorbed dose
+   real(8) :: Fabs   ! [eV] total absorbed energy per simulation box
+   real(8) :: Nph    ! number of absorbed photons
 end type Pulse
 
 

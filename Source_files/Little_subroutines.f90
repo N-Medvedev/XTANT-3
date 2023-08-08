@@ -69,13 +69,26 @@ end interface deallocate_array
 public :: Find_in_array, Find_in_array_monoton, extend_array_size, deallocate_array, Find_monotonous_LE, Fermi_interpolation, &
 linear_interpolation, Find_in_monotonous_1D_array, Gaussian, print_time_step, fast_pow, count_3d, print_progress, &
 interpolate_data_on_grid, number_of_types_of_orbitals, name_of_orbitals, order_of_time, set_starting_time, convolution, &
-sample_gaussian, Fermi_function, d_Fermi_function, print_time, parse_yes_no, parse_time
+sample_gaussian, Fermi_function, d_Fermi_function, print_time, parse_yes_no, parse_time, it_is_number
 
 
 
 
  contains
  
+
+pure function it_is_number(text) result(f)
+   logical f   ! check if the first character in the string is a number
+   character(*), intent(in) :: text
+   character(*), parameter :: numbers = '0123456789'
+
+   if (verify(trim(adjustl(text(1:1))), trim(adjustl(numbers))) /= 0) then
+      f = .false. ! it is not a number
+   else
+      f = .true.  ! it is a number
+   endif
+end function it_is_number
+
  
 subroutine deallocate_array_int1d(X)
    integer, dimension(:), allocatable, intent(inout) :: X

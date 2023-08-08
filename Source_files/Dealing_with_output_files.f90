@@ -2925,21 +2925,28 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
    character(100) :: chtemp(6)
    character(200) :: File_name, Error_descript
    logical :: file_opened
-   path_sep = numpar%path_sep
-   File_name = trim(adjustl(numpar%output_path))//path_sep
-   File_name = trim(adjustl(File_name))//'!OUTPUT_'//trim(adjustl(matter%Name))//'_Parameters.txt'
 
-   !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'new')
-   FN = 111
-   open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'new')
-   inquire(file=trim(adjustl(File_name)),opened=file_opened)
-   if (.not.file_opened) then
+!    path_sep = numpar%path_sep
+!    File_name = trim(adjustl(numpar%output_path))//path_sep
+!    File_name = trim(adjustl(File_name))//'!OUTPUT_'//trim(adjustl(matter%Name))//'_Parameters.txt'
+!    FN = 111
+!    open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'new')
+!    inquire(file=trim(adjustl(File_name)),opened=file_opened)
+   !if (.not.file_opened) then
+!    print*, trim(adjustl(File_name)), file_opened, FN
+
+   ! Check if Parameters file is openen, and try to open if it wasn't:
+   call open_parameters_file(numpar, matter, FN, INFO)   ! below
+   !print*, INFO, file_opened, FN
+
+   if (INFO < 0) then
       INFO = 2
       Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
       call Save_error_details(Err, INFO, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 9999
    endif
+
    numpar%FN_parameters = FN ! save this file number with parameters
 #ifdef OMP_inside
    call Print_title(FN, Scell, matter, laser, numpar, 1) ! below
@@ -2947,7 +2954,7 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
    call Print_title(FN, Scell, matter, laser, numpar, 4) ! below
 #endif
    !close(FN)
-   inquire(file=trim(adjustl(File_name)),opened=file_opened)
+   !inquire(file=trim(adjustl(File_name)),opened=file_opened)
    if (file_opened) then
       write(FN, '(a)') 'Atomic data used for '//trim(adjustl(matter%Name))//' are:'
 
@@ -2989,6 +2996,10 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
       !write(FN,'(a)') '*************************************************************'
       write(FN,'(a)') trim(adjustl(m_starline))
    endif
+
+   ! Save pulse parameters conversion, if required:
+   call printout_fluence_dose_conversion(laser, numpar, matter)   ! below
+
 9999 continue
 end subroutine output_parameters_file
 
@@ -3141,25 +3152,141 @@ subroutine save_duration(matter, numpar, chtext)
    type(Solid), intent(in) :: matter ! parameters of the material
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
    character(*), intent(in) :: chtext ! time duration to print out
-   integer FN
+   integer FN, INFO
    logical file_opened, file_exists
    character(200) :: File_name
    character(1) path_sep
-   path_sep = trim(adjustl(numpar%path_sep))
-   File_name = trim(adjustl(numpar%output_path))//path_sep
-   File_name = trim(adjustl(File_name))//'!OUTPUT_'//trim(adjustl(matter%Name))//'_Parameters.txt'
-   inquire(file=trim(adjustl(File_name)),exist=file_exists)
-   if (.not.file_exists) return  ! no such file exists, nowhere to print
-   inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN)
-   if (.not.file_opened) then
-      FN = 300
-      open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'new')
-   endif
+!    path_sep = trim(adjustl(numpar%path_sep))
+!    File_name = trim(adjustl(numpar%output_path))//path_sep
+!    File_name = trim(adjustl(File_name))//'!OUTPUT_'//trim(adjustl(matter%Name))//'_Parameters.txt'
+!    inquire(file=trim(adjustl(File_name)),exist=file_exists)
+   !if (.not.file_exists) return  ! no such file exists, nowhere to print
+
+   call open_parameters_file(numpar, matter, FN, INFO)   ! below
+   !print*, 'save_duration', INFO, FN
+
+   if (INFO < 0) return
+!    inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN)
+!    print*, trim(adjustl(File_name)), INFO, FN
+!    if (.not.file_opened) then
+!       FN = 300
+!       !open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'new')
+!       open(UNIT=FN, FILE = trim(adjustl(File_name)), status="old", position="append", action="write")
+!    endif
    !write(FN,'(a)') '-----------------------------------------------------------'
    write(FN,'(a,a)') 'Duration of execution of program: ', trim(adjustl(chtext))
    !write(FN,'(a)') '*************************************************************'
    write(FN,'(a)') trim(adjustl(m_starline))
 end subroutine save_duration
+
+
+subroutine open_parameters_file(numpar, matter, FN, INFO)
+   type(Numerics_param), intent(in) :: numpar ! all numerical parameters
+   type(Solid), intent(in) :: matter ! parameters of the material
+   integer, intent(out) :: FN    ! index of the file with parameters
+   integer, intent(out) :: INFO  ! -1 = no output directory; 0=file opened, 1=file created and opened
+   !-------------------------
+   character(500) :: File_name
+   character(1) :: path_sep
+   logical :: file_opened, file_exists
+
+   FN = 0   ! no file
+   INFO = 0 ! to start with
+
+   ! Check if output directory exists:
+   if (LEN(trim(adjustl(numpar%output_path))) == 0) then
+      INFO = -1   ! no output directory
+      return   ! nothing else to do
+   else
+      inquire(DIRECTORY=trim(adjustl(numpar%output_path)),exist=file_exists)    ! check if input directory excists
+      if (.not.file_exists) then
+         INFO = -1   ! no output directory
+         return   ! nothing else to do
+      endif
+   endif
+
+   ! If directory exists, check the existence of the Parameters file:
+   path_sep = trim(adjustl(numpar%path_sep))
+   File_name = trim(adjustl(numpar%output_path))//path_sep
+   File_name = trim(adjustl(File_name))//'!OUTPUT_'//trim(adjustl(matter%Name))//'_Parameters.txt'
+   inquire(file=trim(adjustl(File_name)),exist=file_exists)
+   if (.not.file_exists) then ! no such file exists, create it:
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'new')
+      INFO = 1
+      return
+   endif
+
+   ! Check if file is already opened, and if yes, get its number:
+   inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN)
+
+   ! If file is not opened, open it to a new number:
+   if (.not.file_opened) then
+      !open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'new')
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status="old", position="append", action="write")
+   endif
+end subroutine open_parameters_file
+
+
+
+subroutine printout_fluence_dose_conversion(laser, numpar, matter)
+   type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
+   type(Numerics_param), intent(in) :: numpar ! all numerical parameters
+   type(Solid), intent(in) :: matter ! parameters of the material
+   !---------------------------
+   character(30) :: F_in, Dose, PN, hw
+   integer :: i, Nsiz, FN, INFO
+
+   ! How many laser pulses:
+   Nsiz = size(laser)
+
+   ! To write into Parameters file, find or open it:
+   call open_parameters_file(numpar, matter, FN, INFO)   ! above
+
+   ! For each laser pulse:
+   do i = 1, Nsiz
+      !print*, 'printout_fluence_dose_conversion:', i, laser(i)%F_in, laser(i)%F
+
+      if (laser(i)%F_in > 0.0d0) then
+         write(PN, '(i0)') i
+
+         if ( (laser(i)%F_in > 1.0d6) .or. (laser(i)%F_in < 1.0d-6) ) then
+            write(F_in, '(es26.10)') laser(i)%F_in
+         else
+            write(F_in, '(f24.6)') laser(i)%F_in
+         endif
+
+         if ( (laser(i)%F > 1.0d6) .or. (laser(i)%F < 1.0d-6) ) then
+            write(Dose, '(es26.10)') laser(i)%F
+         else
+            write(Dose, '(f24.6)') laser(i)%F
+         endif
+
+         !---------------------
+         ! Print on the screen:
+         write(6, '(a)') ' Pulse #'//trim(adjustl(PN))//': incoming fluence '//trim(adjustl(F_in))//' [J/cm^2]'
+         write(6, '(a)') ' corresponds to absorbed dose '//trim(adjustl(Dose))//' [eV/atom]'
+         write(6, '(a)') trim(adjustl(m_starline))
+         if (laser(i)%hw < 30.0d0) then ! Print warning for too low photon energy:
+            write(hw, '(f24.3)') laser(i)%hw
+            write(6, '(a)') 'WARNING: Photon energy is too low (<30 eV): '//trim(adjustl(hw))
+            write(6, '(a)') 'Conversion from incoming fluence to dose may not work well!'
+         endif
+
+         ! Print in the file too:
+         if (INFO >= 0) then
+            write(FN, '(a)') ' Pulse #'//trim(adjustl(PN))//': incoming fluence '//trim(adjustl(F_in))//' [J/cm^2]'
+            write(FN, '(a)') ' corresponds to absorbed dose '//trim(adjustl(Dose))//' [eV/atom]'
+            write(FN, '(a)') trim(adjustl(m_starline))
+            ! Print warning for too low photon energy:
+            if (laser(i)%hw < 30.0d0) then
+               write(FN, '(a)') 'WARNING: Photon energy is too low (<30 eV): '//trim(adjustl(hw))
+               write(FN, '(a)') 'Conversion from incoming fluence to dose may not work well!'
+            endif
+         endif
+
+      endif
+   enddo
+end subroutine printout_fluence_dose_conversion
 
 
 
@@ -3245,7 +3372,7 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
    type(Solid), intent(inout) :: matter ! parameters of the material
    real(8), intent(in) :: time ! current time [fs]
-   integer FN, noth, lngt
+   integer FN, noth, lngt, INFO
    logical file_opened, read_well
    character(200) :: File_name, temp1, temp2, given_line_processed
    character(1) path_sep
@@ -3262,12 +3389,19 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
    endif
 
    if (read_well) then
-      File_name = trim(adjustl(numpar%output_path))//path_sep
-      File_name = trim(adjustl(File_name))//'!OUTPUT_'//trim(adjustl(matter%Name))//'_Parameters.txt'
-      inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN)
-      if (.not.file_opened) then
-         FN = 300
-         open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'new')
+!       File_name = trim(adjustl(numpar%output_path))//path_sep
+!       File_name = trim(adjustl(File_name))//'!OUTPUT_'//trim(adjustl(matter%Name))//'_Parameters.txt'
+!       inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN)
+!       if (.not.file_opened) then
+!          FN = 300
+!          !open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'new')
+!          open(UNIT=FN, FILE = trim(adjustl(File_name)), status="old", position="append", action="write")
+!       endif
+      call open_parameters_file(numpar, matter, FN, INFO)   ! below
+      if (INFO < 0) then
+         write(6,'(a)') 'act_on_comunication Error: Could not open file with parameters to write in to'
+         write(6,'(a)') 'Cannot change the parameters, proceeding as before...'
+         return
       endif
 
       select case(trim(adjustl(given_line_processed)))
