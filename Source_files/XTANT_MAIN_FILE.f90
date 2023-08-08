@@ -362,7 +362,7 @@ if (g_numpar%verbose) call print_time_step('Opened files closed succesfully', ms
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 ! Convolve output files with finite duration of the probe pulse:
 !if (g_numpar%do_drude) then
-if (g_Scell(1)%eps%tau > 0.0d0) then
+if ( (g_Scell(1)%eps%tau > 0.0d0) .and. (.not.g_Err%Err) ) then
    call convolve_output(g_Scell, g_numpar)  ! module "Dealing_with_output_files"
    print*, 'Convolution with the probe pulse is performed'
 else
@@ -381,9 +381,11 @@ call print_time('Finished at') ! module "Little_subroutines"
 write(*,'(a)') trim(adjustl(m_starline))
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-write(*,'(a)')  'Executing gnuplot scripts to create plots...'
-call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
-if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully', msec=.true.)
+if (.not.g_Err%Err) then
+   write(*,'(a)')  'Executing gnuplot scripts to create plots...'
+   call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
+   if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully', msec=.true.)
+endif
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !Check if there is another set of input files to run next simulation:

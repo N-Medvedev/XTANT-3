@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 04.08.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 08.08.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2998,8 +2998,18 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
    endif
 
    ! Save pulse parameters conversion, if required:
-   call printout_fluence_dose_conversion(laser, numpar, matter)   ! below
-
+   call printout_fluence_dose_conversion(Scell(1), laser, numpar, matter, INFO)   ! below
+   if (INFO < 0) then
+      INFO = 9
+      Error_descript = 'Specified photon energy does not allow for conversion of fluence into dose, the program terminates'
+      call Save_error_details(Err, INFO, Error_descript)
+      write(6, '(a)') trim(adjustl(m_dashline))
+      write(6, '(a)') trim(adjustl(Error_descript))
+      write(6, '(a)') 'The photon energy is too small, linear-absorption approximation does not work:'
+      write(6, '(a)') 'Either specify the DOSE in the input file or increase photon energy'
+      write(6, '(a)') trim(adjustl(m_dashline))
+      goto 9999
+   endif
 9999 continue
 end subroutine output_parameters_file
 
@@ -3228,16 +3238,24 @@ end subroutine open_parameters_file
 
 
 
-subroutine printout_fluence_dose_conversion(laser, numpar, matter)
+subroutine printout_fluence_dose_conversion(Scell, laser, numpar, matter, INFO)
+   type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
    type(Solid), intent(in) :: matter ! parameters of the material
+   integer, intent(inout) :: INFO   ! flag
    !---------------------------
    character(30) :: F_in, Dose, PN, hw
-   integer :: i, Nsiz, FN, INFO
+   integer :: i, Nsiz, FN, i_CS
 
+   INFO = 0 ! to start with
    ! How many laser pulses:
    Nsiz = size(laser)
+
+   ! Which inelastic cross section to use (BEB vs CDF):
+   do i = 1, size(matter%Atoms)
+      i_CS = minval(matter%Atoms(i)%TOCS(:))
+   enddo
 
    ! To write into Parameters file, find or open it:
    call open_parameters_file(numpar, matter, FN, INFO)   ! above
@@ -3247,7 +3265,8 @@ subroutine printout_fluence_dose_conversion(laser, numpar, matter)
       !print*, 'printout_fluence_dose_conversion:', i, laser(i)%F_in, laser(i)%F
 
       if (laser(i)%F_in > 0.0d0) then
-         write(PN, '(i0)') i
+         write(hw, '(f24.3)') laser(i)%hw ! photon energy as a text
+         write(PN, '(i0)') i  ! pulse index as a text
 
          if ( (laser(i)%F_in > 1.0d6) .or. (laser(i)%F_in < 1.0d-6) ) then
             write(F_in, '(es26.10)') laser(i)%F_in
@@ -3266,8 +3285,14 @@ subroutine printout_fluence_dose_conversion(laser, numpar, matter)
          write(6, '(a)') ' Pulse #'//trim(adjustl(PN))//': incoming fluence '//trim(adjustl(F_in))//' [J/cm^2]'
          write(6, '(a)') ' corresponds to absorbed dose '//trim(adjustl(Dose))//' [eV/atom]'
          write(6, '(a)') trim(adjustl(m_starline))
-         if (laser(i)%hw < 30.0d0) then ! Print warning for too low photon energy:
-            write(hw, '(f24.3)') laser(i)%hw
+         ! Only for EADL atomic cross section, make a worning (but not for CDF):
+
+         if (laser(i)%hw < Scell%E_gap) then
+            INFO = -1
+            write(6, '(a)') 'ERROR: Photon energy is too low (<E_gap): '//trim(adjustl(hw))
+            write(6, '(a)') 'Conversion from incoming fluence to dose CANNOT be done!'
+         elseif ( (laser(i)%hw < 30.0d0) .and. (i_CS < 1) ) then ! Print warning for too low photon energy:
+            INFO = 1
             write(6, '(a)') 'WARNING: Photon energy is too low (<30 eV): '//trim(adjustl(hw))
             write(6, '(a)') 'Conversion from incoming fluence to dose may not work well!'
          endif
@@ -3278,7 +3303,11 @@ subroutine printout_fluence_dose_conversion(laser, numpar, matter)
             write(FN, '(a)') ' corresponds to absorbed dose '//trim(adjustl(Dose))//' [eV/atom]'
             write(FN, '(a)') trim(adjustl(m_starline))
             ! Print warning for too low photon energy:
-            if (laser(i)%hw < 30.0d0) then
+            ! Only for EADL atomic cross section, make a worning (but not for CDF):
+            if (laser(i)%hw < Scell%E_gap) then
+               write(FN, '(a)') 'ERROR: Photon energy is too low (<E_gap): '//trim(adjustl(hw))
+               write(FN, '(a)') 'Conversion from incoming fluence to dose CANNOT be done!'
+            elseif ( (laser(i)%hw < 30.0d0) .and. (i_CS < 1) ) then ! Print warning for too low photon energy:
                write(FN, '(a)') 'WARNING: Photon energy is too low (<30 eV): '//trim(adjustl(hw))
                write(FN, '(a)') 'Conversion from incoming fluence to dose may not work well!'
             endif
