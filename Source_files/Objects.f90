@@ -753,14 +753,15 @@ end type Solid
 
 
 type Pulse
-   integer :: KOP	! kind of pulse: 0 = flat-top, 1 = Gaussian, 2 = SASE
-   real(8) :: hw	! [eV] photon energy
+   integer :: KOP    ! kind of pulse: 0 = flat-top, 1 = Gaussian, 2 = SASE
+   real(8) :: hw     ! [eV] photon energy
    real(8) :: FWHM_hw   ! [eV] distribution of photon energy spectrum (assumed gaussian)
-   real(8) :: t		! [fs] pulse duration
-   real(8) :: t0	! [fs] pulse maximum position
-   real(8) :: F		! [eV/atom] absorbed fluence
-   real(8) :: Fabs	! [eV] total absorbed energy per simulation box
-   real(8) :: Nph	! number of absorbed photons
+   real(8) :: t      ! [fs] pulse duration
+   real(8) :: t0     ! [fs] pulse maximum position
+   real(8) :: F_in   ! [J/cm^2]  incoming fluence
+   real(8) :: F      ! [eV/atom] absorbed dose
+   real(8) :: Fabs   ! [eV] total absorbed energy per simulation box
+   real(8) :: Nph    ! number of absorbed photons
 end type Pulse
 
 
@@ -946,14 +947,17 @@ subroutine Save_error_details(Err_name, Err_num, Err_data)
    Err_name%Err_Num = Err_num
    Err_name%Err_descript = Err_data
    write(FN, '(a,i2,1x,a)') 'Error #', Err_name%Err_Num, trim(adjustl(Err_name%Err_descript))
-!    Error #1: file not found'//NEW_LINE('A')
-!    Error #2: file could not be opened'//NEW_LINE('A')
-!    Error #3: file could not be read on the line number given'//NEW_LINE('A')
-!    Error #4: some problem with databases (EADL, EPDL97, periodic table file)'//NEW_LINE('A')
-!    Error #5: inconsistent TB parametrization (only the same type of parametrization is allowed for all within compound)'//NEW_LINE('A')
-!    Error #6: diagonalization subroutine with LAPACK failed (uses MKL library)'//NEW_LINE('A')
-!    Error #7: some errors in low-energy electrons (probably in tempereature or chem.potential calculation)'//NEW_LINE('A')
-!    Error #8: error in optical coefficients (probably in complex Hamiltonian)'//NEW_LINE('A')
+
+!  Reminder:
+!    Error #1: file not found
+!    Error #2: file could not be opened
+!    Error #3: file could not be read on the line number given
+!    Error #4: some problem with databases (EADL, EPDL97, periodic table file)
+!    Error #5: inconsistent TB parametrization (only the same type of parametrization is allowed for all within compound)
+!    Error #6: diagonalization subroutine with LAPACK failed (uses MKL library)
+!    Error #7: some errors in low-energy electrons (probably in tempereature or chem.potential calculation)
+!    Error #8: error in optical coefficients (probably in complex Hamiltonian)
+!    Error #9: error in conversion between fluence and dose
 end subroutine Save_error_details
 
 END MODULE Objects

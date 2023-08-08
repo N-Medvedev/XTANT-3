@@ -34,7 +34,7 @@ use Electron_tools, only : update_cross_section, Do_relaxation_time, set_high_DO
 implicit none
 PRIVATE
 
-public :: MC_Propagate
+public :: MC_Propagate, process_laser_parameters
 
 
  contains
@@ -1260,6 +1260,48 @@ function SASE_pulse(mu, sigma, x) ! number of photons at the time x according to
    endif
 end function SASE_pulse
 !LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL
+
+
+subroutine process_laser_parameters(Scell, matter, laser, numpar)
+   type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
+   type(Solid), intent(in) :: matter                  ! all material parameters
+   type(Numerics_param), intent(in) :: numpar         ! all numerical parameters
+   type(Pulse), dimension(:), intent(inout) :: laser  ! laser pulse parameters
+   !-----------------------------------
+   integer :: i, Nsiz, N
+   real(8) :: eps, F_abs, d, dsc, Ltot
+
+   eps = 1.0d-12  ! precision
+
+   ! Process the laser pulse parameters:
+   Nsiz = size(laser)   ! how many pulses
+   do i = 1, Nsiz ! for all pulses
+      if ( (laser(i)%F < -eps) .and. (laser(i)%F_in > eps) ) then ! imcoming fluence was specified
+         ! Convert incoming fluence to absorbed dose: [J/cm^2] -> [eV/atom]
+         ! Supercell size along Z:
+         dsc = sqrt( SUM( Scell%supce(3,:)*Scell%supce(3,:) ) )  ! [A]
+         ! Distance between atoms at the borders:
+         d = maxval(Scell%MDAtoms(:)%R(3)) - minval(Scell%MDAtoms(:)%R(3))
+         ! If it is a layer with empty space around it, use the distance, otherwise, use the supercell:
+         if (dsc < 2.0d0*d) then
+            d = dsc
+         endif
+         !print*, sqrt( SUM( Scell%supce(3,:)*Scell%supce(3,:) ) ), d
+
+         ! Photon attenuation length:
+         call Find_in_array_monoton(matter%Ph_MFP_tot%E, laser(i)%hw, N) ! module "Little_subroutines"
+         Ltot = matter%Ph_MFP_tot%L(N) ! inverse mean free path [1/A]
+
+         ! Absorbed fluence in the supercell:
+         F_abs = laser(i)%F_in * (1.0d0 - exp(-d*Ltot) ) ! [J/cm^2]
+
+         ! Absorbed dose:
+         laser(i)%F = F_abs/(g_e * matter%At_dens * (d*1e-8))    ! [eV/atom]
+         !print*, i, Ltot, F_abs, matter%At_dens, laser(i)%F
+      endif
+   enddo
+   !pause 'process_laser_parameters'
+end subroutine process_laser_parameters
 
 
 END MODULE Monte_carlo

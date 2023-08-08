@@ -19,5 +19,5 @@ use TB, only : get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_p
         vdW_interplane, Electron_ion_coupling, update_nrg_after_change,  get_Hamilonian_and_E, MD_step, get_Mullikens_all
 use Optical_parameters, only : get_optical_parameters
 use MC_cross_sections, only : get_mfps, get_photon_attenuation
-use Monte_carlo, only : MC_Propagate
+use Monte_carlo, only : MC_Propagate, process_laser_parameters
 use ZBL_potential, only : get_total_ZBL

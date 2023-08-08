@@ -26,7 +26,7 @@
 MODULE Read_input_data
 use Objects
 use Universal_constants
-use Little_subroutines, only : print_time_step
+use Little_subroutines, only : print_time_step, it_is_number
 use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file, get_file_extension, &
                               ensure_correct_path_separator
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
@@ -233,6 +233,7 @@ end subroutine initialize_default_laser
 subroutine initialize_default_single_laser(laser, i) ! Must be already allocated
    type(Pulse), dimension(:), allocatable, intent(inout) :: laser	! Laser pulse parameters
    integer, intent(in) :: i	! number of the pulse
+   laser(i)%F_in = -1.0d0  ! incoming fluence in [J/cm^2]; negative means unspecified - use absorbed dose instead
    laser(i)%F = 0.0d0  ! ABSORBED DOSE IN [eV/atom]
    laser(i)%hw = 100.0d0  ! PHOTON ENERGY IN [eV]
    laser(i)%FWHM_hw = 0.0d0  ! distribution of photon energies [eV]
@@ -299,6 +300,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    ! In case the user didn't define something, the default values will be used
    ! Set the default values:
    call initialize_default_values(matter, numpar, laser, Scell)
+
    !--------------------------------------------------------------------------
    ! Now, read the input file:
    call Path_separator(numpar%path_sep) ! module "Dealing_with_files"
@@ -406,7 +408,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          call read_TB_parameters(matter, numpar, Scell(i)%TB_Repuls, Scell(i)%TB_Hamil, &
                            Scell(i)%TB_Waals, Scell(i)%TB_Coul, Scell(i)%TB_Expwall, Err) ! below
       else ! do only MC part
-          ! Run it like XCASCADE
+          ! Run it like XCASCADE (untested, may not work!)
       endif
    enddo
 
@@ -5747,6 +5749,9 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       goto 3417
    endif
 
+   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+   ! Material parameters:
+
    ! Material name (and possibly the file name with coordinates):
    read(FN, '(a)', IOSTAT=Reason) read_line
    read(read_line,*,IOSTAT=Reason) matter%Name, numpar%Cell_filename
@@ -5821,6 +5826,10 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       Scell(i)%TaeV = Scell(i)%Ta/g_kb ! [eV] atomic temperature
    enddo !Scell
 
+
+   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+   ! Basic parameters of the simulation:
+
    ! Start of the simulation [fs]:
    read(FN,*,IOSTAT=Reason) numpar%t_start
    call read_file(Reason, count_lines, read_well)
@@ -5841,8 +5850,12 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       goto 3417
    endif
 
+
+   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
    ! Laser parameters:
-   read(FN,*,IOSTAT=Reason) N		! How many pulses
+
+   ! Number of laser pulses to model:
+   read(FN,*,IOSTAT=Reason) N          ! How many pulses
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
       write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
@@ -5855,33 +5868,50 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
     if (allocated(laser)) deallocate(laser)
     allocate(laser(N))  ! that's how many pulses
     do i = 1, N         ! read parameters for all pulses
-      read_var = 0.0d0 ! to start with
-      read(FN,*,IOSTAT=Reason) read_var(:)
+      text = ''   ! to start with
+      read_var = -1.0d0 ! to start with
+
+      ! Read the laser pulse fluence or dose:
+      read(FN, '(a)', IOSTAT=Reason) read_line  ! to interprete the text below
+      call read_file(Reason, count_lines, read_well)  ! to keep proper counting of lines, do this
+      if (.not. read_well) then
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         goto 3417
+      endif
+
+      ! Check if there are specifications provided, or just the number (assuming default):
+      if (it_is_number(read_line)) then ! function from module "Little_subroutines"
+         read(read_line,*,IOSTAT=Reason) read_var(:)
+         if (numpar%verbose) write(*,'(a, f, f, f)') &
+               'No specification of fluence provided, assuming absorbed dose [eV/atom]', read_var(:)
+      else  ! read the specifications of the input (fluence vs dose etc.):
+         read(read_line,*,IOSTAT=Reason) text, read_var(:)
+         if (numpar%verbose) write(*,'(a, f, f, f)') &
+               'Specification of fluence provided: '//trim(adjustl(text)), read_var(:)
+      endif
+      ! Check if at least one number was read well:
+      if (read_var(1) < 0.0d0) then ! could not read the numberes, something went wrong
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)
+         print*, trim(adjustl(Error_descript)), read_var(:)
+         goto 3417
+      endif
+      ! Check if there was single fluence, or a grid:
       if (Reason == 0) then ! three numbers are given, set few inputs with varying dose:
-         call read_file(Reason, count_lines, read_well)  ! to keep proper counting of lines, do this
-         if (.not. read_well) then
-            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-            call Save_error_details(Err, 3, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 3417
-         endif
          ! For this simulation run, use the first value given:
          laser(i)%F = read_var(1)   ! ABSORBED DOSE IN [eV/atom]
          ! For other simulation runs, create the input files accordingly:
          call prepare_multiple_inputs(numpar, File_name, read_var)  ! below
 
       else ! probably, there weren't three parameters in the line, so read just the fluence
-         backspace(FN)  ! get back and try to read the line again:
-         count_lines = count_lines - 1
-         read(FN,*,IOSTAT=Reason) laser(i)%F	  ! ABSORBED DOSE IN [eV/atom]
-         call read_file(Reason, count_lines, read_well)
-         if (.not. read_well) then
-            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-            call Save_error_details(Err, 3, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 3417
-         endif
+         laser(i)%F = read_var(1)   ! ABSORBED DOSE IN [eV/atom]
       endif
+
+      ! Check if there are additional pulse specifications:
+      call check_pulse_specifications(trim(adjustl(text)), laser(i), read_var(1))   ! below
+
 
       read(FN,*,IOSTAT=Reason) laser(i)%hw, laser(i)%FWHM_hw  ! photon energy in [eV], and FWHM width of distribution [eV]
       if (Reason /= 0) then ! probably only energy provided, not the distribution width, so assume FWHM_hw=0
@@ -5930,7 +5960,9 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
    endif PULS
    
 
-   !------------------------------------------------
+   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+   ! Additional parameters:
+
    ! Check if there are additional options provided:
    read_well = .true.   ! to start with
    RDID: do while (read_well)
@@ -5962,6 +5994,31 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
    ! Close this file, it has been read through:
 3417  if (file_opened) close(FN)
 end subroutine read_input_material
+
+
+
+subroutine check_pulse_specifications(text, laser, read_var)
+   character(*), intent(in) :: text ! specification text
+   type(Pulse), intent(inout) :: laser ! Laser pulse parameters
+   real(8), intent(in) :: read_var  ! value provided (incoming fluence or absorbed dose)
+   !------------------------
+   integer :: i, Nsiz
+
+   Nsiz = LEN(text)
+   if (Nsiz > 0) then ! there was an additional text with specifications:
+      do i = 1, Nsiz
+         select case (text(i:i))
+         case ('d', 'D')
+            laser%F = read_var   ! absorbed dose [eV/atom]
+            laser%F_in = -1.0d0  ! default, undefined
+         case ('f', 'F')
+            laser%F_in = read_var   ! incoming fluence [J/cm^2]
+            laser%F = -1.0d0  ! default, undefined
+         end select
+      enddo
+   endif
+   !print*, 'check_pulse_specifications', Nsiz, text, laser%F_in, laser%F
+end subroutine check_pulse_specifications
 
 
 
@@ -6122,7 +6179,7 @@ subroutine prepare_multiple_inputs(numpar, File_name, read_var, do_eph, num_phon
    character(250) :: Save_file, Cur_file, Num_par_file
    character(250), allocatable, dimension(:) :: File_content
    character(5) :: chtest2
-   character(25) :: chtest
+   character(25) :: chtest, ch_temp
    logical :: read_well, do_el_phon, file_exists
 
    ! Check, if user requested average electron-phonon coupling calculations:
@@ -6228,11 +6285,17 @@ subroutine prepare_multiple_inputs(numpar, File_name, read_var, do_eph, num_phon
                write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! end of simulation time [fs]'
             case (8) ! absorbed dose per this pulse [eV/atom] (min, max, step)
                ! Get the user-provided simulation time:
-               read( File_content(j), *, IOSTAT=Reason) x_0
+               ch_temp = '' ! to start with
+               if ( .not. it_is_number(File_content(j)) ) then ! there is pulse specificatin parameter
+                  read( File_content(j), *, IOSTAT=Reason) ch_temp, x_0
+               else
+                  read( File_content(j), *, IOSTAT=Reason) x_0
+               endif
                ! Sample randomly simulation starting time:
                call random_number(RN)  ! [0:1]
                x_cur = x_0 * (1.0d0 + 0.2d0*(RN-0.5d0))
                write(chtest, '(f16.5)') x_cur
+               chtest = trim(adjustl(ch_temp))//'  '//trim(adjustl(chtest))   ! amend the specification parameter, if any
                write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! absorbed dose per this pulse [eV/atom]'
             case (10)   ! pulse FWHM-duration [fs]
                write(chtest, '(f16.5)') pulse
@@ -6241,7 +6304,12 @@ subroutine prepare_multiple_inputs(numpar, File_name, read_var, do_eph, num_phon
 
          else ! it is fluence grid:
             if (j == 8) then  ! dose is set in the line #8
+               ch_temp = '' ! to start with
+               if ( .not. it_is_number(File_content(j)) ) then ! there is pulse specificatin parameter
+                  read( File_content(j), *, IOSTAT=Reason) ch_temp
+               endif
                write(chtest, '(f16.5)') dose_cur
+               chtest = trim(adjustl(ch_temp))//'  '//trim(adjustl(chtest))   ! amend the specification parameter, if any
                write(FN2, '(a,a)') trim(adjustl(chtest)), '          ! absorbed dose [eV/atom]'
             else  ! not the dose
                if (present(string)) then
