@@ -6091,18 +6091,19 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
       endif
       SCL:do i = 1, size(Scell) ! for all supercells
          if (numpar%optic_model .GT. 0) then ! yes, calculate optical coefficients:
-            numpar%do_drude = .true.	! included
-            Scell(i)%eps%KK = .false.	! no K-K relations
-            if (N == 2) then	! use Kramers Kronig relations for spectrum
+            numpar%do_drude = .true.   ! included
+            Scell(i)%eps%KK = .false.  ! no K-K relations
+            select case(N) ! which model to use
+            case (2)    ! use Kramers Kronig relations for spectrum
                Scell(i)%eps%KK = .true.
                Scell(i)%eps%all_w = .true.
-            elseif (N == 1) then	! calculate spectrum, but directly, without using Kramers Kronig relations
+            case (1)    ! calculate spectrum, but directly, without using Kramers Kronig relations
                Scell(i)%eps%all_w = .true.
-            else
+            case default
                Scell(i)%eps%all_w = .false.
-            endif
+            end select
          else
-            numpar%do_drude = .false.	! not included
+            numpar%do_drude = .false.  ! not included
          endif
 
          Scell(i)%eps%E_min = read_var(1) ! starting point of the grid of energy [eV]
