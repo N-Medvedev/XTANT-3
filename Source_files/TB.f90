@@ -2111,7 +2111,6 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    complex(8) :: expfac, SH_1
    character(200) :: Error_descript
 
-   !print*, OMP_GET_THREAD_NUM(), 'construct_complex_Hamiltonian'
    nol = 0.0d0
    Error_descript = ''
    nat = size(Scell(NSC)%MDatoms) ! number of atoms
@@ -2135,7 +2134,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       if (.not.allocated(cPPRz_0)) allocate(cPPRz_0(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! temporary
       if (.not.allocated(cTnn_0)) allocate(cTnn_0(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
    endif
-   !print*, OMP_GET_THREAD_NUM(), 'allocated'
+
 
    if (present(Sij)) then   ! it is nonorthogonal case:
       if (.not.allocated(CSij)) allocate(CSij(Nsiz,Nsiz))
@@ -2149,7 +2148,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    
    call Reciproc(Scell(NSC)%supce, k_supce) ! create reciprocal super-cell, module "Algebra_tools"
    call Convert_reciproc_rel_to_abs(ksx, ksy, ksz, k_supce, kx, ky, kz) ! get absolute k-values, molue "Atomic_tools"
-   !print*, OMP_GET_THREAD_NUM(), 'Reciproc'
+
 
    ! 1) Construct complex Hamiltonian and overlap:
    !$omp parallel
@@ -2164,9 +2163,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             z1 => nol
          else
             i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-            x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1)	! at this distance, X
-            y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2)	! at this distance, Y
-            z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3)	! at this distance, Z
+            x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
+            y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
+            z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
          endif ! (atom_2 .EQ. 0)
          
          if ((abs(kx) < 1.0d-14) .AND. (abs(ky) < 1.0d-14) .AND. (abs(kz) < 1.0d-14)) then
@@ -2204,29 +2203,28 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    !$omp end do 
    !$omp end parallel
 
-   !print*, OMP_GET_THREAD_NUM(), 'CHij_temp created', numpar%optic_model
 
    ! Temporarily save nonorthogonal Hamiltonian and overlap matrix:
    CHij_non = CHij_temp
-   if (present(Sij)) then 
+   if (present(Sij)) then  ! nonorthogonal
       CSij_save = CSij
       if (numpar%optic_model .EQ. 2) then  ! Trani
-         !print*, OMP_GET_THREAD_NUM(), 'calling diagonalize_complex_Hamiltonian-2'
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth)    ! below
       elseif (numpar%optic_model .EQ. 4) then  ! Graf-Vogl
-         print*, OMP_GET_THREAD_NUM(), 'calling diagonalize_complex_Hamiltonian-4'
          !call diagonalize_complex8_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
       endif
-   else
-      call diagonalize_complex_Hamiltonian(CHij_temp, Ei)    ! below
+   else  ! orthogonal
+      if (numpar%optic_model .EQ. 2) then  ! Trani
+         call diagonalize_complex_Hamiltonian(CHij_temp, Ei)    ! below
+      elseif (numpar%optic_model .EQ. 4) then  ! Graf-Vogl
+         call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CHij_orth=CHij_orth, CWF_orth=CWF_orth)    ! below
+      endif
    endif
    CHij = CHij_temp ! save for output
    if (present(CSij_out)) then
       CSij_out = CHij ! output
    endif
-
-   !print*, OMP_GET_THREAD_NUM(), 'CHij created'
 
    !---------------------------------------
    ! Effective momentum operators:
@@ -2326,13 +2324,10 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 
    !---------------------------------------
    else if (numpar%optic_model .EQ. 4) then  ! Graf-Vogl
-
-      !print*, OMP_GET_THREAD_NUM(), 'numpar%optic_model .EQ. 4'
       if (.not.allocated(cPRRx)) allocate(cPRRx(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
       if (.not.allocated(cPRRy)) allocate(cPRRy(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
       if (.not.allocated(cPRRz)) allocate(cPRRz(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
       if (.not.allocated(cTnn)) allocate(cTnn(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0, 0.0d0))
-      !print*, OMP_GET_THREAD_NUM(), 'allocated cTnn'
 
       !$omp parallel
       !$omp do private(j, m, atom_2, i, x1, y1, z1, j1, l, i1, k, SH_1, n, nn)
@@ -2365,7 +2360,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                            cPRRy(k,l) = SH_1
                            cPRRz(k,l) = SH_1
 
-                           cTnn(k,l,:,:) = -0.27d0**2 * CHij_orth(k,l)
+                           SH_1 = -0.27d0**2
+                           cTnn(k,l,:,:) = SH_1 * CHij_orth(k,l)
                         endif
                      else  ! different atoms at distance {x,y,z}:
                         SH_1 = CHij_orth(k,l)
@@ -2375,14 +2371,17 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                         cPRRz(k,l) = DCMPLX(0.0d0, z1)*SH_1
 
                         cTnn(k,l,1,1) = -(x1*x1) * CHij_orth(k,l)
-                        cTnn(k,l,1,2) = -(x1*y1) * CHij_orth(k,l)
-                        cTnn(k,l,1,3) = -(x1*z1) * CHij_orth(k,l)
-                        cTnn(k,l,2,1) = cTnn(k,l,1,2) !-(y1*x1) * CHij_orth(k,l)
                         cTnn(k,l,2,2) = -(y1*y1) * CHij_orth(k,l)
-                        cTnn(k,l,2,3) = -(y1*z1) * CHij_orth(k,l)
-                        cTnn(k,l,3,1) = cTnn(k,l,1,3) !-(z1*x1) * CHij_orth(k,l)
-                        cTnn(k,l,3,2) = cTnn(k,l,2,3) !-(z1*y1) * CHij_orth(k,l)
                         cTnn(k,l,3,3) = -(z1*z1) * CHij_orth(k,l)
+                        SH_1 = -(x1*y1) * CHij_orth(k,l)
+                        cTnn(k,l,1,2) = SH_1
+                        cTnn(k,l,2,1) = SH_1 !cTnn(k,l,1,2) !-(y1*x1) * CHij_orth(k,l)
+                        SH_1 = -(x1*z1) * CHij_orth(k,l)
+                        cTnn(k,l,1,3) = SH_1 !-(x1*z1) * CHij_orth(k,l)
+                        cTnn(k,l,3,1) = SH_1 !cTnn(k,l,1,3) !-(z1*x1) * CHij_orth(k,l)
+                        SH_1 = -(y1*z1) * CHij_orth(k,l)
+                        cTnn(k,l,2,3) = SH_1 !-(y1*z1) * CHij_orth(k,l)
+                        cTnn(k,l,3,2) = SH_1 !cTnn(k,l,2,3) !-(z1*y1) * CHij_orth(k,l)
                      endif
 
                      if (dble(cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(k), x1
@@ -2396,16 +2395,15 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       !$omp end do
       !$OMP BARRIER
 
-      !print*, OMP_GET_THREAD_NUM(), 'constructed cTnn'
-
       !$omp do
       do i = 1, Nsiz ! ensure WF normalization to 1
          Norm1(i) = SQRT( SUM( conjg(CWF_orth(:,i)) * CWF_orth(:,i) ) )
       enddo
       !$omp end do
       !$OMP BARRIER
+
       !$omp do
-      do i = 1, Nsiz
+      do i = 1, Nsiz ! upper triangle
          do nn = 1, Nsiz
             cPPRx_0(i,nn) = SUM(cPRRx(i,:)*CWF_orth(:,nn)) / Norm1(nn)
             cPPRy_0(i,nn) = SUM(cPRRy(i,:)*CWF_orth(:,nn)) / Norm1(nn)
@@ -2413,21 +2411,27 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             cTnn_0(i,nn,1,1) = SUM(cTnn(i,:,1,1)*CWF_orth(:,nn)) / Norm1(nn)
             cTnn_0(i,nn,1,2) = SUM(cTnn(i,:,1,2)*CWF_orth(:,nn)) / Norm1(nn)
             cTnn_0(i,nn,1,3) = SUM(cTnn(i,:,1,3)*CWF_orth(:,nn)) / Norm1(nn)
-            cTnn_0(i,nn,2,1) = cTnn_0(i,nn,1,2) !SUM(cTnn(i,:,2,1)*CWF_orth(:,nn)) / Norm1(nn)
             cTnn_0(i,nn,2,2) = SUM(cTnn(i,:,2,2)*CWF_orth(:,nn)) / Norm1(nn)
             cTnn_0(i,nn,2,3) = SUM(cTnn(i,:,2,3)*CWF_orth(:,nn)) / Norm1(nn)
-            cTnn_0(i,nn,3,1) = cTnn_0(i,nn,1,3) !SUM(cTnn(i,:,3,1)*CWF_orth(:,nn)) / Norm1(nn)
-            cTnn_0(i,nn,3,2) = cTnn_0(i,nn,2,3) !SUM(cTnn(i,:,3,2)*CWF_orth(:,nn)) / Norm1(nn)
             cTnn_0(i,nn,3,3) = SUM(cTnn(i,:,3,3)*CWF_orth(:,nn)) / Norm1(nn)
          enddo ! j
       enddo ! i
       !$omp end do
       !$OMP BARRIER
 
-      !print*, OMP_GET_THREAD_NUM(), 'constructed cTnn_0'
+      !$omp do
+      do i = 1, Nsiz ! lower triangle
+         do nn = 1, Nsiz
+            cTnn_0(i,nn,2,1) = cTnn_0(i,nn,1,2) !SUM(cTnn(i,:,2,1)*CWF_orth(:,nn)) / Norm1(nn)
+            cTnn_0(i,nn,3,1) = cTnn_0(i,nn,1,3) !SUM(cTnn(i,:,3,1)*CWF_orth(:,nn)) / Norm1(nn)
+            cTnn_0(i,nn,3,2) = cTnn_0(i,nn,2,3) !SUM(cTnn(i,:,3,2)*CWF_orth(:,nn)) / Norm1(nn)
+         enddo ! j
+      enddo ! i
+      !$omp end do
+      !$OMP BARRIER
 
       !$omp do
-      do n = 1, Nsiz
+      do n = 1, Nsiz ! upper triangle
          do nn = 1, Nsiz
             cPRRx(n,nn) = SUM(conjg(CWF_orth(:,n))*cPPRx_0(:,nn)) / Norm1(n)
             cPRRy(n,nn) = SUM(conjg(CWF_orth(:,n))*cPPRy_0(:,nn)) / Norm1(n)
@@ -2435,18 +2439,24 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             cTnn(n,nn,1,1) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,1,1)) / Norm1(n)
             cTnn(n,nn,1,2) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,1,2)) / Norm1(n)
             cTnn(n,nn,1,3) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,1,3)) / Norm1(n)
-            cTnn(n,nn,2,1) = cTnn(n,nn,1,2)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,2,1)) / Norm1(n)
             cTnn(n,nn,2,2) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,2,2)) / Norm1(n)
             cTnn(n,nn,2,3) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,2,3)) / Norm1(n)
-            cTnn(n,nn,3,1) = cTnn(n,nn,1,3)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,1)) / Norm1(n)
-            cTnn(n,nn,3,2) = cTnn(n,nn,2,3)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,2)) / Norm1(n)
             cTnn(n,nn,3,3) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,3)) / Norm1(n)
          enddo ! nn
       enddo ! n
       !$omp end do
-      !$omp end parallel
+      !$OMP BARRIER
 
-      !print*, OMP_GET_THREAD_NUM(), 'cTnn done'
+      !$omp do
+      do n = 1, Nsiz ! lower triangle
+         do nn = 1, Nsiz
+            cTnn(n,nn,2,1) = cTnn(n,nn,1,2)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,2,1)) / Norm1(n)
+            cTnn(n,nn,3,1) = cTnn(n,nn,1,3)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,1)) / Norm1(n)
+            cTnn(n,nn,3,2) = cTnn(n,nn,2,3)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,2)) / Norm1(n)
+         enddo ! j
+      enddo ! i
+      !$omp end do
+      !$omp end parallel
 
       ! Convert in SI units of momentum:
       temp = g_me/g_h * g_e*1.0d-10 ! [kg*m/s]
@@ -2459,13 +2469,15 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 
    deallocate(CHij_temp, CHij_non)
    if (allocated(CSij_save)) deallocate(CSij_save)
+   if (allocated(CHij_orth)) deallocate(CHij_orth)
    if (allocated(CWF_orth)) deallocate(CWF_orth)
+   if (allocated(CSij)) deallocate(CSij)
    if (allocated(cPPRx_0)) deallocate(cPPRx_0)
    if (allocated(cPPRy_0)) deallocate(cPPRy_0)
    if (allocated(cPPRz_0)) deallocate(cPPRz_0)
+   if (allocated(cTnn_0)) deallocate(cTnn_0)
+   if (allocated(Norm1)) deallocate(Norm1)
    nullify(x1, y1, z1)
-
-   !print*, OMP_GET_THREAD_NUM(), 'construct_complex_Hamiltonian done'
 end subroutine construct_complex_Hamiltonian
 
 
@@ -2485,26 +2497,32 @@ subroutine diagonalize_complex_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
    integer :: Nsiz, j
    character(200) :: Error_descript
 
-   !print*, OMP_GET_THREAD_NUM(), 'diagonalize_complex_Hamiltonian start'
 
    Error_descript = ''  ! to start with, no error
    Nsiz = size(CHij,1)
    if (.not.allocated(Ei)) allocate(Ei(Nsiz))
    ORTH: if (.not.present(CSij)) then ! orthogonal:
-      !print*, OMP_GET_THREAD_NUM(), 'diagonalize_complex_Hamiltonian orthogonal'
+
+      if (present(CHij_orth)) then  ! Save orthogonal Hamiltonian (for optical coefficients below)
+         CHij_orth = CHij
+      endif
+
       ! Direct diagonalization:
       call sym_diagonalize(CHij, Ei, Error_descript) ! modeule "Algebra_tools"
+
+      if (present(CWF_orth)) then   ! Save WF of orthogonal Hamiltonian
+         CWF_orth = CHij
+      endif
+
    else ORTH ! nonorthogonal
       ! Solve linear eigenproblem:
       ! 1) Orthogonalize the Hamiltonian using Loewdin procidure:
       ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
 
       allocate(CHij_temp(Nsiz,Nsiz))
-      !print*, OMP_GET_THREAD_NUM(), 'nonorthogonal', allocated(CHij_temp), size(CHij_temp,1), size(CHij_temp,2)
 
       CHij_temp = CHij
       call Loewdin_Orthogonalization_c(Nsiz, CSij, CHij_temp)	! module "TB_NRL"
-      !print*, OMP_GET_THREAD_NUM(), 'Loewdin_Orthogonalization_c done'
 
       if (present(CHij_orth)) then  ! Save orthogonalized Hamiltonian (for optical coefficients below)
          CHij_orth = CHij_temp
@@ -2521,11 +2539,8 @@ subroutine diagonalize_complex_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
          CWF_orth = CHij_temp
       endif
 
-      !print*, OMP_GET_THREAD_NUM(), 'sym_diagonalize done'
-
       ! 3) Convert the eigenvectors back into the non-orthogonal basis:
       call mkl_matrix_mult('N', 'N', CSij, CHij_temp, CHij)	! module "Algebra_tools"
-      !print*, OMP_GET_THREAD_NUM(), 'mkl_matrix_mult done'
       
 !       ! 4) If we need to renormalize the wave functions (in case they are not normalized to 1 after this procidure):
 !       do j = 1, Nsiz

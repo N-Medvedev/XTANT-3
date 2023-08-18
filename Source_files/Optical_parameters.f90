@@ -46,9 +46,11 @@ USE OMP_LIB, only : OMP_GET_THREAD_NUM
 implicit none
 PRIVATE
 
+real(8), parameter :: m_gamm = 1.5d14  ! [1/s] gamma parameter
+
 real(8), parameter :: m_inv_sqrt_pi = 1.0d0/sqrt(g_Pi)
 real(8), parameter :: m_e_h = g_h/g_e
-real(8), parameter :: m_prefac = g_e**2 * g_Pi / g_h  ! 1/m_e^2 calcels out, no need to include it here!
+real(8), parameter :: m_prefac = g_e**2 * g_Pi / (g_h*g_me**2)
 
 
 
@@ -215,13 +217,9 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
             cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, cTnn=cTnn) ! module "TB"
          end select
       END ASSOCIATE
-      !PRINT *, OMP_GET_THREAD_NUM(),  'construct_complex_Hamiltonian done'
 
-      !cycle ! testing
-
-      ! Get the inverse effective mass:
+      ! Get the inverse effective mass (in units of m_e):
       call inv_effective_mass(cPRRx, cPRRy, cPRRz, cTnn, Ei, m_eff)  ! below
-      !PRINT *, OMP_GET_THREAD_NUM(),  'inv_effective_mass done'
 
       ! Get the parameters of the CDF:
       if (Scell(NSC)%eps%all_w) then ! full spectrum:
@@ -248,9 +246,9 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
                opt_n, opt_k, Eps_xx, Eps_yy, Eps_zz, dc_cond=dc_cond) ! below
          Eps_hw = Eps_hw + Eps_hw_temp ! sum data at different k-points
       endif ! (Scell(NSC)%eps%all_w)
-      !PRINT *, OMP_GET_THREAD_NUM(),  'save_Eps_hw done'
    enddo ! Ngp
    !$omp end do
+   if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
    !$omp end parallel
 
    ! Save the k-point avreages:
@@ -282,7 +280,6 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
    if (allocated(Ei)) deallocate(Ei)
    if (allocated(CHij)) deallocate(CHij)
    if (allocated(Eps_hw)) deallocate(Eps_hw)
-   if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
 end subroutine get_Graf_Vogl_all_complex
 
 
@@ -301,19 +298,24 @@ subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, cTnn, Ev, 
    complex(8), intent(inout) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
    !----------------------------
    real(8), dimension(3,3) :: Re_eps_ij, Im_eps_ij, Re_eps_ij_term1
-   real(8) :: delt, eta, Vol, w_mn, prefact, Re_prefact, temp, term_1_SI, term_2_SI, f_P_term
+   real(8) :: delt, eta, Vol, w_mn, prefact, Re_prefact, temp, term_1_SI, term_2_SI, Im_term_SI, f_P_term, ww, prec
    integer :: i, j, Nsiz, m, n
 
    Nsiz = size(Ev)   ! number of energy levels
 
+   ! Precision for the principal value:
+   prec = 1.0d-6
+
    ! Approximate the delta-function with a gaussian, Chapter VII in [4]
-   eta = 0.3d0 ! [eV]
+   !eta = 0.3d0 ! [eV]
+   eta = 3.0d0 * m_gamm*m_e_h  ! [eV] gamma parameter
 
    ! Supercell volume:
-   Vol = Scell(NSC)%V*1.0d-30 ! [m]
+   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
    temp = g_e**2/Vol ! prefactor in Re(Eps)
-   term_1_SI = g_ke/g_me ! to convert first term in Re(Eps) into SI units
-   term_2_SI = g_ke  ! to convert second term in Re(Eps) into SI units (and Im(Eps))
+   Im_term_SI = g_ke             ! to convert Im(Eps) into SI units (Coulomb-law)
+   term_1_SI = Im_term_SI/g_me   ! to convert first term in Re(Eps) into SI units
+   term_2_SI = term_1_SI/g_me    ! to convert second term in Re(Eps) into SI units
 
    ! Get the imaginary part of CDF [1]:
    Re_eps_ij = 0.0d0 ! to start wirh
@@ -324,7 +326,7 @@ subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, cTnn, Ev, 
       ! First term in Re_eps:
       do i = 1, 3
          do j = 1,3
-            Re_eps_ij_term1(i,j) = -temp/(w**2) * Scell(NSC)%fe(n) * m_eff(n,i,j) * term_1_SI
+            Re_eps_ij_term1(i,j) = -temp/(w**2) * Scell(NSC)%fe(n) * dble(m_eff(n,i,j)) * term_1_SI
          enddo ! j
       enddo ! i
       ! Im_CDF and second term in Re_CDF:
@@ -332,8 +334,9 @@ subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, cTnn, Ev, 
          if (m /= n) then
             ! Imaginary part:
             w_mn = (Ev(n) - Ev(m))*g_e/g_h ! [1/s] frequency point
-            delt = m_inv_sqrt_pi * exp( -(m_e_h * (w - w_mn)/eta)**2 ) / (eta/m_e_h)   ! delta-function approx. [1/s]
+            delt = m_inv_sqrt_pi * exp( -((w - w_mn)/(eta/m_e_h))**2 ) / (eta/m_e_h)   ! delta-function approx. [s]
             prefact = delt * (Scell(NSC)%fe(n) - Scell(NSC)%fe(m))
+
             Im_eps_ij(1,1) = Im_eps_ij(1,1) + prefact * dble(cPRRx(n,m) * cPRRx(n,m))
             Im_eps_ij(1,2) = Im_eps_ij(1,2) + prefact * dble(cPRRx(n,m) * cPRRy(n,m))
             Im_eps_ij(1,3) = Im_eps_ij(1,3) + prefact * dble(cPRRx(n,m) * cPRRz(n,m))
@@ -345,28 +348,32 @@ subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, cTnn, Ev, 
             Im_eps_ij(3,3) = Im_eps_ij(3,3) + prefact * dble(cPRRz(n,m) * cPRRz(n,m))
 
             ! Real part:
-            Re_prefact = temp*(Scell(NSC)%fe(n) - Scell(NSC)%fe(m))/((w_mn**2)*g_h*(w_mn-w)) * term_2_SI  ! (1/g_me**2) concels out in cPRR
-            Re_eps_ij(1,1) = Re_eps_ij(1,1) + Re_prefact * dble(cPRRx(n,m) * cPRRx(n,m))
-            Re_eps_ij(1,2) = Re_eps_ij(1,2) + Re_prefact * dble(cPRRx(n,m) * cPRRy(n,m))
-            Re_eps_ij(1,3) = Re_eps_ij(1,3) + Re_prefact * dble(cPRRx(n,m) * cPRRz(n,m))
-            Re_eps_ij(2,1) = Re_eps_ij(2,1) + Re_prefact * dble(cPRRy(n,m) * cPRRx(n,m))
-            Re_eps_ij(2,2) = Re_eps_ij(2,2) + Re_prefact * dble(cPRRy(n,m) * cPRRy(n,m))
-            Re_eps_ij(2,3) = Re_eps_ij(2,3) + Re_prefact * dble(cPRRy(n,m) * cPRRz(n,m))
-            Re_eps_ij(3,1) = Re_eps_ij(3,1) + Re_prefact * dble(cPRRz(n,m) * cPRRx(n,m))
-            Re_eps_ij(3,2) = Re_eps_ij(3,2) + Re_prefact * dble(cPRRz(n,m) * cPRRy(n,m))
-            Re_eps_ij(3,3) = Re_eps_ij(3,3) + Re_prefact * dble(cPRRz(n,m) * cPRRz(n,m))
+            ww = (w_mn-w)
+            if (abs(ww) > prec) then
+               Re_prefact = temp*(Scell(NSC)%fe(n) - Scell(NSC)%fe(m))/((w_mn**2)*g_h*ww) * term_2_SI
+               Re_eps_ij(1,1) = Re_eps_ij(1,1) + Re_prefact * dble(cPRRx(n,m) * cPRRx(n,m))
+               Re_eps_ij(1,2) = Re_eps_ij(1,2) + Re_prefact * dble(cPRRx(n,m) * cPRRy(n,m))
+               Re_eps_ij(1,3) = Re_eps_ij(1,3) + Re_prefact * dble(cPRRx(n,m) * cPRRz(n,m))
+               Re_eps_ij(2,1) = Re_eps_ij(2,1) + Re_prefact * dble(cPRRy(n,m) * cPRRx(n,m))
+               Re_eps_ij(2,2) = Re_eps_ij(2,2) + Re_prefact * dble(cPRRy(n,m) * cPRRy(n,m))
+               Re_eps_ij(2,3) = Re_eps_ij(2,3) + Re_prefact * dble(cPRRy(n,m) * cPRRz(n,m))
+               Re_eps_ij(3,1) = Re_eps_ij(3,1) + Re_prefact * dble(cPRRz(n,m) * cPRRx(n,m))
+               Re_eps_ij(3,2) = Re_eps_ij(3,2) + Re_prefact * dble(cPRRz(n,m) * cPRRy(n,m))
+               Re_eps_ij(3,3) = Re_eps_ij(3,3) + Re_prefact * dble(cPRRz(n,m) * cPRRz(n,m))
+            endif ! (abs(ww) > prec)
 
          endif ! (m /= n)
       enddo ! j
    enddo ! i
 
    ! Include prefactors:
-   Im_eps_ij = m_prefac/(w*w * Vol) * Im_eps_ij * term_2_SI   ! -> SI units
-   !Re_eps_ij = Re_eps_ij
+   Im_eps_ij = m_prefac/(w*w * Vol) * Im_eps_ij * Im_term_SI   ! -> SI units
+   Re_eps_ij = Re_eps_ij + Re_eps_ij_term1   ! combine terms
+
    ! Save into output variables:
-   Eps_xx = dcmplx(Re_eps_ij(1,1), Im_eps_ij(1,1))
-   Eps_yy = dcmplx(Re_eps_ij(2,2), Im_eps_ij(2,2))
-   Eps_zz = dcmplx(Re_eps_ij(3,3), Im_eps_ij(3,3))
+   Eps_xx = dcmplx( 1.0d0 + 4.0d0*g_Pi*Re_eps_ij(1,1),  4.0d0*g_Pi*Im_eps_ij(1,1) )
+   Eps_yy = dcmplx( 1.0d0 + 4.0d0*g_Pi*Re_eps_ij(2,2),  4.0d0*g_Pi*Im_eps_ij(2,2) )
+   Eps_zz = dcmplx( 1.0d0 + 4.0d0*g_Pi*Re_eps_ij(3,3),  4.0d0*g_Pi*Im_eps_ij(3,3) )
 
    ! Convert from conductivity to CDF:
    Im_eps = 4.0d0*g_Pi * (Im_eps_ij(1,1)+Im_eps_ij(2,2)+Im_eps_ij(3,3)) / 3.0d0
@@ -502,7 +509,7 @@ subroutine get_trani_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref. [2
 !             ky = (2.0d0*real(iy) - real(iym) - 1.0d0)/(2.0d0*real(iym))
 !             kz = (2.0d0*real(iz) - real(izm) - 1.0d0)/(2.0d0*real(izm))
             call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid)	! module "TB"
-            write(*,'(i3,i3,i3,f9.4,f9.4,f9.4,a)') ix, iy, iz, kx, ky, kz, ' OPT'
+            write(*,'(i3,i3,i3,f9.4,f9.4,f9.4,a)') ix, iy, iz, kx, ky, kz, ' Trani'
             
             call get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx=kx, ky=ky, kz=kz, Err=Err) ! see below
             ! With off-diagonal elements:
@@ -909,7 +916,8 @@ subroutine get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps
 !    allocate(Im_array(NEL,3))
    
 !    g = 1.0d13	! [1/s] gamma parameter
-   g = 1.5d14	! [1/s] gamma parameter
+!    g = 1.5d14	! [1/s] gamma parameter
+   g = m_gamm  ! [1/s] gamma parameter
 
 !    V = Scell(NSC)%V*1d-30
    V = Scell(NSC)%V*1d-10	! power of 20 cancels with the same power in Fnn'

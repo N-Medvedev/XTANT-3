@@ -1594,9 +1594,9 @@ end subroutine Two_Matr_mult_r ! checked!
 
 
 subroutine Two_Matr_mult_c(M1,M2,Mout)
-   complex(8), DIMENSION(:,:), INTENT(in) :: M1 ! input matrix 1
-   complex(8), DIMENSION(:,:), INTENT(in) :: M2 ! input matrix 2
-   complex(8), DIMENSION(:,:), INTENT(out) :: Mout ! output matrix
+   complex, DIMENSION(:,:), INTENT(in) :: M1 ! input matrix 1
+   complex, DIMENSION(:,:), INTENT(in) :: M2 ! input matrix 2
+   complex, DIMENSION(:,:), INTENT(out) :: Mout ! output matrix
    integer i,j,k,n,l,n2,l2
    n = size(M1,1)
    n2 = size(M2,1)
@@ -1608,7 +1608,7 @@ subroutine Two_Matr_mult_c(M1,M2,Mout)
    Mout = 0.0d0
    do i = 1,l2
       do j = 1,l
-         Mout(i,j) = Mout(i,j) + SUM(M1(:,i)*M2(j,:)) ! correct
+         Mout(i,j) = Mout(i,j) + SUM(M1(i,:)*M2(:,j)) ! tested against MATMUL, correct
       enddo ! j
    enddo ! i
 end subroutine Two_Matr_mult_c

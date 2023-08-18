@@ -981,25 +981,20 @@ subroutine Loewdin_Orthogonalization_c(Nsiz, Sij, Hij, Err) ! below
    real(8) :: epsylon
    character(200) :: Error_descript
 
-   !print*, OMP_GET_THREAD_NUM(), 'Loewdin_Orthogonalization_c starts'
-
    Error_descript = ''
    epsylon = 1d-12
 
    ! Save the overlap matrix to test the orthogonalization later:
 !    allocate(Sijsave(Nsiz,Nsiz))
 !    Sijsave = Sij
-   allocate(Xij(Nsiz,Nsiz))
-   allocate(Sij_temp(Nsiz,Nsiz))
-   Xij = dcmplx(0.0d0,0.0d0)
-   Sij_temp = dcmplx(0.0d0,0.0d0)
+   allocate(Xij(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
+   allocate(Sij_temp(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
+   allocate(Xij_star(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
    
    ! Orthogonalize the Hamiltonian, based on  [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144], in a few steps:
    ! 1) diagonalize S matrix:
-   allocate(Ev(Nsiz))   ! array with eigenvalues of nonorthogonal matrix
-   Ev = 0.0d0  ! to start from
+   allocate(Ev(Nsiz), source = 0.0d0)   ! array with eigenvalues of nonorthogonal matrix
    call sym_diagonalize(Sij, Ev, Error_descript) ! module "Algebra_tools"
-   !print*, OMP_GET_THREAD_NUM(), 'sym_diagonalize done'
 
    ! Now Sij is the collection of eigenvectors, Ev contains eigenvalues
    ! Moreover, Sij is now unitary matrix that can be used as U from Eq.(3.166) [Szabo "Modern Quantum Chemistry" 1986, p. 143]
@@ -1009,10 +1004,8 @@ subroutine Loewdin_Orthogonalization_c(Nsiz, Sij, Hij, Err) ! below
       print*, trim(adjustl(Error_descript))
    endif
    ! Test if diagonalization of S matrix worked well:
-   !!$OMP WORKSHARE
    N_neg = COUNT(Ev < 0.0d0)
    N_zero = COUNT(ABS(Ev) < epsylon)
-   !!$OMP END WORKSHARE
    if ( (N_zero > 0) .or. (N_neg > 0) ) then
       print*, 'Subroutine Loewdin_Orthogonalization_c has zero or negative eigenvalues in the COMPLEX overlap matrix!'
       print*, 'Negative: ', N_neg, 'Zero: ', N_zero
@@ -1024,53 +1017,38 @@ subroutine Loewdin_Orthogonalization_c(Nsiz, Sij, Hij, Err) ! below
 
    ! 2) construct S = [1/sqrt(Ev)]:
    allocate(s_mat(Nsiz,Nsiz)) ! temporary array with matrix of 1/sqrt(Ev)
-   !!$OMP WORKSHARE
    s_mat = 0.0d0 ! to start from
    ! Construct S matrix if eigenstates are non-zero:
    forall (i1=1:size(Ev), ABS(Ev(i1)) > epsylon) s_mat(i1,i1) = 1.0d0/dsqrt(Ev(i1))
-   !!$OMP END WORKSHARE
-
-   !do i1 = 1, size(s_mat,1)
-   !   print*, s_mat(i1,i1)
-   !enddo
 
    allocate(s_mat_complex(Nsiz,Nsiz))
    s_mat_complex = dcmplx(s_mat,0.0d0)
    deallocate(s_mat)
 
-   !print*, OMP_GET_THREAD_NUM(), 'before mkl_matrix_mult'
-   !print*, size(Sij,1), size(Sij,2)
-   !print*, size(s_mat_complex,1), size(s_mat_complex,2)
-
    ! 3) construct X = S*s_mat [Szabo "Modern Quantum Chemistry" 1986, p. 144, Eq.(3.169)]
-   !Xij = matmul(Sij,s_mat_complex)  ! same result with standart routine
-   !call mkl_matrix_mult('N', 'N', Sij, s_mat_complex, Xij) ! module "Algebra_tools"
-   call Two_Matr_mult(Sij,s_mat_complex,Xij)   ! module "Algebra_tools"
-   !print*, OMP_GET_THREAD_NUM(), 'after mkl_matrix_mult'
+   !Xij = matmul(Sij,s_mat_complex)  ! same result with standart routine (MAY CAUSE MEMORY OVERLOAD)
+   !call mkl_matrix_mult('N', 'N', Sij, s_mat_complex, Xij) ! module "Algebra_tools" (MAY CAUSE MEMORY OVERLOAD)
+   ! *Note: On some machines, not-too-large matrices may cause overload and failure with standard routines (MATMUL and BLAS),
+   ! so, we have to multiply matrices "by hand" (directly by elements in cicles), thus this:
+   call Two_Matr_mult(Sij, s_mat_complex, Xij)   ! module "Algebra_tools"
 
    ! 4) orthoginalize the Cij matrix [Szabo "Modern Quantum Chemistry" 1986, p. 144, Eq.(3.177)]:
-   ! Note that the matrix is Hermitian, not Symmetric, thus the following subroutine cannot be used!:
-!    call zsymm('L', 'U', Nsiz, Nsiz, dcmplx(1.0d0,0d0), Hij, Nsiz, Xij, Nsiz, dcmplx(0.0d0,0.0d0), Sij_temp, Nsiz)	! from BLAS library
+   ! *Note that the matrix is Hermitian, not Symmetric, thus the following subroutine cannot be used!:
+   ! call zsymm('L', 'U', Nsiz, Nsiz, dcmplx(1.0d0,0d0), Hij, Nsiz, Xij, Nsiz, dcmplx(0.0d0,0.0d0), Sij_temp, Nsiz)	! from BLAS library
    ! Use the standard fortran routine for matrices multiplication:
-   !Sij_temp = matmul(Hij, Xij)
+   !Sij_temp = matmul(Hij, Xij)  ! (MAY CAUSE MEMORY OVERLOAD)
    call Two_Matr_mult(Hij, Xij, Sij_temp)   ! module "Algebra_tools"
-   !print*, OMP_GET_THREAD_NUM(), 'after Sij_temp'
 
-!    Hij = matmul(dconjg(transpose(Xij)), Sij_temp) ! same result with standart routine:
-   !call mkl_matrix_mult('C', 'N', Xij, Sij_temp, Hij)	! module "Algebra_tools"
-
-   allocate(Xij_star(Nsiz,Nsiz))
+   !Hij = matmul(dconjg(transpose(Xij)), Sij_temp) ! same result with standart routine (MAY CAUSE MEMORY OVERLOAD)
+   !call mkl_matrix_mult('C', 'N', Xij, Sij_temp, Hij)	! module "Algebra_tools" (MAY CAUSE MEMORY OVERLOAD)
    Xij_star = conjg(transpose(Xij))
-   !print*, OMP_GET_THREAD_NUM(), 'after conjg'
-
    call Two_Matr_mult(Xij_star, Sij_temp, Hij)   ! module "Algebra_tools"
-   !print*, OMP_GET_THREAD_NUM(), 'after Hij'
+
 
 !     ! test (comment out for release):
 !     call test_orthogonalization_c(Sijsave, Xij) ! Checked, correct!
-   
-    Sij = Xij	! save X matrix
-    !print*, OMP_GET_THREAD_NUM(), 'before deallocation'
+
+    Sij = Xij  ! save X matrix
 
     if (allocated(Xij)) deallocate(Xij)
     if (allocated(Sij_temp)) deallocate(Sij_temp)
@@ -1079,8 +1057,6 @@ subroutine Loewdin_Orthogonalization_c(Nsiz, Sij, Hij, Err) ! below
     if (allocated(s_mat_complex)) deallocate(s_mat_complex)
     if (allocated(Ev)) deallocate(Ev)
     if (allocated(Xij_star)) deallocate(Xij_star)
-
-    !print*, OMP_GET_THREAD_NUM(), 'Loewdin_Orthogonalization_c done'
 end subroutine Loewdin_Orthogonalization_c
 
 

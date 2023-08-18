@@ -3714,6 +3714,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       enddo
    endif ! FEL included or not?
    
+   write(print_to,'(a)') trim(adjustl(m_starline))
    SCL:do i = 1, size(Scell)
       select case (numpar%optic_model)
       case (1) ! within the Drude model
