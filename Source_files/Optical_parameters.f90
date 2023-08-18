@@ -129,9 +129,9 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
    logical, intent(in) :: all_w  ! get all spectrum of hv, or only for given probe wavelength
    type(Error_handling), intent(inout) :: Err   ! error save
    !--------------------
-   complex(8), dimension(:,:,:), allocatable :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
+   real(8), dimension(:,:,:), allocatable :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
    complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
-   complex(8), dimension(:,:,:,:), allocatable :: cTnn ! kinetic energy-related [dimensionless]
+   real(8), dimension(:,:,:,:), allocatable :: cTnn ! kinetic energy-related [dimensionless]
    real(8), dimension(:,:), allocatable :: Eps
    real(8) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond
    real(8) :: w, kx, ky, kz
@@ -226,7 +226,7 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
          do i = 1, N
             w = w_grid(i)  ! frequency
             ! Get CDF:
-            call get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, cTnn, Ei, m_eff, w, &
+            call get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, m_eff, w, &
                Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, Eps_xx, Eps_yy, Eps_zz)   ! below
 
             ! Write them all into array:
@@ -238,7 +238,7 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
       else ! only for given probe:
          w = Scell(NSC)%eps%w
          ! Get CDF:
-         call get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, cTnn, Ei, m_eff, w, &
+         call get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, m_eff, w, &
                Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, Eps_xx, Eps_yy, Eps_zz)   ! below
 
          ! Write them all into array:
@@ -284,31 +284,31 @@ end subroutine get_Graf_Vogl_all_complex
 
 
 
-subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, cTnn, Ev, m_eff, w, &
+subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, m_eff, w, &
                         Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, Eps_xx, Eps_yy, Eps_zz)
    type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
-   complex(8), dimension(:,:,:,:), intent(in) :: cTnn ! kinetic energy-related [dimensionless]
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
-   complex(8), dimension(:,:,:), intent(in) :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
+   real(8), dimension(:,:,:), intent(in) :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
    real(8), intent(in) :: w   ! frequency [1/s]
    real(8), intent(inout) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond
    complex(8), intent(inout) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
    !----------------------------
    real(8), dimension(3,3) :: Re_eps_ij, Im_eps_ij, Re_eps_ij_term1
    real(8) :: delt, eta, Vol, w_mn, prefact, Re_prefact, temp, term_1_SI, term_2_SI, Im_term_SI, f_P_term, ww, prec
+   real(8) :: pxpx, pxpy, pxpz, pypx, pypy, pypz, pzpx, pzpy, pzpz
    integer :: i, j, Nsiz, m, n
 
    Nsiz = size(Ev)   ! number of energy levels
 
    ! Precision for the principal value:
-   prec = 1.0d-6
+   prec = 1.0d-2
 
    ! Approximate the delta-function with a gaussian, Chapter VII in [4]
    !eta = 0.3d0 ! [eV]
-   eta = 3.0d0 * m_gamm*m_e_h  ! [eV] gamma parameter
+   eta = 3.0d0 * m_gamm*m_e_h  ! [eV] gamma parameter ~0.3 eV
 
    ! Supercell volume:
    Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
@@ -320,13 +320,14 @@ subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, cTnn, Ev, 
    ! Get the imaginary part of CDF [1]:
    Re_eps_ij = 0.0d0 ! to start wirh
    Im_eps_ij = 0.0d0 ! to start wirh
-   Re_eps_ij_term1 = 0.0d0
+   Re_eps_ij_term1 = 0.0d0 ! to start wirh
 
    do n = 1, Nsiz
       ! First term in Re_eps:
       do i = 1, 3
          do j = 1,3
-            Re_eps_ij_term1(i,j) = -temp/(w**2) * Scell(NSC)%fe(n) * dble(m_eff(n,i,j)) * term_1_SI
+            !Re_eps_ij_term1(i,j) = Re_eps_ij_term1(i,j) - temp/((w)**2) * Scell(NSC)%fe(n) * dble(m_eff(n,i,j)) * term_1_SI
+            Re_eps_ij_term1(i,j) = Re_eps_ij_term1(i,j) - Scell(NSC)%fe(n) * m_eff(n,i,j)
          enddo ! j
       enddo ! i
       ! Im_CDF and second term in Re_CDF:
@@ -337,29 +338,49 @@ subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, cTnn, Ev, 
             delt = m_inv_sqrt_pi * exp( -((w - w_mn)/(eta/m_e_h))**2 ) / (eta/m_e_h)   ! delta-function approx. [s]
             prefact = delt * (Scell(NSC)%fe(n) - Scell(NSC)%fe(m))
 
-            Im_eps_ij(1,1) = Im_eps_ij(1,1) + prefact * dble(cPRRx(n,m) * cPRRx(n,m))
-            Im_eps_ij(1,2) = Im_eps_ij(1,2) + prefact * dble(cPRRx(n,m) * cPRRy(n,m))
-            Im_eps_ij(1,3) = Im_eps_ij(1,3) + prefact * dble(cPRRx(n,m) * cPRRz(n,m))
-            Im_eps_ij(2,1) = Im_eps_ij(2,1) + prefact * dble(cPRRy(n,m) * cPRRx(n,m))
-            Im_eps_ij(2,2) = Im_eps_ij(2,2) + prefact * dble(cPRRy(n,m) * cPRRy(n,m))
-            Im_eps_ij(2,3) = Im_eps_ij(2,3) + prefact * dble(cPRRy(n,m) * cPRRz(n,m))
-            Im_eps_ij(3,1) = Im_eps_ij(3,1) + prefact * dble(cPRRz(n,m) * cPRRx(n,m))
-            Im_eps_ij(3,2) = Im_eps_ij(3,2) + prefact * dble(cPRRz(n,m) * cPRRy(n,m))
-            Im_eps_ij(3,3) = Im_eps_ij(3,3) + prefact * dble(cPRRz(n,m) * cPRRz(n,m))
+            pxpx = conjg(cPRRx(n,m)) * cPRRx(m,n)
+            pxpy = conjg(cPRRx(n,m)) * cPRRy(m,n)
+            pxpz = conjg(cPRRx(n,m)) * cPRRz(m,n)
+            pypx = conjg(cPRRy(n,m)) * cPRRx(m,n)
+            pypy = conjg(cPRRy(n,m)) * cPRRy(m,n)
+            pypz = conjg(cPRRy(n,m)) * cPRRz(m,n)
+            pzpx = conjg(cPRRz(n,m)) * cPRRx(m,n)
+            pzpy = conjg(cPRRz(n,m)) * cPRRy(m,n)
+            pzpz = conjg(cPRRz(n,m)) * cPRRz(m,n)
+
+!             pxpx = (cPRRx(n,m)) * conjg(cPRRx(m,n))
+!             pxpy = (cPRRx(n,m)) * conjg(cPRRy(m,n))
+!             pxpz = (cPRRx(n,m)) * conjg(cPRRz(m,n))
+!             pypx = (cPRRy(n,m)) * conjg(cPRRx(m,n))
+!             pypy = (cPRRy(n,m)) * conjg(cPRRy(m,n))
+!             pypz = (cPRRy(n,m)) * conjg(cPRRz(m,n))
+!             pzpx = (cPRRz(n,m)) * conjg(cPRRx(m,n))
+!             pzpy = (cPRRz(n,m)) * conjg(cPRRy(m,n))
+!             pzpz = (cPRRz(n,m)) * conjg(cPRRz(m,n))
+
+            Im_eps_ij(1,1) = Im_eps_ij(1,1) + prefact * pxpx
+            Im_eps_ij(1,2) = Im_eps_ij(1,2) + prefact * pxpy
+            Im_eps_ij(1,3) = Im_eps_ij(1,3) + prefact * pxpz
+            Im_eps_ij(2,1) = Im_eps_ij(2,1) + prefact * pypx
+            Im_eps_ij(2,2) = Im_eps_ij(2,2) + prefact * pypy
+            Im_eps_ij(2,3) = Im_eps_ij(2,3) + prefact * pypz
+            Im_eps_ij(3,1) = Im_eps_ij(3,1) + prefact * pzpx
+            Im_eps_ij(3,2) = Im_eps_ij(3,2) + prefact * pzpy
+            Im_eps_ij(3,3) = Im_eps_ij(3,3) + prefact * pzpz
 
             ! Real part:
             ww = (w_mn-w)
             if (abs(ww) > prec) then
-               Re_prefact = temp*(Scell(NSC)%fe(n) - Scell(NSC)%fe(m))/((w_mn**2)*g_h*ww) * term_2_SI
-               Re_eps_ij(1,1) = Re_eps_ij(1,1) + Re_prefact * dble(cPRRx(n,m) * cPRRx(n,m))
-               Re_eps_ij(1,2) = Re_eps_ij(1,2) + Re_prefact * dble(cPRRx(n,m) * cPRRy(n,m))
-               Re_eps_ij(1,3) = Re_eps_ij(1,3) + Re_prefact * dble(cPRRx(n,m) * cPRRz(n,m))
-               Re_eps_ij(2,1) = Re_eps_ij(2,1) + Re_prefact * dble(cPRRy(n,m) * cPRRx(n,m))
-               Re_eps_ij(2,2) = Re_eps_ij(2,2) + Re_prefact * dble(cPRRy(n,m) * cPRRy(n,m))
-               Re_eps_ij(2,3) = Re_eps_ij(2,3) + Re_prefact * dble(cPRRy(n,m) * cPRRz(n,m))
-               Re_eps_ij(3,1) = Re_eps_ij(3,1) + Re_prefact * dble(cPRRz(n,m) * cPRRx(n,m))
-               Re_eps_ij(3,2) = Re_eps_ij(3,2) + Re_prefact * dble(cPRRz(n,m) * cPRRy(n,m))
-               Re_eps_ij(3,3) = Re_eps_ij(3,3) + Re_prefact * dble(cPRRz(n,m) * cPRRz(n,m))
+               Re_prefact = (Scell(NSC)%fe(n) - Scell(NSC)%fe(m))/((w_mn**2)*g_h*ww)
+               Re_eps_ij(1,1) = Re_eps_ij(1,1) + Re_prefact * pxpx
+               Re_eps_ij(1,2) = Re_eps_ij(1,2) + Re_prefact * pxpy
+               Re_eps_ij(1,3) = Re_eps_ij(1,3) + Re_prefact * pxpz
+               Re_eps_ij(2,1) = Re_eps_ij(2,1) + Re_prefact * pypx
+               Re_eps_ij(2,2) = Re_eps_ij(2,2) + Re_prefact * pypy
+               Re_eps_ij(2,3) = Re_eps_ij(2,3) + Re_prefact * pypz
+               Re_eps_ij(3,1) = Re_eps_ij(3,1) + Re_prefact * pzpx
+               Re_eps_ij(3,2) = Re_eps_ij(3,2) + Re_prefact * pzpy
+               Re_eps_ij(3,3) = Re_eps_ij(3,3) + Re_prefact * pzpz
             endif ! (abs(ww) > prec)
 
          endif ! (m /= n)
@@ -368,7 +389,8 @@ subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, cTnn, Ev, 
 
    ! Include prefactors:
    Im_eps_ij = m_prefac/(w*w * Vol) * Im_eps_ij * Im_term_SI   ! -> SI units
-   Re_eps_ij = Re_eps_ij + Re_eps_ij_term1   ! combine terms
+   Re_eps_ij_term1 = Re_eps_ij_term1 * temp/((w-eta/m_e_h)**2) * term_1_SI
+   Re_eps_ij = Re_eps_ij * temp*term_2_SI + Re_eps_ij_term1   ! combine terms
 
    ! Save into output variables:
    Eps_xx = dcmplx( 1.0d0 + 4.0d0*g_Pi*Re_eps_ij(1,1),  4.0d0*g_Pi*Im_eps_ij(1,1) )
@@ -376,8 +398,8 @@ subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, cTnn, Ev, 
    Eps_zz = dcmplx( 1.0d0 + 4.0d0*g_Pi*Re_eps_ij(3,3),  4.0d0*g_Pi*Im_eps_ij(3,3) )
 
    ! Convert from conductivity to CDF:
-   Im_eps = 4.0d0*g_Pi * (Im_eps_ij(1,1)+Im_eps_ij(2,2)+Im_eps_ij(3,3)) / 3.0d0
-   Re_eps = 1.0d0 + 4.0d0*g_Pi * (Re_eps_ij(1,1)+Re_eps_ij(2,2)+Re_eps_ij(3,3)) / 3.0d0
+   Im_eps = aimag(Eps_xx(1,1)+Eps_xx(2,2)+Eps_xx(3,3)) / 3.0d0
+   Re_eps = dble (Eps_xx(1,1)+Eps_xx(2,2)+Eps_xx(3,3)) / 3.0d0
 
    ! DC-conductivity:
    dc_cond = Im_eps*w*g_e0     ! averaged over x, y, and z
@@ -391,9 +413,9 @@ end subroutine get_Graf_Vogl_CDF
 
 subroutine inv_effective_mass(cPRRx, cPRRy, cPRRz, cTnn, Ev, m_eff)  ! Ref.[2], Eq(8)
    complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
-   complex(8), dimension(:,:,:,:), intent(in) :: cTnn ! kinetic energy-related [dimensionless]
+   real(8), dimension(:,:,:,:), intent(in) :: cTnn ! kinetic energy-related [dimensionless]
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
-   complex(8), dimension(:,:,:), intent(inout), allocatable :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
+   real(8), dimension(:,:,:), intent(inout), allocatable :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
    !-----------------------------
    integer :: Nsiz, n, m, i, j
    real(8) :: fact, me_inv
@@ -411,27 +433,31 @@ subroutine inv_effective_mass(cPRRx, cPRRy, cPRRz, cTnn, Ev, m_eff)  ! Ref.[2], 
          do j = 1, 3
             ! Term 1, kinetic energy (diagonal) contribution:
             m_eff(n,i,j) = cTnn(n,n,i,j)  ! 1/me is excluded, due to units choice
+!             print*, n, i, j, cTnn(n,n,i,j)
          enddo ! j
       enddo ! i
 
       ! Term 2, momentum contribution:
       do m = 1, Nsiz
          if (m /= n) then ! off-diagonal terms:
-            fact = me_inv*(Ev(n) - Ev(m)) ! 1/(me*(En-Em))
-            m_eff(n,1,1) = m_eff(n,1,1) + fact * ( cPRRx(n,m)*cPRRx(m,n) + cPRRx(m,n)*cPRRx(n,m) ) ! i = x, j = x
-            m_eff(n,1,2) = m_eff(n,1,2) + fact * ( cPRRx(n,m)*cPRRy(m,n) + cPRRx(m,n)*cPRRy(n,m) ) ! i = x, j = y
-            m_eff(n,1,3) = m_eff(n,1,3) + fact * ( cPRRx(n,m)*cPRRz(m,n) + cPRRx(m,n)*cPRRz(n,m) ) ! i = x, j = z
-            m_eff(n,2,1) = m_eff(n,2,1) + fact * ( cPRRy(n,m)*cPRRx(m,n) + cPRRy(m,n)*cPRRx(n,m) ) ! i = y, j = x
-            m_eff(n,2,2) = m_eff(n,2,2) + fact * ( cPRRy(n,m)*cPRRy(m,n) + cPRRy(m,n)*cPRRy(n,m) ) ! i = y, j = y
-            m_eff(n,2,3) = m_eff(n,2,3) + fact * ( cPRRy(n,m)*cPRRz(m,n) + cPRRy(m,n)*cPRRz(n,m) ) ! i = y, j = z
-            m_eff(n,3,1) = m_eff(n,3,1) + fact * ( cPRRz(n,m)*cPRRx(m,n) + cPRRz(m,n)*cPRRx(n,m) ) ! i = z, j = x
-            m_eff(n,3,2) = m_eff(n,3,2) + fact * ( cPRRz(n,m)*cPRRy(m,n) + cPRRz(m,n)*cPRRy(n,m) ) ! i = z, j = y
-            m_eff(n,3,3) = m_eff(n,3,3) + fact * ( cPRRz(n,m)*cPRRz(m,n) + cPRRz(m,n)*cPRRz(n,m) ) ! i = z, j = z
+            fact = me_inv/(Ev(n) - Ev(m)) ! 1/(me*(En-Em))
+            m_eff(n,1,1) = m_eff(n,1,1) + fact * ( conjg(cPRRx(n,m))*cPRRx(m,n) + conjg(cPRRx(m,n))*cPRRx(n,m) ) ! i = x, j = x
+            m_eff(n,1,2) = m_eff(n,1,2) + fact * ( conjg(cPRRx(n,m))*cPRRy(m,n) + conjg(cPRRx(m,n))*cPRRy(n,m) ) ! i = x, j = y
+            m_eff(n,1,3) = m_eff(n,1,3) + fact * ( conjg(cPRRx(n,m))*cPRRz(m,n) + conjg(cPRRx(m,n))*cPRRz(n,m) ) ! i = x, j = z
+            m_eff(n,2,1) = m_eff(n,2,1) + fact * ( conjg(cPRRy(n,m))*cPRRx(m,n) + conjg(cPRRy(m,n))*cPRRx(n,m) ) ! i = y, j = x
+            m_eff(n,2,2) = m_eff(n,2,2) + fact * ( conjg(cPRRy(n,m))*cPRRy(m,n) + conjg(cPRRy(m,n))*cPRRy(n,m) ) ! i = y, j = y
+            m_eff(n,2,3) = m_eff(n,2,3) + fact * ( conjg(cPRRy(n,m))*cPRRz(m,n) + conjg(cPRRy(m,n))*cPRRz(n,m) ) ! i = y, j = z
+            m_eff(n,3,1) = m_eff(n,3,1) + fact * ( conjg(cPRRz(n,m))*cPRRx(m,n) + conjg(cPRRz(m,n))*cPRRx(n,m) ) ! i = z, j = x
+            m_eff(n,3,2) = m_eff(n,3,2) + fact * ( conjg(cPRRz(n,m))*cPRRy(m,n) + conjg(cPRRz(m,n))*cPRRy(n,m) ) ! i = z, j = y
+            m_eff(n,3,3) = m_eff(n,3,3) + fact * ( conjg(cPRRz(n,m))*cPRRz(m,n) + conjg(cPRRz(m,n))*cPRRz(n,m) ) ! i = z, j = z
          endif ! (m /= n)
       enddo ! m
+
+!       print*, n, m_eff(n,:,:)
    enddo ! n
    !$omp end do
    !$omp end parallel
+!    pause 'inv_effective_mass'
 end subroutine inv_effective_mass
 
 
