@@ -2126,14 +2126,16 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    CHij_temp = dcmplx(0.0d0,0.0d0)	! to start with
    if (.not.allocated(CHij_orth)) allocate(CHij_orth(Nsiz,Nsiz))  ! orthogonalized Hamiltonian
    CHij_orth = dcmplx(0.0d0,0.0d0)	! to start with
-   if (numpar%optic_model .EQ. 4) then  ! Graf-Vogl
+   if (abs(numpar%optic_model) .EQ. 4) then  ! Graf-Vogl or Kubo-Greenwood
       if (.not.allocated(CWF_orth)) allocate(CWF_orth(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! orthogonalized Hamiltonian
       if (.not.allocated(Norm1)) allocate(Norm1(Nsiz), source = 0.0d0)  ! normalization of WF
       if (.not.allocated(cPPRx_0)) allocate(cPPRx_0(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! temporary
       if (.not.allocated(cPPRy_0)) allocate(cPPRy_0(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! temporary
       if (.not.allocated(cPPRz_0)) allocate(cPPRz_0(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! temporary
-      if (.not.allocated(cTnn_0)) allocate(cTnn_0(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
-      if (.not.allocated(cTnn_c)) allocate(cTnn_c(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
+      if (present(cTnn)) then
+         if (.not.allocated(cTnn_0)) allocate(cTnn_0(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
+         if (.not.allocated(cTnn_c)) allocate(cTnn_c(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
+      endif
    endif
 
 
@@ -2324,11 +2326,13 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       cPRRz = cPRRz * temp
 
    !---------------------------------------
-   else if (numpar%optic_model .EQ. 4) then  ! Graf-Vogl
+   else if (abs(numpar%optic_model) .EQ. 4) then  ! Graf-Vogl or Kubo-Greenwood
       if (.not.allocated(cPRRx)) allocate(cPRRx(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
       if (.not.allocated(cPRRy)) allocate(cPRRy(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
       if (.not.allocated(cPRRz)) allocate(cPRRz(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
-      if (.not.allocated(cTnn)) allocate(cTnn(Nsiz,Nsiz,3,3), source = 0.0d0)
+      if (present(cTnn)) then
+         if (.not.allocated(cTnn)) allocate(cTnn(Nsiz,Nsiz,3,3), source = 0.0d0)
+      endif
 
       !$omp parallel
       !$omp do private(j, m, atom_2, i, x1, y1, z1, j1, l, i1, k, SH_1, n, nn)
@@ -2354,35 +2358,39 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                            ! Skip the same orbital, no overlap
                         else
                            ! Orthogonalized Hamiltonian:
-                           ! -i*(R-R') terms:
-                           SH_1 = -DCMPLX(0.0d0, 0.27d0) * CHij_orth(k,l)
+                           ! i*(R-R') terms:
+                           SH_1 = DCMPLX(0.0d0, 0.27d0) * CHij_orth(k,l)
 
                            cPRRx(k,l) = SH_1
                            cPRRy(k,l) = SH_1
                            cPRRz(k,l) = SH_1
 
-                           SH_1 = -0.27d0**2
-                           cTnn_c(k,l,:,:) = SH_1 * CHij_orth(k,l)
+                           if (present(cTnn)) then
+                              SH_1 = -0.27d0**2
+                              cTnn_c(k,l,:,:) = SH_1 * CHij_orth(k,l)
+                           endif
                         endif
                      else  ! different atoms at distance {x,y,z}:
                         SH_1 = CHij_orth(k,l)
-                        ! -i*(R-R') terms:
-                        cPRRx(k,l) = -DCMPLX(0.0d0, x1)*SH_1
-                        cPRRy(k,l) = -DCMPLX(0.0d0, y1)*SH_1
-                        cPRRz(k,l) = -DCMPLX(0.0d0, z1)*SH_1
+                        ! i*(R-R') terms:
+                        cPRRx(k,l) = DCMPLX(0.0d0, x1)*SH_1
+                        cPRRy(k,l) = DCMPLX(0.0d0, y1)*SH_1
+                        cPRRz(k,l) = DCMPLX(0.0d0, z1)*SH_1
 
-                        cTnn_c(k,l,1,1) = -(x1*x1) * CHij_orth(k,l)
-                        cTnn_c(k,l,2,2) = -(y1*y1) * CHij_orth(k,l)
-                        cTnn_c(k,l,3,3) = -(z1*z1) * CHij_orth(k,l)
-                        SH_1 = -(x1*y1) * CHij_orth(k,l)
-                        cTnn_c(k,l,1,2) = SH_1
-                        cTnn_c(k,l,2,1) = SH_1 !cTnn(k,l,1,2) !-(y1*x1) * CHij_orth(k,l)
-                        SH_1 = -(x1*z1) * CHij_orth(k,l)
-                        cTnn_c(k,l,1,3) = SH_1 !-(x1*z1) * CHij_orth(k,l)
-                        cTnn_c(k,l,3,1) = SH_1 !cTnn(k,l,1,3) !-(z1*x1) * CHij_orth(k,l)
-                        SH_1 = -(y1*z1) * CHij_orth(k,l)
-                        cTnn_c(k,l,2,3) = SH_1 !-(y1*z1) * CHij_orth(k,l)
-                        cTnn_c(k,l,3,2) = SH_1 !cTnn(k,l,2,3) !-(z1*y1) * CHij_orth(k,l)
+                        if (present(cTnn)) then
+                           cTnn_c(k,l,1,1) = -(x1*x1) * CHij_orth(k,l)
+                           cTnn_c(k,l,2,2) = -(y1*y1) * CHij_orth(k,l)
+                           cTnn_c(k,l,3,3) = -(z1*z1) * CHij_orth(k,l)
+                           SH_1 = -(x1*y1) * CHij_orth(k,l)
+                           cTnn_c(k,l,1,2) = SH_1
+                           cTnn_c(k,l,2,1) = SH_1 !cTnn(k,l,1,2) !-(y1*x1) * CHij_orth(k,l)
+                           SH_1 = -(x1*z1) * CHij_orth(k,l)
+                           cTnn_c(k,l,1,3) = SH_1 !-(x1*z1) * CHij_orth(k,l)
+                           cTnn_c(k,l,3,1) = SH_1 !cTnn(k,l,1,3) !-(z1*x1) * CHij_orth(k,l)
+                           SH_1 = -(y1*z1) * CHij_orth(k,l)
+                           cTnn_c(k,l,2,3) = SH_1 !-(y1*z1) * CHij_orth(k,l)
+                           cTnn_c(k,l,3,2) = SH_1 !cTnn(k,l,2,3) !-(z1*y1) * CHij_orth(k,l)
+                        endif
                      endif
 
                      if (dble(cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(k), x1
@@ -2402,61 +2410,80 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       enddo
       !$omp end do
       !$OMP BARRIER
-
       !$omp do
-      do i = 1, Nsiz ! upper triangle
+      do i = 1, Nsiz
          do nn = 1, Nsiz
             cPPRx_0(i,nn) = SUM(cPRRx(i,:)*CWF_orth(:,nn)) / Norm1(nn)
             cPPRy_0(i,nn) = SUM(cPRRy(i,:)*CWF_orth(:,nn)) / Norm1(nn)
             cPPRz_0(i,nn) = SUM(cPRRz(i,:)*CWF_orth(:,nn)) / Norm1(nn)
-            cTnn_0(i,nn,1,1) = SUM(cTnn_c(i,:,1,1)*CWF_orth(:,nn)) / Norm1(nn)
-            cTnn_0(i,nn,1,2) = SUM(cTnn_c(i,:,1,2)*CWF_orth(:,nn)) / Norm1(nn)
-            cTnn_0(i,nn,1,3) = SUM(cTnn_c(i,:,1,3)*CWF_orth(:,nn)) / Norm1(nn)
-            cTnn_0(i,nn,2,2) = SUM(cTnn_c(i,:,2,2)*CWF_orth(:,nn)) / Norm1(nn)
-            cTnn_0(i,nn,2,3) = SUM(cTnn_c(i,:,2,3)*CWF_orth(:,nn)) / Norm1(nn)
-            cTnn_0(i,nn,3,3) = SUM(cTnn_c(i,:,3,3)*CWF_orth(:,nn)) / Norm1(nn)
          enddo ! j
       enddo ! i
       !$omp end do
       !$OMP BARRIER
 
-      !$omp do
-      do i = 1, Nsiz ! lower triangle
-         do nn = 1, Nsiz
-            cTnn_0(i,nn,2,1) = cTnn_0(i,nn,1,2) !SUM(cTnn(i,:,2,1)*CWF_orth(:,nn)) / Norm1(nn)
-            cTnn_0(i,nn,3,1) = cTnn_0(i,nn,1,3) !SUM(cTnn(i,:,3,1)*CWF_orth(:,nn)) / Norm1(nn)
-            cTnn_0(i,nn,3,2) = cTnn_0(i,nn,2,3) !SUM(cTnn(i,:,3,2)*CWF_orth(:,nn)) / Norm1(nn)
-         enddo ! j
-      enddo ! i
-      !$omp end do
-      !$OMP BARRIER
+
+      if (present(cTnn)) then
+         !$omp do
+         do i = 1, Nsiz ! upper triangle
+            do nn = 1, Nsiz
+               cTnn_0(i,nn,1,1) = SUM(cTnn_c(i,:,1,1)*CWF_orth(:,nn)) / Norm1(nn)
+               cTnn_0(i,nn,1,2) = SUM(cTnn_c(i,:,1,2)*CWF_orth(:,nn)) / Norm1(nn)
+               cTnn_0(i,nn,1,3) = SUM(cTnn_c(i,:,1,3)*CWF_orth(:,nn)) / Norm1(nn)
+               cTnn_0(i,nn,2,2) = SUM(cTnn_c(i,:,2,2)*CWF_orth(:,nn)) / Norm1(nn)
+               cTnn_0(i,nn,2,3) = SUM(cTnn_c(i,:,2,3)*CWF_orth(:,nn)) / Norm1(nn)
+               cTnn_0(i,nn,3,3) = SUM(cTnn_c(i,:,3,3)*CWF_orth(:,nn)) / Norm1(nn)
+            enddo ! j
+         enddo ! i
+         !$omp end do
+         !$OMP BARRIER
+         !$omp do
+         do i = 1, Nsiz ! lower triangle
+            do nn = 1, Nsiz
+               cTnn_0(i,nn,2,1) = cTnn_0(i,nn,1,2) !SUM(cTnn(i,:,2,1)*CWF_orth(:,nn)) / Norm1(nn)
+               cTnn_0(i,nn,3,1) = cTnn_0(i,nn,1,3) !SUM(cTnn(i,:,3,1)*CWF_orth(:,nn)) / Norm1(nn)
+               cTnn_0(i,nn,3,2) = cTnn_0(i,nn,2,3) !SUM(cTnn(i,:,3,2)*CWF_orth(:,nn)) / Norm1(nn)
+            enddo ! j
+         enddo ! i
+         !$omp end do
+         !$OMP BARRIER
+      endif
 
       !$omp do
-      do n = 1, Nsiz ! upper triangle
+      do n = 1, Nsiz
          do nn = 1, Nsiz
             cPRRx(n,nn) = SUM(conjg(CWF_orth(:,n))*cPPRx_0(:,nn)) / Norm1(n)
             cPRRy(n,nn) = SUM(conjg(CWF_orth(:,n))*cPPRy_0(:,nn)) / Norm1(n)
             cPRRz(n,nn) = SUM(conjg(CWF_orth(:,n))*cPPRz_0(:,nn)) / Norm1(n)
-            cTnn_c(n,nn,1,1) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,1,1)) / Norm1(n)
-            cTnn_c(n,nn,1,2) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,1,2)) / Norm1(n)
-            cTnn_c(n,nn,1,3) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,1,3)) / Norm1(n)
-            cTnn_c(n,nn,2,2) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,2,2)) / Norm1(n)
-            cTnn_c(n,nn,2,3) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,2,3)) / Norm1(n)
-            cTnn_c(n,nn,3,3) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,3)) / Norm1(n)
          enddo ! nn
       enddo ! n
       !$omp end do
       !$OMP BARRIER
 
-      !$omp do
-      do n = 1, Nsiz ! lower triangle
-         do nn = 1, Nsiz
-            cTnn_c(n,nn,2,1) = cTnn_c(n,nn,1,2)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,2,1)) / Norm1(n)
-            cTnn_c(n,nn,3,1) = cTnn_c(n,nn,1,3)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,1)) / Norm1(n)
-            cTnn_c(n,nn,3,2) = cTnn_c(n,nn,2,3)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,2)) / Norm1(n)
-         enddo ! j
-      enddo ! i
-      !$omp end do
+
+      if (present(cTnn)) then
+         !$omp do
+         do n = 1, Nsiz ! upper triangle
+            do nn = 1, Nsiz
+               cTnn_c(n,nn,1,1) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,1,1)) / Norm1(n)
+               cTnn_c(n,nn,1,2) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,1,2)) / Norm1(n)
+               cTnn_c(n,nn,1,3) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,1,3)) / Norm1(n)
+               cTnn_c(n,nn,2,2) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,2,2)) / Norm1(n)
+               cTnn_c(n,nn,2,3) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,2,3)) / Norm1(n)
+               cTnn_c(n,nn,3,3) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,3)) / Norm1(n)
+            enddo ! nn
+         enddo ! n
+         !$omp end do
+         !$OMP BARRIER
+         !$omp do
+         do n = 1, Nsiz ! lower triangle
+            do nn = 1, Nsiz
+               cTnn_c(n,nn,2,1) = cTnn_c(n,nn,1,2)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,2,1)) / Norm1(n)
+               cTnn_c(n,nn,3,1) = cTnn_c(n,nn,1,3)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,1)) / Norm1(n)
+               cTnn_c(n,nn,3,2) = cTnn_c(n,nn,2,3)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,2)) / Norm1(n)
+            enddo ! j
+         enddo ! i
+         !$omp end do
+      endif
       !$omp end parallel
 
       ! Convert in SI units of momentum:
@@ -2464,8 +2491,11 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       cPRRx = cPRRx * temp
       cPRRy = cPRRy * temp
       cPRRz = cPRRz * temp
+
       ! And kinetic energy:
-      cTnn = dble(cTnn_c) * temp/g_h*1.0d-10  ! [dimensionless]
+      if (present(cTnn)) then
+         cTnn = dble(cTnn_c) * temp/g_h*1.0d-10  ! [dimensionless]
+      endif
    endif
 
    deallocate(CHij_temp, CHij_non)

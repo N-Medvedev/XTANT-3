@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 08.08.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 21.08.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -3716,7 +3716,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    
    write(print_to,'(a)') trim(adjustl(m_starline))
    SCL:do i = 1, size(Scell)
-      select case (numpar%optic_model)
+      select case (abs(numpar%optic_model))
       case (1) ! within the Drude model
          write(print_to,'(a)') ' Probe-pulse is calculated within Drude model'
          write(print_to,'(a)') ' with the following parameters of the probe:'
@@ -3745,8 +3745,12 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          else
             write(print_to,'(a)') ' Calculations are performed for Gamma-point'
          endif
-      case (4) ! Graf-Vogl model
-         write(print_to,'(a)') ' Probe-pulse is calculated within Graf-Vogl approach'
+      case (4:5) ! Graf-Vogl model
+         if (numpar%optic_model < 0) then
+            write(print_to,'(a)') ' Probe-pulse is calculated within Graf-Vogl approach'
+         else
+            write(print_to,'(a)') ' Probe-pulse is calculated within Kubo-Greenwood approach'
+         endif
          write(print_to,'(a)') ' with the following parameters of the probe:'
          write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', &
             Scell(i)%eps%teta/g_Pi*(180.0d0), '    [degrees]'
@@ -4117,7 +4121,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    if (numpar%save_DOS) then
       write(print_to,'(a, f7.5, a)') ' Density of states (DOS); smearing used: ', numpar%Smear_DOS, ' [eV]'
       select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma
-      case (2)	! multiple k points
+      case (2,4:5)   ! multiple k points
          write(text1, '(i10)') numpar%ixm
          write(text2, '(i10)') numpar%iym
          write(text3, '(i10)') numpar%izm

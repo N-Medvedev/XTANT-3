@@ -584,8 +584,8 @@ subroutine read_k_grid(matter, numpar, Err)
    logical :: file_exist, file_opened, read_well
    
    ! Check if we even need the k grid:
-   select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma
-      case (2)	! multiple k points
+   select case (ABS(numpar%optic_model))  ! use multiple k-points, or only gamma
+      case (-4, 2, 4:5) ! Models that use multiple k points
          Folder_name = trim(adjustl(numpar%input_path))
          Path = trim(adjustl(Folder_name))//trim(adjustl(matter%Name))
          write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), 'k_grid.dat'
@@ -5047,7 +5047,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       ! which means it is currently not possible to get gamma-point probe pulse, and multiple-k-points for DOS.
       ! They are connected: either both are calculated for multiple (and the same) k-points,
       ! or DOS calculation takes precedence, and probe is switched off:
-      if (numpar%optic_model /= 2) then
+      if ((numpar%optic_model /= 2) .and. (abs(numpar%optic_model) /= 4) .and. (numpar%optic_model /= 5)) then
          numpar%optic_model = -2    ! complex, for given number of k-points for DOS calculations
       endif
       numpar%save_DOS = .true.   ! included
@@ -6090,7 +6090,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
          return
       endif
       SCL:do i = 1, size(Scell) ! for all supercells
-         if (numpar%optic_model .GT. 0) then ! yes, calculate optical coefficients:
+         if (numpar%optic_model /= 0) then ! yes, calculate optical coefficients:
             numpar%do_drude = .true.   ! included
             Scell(i)%eps%KK = .false.  ! no K-K relations
             select case(N) ! which model to use
