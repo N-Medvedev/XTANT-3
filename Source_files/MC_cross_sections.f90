@@ -313,7 +313,7 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
             ! And check the sum rules:
             select case (matter%Atoms(i)%TOCS(j)) ! which inelastic cross section to use (BEB vs CDF):
             case (1) ! CDF
-               Omega = w_plasma(1d6*matter%At_dens*SUM(matter%Atoms(:)%percentage)) ! finction below, plasma frequency [1/s]
+               Omega = w_plasma(1d6*matter%At_dens*SUM(matter%Atoms(:)%percentage)) ! function below, plasma frequency [1/s]
                call sumrules(matter%Atoms(i)%CDF(j)%A, matter%Atoms(i)%CDF(j)%E0, matter%Atoms(i)%CDF(j)%G, ksum, fsum, matter%Atoms(i)%Ip(j), Omega)
                write(*,'(a,f7.2,e12.2)') 'Sum rules for '//trim(adjustl(matter%Atoms(i)%Name))//', Ip='//trim(adjustl(chtemp))//'eV are (ps,f):', ksum, fsum !, Omega
             end select
@@ -797,7 +797,7 @@ end function Diel_func
 
 function w_plasma(At_dens)
    real(8) w_plasma ! plasma frequency [1/s]
-   real(8), intent(in) :: At_dens
+   real(8), intent(in) :: At_dens   ! atomic density [1/m^3]
    w_plasma = (4.0d0*g_Pi*At_dens*g_e*g_e/(4.0d0*g_Pi*g_e0*g_me))
 end function w_plasma
 

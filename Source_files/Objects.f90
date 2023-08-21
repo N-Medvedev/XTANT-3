@@ -513,8 +513,25 @@ type Drude
    real(8) :: dd 	! [nm] experimental layer thickness
    logical :: all_w	! calculate for all hw or not
    logical :: KK	! calculate real part of CDF via Kramers-Kronig relation or not
-   real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
    real(8) :: E_min, E_max, dE ! min, max, and step for the array of Eps_hw (given in input file)
+   real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
+   ! Reminder:
+!    Eps_hw(1,i) = hw     ! energy [eV]
+!    Eps_hw(2,i) = Re_eps ! real part of CDF
+!    Eps_hw(3,i) = Im_eps ! imaginary part of CDF
+!    Eps_hw(4,i) = LF  ! loss function
+!    Eps_hw(5,i) = R   ! reflectivity
+!    Eps_hw(6,i) = T   ! transmission
+!    Eps_hw(7,i) = A   ! absorption
+!    Eps_hw(8,i) = n   ! optical n
+!    Eps_hw(9,i) = k   ! optical k
+!    Eps_hw(10,i) = k   ! dc-conductivity
+!    Eps_hw(11,i) = Re_E_xx
+!    Eps_hw(12,i) = Im_E_xx
+!    Eps_hw(13,i) = Re_E_yy
+!    Eps_hw(14,i) = Im_E_yy
+!    Eps_hw(15,i) = Re_E_zz
+!    Eps_hw(16,i) = Im_E_zz
 end type Drude
 
 

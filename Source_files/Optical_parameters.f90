@@ -21,6 +21,14 @@
 ! By using this code or its materials, you agree with these terms and conditions.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
+! References:
+! [1] M. Graf and P. Vogl, Phys. Rev. B 51, 4940 (1995)
+! [2] F. Trani, G. Cantele, D. Ninno, and G. Iadonisi, Phys. Rev. B 72, 075423 (2005)
+! [3] P. Yeh "Optical Waves in Layered Media", (2005) ISBN: 978-0-471-73192-4
+! [4] J. Graves, "Electronic and structural response of semiconductors to ultra-intense laser pulses" PhD thesis, Texas A&M University (1997)
+! [5] Notes on Kubo-Greenwood CDF: https://www.openmx-square.org/tech_notes/Dielectric_Function_YTL.pdf
+
+
 MODULE Optical_parameters
 use Universal_constants
 use Objects
@@ -32,10 +40,20 @@ use TB_Molteni, only : Complex_Hamil_tot_Molteni
 use TB_NRL, only : Complex_Hamil_NRL
 use TB_DFTB, only : Complex_Hamil_DFTB, identify_DFTB_orbitals_per_atom
 use TB, only : k_point_choice, construct_complex_Hamiltonian
-use Little_subroutines, only : deallocate_array
+use Little_subroutines, only : deallocate_array, Find_in_array_monoton
+
+USE OMP_LIB, only : OMP_GET_THREAD_NUM
 
 implicit none
 PRIVATE
+
+real(8), parameter :: m_gamm = 1.5d14  ! [1/s] gamma parameter
+
+real(8), parameter :: m_inv_sqrt_pi = 1.0d0/sqrt(g_Pi)
+real(8), parameter :: m_e_h = g_h/g_e
+real(8), parameter :: m_prefac = g_e**2 * g_Pi / (g_h*g_me**2)
+
+
 
 public :: get_optical_parameters
 
@@ -57,34 +75,23 @@ subroutine get_optical_parameters(numpar, matter, Scell, Err) ! optical coeffici
       call get_number_of_CB_electrons(Scell, NSC) ! module "Electron_tools"
 
       select case (numpar%optic_model)
-         case (1)	! within the Drude model
+         case (1) ! within the Drude model
             call get_drude(numpar, Scell, NSC)  ! below
-         case (2)	! Trani et al. PRB 72, 075423 (2005) -- This subroutine is TB-parameterization specific:
-            !call get_trani_all_complex(numpar, Scell, NSC, Scell(NSC)%fe, Scell(NSC)%eps%all_w, Err)    ! below
+         case (2) ! Trani et al. PRB 72, 075423 (2005) -- This subroutine is TB-parameterization specific:
             call get_trani_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
-            
-!             ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
-!             select type(ARRAY)
-!                type is (TB_H_Pettifor)
-!                   call get_trani_all_complex(numpar, Scell, NSC, Scell(NSC)%fe, Scell(NSC)%eps%all_w, Err)
-!                type is (TB_H_Molteni)
-!                   call get_trani_all_complex_M(numpar, Scell, NSC, Scell(NSC)%MDatoms, ARRAY, Scell(NSC)%fe, Scell(NSC)%eps%all_w, Err)
-!                type is (TB_H_Fu)
-!                    call get_trani_all_complex_F(numpar, Scell, NSC, Scell(NSC)%MDatoms, ARRAY, Scell(NSC)%fe, Scell(NSC)%eps%all_w, Err)
-!                type is (TB_H_NRL)
-!                    call get_trani_all_complex_NRL(numpar, Scell, NSC, ARRAY, Scell(NSC)%fe, Scell(NSC)%eps%all_w, Err)
-!                type is (TB_H_DFTB)
-!                    call get_trani_all_complex_DFTB(numpar, Scell, NSC, Scell(NSC)%fe, Scell(NSC)%eps%all_w, Err)
-!                end select	!  type of Hamiltonain parameterization
-!             END ASSOCIATE
-         case (3)	! Trani at the Gamma-point only
+         case (3) ! Trani at the Gamma-point only
             call get_trani_all(numpar, Scell, NSC, Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%eps%all_w)   ! below
+         case (4:5) ! Kubo-Greenwood Refs.[2] and [5]
+            call get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
+         case (-4) ! Graf-Vogl Ref.[2] (Not realy working...)
+            call get_Graf_Vogl_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
          case default ! no optical coefficients needed
-            !call get_trani_all(numpar, Scell, NSC, Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%eps%all_w)
+            ! nothing to do
       end select ! (numpar%optic_model)
       
       !-------------------------------------
-      ! Convergence with respect to the number of k-points is better for Im part than Re part of CDF, so use Kramers-Kronig relations to restore Re part:
+      ! Convergence with respect to the number of k-points is better for Im part than Re part of CDF,
+      ! so use Kramers-Kronig relations to restore Re part:
       if (Scell(NSC)%eps%all_w .and. Scell(NSC)%eps%KK) then
 !          do i = 1, size(Scell(NSC)%eps%Eps_hw(1,:))
 !             write(*,'(f,es,es)') Scell(NSC)%eps%Eps_hw(1,i), Scell(NSC)%eps%Eps_hw(2,i), Scell(NSC)%eps%Eps_hw(3,i)
@@ -115,20 +122,644 @@ end subroutine get_optical_parameters
 
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! Complex-value Trani's subroutines:
+! Kubo-GReenwood implementation in orthogonalized Hamiltonian (combined Refs.[2] and [5]):
+subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref. [2]
+   type (Numerics_param), intent(inout) :: numpar  ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(inout) :: Scell   ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC    ! number of supercell
+   logical, intent(in) :: all_w  ! get all spectrum of hv, or only for given probe wavelength
+   type(Error_handling), intent(inout) :: Err   ! error save
+   !--------------------
+   complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   real(8) :: w, kx, ky, kz
+   real(8), dimension(:), allocatable :: w_grid
+   integer :: i, j, N, FN, ix, iy, iz, ixm, iym, izm, schem, Ngp, Nsiz
+   real(8), dimension(:), allocatable :: Ei	! energy levels [eV]
+   complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
+   real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
+   real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
+   !--------------------
+
+   ! Allocate the array of optical coefficients spectrum (if not allocated before):
+   ! Define the grid size:
+   if (Scell(NSC)%eps%all_w) then ! full spectrum:
+      call allocate_Eps_hw(Scell(NSC)%eps%E_min, Scell(NSC)%eps%E_max, Scell(NSC)%eps%dE, Scell(NSC)%eps%Eps_hw) ! see below
+      N = size(Scell(NSC)%eps%Eps_hw,2) ! use this size to define temporary arrays within this subroutine
+      ! Grid of frequencies:
+      allocate(w_grid(N),source = 0.0d0)
+      w_grid(1) =  Scell(NSC)%eps%E_min*g_e/g_h ! [1/s] frequency starting point for the optical spectrum (from [eV])
+      do i = 2, N
+         w_grid(i) = w_grid(i-1) + Scell(NSC)%eps%dE*g_e/g_h	! [1/s] frequency next grid point [eV]
+      enddo
+   else  ! single frequency
+      N = 1
+      allocate(w_grid(N),source = 0.0d0)
+      if (.not.allocated(Scell(NSC)%eps%Eps_hw)) then
+         allocate(Scell(NSC)%eps%Eps_hw(16,N)) ! different parameters saved for all energy grid points
+      endif
+      w_grid(1) = Scell(NSC)%eps%w
+   endif
+   if (.not.allocated(Eps_hw)) allocate(Eps_hw(16,N), source = 0.0d0) ! all are there
+
+   ! For the user-defind number of k-points:
+   ixm = numpar%ixm
+   iym = numpar%iym
+   izm = numpar%izm
+   if (allocated(numpar%k_grid)) then
+      schem = 1   ! user-defined grid is present
+      Nsiz = size(numpar%k_grid,1)  ! size of the user provided grid
+   else
+      schem = 0   ! no user-defined grid, use default
+      Nsiz = ixm*iym*izm
+   endif
+
+   !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp)
+   if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N), source = 0.0d0) ! all are there
+   !$omp do schedule(dynamic) reduction( + : Eps_hw)
+   do Ngp = 1, Nsiz
+      ! Split total index into 3 coordinates indices:
+      ix = ceiling( dble(Ngp)/dble(iym*izm) )
+      iy = ceiling( dble(Ngp - (ix-1)*iym*izm)/dble(izm) )
+      iz = Ngp - (ix-1)*iym*izm - (iy-1)*izm
+
+      ! k-points:
+      call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
+      if (numpar%verbose) write(*,'(a,i4,a,i6,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'Thread #', OMP_GET_THREAD_NUM(), &
+                                     ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' Kubo-Greenwood'
+
+      ! Get the effective momentum and kinetic-energy-related operators:
+      ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
+         select type(ARRAY)
+         type is (TB_H_Pettifor) ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+         type is (TB_H_Molteni)  ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+         type is (TB_H_Fu) ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+         type is (TB_H_NRL)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+         type is (TB_H_DFTB)  ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+         type is (TB_H_3TB)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+         type is (TB_H_xTB)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+         end select
+      END ASSOCIATE
+
+      ! Get the parameters of the CDF:
+      call get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRRz, Ei, Eps_hw_temp)   ! below
+      ! Save data:
+      Eps_hw = Eps_hw + Eps_hw_temp ! sum data at different k-points
+   enddo ! Ngp
+   !$omp end do
+   if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
+   !$omp end parallel
+
+   ! Save the k-point avreages:
+   Eps_hw = Eps_hw/dble(Nsiz) ! normalize k-point summation
+   Scell(NSC)%eps%Eps_hw = Eps_hw   ! all data for spectrum in array
+   ! Get the values for the single value of the probe pulse:
+   call Find_in_array_monoton(w_grid, Scell(NSC)%eps%w, i)  ! module "Little_subroutines"
+   ! Use closest value on the grid:
+   Scell(NSC)%eps%ReEps = Eps_hw(2,i)  ! real part of CDF
+   Scell(NSC)%eps%ImEps = Eps_hw(3,i)  ! imaginary part of CDF
+   Scell(NSC)%eps%R = Eps_hw(5,i)   ! reflectivity
+   Scell(NSC)%eps%T = Eps_hw(6,i)   ! transmission
+   Scell(NSC)%eps%A = Eps_hw(7,i)   ! absorption
+   Scell(NSC)%eps%n = Eps_hw(8,i)   ! optical n
+   Scell(NSC)%eps%k = Eps_hw(9,i)   ! optical k
+   Scell(NSC)%eps%dc_cond = Eps_hw(10,i)  ! dc-conductivity
+   Scell(NSC)%eps%Eps_xx = dcmplx(Eps_hw(11,i), Eps_hw(12,i))  ! Re_E_xx and Im_E_xx
+   Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,i), Eps_hw(14,i))  ! Re_E_yy and Im_E_yy
+   Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,i), Eps_hw(16,i))  ! Re_E_zz and Im_E_zz
+
+   ! Clean up:
+   if (allocated(cPRRx)) deallocate(cPRRx)
+   if (allocated(cPRRy)) deallocate(cPRRy)
+   if (allocated(cPRRz)) deallocate(cPRRz)
+   if (allocated(w_grid)) deallocate(w_grid)
+   if (allocated(Ei)) deallocate(Ei)
+   if (allocated(CHij)) deallocate(CHij)
+   if (allocated(Eps_hw)) deallocate(Eps_hw)
+end subroutine get_Kubo_Greenwood_all_complex
+
+
+
+subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRRz, Ev, Eps_hw_temp)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   real(8), dimension(:), intent(in) :: w_grid ! frequency grid [1/s]
+   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
+   real(8), dimension(:,:), intent(inout) :: Eps_hw_temp ! all CDF data
+   !----------------------------
+   real(8), dimension(3,3) :: Re_eps_ij, Im_eps_ij
+   real(8), dimension(:,:), allocatable :: f_nm_w_nm
+   real(8), dimension(:,:,:,:), allocatable :: A_sigma, B_sigma
+   complex(8) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
+   real(8) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, temp_1, temp_2
+   real(8) :: w, Vol, prefact, w_mn, g_sigma, w_sigma, denom, prec
+   real(8) :: pxpx, pxpy, pxpz, pypx, pypy, pypz, pzpx, pzpy, pzpz
+   integer :: i, j, Nsiz, m, n, N_w
+
+
+   prec = 1.0d-10 ! [eV] acceptance for degenerate levels
+   Nsiz = size(Ev)   ! number of energy levels
+   N_w = size(w_grid)   ! number of frequency grid points
+
+   ! Supercell volume:
+   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+   prefact = m_prefac*g_ke/Vol  ! prefactor of sigma
+
+   allocate(f_nm_w_nm(Nsiz,Nsiz), source = 0.0d0)
+   allocate(A_sigma(Nsiz,Nsiz,3,3), source = 0.0d0)
+   allocate(B_sigma(Nsiz,Nsiz,3,3), source = 0.0d0)
+
+   !-------------------
+   ! 1) Get frequency-independent terms:
+!    !$omp PARALLEL private(n, m, w_mn)
+!    !$omp do schedule(dynamic)
+   do n = 1, Nsiz ! all energy points
+      do m = 1, Nsiz
+         w_mn = (Ev(n) - Ev(m))
+         if ( (n /= m) .and. (abs(w_mn) > prec) ) then   ! nondegenerate levels
+            w_mn = w_mn/m_e_h   ! [1/s] frequency point
+            !f_nm_w_nm(n,m) = (Scell(NSC)%fe(n) - Scell(NSC)%fe(m)) / w_mn
+            f_nm_w_nm(n,m) = (Scell(NSC)%fe(n) - Scell(NSC)%fe(m)) / w_mn**2
+
+            select case(numpar%optic_model)
+            case (4) ! full calculations
+               A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
+               A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
+               A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
+
+               B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) + aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
+               B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) + aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
+               B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) + aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
+            case (5) ! only real part (empirical adjustment!)
+               A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n))
+               A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n))
+               A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n))
+
+               B_sigma(n,m,1,1) = 0.0d0
+               B_sigma(n,m,2,2) = 0.0d0
+               B_sigma(n,m,3,3) = 0.0d0
+            end select
+
+            ! Off-diagonal (currently unused):
+            !A_sigma(n,m,1,2) = dble(cPRRx(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRy(m,n))
+            !A_sigma(n,m,1,3) = dble(cPRRx(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRz(m,n))
+            !A_sigma(n,m,2,1) = dble(cPRRy(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRx(m,n))
+            !A_sigma(n,m,2,3) = dble(cPRRy(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRz(m,n))
+            !A_sigma(n,m,3,1) = dble(cPRRz(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRx(m,n))
+            !A_sigma(n,m,3,2) = dble(cPRRz(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRy(m,n))
+            ! Off-diagonal (currently unused):
+            !B_sigma(n,m,1,2) = dble(cPRRx(n,m)) * aimag(cPRRy(m,n)) + aimag(cPRRx(n,m)) * dble(cPRRy(m,n))
+            !B_sigma(n,m,1,3) = dble(cPRRx(n,m)) * aimag(cPRRz(m,n)) + aimag(cPRRx(n,m)) * dble(cPRRz(m,n))
+            !B_sigma(n,m,2,1) = dble(cPRRy(n,m)) * aimag(cPRRx(m,n)) + aimag(cPRRy(n,m)) * dble(cPRRx(m,n))
+            !B_sigma(n,m,2,3) = dble(cPRRy(n,m)) * aimag(cPRRz(m,n)) + aimag(cPRRy(n,m)) * dble(cPRRz(m,n))
+            !B_sigma(n,m,3,1) = dble(cPRRz(n,m)) * aimag(cPRRx(m,n)) + aimag(cPRRz(n,m)) * dble(cPRRx(m,n))
+            !B_sigma(n,m,3,2) = dble(cPRRz(n,m)) * aimag(cPRRy(m,n)) + aimag(cPRRz(n,m)) * dble(cPRRy(m,n))
+         endif
+      enddo
+   enddo
+!    !$omp end do
+!    !$omp end parallel
+
+   !-------------------
+   ! 2) Frequency-dependent values:
+   do i = 1, N_w  ! all frequencies
+      w = w_grid(i)  ! frequency grid point [1/s]
+
+      ! Get the real and imaginary parts of CDF [1]:
+      Re_eps_ij = 0.0d0 ! to start wirh
+      Im_eps_ij = 0.0d0 ! to start wirh
+
+!       !$omp PARALLEL private(n, m, w_mn, denom, g_sigma, w_sigma)
+!       !$omp do schedule(dynamic) reduction( + : Re_eps_ij, Im_eps_ij)
+      do n = 1, Nsiz ! all energy points
+         do m = 1, Nsiz ! all energy points
+            w_mn = (Ev(n) - Ev(m))/m_e_h   ! [1/s] frequency point
+            denom = (w_mn + w)**2 + m_gamm**2
+            g_sigma = m_gamm / denom
+            w_sigma = (w_mn + w) / denom
+
+            ! Optical conductivity / w:
+            Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma - B_sigma(n,m,1,1) * w_sigma)
+            Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma - B_sigma(n,m,2,2) * w_sigma)
+            Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma - B_sigma(n,m,3,3) * w_sigma)
+
+            Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
+            Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
+            Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
+         enddo ! m
+      enddo ! n
+!       !$omp end do
+!       !$omp end parallel
+
+      ! Get the prefactors:
+      Re_eps_ij = prefact * Re_eps_ij
+      Im_eps_ij = prefact * Im_eps_ij
+
+      ! Convert conductivity into CDF:
+      !Eps_xx = dcmplx( 1.0d0 - 4.0d0*g_Pi*Im_eps_ij(1,1) / w, 4.0d0*g_Pi*Re_eps_ij(1,1) / w )
+      !Eps_yy = dcmplx( 1.0d0 - 4.0d0*g_Pi*Im_eps_ij(2,2) / w, 4.0d0*g_Pi*Re_eps_ij(2,2) / w )
+      !Eps_zz = dcmplx( 1.0d0 - 4.0d0*g_Pi*Im_eps_ij(3,3) / w, 4.0d0*g_Pi*Re_eps_ij(3,3) / w )
+      ! Convert (sigma/w) into CDF:
+      Eps_xx = dcmplx( 1.0d0 - 4.0d0*g_Pi*Im_eps_ij(1,1), 4.0d0*g_Pi*Re_eps_ij(1,1))
+      Eps_yy = dcmplx( 1.0d0 - 4.0d0*g_Pi*Im_eps_ij(2,2), 4.0d0*g_Pi*Re_eps_ij(2,2))
+      Eps_zz = dcmplx( 1.0d0 - 4.0d0*g_Pi*Im_eps_ij(3,3), 4.0d0*g_Pi*Re_eps_ij(3,3))
+
+      ! Average CDF:
+      Im_eps = aimag(Eps_xx + Eps_yy + Eps_zz) / 3.0d0
+      Re_eps = dble (Eps_xx + Eps_yy + Eps_zz) / 3.0d0
+      !print*, 'get_Kubo_Greenwood_CDF', Im_eps, Re_eps
+
+      ! DC-conductivity:
+      dc_cond = Im_eps*w*g_e0     ! averaged over x, y, and z
+
+      ! Get optical coefficients:
+      call get_RTA_from_CDF(Re_eps, Im_eps, Scell(NSC)%eps%l, Scell(NSC)%eps%dd, Scell(NSC)%eps%teta, numpar%drude_ray, R, T, A) ! below
+      call get_n_k(Re_eps, Im_eps, opt_n, opt_k)  ! transfer Re(e) and Im(e) into n and k
+
+      ! Write them all into array:
+      call save_Eps_hw(Eps_hw_temp, i, w*m_e_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, &
+               opt_n, opt_k, Eps_xx, Eps_yy, Eps_zz, dc_cond=dc_cond) ! below
+   enddo ! i
+
+   ! Clean up:
+   deallocate(f_nm_w_nm)
+end subroutine get_Kubo_Greenwood_CDF
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Subroutines from Ref.[2]:
+subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref. [2]
+   type (Numerics_param), intent(inout) :: numpar  ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(inout) :: Scell   ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC    ! number of supercell
+   logical, intent(in) :: all_w  ! get all spectrum of hv, or only for given probe wavelength
+   type(Error_handling), intent(inout) :: Err   ! error save
+   !--------------------
+   real(8), dimension(:,:,:), allocatable :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
+   complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   real(8), dimension(:,:,:,:), allocatable :: cTnn ! kinetic energy-related [dimensionless]
+   real(8), dimension(:,:), allocatable :: Eps
+   real(8) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond
+   real(8) :: w, kx, ky, kz
+   real(8), dimension(:), allocatable :: w_grid
+   integer :: i, j, N, FN, ix, iy, iz, ixm, iym, izm, schem, Ngp, Nsiz, Nx, Ny, Nz
+   real(8), dimension(:), allocatable :: Ei	! energy levels [eV]
+   complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
+   real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
+   real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
+   complex(8) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
+   !--------------------
+
+   ! Allocate the array of optical coefficients spectrum (if not allocated before):
+   ! Define the grid size:
+   if (Scell(NSC)%eps%all_w) then ! full spectrum:
+      call allocate_Eps_hw(Scell(NSC)%eps%E_min, Scell(NSC)%eps%E_max, Scell(NSC)%eps%dE, Scell(NSC)%eps%Eps_hw) ! see below
+      N = size(Scell(NSC)%eps%Eps_hw,2) ! use this size to define temporary arrays within this subroutine
+      ! Grid of frequencies:
+      allocate(w_grid(N),source = 0.0d0)
+      w_grid(1) =  Scell(NSC)%eps%E_min*g_e/g_h ! [1/s] frequency starting point for the optical spectrum [eV]
+      do i = 2, N
+         w_grid(i) = w_grid(i-1) + Scell(NSC)%eps%dE*g_e/g_h	! [1/s] frequency next grid point [eV]
+      enddo
+   else
+      N = 1
+      if (.not.allocated(Scell(NSC)%eps%Eps_hw)) then
+         allocate(Scell(NSC)%eps%Eps_hw(16,N)) ! different parameters saved for all energy grid points
+      endif
+   endif
+
+   if (.not.allocated(Eps_hw)) allocate(Eps_hw(16,N), source = 0.0d0) ! all are there
+
+   ! For the user-defind number of k-points:
+   ixm = numpar%ixm
+   iym = numpar%iym
+   izm = numpar%izm
+   if (allocated(numpar%k_grid)) then
+      schem = 1   ! user-defined grid is present
+      Nsiz = size(numpar%k_grid,1)  ! size of the user provided grid
+   else
+      schem = 0   ! no user-defined grid, use default
+      Nsiz = ixm*iym*izm
+   endif
+
+   !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, cTnn, CHij, Ei, m_eff, w, i, &
+   !$omp                  Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, Eps_hw_temp, Eps_xx, Eps_yy, Eps_zz)
+   if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N), source = 0.0d0) ! all are there
+   !$omp do schedule(dynamic) reduction( + : Eps_hw)
+   do Ngp = 1, Nsiz
+      ! Split total index into 3 coordinates indices:
+      ix = ceiling( dble(Ngp)/dble(iym*izm) )
+      iy = ceiling( dble(Ngp - (ix-1)*iym*izm)/dble(izm) )
+      iz = Ngp - (ix-1)*iym*izm - (iy-1)*izm
+
+      ! k-points:
+      call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
+      if (numpar%verbose) write(*,'(a,i4,a,i7,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'Thread #', OMP_GET_THREAD_NUM(), &
+                                     ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' Graf-Vogl'
+
+      ! Get the effective momentum and kinetic-energy-related operators:
+      ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
+         select type(ARRAY)
+         type is (TB_H_Pettifor) ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, cTnn=cTnn)  ! module "TB"
+         type is (TB_H_Molteni)  ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, cTnn=cTnn)  ! module "TB"
+         type is (TB_H_Fu) ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, cTnn=cTnn)  ! module "TB"
+         type is (TB_H_NRL)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, cTnn=cTnn) ! module "TB"
+         type is (TB_H_DFTB)  ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, cTnn=cTnn) ! module "TB"
+         type is (TB_H_3TB)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, cTnn=cTnn) ! module "TB"
+         type is (TB_H_xTB)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, cTnn=cTnn) ! module "TB"
+         end select
+      END ASSOCIATE
+
+      ! Get the inverse effective mass (in units of m_e):
+      call inv_effective_mass(cPRRx, cPRRy, cPRRz, cTnn, Ei, m_eff)  ! below
+
+      ! Get the parameters of the CDF:
+      if (Scell(NSC)%eps%all_w) then ! full spectrum:
+         do i = 1, N
+            w = w_grid(i)  ! frequency
+            ! Get CDF:
+            call get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, m_eff, w, &
+               Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, Eps_xx, Eps_yy, Eps_zz)   ! below
+
+            ! Write them all into array:
+            call save_Eps_hw(Eps_hw_temp, i, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, &
+                  opt_n, opt_k, Eps_xx, Eps_yy, Eps_zz, dc_cond=dc_cond) ! below
+         enddo
+         Eps_hw = Eps_hw + Eps_hw_temp ! sum data at different k-points
+
+      else ! only for given probe:
+         w = Scell(NSC)%eps%w
+         ! Get CDF:
+         call get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, m_eff, w, &
+               Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, Eps_xx, Eps_yy, Eps_zz)   ! below
+
+         ! Write them all into array:
+         call save_Eps_hw(Eps_hw_temp, 1, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, &
+               opt_n, opt_k, Eps_xx, Eps_yy, Eps_zz, dc_cond=dc_cond) ! below
+         Eps_hw = Eps_hw + Eps_hw_temp ! sum data at different k-points
+      endif ! (Scell(NSC)%eps%all_w)
+   enddo ! Ngp
+   !$omp end do
+   if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
+   !$omp end parallel
+
+   ! Save the k-point avreages:
+   Eps_hw = Eps_hw/dble(Nsiz) ! normalize k-point summation
+   Scell(NSC)%eps%Eps_hw = Eps_hw   ! all data for spectrum in array
+   ! Get the values for the single value of the probe pulse:
+   call Find_in_array_monoton(w_grid, Scell(NSC)%eps%w, i)  ! module "Little_subroutines"
+   ! Use closest value on the grid:
+   Scell(NSC)%eps%ReEps = Eps_hw(2,i)  ! real part of CDF
+   Scell(NSC)%eps%ImEps = Eps_hw(3,i)  ! imaginary part of CDF
+   Scell(NSC)%eps%R = Eps_hw(5,i)   ! reflectivity
+   Scell(NSC)%eps%T = Eps_hw(6,i)   ! transmission
+   Scell(NSC)%eps%A = Eps_hw(7,i)   ! absorption
+   Scell(NSC)%eps%n = Eps_hw(8,i)   ! optical n
+   Scell(NSC)%eps%k = Eps_hw(9,i)   ! optical k
+   Scell(NSC)%eps%dc_cond = Eps_hw(10,i)  ! dc-conductivity
+   Scell(NSC)%eps%Eps_xx = dcmplx(Eps_hw(11,i), Eps_hw(12,i))  ! Re_E_xx and Im_E_xx
+   Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,i), Eps_hw(14,i))  ! Re_E_yy and Im_E_yy
+   Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,i), Eps_hw(16,i))  ! Re_E_zz and Im_E_zz
+
+   ! Clean up:
+   if (allocated(m_eff)) deallocate(m_eff)
+   if (allocated(cPRRx)) deallocate(cPRRx)
+   if (allocated(cPRRy)) deallocate(cPRRy)
+   if (allocated(cPRRz)) deallocate(cPRRz)
+   if (allocated(cTnn)) deallocate(cTnn)
+   if (allocated(Eps)) deallocate(Eps)
+   if (allocated(w_grid)) deallocate(w_grid)
+   if (allocated(Ei)) deallocate(Ei)
+   if (allocated(CHij)) deallocate(CHij)
+   if (allocated(Eps_hw)) deallocate(Eps_hw)
+end subroutine get_Graf_Vogl_all_complex
+
+
+
+subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, m_eff, w, &
+                        Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, Eps_xx, Eps_yy, Eps_zz)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
+   real(8), dimension(:,:,:), intent(in) :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
+   real(8), intent(in) :: w   ! frequency [1/s]
+   real(8), intent(inout) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond
+   complex(8), intent(inout) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
+   !----------------------------
+   real(8), dimension(3,3) :: Re_eps_ij, Im_eps_ij, Re_eps_ij_term1
+   real(8) :: delt, eta, Vol, w_mn, prefact, Re_prefact, temp, term_1_SI, term_2_SI, Im_term_SI, f_P_term, ww, prec
+   real(8) :: pxpx, pxpy, pxpz, pypx, pypy, pypz, pzpx, pzpy, pzpz
+   integer :: i, j, Nsiz, m, n
+
+   Nsiz = size(Ev)   ! number of energy levels
+
+   ! Precision for the principal value:
+   prec = 1.0d-2
+
+   ! Approximate the delta-function with a gaussian, Chapter VII in [4]
+   !eta = 0.3d0 ! [eV]
+   eta = 3.0d0 * m_gamm*m_e_h  ! [eV] gamma parameter ~0.3 eV
+
+   ! Supercell volume:
+   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+   temp = g_e**2/Vol ! prefactor in Re(Eps)
+   Im_term_SI = g_ke             ! to convert Im(Eps) into SI units (Coulomb-law)
+   term_1_SI = Im_term_SI/g_me   ! to convert first term in Re(Eps) into SI units
+   term_2_SI = term_1_SI/g_me    ! to convert second term in Re(Eps) into SI units
+
+   ! Get the imaginary part of CDF [1]:
+   Re_eps_ij = 0.0d0 ! to start wirh
+   Im_eps_ij = 0.0d0 ! to start wirh
+   Re_eps_ij_term1 = 0.0d0 ! to start wirh
+
+   do n = 1, Nsiz
+      ! First term in Re_eps:
+      do i = 1, 3
+         do j = 1,3
+            !Re_eps_ij_term1(i,j) = Re_eps_ij_term1(i,j) - temp/((w)**2) * Scell(NSC)%fe(n) * dble(m_eff(n,i,j)) * term_1_SI
+            Re_eps_ij_term1(i,j) = Re_eps_ij_term1(i,j) - Scell(NSC)%fe(n) * m_eff(n,i,j)
+         enddo ! j
+      enddo ! i
+      ! Im_CDF and second term in Re_CDF:
+      do m = 1, Nsiz
+         if (m /= n) then
+            ! Imaginary part:
+            w_mn = (Ev(n) - Ev(m))*g_e/g_h ! [1/s] frequency point
+            delt = m_inv_sqrt_pi * exp( -((w - w_mn)/(eta/m_e_h))**2 ) / (eta/m_e_h)   ! delta-function approx. [s]
+            prefact = -delt * (Scell(NSC)%fe(n) - Scell(NSC)%fe(m))
+
+!             pxpx = conjg(cPRRx(n,m)) * cPRRx(m,n)
+!             pxpy = conjg(cPRRx(n,m)) * cPRRy(m,n)
+!             pxpz = conjg(cPRRx(n,m)) * cPRRz(m,n)
+!             pypx = conjg(cPRRy(n,m)) * cPRRx(m,n)
+!             pypy = conjg(cPRRy(n,m)) * cPRRy(m,n)
+!             pypz = conjg(cPRRy(n,m)) * cPRRz(m,n)
+!             pzpx = conjg(cPRRz(n,m)) * cPRRx(m,n)
+!             pzpy = conjg(cPRRz(n,m)) * cPRRy(m,n)
+!             pzpz = conjg(cPRRz(n,m)) * cPRRz(m,n)
+
+            pxpx = dble( cPRRx(n,m) * cPRRx(m,n) )
+            pxpy = dble( cPRRx(n,m) * cPRRy(m,n) )
+            pxpz = dble( cPRRx(n,m) * cPRRz(m,n) )
+            pypx = dble( cPRRy(n,m) * cPRRx(m,n) )
+            pypy = dble( cPRRy(n,m) * cPRRy(m,n) )
+            pypz = dble( cPRRy(n,m) * cPRRz(m,n) )
+            pzpx = dble( cPRRz(n,m) * cPRRx(m,n) )
+            pzpy = dble( cPRRz(n,m) * cPRRy(m,n) )
+            pzpz = dble( cPRRz(n,m) * cPRRz(m,n) )
+
+            Im_eps_ij(1,1) = Im_eps_ij(1,1) + prefact * pxpx
+            Im_eps_ij(1,2) = Im_eps_ij(1,2) + prefact * pxpy
+            Im_eps_ij(1,3) = Im_eps_ij(1,3) + prefact * pxpz
+            Im_eps_ij(2,1) = Im_eps_ij(2,1) + prefact * pypx
+            Im_eps_ij(2,2) = Im_eps_ij(2,2) + prefact * pypy
+            Im_eps_ij(2,3) = Im_eps_ij(2,3) + prefact * pypz
+            Im_eps_ij(3,1) = Im_eps_ij(3,1) + prefact * pzpx
+            Im_eps_ij(3,2) = Im_eps_ij(3,2) + prefact * pzpy
+            Im_eps_ij(3,3) = Im_eps_ij(3,3) + prefact * pzpz
+
+            ! Real part:
+            ww = (w_mn-w)
+            if (abs(ww) > prec) then
+               Re_prefact = (Scell(NSC)%fe(n) - Scell(NSC)%fe(m))/((w_mn**2)*g_h*ww)
+               Re_eps_ij(1,1) = Re_eps_ij(1,1) + Re_prefact * pxpx
+               Re_eps_ij(1,2) = Re_eps_ij(1,2) + Re_prefact * pxpy
+               Re_eps_ij(1,3) = Re_eps_ij(1,3) + Re_prefact * pxpz
+               Re_eps_ij(2,1) = Re_eps_ij(2,1) + Re_prefact * pypx
+               Re_eps_ij(2,2) = Re_eps_ij(2,2) + Re_prefact * pypy
+               Re_eps_ij(2,3) = Re_eps_ij(2,3) + Re_prefact * pypz
+               Re_eps_ij(3,1) = Re_eps_ij(3,1) + Re_prefact * pzpx
+               Re_eps_ij(3,2) = Re_eps_ij(3,2) + Re_prefact * pzpy
+               Re_eps_ij(3,3) = Re_eps_ij(3,3) + Re_prefact * pzpz
+            endif ! (abs(ww) > prec)
+
+         endif ! (m /= n)
+      enddo ! j
+   enddo ! i
+
+   ! Include prefactors:
+   Im_eps_ij = m_prefac/(w*w * Vol) * Im_eps_ij * Im_term_SI   ! -> SI units
+   Re_eps_ij_term1 = Re_eps_ij_term1 * temp/((w-eta/m_e_h)**2) * term_1_SI
+   Re_eps_ij = Re_eps_ij * temp*term_2_SI + Re_eps_ij_term1   ! combine terms
+
+   ! Save into output variables:
+   Eps_xx = dcmplx( 1.0d0 + 4.0d0*g_Pi*Re_eps_ij(1,1),  4.0d0*g_Pi*Im_eps_ij(1,1) )
+   Eps_yy = dcmplx( 1.0d0 + 4.0d0*g_Pi*Re_eps_ij(2,2),  4.0d0*g_Pi*Im_eps_ij(2,2) )
+   Eps_zz = dcmplx( 1.0d0 + 4.0d0*g_Pi*Re_eps_ij(3,3),  4.0d0*g_Pi*Im_eps_ij(3,3) )
+
+   ! Convert from conductivity to CDF:
+   Im_eps = aimag(Eps_xx + Eps_yy + Eps_zz) / 3.0d0
+   Re_eps = dble (Eps_xx + Eps_yy + Eps_zz) / 3.0d0
+
+   ! DC-conductivity:
+   dc_cond = Im_eps*w*g_e0     ! averaged over x, y, and z
+
+   ! Get optical coefficients:
+   call get_RTA_from_CDF(Re_eps, Im_eps, Scell(NSC)%eps%l, Scell(NSC)%eps%dd, Scell(NSC)%eps%teta, numpar%drude_ray, R, T, A) ! below
+   call get_n_k(Re_eps, Im_eps, opt_n, opt_k)  ! transfer Re(e) and Im(e) into n and k
+end subroutine get_Graf_Vogl_CDF
+
+
+
+subroutine inv_effective_mass(cPRRx, cPRRy, cPRRz, cTnn, Ev, m_eff)  ! Ref.[2], Eq(8)
+   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   real(8), dimension(:,:,:,:), intent(in) :: cTnn ! kinetic energy-related [dimensionless]
+   real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
+   real(8), dimension(:,:,:), intent(inout), allocatable :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
+   !-----------------------------
+   integer :: Nsiz, n, m, i, j
+   real(8) :: fact, me_inv
+
+   Nsiz = size(cTnn,1)
+   me_inv = 1.0d0/g_me
+
+   if (.not.allocated(m_eff)) allocate(m_eff(Nsiz,3,3))
+   m_eff = 0.0d0 ! to start with
+
+   !$omp parallel
+   !$omp do private(n, m, i, j, fact)
+   do n = 1, Nsiz
+      do i = 1, 3
+         do j = 1, 3
+            ! Term 1, kinetic energy (diagonal) contribution:
+            m_eff(n,i,j) = cTnn(n,n,i,j)  ! 1/me is excluded, due to units choice
+!             print*, n, i, j, cTnn(n,n,i,j)
+         enddo ! j
+      enddo ! i
+
+      ! Term 2, momentum contribution:
+      do m = 1, Nsiz
+         if (m /= n) then ! off-diagonal terms:
+            fact = me_inv/(Ev(n) - Ev(m)) ! 1/(me*(En-Em))
+            m_eff(n,1,1) = m_eff(n,1,1) + fact * ( conjg(cPRRx(n,m))*cPRRx(m,n) + conjg(cPRRx(m,n))*cPRRx(n,m) ) ! i = x, j = x
+            m_eff(n,1,2) = m_eff(n,1,2) + fact * ( conjg(cPRRx(n,m))*cPRRy(m,n) + conjg(cPRRx(m,n))*cPRRy(n,m) ) ! i = x, j = y
+            m_eff(n,1,3) = m_eff(n,1,3) + fact * ( conjg(cPRRx(n,m))*cPRRz(m,n) + conjg(cPRRx(m,n))*cPRRz(n,m) ) ! i = x, j = z
+            m_eff(n,2,1) = m_eff(n,2,1) + fact * ( conjg(cPRRy(n,m))*cPRRx(m,n) + conjg(cPRRy(m,n))*cPRRx(n,m) ) ! i = y, j = x
+            m_eff(n,2,2) = m_eff(n,2,2) + fact * ( conjg(cPRRy(n,m))*cPRRy(m,n) + conjg(cPRRy(m,n))*cPRRy(n,m) ) ! i = y, j = y
+            m_eff(n,2,3) = m_eff(n,2,3) + fact * ( conjg(cPRRy(n,m))*cPRRz(m,n) + conjg(cPRRy(m,n))*cPRRz(n,m) ) ! i = y, j = z
+            m_eff(n,3,1) = m_eff(n,3,1) + fact * ( conjg(cPRRz(n,m))*cPRRx(m,n) + conjg(cPRRz(m,n))*cPRRx(n,m) ) ! i = z, j = x
+            m_eff(n,3,2) = m_eff(n,3,2) + fact * ( conjg(cPRRz(n,m))*cPRRy(m,n) + conjg(cPRRz(m,n))*cPRRy(n,m) ) ! i = z, j = y
+            m_eff(n,3,3) = m_eff(n,3,3) + fact * ( conjg(cPRRz(n,m))*cPRRz(m,n) + conjg(cPRRz(m,n))*cPRRz(n,m) ) ! i = z, j = z
+         endif ! (m /= n)
+      enddo ! m
+
+!       print*, n, m_eff(n,:,:)
+   enddo ! n
+   !$omp end do
+   !$omp end parallel
+!    pause 'inv_effective_mass'
+end subroutine inv_effective_mass
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Complex-value Trani's subroutines from Ref.[1]:
 
 !subroutine get_trani_all_complex(numpar, Scell, NSC, fe, all_w, Err)
-subroutine get_trani_all_complex(numpar, Scell, NSC, all_w, Err)
+subroutine get_trani_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref. [2]
    type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function 
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
 !    real(8), dimension(:), intent(in) :: fe	! electron distribution function
    logical, intent(in) :: all_w	! get all spectrum of hv, or only for given probe wavelength
    type(Error_handling), intent(inout) :: Err	! error save
-
+   !-----------------------------------------
    real(8), dimension(:,:), allocatable :: Fnnx, Fnny, Fnnz
    real(8), dimension(:,:), allocatable :: Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz
    real(8), dimension(:,:), allocatable :: Eps
+   real(8), dimension(:), allocatable :: w_grid
    real(8) Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond
    real(8) w, kx, ky, kz
    integer i, j, N, FN, ix, iy, iz, ixm, iym, izm, schem, Ngp, Nsiz
@@ -160,6 +791,7 @@ subroutine get_trani_all_complex(numpar, Scell, NSC, all_w, Err)
       allocate(Eps_hw_temp(16,N)) ! all are there
       Eps_hw_temp = 0.0d0
    endif
+   allocate(w_grid(N))
 
    ixm = numpar%ixm
    iym = numpar%iym
@@ -186,7 +818,7 @@ subroutine get_trani_all_complex(numpar, Scell, NSC, all_w, Err)
 !             ky = (2.0d0*real(iy) - real(iym) - 1.0d0)/(2.0d0*real(iym))
 !             kz = (2.0d0*real(iz) - real(izm) - 1.0d0)/(2.0d0*real(izm))
             call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid)	! module "TB"
-            write(*,'(i3,i3,i3,f9.4,f9.4,f9.4,a)') ix, iy, iz, kx, ky, kz, ' OPT'
+            if (numpar%verbose) write(*,'(i3,i3,i3,f9.4,f9.4,f9.4,a)') ix, iy, iz, kx, ky, kz, ' Trani'
             
             call get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx=kx, ky=ky, kz=kz, Err=Err) ! see below
             ! With off-diagonal elements:
@@ -195,22 +827,27 @@ subroutine get_trani_all_complex(numpar, Scell, NSC, all_w, Err)
 
             if (all_w) then ! full spectrum:
                w = Scell(NSC)%eps%E_min*g_e/g_h	! [1/s] frequency starting point for the optical spectrum [eV]
+               w_grid(1) = w  ! save for the grid
                do i = 1, N
                   call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond=dc_cond)
                   ! With off-diagonal elements:
 !                   call get_trani(numpar, Scell, NSC, Fnnxx, Fnnyy, Fnnzz, Ei, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond=dc_cond, Fnnxy=Fnnxy, Fnnxz=Fnnxz, Fnnyx=Fnnyx, Fnnyz=Fnnyz, Fnnzx=Fnnzx, Fnnzy=Fnnzy)
                   !call get_trani(numpar, matter, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, Ei, fe, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k)
-                  call save_Eps_hw(Eps_hw_temp, i, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, opt_n, opt_k, Scell(NSC)%eps%Eps_xx, Scell(NSC)%eps%Eps_yy, Scell(NSC)%eps%Eps_zz, dc_cond=dc_cond) ! Eps_hw_temp(1,i) = hw  ! energy
+                  call save_Eps_hw(Eps_hw_temp, i, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), &
+                  R, T, A, opt_n, opt_k, Scell(NSC)%eps%Eps_xx, Scell(NSC)%eps%Eps_yy, Scell(NSC)%eps%Eps_zz, dc_cond=dc_cond) ! Eps_hw_temp(1,i) = hw  ! energy
                   w = w + Scell(NSC)%eps%dE*g_e/g_h	! [1/s] frequency next grid point [eV]
+                  if (i<N) w_grid(i+1) = w   ! save for the grid
                enddo
                Eps_hw = Eps_hw + Eps_hw_temp
             else ! only for given probe:
                w = Scell(NSC)%eps%w
+               w_grid(1) = w  ! save for the grid
                call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond=dc_cond)
                ! With off-diagonal elements:
 !                call get_trani(numpar, Scell, NSC, Fnnxx, Fnnyy, Fnnzz, Ei, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond=dc_cond, Fnnxy=Fnnxy, Fnnxz=Fnnxz, Fnnyx=Fnnyx, Fnnyz=Fnnyz, Fnnzx=Fnnzx, Fnnzy=Fnnzy)
                !call get_trani(numpar, matter, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, Ei, fe, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k)
-               call save_Eps_hw(Eps_hw_temp, 1, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, opt_n, opt_k, Scell(NSC)%eps%Eps_xx, Scell(NSC)%eps%Eps_yy, Scell(NSC)%eps%Eps_zz, dc_cond=dc_cond) ! Eps_hw_temp(1,i) = hw  ! energy   
+               call save_Eps_hw(Eps_hw_temp, 1, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), &
+               R, T, A, opt_n, opt_k, Scell(NSC)%eps%Eps_xx, Scell(NSC)%eps%Eps_yy, Scell(NSC)%eps%Eps_zz, dc_cond=dc_cond) ! Eps_hw_temp(1,i) = hw  ! energy
                Eps_hw = Eps_hw + Eps_hw_temp
             endif
 !             print*, 'Fnn', Fnnx, Fnny, Fnnz
@@ -227,19 +864,21 @@ subroutine get_trani_all_complex(numpar, Scell, NSC, all_w, Err)
 !       Eps_hw = Eps_hw/dble(ixm*iym*izm)
      Eps_hw = Eps_hw/dble(Nsiz)
      Scell(NSC)%eps%Eps_hw = Eps_hw     
-     
-     Scell(NSC)%eps%ReEps = Eps_hw(2,1)	! real part of CDF
-     Scell(NSC)%eps%ImEps = Eps_hw(3,1)	! imaginary part of CDF
-     Scell(NSC)%eps%R = Eps_hw(5,1)	! reflectivity
-     Scell(NSC)%eps%T = Eps_hw(6,1)	! transmission
-     Scell(NSC)%eps%A = Eps_hw(7,1)	! absorption
-     Scell(NSC)%eps%n = Eps_hw(8,1)	! optical n
-     Scell(NSC)%eps%k = Eps_hw(9,1)	! optical k
-     Scell(NSC)%eps%dc_cond = Eps_hw(10,1)	! dc-conductivity
-     Scell(NSC)%eps%Eps_xx = dcmplx(Eps_hw(11,1), Eps_hw(12,1))  ! Re_E_xx and Im_E_xx
-     Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,1), Eps_hw(14,1))  ! Re_E_yy and Im_E_yy
-     Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,1), Eps_hw(16,1))  ! Re_E_zz and Im_E_zz
 
+     ! Get the values for the single value of the probe pulse:
+     call Find_in_array_monoton(w_grid, Scell(NSC)%eps%w, i)  ! module "Little_subroutines"
+
+     Scell(NSC)%eps%ReEps = Eps_hw(2,i)	! real part of CDF
+     Scell(NSC)%eps%ImEps = Eps_hw(3,i)	! imaginary part of CDF
+     Scell(NSC)%eps%R = Eps_hw(5,i)	! reflectivity
+     Scell(NSC)%eps%T = Eps_hw(6,i)	! transmission
+     Scell(NSC)%eps%A = Eps_hw(7,i)	! absorption
+     Scell(NSC)%eps%n = Eps_hw(8,i)	! optical n
+     Scell(NSC)%eps%k = Eps_hw(9,i)	! optical k
+     Scell(NSC)%eps%dc_cond = Eps_hw(10,i)	! dc-conductivity
+     Scell(NSC)%eps%Eps_xx = dcmplx(Eps_hw(11,i), Eps_hw(12,i))  ! Re_E_xx and Im_E_xx
+     Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,i), Eps_hw(14,i))  ! Re_E_yy and Im_E_yy
+     Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,i), Eps_hw(16,i))  ! Re_E_zz and Im_E_zz
 
 !       ! Save parameters for the selected probe-pulse:
 !       w = Scell(NSC)%eps%w
@@ -285,7 +924,7 @@ subroutine allocate_Eps_hw(E_min, E_max, dE, Eps_hw)
 end subroutine allocate_Eps_hw
 
 
-subroutine get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz, Err, Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy)
+subroutine get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz, Err, Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy) ! Ref. [2]
 !subroutine get_Fnn_complex(numpar, matter, atoms, TB, CHij, Ei, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, kx ,ky, kz, Err)
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
@@ -470,7 +1109,7 @@ end subroutine get_Fnn_complex
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Real-value Trani's subroutines (Gamma-point):
-subroutine get_trani_all(numpar, Scell, NSC, Ei, Ha, fe, all_w)
+subroutine get_trani_all(numpar, Scell, NSC, Ei, Ha, fe, all_w) ! Ref. [2]
    type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function 
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -550,8 +1189,8 @@ end subroutine get_trani_all
 
 
 
-subroutine get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, R, T, A, n, k, dc_cond, Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy)
-! subroutine get_trani(numpar, matter, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, Ei, fe, w, Re_eps, Im_eps, R, T, A, n, k)
+subroutine get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, R, T, A, n, k, dc_cond, &
+                     Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy) ! Ref. [1]
    type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function 
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -586,7 +1225,8 @@ subroutine get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps
 !    allocate(Im_array(NEL,3))
    
 !    g = 1.0d13	! [1/s] gamma parameter
-   g = 1.5d14	! [1/s] gamma parameter
+!    g = 1.5d14	! [1/s] gamma parameter
+   g = m_gamm  ! [1/s] gamma parameter
 
 !    V = Scell(NSC)%V*1d-30
    V = Scell(NSC)%V*1d-10	! power of 20 cancels with the same power in Fnn'
@@ -855,7 +1495,7 @@ subroutine split_into_orders(temp, V_small, V_mid, V_large)
 end subroutine split_into_orders
 
 
-subroutine get_Fnn(Scell, NSC, Ha, Ei, Fnnx, Fnny, Fnnz, Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy)
+subroutine get_Fnn(Scell, NSC, Ha, Ei, Fnnx, Fnny, Fnnz, Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy) ! Ref. [2]
 ! subroutine get_Fnn(matter, Ha, Ei, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -979,6 +1619,8 @@ end subroutine save_Eps_hw
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
+
+
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Drude subroutines:
 subroutine get_drude(numpar, Scell, NSC)
@@ -1013,6 +1655,7 @@ subroutine get_drude(numpar, Scell, NSC)
       call get_n_k(Scell(NSC)%eps%ReEps, Scell(NSC)%eps%ImEps, Scell(NSC)%eps%n, Scell(NSC)%eps%k)	! transfer Re(e) and Im(e) into n and k
    endif
 end subroutine get_drude
+
 
 
 
@@ -1066,7 +1709,7 @@ end subroutine Kramers_Kronig_Re_from_Im
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! General optical coefficients subroutines:
-subroutine get_RTA_from_CDF(ReEps, ImEps, ll, dd, teta0, drude_ray, R, T, A)
+subroutine get_RTA_from_CDF(ReEps, ImEps, ll, dd, teta0, drude_ray, R, T, A)  ! Ref. [3]
    real(8), intent(in) :: ReEps, ImEps	! Re(e) and Im(e) of dielectric function
    real(8), intent(in) :: ll  ! [nm] probe-pulse wavelength
    real(8), intent(in) :: dd  ! [nm] experimental layer thickness
@@ -1159,958 +1802,25 @@ end subroutine get_Re_and_Im
 
 
 !c creflection coefficient between two layers as function of two wave vectors:
-function crefl(cxki,cxkj)
+function crefl(cxki,cxkj)  ! Ref. [3]
    complex :: crefl, cxki, cxkj
    crefl = (cxki-cxkj)/(cxki+cxkj)
 end function crefl
 
 !c transmission coefficient between two layers as function of two wave vectors:
-function ctrans(cxki,cxkj)
+function ctrans(cxki,cxkj) ! Ref. [3]
    complex :: ctrans, cxki, cxkj
    ctrans = 2.0d0*cxki/(cxki+cxkj)
 end function ctrans
 
 !c phase factor within the layer i:
-function cphase(cxkx,cd)
+function cphase(cxkx,cd)   ! Ref. [3]
    complex :: cphase, cxkx, cd
    complex cc, carg
    cc = (0.0d0,1.0d0)
    carg = -cc*cxkx*cd
    cphase=exp(carg)
 end function cphase
-
-
-
-
-
-!======================================================
-! Obsolete subs:
-
-
-subroutine get_trani_all_complex_M(numpar, Scell, NSC, atoms, TB_Hamil, fe, all_w, Err)
-   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function 
-   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   integer, intent(in) :: NSC ! number of supercell
-   type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
-   type(TB_H_Molteni), dimension(:,:), intent(in) :: TB_Hamil   ! parameters of the Hamiltonian of TB
-   real(8), dimension(:), intent(in) :: fe	! electron distribution function
-   logical, intent(in) :: all_w	! get all spectrum of hv, or only for given probe wavelength
-   type(Error_handling), intent(inout) :: Err	! error save
-
-   real(8), dimension(:,:), allocatable :: Fnnx, Fnny, Fnnz
-   !real(8), dimension(:,:), allocatable :: Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz
-   real(8), dimension(:,:), allocatable :: Eps
-   real(8) Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond
-   real(8) w, wmax, kx, ky, kz
-   integer i, j, N, FN, ix, iy, iz, ixm, iym, izm, iw
-   !integer*4 today(3), now(3)
-
-   real(8), dimension(:), allocatable :: Ei	! energy levels [eV]
-   complex, dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
-   real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
-   real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
-
-!    N = 1000
-!    if (.not.allocated(Scell(NSC)%eps%Eps_hw)) then
-!       allocate(Scell(NSC)%eps%Eps_hw(9,N)) ! all are there
-!    endif
-   ! Allocate the array of optical coefficients spectrum (if not allocated before):
-   call allocate_Eps_hw(Scell(NSC)%eps%E_min, Scell(NSC)%eps%E_max, Scell(NSC)%eps%dE, Scell(NSC)%eps%Eps_hw) ! see below
-   N = size(Scell(NSC)%eps%Eps_hw,2) ! use this size to define temporary arrays within this subroutine
-   
-   if (.not.allocated(Eps_hw)) allocate(Eps_hw(16,N)) ! all are there
-   Eps_hw = 0.0d0
-   if (.not.allocated(Eps_hw_temp)) then
-      allocate(Eps_hw_temp(16,N)) ! all are there
-      Eps_hw_temp = 0.0d0
-   endif
-!    wmax =50.0d0*g_e/g_h ! [1/s] maximum frequency to trace
-   ixm = numpar%ixm
-   iym = numpar%iym
-   izm = numpar%izm
-   
-!    !$omp PARALLEL private(ix,iy,iz,i,Eps_hw_temp,CHij,Ei,Fnnx,Fnny,Fnnz,w,Re_eps,Im_eps,R,T,A,opt_n,opt_k) shared(Eps_hw)
-!    !$omp do reduction( + : Eps_hw)
-   do ix = 1, ixm
-      do iy = 1, iym
-         do iz = 1, izm
-            
-            print*, ix, iy, iz, ixm
-            
-            ! k-points choice from [J. Moreno, J. M. Soler, PRB 45, 13891 (1992)]
-            kx = (2.0d0*real(ix) - real(ixm) - 1.0d0)/(2.0d0*real(ixm))
-            ky = (2.0d0*real(iy) - real(iym) - 1.0d0)/(2.0d0*real(iym))
-            kz = (2.0d0*real(iz) - real(izm) - 1.0d0)/(2.0d0*real(izm))
-
-            call get_Fnn_complex_M(numpar, Scell, NSC, atoms, TB_Hamil, CHij, Ei, Fnnx, Fnny, Fnnz, kx=kx, ky=ky, kz=kz, Err=Err) ! see below
-!             call get_Fnn_complex(numpar, matter, atoms, TB_Hamil, CHij, Ei, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, kx=real(ix)/real(ixm), ky=real(iy)/real(iym), kz=real(iz)/real(izm), Err=Err) ! see below
-
-            if (all_w) then ! full spectrum:
-! !$omp PARALLEL private(i,w,Eps_hw_temp,Re_eps,Im_eps,R,T,A,opt_n,opt_k)
-! !$omp do reduction( + : Eps_hw)
-               w = Scell(NSC)%eps%E_min*g_e/g_h	! [1/s] frequency starting point for the optical spectrum [eV]
-               do i = 1, N
-!                   w = real(i)/real(N)*wmax
-                  call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k)
-!                 call get_trani(numpar, matter, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, Ei, fe, w, Re_eps, Im_eps)
-                  call save_Eps_hw(Eps_hw_temp, i, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, opt_n, opt_k, Scell(NSC)%eps%Eps_xx, Scell(NSC)%eps%Eps_yy, Scell(NSC)%eps%Eps_zz) ! Eps_hw_temp(1,i) = hw  ! energy
-                  w = w + Scell(NSC)%eps%dE*g_e/g_h	! [1/s] frequency next grid point [eV]
-               enddo
-! !$omp end do
-               Eps_hw = Eps_hw + Eps_hw_temp
-! !$omp end parallel
-            else ! only for given probe:
-               w = Scell(NSC)%eps%w
-               call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, dc_cond=dc_cond)
-!                call get_trani(numpar, matter, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, Ei, fe, w, Re_eps, Im_eps)
-            endif
-         enddo ! iz
-      enddo ! iy
-   enddo ! ix
-
-!    !$omp end do
-!    !$omp end parallel
-!    if (all_w) then ! full spectrum:
-!       !Eps_hw = Eps_hw/real((ixm+1)*(iym+1)*(izm+1))
-      Eps_hw = Eps_hw/dble(ixm*iym*izm)
-      Scell(NSC)%eps%Eps_hw = Eps_hw
-
-     Scell(NSC)%eps%ReEps = Eps_hw(2,1)	! real part of CDF
-     Scell(NSC)%eps%ImEps = Eps_hw(3,1)	! imaginary part of CDF
-     Scell(NSC)%eps%R = Eps_hw(5,1)	! reflectivity
-     Scell(NSC)%eps%T = Eps_hw(6,1)	! transmission
-     Scell(NSC)%eps%A = Eps_hw(7,1)	! absorption
-     Scell(NSC)%eps%n = Eps_hw(8,1)	! optical n
-     Scell(NSC)%eps%k = Eps_hw(9,1)	! optical k
-     Scell(NSC)%eps%dc_cond = Eps_hw(10,1)	! dc-conductivity
-     Scell(NSC)%eps%Eps_xx = dcmplx(Eps_hw(11,1), Eps_hw(12,1))  ! Re_E_xx and Im_E_xx
-     Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,1), Eps_hw(14,1))  ! Re_E_yy and Im_E_yy
-     Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,1), Eps_hw(16,1))  ! Re_E_zz and Im_E_zz
-!       ! Save parameters for the selected probe-pulse:
-!       w = Scell(NSC)%eps%w
-!       call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, fe, w, Re_eps, Im_eps, dc_cond=dc_cond)
-!    endif
-   
-end subroutine get_trani_all_complex_M
-
-
-
-subroutine get_trani_all_complex_F(numpar, Scell, NSC, atoms, TB_Hamil, fe, all_w, Err)
-   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function 
-   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   integer, intent(in) :: NSC ! number of supercell
-   type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
-   type(TB_H_Fu), dimension(:,:), intent(in) :: TB_Hamil   ! parameters of the Hamiltonian of TB
-   real(8), dimension(:), intent(in) :: fe	! electron distribution function
-   logical, intent(in) :: all_w	! get all spectrum of hv, or only for given probe wavelength
-   type(Error_handling), intent(inout) :: Err	! error save
-
-   real(8), dimension(:,:), allocatable :: Fnnx, Fnny, Fnnz
-   !real(8), dimension(:,:), allocatable :: Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz
-   real(8), dimension(:,:), allocatable :: Eps
-   real(8) Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond
-   real(8) w, kx, ky, kz
-   integer i, j, N, FN, ix, iy, iz, ixm, iym, izm
-   !integer*4 today(3), now(3)
-
-   real(8), dimension(:), allocatable :: Ei	! energy levels [eV]
-   complex, dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
-   real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
-   real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
-
-!    N = 1000
-!    if (.not.allocated(Scell(NSC)%eps%Eps_hw)) then
-!       allocate(Scell(NSC)%eps%Eps_hw(9,N)) ! all are there
-!    endif
-   ! Allocate the array of optical coefficients spectrum (if not allocated before):
-   if (all_w) then ! full spectrum:
-      call allocate_Eps_hw(Scell(NSC)%eps%E_min, Scell(NSC)%eps%E_max, Scell(NSC)%eps%dE, Scell(NSC)%eps%Eps_hw) ! see below
-      N = size(Scell(NSC)%eps%Eps_hw,2) ! use this size to define temporary arrays within this subroutine
-   else
-      N = 1
-      if (.not.allocated(Scell(NSC)%eps%Eps_hw)) then
-         allocate(Scell(NSC)%eps%Eps_hw(16,N)) ! 10 different parameters saved for all energy grid points
-      endif     
-   endif
-
-   if (.not.allocated(Eps_hw)) allocate(Eps_hw(16,N)) ! all are there
-   Eps_hw = 0.0d0
-   if (.not.allocated(Eps_hw_temp)) then
-      allocate(Eps_hw_temp(16,N)) ! all are there
-      Eps_hw_temp = 0.0d0
-   endif
-!    wmax =50.0d0*g_e/g_h ! [1/s] maximum frequency to trace
-   ixm = numpar%ixm
-   iym = numpar%iym
-   izm = numpar%izm
-
-!    !$omp PARALLEL private(ix,iy,iz,i,Eps_hw_temp,CHij,Ei,Fnnx,Fnny,Fnnz,w,Re_eps,Im_eps,R,T,A,opt_n,opt_k) shared(Eps_hw)
-!    !$omp do reduction( + : Eps_hw)
-   do ix = 1, ixm
-      do iy = 1, iym
-         do iz = 1, izm
-         
-            print*, ix, iy, iz, ixm, 'P'
-         
-            ! k-points choice from [J. Moreno, J. M. Soler, PRB 45, 13891 (1992)]
-            kx = (2.0d0*real(ix) - real(ixm) - 1.0d0)/(2.0d0*real(ixm))
-            ky = (2.0d0*real(iy) - real(iym) - 1.0d0)/(2.0d0*real(iym))
-            kz = (2.0d0*real(iz) - real(izm) - 1.0d0)/(2.0d0*real(izm))
-            call get_Fnn_complex_F(numpar, Scell, NSC, atoms, TB_Hamil, CHij, Ei, Fnnx, Fnny, Fnnz, kx=kx, ky=ky, kz=kz, Err=Err) ! see below
-!             call get_Fnn_complex(numpar, matter, atoms, TB_Hamil, CHij, Ei, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, kx=real(ix)/real(ixm), ky=real(iy)/real(iym), kz=real(iz)/real(izm), Err=Err) ! see below
-
-            if (all_w) then ! full spectrum:
-               w = Scell(NSC)%eps%E_min*g_e/g_h	! [1/s] frequency starting point for the optical spectrum [eV]
-               do i = 1, N
-                  !w = real(i)/real(N)*wmax
-                  call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond=dc_cond)
-                  !call get_trani(numpar, matter, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, Ei, fe, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k)
-                  call save_Eps_hw(Eps_hw_temp, i, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, opt_n, opt_k, Scell(NSC)%eps%Eps_xx, Scell(NSC)%eps%Eps_yy, Scell(NSC)%eps%Eps_zz, dc_cond=dc_cond) ! Eps_hw_temp(1,i) = hw  ! energy
-                  w = w + Scell(NSC)%eps%dE*g_e/g_h	! [1/s] frequency next grid point [eV]
-               enddo
-               Eps_hw = Eps_hw + Eps_hw_temp
-            else ! only for given probe:
-               w = Scell(NSC)%eps%w
-               !call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, fe, w, Re_eps, Im_eps, dc_cond=dc_cond)
-!                call get_trani(numpar, matter, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, Ei, fe, w, Re_eps, Im_eps)
-               call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond=dc_cond)
-               !call get_trani(numpar, matter, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, Ei, fe, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k)
-               call save_Eps_hw(Eps_hw_temp, 1, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, opt_n, opt_k, Scell(NSC)%eps%Eps_xx, Scell(NSC)%eps%Eps_yy, Scell(NSC)%eps%Eps_zz, dc_cond=dc_cond) ! Eps_hw_temp(1,i) = hw  ! energy   
-               Eps_hw = Eps_hw + Eps_hw_temp
-            endif
-!             print*, 'Fnn', Fnnx, Fnny, Fnnz
-!             print*, w, Re_eps, Im_eps
-         enddo ! iz
-      enddo ! iy
-   enddo ! ix
-
-!    !$omp end do
-!    !$omp end parallel
-!    if (all_w) then ! full spectrum:
-!       !Eps_hw = Eps_hw/real((ixm+1)*(iym+1)*(izm+1))
-      Eps_hw = Eps_hw/dble(ixm*iym*izm)
-      Scell(NSC)%eps%Eps_hw = Eps_hw     
-     
-     Scell(NSC)%eps%ReEps = Eps_hw(2,1)	! real part of CDF
-     Scell(NSC)%eps%ImEps = Eps_hw(3,1)	! imaginary part of CDF
-     Scell(NSC)%eps%R = Eps_hw(5,1)	! reflectivity
-     Scell(NSC)%eps%T = Eps_hw(6,1)	! transmission
-     Scell(NSC)%eps%A = Eps_hw(7,1)	! absorption
-     Scell(NSC)%eps%n = Eps_hw(8,1)	! optical n
-     Scell(NSC)%eps%k = Eps_hw(9,1)	! optical k
-     Scell(NSC)%eps%dc_cond = Eps_hw(10,1)	! dc-conductivity
-     Scell(NSC)%eps%Eps_xx = dcmplx(Eps_hw(11,1), Eps_hw(12,1))  ! Re_E_xx and Im_E_xx
-     Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,1), Eps_hw(14,1))  ! Re_E_yy and Im_E_yy
-     Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,1), Eps_hw(16,1))  ! Re_E_zz and Im_E_zz
-     
-!       ! Save parameters for the selected probe-pulse:
-!       w = Scell(NSC)%eps%w
-!       call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, fe, w, Re_eps, Im_eps, dc_cond=dc_cond)
-!    endif
-end subroutine get_trani_all_complex_F
-
-
-subroutine get_trani_all_complex_NRL(numpar, Scell, NSC, TB_Hamil, fe, all_w, Err)
- type (Numerics_param), intent(inout) :: numpar	! numerical parameters, including drude-function 
-   type(Super_cell), dimension(:), intent(inout) :: Scell	! supercell with all the atoms as one object
-   integer, intent(in) :: NSC	! number of supercell
-   type(TB_H_NRL), dimension(:,:), intent(in) :: TB_Hamil	! parameters of the Hamiltonian of TB
-   real(8), dimension(:), intent(in) :: fe	! electron distribution function
-   logical, intent(in) :: all_w	! get all spectrum of hv, or only for given probe wavelength
-   type(Error_handling), intent(inout) :: Err	! error save
-   !----------------------------------------------------------------------------
-   real(8), dimension(:,:), allocatable :: Fnnx, Fnny, Fnnz
-   real(8), dimension(:,:), allocatable :: Eps
-   real(8) Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond
-   real(8) w, kx, ky, kz
-   integer i, j, N, FN, ix, iy, iz, ixm, iym, izm, schem, Ngp, Nsiz
-   real(8), dimension(:), allocatable :: Ei	! energy levels [eV]
-   real(8), dimension(:,:), allocatable :: Eps_hw	! array of all eps vs hw
-   real(8), dimension(:,:), allocatable :: Eps_hw_temp	! array of all eps vs hw
-
-   ! Allocate the array of optical coefficients spectrum (if not allocated before):
-   if (all_w) then ! full spectrum:
-      call allocate_Eps_hw(Scell(NSC)%eps%E_min, Scell(NSC)%eps%E_max, Scell(NSC)%eps%dE, Scell(NSC)%eps%Eps_hw) ! see below
-      N = size(Scell(NSC)%eps%Eps_hw,2) ! use this size to define temporary arrays within this subroutine
-   else
-      N = 1
-      if (.not.allocated(Scell(NSC)%eps%Eps_hw)) then
-         allocate(Scell(NSC)%eps%Eps_hw(16,N)) ! different parameters saved for all energy grid points
-      endif     
-   endif
-
-   if (.not.allocated(Eps_hw)) allocate(Eps_hw(16,N)) ! all are there
-   Eps_hw = 0.0d0
-   if (.not.allocated(Eps_hw_temp)) then
-      allocate(Eps_hw_temp(16,N)) ! all are there
-      Eps_hw_temp = 0.0d0
-   endif
-   
-   ixm = numpar%ixm
-   iym = numpar%iym
-   izm = numpar%izm
-   if (allocated(numpar%k_grid)) then
-      schem = 1	! user-defined grid is present
-      Nsiz = size(numpar%k_grid,1)	! size of the user provided grid
-   else
-      schem = 0	! no user-defined grid
-      Nsiz = ixm*iym*izm
-   endif
-
-   do ix = 1, ixm
-      do iy = 1, iym
-         do iz = 1, izm
-         
-            print*, ix, iy, iz, ixm, 'NRL'
-            Ngp = (ix-1)*iym*ixm + (iy-1)*ixm + iz	! number of grid point for user defined grid
-            if (Ngp > Nsiz) goto 3456
-            
-!             ! k-points choice from [J. Moreno, J. M. Soler, PRB 45, 13891 (1992)]
-!             kx = (2.0d0*real(ix) - real(ixm) - 1.0d0)/(2.0d0*real(ixm))
-!             ky = (2.0d0*real(iy) - real(iym) - 1.0d0)/(2.0d0*real(iym))
-!             kz = (2.0d0*real(iz) - real(izm) - 1.0d0)/(2.0d0*real(izm))
-            call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid)	! module "TB"
-            
-            call get_Fnn_complex_NRL(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx=kx, ky=ky, kz=kz, Err=Err) ! see below
-            
-            if (all_w) then ! full spectrum:
-               w = Scell(NSC)%eps%E_min*g_e/g_h	! [1/s] frequency starting point for the optical spectrum [eV]
-               do i = 1, N
-                  call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond=dc_cond)
-                  call save_Eps_hw(Eps_hw_temp, i, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, opt_n, opt_k, Scell(NSC)%eps%Eps_xx, Scell(NSC)%eps%Eps_yy, Scell(NSC)%eps%Eps_zz, dc_cond=dc_cond) ! Eps_hw_temp(1,i) = hw  ! energy
-                  w = w + Scell(NSC)%eps%dE*g_e/g_h	! [1/s] frequency next grid point [eV]
-               enddo
-               Eps_hw = Eps_hw + Eps_hw_temp
-            else ! only for given probe:
-               w = Scell(NSC)%eps%w
-               call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond=dc_cond)
-               call save_Eps_hw(Eps_hw_temp, 1, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, opt_n, opt_k, Scell(NSC)%eps%Eps_xx, Scell(NSC)%eps%Eps_yy, Scell(NSC)%eps%Eps_zz, dc_cond=dc_cond) ! Eps_hw_temp(1,i) = hw  ! energy   
-               Eps_hw = Eps_hw + Eps_hw_temp
-            endif
-         enddo ! iz
-      enddo ! iy
-   enddo ! ix
-
-3456  continue
-   !Eps_hw = Eps_hw/dble(ixm*iym*izm)
-   Eps_hw = Eps_hw/dble(Nsiz)
-   Scell(NSC)%eps%Eps_hw = Eps_hw     
-     
-   Scell(NSC)%eps%ReEps = Eps_hw(2,1)	! real part of CDF
-   Scell(NSC)%eps%ImEps = Eps_hw(3,1)	! imaginary part of CDF
-   Scell(NSC)%eps%R = Eps_hw(5,1)	! reflectivity
-   Scell(NSC)%eps%T = Eps_hw(6,1)	! transmission
-   Scell(NSC)%eps%A = Eps_hw(7,1)	! absorption
-   Scell(NSC)%eps%n = Eps_hw(8,1)	! optical n
-   Scell(NSC)%eps%k = Eps_hw(9,1)	! optical k
-   Scell(NSC)%eps%dc_cond = Eps_hw(10,1)	! dc-conductivity
-   Scell(NSC)%eps%Eps_xx = dcmplx(Eps_hw(11,1), Eps_hw(12,1))  ! Re_E_xx and Im_E_xx
-   Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,1), Eps_hw(14,1))  ! Re_E_yy and Im_E_yy
-   Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,1), Eps_hw(16,1))  ! Re_E_zz and Im_E_zz
-end subroutine get_trani_all_complex_NRL
-
-
-subroutine get_trani_all_complex_DFTB(numpar, Scell, NSC, fe, all_w, Err)
-   type (Numerics_param), intent(inout) :: numpar	! numerical parameters, including drude-function
-   type(Super_cell), dimension(:), intent(inout) :: Scell	! supercell with all the atoms as one object
-   integer, intent(in) :: NSC	! number of supercell
-   real(8), dimension(:), intent(in) :: fe	! electron distribution function
-   logical, intent(in) :: all_w	! get all spectrum of hv, or only for given probe wavelength
-   type(Error_handling), intent(inout) :: Err	! error save
-   !----------------------------------------------------------------------------
-   real(8), dimension(:,:), allocatable :: Fnnx, Fnny, Fnnz
-   real(8), dimension(:,:), allocatable :: Fnnx_test, Fnny_test, Fnnz_test
-   real(8), dimension(:,:), allocatable :: Eps
-   real(8) Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond
-   real(8) w, kx, ky, kz
-   integer i, j, N, FN, ix, iy, iz, ixm, iym, izm, schem, Ngp, Nsiz
-   real(8), dimension(:), allocatable :: Ei	! energy levels [eV]
-   real(8), dimension(:,:), allocatable :: Eps_hw	! array of all eps vs hw
-   real(8), dimension(:,:), allocatable :: Eps_hw_temp	! array of all eps vs hw
-
-   ! Allocate the array of optical coefficients spectrum (if not allocated before):
-   if (all_w) then ! full spectrum:
-      call allocate_Eps_hw(Scell(NSC)%eps%E_min, Scell(NSC)%eps%E_max, Scell(NSC)%eps%dE, Scell(NSC)%eps%Eps_hw) ! see below
-      N = size(Scell(NSC)%eps%Eps_hw,2) ! use this size to define temporary arrays within this subroutine
-   else
-      N = 1
-      if (.not.allocated(Scell(NSC)%eps%Eps_hw)) then
-         allocate(Scell(NSC)%eps%Eps_hw(16,N)) ! different parameters saved for all energy grid points
-      endif     
-   endif
-
-   if (.not.allocated(Eps_hw)) allocate(Eps_hw(16,N)) ! all are there
-   Eps_hw = 0.0d0
-   if (.not.allocated(Eps_hw_temp)) then
-      allocate(Eps_hw_temp(16,N)) ! all are there
-      Eps_hw_temp = 0.0d0
-   endif
-   
-   ixm = numpar%ixm
-   iym = numpar%iym
-   izm = numpar%izm
-   if (allocated(numpar%k_grid)) then
-      schem = 1	! user-defined grid is present
-      Nsiz = size(numpar%k_grid,1)	! size of the user provided grid
-   else
-      schem = 0	! no user-defined grid
-      Nsiz = ixm*iym*izm
-   endif
-
-   do ix = 1, ixm
-      do iy = 1, iym
-         do iz = 1, izm
-         
-            print*, ix, iy, iz, ixm, 'DFTB'
-            Ngp = (ix-1)*iym*ixm + (iy-1)*ixm + iz	! number of grid point for user defined grid
-            if (Ngp > Nsiz) goto 3456
-            
-!             ! k-points choice from [J. Moreno, J. M. Soler, PRB 45, 13891 (1992)]
-!             kx = (2.0d0*real(ix) - real(ixm) - 1.0d0)/(2.0d0*real(ixm))
-!             ky = (2.0d0*real(iy) - real(iym) - 1.0d0)/(2.0d0*real(iym))
-!             kz = (2.0d0*real(iz) - real(izm) - 1.0d0)/(2.0d0*real(izm))
-            call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid)	! module "TB"
-            
-            call get_Fnn_complex_DFTB(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx=kx, ky=ky, kz=kz, Err=Err) ! see below
-            
-!             call get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx_test, Fnny_test, Fnnz_test, kx=kx, ky=ky, kz=kz, Err=Err) ! see below
-!             do i = 1, size(Fnnx,1)
-!                do j = 1, size(Fnnx,2)
-!                   if (ABS(Fnnx(i,j)) > 1.0d-13) print*, i, j, Fnnx(i,j), Fnnx_test(i,j) ! the same, CHECKED
-!                enddo
-!             enddo
-!             pause 'Test get_Fnn_complex'
-            
-            if (all_w) then ! full spectrum:
-               w = Scell(NSC)%eps%E_min*g_e/g_h	! [1/s] frequency starting point for the optical spectrum [eV]
-               do i = 1, N
-                  call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond=dc_cond)
-                  call save_Eps_hw(Eps_hw_temp, i, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, opt_n, opt_k, Scell(NSC)%eps%Eps_xx, Scell(NSC)%eps%Eps_yy, Scell(NSC)%eps%Eps_zz, dc_cond=dc_cond) ! Eps_hw_temp(1,i) = hw  ! energy
-                  w = w + Scell(NSC)%eps%dE*g_e/g_h	! [1/s] frequency next grid point [eV]
-               enddo
-               Eps_hw = Eps_hw + Eps_hw_temp
-            else ! only for given probe:
-               w = Scell(NSC)%eps%w
-               call get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond=dc_cond)
-               call save_Eps_hw(Eps_hw_temp, 1, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, opt_n, opt_k, Scell(NSC)%eps%Eps_xx, Scell(NSC)%eps%Eps_yy, Scell(NSC)%eps%Eps_zz, dc_cond=dc_cond) ! Eps_hw_temp(1,i) = hw  ! energy   
-               Eps_hw = Eps_hw + Eps_hw_temp
-            endif
-         enddo ! iz
-      enddo ! iy
-   enddo ! ix
-
-3456  continue
-   !Eps_hw = Eps_hw/dble(ixm*iym*izm)
-   Eps_hw = Eps_hw/dble(Nsiz)
-   Scell(NSC)%eps%Eps_hw = Eps_hw     
-     
-   Scell(NSC)%eps%ReEps = Eps_hw(2,1)	! real part of CDF
-   Scell(NSC)%eps%ImEps = Eps_hw(3,1)	! imaginary part of CDF
-   Scell(NSC)%eps%R = Eps_hw(5,1)	! reflectivity
-   Scell(NSC)%eps%T = Eps_hw(6,1)	! transmission
-   Scell(NSC)%eps%A = Eps_hw(7,1)	! absorption
-   Scell(NSC)%eps%n = Eps_hw(8,1)	! optical n
-   Scell(NSC)%eps%k = Eps_hw(9,1)	! optical k
-   Scell(NSC)%eps%dc_cond = Eps_hw(10,1)	! dc-conductivity
-   Scell(NSC)%eps%Eps_xx = dcmplx(Eps_hw(11,1), Eps_hw(12,1))  ! Re_E_xx and Im_E_xx
-   Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,1), Eps_hw(14,1))  ! Re_E_yy and Im_E_yy
-   Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,1), Eps_hw(16,1))  ! Re_E_zz and Im_E_zz
-end subroutine get_trani_all_complex_DFTB
-
-
-
-
-
-subroutine get_Fnn_complex_NRL(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx, ky, kz, Err) ! see below
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   integer, intent(in) :: NSC ! number of supercell
-   real(8), dimension(:), allocatable, intent(out) :: Ei	! energy levels [eV]
-   real(8), dimension(:,:), allocatable, intent(out) :: Fnnx, Fnny, Fnnz
-   real(8), intent(in) :: kx ,ky, kz ! k-point to get Hamiltonian at
-   type(Error_handling), intent(inout) :: Err	! error save
-   !----------------------------------------------------------------------------
-   complex, dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
-!    complex, dimension(:,:), allocatable :: CHij_temp	! eigenvectors of the hamiltonian
-   complex, dimension(:,:), allocatable :: CSij	! overlap matrix of the nonorthogonal hamiltonian
-   complex*8, dimension(:,:), allocatable :: Fnn_temp_x, Fnn_temp_y, Fnn_temp_z
-   complex*8, dimension(:,:), allocatable :: PBx, PBy, PBz
-   integer i, j, n, nn, Ne, m
-   character(200) :: Error_descript
-   
-   real(8), dimension(:,:), allocatable :: Hij
-   real(8), dimension(:), allocatable :: Ei_r
-   
-   Error_descript = ''
-
-   ! Allocate Hamiltonan matrices:
-   Ne = 9.0d0*Scell(NSC)%Na ! number of energy levels is defined by the number of TB parameters included
-   m = Ne
-   
-   if (.not.allocated(Ei)) allocate(Ei(Ne))
-   if (.not.allocated(Fnnx)) allocate(Fnnx(Ne,Ne))
-   if (.not.allocated(Fnny)) allocate(Fnny(Ne,Ne))
-   if (.not.allocated(Fnnz)) allocate(Fnnz(Ne,Ne))
-   allocate(CHij(Ne,Ne))
-   allocate(CSij(Ne,Ne))
-   allocate(Fnn_temp_x(Ne,Ne))
-   allocate(Fnn_temp_y(Ne,Ne))
-   allocate(Fnn_temp_z(Ne,Ne))
-   allocate(PBx(Ne,Ne))
-   allocate(PBy(Ne,Ne))
-   allocate(PBz(Ne,Ne))
-
-   ! Construct complex Hamiltonian from the real one for the given k-point:
-   call Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_NRL"
-   
-!    ! TEST:
-!    do j = 1,size(CHij,1)
-!       do i = 1,size(CHij,2)
-!          if ( ABS(dble(CSij(j,i)) - Scell(NSC)%Sij(j,i)) > 1.0d-14 ) print*, j, i, CSij(j,i), Scell(NSC)%Sij(j,i)
-!       enddo
-!    enddo
-!    PAUSE 'dble(CSij(j,i)) - '
-
-!    do j = 1,size(CHij,1)
-!       do i = 1,size(CHij,2)
-!          if (isnan(REAL(CHij(j,i))) .or. isnan(AIMAG(CHij(j,i)))) then
-!              Error_descript = 'Module Optical_parameters: subroutine get_Fnn_complex_NRL got NaNs'
-!              call Save_error_details(Err, 8, Error_descript)
-!              print*, trim(adjustl(Error_descript)), j, i, CHij(j,i)
-!          endif
-!       enddo
-!    enddo
-   
-   !$omp PARALLEL private(i,nn,n,j)
-   !$omp do
-   do i = 1, m
-      do nn = 1, m
-         PBx(i,nn) = SUM(Scell(NSC)%cPRRx(i,:)*CHij(:,nn))
-         PBy(i,nn) = SUM(Scell(NSC)%cPRRy(i,:)*CHij(:,nn))
-         PBz(i,nn) = SUM(Scell(NSC)%cPRRz(i,:)*CHij(:,nn))
-      enddo ! j
-   enddo ! i
-   !$omp end do
-   !$omp do
-   do n = 1, m
-      do nn = 1, m
-         Fnn_temp_x(n,nn) = SUM(CONJG(CHij(:,n))*PBx(:,nn))
-         Fnn_temp_y(n,nn) = SUM(CONJG(CHij(:,n))*PBy(:,nn))
-         Fnn_temp_z(n,nn) = SUM(CONJG(CHij(:,n))*PBz(:,nn))
-      enddo ! nn
-   enddo ! n
-   !$omp end do
-   !$omp do
-   do i = 1, m
-      do j = 1, m
-!        ! Must convert it to double complex, otherwise it gives wrong results!
-         Fnnx(i,j) = DCMPLX(CONJG(Fnn_temp_x(i,j)))*DCMPLX(Fnn_temp_x(i,j))
-         Fnny(i,j) = DCMPLX(CONJG(Fnn_temp_y(i,j)))*DCMPLX(Fnn_temp_y(i,j))
-         Fnnz(i,j) = DCMPLX(CONJG(Fnn_temp_z(i,j)))*DCMPLX(Fnn_temp_z(i,j))
-      enddo
-   enddo
-   !$omp end do
-   !$omp end parallel
-   
-   deallocate (Fnn_temp_x,Fnn_temp_y,Fnn_temp_z,PBx,PBy,PBz,CHij,CSij)
-end subroutine get_Fnn_complex_NRL
-
-
-
-subroutine get_Fnn_complex_DFTB(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx, ky, kz, Err) ! see below
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   integer, intent(in) :: NSC ! number of supercell
-   real(8), dimension(:), allocatable, intent(out) :: Ei	! energy levels [eV]
-   real(8), dimension(:,:), allocatable, intent(out) :: Fnnx, Fnny, Fnnz
-   real(8), intent(in) :: kx ,ky, kz ! k-point to get Hamiltonian at
-   type(Error_handling), intent(inout) :: Err	! error save
-   !----------------------------------------------------------------------------
-   complex, dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
-!    complex, dimension(:,:), allocatable :: CHij_temp	! eigenvectors of the hamiltonian
-   complex, dimension(:,:), allocatable :: CSij	! overlap matrix of the nonorthogonal hamiltonian
-   complex*8, dimension(:,:), allocatable :: Fnn_temp_x, Fnn_temp_y, Fnn_temp_z
-   complex*8, dimension(:,:), allocatable :: PBx, PBy, PBz
-   integer i, j, n, nn, Ne, m, n_orb
-   character(200) :: Error_descript
-   
-   real(8), dimension(:,:), allocatable :: Hij
-   real(8), dimension(:), allocatable :: Ei_r
-   
-   complex, dimension(:,:), allocatable :: CHij_test
-   real(8), dimension(:), allocatable :: Ei_test	   ! energy levels [eV]
-   
-   Error_descript = ''
-
-   ! Size of the basis set per atom:
-   n_orb =  identify_DFTB_orbitals_per_atom(numpar%N_basis_size)    ! module "TB_DFTB"
-   Ne = n_orb*Scell(NSC)%Na ! number of energy levels is defined by the number of TB parameters included
-   m = Ne
-   ! Allocate Hamiltonan matrices:   
-   if (.not.allocated(Ei)) allocate(Ei(Ne))
-   if (.not.allocated(Ei_test)) allocate(Ei_test(Ne))
-   if (.not.allocated(Fnnx)) allocate(Fnnx(Ne,Ne))
-   if (.not.allocated(Fnny)) allocate(Fnny(Ne,Ne))
-   if (.not.allocated(Fnnz)) allocate(Fnnz(Ne,Ne))
-   allocate(CHij(Ne,Ne))
-   allocate(CHij_test(Ne,Ne))
-   allocate(CSij(Ne,Ne))
-   allocate(Fnn_temp_x(Ne,Ne))
-   allocate(Fnn_temp_y(Ne,Ne))
-   allocate(Fnn_temp_z(Ne,Ne))
-   allocate(PBx(Ne,Ne))
-   allocate(PBy(Ne,Ne))
-   allocate(PBz(Ne,Ne))
-
-   ! Construct complex Hamiltonian from the real one for the given k-point:
-   call Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_DFTB"
-   
-!    call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij_test, Ei_test, kx, ky, kz, Err, Scell(NSC)%cPRRx, Scell(NSC)%cPRRy, Scell(NSC)%cPRRz, Scell(NSC)%Sij, CSij)
-   
-!    print*, ' kx, ky, kz ',  kx, ky, kz
-   
-!    do i = 1,size(CHij,1)
-!       print*, i, Ei(i), Ei_test(i)
-!    enddo
-!    pause 'Test construct_complex_Hamiltonian'
-   
-!     ! test:
-!     do j = 250,size(CHij,1)
-!        do i = 250,size(CHij,2)
-! !           if ( ABS(dble(CSij(j,i)) - Scell(NSC)%Sij(j,i)) > 1.0d-14 ) print*, j, i, CSij(j,i), Scell(NSC)%Sij(j,i)
-!          if ( ABS(dble(CHij(j,i)))  > 1.0d-14 ) print*, j, i, CHij(j,i) , CHij_test(j,i)  ! The same, CHECKED
-!        enddo
-!     enddo
-!     PAUSE ' CHij '
-
-!    do j = 1,size(CHij,1)
-!       do i = 1,size(CHij,2)
-!          if (isnan(REAL(CHij(j,i))) .or. isnan(AIMAG(CHij(j,i)))) then
-!              Error_descript = 'Module Optical_parameters: subroutine get_Fnn_complex_NRL got NaNs'
-!              call Save_error_details(Err, 8, Error_descript)
-!              print*, trim(adjustl(Error_descript)), j, i, CHij(j,i)
-!          endif
-!       enddo
-!    enddo
-   
-   !$omp PARALLEL private(i,nn,n,j)
-   !$omp do
-   do i = 1, m
-      do nn = 1, m
-         PBx(i,nn) = SUM(Scell(NSC)%cPRRx(i,:)*CHij(:,nn))
-         PBy(i,nn) = SUM(Scell(NSC)%cPRRy(i,:)*CHij(:,nn))
-         PBz(i,nn) = SUM(Scell(NSC)%cPRRz(i,:)*CHij(:,nn))
-      enddo ! j
-   enddo ! i
-   !$omp end do
-   !$omp do
-   do n = 1, m
-      do nn = 1, m
-         Fnn_temp_x(n,nn) = SUM(CONJG(CHij(:,n))*PBx(:,nn))
-         Fnn_temp_y(n,nn) = SUM(CONJG(CHij(:,n))*PBy(:,nn))
-         Fnn_temp_z(n,nn) = SUM(CONJG(CHij(:,n))*PBz(:,nn))
-      enddo ! nn
-   enddo ! n
-   !$omp end do
-   !$omp do
-   do i = 1, m
-      do j = 1, m
-!        ! Must convert it to double complex, otherwise it gives wrong results!
-         Fnnx(i,j) = DCMPLX(CONJG(Fnn_temp_x(i,j)))*DCMPLX(Fnn_temp_x(i,j))
-         Fnny(i,j) = DCMPLX(CONJG(Fnn_temp_y(i,j)))*DCMPLX(Fnn_temp_y(i,j))
-         Fnnz(i,j) = DCMPLX(CONJG(Fnn_temp_z(i,j)))*DCMPLX(Fnn_temp_z(i,j))
-      enddo
-   enddo
-   !$omp end do
-   !$omp end parallel
-   
-   deallocate (Fnn_temp_x,Fnn_temp_y,Fnn_temp_z,PBx,PBy,PBz,CHij,CSij)
-end subroutine get_Fnn_complex_DFTB
-
-
-
-subroutine get_Fnn_complex_F(numpar, Scell, NSC, atoms, TB, CHij, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz, Err)
-!subroutine get_Fnn_complex(numpar, matter, atoms, TB, CHij, Ei, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, kx ,ky, kz, Err)
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   integer, intent(in) :: NSC ! number of supercell
-   type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
-   type(TB_H_Fu), dimension(:,:), intent(in) :: TB   ! parameters of the Hamiltonian of TB
-   real(8), dimension(:), allocatable, intent(out) :: Ei	! energy levels [eV]
-   complex, dimension(:,:), allocatable, intent(out) :: CHij	! eigenvectors of the hamiltonian
-   real(8), dimension(:,:), allocatable, intent(out) :: Fnnx, Fnny, Fnnz
-   !real(8), dimension(:,:), allocatable, intent(out) :: Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz
-   real(8), intent(in) :: kx ,ky, kz ! k-point to get Hamiltonian at
-   type(Error_handling), intent(inout) :: Err	! error save
-   ! complex, dimension(:,:), allocatable :: Fnn_temp_x, Fnn_temp_y, Fnn_temp_z
-   ! complex, dimension(:,:), allocatable :: PBx, PBy, PBz
-   complex*8, dimension(:,:), allocatable :: Fnn_temp_x, Fnn_temp_y, Fnn_temp_z
-   complex*8, dimension(:,:), allocatable :: PBx, PBy, PBz
-   integer i, j, m, n, nn, FN, Ne
-   character(200) :: Error_descript
-   
-   
-   real(8), dimension(:,:), allocatable :: Hij
-   real(8), dimension(:), allocatable :: Ei_r
-   
-   
-   Error_descript = ''
-   
-   Ne = Scell(NSC)%Ne  ! initial number of VB electrons
-   m = Ne
-
-   ! Allocate Hamiltonan matrices:
-   ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
-      select type(ARRAY)
-      type is (TB_H_Pettifor)
-         m = size(ARRAY(NSC,NSC)%V0)*Scell(NSC)%Na ! number of energy levels is defined by the number of TB parameters included
-      type is (TB_H_Molteni)
-         m = size(ARRAY(NSC,NSC)%V0)*Scell(NSC)%Na ! number of energy levels is defined by the number of TB parameters included
-      type is (TB_H_Fu)
-         m = size(ARRAY(NSC,NSC)%V0)*Scell(NSC)%Na ! number of energy levels is defined by the number of TB parameters included
-      end select
-   END ASSOCIATE
-   Ne = m
-
-
-   if (.not.allocated(CHij)) allocate(CHij(Ne,Ne))
-   if (.not.allocated(Ei)) allocate(Ei(Ne))
-   if (.not.allocated(Fnnx)) allocate(Fnnx(Ne,Ne))
-   if (.not.allocated(Fnny)) allocate(Fnny(Ne,Ne))
-   if (.not.allocated(Fnnz)) allocate(Fnnz(Ne,Ne))
-   
-   if (.not.allocated(Hij)) allocate(Hij(Ne,Ne))
-   if (.not.allocated(Ei_r)) allocate(Ei_r(Ne))
-   
-!    if (.not.allocated(Fnnxx)) allocate(Fnnxx(Ne,Ne))
-!    if (.not.allocated(Fnnxy)) allocate(Fnnxy(Ne,Ne))
-!    if (.not.allocated(Fnnxz)) allocate(Fnnxz(Ne,Ne))
-!    if (.not.allocated(Fnnyx)) allocate(Fnnyx(Ne,Ne))
-!    if (.not.allocated(Fnnyy)) allocate(Fnnyy(Ne,Ne))
-!    if (.not.allocated(Fnnyz)) allocate(Fnnyz(Ne,Ne))
-!    if (.not.allocated(Fnnzx)) allocate(Fnnzx(Ne,Ne))
-!    if (.not.allocated(Fnnzy)) allocate(Fnnzy(Ne,Ne))
-!    if (.not.allocated(Fnnzz)) allocate(Fnnzz(Ne,Ne))
-   allocate(Fnn_temp_x(Ne,Ne))
-   allocate(Fnn_temp_y(Ne,Ne))
-   allocate(Fnn_temp_z(Ne,Ne))
-   allocate(PBx(Ne,Ne))
-   allocate(PBy(Ne,Ne))
-   allocate(PBz(Ne,Ne))
-
-   call Complex_Hamil_tot_F(numpar, Scell, NSC, atoms, TB, CHij=CHij, ksx=kx, ksy=ky, ksz=kz) ! "TB_Fu"
-   
-   call sym_diagonalize(CHij, Ei, Err%Err_descript) ! module "Algebra_tools"
-!    pause 'Complex_Hamil_tot TEST'
-
-   do j = 1,size(CHij,1)
-      do i = 1,size(CHij,2)
-         if (isnan(REAL(CHij(j,i))) .or. isnan(AIMAG(CHij(j,i)))) then
-             Error_descript = 'Module Optical_parameters: subroutine get_Fnn_complex got NaNs'
-             call Save_error_details(Err, 8, Error_descript)
-             print*, trim(adjustl(Error_descript)), j, i, CHij(j,i)
-         endif
-      enddo
-   enddo
-   
-!    call Hamil_tot(numpar, Scell, NSC, TB, Hij)
-!    call sym_diagonalize(Hij, Ei_r, Err%Err_descript) ! modeule "Algebra_tools"
-!    do i = 1, size(Ei) ! compare Real and Complex Hamiltonians eigenvalues:
-!       write(*,'(i,e,e,f,f)') i, Ei(i), Ei_r(i), CHij(i,1)
-!    enddo
-!    PAUSE 'Test CHij'
-
-   !$omp PARALLEL private(i,nn,n,j)
-   !$omp do
-   do i = 1, m
-      do nn = 1, m
-         PBx(i,nn) = SUM(Scell(NSC)%cPRRx(i,:)*CHij(:,nn))
-         PBy(i,nn) = SUM(Scell(NSC)%cPRRy(i,:)*CHij(:,nn))
-         PBz(i,nn) = SUM(Scell(NSC)%cPRRz(i,:)*CHij(:,nn))
-      enddo ! j
-   enddo ! i
-   !$omp end do
-   !$omp do
-   do n = 1, m
-      do nn = 1, m
-         Fnn_temp_x(n,nn) = SUM(CONJG(CHij(:,n))*PBx(:,nn))
-         Fnn_temp_y(n,nn) = SUM(CONJG(CHij(:,n))*PBy(:,nn))
-         Fnn_temp_z(n,nn) = SUM(CONJG(CHij(:,n))*PBz(:,nn))
-      enddo ! nn
-   enddo ! n
-   !$omp end do
-   !$omp do
-   do i = 1, m
-      do j = 1, m
-!          Fnnx(i,j) = CONJG(Fnn_temp_x(i,j))*Fnn_temp_x(i,j)
-!          Fnny(i,j) = CONJG(Fnn_temp_y(i,j))*Fnn_temp_y(i,j)
-!          Fnnz(i,j) = CONJG(Fnn_temp_z(i,j))*Fnn_temp_z(i,j)
-
-!        ! Must convert it to double complex, otherwise it gives wrong results!
-         Fnnx(i,j) = DCMPLX(CONJG(Fnn_temp_x(i,j)))*DCMPLX(Fnn_temp_x(i,j))
-         Fnny(i,j) = DCMPLX(CONJG(Fnn_temp_y(i,j)))*DCMPLX(Fnn_temp_y(i,j))
-         Fnnz(i,j) = DCMPLX(CONJG(Fnn_temp_z(i,j)))*DCMPLX(Fnn_temp_z(i,j))
-         
-!          Fnnxx(i,j) = CONJG(Fnn_temp_x(i,j))*Fnn_temp_x(i,j)
-!          Fnnxy(i,j) = CONJG(Fnn_temp_x(i,j))*Fnn_temp_y(i,j)
-!          Fnnxz(i,j) = CONJG(Fnn_temp_x(i,j))*Fnn_temp_z(i,j)
-!          Fnnyx(i,j) = CONJG(Fnn_temp_y(i,j))*Fnn_temp_x(i,j)
-!          Fnnyy(i,j) = CONJG(Fnn_temp_y(i,j))*Fnn_temp_y(i,j)
-!          Fnnyz(i,j) = CONJG(Fnn_temp_y(i,j))*Fnn_temp_z(i,j)
-!          Fnnzx(i,j) = CONJG(Fnn_temp_z(i,j))*Fnn_temp_x(i,j)
-!          Fnnzy(i,j) = CONJG(Fnn_temp_z(i,j))*Fnn_temp_y(i,j)
-!          Fnnzz(i,j) = CONJG(Fnn_temp_z(i,j))*Fnn_temp_z(i,j)
-      enddo
-   enddo
-   !$omp end do
-   !$omp end parallel
-
-
-!   open(NEWUNIT=FN, FILE = 'OUTPUT_PBx.dat')
-!      do i = 1, size(PBx,1)
-!         do j = 1, size(PBx,2)
-!            write(FN, '(i,i,e)') i, j, PBx(i,j)
-!         enddo
-!      enddo
-!   close(FN)
-!   pause 'get_Fnn'
-
-end subroutine get_Fnn_complex_F
-
-
-subroutine get_Fnn_complex_M(numpar, Scell, NSC, atoms, TB, CHij, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz, Err)
-!subroutine get_Fnn_complex(numpar, matter, atoms, TB, CHij, Ei, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, kx ,ky, kz, Err)
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   integer, intent(in) :: NSC ! number of supercell
-   type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
-   type(TB_H_Molteni), dimension(:,:), intent(in) :: TB   ! parameters of the Hamiltonian of TB
-   real(8), dimension(:), allocatable, intent(out) :: Ei	! energy levels [eV]
-   complex, dimension(:,:), allocatable, intent(out) :: CHij	! eigenvectors of the hamiltonian
-   real(8), dimension(:,:), allocatable, intent(out) :: Fnnx, Fnny, Fnnz
-   !real(8), dimension(:,:), allocatable, intent(out) :: Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz
-   real(8), intent(in) :: kx ,ky, kz ! k-point to get Hamiltonian at
-   type(Error_handling), intent(inout) :: Err	! error save
-   complex*8, dimension(:,:), allocatable :: Fnn_temp_x, Fnn_temp_y, Fnn_temp_z
-   complex*8, dimension(:,:), allocatable :: PBx, PBy, PBz
-   integer i, j, m, n, nn, FN, Ne
-   character(200) :: Error_descript
-   Error_descript = ''
-
-   ! Allocate Hamiltonan matrices:
-   ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
-      select type(ARRAY)
-      type is (TB_H_Pettifor)
-         m = size(ARRAY(NSC,NSC)%V0)*Scell(NSC)%Na ! number of energy levels is defined by the number of TB parameters included
-      type is (TB_H_Molteni)
-         m = size(ARRAY(NSC,NSC)%V0)*Scell(NSC)%Na ! number of energy levels is defined by the number of TB parameters included
-       type is (TB_H_Fu)
-         m = size(ARRAY(NSC,NSC)%V0)*Scell(NSC)%Na ! number of energy levels is defined by the number of TB parameters included
-      end select
-   END ASSOCIATE
-   Ne = m
-
-   if (.not.allocated(CHij)) allocate(CHij(Ne,Ne))
-   if (.not.allocated(Ei)) allocate(Ei(Ne))
-   if (.not.allocated(Fnnx)) allocate(Fnnx(Ne,Ne))
-   if (.not.allocated(Fnny)) allocate(Fnny(Ne,Ne))
-   if (.not.allocated(Fnnz)) allocate(Fnnz(Ne,Ne))
-!    if (.not.allocated(Fnnxx)) allocate(Fnnxx(Ne,Ne))
-!    if (.not.allocated(Fnnxy)) allocate(Fnnxy(Ne,Ne))
-!    if (.not.allocated(Fnnxz)) allocate(Fnnxz(Ne,Ne))
-!    if (.not.allocated(Fnnyx)) allocate(Fnnyx(Ne,Ne))
-!    if (.not.allocated(Fnnyy)) allocate(Fnnyy(Ne,Ne))
-!    if (.not.allocated(Fnnyz)) allocate(Fnnyz(Ne,Ne))
-!    if (.not.allocated(Fnnzx)) allocate(Fnnzx(Ne,Ne))
-!    if (.not.allocated(Fnnzy)) allocate(Fnnzy(Ne,Ne))
-!    if (.not.allocated(Fnnzz)) allocate(Fnnzz(Ne,Ne))
-   allocate(Fnn_temp_x(Ne,Ne))
-   allocate(Fnn_temp_y(Ne,Ne))
-   allocate(Fnn_temp_z(Ne,Ne))
-   allocate(PBx(Ne,Ne))
-   allocate(PBy(Ne,Ne))
-   allocate(PBz(Ne,Ne))
-
-   call Complex_Hamil_tot_Molteni(numpar, Scell, NSC, atoms, TB, CHij=CHij, ksx=kx, ksy=ky, ksz=kz) ! "TB_Hamiltonian"
-
-   do j = 1,size(CHij,1)
-      do i = 1,size(CHij,2)
-         if (isnan(REAL(CHij(j,i))) .or. isnan(AIMAG(CHij(j,i)))) then
-             !print*, j,i,CHij(j,i)
-             Error_descript = 'Module Optical_parameters: subroutine get_Fnn_complex_M got NaNs'
-             call Save_error_details(Err, 8, Error_descript)
-             print*, trim(adjustl(Error_descript)), j, i, CHij(j,i)
-         endif
-      enddo
-   enddo
-   
-   call sym_diagonalize(CHij, Ei, Err%Err_descript) ! module "Algebra_tools"
-
-!    do i = 1, size(Ei) ! compare Real and Complex Hamiltonians eigenvalues:
-!       write(*,'(i,f,f,f)') i, Ei(i), CHij(i,1)
-!    enddo
-
-   !$omp PARALLEL private(i,nn,n,j)
-   !$omp do
-   do i = 1, m
-      do nn = 1, m
-         PBx(i,nn) = SUM(Scell(NSC)%cPRRx(i,:)*CHij(:,nn))
-         PBy(i,nn) = SUM(Scell(NSC)%cPRRy(i,:)*CHij(:,nn))
-         PBz(i,nn) = SUM(Scell(NSC)%cPRRz(i,:)*CHij(:,nn))
-!          write(*,'(es,es,es,es,es,es)') PBx(i,nn), PBy(i,nn), PBz(i,nn)
-      enddo ! j
-   enddo ! i
-   !$omp end do
-   !$omp do
-   do n = 1, m
-      do nn = 1, m
-         Fnn_temp_x(n,nn) = SUM(CONJG(CHij(:,n))*PBx(:,nn))
-         Fnn_temp_y(n,nn) = SUM(CONJG(CHij(:,n))*PBy(:,nn))
-         Fnn_temp_z(n,nn) = SUM(CONJG(CHij(:,n))*PBz(:,nn))
-!          write(*,'(es,es,es,es,es,es)') Fnn_temp_x(n,nn), Fnn_temp_y(n,nn), Fnn_temp_z(n,nn)
-      enddo ! nn
-   enddo ! n
-   !$omp end do
-   
-   !$omp do
-   do i = 1, m
-      do j = 1, m
-!          Fnnx(i,j) = CONJG(Fnn_temp_x(i,j))*Fnn_temp_x(i,j)
-!          Fnny(i,j) = CONJG(Fnn_temp_y(i,j))*Fnn_temp_y(i,j)
-!          Fnnz(i,j) = CONJG(Fnn_temp_z(i,j))*Fnn_temp_z(i,j)
-
-         ! Must convert it to double complex, otherwise it gives wrong results!
-         Fnnx(i,j) = DCMPLX(CONJG(Fnn_temp_x(i,j)))*DCMPLX(Fnn_temp_x(i,j))
-         Fnny(i,j) = DCMPLX(CONJG(Fnn_temp_y(i,j)))*DCMPLX(Fnn_temp_y(i,j))
-         Fnnz(i,j) = DCMPLX(CONJG(Fnn_temp_z(i,j)))*DCMPLX(Fnn_temp_z(i,j))
-
-!          Fnnxx(i,j) = CONJG(Fnn_temp_x(i,j))*Fnn_temp_x(i,j)
-!          Fnnxy(i,j) = CONJG(Fnn_temp_x(i,j))*Fnn_temp_y(i,j)
-!          Fnnxz(i,j) = CONJG(Fnn_temp_x(i,j))*Fnn_temp_z(i,j)
-!          Fnnyx(i,j) = CONJG(Fnn_temp_y(i,j))*Fnn_temp_x(i,j)
-!          Fnnyy(i,j) = CONJG(Fnn_temp_y(i,j))*Fnn_temp_y(i,j)
-!          Fnnyz(i,j) = CONJG(Fnn_temp_y(i,j))*Fnn_temp_z(i,j)
-!          Fnnzx(i,j) = CONJG(Fnn_temp_z(i,j))*Fnn_temp_x(i,j)
-!          Fnnzy(i,j) = CONJG(Fnn_temp_z(i,j))*Fnn_temp_y(i,j)
-!          Fnnzz(i,j) = CONJG(Fnn_temp_z(i,j))*Fnn_temp_z(i,j)
-         !write(*,'(es,es,es,es,es,es)') Fnnx(i,j), Fnny(i,j), Fnnz(i,j)
-!          write(*,'(es,es,es,es,es,es)') Fnn_temp_x(i,j), DCMPLX(CONJG(Fnn_temp_x(i,j)))*DCMPLX(Fnn_temp_x(i,j)), Fnnx(i,j)
-      enddo
-   enddo
-   !$omp end do
-   !$omp end parallel
-
-!   open(NEWUNIT=FN, FILE = 'OUTPUT_PBx.dat')
-!      do i = 1, size(PBx,1)
-!         do j = 1, size(PBx,2)
-!            write(FN, '(i,i,e)') i, j, PBx(i,j)
-!         enddo
-!      enddo
-!   close(FN)
-!   pause 'get_Fnn'
-
-end subroutine get_Fnn_complex_M
-
 
 
 END MODULE Optical_parameters

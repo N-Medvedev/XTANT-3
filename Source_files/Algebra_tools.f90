@@ -25,6 +25,8 @@
 MODULE Algebra_tools
 use Universal_constants
 
+USE OMP_LIB, only : OMP_GET_THREAD_NUM
+
 implicit none
 PRIVATE
 
@@ -60,6 +62,11 @@ interface check_Ha
     module procedure check_Ha_cc
 end interface check_Ha
 
+interface Two_Matr_mult
+   module procedure Two_Matr_mult_r
+   module procedure Two_Matr_mult_c
+end interface Two_Matr_mult
+
 
 real(8), parameter :: m_34 = 3.0d0/4.0d0
 real(8), parameter :: m_16 = 1.0d0/6.0d0
@@ -70,7 +77,7 @@ public :: sym_diagonalize, nonsym_diagonalize, check_Ha, Kronecker_delta, sort_a
 public :: double_factorial, Heavyside_tau, get_factorial, Two_Vect_Matr, Det_3x3, Cross_Prod, Matrix_Vec_Prod
 public :: mkl_matrix_mult, Reciproc, check_hermiticity, Laguerre_up_to_6, d_Laguerre_up_to_6, check_symmetry
 public :: d_detH_d_h_a_b, Two_Matr_mult, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points
-public :: make_cubic_splines, cubic_function, d_cubic_function
+public :: make_cubic_splines, cubic_function, d_cubic_function, c8_diagonalize, mkl_matrix_mult_c8
 !=======================================
 
  contains
@@ -921,12 +928,15 @@ subroutine c_diagonalize(M, Ev, Error_descript, print_Ei, check_M)
    integer, dimension(:), allocatable :: IWORK
    real(8), dimension(:), allocatable ::  RWORK
    !real, dimension(:), allocatable ::  RWORK
-   complex, dimension(size(M,1),size(M,2)) :: M_save	! matrix
-   complex, dimension(size(M,1),size(M,2)) :: M_work	! matrix in 16 bit format
+   complex, dimension(:,:), allocatable :: M_save, M_work   ! matrix
+!    complex, dimension(size(M,1),size(M,2)) :: M_save	! matrix
+!    complex, dimension(size(M,1),size(M,2)) :: M_work	! matrix in 16 bit format
 !    complex(16), dimension(size(M,1),size(M,2)) :: M_work	! matrix in 16 bit format :: WRONG!
    
    integer :: i_countin, FN, i, j
    N = size(M,1)
+   allocate(M_save(N,N))
+   allocate(M_work(N,N))
    LIWORK = 3 + 5*N  ! 3 + 5*N
    LRWORK = 1 + 5*N + 2*N*N !  1 + 5*N + 2*N**2
    LWORK = 2*N + N*N ! 2*N + N**2
@@ -934,15 +944,15 @@ subroutine c_diagonalize(M, Ev, Error_descript, print_Ei, check_M)
    allocate(IWORK(LIWORK)) ! (MAX(1,LIWORK))
    allocate(RWORK(LRWORK)) ! LRWORK
 
-   !$OMP WORKSHARE
+   !!$OMP WORKSHARE
    M_save = M ! to make sure it's fine
    M_work = M ! convert it into complex*16
-   !$OMP END WORKSHARE
+   !!$OMP END WORKSHARE
    
    ! Test it before the start:
    CH1:do i = 1, size(M,1) 
       do j = 1, size(M,2) 
-         if (isnan(REAL(M_work(i,j))) .or. isnan(AIMAG(M_work(i,j)))) then
+         if (isnan(dble(M_work(i,j))) .or. isnan(AIMAG(M_work(i,j)))) then
             Error_descript = 'Module Algebra_tools: complex matrix diagonalization: M is NaN before'
             print*, trim(adjustl(Error_descript))
             exit CH1
@@ -952,15 +962,14 @@ subroutine c_diagonalize(M, Ev, Error_descript, print_Ei, check_M)
    
    !call ZHEEVD('V','U', N, M, N, Ev, LAPWORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, INFO )
    call ZHEEVD('V','U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, INFO )
-!    call ZHEEV('V', 'U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK,INFO)
-   !    zheevd (JOBZ, UPLO, N, A, LDA, W, WORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, INFO)
+   !print*, OMP_GET_THREAD_NUM(), 'After ZHEEVD'
    
    if (INFO .NE. 0) then ! if divide-n-conquare LAPACK diagonalization procidure failed, try regular one:
       print*, 'ZHEEVD did not work, INFO=', INFO
-      !$OMP WORKSHARE
+      !!$OMP WORKSHARE
       M = M_save ! to make sure it's fine
       M_work = M_save
-      !$OMP END WORKSHARE
+      !!$OMP END WORKSHARE
       !call ZHEEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, RWORK,INFO)
       call ZHEEV('V', 'U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK,INFO)
       if (INFO .NE. 0) then ! if LAPACK diagonalization procidure failed:
@@ -968,13 +977,11 @@ subroutine c_diagonalize(M, Ev, Error_descript, print_Ei, check_M)
          print*, trim(adjustl(Error_descript))
       endif
    endif
-   deallocate(LAPWORK)
-   deallocate(IWORK)
-   deallocate(RWORK)
+   deallocate(LAPWORK, IWORK, RWORK)
    
-   !$OMP WORKSHARE
+   !!$OMP WORKSHARE
    M = M_work ! save processed matrix back into the output matrix
-   !$OMP END WORKSHARE
+   !!$OMP END WORKSHARE
    
    if (present(check_M)) then
       if (check_M) then
@@ -982,6 +989,7 @@ subroutine c_diagonalize(M, Ev, Error_descript, print_Ei, check_M)
 !          pause 'check_M'
       endif
    endif
+   deallocate(M_save, M_work) ! clean up
    
    ! test the resulting diagonalized Hamiltonian:
    CH2:do i = 1, size(M,1)
@@ -991,7 +999,7 @@ subroutine c_diagonalize(M, Ev, Error_descript, print_Ei, check_M)
          exit CH2
       endif
       do j = 1, size(M,2) 
-         if (isnan(REAL(M(i,j))) .or. isnan(AIMAG(M(i,j)))) then
+         if (isnan(dble(M(i,j))) .or. isnan(AIMAG(M(i,j)))) then
             Error_descript = 'Module Algebra_tools: complex matrix diagonalization: M is NaN after'
             print*, trim(adjustl(Error_descript))
             exit CH2
@@ -1006,7 +1014,117 @@ subroutine c_diagonalize(M, Ev, Error_descript, print_Ei, check_M)
          enddo
       endif
    endif
+
+   !print*, OMP_GET_THREAD_NUM(), 'c_diagonalize done'
 end subroutine c_diagonalize
+
+
+
+
+subroutine c8_diagonalize(M, Ev, Error_descript, print_Ei, check_M) ! double precision complex
+   complex(8), dimension(:,:), intent(inout) :: M  ! matrix
+   real(8), dimension(:), intent(inout) :: Ev      ! eigenvalues
+   character(*), intent(inout) :: Error_descript   ! error description
+   logical, intent(in), optional :: print_Ei       ! print out eigenvalues or not
+   logical, intent(in), optional :: check_M        ! chech diagonalization
+   !-------------------------
+   integer :: LIWORK, LWORK, N, INFO, LRWORK
+   complex(8), dimension(:), allocatable :: LAPWORK
+   integer, dimension(:), allocatable :: IWORK
+   real(8), dimension(:), allocatable ::  RWORK
+   !complex(8), dimension(size(Ev),size(Ev)) :: M_save ! This way of defining size breaks down!
+   complex(8), dimension(:,:), allocatable :: M_save, M_work
+   integer :: i_countin, FN, i, j
+
+   N = size(M,1)
+   allocate(M_save(N,N))
+   allocate(M_work(N,N))
+
+   LIWORK = 3 + 5*N  ! 3 + 5*N
+   LRWORK = 1 + 5*N + 2*N*N !  1 + 5*N + 2*N**2
+   LWORK = 2*N + N*N ! 2*N + N**2
+   allocate(LAPWORK(MAX(1,LWORK))) ! (MAX(1,LWORK))
+   allocate(IWORK(LIWORK)) ! (MAX(1,LIWORK))
+   allocate(RWORK(LRWORK)) ! LRWORK
+
+   !$OMP WORKSHARE
+   M_save = M ! to make sure it's fine
+   M_work = M ! convert it into complex*16
+   !$OMP END WORKSHARE
+
+   ! Test it before the start:
+   CH1:do i = 1, N
+      do j = 1, N
+         if (isnan(dble(M_work(i,j))) .or. isnan(AIMAG(M_work(i,j)))) then
+            Error_descript = 'Module Algebra_tools: complex matrix diagonalization: M is NaN before'
+            print*, trim(adjustl(Error_descript))
+            exit CH1
+         endif
+      enddo ! j
+   enddo CH1 ! i
+
+   call ZHEEVD('V','U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, INFO )
+
+   if (INFO .NE. 0) then ! if divide-n-conquare LAPACK diagonalization procidure failed, try regular one:
+      print*, 'ZHEEVD did not work, INFO=', INFO
+      !$OMP WORKSHARE
+      M = M_save ! to make sure it's fine
+      M_work = M_save
+      !$OMP END WORKSHARE
+      !call ZHEEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, RWORK,INFO)
+      call ZHEEV('V', 'U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK,INFO)
+      if (INFO .NE. 0) then ! if LAPACK diagonalization procidure failed:
+         Error_descript = 'Module Algebra_tools: complex matrix diagonalization failed!'
+         print*, trim(adjustl(Error_descript))
+      endif
+   endif
+
+   deallocate(LAPWORK)
+   deallocate(IWORK)
+   deallocate(RWORK)
+
+   !!$OMP WORKSHARE
+   M = M_work ! save processed matrix back into the output matrix
+   !!$OMP END WORKSHARE
+
+   print*, OMP_GET_THREAD_NUM(), 'Before check_M'
+
+   if (present(check_M)) then
+      if (check_M) then
+         call check_Ha(M_save, M_work, Ev)   ! to make sure diagonalization went well
+!          pause 'check_M'
+      endif
+   endif
+
+   print*, OMP_GET_THREAD_NUM(), 'After check_M'
+
+   ! Clean up temporary arrays:
+   deallocate(M_save, M_work)
+
+   ! test the resulting diagonalized Hamiltonian:
+   CH2:do i = 1, N
+      if (isnan(Ev(i))) then
+         Error_descript = 'Module Algebra_tools: complex matrix diagonalization: Ev is NaN after'
+         print*, trim(adjustl(Error_descript)), INFO
+         exit CH2
+      endif
+      do j = 1, N
+         if (isnan(dble(M(i,j))) .or. isnan(AIMAG(M(i,j)))) then
+            Error_descript = 'Module Algebra_tools: complex matrix diagonalization: M is NaN after'
+            print*, trim(adjustl(Error_descript))
+            exit CH2
+         endif
+      enddo ! j
+   enddo CH2 ! i
+
+   if (present(print_Ei)) then
+      if (print_Ei) then
+         do i_countin = 1, size(Ev)
+            write(*,'(a,i4,a,f12.5)') 'Eigenvalue #', i_countin, ' is ', Ev(i_countin)
+         enddo
+      endif
+   endif
+end subroutine c8_diagonalize
 
 
 
@@ -1029,11 +1147,40 @@ subroutine check_Ha_c(Mat, Eigenvec, Eigenval) ! real matrix, complex eigenstate
       enddo
 !       Ev = dble(SUM(DCONJG(Eigenvec(:,i))*Evec(:)))
       Ev = dble(SUM(CONJG(Eigenvec(:,i))*Evec(:)))
-      if (ABS(Ev - Eigenval(i))/min(ABS(Ev),ABS(Eigenval(i))) .GT. 1.0d-10) then ! diagonalization went wrong:
+      if (ABS(Ev - Eigenval(i)) .GT. min(ABS(Ev),ABS(Eigenval(i)))*1.0d-10) then ! diagonalization went wrong:
          print*, 'Ev_c:', i, Ev, Eigenval(i) !, SUM(CONJG(Eigenvec(:,i))*Eigenvec(:,i))
       endif
    enddo
 end subroutine check_Ha_c
+
+
+
+subroutine check_Ha_c8(Mat, Eigenvec, Eigenval) ! real matrix, complex eigenstates
+   complex(8), dimension(:,:), intent(in) :: Mat	! matrix
+   complex(8), dimension(:,:), intent(in) :: Eigenvec	! eigenvectors of this matrix
+   real(8), dimension(:), intent(in) :: Eigenval	! eigenvalues of this matrix
+   real(8), dimension(size(Mat,1), size(Mat,2)) :: M_temp
+   complex(8) :: Evec(size(Eigenval))
+   real(8) :: Ev
+   integer :: i, j, k, M
+
+   M = size(Eigenval)
+
+   Ev = 0.0d0
+   do i = 1,M
+      do k = 1,M
+          Evec(k) = SUM(Mat(k,:)*Eigenvec(:,i)) ! correct
+!           Evec(k) = SUM(Mat(:,k)*Eigenvec(:,i))
+      enddo
+!       Ev = dble(SUM(DCONJG(Eigenvec(:,i))*Evec(:)))
+      Ev = dble(SUM(CONJG(Eigenvec(:,i))*Evec(:)))
+      if (ABS(Ev - Eigenval(i))/min(ABS(Ev),ABS(Eigenval(i))) .GT. 1.0d-10) then ! diagonalization went wrong:
+         print*, 'Ev_c:', i, Ev, Eigenval(i) !, SUM(CONJG(Eigenvec(:,i))*Eigenvec(:,i))
+      endif
+   enddo
+end subroutine check_Ha_c8
+
+
 
 subroutine check_Ha_cc(Mat, Eigenvec, Eigenval) ! complex matrix, complex eigenstates
    complex, dimension(:,:), intent(in) :: Mat	! matrix
@@ -1113,7 +1260,7 @@ subroutine mkl_matrix_mult_r(TRANSA, TRANSB, A, B, ResultM)
    !op( X ) = X   or   op( X ) = X**T,
    real(8), dimension(:,:), intent(in) :: A, B
    real(8), dimension(:,:), intent(inout) ::ResultM
-   character(1) :: TRANSA, TRANSB
+   character(1), intent(in) :: TRANSA, TRANSB
    real(8) :: ALPHA, BETA
    integer :: M, N, K, ka, kb
    integer :: LDA, LDB, LDC
@@ -1144,8 +1291,53 @@ subroutine mkl_matrix_mult_c(TRANSA, TRANSB, A, B, ResultM)
    !where  op( X ) is one of
    !op( X ) = X   or   op( X ) = X**T,
    complex, dimension(:,:), intent(in) :: A, B
-   complex, dimension(:,:), intent(inout) ::ResultM
-   character(1) :: TRANSA, TRANSB
+   complex, dimension(:,:), intent(inout) :: ResultM
+   character(1), intent(in) :: TRANSA, TRANSB
+   complex :: ALPHA, BETA
+   integer :: M, N, K, ka, kb
+   integer :: LDA, LDB, LDC
+   !DDDDDDDDDDDDDDDDDDDDDDDDD
+   !print*, 'mkl_matrix_mult_c start'
+
+   ALPHA = dcmplx(1.0d0,0.0d0)
+   BETA = dcmplx(0.0d0,0.0d0)
+
+   M = size(A,1)
+   N = size(B,2)
+   K = size(A,2)
+   !LDA = max(1,K,M)
+   select case (TRANSA)
+   case ('N', 'n')
+      LDA = max(1,M)
+   case default
+      LDA = max(1,K)
+   endselect
+   !LDB = max(1,K,N)
+   select case (TRANSB)
+   case ('N', 'n')
+      LDB = max(1,K)
+   case default
+      LDB = max(1,N)
+   endselect
+   LDC = max(1,M)
+
+   !print*, 'calling zgemm '
+   !CALL cgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)  ! LAPACK, single precision
+   CALL zgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC) ! LAPACK, double precision
+
+   !print*, 'mkl_matrix_mult_c done'
+end subroutine mkl_matrix_mult_c
+
+
+
+subroutine mkl_matrix_mult_c8(TRANSA, TRANSB, A, B, ResultM)
+   !DGEMM  performs one of the matrix-matrix operations
+   !C := alpha*op( A )*op( B ) + beta*C,
+   !where  op( X ) is one of
+   !op( X ) = X   or   op( X ) = X**T,
+   complex(8), dimension(:,:), intent(in) :: A, B
+   complex(8), dimension(:,:), intent(inout) :: ResultM
+   character(1), intent(in) :: TRANSA, TRANSB
    complex :: ALPHA, BETA
    integer :: M, N, K, ka, kb
    integer :: LDA, LDB, LDC
@@ -1161,7 +1353,7 @@ subroutine mkl_matrix_mult_c(TRANSA, TRANSB, A, B, ResultM)
    LDB = max(1,K,N)
    LDC = max(1,M)
    CALL zgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)
-end subroutine mkl_matrix_mult_c
+end subroutine mkl_matrix_mult_c8
 
 
 ! Create a matrix of reciprocal vectors:
@@ -1379,7 +1571,7 @@ end subroutine Two_Vect_Matr ! checked
 
 
 ! This subroutine multiplies two sqare matricis:
-subroutine Two_Matr_mult(M1,M2,Mout)
+subroutine Two_Matr_mult_r(M1,M2,Mout)
    REAL(8), DIMENSION(:,:), INTENT(in) :: M1 ! input matrix 1
    REAL(8), DIMENSION(:,:), INTENT(in) :: M2 ! input matrix 2
    REAL(8), DIMENSION(:,:), INTENT(out) :: Mout ! output matrix
@@ -1398,7 +1590,29 @@ subroutine Two_Matr_mult(M1,M2,Mout)
          Mout(i,j) = Mout(i,j) + SUM(M1(:,i)*M2(j,:)) ! correct
       enddo ! j
    enddo ! i
-end subroutine Two_Matr_mult ! checked!
+end subroutine Two_Matr_mult_r ! checked!
+
+
+subroutine Two_Matr_mult_c(M1,M2,Mout)
+   complex, DIMENSION(:,:), INTENT(in) :: M1 ! input matrix 1
+   complex, DIMENSION(:,:), INTENT(in) :: M2 ! input matrix 2
+   complex, DIMENSION(:,:), INTENT(out) :: Mout ! output matrix
+   integer i,j,k,n,l,n2,l2
+   n = size(M1,1)
+   n2 = size(M2,1)
+   l = size(M1,2)
+   l2 = size(M2,2)
+   if ((n .NE. n2)) print*, 'Two_Matr_mult_c Failed! (1) Ranges of matricis are different!'
+   if ((n2 .NE. l)) print*, 'Two_Matr_mult_c Failed! (2) Ranges of matricis are different!'
+   if ((l .NE. l2)) print*, 'Two_Matr_mult_c Failed! (3) Ranges of matricis are different!'
+   Mout = 0.0d0
+   do i = 1,l2
+      do j = 1,l
+         Mout(i,j) = Mout(i,j) + SUM(M1(i,:)*M2(:,j)) ! tested against MATMUL, correct
+      enddo ! j
+   enddo ! i
+end subroutine Two_Matr_mult_c
+
 
 
 END MODULE Algebra_tools
