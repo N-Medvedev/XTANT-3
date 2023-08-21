@@ -3726,7 +3726,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(print_to,'(a, es12.3, es12.3)') ' Effective mass of electron and hole: ', Scell(i)%eps%me_eff, Scell(i)%eps%mh_eff
          write(print_to,'(a, es12.3, es12.3)') ' Effective scattering time of electron and of hole: ', Scell(i)%eps%tau_e, Scell(i)%eps%tau_h
       case (2:3)  ! Trani model
-         write(print_to,'(a)') ' Probe-pulse is calculated within Trani et al. approach ' ! [PRB 72, 075423 (2005)]'
+         write(print_to,'(a)') ' Probe-pulse is calculated with RPA (Trani et al.) approach ' ! [PRB 72, 075423 (2005)]'
          write(print_to,'(a)') ' with the following parameters of the probe:'
          write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', &
             Scell(i)%eps%teta/g_Pi*(180.0d0), '    [degrees]'
@@ -3747,9 +3747,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          endif
       case (4:5) ! Graf-Vogl model
          if (numpar%optic_model < 0) then
-            write(print_to,'(a)') ' Probe-pulse is calculated within Graf-Vogl approach'
+            write(print_to,'(a)') ' Probe-pulse is calculated with Graf-Vogl approach'
+         else if (numpar%optic_model == 5) then
+            write(print_to,'(a)') ' Probe-pulse is calculated with Kubo-Greenwood (adjusted) approach'
          else
-            write(print_to,'(a)') ' Probe-pulse is calculated within Kubo-Greenwood approach'
+            write(print_to,'(a)') ' Probe-pulse is calculated with Kubo-Greenwood approach'
          endif
          write(print_to,'(a)') ' with the following parameters of the probe:'
          write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', &

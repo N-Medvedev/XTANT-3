@@ -2126,7 +2126,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    CHij_temp = dcmplx(0.0d0,0.0d0)	! to start with
    if (.not.allocated(CHij_orth)) allocate(CHij_orth(Nsiz,Nsiz))  ! orthogonalized Hamiltonian
    CHij_orth = dcmplx(0.0d0,0.0d0)	! to start with
-   if (abs(numpar%optic_model) .EQ. 4) then  ! Graf-Vogl or Kubo-Greenwood
+   select case (abs(numpar%optic_model))
+   case (4:5) ! Graf-Vogl or Kubo-Greenwood
       if (.not.allocated(CWF_orth)) allocate(CWF_orth(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! orthogonalized Hamiltonian
       if (.not.allocated(Norm1)) allocate(Norm1(Nsiz), source = 0.0d0)  ! normalization of WF
       if (.not.allocated(cPPRx_0)) allocate(cPPRx_0(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! temporary
@@ -2136,7 +2137,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
          if (.not.allocated(cTnn_0)) allocate(cTnn_0(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
          if (.not.allocated(cTnn_c)) allocate(cTnn_c(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
       endif
-   endif
+   end select
 
 
    if (present(Sij)) then   ! it is nonorthogonal case:
@@ -2211,18 +2212,20 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    CHij_non = CHij_temp
    if (present(Sij)) then  ! nonorthogonal
       CSij_save = CSij
-      if (numpar%optic_model .EQ. 2) then  ! Trani
+      select case (abs(numpar%optic_model))
+      case (2)   ! Trani
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth)    ! below
-      elseif (numpar%optic_model .EQ. 4) then  ! Graf-Vogl
+      case (4:5)   ! Graf-Vogl or KG
          !call diagonalize_complex8_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
-      endif
+      end select
    else  ! orthogonal
-      if (numpar%optic_model .EQ. 2) then  ! Trani
+      select case (abs(numpar%optic_model))
+      case (2)   ! Trani
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei)    ! below
-      elseif (numpar%optic_model .EQ. 4) then  ! Graf-Vogl
+      case (4:5)  ! Graf-Vogl or KG
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CHij_orth=CHij_orth, CWF_orth=CWF_orth)    ! below
-      endif
+      end select
    endif
    CHij = CHij_temp ! save for output
    if (present(CSij_out)) then
@@ -2231,7 +2234,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 
    !---------------------------------------
    ! Effective momentum operators:
-   if (numpar%optic_model .EQ. 2) then ! create matrix element for Trani method
+   select case (abs(numpar%optic_model))
+   case (2)  ! create matrix element for Trani method
       if (.not.allocated(cPRRx)) allocate(cPRRx(Nsiz,Nsiz))
       if (.not.allocated(cPRRy)) allocate(cPRRy(Nsiz,Nsiz))
       if (.not.allocated(cPRRz)) allocate(cPRRz(Nsiz,Nsiz))
@@ -2326,7 +2330,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       cPRRz = cPRRz * temp
 
    !---------------------------------------
-   else if (abs(numpar%optic_model) .EQ. 4) then  ! Graf-Vogl or Kubo-Greenwood
+   case (4:5) ! Graf-Vogl or Kubo-Greenwood
       if (.not.allocated(cPRRx)) allocate(cPRRx(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
       if (.not.allocated(cPRRy)) allocate(cPRRy(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
       if (.not.allocated(cPRRz)) allocate(cPRRz(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
@@ -2496,7 +2500,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       if (present(cTnn)) then
          cTnn = dble(cTnn_c) * temp/g_h*1.0d-10  ! [dimensionless]
       endif
-   endif
+   end select
 
    deallocate(CHij_temp, CHij_non)
    if (allocated(CSij_save)) deallocate(CSij_save)
