@@ -372,6 +372,7 @@ endif
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Printing out the duration of the program, starting and ending time and date:
 call parse_time(chtest, c0_in=g_ctim) ! module "Little_subroutines"
+write(*,'(a)') trim(adjustl(m_starline))
 write(*,'(a,a)') 'Duration of execution of program: ', trim(adjustl(chtest))
 
 call save_duration(g_matter, g_numpar, trim(adjustl(chtest))) ! module "Dealing_with_output_files"

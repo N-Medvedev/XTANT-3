@@ -27,12 +27,13 @@
 ! [3] P. Yeh "Optical Waves in Layered Media", (2005) ISBN: 978-0-471-73192-4
 ! [4] J. Graves, "Electronic and structural response of semiconductors to ultra-intense laser pulses" PhD thesis, Texas A&M University (1997)
 ! [5] Notes on Kubo-Greenwood CDF: https://www.openmx-square.org/tech_notes/Dielectric_Function_YTL.pdf
+! [6] G. S. Demyanov et al., Phys. Rev. E 105 (2022) 035307 https://doi.org/10.1103/PhysRevE.105.035307
 
 
 MODULE Optical_parameters
 use Universal_constants
 use Objects
-use Algebra_tools, only : sym_diagonalize
+use Algebra_tools, only : sym_diagonalize, numerical_delta
 use Electron_tools, only : get_number_of_CB_electrons, set_Fermi, set_Erf_distribution
 use TB_Fu, only : Complex_Hamil_tot_F
 use TB_Pettifor, only : Complex_Hamil_tot
@@ -91,7 +92,7 @@ subroutine get_optical_parameters(numpar, matter, Scell, Err) ! optical coeffici
       
       !-------------------------------------
       ! Convergence with respect to the number of k-points is better for Im part than Re part of CDF,
-      ! so use Kramers-Kronig relations to restore Re part:
+      ! so you may use Kramers-Kronig relations to restore Re part:
       if (Scell(NSC)%eps%all_w .and. Scell(NSC)%eps%KK) then
 !          do i = 1, size(Scell(NSC)%eps%Eps_hw(1,:))
 !             write(*,'(f,es,es)') Scell(NSC)%eps%Eps_hw(1,i), Scell(NSC)%eps%Eps_hw(2,i), Scell(NSC)%eps%Eps_hw(3,i)
@@ -138,6 +139,7 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
    real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
    real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
+   real(8) :: kappa, kappa_temp    ! electron heat conductivity
    !--------------------
 
    ! Allocate the array of optical coefficients spectrum (if not allocated before):
@@ -173,9 +175,11 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
       Nsiz = ixm*iym*izm
    endif
 
-   !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp)
+   kappa = 0.0d0  ! to start with
+
+   !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, kappa_temp)
    if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N), source = 0.0d0) ! all are there
-   !$omp do schedule(dynamic) reduction( + : Eps_hw)
+   !$omp do schedule(dynamic) reduction( + : Eps_hw, kappa)
    do Ngp = 1, Nsiz
       ! Split total index into 3 coordinates indices:
       ix = ceiling( dble(Ngp)/dble(iym*izm) )
@@ -214,10 +218,17 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
          end select
       END ASSOCIATE
 
+      !-------------------------------
       ! Get the parameters of the CDF:
       call get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRRz, Ei, Eps_hw_temp)   ! below
       ! Save data:
       Eps_hw = Eps_hw + Eps_hw_temp ! sum data at different k-points
+
+      !-------------------------------
+      ! If required, do Onsager coefficients (for electronic heat conductivity):
+      call get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp)   ! below
+      kappa = kappa + kappa_temp ! sum up at different k-points
+
    enddo ! Ngp
    !$omp end do
    if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
@@ -241,6 +252,9 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,i), Eps_hw(14,i))  ! Re_E_yy and Im_E_yy
    Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,i), Eps_hw(16,i))  ! Re_E_zz and Im_E_zz
 
+   ! Save electron heat conductivity:
+   Scell(NSC)%kappa_e = kappa
+
    ! Clean up:
    if (allocated(cPRRx)) deallocate(cPRRx)
    if (allocated(cPRRy)) deallocate(cPRRy)
@@ -250,6 +264,80 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    if (allocated(CHij)) deallocate(CHij)
    if (allocated(Eps_hw)) deallocate(Eps_hw)
 end subroutine get_Kubo_Greenwood_all_complex
+
+
+
+subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa)
+   ! Following Ref. [6] for evaluation of Onsager coefficients, Eqs.(6-7) (assuming w->0)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
+   real(8), intent(out) :: kappa ! electron heat conductivity tensor [W/(K*m)]
+   !----------------------------
+   real(8) :: prec, Vol, prefact, delta, Eij, eta, A, B, C, P2, A_cur, B_cur, C_cur, E_mu
+   integer :: Nsiz, n, m
+
+
+   Nsiz = size(Ev)   ! number of energy levels
+   prec = 1.0d-10 ! [eV] acceptance for degenerate levels
+   eta = m_gamm * m_e_h ! finite width of delta function [eV]
+   ! Supercell volume:
+   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+
+   ! Calculate only if requested:
+   if (numpar%do_kappa) then ! only if requested
+      if (Scell(NSC)%Te < 35.0d0) then ! effectively zero Te [K]
+         kappa = 0.0d0
+      else ! non-zero Te
+         prefact = g_Pi * g_h / (g_me**2 * Vol * Scell(NSC)%Te) ! prefactor in L22
+
+         A = 0.0d0   ! to start with
+         B = 0.0d0   ! to start with
+         C = 0.0d0   ! to start with
+
+         !$omp PARALLEL private(n, m, Eij, delta, P2, E_mu, A_cur, B_cur, C_cur)
+         !$omp do schedule(dynamic)  reduction( + : A, B, C)
+         do n = 1, Nsiz ! all energy points
+            do m = 1, Nsiz
+               Eij = (Ev(n) - Ev(m))   ! [eV]
+               if ( (n /= m) .and. (abs(Eij) > prec) ) then   ! nondegenerate levels
+
+                  ! Get approximate delta-function:
+                  delta = numerical_delta(Eij, eta)   ! [1/eV] module "Algebra_tools"
+
+                  ! Average momentum operator:
+                  P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + &
+                      dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + &
+                      dble(cPRRz(n,m)) * dble(cPRRz(m,n)) ) / 3.0d0  ! [kg*m/s]^2
+
+                  ! Collect terms (without prefactors):
+                  E_mu = ( (Ev(n) + Ev(m))*0.5d0 - Scell(NSC)%mu )   ! [eV]
+
+                  B_cur = P2 * (Scell(NSC)%fe(n) - Scell(NSC)%fe(m)) / Eij * delta
+                  C_cur = B_cur * E_mu
+                  A_cur = C_cur * E_mu
+
+                  ! Sum up the terms:
+                  A = A + A_cur
+                  B = B + B_cur
+                  C = C + C_cur
+                  print*, 'a', n, m, A_cur, B_cur, C_cur, delta
+               endif
+            enddo ! m
+         enddo ! n
+         !$omp end do
+         !$omp end parallel
+
+         ! Collect terms to calculate thermal conductivity:
+         print*, prefact, A, C, B
+         kappa = prefact * (A - C**2/B)   ! [W/(K*m)]
+
+      endif ! (Scell(NSC)%Te < 35.0d0)
+   endif ! numpar%do_kappa
+end subroutine get_Onsager_coeffs
+
 
 
 

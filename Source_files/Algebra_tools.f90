@@ -70,6 +70,7 @@ end interface Two_Matr_mult
 
 real(8), parameter :: m_34 = 3.0d0/4.0d0
 real(8), parameter :: m_16 = 1.0d0/6.0d0
+real(8), parameter :: m_one_over_sqrtPi = 1.0d0/sqrt(g_Pi)
 
 
 !private  ! hides items not listed on public statement
@@ -77,10 +78,22 @@ public :: sym_diagonalize, nonsym_diagonalize, check_Ha, Kronecker_delta, sort_a
 public :: double_factorial, Heavyside_tau, get_factorial, Two_Vect_Matr, Det_3x3, Cross_Prod, Matrix_Vec_Prod
 public :: mkl_matrix_mult, Reciproc, check_hermiticity, Laguerre_up_to_6, d_Laguerre_up_to_6, check_symmetry
 public :: d_detH_d_h_a_b, Two_Matr_mult, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points
-public :: make_cubic_splines, cubic_function, d_cubic_function, c8_diagonalize, mkl_matrix_mult_c8
+public :: make_cubic_splines, cubic_function, d_cubic_function, c8_diagonalize, mkl_matrix_mult_c8, numerical_delta
 !=======================================
 
  contains
+
+
+pure function numerical_delta(x, eta) result(delta)
+   real(8), intent(in) :: x, eta
+   real(8) delta  ! numerical approximation for Dirac's delta function
+
+   if (abs(eta) < 1.0d-10) then  ! near zero width, detla -> infinity
+      delta = 0.95d30 ! approximate infinity with a distinct number
+   else
+      delta = m_one_over_sqrtPi * exp(-(x/eta)**2)/eta
+   endif
+end function numerical_delta
 
 
 subroutine make_cubic_splines(x_array, y_array, a, b, c, d)

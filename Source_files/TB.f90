@@ -1782,8 +1782,9 @@ subroutine get_electronic_thermal_parameters(numpar, Scell, NSC, matter, Err)
    endif
 
    !----------------------------
-   ! Electron heat conductivity, if required (does not work well...):
-   call get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err) ! below
+   ! Electron heat conductivity, if required (does not work well...).
+   ! Exclude it from here; instead, try to use Onsager coefficients in Optical module.
+   !call get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err) ! below
 
 end subroutine get_electronic_thermal_parameters
 
