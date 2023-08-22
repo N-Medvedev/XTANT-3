@@ -253,7 +253,7 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,i), Eps_hw(16,i))  ! Re_E_zz and Im_E_zz
 
    ! Save electron heat conductivity:
-   Scell(NSC)%kappa_e = kappa
+   Scell(NSC)%kappa_e = kappa/dble(Nsiz)
 
    ! Clean up:
    if (allocated(cPRRx)) deallocate(cPRRx)
@@ -276,7 +276,7 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
    real(8), intent(out) :: kappa ! electron heat conductivity tensor [W/(K*m)]
    !----------------------------
-   real(8) :: prec, Vol, prefact, delta, Eij, eta, A, B, C, P2, A_cur, B_cur, C_cur, E_mu
+   real(8) :: prec, Vol, prefact, delta, Eij, eta, A, B, C, P2, A_cur, B_cur, C_cur, E_mu, f_nm, f_delt
    integer :: Nsiz, n, m
 
 
@@ -297,25 +297,31 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
          B = 0.0d0   ! to start with
          C = 0.0d0   ! to start with
 
-         !$omp PARALLEL private(n, m, Eij, delta, P2, E_mu, A_cur, B_cur, C_cur)
+         !$omp PARALLEL private(n, m, Eij, delta, P2, E_mu, A_cur, B_cur, C_cur, f_nm, f_delt)
          !$omp do schedule(dynamic)  reduction( + : A, B, C)
          do n = 1, Nsiz ! all energy points
             do m = 1, Nsiz
-               Eij = (Ev(n) - Ev(m))   ! [eV]
-               if ( (n /= m) .and. (abs(Eij) > prec) ) then   ! nondegenerate levels
+               Eij = (Ev(m) - Ev(n))   ! [eV]
 
-                  ! Get approximate delta-function:
-                  delta = numerical_delta(Eij, eta)   ! [1/eV] module "Algebra_tools"
+               ! Get approximate delta-function:
+               delta = numerical_delta(Eij, eta)   ! [1/eV] module "Algebra_tools"
 
+               f_nm = Scell(NSC)%fe(n) - Scell(NSC)%fe(m)
+               f_delt = f_nm * delta
+
+               if ( (n /= m) .and. (abs(Eij) > prec) .and. (abs(f_delt) > prec) ) then   ! nondegenerate levels
                   ! Average momentum operator:
-                  P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + &
-                      dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + &
-                      dble(cPRRz(n,m)) * dble(cPRRz(m,n)) ) / 3.0d0  ! [kg*m/s]^2
+                  !P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + &
+                  !    dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + &
+                  !    dble(cPRRz(n,m)) * dble(cPRRz(m,n)) ) / 3.0d0  ! [kg*m/s]^2
+                  P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+                  dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+                  dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
 
                   ! Collect terms (without prefactors):
                   E_mu = ( (Ev(n) + Ev(m))*0.5d0 - Scell(NSC)%mu )   ! [eV]
 
-                  B_cur = P2 * (Scell(NSC)%fe(n) - Scell(NSC)%fe(m)) / Eij * delta
+                  B_cur = abs(P2) * f_delt / Eij
                   C_cur = B_cur * E_mu
                   A_cur = C_cur * E_mu
 
@@ -323,7 +329,9 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
                   A = A + A_cur
                   B = B + B_cur
                   C = C + C_cur
-                  print*, 'a', n, m, A_cur, B_cur, C_cur, delta
+!                   if (f_nm > 1.0d-10) then
+!                      print*, 'a', n, m, A_cur, B_cur, C_cur, delta, P2, Eij, f_nm, cPRRx(n,m)
+!                   endif
                endif
             enddo ! m
          enddo ! n
@@ -331,7 +339,7 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
          !$omp end parallel
 
          ! Collect terms to calculate thermal conductivity:
-         print*, prefact, A, C, B
+         !print*, prefact, A, C, B
          kappa = prefact * (A - C**2/B)   ! [W/(K*m)]
 
       endif ! (Scell(NSC)%Te < 35.0d0)

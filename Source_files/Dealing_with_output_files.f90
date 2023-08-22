@@ -2999,13 +2999,12 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
    !if (.not.file_opened) then
 !    print*, trim(adjustl(File_name)), file_opened, FN
 
-   ! Check if Parameters file is openen, and try to open if it wasn't:
+   ! Check if Parameters file is opened, and try to open if it wasn't:
    call open_parameters_file(numpar, matter, FN, INFO)   ! below
-   !print*, INFO, file_opened, FN
 
    if (INFO < 0) then
       INFO = 2
-      Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
+      Error_descript = 'Error in output_parameters_file: file could not be opened, the program terminates'
       call Save_error_details(Err, INFO, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 9999
@@ -3017,9 +3016,8 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
 #else
    call Print_title(FN, Scell, matter, laser, numpar, 4) ! below
 #endif
-   !close(FN)
-   inquire(file=trim(adjustl(File_name)),opened=file_opened)
-   if (file_opened) then
+
+   if (INFO >= 0) then
       write(FN, '(a)') 'Atomic data used for '//trim(adjustl(matter%Name))//' are:'
 
       do i = 1, matter%N_KAO
