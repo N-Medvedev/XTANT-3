@@ -41,7 +41,7 @@ use TB_Molteni, only : Complex_Hamil_tot_Molteni
 use TB_NRL, only : Complex_Hamil_NRL
 use TB_DFTB, only : Complex_Hamil_DFTB, identify_DFTB_orbitals_per_atom
 use TB, only : k_point_choice, construct_complex_Hamiltonian
-use Little_subroutines, only : deallocate_array, Find_in_array_monoton
+use Little_subroutines, only : deallocate_array, Find_in_array_monoton, d_Fermi_function
 
 USE OMP_LIB, only : OMP_GET_THREAD_NUM
 
@@ -226,7 +226,8 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
 
       !-------------------------------
       ! If required, do Onsager coefficients (for electronic heat conductivity):
-      call get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp)   ! below
+      !call get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp)   ! below
+      call get_Onsager_coeffs_fast(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp)   ! below
       kappa = kappa + kappa_temp ! sum up at different k-points
 
    enddo ! Ngp
@@ -311,12 +312,12 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
 
                if ( (n /= m) .and. (abs(Eij) > prec) .and. (abs(f_delt) > prec) ) then   ! nondegenerate levels
                   ! Average momentum operator:
-                  !P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + &
-                  !    dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + &
-                  !    dble(cPRRz(n,m)) * dble(cPRRz(m,n)) ) / 3.0d0  ! [kg*m/s]^2
-                  P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
-                  dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
-                  dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+!                   P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+!                   dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+!                   dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+                  P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+                  dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+                  dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
 
                   ! Collect terms (without prefactors):
                   E_mu = ( (Ev(n) + Ev(m))*0.5d0 - Scell(NSC)%mu )   ! [eV]
@@ -340,11 +341,91 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
 
          ! Collect terms to calculate thermal conductivity:
          !print*, prefact, A, C, B
-         kappa = prefact * (A - C**2/B)   ! [W/(K*m)]
+         if (B > 0.0d0) then
+            kappa = prefact * (A - C**2/B)   ! [W/(K*m)]
+         else
+            kappa = 0.0d0
+         endif
 
       endif ! (Scell(NSC)%Te < 35.0d0)
    endif ! numpar%do_kappa
 end subroutine get_Onsager_coeffs
+
+
+
+subroutine get_Onsager_coeffs_fast(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa)
+   ! Following Ref. [6] for evaluation of Onsager coefficients, Eqs.(6-7) (assuming w->0)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
+   real(8), intent(out) :: kappa ! electron heat conductivity tensor [W/(K*m)]
+   !----------------------------
+   real(8) :: prec, Vol, prefact, delta, Eij, eta, A, B, C, P2, A_cur, B_cur, C_cur, E_mu, f_nm, f_delt
+   integer :: Nsiz, n, m
+
+
+   Nsiz = size(Ev)   ! number of energy levels
+   prec = 1.0d-10 ! [eV] acceptance for degenerate levels
+   eta = m_gamm * m_e_h ! finite width of delta function [eV]
+   ! Supercell volume:
+   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+
+   ! Calculate only if requested:
+   if (numpar%do_kappa) then ! only if requested
+      if (Scell(NSC)%Te < 35.0d0) then ! effectively zero Te [K]
+         kappa = 0.0d0
+      else ! non-zero Te
+         prefact = g_Pi * g_h / (g_me**2 * Vol * Scell(NSC)%Te) ! prefactor in L22
+
+         A = 0.0d0   ! to start with
+         B = 0.0d0   ! to start with
+         C = 0.0d0   ! to start with
+
+         !$omp PARALLEL private(n, Eij, P2, E_mu, A_cur, B_cur, C_cur, f_nm)
+         !$omp do schedule(dynamic)  reduction( + : A, B, C)
+         do n = 1, Nsiz ! all energy points
+
+            ! Assume thermalized Fermi distribution:
+            f_nm = -d_Fermi_function(Scell(NSC)%mu, Scell(NSC)%TeeV, Ev(n), .false.) ! [1/eV] module "Little_subroutines"
+
+            ! Average momentum operator:
+            ! P * P [ 2 ]:
+!               P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+!               dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+!               dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+            ! (P*) * P [ * ]:
+            P2 = ( dble(cPRRx(n,n)) * dble(cPRRx(n,n)) + aimag(cPRRx(n,n)) * aimag(cPRRx(n,n)) + &
+                   dble(cPRRy(n,n)) * dble(cPRRy(n,n)) + aimag(cPRRy(n,n)) * aimag(cPRRy(n,n)) + &
+                   dble(cPRRz(n,n)) * dble(cPRRz(n,n)) + aimag(cPRRz(n,n)) * aimag(cPRRz(n,n)) ) / 3.0d0
+
+            ! Collect terms (without prefactors):
+            E_mu = ( Ev(n) - Scell(NSC)%mu )   ! [eV]
+
+            B_cur = abs(P2) * f_nm
+            C_cur = B_cur * E_mu
+            A_cur = C_cur * E_mu
+
+            ! Sum up the terms:
+            A = A + A_cur
+            B = B + B_cur
+            C = C + C_cur
+         enddo ! n
+         !$omp end do
+         !$omp end parallel
+
+         ! Collect terms to calculate thermal conductivity:
+         !print*, prefact, A, C, B
+         if (abs(B) > 0.0d0) then
+            kappa = prefact * (A - C**2/B)   ! [W/(K*m)]
+         else
+            kappa = 0.0d0
+         endif
+
+      endif ! (Scell(NSC)%Te < 35.0d0)
+   endif ! numpar%do_kappa
+end subroutine get_Onsager_coeffs_fast
 
 
 
@@ -394,6 +475,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
 
             select case(numpar%optic_model)
             case (4) ! full calculations
+               ! (P) * (P) [2]:
                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
                A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
@@ -401,6 +483,15 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
                B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) + aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
                B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) + aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
                B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) + aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
+
+               ! (P*) * (P) [*]:
+!                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
+!                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
+!                A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
+!
+!                B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) - aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
+!                B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) - aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
+!                B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) - aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
             case (5) ! only real part (empirical adjustment!)
                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n))
                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n))
@@ -450,13 +541,43 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
             w_sigma = (w_mn + w) / denom
 
             ! Optical conductivity / w:
-            Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma - B_sigma(n,m,1,1) * w_sigma)
-            Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma - B_sigma(n,m,2,2) * w_sigma)
-            Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma - B_sigma(n,m,3,3) * w_sigma)
+            ! [ D ]
+!             Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma - B_sigma(n,m,1,1) * w_sigma)
+!             Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma - B_sigma(n,m,2,2) * w_sigma)
+!             Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma - B_sigma(n,m,3,3) * w_sigma)
+!
+!             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
+!             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
+!             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
+
+            ! [ C ]
+            Re_eps_ij(1,1) = Re_eps_ij(1,1) - f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma - B_sigma(n,m,1,1) * w_sigma)
+            Re_eps_ij(2,2) = Re_eps_ij(2,2) - f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma - B_sigma(n,m,2,2) * w_sigma)
+            Re_eps_ij(3,3) = Re_eps_ij(3,3) - f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma - B_sigma(n,m,3,3) * w_sigma)
 
             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
+
+            ! [ B ]
+!             Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma + B_sigma(n,m,1,1) * w_sigma)
+!             Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma + B_sigma(n,m,2,2) * w_sigma)
+!             Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma + B_sigma(n,m,3,3) * w_sigma)
+!
+!             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma - B_sigma(n,m,1,1) * g_sigma)
+!             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma - B_sigma(n,m,2,2) * g_sigma)
+!             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma - B_sigma(n,m,3,3) * g_sigma)
+
+            ! [ A ]
+!             Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
+!             Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
+!             Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
+!
+!             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (-A_sigma(n,m,1,1) * g_sigma + B_sigma(n,m,1,1) * w_sigma)
+!             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (-A_sigma(n,m,2,2) * g_sigma + B_sigma(n,m,2,2) * w_sigma)
+!             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (-A_sigma(n,m,3,3) * g_sigma + B_sigma(n,m,3,3) * w_sigma)
+
+
          enddo ! m
       enddo ! n
 !       !$omp end do

@@ -2348,9 +2348,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                i = j
             else
                i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-               x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1)	! at this distance, X
-               y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2)	! at this distance, Y
-               z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3)	! at this distance, Z
+               x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
+               y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
+               z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
             endif ! (atom_2 .EQ. 0)
 
             if (i > 0) then
@@ -2497,7 +2497,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       cPRRy = cPRRy * temp
       cPRRz = cPRRz * temp
 
-      ! Term with km, according to
+      ! Term with k, according to
       ! [B. Holst, M. French, R. Redmer, Phys. Rev. B 83, 235120 (2011)], Eq.(18):
       do n = 1, Nsiz
          cPRRx(n,n) = cPRRx(n,n) + DCMPLX( sqrt(kx**2 + ky**2 + kz**2)*1.0d10*g_h, 0.0d0 )
