@@ -226,8 +226,11 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
 
       !-------------------------------
       ! If required, do Onsager coefficients (for electronic heat conductivity):
-      !call get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp)   ! below
-      call get_Onsager_coeffs_fast(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp)   ! below
+      call get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp)   ! below
+!       print*, 'one', kappa_temp
+!       call get_Onsager_coeffs_fast(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp)   ! below
+!       print*, 'two', kappa_temp
+
       kappa = kappa + kappa_temp ! sum up at different k-points
 
    enddo ! Ngp
@@ -235,7 +238,7 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
    !$omp end parallel
 
-   ! Save the k-point avreages:
+   ! Save the k-point averages:
    Eps_hw = Eps_hw/dble(Nsiz) ! normalize k-point summation
    Scell(NSC)%eps%Eps_hw = Eps_hw   ! all data for spectrum in array
    ! Get the values for the single value of the probe pulse:
@@ -253,7 +256,7 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,i), Eps_hw(14,i))  ! Re_E_yy and Im_E_yy
    Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,i), Eps_hw(16,i))  ! Re_E_zz and Im_E_zz
 
-   ! Save electron heat conductivity:
+   ! Save electron heat conductivity, averaged over k-points:
    Scell(NSC)%kappa_e = kappa/dble(Nsiz)
 
    ! Clean up:
@@ -313,11 +316,11 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
                if ( (n /= m) .and. (abs(Eij) > prec) .and. (abs(f_delt) > prec) ) then   ! nondegenerate levels
                   ! Average momentum operator:
 !                   P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
-!                   dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
-!                   dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+!                          dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+!                          dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
                   P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
-                  dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
-                  dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+                         dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+                         dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
 
                   ! Collect terms (without prefactors):
                   E_mu = ( (Ev(n) + Ev(m))*0.5d0 - Scell(NSC)%mu )   ! [eV]
@@ -353,7 +356,7 @@ end subroutine get_Onsager_coeffs
 
 
 
-subroutine get_Onsager_coeffs_fast(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa)
+subroutine get_Onsager_coeffs_fast(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa) ! Wrong, does not work!
    ! Following Ref. [6] for evaluation of Onsager coefficients, Eqs.(6-7) (assuming w->0)
    type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
@@ -367,7 +370,7 @@ subroutine get_Onsager_coeffs_fast(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, 
 
 
    Nsiz = size(Ev)   ! number of energy levels
-   prec = 1.0d-10 ! [eV] acceptance for degenerate levels
+   prec = 1.0d-11 ! [eV] acceptance for degenerate levels
    eta = m_gamm * m_e_h ! finite width of delta function [eV]
    ! Supercell volume:
    Vol = Scell(NSC)%V*1.0d-30 ! [m^3]

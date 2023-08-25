@@ -2499,11 +2499,11 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 
       ! Term with k, according to
       ! [B. Holst, M. French, R. Redmer, Phys. Rev. B 83, 235120 (2011)], Eq.(18):
-      do n = 1, Nsiz
-         cPRRx(n,n) = cPRRx(n,n) + DCMPLX( sqrt(kx**2 + ky**2 + kz**2)*1.0d10*g_h, 0.0d0 )
-         cPRRy(n,n) = cPRRy(n,n) + DCMPLX( sqrt(kx**2 + ky**2 + kz**2)*1.0d10*g_h, 0.0d0 )
-         cPRRz(n,n) = cPRRz(n,n) + DCMPLX( sqrt(kx**2 + ky**2 + kz**2)*1.0d10*g_h, 0.0d0 )
-      enddo
+!       do n = 1, Nsiz
+!          cPRRx(n,n) = cPRRx(n,n) + DCMPLX( sqrt(kx**2 + ky**2 + kz**2)*1.0d10*g_h, 0.0d0 )
+!          cPRRy(n,n) = cPRRy(n,n) + DCMPLX( sqrt(kx**2 + ky**2 + kz**2)*1.0d10*g_h, 0.0d0 )
+!          cPRRz(n,n) = cPRRz(n,n) + DCMPLX( sqrt(kx**2 + ky**2 + kz**2)*1.0d10*g_h, 0.0d0 )
+!       enddo
 
       ! And kinetic energy:
       if (present(cTnn)) then
