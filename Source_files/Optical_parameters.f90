@@ -34,7 +34,7 @@ MODULE Optical_parameters
 use Universal_constants
 use Objects
 use Algebra_tools, only : sym_diagonalize, numerical_delta
-use Electron_tools, only : get_number_of_CB_electrons, set_Fermi, set_Erf_distribution
+use Electron_tools, only : get_number_of_CB_electrons, set_Fermi, set_Erf_distribution, find_mu_from_N_T
 use TB_Fu, only : Complex_Hamil_tot_F
 use TB_Pettifor, only : Complex_Hamil_tot
 use TB_Molteni, only : Complex_Hamil_tot_Molteni
@@ -139,8 +139,25 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
    real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
    real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
-   real(8) :: kappa, kappa_temp    ! electron heat conductivity
-   !--------------------
+   real(8), dimension(:), allocatable :: kappa, kappa_temp    ! electron heat conductivity vs Te
+   real(8), dimension(:), allocatable :: kappa_mu_grid, kappa_mu_grid_temp
+   integer :: Nsiz_Te
+   real(8) :: Te_min, Te_max, dTe
+
+   ! Define electron temperature grid:
+   Te_min = 300.0d0     ! [K]
+   Te_max = 30000.0d0   ! [K]
+   dTe = 100.0d0
+   Nsiz_Te = (Te_max - Te_min)/dTe
+   allocate(kappa(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(Scell(NSC)%kappa_e_vs_Te)) allocate(Scell(NSC)%kappa_e_vs_Te(Nsiz_Te), source = 0.0d0)   ! kappa
+   if (.not.allocated(Scell(NSC)%kappa_Te_grid)) allocate(Scell(NSC)%kappa_Te_grid(Nsiz_Te), source = 0.0d0)   ! Te [K]
+   if (.not.allocated(Scell(NSC)%kappa_mu_grid)) allocate(Scell(NSC)%kappa_mu_grid(Nsiz_Te), source = 0.0d0)   ! mu [eV]
+   if (.not.allocated(kappa_mu_grid)) allocate(kappa_mu_grid(Nsiz_Te), source = 0.0d0)   ! mu [eV]
+   Scell(NSC)%kappa_Te_grid(1) = Te_min
+   do i = 2, Nsiz_Te ! Set the electronic temperature grid
+      Scell(NSC)%kappa_Te_grid(i) = Scell(NSC)%kappa_Te_grid(i-1) + dTe
+   enddo
 
    ! Allocate the array of optical coefficients spectrum (if not allocated before):
    ! Define the grid size:
@@ -177,9 +194,11 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
 
    kappa = 0.0d0  ! to start with
 
-   !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, kappa_temp)
+   !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, kappa_temp, kappa_mu_grid_temp)
    if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N), source = 0.0d0) ! all are there
-   !$omp do schedule(dynamic) reduction( + : Eps_hw, kappa)
+   if (.not.allocated(kappa_temp)) allocate(kappa_temp(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(kappa_mu_grid_temp)) allocate(kappa_mu_grid_temp(Nsiz_Te), source = 0.0d0)   ! mu [eV]
+   !$omp do schedule(dynamic) reduction( + : Eps_hw, kappa, kappa_mu_grid)
    do Ngp = 1, Nsiz
       ! Split total index into 3 coordinates indices:
       ix = ceiling( dble(Ngp)/dble(iym*izm) )
@@ -226,16 +245,20 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
 
       !-------------------------------
       ! If required, do Onsager coefficients (for electronic heat conductivity):
-      call get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp)   ! below
-!       print*, 'one', kappa_temp
+      call get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
+                              Scell(NSC)%kappa_Te_grid, kappa_mu_grid_temp)   ! below
+!       print*, 'get_Onsager_coeffs done:', kappa_temp(1)
 !       call get_Onsager_coeffs_fast(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp)   ! below
 !       print*, 'two', kappa_temp
 
       kappa = kappa + kappa_temp ! sum up at different k-points
+      kappa_mu_grid = kappa_mu_grid + kappa_mu_grid_temp   ! average mu
 
    enddo ! Ngp
    !$omp end do
    if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
+   if (allocated(kappa_temp)) deallocate(kappa_temp)
+   if (allocated(kappa_mu_grid_temp)) deallocate(kappa_mu_grid_temp)
    !$omp end parallel
 
    ! Save the k-point averages:
@@ -257,7 +280,9 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,i), Eps_hw(16,i))  ! Re_E_zz and Im_E_zz
 
    ! Save electron heat conductivity, averaged over k-points:
-   Scell(NSC)%kappa_e = kappa/dble(Nsiz)
+   Scell(NSC)%kappa_e = kappa(1)/dble(Nsiz)  ! room temperature
+   Scell(NSC)%kappa_e_vs_Te = kappa/dble(Nsiz)  ! array vs Te
+   Scell(NSC)%kappa_mu_grid = kappa_mu_grid/dble(Nsiz)  ! array of mu vs Te
 
    ! Clean up:
    if (allocated(cPRRx)) deallocate(cPRRx)
@@ -267,24 +292,50 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    if (allocated(Ei)) deallocate(Ei)
    if (allocated(CHij)) deallocate(CHij)
    if (allocated(Eps_hw)) deallocate(Eps_hw)
+   if (allocated(kappa)) deallocate(kappa)
+   if (allocated(kappa_temp)) deallocate(kappa_temp)
 end subroutine get_Kubo_Greenwood_all_complex
 
 
 
-subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa)
+subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa, Te_grid, mu_grid)
    ! Following Ref. [6] for evaluation of Onsager coefficients, Eqs.(6-7) (assuming w->0)
    type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
-   real(8), intent(out) :: kappa ! electron heat conductivity tensor [W/(K*m)]
+   real(8), dimension(:), intent(out) :: kappa ! electron heat conductivity tensor [W/(K*m)] vs Te
+   real(8), dimension(:), intent(in) :: Te_grid ! electronic temperature grid [K]
+   real(8), dimension(:), intent(out) :: mu_grid ! chemical potential [eV]
    !----------------------------
-   real(8) :: prec, Vol, prefact, delta, Eij, eta, A, B, C, P2, A_cur, B_cur, C_cur, E_mu, f_nm, f_delt
-   integer :: Nsiz, n, m
-
+   real(8), dimension(:,:), allocatable :: fe_on_Te_grid
+   real(8) :: prec, Vol, pref, prefact, delta, Eij, eta, P2, A_cur, B_cur, C_cur, E_mu, f_nm, f_delt
+   real(8), dimension(:), allocatable :: A, B, C, mu
+   integer :: Nsiz, n, m, N_Te_grid, i
 
    Nsiz = size(Ev)   ! number of energy levels
+   N_Te_grid = size(Te_grid)
+
+   ! Define the distributions on the temperature grid:
+   if (.not. allocated(mu)) then
+      allocate(mu(N_Te_grid), source = 0.0d0)
+   else
+      mu = 0.0d0
+   endif
+   if (.not. allocated(fe_on_Te_grid)) then
+      allocate(fe_on_Te_grid(N_Te_grid, Nsiz), source = 0.0d0)
+   else
+      fe_on_Te_grid = 0.0d0   ! to start with
+   endif
+   do i = 1, N_Te_grid
+      call find_mu_from_N_T( Ev, dble(Scell(NSC)%Ne), mu(i), Te_grid(i)*g_kb_EV) ! module "Electron_tools"
+      call set_Fermi( Ev, Te_grid(i)*g_kb_EV, mu(i), fe_on_Te_grid(i,:) )   ! module "Electron_tools"
+      ! Save chem.potential:
+      mu_grid(i) = mu(i)
+      !print*, 'get_Onsager_coeffs:', i, Te_grid(i), mu(i)
+   enddo
+
    prec = 1.0d-10 ! [eV] acceptance for degenerate levels
    eta = m_gamm * m_e_h ! finite width of delta function [eV]
    ! Supercell volume:
@@ -292,66 +343,86 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
 
    ! Calculate only if requested:
    if (numpar%do_kappa) then ! only if requested
-      if (Scell(NSC)%Te < 35.0d0) then ! effectively zero Te [K]
-         kappa = 0.0d0
-      else ! non-zero Te
-         prefact = g_Pi * g_h / (g_me**2 * Vol * Scell(NSC)%Te) ! prefactor in L22
 
-         A = 0.0d0   ! to start with
-         B = 0.0d0   ! to start with
-         C = 0.0d0   ! to start with
+      if (.not. allocated(A)) then
+         allocate(A(N_Te_grid), source = 0.0d0) ! to start with
+      else
+         A = 0.0d0
+      endif
+      if (.not. allocated(B)) then
+         allocate(B(N_Te_grid), source = 0.0d0) ! to start with
+      else
+         B = 0.0d0
+      endif
+      if (.not. allocated(C)) then
+         allocate(C(N_Te_grid), source = 0.0d0) ! to start with
+      else
+         C = 0.0d0
+      endif
 
-         !$omp PARALLEL private(n, m, Eij, delta, P2, E_mu, A_cur, B_cur, C_cur, f_nm, f_delt)
-         !$omp do schedule(dynamic)  reduction( + : A, B, C)
-         do n = 1, Nsiz ! all energy points
-            do m = 1, Nsiz
-               Eij = (Ev(m) - Ev(n))   ! [eV]
+      !$omp PARALLEL private(n, m, Eij, delta, P2, E_mu, i, A_cur, B_cur, C_cur, f_nm, f_delt)
+      !$omp do schedule(dynamic)  reduction( + : A, B, C)
+      do n = 1, Nsiz ! all energy points
+         do m = 1, Nsiz
+            Eij = (Ev(m) - Ev(n))   ! [eV]
 
-               ! Get approximate delta-function:
-               delta = numerical_delta(Eij, eta)   ! [1/eV] module "Algebra_tools"
+            ! Get approximate delta-function:
+            delta = numerical_delta(Eij, eta)   ! [1/eV] module "Algebra_tools"
 
-               f_nm = Scell(NSC)%fe(n) - Scell(NSC)%fe(m)
-               f_delt = f_nm * delta
+            if ( (n /= m) .and. (abs(Eij) > prec) .and. (abs(delta) > prec) ) then   ! nondegenerate levels
+               ! Average momentum operator:
+!                  P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+!                         dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+!                         dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+               P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+                     dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+                     dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
 
-               if ( (n /= m) .and. (abs(Eij) > prec) .and. (abs(f_delt) > prec) ) then   ! nondegenerate levels
-                  ! Average momentum operator:
-!                   P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
-!                          dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
-!                          dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
-                  P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
-                         dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
-                         dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+               ! Collect terms (without prefactors)
+               ! for a set of electronic temperatures:
+               do i = 1, N_Te_grid
+                  !f_nm = Scell(NSC)%fe(n) - Scell(NSC)%fe(m)
+                  !E_mu = ( (Ev(n) + Ev(m))*0.5d0 - Scell(NSC)%mu )   ! [eV]
 
-                  ! Collect terms (without prefactors):
-                  E_mu = ( (Ev(n) + Ev(m))*0.5d0 - Scell(NSC)%mu )   ! [eV]
+                  E_mu = ( (Ev(n) + Ev(m))*0.5d0 - mu(i) )   ! [eV]
+
+                  f_nm = fe_on_Te_grid(i,n) - fe_on_Te_grid(i,m)
+                  f_delt = f_nm * delta
 
                   B_cur = abs(P2) * f_delt / Eij
                   C_cur = B_cur * E_mu
                   A_cur = C_cur * E_mu
 
                   ! Sum up the terms:
-                  A = A + A_cur
-                  B = B + B_cur
-                  C = C + C_cur
-!                   if (f_nm > 1.0d-10) then
-!                      print*, 'a', n, m, A_cur, B_cur, C_cur, delta, P2, Eij, f_nm, cPRRx(n,m)
-!                   endif
-               endif
-            enddo ! m
-         enddo ! n
-         !$omp end do
-         !$omp end parallel
+                  A(i) = A(i) + A_cur
+                  B(i) = B(i) + B_cur
+                  C(i) = C(i) + C_cur
+               enddo ! i
+            endif ! (n /= m)
 
-         ! Collect terms to calculate thermal conductivity:
-         !print*, prefact, A, C, B
-         if (B > 0.0d0) then
-            kappa = prefact * (A - C**2/B)   ! [W/(K*m)]
+         enddo ! m
+      enddo ! n
+      !$omp end do
+      !$omp end parallel
+
+      ! Collect terms to calculate thermal conductivity:
+      !prefact = g_Pi * g_h / (g_me**2 * Vol * Scell(NSC)%Te) ! prefactor in L22
+      pref = g_Pi * g_h / (g_me**2 * Vol) ! prefactor in L22
+      do i = 1, N_Te_grid
+         prefact = pref / Te_grid(i)
+         if (B(i) > 0.0d0) then
+            kappa(i) = prefact * (A(i) - C(i)**2/B(i))   ! [W/(K*m)]
          else
-            kappa = 0.0d0
+            kappa(i) = 0.0d0
          endif
-
-      endif ! (Scell(NSC)%Te < 35.0d0)
+      enddo ! i
    endif ! numpar%do_kappa
+
+   if (allocated(fe_on_Te_grid)) deallocate(fe_on_Te_grid)
+   if (allocated(A)) deallocate(A)
+   if (allocated(B)) deallocate(B)
+   if (allocated(C)) deallocate(C)
+   if (allocated(mu)) deallocate(mu)
 end subroutine get_Onsager_coeffs
 
 
@@ -2021,19 +2092,19 @@ subroutine get_Re_and_Im(ReEps, ImEps, n, k)
 end subroutine get_Re_and_Im
 
 
-!c creflection coefficient between two layers as function of two wave vectors:
+! reflection coefficient between two layers as function of two wave vectors:
 function crefl(cxki,cxkj)  ! Ref. [3]
    complex :: crefl, cxki, cxkj
    crefl = (cxki-cxkj)/(cxki+cxkj)
 end function crefl
 
-!c transmission coefficient between two layers as function of two wave vectors:
+! transmission coefficient between two layers as function of two wave vectors:
 function ctrans(cxki,cxkj) ! Ref. [3]
    complex :: ctrans, cxki, cxkj
    ctrans = 2.0d0*cxki/(cxki+cxkj)
 end function ctrans
 
-!c phase factor within the layer i:
+! phase factor within the layer i:
 function cphase(cxkx,cd)   ! Ref. [3]
    complex :: cphase, cxkx, cd
    complex cc, carg

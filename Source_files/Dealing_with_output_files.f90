@@ -635,7 +635,11 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    ! Write electron heat conductivity if requesed:
    if (numpar%do_kappa) then
       ! Total kappa:
-      write(FN_kappa, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%kappa_e
+      !write(FN_kappa, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%kappa_e
+      do i = 1, size(Scell(NSC)%kappa_e_vs_Te)
+         write(FN_kappa, '(es25.16,es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
+                        Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_mu_grid(i)
+      enddo
       ! All shells resolved:
 !       do i_at = 1, Nat
 !          do i_types = 1, N_types
@@ -643,7 +647,7 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
 !             write(FN_kappa,'(es25.16)',advance='no') Scell(NSC)%kappa_e_part(i_G1)
 !          enddo   ! i_types
 !       enddo ! i_at
-      write(FN_kappa,'(a)') ''
+!       write(FN_kappa,'(a)') ''
    endif
 
 
@@ -1231,8 +1235,10 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       file_electron_heat_conductivity = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_conductivity)))
       numpar%FN_kappa = FN
-      call create_file_header(numpar%FN_kappa, '#Time kappa')
-      call create_file_header(numpar%FN_kappa, '#[fs]  [W/(K*m)]')
+      !call create_file_header(numpar%FN_kappa, '#Time kappa')
+      !call create_file_header(numpar%FN_kappa, '#[fs]  [W/(K*m)]')
+      call create_file_header(numpar%FN_kappa, '#Te   kappa mu')
+      call create_file_header(numpar%FN_kappa, '#[K]  [W/(K*m)]   [eV]')
    endif
 
    file_energies = trim(adjustl(file_path))//'OUTPUT_energies.dat'

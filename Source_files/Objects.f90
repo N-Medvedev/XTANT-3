@@ -641,6 +641,9 @@ type Super_cell
    real(8), dimension(:), allocatable :: Ce_part   ! band-resolved electron heat capacity [J/(m^3 K)]
    real(8), dimension(:), allocatable :: Ce_i   ! energy level resolved electron heat capacity [J/(m^3 K)]
    real(8) :: kappa_e  ! electron heat conductivity [W/(m K)]
+   real(8), dimension(:), allocatable :: kappa_e_vs_Te  ! electron heat conductivity [W/(m K)] vs Te [K]
+   real(8), dimension(:), allocatable :: kappa_Te_grid  ! Te grid for electron heat conductivity [K]
+   real(8), dimension(:), allocatable :: kappa_mu_grid  ! mu vs Te for electron heat conductivity [eV]
    real(8), dimension(:), allocatable :: kappa_e_part   ! band-resolved electron heat conductivity [W/(m K)]
    ! Atoms:
    type(Atom), dimension(:), allocatable :: MDAtoms ! all atoms in MD
