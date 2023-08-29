@@ -36,7 +36,7 @@ public :: get_low_e_energy, find_band_gap, get_DOS_sort, Diff_Fermi_E, get_numbe
 public :: set_Erf_distribution, update_fe, Electron_thermalization, get_glob_energy, update_cross_section
 public :: Do_relaxation_time, set_initial_fe, find_mu_from_N_T, set_total_el_energy, Electron_Fixed_Etot
 public :: get_new_global_energy, get_electronic_heat_capacity, get_total_el_energy, electronic_entropy
-public :: get_low_energy_distribution, set_high_DOS, get_Ce_and_mu
+public :: get_low_energy_distribution, set_high_DOS, get_Ce_and_mu, Diff_Fermi_Te
 
  contains
 
@@ -1486,7 +1486,7 @@ end function Diff_Fermi_Te
 
 pure function Diff_Fermi_E(Te, mu, E, norm_fe) result(dfdE)
    real(8), intent(in) :: Te, mu, E   ! [eV], temperature, chem.potential, and energy
-   real(8) :: dfdE   ! Derivative of the Fermi-function by energy
+   real(8) :: dfdE   ! Derivative of the Fermi-function by energy [1/eV]
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
    real(8) F, buf
    real(8) :: f_norm

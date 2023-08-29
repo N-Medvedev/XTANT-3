@@ -898,6 +898,7 @@ type Numerics_param
    integer :: Mulliken_model
    integer :: ind_fig_extention, change_size_step
    real(8) :: change_size_max, change_size_min
+   real(8) :: kappa_Te_min, kappa_Te_max, kappa_dTe
    character(4) :: fig_extention
    ! BOP parameters creation:
    logical :: create_BOP_repulse

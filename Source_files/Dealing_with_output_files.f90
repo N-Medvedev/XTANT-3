@@ -637,7 +637,7 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
       ! Total kappa:
       !write(FN_kappa, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%kappa_e
       do i = 1, size(Scell(NSC)%kappa_e_vs_Te)
-         write(FN_kappa, '(es25.16,es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
+         write(FN_kappa, '(es25.16,es25.16, es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
             Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_mu_grid(i), Scell(NSC)%kappa_Ce_grid(i)
       enddo
       ! All shells resolved:
@@ -4250,7 +4250,17 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    endif
 
    if (numpar%do_kappa) then
-      write(print_to,'(a)') ' Electronic heat conductivity'
+      write(print_to,'(a)') ' Electronic heat conductivity (and Ce, mu) vs Te'
+      write(text1, '(i10)') numpar%ixm
+      write(text2, '(i10)') numpar%iym
+      write(text3, '(i10)') numpar%izm
+      if (allocated(numpar%k_grid)) then
+         write(print_to,'(a,a,a,a,a,a)') ' Averaged over k-points (on user-defined grid): ', &
+               trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+      else
+         write(print_to,'(a,a,a,a,a,a)') ' Averaged over k-points (on Monkhorst-Pack grid): ', &
+               trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+      endif
       optional_output = .true.   ! there is at least some optional output
    !else
    !   write(print_to,'(a)') ' No calculation of electronic heat conductivity'

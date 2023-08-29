@@ -34,7 +34,7 @@ MODULE Optical_parameters
 use Universal_constants
 use Objects
 use Algebra_tools, only : sym_diagonalize, numerical_delta
-use Electron_tools, only : get_number_of_CB_electrons, set_Fermi, set_Erf_distribution, find_mu_from_N_T, get_Ce_and_mu
+use Electron_tools, only : get_number_of_CB_electrons, set_Fermi, set_Erf_distribution, find_mu_from_N_T, get_Ce_and_mu, Diff_Fermi_E
 use TB_Fu, only : Complex_Hamil_tot_F
 use TB_Pettifor, only : Complex_Hamil_tot
 use TB_Molteni, only : Complex_Hamil_tot_Molteni
@@ -84,7 +84,7 @@ subroutine get_optical_parameters(numpar, matter, Scell, Err) ! optical coeffici
       endif
 
       if (do_together) then   ! One subroutine to get both, kappa and CDF:
-         call get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
+         call get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
 
       else ! separate ones for kappa and CDF:
          ! CDF (if requested):
@@ -96,7 +96,7 @@ subroutine get_optical_parameters(numpar, matter, Scell, Err) ! optical coeffici
             case (3) ! Trani at the Gamma-point only
                call get_trani_all(numpar, Scell, NSC, Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%eps%all_w)   ! below
             case (4:5) ! Kubo-Greenwood Refs.[2] and [5]
-               call get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
+               call get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
             case (-4) ! Graf-Vogl Ref.[2] (Not realy working...)
                call get_Graf_Vogl_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
             case default ! no optical coefficients needed
@@ -104,7 +104,7 @@ subroutine get_optical_parameters(numpar, matter, Scell, Err) ! optical coeffici
          end select ! (numpar%optic_model)
 
          ! Kappa (if requested):
-         call get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
+         call get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
       endif ! do_together
       
       !-------------------------------------
@@ -141,8 +141,9 @@ end subroutine get_optical_parameters
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Kubo-GReenwood implementation in orthogonalized Hamiltonian (combined Refs.[2] and [5]):
-subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref. [2]
+subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err)  ! From Ref. [2]
    type (Numerics_param), intent(inout) :: numpar  ! numerical parameters, including drude-function
+   type(Solid), intent(in) :: matter  ! Material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell   ! supercell with all the atoms as one object
    integer, intent(in) :: NSC    ! number of supercell
    logical, intent(in) :: all_w  ! get all spectrum of hv, or only for given probe wavelength
@@ -162,10 +163,10 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    real(8) :: Te_min, Te_max, dTe
 
    ! Define electron temperature grid:
-   Te_min = 300.0d0     ! [K]
-   Te_max = 30000.0d0   ! [K]
-   dTe = 100.0d0
-   Nsiz_Te = (Te_max - Te_min)/dTe
+   Te_min = numpar%kappa_Te_min  ! [K]
+   Te_max = numpar%kappa_Te_max  ! [K]
+   dTe = numpar%kappa_dTe  ! [K]
+   Nsiz_Te = (Te_max+dTe - Te_min)/dTe
 
    if (.not.allocated(Scell(NSC)%kappa_Te_grid)) allocate(Scell(NSC)%kappa_Te_grid(Nsiz_Te), source = 0.0d0)   ! Te [K]
    if (.not.allocated(Scell(NSC)%kappa_e_vs_Te)) allocate(Scell(NSC)%kappa_e_vs_Te(Nsiz_Te), source = 0.0d0)   ! kappa
@@ -274,7 +275,7 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
       !-------------------------------
       ! If required, do Onsager coefficients (for electronic heat conductivity):
       if (numpar%do_kappa) then  ! if requested
-         call get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
+         call get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
                               Scell(NSC)%kappa_Te_grid, kappa_mu_grid_temp, kappa_Ce_grid_temp)   ! below
       else  ! if not required
          kappa_temp = 0.0d0
@@ -335,9 +336,10 @@ end subroutine get_Kubo_Greenwood_all_complex
 
 
 
-subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa, Te_grid, mu_grid, Ce_grid)
+subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa, Te_grid, mu_grid, Ce_grid)
    ! Following Ref. [6] for evaluation of Onsager coefficients, Eqs.(6-7) (assuming w->0)
    type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Solid), intent(in) :: matter  ! Material parameters
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
@@ -347,8 +349,9 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
    real(8), dimension(:), intent(out) :: mu_grid ! chemical potential [eV]
    real(8), dimension(:), intent(out) :: Ce_grid   ! heat capacity [J/(m^3 K)]
    !----------------------------
-   real(8), dimension(:,:), allocatable :: fe_on_Te_grid
+   real(8), dimension(:,:), allocatable :: fe_on_Te_grid, dfe_dE_grid
    real(8) :: prec, Vol, pref, prefact, delta, Eij, eta, P2, A_cur, B_cur, C_cur, E_mu, f_nm, f_delt
+   real(8) :: kappa_e, n_s, v_F, pref_ke, ne
    real(8), dimension(:), allocatable :: A, B, C, mu, Ce
    integer :: Nsiz, n, m, N_Te_grid, i
 
@@ -374,6 +377,12 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
       fe_on_Te_grid = 0.0d0   ! to start with
    endif
 
+   if (.not. allocated(dfe_dE_grid)) then
+      allocate(dfe_dE_grid(N_Te_grid, Nsiz), source = 0.0d0)
+   else
+      dfe_dE_grid = 0.0d0   ! to start with
+   endif
+
    do i = 1, N_Te_grid
       !call find_mu_from_N_T( Ev, dble(Scell(NSC)%Ne), mu(i), Te_grid(i)*g_kb_EV) ! module "Electron_tools"
       call get_Ce_and_mu(Scell, NSC, Te_grid(i), Ev, Ce(i), mu(i))   ! module "Electron_tools"
@@ -382,7 +391,10 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
       mu_grid(i) = mu(i)
       ! Save heat capacity:
       Ce_grid(i) = Ce(i)
-      !print*, 'get_Onsager_coeffs:', i, Te_grid(i), mu(i), Ce(i)
+      ! Derivative of fe by Te:
+      do n = 1, Nsiz ! all energy points
+         dfe_dE_grid(i,n) = Diff_Fermi_E(Te_grid(i)*g_kb_EV, mu(i), Ev(n))   ! module "Electron_tools"
+      enddo
    enddo
 
    prec = 1.0d-10 ! [eV] acceptance for degenerate levels
@@ -409,6 +421,65 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
          C = 0.0d0
       endif
 
+      ! Get the Onsager coefficients:
+      call get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_dE_grid, A, B, C, model=1)   ! below
+
+      ! Collect terms to calculate thermal conductivity:
+      !prefact = g_Pi * g_h / (g_me**2 * Vol * Scell(NSC)%Te) ! prefactor in L22
+      pref = g_Pi * g_h / (g_me**2 * Vol) ! prefactor in L22
+      do i = 1, N_Te_grid
+         prefact = pref / Te_grid(i)
+         if (abs(B(i)) > 0.0d0) then
+            kappa(i) = prefact * (A(i) - C(i)**2/B(i))   ! [W/(K*m)]
+         else
+            kappa(i) = 0.0d0
+         endif
+      enddo ! i
+
+      ! Add contribution of the electronic term:
+      ! [Petrov et al., Data in brief 28 (2020) 104980]
+      !n_s = dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na) * (matter%At_dens*1d6) ! [1/m^3]
+      ne = dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na)  ! electrons per atom
+      n_s = matter%At_dens*1d6 / (ne*3.0d0) ! [1/m^3] empirically adjusted
+      v_F = sqrt(2.0d0*(Scell(NSC)%E_VB_top - Scell(NSC)%E_VB_bottom)*g_e/g_me)  ! [m/s]
+      if (numpar%verbose) write(6,'(a,f,es,f)') 'Fermi-velosity: ', dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na), n_s, v_F
+      pref_ke = g_Pi**2/6.0d0 * n_s * g_h * v_F**2
+      do i = 1, N_Te_grid
+         kappa_e = pref_ke / Te_grid(i)
+         print*, 'k', i, kappa(i), kappa_e
+         kappa(i) = 1.0d0 / ( 1.0d0/kappa(i) + 1.0d0/kappa_e )
+      enddo
+
+   endif ! numpar%do_kappa
+
+   if (allocated(fe_on_Te_grid)) deallocate(fe_on_Te_grid)
+   if (allocated(A)) deallocate(A)
+   if (allocated(B)) deallocate(B)
+   if (allocated(C)) deallocate(C)
+   if (allocated(mu)) deallocate(mu)
+end subroutine get_Onsager_coeffs
+
+
+subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_dE_grid, A, B, C, model)
+   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
+   real(8), intent(in) :: eta
+   real(8), dimension(:), intent(in) :: mu
+   real(8), dimension(:,:), intent(in) :: fe_on_Te_grid, dfe_dE_grid
+   real(8), dimension(:), intent(inout) :: A, B, C
+   integer, intent(in) :: model
+   !---------------------
+   real(8) :: prec, delta, Eij, P2, E_mu, A_cur, B_cur, C_cur, f_nm, f_delt
+   integer :: n, m, i, N_Te_grid, Nsiz
+
+   prec = 1.0d-10 ! [eV] acceptance for degenerate levels
+   N_Te_grid = size(mu)
+   Nsiz = size(Ev)   ! number of energy levels
+
+
+   select case (model)
+   !-----------------------
+   case default   ! get numerical df/dE
       !$omp PARALLEL private(n, m, Eij, delta, P2, E_mu, i, A_cur, B_cur, C_cur, f_nm, f_delt)
       !$omp do schedule(dynamic)  reduction( + : A, B, C)
       do n = 1, Nsiz ! all energy points
@@ -454,26 +525,47 @@ subroutine get_Onsager_coeffs(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa
       !$omp end do
       !$omp end parallel
 
-      ! Collect terms to calculate thermal conductivity:
-      !prefact = g_Pi * g_h / (g_me**2 * Vol * Scell(NSC)%Te) ! prefactor in L22
-      pref = g_Pi * g_h / (g_me**2 * Vol) ! prefactor in L22
-      do i = 1, N_Te_grid
-         prefact = pref / Te_grid(i)
-         if (B(i) > 0.0d0) then
-            kappa(i) = prefact * (A(i) - C(i)**2/B(i))   ! [W/(K*m)]
-         else
-            kappa(i) = 0.0d0
-         endif
-      enddo ! i
-   endif ! numpar%do_kappa
+   !-----------------------
+   case (1) ! get analytical df/dE
+      !$omp PARALLEL private(n, m, P2, E_mu, i, A_cur, B_cur, C_cur, f_nm)
+      !$omp do schedule(dynamic)  reduction( + : A, B, C)
+      do n = 1, Nsiz ! all energy points
+         ! Get summ of P2:
+         P2 = 0.0d0
+         do m = 1, Nsiz
+            !if ( (n /= m) ) then   ! nondegenerate levels
+               ! Average momentum operator:
+               P2 = P2 + ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+                     dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+                     dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+!                P2 = P2 +( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+!                      dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+!                      dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+            !endif ! (n /= m)
+         enddo ! m
 
-   if (allocated(fe_on_Te_grid)) deallocate(fe_on_Te_grid)
-   if (allocated(A)) deallocate(A)
-   if (allocated(B)) deallocate(B)
-   if (allocated(C)) deallocate(C)
-   if (allocated(mu)) deallocate(mu)
-end subroutine get_Onsager_coeffs
+         ! Collect terms (without prefactors)
+         ! for a set of electronic temperatures:
+         do i = 1, N_Te_grid
+            E_mu = Ev(n) - mu(i) ! [eV]
+            f_nm = -dfe_dE_grid(i,n)   ! [1/eV]
 
+            B_cur = abs(P2) * f_nm
+            C_cur = B_cur * E_mu
+            A_cur = C_cur * E_mu
+
+            ! Sum up the terms:
+            A(i) = A(i) + A_cur
+            B(i) = B(i) + B_cur
+            C(i) = C(i) + C_cur
+
+!             print*, n, i, P2, f_nm
+         enddo ! i
+      enddo ! n
+      !$omp end do
+      !$omp end parallel
+   end select
+end subroutine get_Onsager_ABC
 
 
 subroutine get_Onsager_coeffs_fast(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa) ! Wrong, does not work!

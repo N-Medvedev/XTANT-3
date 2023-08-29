@@ -160,6 +160,9 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%t_NA = 1.0d-3	! [fs] start of the nonadiabatic
    numpar%acc_window = 5.0d0	! [eV] acceptance window for nonadiabatic coupling:
    numpar%do_kappa = .false.  ! electron heat conductivity calculation
+   numpar%kappa_Te_min = 300.0d0 ! [K]
+   numpar%kappa_Te_max = 30000.0d0  ! [K]
+   numpar%kappa_dTe = 100.0d0 ! [K]
    numpar%do_cool = .false.	! quenching excluded
    numpar%at_cool_start = 2500.0	! starting from when [fs]
    numpar%at_cool_dt = 40.0	! how often [fs]
@@ -6080,6 +6083,14 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
 
    case ('KAPPA', 'Kappa', 'kappa', 'conductivity', 'do_kappa', 'Do_kappa', 'Get_kappa', 'get_kappa')
       numpar%do_kappa = .true.   ! calculate K, electron heat conductivity vs Te
+      read(FN,'(a)',IOSTAT=Reason) temp_ch
+      call read_file(Reason, count_lines, read_well)
+      read(temp_ch,*,IOSTAT=Reason) numpar%kappa_Te_min, numpar%kappa_Te_max, numpar%kappa_dTe
+      if (Reason /= 0) then   ! use default values
+         numpar%kappa_Te_min = 300.0d0
+         numpar%kappa_Te_max = 30000.0d0
+         numpar%kappa_dTe = 100.0d0
+      endif
 
    case ('PROBE', 'Probe', 'probe')
       ! Calculate optical parameters (and electronic heat conductivity, ir requested), and with which model:
