@@ -6078,7 +6078,10 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
          numpar%N_water_mol = 0
       endif
 
-   case ('PROBE', 'Probe', 'probe', 'KAPPA', 'Kappa', 'kappa', 'conductivity')
+   case ('KAPPA', 'Kappa', 'kappa', 'conductivity', 'do_kappa', 'Do_kappa', 'Get_kappa', 'get_kappa')
+      numpar%do_kappa = .true.   ! calculate K, electron heat conductivity vs Te
+
+   case ('PROBE', 'Probe', 'probe')
       ! Calculate optical parameters (and electronic heat conductivity, ir requested), and with which model:
       read(FN,*,IOSTAT=Reason) numpar%optic_model, N, read_var
       call read_file(Reason, count_lines, read_well)
@@ -6088,15 +6091,6 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
          print*, trim(adjustl(Error_descript))
          return
       endif
-
-      ! Check if calculation of electronic thermal conductivity is requested:
-      select case (trim(adjustl(string)))
-      case ('KAPPA', 'Kappa', 'kappa', 'conductivity')   ! in this case, set Kubo-Greenwood
-         if ( (numpar%optic_model < 4) .or. (numpar%optic_model > 5)) then
-            numpar%optic_model = 5  ! force it, to calculate electronic heat conductivity (K)
-         endif
-         numpar%do_kappa = .true.   ! calculate K
-      end select
 
       SCL:do i = 1, size(Scell) ! for all supercells
          if (numpar%optic_model /= 0) then ! yes, calculate optical coefficients:

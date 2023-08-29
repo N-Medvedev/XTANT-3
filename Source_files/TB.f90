@@ -1335,34 +1335,32 @@ end subroutine get_DOS_sort_complex
 
 
 subroutine k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, UPG)
-   integer, intent(in) :: schem	! scheme for k-points samping: 0=Monkhorst-Pack; 1=user provided grid
-   integer, intent(in) :: ix, iy, iz, ixm, iym, izm	! number of grid points and sizes of the grids along the reciprocal vectors
-   real(8), dimension(:,:), allocatable, intent(in) :: UPG	! user provided grid
-   real(8), intent(out) :: kx, ky, kz	! coordinates of the k-points in the units of the reciprocal vectors
+   integer, intent(in) :: schem  ! scheme for k-points samping: 0=Monkhorst-Pack; 1=user provided grid
+   integer, intent(in) :: ix, iy, iz, ixm, iym, izm   ! number of grid points and sizes of the grids along the reciprocal vectors
+   real(8), dimension(:,:), allocatable, intent(in) :: UPG  ! user provided grid
+   real(8), intent(out) :: kx, ky, kz  ! coordinates of the k-points in the units of the reciprocal vectors
    !------------------------------
    integer :: Ngp, Nsiz
    select case (schem)
-   case (1)	! user defined grid:
-      UG:if (.not.allocated(UPG)) then	! use Monkhorst-Pack grid
+   case (1) ! user defined grid:
+      UG:if (.not.allocated(UPG)) then ! use Monkhorst-Pack grid
          kx = (2.0d0*real(ix) - real(ixm) - 1.0d0)/(2.0d0*real(ixm))
          ky = (2.0d0*real(iy) - real(iym) - 1.0d0)/(2.0d0*real(iym))
          kz = (2.0d0*real(iz) - real(izm) - 1.0d0)/(2.0d0*real(izm))
-      else UG	! user provided the grid:
-         !Ngp = ix*iy*iz	! number of grid point for user defined grid
-         !Ngp = (iz-1)*iym*ixm + (iy-1)*ixm + ix	! number of grid point for user defined grid
-         Ngp = (ix-1)*iym*ixm + (iy-1)*ixm + iz	! number of grid point for user defined grid
-         Nsiz = size(UPG,1)	! size of the user provided grid
-         if (Ngp > Nsiz) then	! If user didn't match the number of k-points to the grid provided, just use Gamma point for extra points:
+      else UG  ! user provided the grid:
+         Ngp = (ix-1)*iym*ixm + (iy-1)*ixm + iz ! number of grid point for user defined grid
+         Nsiz = size(UPG,1)   ! size of the user provided grid
+         if (Ngp > Nsiz) then ! If user didn't match the number of k-points to the grid provided, just use Gamma point for extra points:
             kx = 0.0d0
             ky = 0.0d0
             kz = 0.0d0
-         else	! read from the user provided array:
+         else  ! read from the user provided array:
             kx = UPG(Ngp,1)
             ky = UPG(Ngp,2)
             kz = UPG(Ngp,3)
          endif
       endif UG
-   case default	! Monkhorst-Pack [J. Moreno, J. M. Soler, PRB 45, 13891 (1992)]:
+   case default   ! Monkhorst-Pack [J. Moreno, J. M. Soler, PRB 45, 13891 (1992)]:
       kx = (2.0d0*real(ix) - real(ixm) - 1.0d0)/(2.0d0*real(ixm))
       ky = (2.0d0*real(iy) - real(iym) - 1.0d0)/(2.0d0*real(iym))
       kz = (2.0d0*real(iz) - real(izm) - 1.0d0)/(2.0d0*real(izm))
@@ -2127,8 +2125,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    CHij_temp = dcmplx(0.0d0,0.0d0)	! to start with
    if (.not.allocated(CHij_orth)) allocate(CHij_orth(Nsiz,Nsiz))  ! orthogonalized Hamiltonian
    CHij_orth = dcmplx(0.0d0,0.0d0)	! to start with
-   select case (abs(numpar%optic_model))
-   case (4:5) ! Graf-Vogl or Kubo-Greenwood
+   !select case (abs(numpar%optic_model))
+   !case (4:5) ! Graf-Vogl or Kubo-Greenwood
+   if (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
       if (.not.allocated(CWF_orth)) allocate(CWF_orth(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! orthogonalized Hamiltonian
       if (.not.allocated(Norm1)) allocate(Norm1(Nsiz), source = 0.0d0)  ! normalization of WF
       if (.not.allocated(cPPRx_0)) allocate(cPPRx_0(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! temporary
@@ -2138,7 +2137,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
          if (.not.allocated(cTnn_0)) allocate(cTnn_0(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
          if (.not.allocated(cTnn_c)) allocate(cTnn_c(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
       endif
-   end select
+   end if
 
 
    if (present(Sij)) then   ! it is nonorthogonal case:
@@ -2213,20 +2212,24 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    CHij_non = CHij_temp
    if (present(Sij)) then  ! nonorthogonal
       CSij_save = CSij
-      select case (abs(numpar%optic_model))
-      case (2)   ! Trani
+      !select case (abs(numpar%optic_model))
+      !case (2)   ! Trani
+      if (abs(numpar%optic_model) == 2) then
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth)    ! below
-      case (4:5)   ! Graf-Vogl or KG
+      !case (4:5)   ! Graf-Vogl or KG
+      elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
          !call diagonalize_complex8_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
-      end select
+      end if
    else  ! orthogonal
-      select case (abs(numpar%optic_model))
-      case (2)   ! Trani
+      !select case (abs(numpar%optic_model))
+      !case (2)   ! Trani
+      if (abs(numpar%optic_model) == 2) then
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei)    ! below
-      case (4:5)  ! Graf-Vogl or KG
+      !case (4:5)  ! Graf-Vogl or KG
+      elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CHij_orth=CHij_orth, CWF_orth=CWF_orth)    ! below
-      end select
+      end if
    endif
    CHij = CHij_temp ! save for output
    if (present(CSij_out)) then
@@ -2235,8 +2238,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 
    !---------------------------------------
    ! Effective momentum operators:
-   select case (abs(numpar%optic_model))
-   case (2)  ! create matrix element for Trani method
+   !select case (abs(numpar%optic_model))
+   !case (2)  ! create matrix element for Trani method
+   if (abs(numpar%optic_model) == 2) then
       if (.not.allocated(cPRRx)) allocate(cPRRx(Nsiz,Nsiz))
       if (.not.allocated(cPRRy)) allocate(cPRRy(Nsiz,Nsiz))
       if (.not.allocated(cPRRz)) allocate(cPRRz(Nsiz,Nsiz))
@@ -2331,7 +2335,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       cPRRz = cPRRz * temp
 
    !---------------------------------------
-   case (4:5) ! Graf-Vogl or Kubo-Greenwood
+   !case (4:5) ! Graf-Vogl or Kubo-Greenwood
+   elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
       if (.not.allocated(cPRRx)) allocate(cPRRx(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
       if (.not.allocated(cPRRy)) allocate(cPRRy(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
       if (.not.allocated(cPRRz)) allocate(cPRRz(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
@@ -2509,7 +2514,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       if (present(cTnn)) then
          cTnn = dble(cTnn_c) * temp/g_h*1.0d-10  ! [dimensionless]
       endif
-   end select
+   end if
 
    deallocate(CHij_temp, CHij_non)
    if (allocated(CSij_save)) deallocate(CSij_save)

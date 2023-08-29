@@ -638,7 +638,7 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
       !write(FN_kappa, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%kappa_e
       do i = 1, size(Scell(NSC)%kappa_e_vs_Te)
          write(FN_kappa, '(es25.16,es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
-                        Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_mu_grid(i)
+            Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_mu_grid(i), Scell(NSC)%kappa_Ce_grid(i)
       enddo
       ! All shells resolved:
 !       do i_at = 1, Nat
@@ -1237,8 +1237,8 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       numpar%FN_kappa = FN
       !call create_file_header(numpar%FN_kappa, '#Time kappa')
       !call create_file_header(numpar%FN_kappa, '#[fs]  [W/(K*m)]')
-      call create_file_header(numpar%FN_kappa, '#Te   kappa mu')
-      call create_file_header(numpar%FN_kappa, '#[K]  [W/(K*m)]   [eV]')
+      call create_file_header(numpar%FN_kappa, '#Te   kappa mu Ce')
+      call create_file_header(numpar%FN_kappa, '#[K]  [W/(K*m)]   [eV]  [J/(m^3 K)]')
    endif
 
    file_energies = trim(adjustl(file_path))//'OUTPUT_energies.dat'
@@ -1466,8 +1466,8 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       write(FN, '(a)') 'call OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
 
       if (numpar%do_kappa) then
-         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
+!          if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
+!          write(FN, '(a)') 'call OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
       endif
 
       if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
@@ -1529,7 +1529,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') 'call OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
          if (numpar%do_kappa) then
-            write(FN, '(a)') 'call OUTPUT_electron_heat_conductivity_CONVOLVED'//trim(adjustl(sh_cmd))
+!             write(FN, '(a)') 'call OUTPUT_electron_heat_conductivity_CONVOLVED'//trim(adjustl(sh_cmd))
          endif
          write(FN, '(a)') 'call OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -1562,7 +1562,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       write(FN, '(a)') './OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
       if (numpar%do_kappa) then
-         write(FN, '(a)') './OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
+!          write(FN, '(a)') './OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
       endif
       write(FN, '(a)') './OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
@@ -1607,7 +1607,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') './OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
          if (numpar%do_kappa) then
-            write(FN, '(a)') './OUTPUT_electron_heat_conductivity_CONVOLVED'//trim(adjustl(sh_cmd))
+!             write(FN, '(a)') './OUTPUT_electron_heat_conductivity_CONVOLVED'//trim(adjustl(sh_cmd))
          endif
          write(FN, '(a)') './OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -1677,7 +1677,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    ! Electron heat conductivity:
    if (numpar%do_kappa) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
-      call gnu_heat_capacity(File_name, file_heat_capacity, t0, t_last, 'OUTPUT_electron_heat_conductivity.' &
+      call gnu_heat_conductivity(File_name, file_heat_capacity, t0, t_last, 'OUTPUT_electron_heat_conductivity.' &
                         //trim(adjustl(numpar%fig_extention))) ! below
    endif
 
@@ -1817,7 +1817,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       ! Electron heat conductivity:
       if (numpar%do_kappa) then
          File_name  = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity_CONVOLVED'//trim(adjustl(sh_cmd))
-         call gnu_heat_capacity(File_name, &
+         call gnu_heat_conductivity(File_name, &
          trim(adjustl(file_heat_capacity(1:len(trim(adjustl(file_heat_capacity)))-4)))//'_CONVOLVED.dat', &
          t0, t_last, 'OUTPUT_electron_heat_conductivity.'//trim(adjustl(numpar%fig_extention))) ! below
       endif
@@ -2518,7 +2518,7 @@ end subroutine gnu_capacity
 
 
 
-subroutine gnu_heat_capacity(File_name, file_heat_capacity, t0, t_last, eps_name)
+subroutine gnu_heat_conductivity(File_name, file_heat_capacity, t0, t_last, eps_name)
    character(*), intent(in) :: File_name   ! file to create
    character(*), intent(in) :: file_heat_capacity ! input file
    real(8), intent(in) :: t0, t_last	 ! time instance [fs]
@@ -2544,7 +2544,7 @@ subroutine gnu_heat_capacity(File_name, file_heat_capacity, t0, t_last, eps_name
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
-end subroutine gnu_heat_capacity
+end subroutine gnu_heat_conductivity
 
 
 subroutine gnu_entropy(File_name, file_electron_entropy, t0, t_last, eps_name)

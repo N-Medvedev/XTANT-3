@@ -36,7 +36,7 @@ public :: get_low_e_energy, find_band_gap, get_DOS_sort, Diff_Fermi_E, get_numbe
 public :: set_Erf_distribution, update_fe, Electron_thermalization, get_glob_energy, update_cross_section
 public :: Do_relaxation_time, set_initial_fe, find_mu_from_N_T, set_total_el_energy, Electron_Fixed_Etot
 public :: get_new_global_energy, get_electronic_heat_capacity, get_total_el_energy, electronic_entropy
-public :: get_low_energy_distribution, set_high_DOS
+public :: get_low_energy_distribution, set_high_DOS, get_Ce_and_mu
 
  contains
 
@@ -1270,7 +1270,7 @@ end subroutine set_Erf_distribution
 
 
 
-subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, Ce_partial, norm_fe)
+subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, Ce_partial, norm_fe, mu_in, Te_in)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), intent(out) :: Ce ! current electron heat capacity [J/(m^3 K)]
@@ -1278,6 +1278,8 @@ subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, C
    real(8), dimension(:,:,:), intent(in), optional :: DOS_weights ! weigths of the particular type of orbital on each energy level
    real(8), dimension(:), intent(out), allocatable, optional :: Ce_partial ! band-resolved Ce [J/(m^3 K)]
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
+   real(8), intent(in), optional :: mu_in, Te_in   ! [eV], [K], provided chemical potential and temperature
+   !-----------------
    real(8) :: Ntot	! number of electrons
    real(8) :: nat   ! number of atoms
    real(8) :: Te	! current electron temperature [eV]
@@ -1296,13 +1298,22 @@ subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, C
        do_partial = .false.
     endif
 
-   dTe = 10.0d0/g_kb	! [eV] -> [K]
+   dTe = 10.0d0/g_kb    ! [eV] -> [K]
    Ntot = dble(Scell(NSC)%Ne)
    nat = dble(Scell(NSC)%Na) ! number of atoms
 
    ! 1) Low-energy electrons populating TB-band structure:
-   Te = Scell(NSC)%TeeV
-   mu = Scell(NSC)%mu
+   if (present(Te_in)) then   ! use the provided value
+      Te = Te_in/g_kb    ! [eV] -> [K]
+   else ! use the default one from the supercell
+      Te = Scell(NSC)%TeeV
+   endif
+   if (present(mu_in)) then   ! use the provided value
+      mu = mu_in
+   else ! use the default one from the supercell
+      mu = Scell(NSC)%mu
+   endif
+
    if (present(norm_fe)) then
       call Electron_Fixed_Te(Scell(NSC)%Ei, Ntot, mu0, Te+dTe, norm_fe) ! in case if the electron temperature is given
    else
@@ -1311,15 +1322,15 @@ subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, C
    dmu = (mu0 - mu)/dTe
    if (present(norm_fe)) then ! normalization of fe provided:
       if (do_partial) then
-         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, DOS_weights, Ce_partial, norm_fe)
+         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, Ce_i, DOS_weights, Ce_partial, norm_fe)   ! below
       else  ! no partial contributions required:
-         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, norm_fe=norm_fe)
+         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, Ce_i, norm_fe=norm_fe)   ! below
       endif
    else  ! default normalization of fe:
       if (do_partial) then
-         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, DOS_weights, Ce_partial)
+         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, Ce_i, DOS_weights, Ce_partial)   ! below
       else  ! no partial contributions required:
-         call Get_Ce(Ce_i, Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce)
+         call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce, Ce_i)   ! below
       endif
    endif
 
@@ -1352,13 +1363,56 @@ subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, C
 end subroutine get_electronic_heat_capacity
 
 
-subroutine Get_Ce(Ce_i, Ei, Te, mu, dmu, C, DOS_weights, Ce_partial, norm_fe)
-    real(8), dimension(:), intent(out) :: Ce_i
+
+
+subroutine get_Ce_and_mu(Scell, NSC, Te_in, Ei, Ce, mu)
+   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   real(8), intent(in) :: Te_in   ! [K] electronic temperature
+   real(8), dimension(:), intent(in) :: Ei   ! [eV] electronic energy levels
+   real(8), intent(out) :: Ce ! electron heat capacity [J/(m^3 K)]
+   real(8), intent(out) :: mu ! electron chemical potential [eV]
+   !-----------------
+   real(8) :: Ntot   ! number of electrons
+   real(8) :: nat    ! number of atoms
+   real(8) :: Te     ! current electron temperature [eV]
+   real(8) :: dmu, dTe, mu0   ! electron differential chemical potential [eV], temperature [eV]
+   real(8) :: Dens   ! atomic density
+   real(8) :: coef   ! conversion coefficients with units
+
+   Te = Te_in/g_kb      ! [eV] -> [K]
+   ! Step in temperature for (d mu/ d Te):
+   dTe = 10.0d0/g_kb    ! [eV] -> [K]
+   Ntot = dble(Scell(NSC)%Ne) ! number of electrons
+   nat = dble(Scell(NSC)%Na)  ! number of atoms
+
+   ! Numerical derivative of chem.pot.:
+   ! Get mu:
+   call Electron_Fixed_Te(Scell(NSC)%Ei, Ntot, mu, Te) ! below
+   ! Get mu0:
+   call Electron_Fixed_Te(Scell(NSC)%Ei, Ntot, mu0, Te+dTe) ! below
+   dmu = (mu0 - mu)/dTe    ! (d mu/ d Te)
+
+   ! Get Ce in arb.units:
+   call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce) ! below
+
+   coef = 1.0d30*g_e/g_kb  ! [eV/A^3] -> [J/m^3/K]
+   Dens = 1.0d0/(Scell(NSC)%V) ! [1/A^3]
+   Ce = Ce * Dens*coef  ! [J/(m^3 K)]
+
+   ! If undefined or infinite:
+   if (isnan(Ce) .or. abs(Ce) >= 1d30) Ce = 0.0d0
+end subroutine get_Ce_and_mu
+
+
+
+subroutine Get_Ce(Ei, Te, mu, dmu, C, Ce_i, DOS_weights, Ce_partial, norm_fe)
     real(8), dimension(:), intent(in) :: Ei
     real(8), intent(in) :: Te, mu, dmu
-    real(8), intent(out) :: C ! heat capacity
+    real(8), intent(out) :: C ! heat capacity [arb.units]
+    real(8), dimension(:), intent(out), optional :: Ce_i
     real(8), dimension(:,:,:), intent(in), optional :: DOS_weights ! weigths of the particular type of orbital on each energy level
-    real(8), dimension(:), intent(out), optional :: Ce_partial ! band-resolved Ce [J/(m^3 K)]
+    real(8), dimension(:), intent(out), optional :: Ce_partial ! band-resolved Ce [arb.units]
     real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
     !------------------------
     real(8) :: dfdT, E, C_temp
@@ -1387,7 +1441,7 @@ subroutine Get_Ce(Ce_i, Ei, Te, mu, dmu, C, DOS_weights, Ce_partial, norm_fe)
         endif
         C_temp = dfdT*(E-mu)  ! correct definition from Cv = T*dS/dT; S=entropy
         C = C + C_temp     ! total
-        Ce_i(i) = C_temp   ! save for output
+        if (present(Ce_i)) Ce_i(i) = C_temp   ! save for output
 
         if (do_partial) then ! partial contributions required:
            do i_at = 1, N_at ! all elements
