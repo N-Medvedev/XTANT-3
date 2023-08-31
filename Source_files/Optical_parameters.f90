@@ -27,20 +27,21 @@
 ! [3] P. Yeh "Optical Waves in Layered Media", (2005) ISBN: 978-0-471-73192-4
 ! [4] J. Graves, "Electronic and structural response of semiconductors to ultra-intense laser pulses" PhD thesis, Texas A&M University (1997)
 ! [5] Notes on Kubo-Greenwood CDF: https://www.openmx-square.org/tech_notes/Dielectric_Function_YTL.pdf
+! [6] G. S. Demyanov et al., Phys. Rev. E 105 (2022) 035307 https://doi.org/10.1103/PhysRevE.105.035307
 
 
 MODULE Optical_parameters
 use Universal_constants
 use Objects
-use Algebra_tools, only : sym_diagonalize
-use Electron_tools, only : get_number_of_CB_electrons, set_Fermi, set_Erf_distribution
+use Algebra_tools, only : sym_diagonalize, numerical_delta
+use Electron_tools, only : get_number_of_CB_electrons, set_Fermi, set_Erf_distribution, find_mu_from_N_T, get_Ce_and_mu, Diff_Fermi_E
 use TB_Fu, only : Complex_Hamil_tot_F
 use TB_Pettifor, only : Complex_Hamil_tot
 use TB_Molteni, only : Complex_Hamil_tot_Molteni
 use TB_NRL, only : Complex_Hamil_NRL
 use TB_DFTB, only : Complex_Hamil_DFTB, identify_DFTB_orbitals_per_atom
 use TB, only : k_point_choice, construct_complex_Hamiltonian
-use Little_subroutines, only : deallocate_array, Find_in_array_monoton
+use Little_subroutines, only : deallocate_array, Find_in_array_monoton, d_Fermi_function
 
 USE OMP_LIB, only : OMP_GET_THREAD_NUM
 
@@ -55,7 +56,7 @@ real(8), parameter :: m_prefac = g_e**2 * g_Pi / (g_h*g_me**2)
 
 
 
-public :: get_optical_parameters
+public :: get_optical_parameters, allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF
 
 
  contains
@@ -69,29 +70,46 @@ subroutine get_optical_parameters(numpar, matter, Scell, Err) ! optical coeffici
    !=====================================
    integer NSC, i
    real(8), dimension(:), allocatable :: Re_CDF
+   logical :: do_together
 
    do NSC = 1, size(Scell) ! for all super-cells
       ! Get the number of CB electrons:
       call get_number_of_CB_electrons(Scell, NSC) ! module "Electron_tools"
 
-      select case (numpar%optic_model)
-         case (1) ! within the Drude model
-            call get_drude(numpar, Scell, NSC)  ! below
-         case (2) ! Trani et al. PRB 72, 075423 (2005) -- This subroutine is TB-parameterization specific:
-            call get_trani_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
-         case (3) ! Trani at the Gamma-point only
-            call get_trani_all(numpar, Scell, NSC, Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%eps%all_w)   ! below
-         case (4:5) ! Kubo-Greenwood Refs.[2] and [5]
-            call get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
-         case (-4) ! Graf-Vogl Ref.[2] (Not realy working...)
-            call get_Graf_Vogl_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
-         case default ! no optical coefficients needed
+      ! Check if kappa and optical CDF can be calculated together:
+      if (numpar%do_kappa .and. ((numpar%optic_model == 4) .or. (numpar%optic_model == 5)) ) then  ! yes, it's possible
+         do_together = .true.
+      else  ! no, separate subroutines required (more time consuming!)
+         do_together = .false.
+      endif
+
+      if (do_together) then   ! One subroutine to get both, kappa and CDF:
+         call get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
+
+      else ! separate ones for kappa and CDF:
+         ! CDF (if requested):
+         select case (numpar%optic_model)
+            case (1) ! within the Drude model
+               call get_drude(numpar, Scell, NSC)  ! below
+            case (2) ! Trani et al. PRB 72, 075423 (2005) -- This subroutine is TB-parameterization specific:
+               call get_trani_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
+            case (3) ! Trani at the Gamma-point only
+               call get_trani_all(numpar, Scell, NSC, Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%eps%all_w)   ! below
+            case (4:5) ! Kubo-Greenwood Refs.[2] and [5]
+               call get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
+            case (-4) ! Graf-Vogl Ref.[2] (Not realy working...)
+               call get_Graf_Vogl_all_complex(numpar, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
+            case default ! no optical coefficients needed
             ! nothing to do
-      end select ! (numpar%optic_model)
+         end select ! (numpar%optic_model)
+
+         ! Kappa (if requested):
+         if (numpar%do_kappa) call get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
+      endif ! do_together
       
       !-------------------------------------
       ! Convergence with respect to the number of k-points is better for Im part than Re part of CDF,
-      ! so use Kramers-Kronig relations to restore Re part:
+      ! so you may use Kramers-Kronig relations to restore Re part:
       if (Scell(NSC)%eps%all_w .and. Scell(NSC)%eps%KK) then
 !          do i = 1, size(Scell(NSC)%eps%Eps_hw(1,:))
 !             write(*,'(f,es,es)') Scell(NSC)%eps%Eps_hw(1,i), Scell(NSC)%eps%Eps_hw(2,i), Scell(NSC)%eps%Eps_hw(3,i)
@@ -123,8 +141,9 @@ end subroutine get_optical_parameters
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Kubo-GReenwood implementation in orthogonalized Hamiltonian (combined Refs.[2] and [5]):
-subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref. [2]
+subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err)  ! From Ref. [2]
    type (Numerics_param), intent(inout) :: numpar  ! numerical parameters, including drude-function
+   type(Solid), intent(in) :: matter  ! Material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell   ! supercell with all the atoms as one object
    integer, intent(in) :: NSC    ! number of supercell
    logical, intent(in) :: all_w  ! get all spectrum of hv, or only for given probe wavelength
@@ -138,7 +157,30 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
    real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
    real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
-   !--------------------
+   real(8), dimension(:), allocatable :: kappa, kappa_temp    ! electron heat conductivity vs Te
+   real(8), dimension(:), allocatable :: kappa_mu_grid, kappa_mu_grid_temp, kappa_Ce_grid, kappa_Ce_grid_temp
+   integer :: Nsiz_Te
+   real(8) :: Te_min, Te_max, dTe
+
+   ! Define electron temperature grid:
+   Te_min = numpar%kappa_Te_min  ! [K]
+   Te_max = numpar%kappa_Te_max  ! [K]
+   dTe = numpar%kappa_dTe  ! [K]
+   Nsiz_Te = (Te_max+dTe - Te_min)/dTe
+
+   if (.not.allocated(Scell(NSC)%kappa_Te_grid)) allocate(Scell(NSC)%kappa_Te_grid(Nsiz_Te), source = 0.0d0)   ! Te [K]
+   if (.not.allocated(Scell(NSC)%kappa_e_vs_Te)) allocate(Scell(NSC)%kappa_e_vs_Te(Nsiz_Te), source = 0.0d0)   ! kappa
+   if (.not.allocated(Scell(NSC)%kappa_mu_grid)) allocate(Scell(NSC)%kappa_mu_grid(Nsiz_Te), source = 0.0d0)   ! mu [eV]
+   if (.not.allocated(Scell(NSC)%kappa_Ce_grid)) allocate(Scell(NSC)%kappa_Ce_grid(Nsiz_Te), source = 0.0d0)   ! Ce [J/(m^3 K)]
+
+   if (.not.allocated(kappa)) allocate(kappa(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(kappa_mu_grid)) allocate(kappa_mu_grid(Nsiz_Te), source = 0.0d0)   ! mu [eV]
+   if (.not.allocated(kappa_Ce_grid)) allocate(kappa_Ce_grid(Nsiz_Te), source = 0.0d0)   ! Ce [J/(m^3 K)]
+
+   Scell(NSC)%kappa_Te_grid(1) = Te_min
+   do i = 2, Nsiz_Te ! Set the electronic temperature grid
+      Scell(NSC)%kappa_Te_grid(i) = Scell(NSC)%kappa_Te_grid(i-1) + dTe
+   enddo
 
    ! Allocate the array of optical coefficients spectrum (if not allocated before):
    ! Define the grid size:
@@ -173,9 +215,15 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
       Nsiz = ixm*iym*izm
    endif
 
-   !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp)
+   kappa = 0.0d0  ! to start with
+
+   !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, &
+   !$omp                  kappa_temp, kappa_mu_grid_temp, kappa_Ce_grid_temp)
    if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N), source = 0.0d0) ! all are there
-   !$omp do schedule(dynamic) reduction( + : Eps_hw)
+   if (.not.allocated(kappa_temp)) allocate(kappa_temp(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(kappa_mu_grid_temp)) allocate(kappa_mu_grid_temp(Nsiz_Te), source = 0.0d0)   ! mu [eV]
+   if (.not.allocated(kappa_Ce_grid_temp)) allocate(kappa_Ce_grid_temp(Nsiz_Te), source = 0.0d0)   ! Ce
+   !$omp do schedule(dynamic) reduction( + : Eps_hw, kappa, kappa_mu_grid, kappa_Ce_grid)
    do Ngp = 1, Nsiz
       ! Split total index into 3 coordinates indices:
       ix = ceiling( dble(Ngp)/dble(iym*izm) )
@@ -214,32 +262,64 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
          end select
       END ASSOCIATE
 
+      !-------------------------------
       ! Get the parameters of the CDF:
-      call get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRRz, Ei, Eps_hw_temp)   ! below
+      if ((numpar%optic_model == 4) .or. (numpar%optic_model == 5)) then ! if requested
+         call get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRRz, Ei, Eps_hw_temp)   ! below
+      else  ! skip it, if not reqired
+         Eps_hw_temp = 0.0d0
+      endif
       ! Save data:
       Eps_hw = Eps_hw + Eps_hw_temp ! sum data at different k-points
+
+      !-------------------------------
+      ! If required, do Onsager coefficients (for electronic heat conductivity):
+      if (numpar%do_kappa) then  ! if requested
+         call get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
+                              Scell(NSC)%kappa_Te_grid, kappa_mu_grid_temp, kappa_Ce_grid_temp)   ! below
+      else  ! if not required
+         kappa_temp = 0.0d0
+         kappa_mu_grid_temp = 0.0d0
+         kappa_Ce_grid_temp = 0.0d0
+      endif
+      kappa = kappa + kappa_temp ! sum up at different k-points
+      kappa_mu_grid = kappa_mu_grid + kappa_mu_grid_temp    ! average mu
+      kappa_Ce_grid = kappa_Ce_grid + kappa_Ce_grid_temp    ! average Ce
    enddo ! Ngp
    !$omp end do
    if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
+   if (allocated(kappa_temp)) deallocate(kappa_temp)
+   if (allocated(kappa_mu_grid_temp)) deallocate(kappa_mu_grid_temp)
+   if (allocated(kappa_Ce_grid_temp)) deallocate(kappa_Ce_grid_temp)
    !$omp end parallel
 
-   ! Save the k-point avreages:
+   ! Save the k-point averages:
    Eps_hw = Eps_hw/dble(Nsiz) ! normalize k-point summation
-   Scell(NSC)%eps%Eps_hw = Eps_hw   ! all data for spectrum in array
-   ! Get the values for the single value of the probe pulse:
-   call Find_in_array_monoton(w_grid, Scell(NSC)%eps%w, i)  ! module "Little_subroutines"
-   ! Use closest value on the grid:
-   Scell(NSC)%eps%ReEps = Eps_hw(2,i)  ! real part of CDF
-   Scell(NSC)%eps%ImEps = Eps_hw(3,i)  ! imaginary part of CDF
-   Scell(NSC)%eps%R = Eps_hw(5,i)   ! reflectivity
-   Scell(NSC)%eps%T = Eps_hw(6,i)   ! transmission
-   Scell(NSC)%eps%A = Eps_hw(7,i)   ! absorption
-   Scell(NSC)%eps%n = Eps_hw(8,i)   ! optical n
-   Scell(NSC)%eps%k = Eps_hw(9,i)   ! optical k
-   Scell(NSC)%eps%dc_cond = Eps_hw(10,i)  ! dc-conductivity
-   Scell(NSC)%eps%Eps_xx = dcmplx(Eps_hw(11,i), Eps_hw(12,i))  ! Re_E_xx and Im_E_xx
-   Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,i), Eps_hw(14,i))  ! Re_E_yy and Im_E_yy
-   Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,i), Eps_hw(16,i))  ! Re_E_zz and Im_E_zz
+   if ((numpar%optic_model == 4) .or. (numpar%optic_model == 5)) then ! if requested
+      Scell(NSC)%eps%Eps_hw = Eps_hw   ! all data for spectrum in array
+      ! Get the values for the single value of the probe pulse:
+      call Find_in_array_monoton(w_grid, Scell(NSC)%eps%w, i)  ! module "Little_subroutines"
+      ! Use closest value on the grid:
+      Scell(NSC)%eps%ReEps = Eps_hw(2,i)  ! real part of CDF
+      Scell(NSC)%eps%ImEps = Eps_hw(3,i)  ! imaginary part of CDF
+      Scell(NSC)%eps%R = Eps_hw(5,i)   ! reflectivity
+      Scell(NSC)%eps%T = Eps_hw(6,i)   ! transmission
+      Scell(NSC)%eps%A = Eps_hw(7,i)   ! absorption
+      Scell(NSC)%eps%n = Eps_hw(8,i)   ! optical n
+      Scell(NSC)%eps%k = Eps_hw(9,i)   ! optical k
+      Scell(NSC)%eps%dc_cond = Eps_hw(10,i)  ! dc-conductivity
+      Scell(NSC)%eps%Eps_xx = dcmplx(Eps_hw(11,i), Eps_hw(12,i))  ! Re_E_xx and Im_E_xx
+      Scell(NSC)%eps%Eps_yy = dcmplx(Eps_hw(13,i), Eps_hw(14,i))  ! Re_E_yy and Im_E_yy
+      Scell(NSC)%eps%Eps_zz = dcmplx(Eps_hw(15,i), Eps_hw(16,i))  ! Re_E_zz and Im_E_zz
+   endif
+
+   ! Save electron heat conductivity, averaged over k-points:
+   if (numpar%do_kappa) then  ! if requested
+      Scell(NSC)%kappa_e = kappa(1)/dble(Nsiz)  ! room temperature
+      Scell(NSC)%kappa_e_vs_Te = kappa/dble(Nsiz)  ! array vs Te
+      Scell(NSC)%kappa_mu_grid = kappa_mu_grid/dble(Nsiz)  ! array of mu vs Te
+      Scell(NSC)%kappa_Ce_grid = kappa_Ce_grid/dble(Nsiz)  ! array of Ce vs Te
+   endif
 
    ! Clean up:
    if (allocated(cPRRx)) deallocate(cPRRx)
@@ -249,7 +329,319 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, Scell, NSC, all_w, Err)  ! Fro
    if (allocated(Ei)) deallocate(Ei)
    if (allocated(CHij)) deallocate(CHij)
    if (allocated(Eps_hw)) deallocate(Eps_hw)
+   if (allocated(kappa)) deallocate(kappa)
+   if (allocated(kappa_mu_grid)) deallocate(kappa_mu_grid)
+   if (allocated(kappa_Ce_grid)) deallocate(kappa_Ce_grid)
 end subroutine get_Kubo_Greenwood_all_complex
+
+
+
+subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa, Te_grid, mu_grid, Ce_grid)
+   ! Following Ref. [6] for evaluation of Onsager coefficients, Eqs.(6-7) (assuming w->0)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Solid), intent(in) :: matter  ! Material parameters
+   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
+   real(8), dimension(:), intent(out) :: kappa ! electron heat conductivity tensor [W/(K*m)] vs Te
+   real(8), dimension(:), intent(in) :: Te_grid ! electronic temperature grid [K]
+   real(8), dimension(:), intent(out) :: mu_grid ! chemical potential [eV]
+   real(8), dimension(:), intent(out) :: Ce_grid   ! heat capacity [J/(m^3 K)]
+   !----------------------------
+   real(8), dimension(:,:), allocatable :: fe_on_Te_grid, dfe_dE_grid
+   real(8) :: prec, Vol, pref, prefact, delta, Eij, eta, P2, A_cur, B_cur, C_cur, E_mu, f_nm, f_delt
+   real(8) :: kappa_e, n_s, v_F, pref_ke, ne
+   real(8), dimension(:), allocatable :: A, B, C, mu, Ce
+   integer :: Nsiz, n, m, N_Te_grid, i
+
+   Nsiz = size(Ev)   ! number of energy levels
+   N_Te_grid = size(Te_grid)
+
+   ! Define the distributions on the temperature grid:
+   if (.not. allocated(mu)) then
+      allocate(mu(N_Te_grid), source = 0.0d0)
+   else
+      mu = 0.0d0
+   endif
+
+   if (.not. allocated(Ce)) then
+      allocate(Ce(N_Te_grid), source = 0.0d0)
+   else
+      Ce = 0.0d0
+   endif
+
+   if (.not. allocated(fe_on_Te_grid)) then
+      allocate(fe_on_Te_grid(N_Te_grid, Nsiz), source = 0.0d0)
+   else
+      fe_on_Te_grid = 0.0d0   ! to start with
+   endif
+
+   if (.not. allocated(dfe_dE_grid)) then
+      allocate(dfe_dE_grid(N_Te_grid, Nsiz), source = 0.0d0)
+   else
+      dfe_dE_grid = 0.0d0   ! to start with
+   endif
+
+   do i = 1, N_Te_grid
+      !call find_mu_from_N_T( Ev, dble(Scell(NSC)%Ne), mu(i), Te_grid(i)*g_kb_EV) ! module "Electron_tools"
+      call get_Ce_and_mu(Scell, NSC, Te_grid(i), Ev, Ce(i), mu(i))   ! module "Electron_tools"
+      call set_Fermi( Ev, Te_grid(i)*g_kb_EV, mu(i), fe_on_Te_grid(i,:) )   ! module "Electron_tools"
+      ! Save chem.potential:
+      mu_grid(i) = mu(i)
+      ! Save heat capacity:
+      Ce_grid(i) = Ce(i)
+      ! Derivative of fe by Te:
+      do n = 1, Nsiz ! all energy points
+         dfe_dE_grid(i,n) = Diff_Fermi_E(Te_grid(i)*g_kb_EV, mu(i), Ev(n))   ! module "Electron_tools"
+      enddo
+   enddo
+
+   prec = 1.0d-10 ! [eV] acceptance for degenerate levels
+   eta = m_gamm * m_e_h ! finite width of delta function [eV]
+   ! Supercell volume:
+   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+
+   ! Calculate only if requested:
+   if (numpar%do_kappa) then ! only if requested
+
+      if (.not. allocated(A)) then
+         allocate(A(N_Te_grid), source = 0.0d0) ! to start with
+      else
+         A = 0.0d0
+      endif
+      if (.not. allocated(B)) then
+         allocate(B(N_Te_grid), source = 0.0d0) ! to start with
+      else
+         B = 0.0d0
+      endif
+      if (.not. allocated(C)) then
+         allocate(C(N_Te_grid), source = 0.0d0) ! to start with
+      else
+         C = 0.0d0
+      endif
+
+      ! Get the Onsager coefficients:
+      call get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_dE_grid, A, B, C, model=numpar%kappa_model)   ! below
+
+      ! Collect terms to calculate thermal conductivity:
+      !prefact = g_Pi * g_h / (g_me**2 * Vol * Scell(NSC)%Te) ! prefactor in L22
+      pref = g_Pi * g_h / (g_me**2 * Vol) ! prefactor in L22
+      do i = 1, N_Te_grid
+         prefact = pref / Te_grid(i)
+         if (abs(B(i)) > 0.0d0) then
+            kappa(i) = prefact * (A(i) - C(i)**2/B(i))   ! [W/(K*m)]
+         else
+            kappa(i) = 0.0d0
+         endif
+      enddo ! i
+
+      ! Add contribution of the electronic term:
+      ! [Petrov et al., Data in brief 28 (2020) 104980]
+      !n_s = dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na) * (matter%At_dens*1d6) ! [1/m^3]
+      ne = dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na)  ! electrons per atom
+      n_s = matter%At_dens*1d6 / (ne*3.0d0) ! [1/m^3] empirically adjusted
+      v_F = sqrt(2.0d0*(Scell(NSC)%E_VB_top - Scell(NSC)%E_VB_bottom)*g_e/g_me)  ! [m/s]
+!       if (numpar%verbose) write(6,'(a,f,es,f)') 'Fermi-velosity: ', dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na), n_s, v_F
+      pref_ke = g_Pi**2/6.0d0 * n_s * g_h * v_F**2
+      do i = 1, N_Te_grid
+         kappa_e = pref_ke / Te_grid(i)
+         !print*, 'k', i, kappa(i), kappa_e
+         kappa(i) = 1.0d0 / ( 1.0d0/kappa(i) + 1.0d0/kappa_e )
+      enddo
+
+   endif ! numpar%do_kappa
+
+   if (allocated(fe_on_Te_grid)) deallocate(fe_on_Te_grid)
+   if (allocated(A)) deallocate(A)
+   if (allocated(B)) deallocate(B)
+   if (allocated(C)) deallocate(C)
+   if (allocated(mu)) deallocate(mu)
+end subroutine get_Onsager_coeffs
+
+
+subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_dE_grid, A, B, C, model)
+   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
+   real(8), intent(in) :: eta
+   real(8), dimension(:), intent(in) :: mu
+   real(8), dimension(:,:), intent(in) :: fe_on_Te_grid, dfe_dE_grid
+   real(8), dimension(:), intent(inout) :: A, B, C
+   integer, intent(in) :: model
+   !---------------------
+   real(8) :: prec, delta, Eij, P2, E_mu, A_cur, B_cur, C_cur, f_nm, f_delt
+   integer :: n, m, i, N_Te_grid, Nsiz
+
+   prec = 1.0d-10 ! [eV] acceptance for degenerate levels
+   N_Te_grid = size(mu)
+   Nsiz = size(Ev)   ! number of energy levels
+
+
+   select case (model)
+   !-----------------------
+   case default   ! get numerical df/dE
+      !$omp PARALLEL private(n, m, Eij, delta, P2, E_mu, i, A_cur, B_cur, C_cur, f_nm, f_delt)
+      !$omp do schedule(dynamic)  reduction( + : A, B, C)
+      do n = 1, Nsiz ! all energy points
+         do m = 1, Nsiz
+            Eij = (Ev(m) - Ev(n))   ! [eV]
+
+            ! Get approximate delta-function:
+            delta = numerical_delta(Eij, eta)   ! [1/eV] module "Algebra_tools"
+
+            if ( (n /= m) .and. (abs(Eij) > prec) .and. (abs(delta) > prec) ) then   ! nondegenerate levels
+               ! Average momentum operator:
+               P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+                     dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+                     dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+!                P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+!                      dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+!                      dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+
+               ! Collect terms (without prefactors)
+               ! for a set of electronic temperatures:
+               do i = 1, N_Te_grid
+                  !f_nm = Scell(NSC)%fe(n) - Scell(NSC)%fe(m)
+                  !E_mu = ( (Ev(n) + Ev(m))*0.5d0 - Scell(NSC)%mu )   ! [eV]
+
+                  E_mu = ( (Ev(n) + Ev(m))*0.5d0 - mu(i) )   ! [eV]
+
+                  f_nm = fe_on_Te_grid(i,n) - fe_on_Te_grid(i,m)
+                  f_delt = f_nm * delta
+
+                  B_cur = abs(P2) * f_delt / Eij
+                  C_cur = B_cur * E_mu
+                  A_cur = C_cur * E_mu
+
+                  ! Sum up the terms:
+                  A(i) = A(i) + A_cur
+                  B(i) = B(i) + B_cur
+                  C(i) = C(i) + C_cur
+               enddo ! i
+            endif ! (n /= m)
+
+         enddo ! m
+      enddo ! n
+      !$omp end do
+      !$omp end parallel
+
+   !-----------------------
+   case (1) ! get analytical df/dE
+      !$omp PARALLEL private(n, m, P2, E_mu, i, A_cur, B_cur, C_cur, f_nm)
+      !$omp do schedule(dynamic)  reduction( + : A, B, C)
+      do n = 1, Nsiz ! all energy points
+         ! Get summ of P2:
+         P2 = 0.0d0
+         do m = 1, Nsiz
+            !if ( (n /= m) ) then   ! nondegenerate levels
+               ! Average momentum operator:
+               P2 = P2 + ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+                     dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+                     dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+!                P2 = P2 +( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+!                      dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+!                      dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+            !endif ! (n /= m)
+         enddo ! m
+
+         ! Collect terms (without prefactors)
+         ! for a set of electronic temperatures:
+         do i = 1, N_Te_grid
+            E_mu = Ev(n) - mu(i) ! [eV]
+            f_nm = -dfe_dE_grid(i,n)   ! [1/eV]
+
+            B_cur = abs(P2) * f_nm
+            C_cur = B_cur * E_mu
+            A_cur = C_cur * E_mu
+
+            ! Sum up the terms:
+            A(i) = A(i) + A_cur
+            B(i) = B(i) + B_cur
+            C(i) = C(i) + C_cur
+
+!             print*, n, i, P2, f_nm
+         enddo ! i
+      enddo ! n
+      !$omp end do
+      !$omp end parallel
+   end select
+end subroutine get_Onsager_ABC
+
+
+subroutine get_Onsager_coeffs_fast(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa) ! Wrong, does not work!
+   ! Following Ref. [6] for evaluation of Onsager coefficients, Eqs.(6-7) (assuming w->0)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
+   real(8), intent(out) :: kappa ! electron heat conductivity tensor [W/(K*m)]
+   !----------------------------
+   real(8) :: prec, Vol, prefact, delta, Eij, eta, A, B, C, P2, A_cur, B_cur, C_cur, E_mu, f_nm, f_delt
+   integer :: Nsiz, n, m
+
+
+   Nsiz = size(Ev)   ! number of energy levels
+   prec = 1.0d-11 ! [eV] acceptance for degenerate levels
+   eta = m_gamm * m_e_h ! finite width of delta function [eV]
+   ! Supercell volume:
+   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+
+   ! Calculate only if requested:
+   if (numpar%do_kappa) then ! only if requested
+      if (Scell(NSC)%Te < 35.0d0) then ! effectively zero Te [K]
+         kappa = 0.0d0
+      else ! non-zero Te
+         prefact = g_Pi * g_h / (g_me**2 * Vol * Scell(NSC)%Te) ! prefactor in L22
+
+         A = 0.0d0   ! to start with
+         B = 0.0d0   ! to start with
+         C = 0.0d0   ! to start with
+
+         !$omp PARALLEL private(n, Eij, P2, E_mu, A_cur, B_cur, C_cur, f_nm)
+         !$omp do schedule(dynamic)  reduction( + : A, B, C)
+         do n = 1, Nsiz ! all energy points
+
+            ! Assume thermalized Fermi distribution:
+            f_nm = -d_Fermi_function(Scell(NSC)%mu, Scell(NSC)%TeeV, Ev(n), .false.) ! [1/eV] module "Little_subroutines"
+
+            ! Average momentum operator:
+            ! P * P [ 2 ]:
+!               P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+!               dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+!               dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+            ! (P*) * P [ * ]:
+            P2 = ( dble(cPRRx(n,n)) * dble(cPRRx(n,n)) + aimag(cPRRx(n,n)) * aimag(cPRRx(n,n)) + &
+                   dble(cPRRy(n,n)) * dble(cPRRy(n,n)) + aimag(cPRRy(n,n)) * aimag(cPRRy(n,n)) + &
+                   dble(cPRRz(n,n)) * dble(cPRRz(n,n)) + aimag(cPRRz(n,n)) * aimag(cPRRz(n,n)) ) / 3.0d0
+
+            ! Collect terms (without prefactors):
+            E_mu = ( Ev(n) - Scell(NSC)%mu )   ! [eV]
+
+            B_cur = abs(P2) * f_nm
+            C_cur = B_cur * E_mu
+            A_cur = C_cur * E_mu
+
+            ! Sum up the terms:
+            A = A + A_cur
+            B = B + B_cur
+            C = C + C_cur
+         enddo ! n
+         !$omp end do
+         !$omp end parallel
+
+         ! Collect terms to calculate thermal conductivity:
+         !print*, prefact, A, C, B
+         if (abs(B) > 0.0d0) then
+            kappa = prefact * (A - C**2/B)   ! [W/(K*m)]
+         else
+            kappa = 0.0d0
+         endif
+
+      endif ! (Scell(NSC)%Te < 35.0d0)
+   endif ! numpar%do_kappa
+end subroutine get_Onsager_coeffs_fast
+
 
 
 
@@ -298,6 +690,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
 
             select case(numpar%optic_model)
             case (4) ! full calculations
+               ! (P) * (P) [2]:
                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
                A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
@@ -305,6 +698,15 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
                B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) + aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
                B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) + aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
                B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) + aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
+
+               ! (P*) * (P) [*]: SEEMS WRONG ?
+!                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
+!                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
+!                A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
+!
+!                B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) - aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
+!                B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) - aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
+!                B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) - aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
             case (5) ! only real part (empirical adjustment!)
                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n))
                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n))
@@ -354,6 +756,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
             w_sigma = (w_mn + w) / denom
 
             ! Optical conductivity / w:
+            ! [ D ]
             Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma - B_sigma(n,m,1,1) * w_sigma)
             Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma - B_sigma(n,m,2,2) * w_sigma)
             Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma - B_sigma(n,m,3,3) * w_sigma)
@@ -361,6 +764,35 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
+
+            ! [ C ] IDENTICAL TO D
+!             Re_eps_ij(1,1) = Re_eps_ij(1,1) - f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma - B_sigma(n,m,1,1) * w_sigma)
+!             Re_eps_ij(2,2) = Re_eps_ij(2,2) - f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma - B_sigma(n,m,2,2) * w_sigma)
+!             Re_eps_ij(3,3) = Re_eps_ij(3,3) - f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma - B_sigma(n,m,3,3) * w_sigma)
+!
+!             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
+!             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
+!             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
+
+            ! [ B ] IDENTICAL TO D
+!             Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma + B_sigma(n,m,1,1) * w_sigma)
+!             Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma + B_sigma(n,m,2,2) * w_sigma)
+!             Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma + B_sigma(n,m,3,3) * w_sigma)
+!
+!             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma - B_sigma(n,m,1,1) * g_sigma)
+!             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma - B_sigma(n,m,2,2) * g_sigma)
+!             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma - B_sigma(n,m,3,3) * g_sigma)
+
+            ! [ A ] SEEMS WRONG ?
+!             Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
+!             Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
+!             Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
+!
+!             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (-A_sigma(n,m,1,1) * g_sigma + B_sigma(n,m,1,1) * w_sigma)
+!             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (-A_sigma(n,m,2,2) * g_sigma + B_sigma(n,m,2,2) * w_sigma)
+!             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (-A_sigma(n,m,3,3) * g_sigma + B_sigma(n,m,3,3) * w_sigma)
+
+
          enddo ! m
       enddo ! n
 !       !$omp end do
@@ -1801,19 +2233,19 @@ subroutine get_Re_and_Im(ReEps, ImEps, n, k)
 end subroutine get_Re_and_Im
 
 
-!c creflection coefficient between two layers as function of two wave vectors:
+! reflection coefficient between two layers as function of two wave vectors:
 function crefl(cxki,cxkj)  ! Ref. [3]
    complex :: crefl, cxki, cxkj
    crefl = (cxki-cxkj)/(cxki+cxkj)
 end function crefl
 
-!c transmission coefficient between two layers as function of two wave vectors:
+! transmission coefficient between two layers as function of two wave vectors:
 function ctrans(cxki,cxkj) ! Ref. [3]
    complex :: ctrans, cxki, cxkj
    ctrans = 2.0d0*cxki/(cxki+cxkj)
 end function ctrans
 
-!c phase factor within the layer i:
+! phase factor within the layer i:
 function cphase(cxkx,cd)   ! Ref. [3]
    complex :: cphase, cxkx, cd
    complex cc, carg

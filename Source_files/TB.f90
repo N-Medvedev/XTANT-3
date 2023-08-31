@@ -33,7 +33,7 @@ use Atomic_tools, only : get_near_neighbours, total_forces, Potential_super_cell
                         Convert_reciproc_rel_to_abs, Rescale_atomic_velocities, get_kinetic_energy_abs, &
                         get_Ekin, save_last_timestep, Potential_super_cell_forces, &
                         make_time_step_atoms, make_time_step_supercell, make_time_step_atoms_Y4, make_time_step_supercell_Y4, &
-                        make_time_step_atoms_M
+                        make_time_step_atoms_M, distance_to_given_cell, shortest_distance
 use Electron_tools, only : set_initial_fe, update_fe, get_new_global_energy, find_band_gap, get_DOS_sort, &
                      get_electronic_heat_capacity, electronic_entropy, Diff_Fermi_E, get_low_e_energy, get_total_el_energy
 use Nonadiabatic, only : Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, Electron_ion_collision_int, get_G_ei
@@ -1212,40 +1212,28 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
 !           print*, 'get_DOS test 1'
          
          ! Now calculate the DOS:
-         select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma
-         case (2)	! multiple k points
+         select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma!
+         case (2,4,5)   ! multiple k points
+
             ! Partial DOS if needed:
             select case (numpar%DOS_splitting)
             case (1)
-
-!                call print_time_step('DOSp:', 2.0, msec=.true.)   ! module "Little_subroutines"
-
                call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err, Scell(NSC)%partial_DOS, numpar%mask_DOS)	! see below
             case default    ! No need to sort DOS per orbitals
-
-!                call print_time_step('DOSc:', 2.0, msec=.true.)   ! module "Little_subroutines"
-
                call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err)	! see below
             endselect
          case default	! gamma point
             ! Partial DOS if needed:
-            
-            
             select case (numpar%DOS_splitting)
             case (1)
-!                 print*, 'get_DOS test 2a'
                call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS, Scell(NSC)%partial_DOS, numpar%mask_DOS, Hij = Scell(NSC)%Ha)	! module "Electron_tools"
-!                 print*, 'get_DOS test 3a'
             case default    ! No need to sort DOS per orbitals
-!                 print*, 'get_DOS test 2b'
                call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS)	! module "Electron_tools"
-!                 print*, 'get_DOS test 3b'
             endselect
          end select
 !           call print_time_step('After DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
-      endif	!  (numpar%save_DOS) 
-   enddo	! NSC = 1, size(Scell) ! for all super-cells
-!     print*, 'get_DOS test end'
+      endif !  (numpar%save_DOS)
+   enddo ! NSC = 1, size(Scell) ! for all super-cells
 end subroutine get_DOS
 
 
@@ -1335,34 +1323,32 @@ end subroutine get_DOS_sort_complex
 
 
 subroutine k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, UPG)
-   integer, intent(in) :: schem	! scheme for k-points samping: 0=Monkhorst-Pack; 1=user provided grid
-   integer, intent(in) :: ix, iy, iz, ixm, iym, izm	! number of grid points and sizes of the grids along the reciprocal vectors
-   real(8), dimension(:,:), allocatable, intent(in) :: UPG	! user provided grid
-   real(8), intent(out) :: kx, ky, kz	! coordinates of the k-points in the units of the reciprocal vectors
+   integer, intent(in) :: schem  ! scheme for k-points samping: 0=Monkhorst-Pack; 1=user provided grid
+   integer, intent(in) :: ix, iy, iz, ixm, iym, izm   ! number of grid points and sizes of the grids along the reciprocal vectors
+   real(8), dimension(:,:), allocatable, intent(in) :: UPG  ! user provided grid
+   real(8), intent(out) :: kx, ky, kz  ! coordinates of the k-points in the units of the reciprocal vectors
    !------------------------------
    integer :: Ngp, Nsiz
    select case (schem)
-   case (1)	! user defined grid:
-      UG:if (.not.allocated(UPG)) then	! use Monkhorst-Pack grid
+   case (1) ! user defined grid:
+      UG:if (.not.allocated(UPG)) then ! use Monkhorst-Pack grid
          kx = (2.0d0*real(ix) - real(ixm) - 1.0d0)/(2.0d0*real(ixm))
          ky = (2.0d0*real(iy) - real(iym) - 1.0d0)/(2.0d0*real(iym))
          kz = (2.0d0*real(iz) - real(izm) - 1.0d0)/(2.0d0*real(izm))
-      else UG	! user provided the grid:
-         !Ngp = ix*iy*iz	! number of grid point for user defined grid
-         !Ngp = (iz-1)*iym*ixm + (iy-1)*ixm + ix	! number of grid point for user defined grid
-         Ngp = (ix-1)*iym*ixm + (iy-1)*ixm + iz	! number of grid point for user defined grid
-         Nsiz = size(UPG,1)	! size of the user provided grid
-         if (Ngp > Nsiz) then	! If user didn't match the number of k-points to the grid provided, just use Gamma point for extra points:
+      else UG  ! user provided the grid:
+         Ngp = (ix-1)*iym*ixm + (iy-1)*ixm + iz ! number of grid point for user defined grid
+         Nsiz = size(UPG,1)   ! size of the user provided grid
+         if (Ngp > Nsiz) then ! If user didn't match the number of k-points to the grid provided, just use Gamma point for extra points:
             kx = 0.0d0
             ky = 0.0d0
             kz = 0.0d0
-         else	! read from the user provided array:
+         else  ! read from the user provided array:
             kx = UPG(Ngp,1)
             ky = UPG(Ngp,2)
             kz = UPG(Ngp,3)
          endif
       endif UG
-   case default	! Monkhorst-Pack [J. Moreno, J. M. Soler, PRB 45, 13891 (1992)]:
+   case default   ! Monkhorst-Pack [J. Moreno, J. M. Soler, PRB 45, 13891 (1992)]:
       kx = (2.0d0*real(ix) - real(ixm) - 1.0d0)/(2.0d0*real(ixm))
       ky = (2.0d0*real(iy) - real(iym) - 1.0d0)/(2.0d0*real(iym))
       kz = (2.0d0*real(iz) - real(izm) - 1.0d0)/(2.0d0*real(izm))
@@ -1782,8 +1768,9 @@ subroutine get_electronic_thermal_parameters(numpar, Scell, NSC, matter, Err)
    endif
 
    !----------------------------
-   ! Electron heat conductivity, if required (does not work well...):
-   call get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err) ! below
+   ! Electron heat conductivity, if required (does not work well...).
+   ! Exclude it from here; instead, try to use Onsager coefficients in Optical module.
+   !call get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err) ! below
 
 end subroutine get_electronic_thermal_parameters
 
@@ -2103,9 +2090,10 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    complex(8), dimension(:,:), allocatable :: CHij_temp, CHij_non, CSij_save, CHij_orth, CWF_orth, cPPRx_0, cPPRy_0, cPPRz_0, CSij
    complex(8), dimension(:,:,:,:), allocatable :: cTnn_0, cTnn_c
    real(8), dimension(:), allocatable :: Norm1
-   integer :: Nsiz, j, nat, m, atom_2, i, j1, l, i1, k, norb, n, nn
+   real(8), dimension(3,3,3,3), target :: distances_to_image_cells
+   integer :: Nsiz, j, nat, m, atom_2, i, j1, l, i1, k, norb, n, nn, cell_x, cell_y, cell_z
    real(8), dimension(3,3) :: k_supce   ! reciprocal supercell vectors
-   real(8) :: temp, kx, ky, kz
+   real(8) :: temp, kx, ky, kz, zb(3), R, x, y, z
    real(8), target :: nol
    real(8), pointer :: x1, y1, z1
    complex(8) :: expfac, SH_1
@@ -2126,8 +2114,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    CHij_temp = dcmplx(0.0d0,0.0d0)	! to start with
    if (.not.allocated(CHij_orth)) allocate(CHij_orth(Nsiz,Nsiz))  ! orthogonalized Hamiltonian
    CHij_orth = dcmplx(0.0d0,0.0d0)	! to start with
-   select case (abs(numpar%optic_model))
-   case (4:5) ! Graf-Vogl or Kubo-Greenwood
+   !select case (abs(numpar%optic_model))
+   !case (4:5) ! Graf-Vogl or Kubo-Greenwood
+   if (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
       if (.not.allocated(CWF_orth)) allocate(CWF_orth(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! orthogonalized Hamiltonian
       if (.not.allocated(Norm1)) allocate(Norm1(Nsiz), source = 0.0d0)  ! normalization of WF
       if (.not.allocated(cPPRx_0)) allocate(cPPRx_0(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! temporary
@@ -2137,27 +2126,44 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
          if (.not.allocated(cTnn_0)) allocate(cTnn_0(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
          if (.not.allocated(cTnn_c)) allocate(cTnn_c(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
       endif
-   end select
+   end if
 
 
+   if (.not.allocated(CSij_save)) allocate(CSij_save(Nsiz,Nsiz), source=cmplx(0.0d0,0.0d0))
    if (present(Sij)) then   ! it is nonorthogonal case:
       if (.not.allocated(CSij)) allocate(CSij(Nsiz,Nsiz))
-      if (.not.allocated(CSij_save)) allocate(CSij_save(Nsiz,Nsiz))
       CSij = dcmplx(0.0d0,0.0d0)	! to start with
-      CSij_save = dcmplx(0.0d0,0.0d0)	! to start with
       if (present(CSij_out)) then
          if (.not.allocated(CSij_out)) allocate(CSij_out(Nsiz,Nsiz), source=dcmplx(0.0d0,0.0d0))
       endif
    endif
    
+   ! Get reciprocal vectors:
    call Reciproc(Scell(NSC)%supce, k_supce) ! create reciprocal super-cell, module "Algebra_tools"
    call Convert_reciproc_rel_to_abs(ksx, ksy, ksz, k_supce, kx, ky, kz) ! get absolute k-values, molue "Atomic_tools"
+
+   ! Get distances to image cells:
+   do i = 1, 3 ! x
+      zb(1) = dble(i-2) ! -1:1
+      do j = 1, 3 ! y
+         zb(2) = dble(j-2) ! -1:1
+         do k = 1, 3 ! z
+            zb(3) = dble(k-2) ! -1:1
+            ! Get the distance to the replica of an atom #1 in the emage cell:
+            call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDAtoms, zb, 1, 1, R, x, y, z)  ! module "Atomic_tools"
+            ! Save it into an array:
+            distances_to_image_cells(i,j,k,1) = x
+            distances_to_image_cells(i,j,k,2) = y
+            distances_to_image_cells(i,j,k,3) = z
+         enddo ! k
+      enddo ! j
+   enddo ! i
 
 
    ! 1) Construct complex Hamiltonian and overlap:
    !$omp parallel
-   !$omp do private(j, m, atom_2, i, x1, y1, z1, expfac, j1, l, i1, k)
-   do j = 1,nat	! all atoms
+   !$omp do schedule(dynamic) private(j, m, atom_2, i, x1, y1, z1, R, cell_x, cell_y, cell_z, expfac, j1, l, i1, k)
+   do j = 1,nat   ! all atoms
       m = Scell(NSC)%Near_neighbor_size(j)
       do atom_2 = 0,m ! do only for atoms close to that one  
          if (atom_2 == 0) then
@@ -2167,9 +2173,20 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             z1 => nol
          else
             i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-            x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
-            y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
-            z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
+            !x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
+            !y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
+            !z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
+
+            ! Find the used image cell indices:
+            call shortest_distance(Scell(NSC), j, i, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
+            ! convert from cell index to array index:
+            cell_x = cell_x+2
+            cell_y = cell_y+2
+            cell_z = cell_z+2
+            ! get the distance to the given cell:
+            x1 => distances_to_image_cells(cell_x,cell_y,cell_z,1)
+            y1 => distances_to_image_cells(cell_x,cell_y,cell_z,2)
+            z1 => distances_to_image_cells(cell_x,cell_y,cell_z,3)
          endif ! (atom_2 .EQ. 0)
          
          if ((abs(kx) < 1.0d-14) .AND. (abs(ky) < 1.0d-14) .AND. (abs(kz) < 1.0d-14)) then
@@ -2212,30 +2229,36 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    CHij_non = CHij_temp
    if (present(Sij)) then  ! nonorthogonal
       CSij_save = CSij
-      select case (abs(numpar%optic_model))
-      case (2)   ! Trani
+      !select case (abs(numpar%optic_model))
+      !case (2)   ! Trani
+      if (abs(numpar%optic_model) == 2) then
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth)    ! below
-      case (4:5)   ! Graf-Vogl or KG
+      !case (4:5)   ! Graf-Vogl or KG
+      elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
          !call diagonalize_complex8_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
-      end select
+      end if
    else  ! orthogonal
-      select case (abs(numpar%optic_model))
-      case (2)   ! Trani
+      CSij_save = 0.0d0 ! exclude nonorthogonal contribution
+      !select case (abs(numpar%optic_model))
+      !case (2)   ! Trani
+      if (abs(numpar%optic_model) == 2) then
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei)    ! below
-      case (4:5)  ! Graf-Vogl or KG
+      !case (4:5)  ! Graf-Vogl or KG
+      elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CHij_orth=CHij_orth, CWF_orth=CWF_orth)    ! below
-      end select
+      end if
    endif
    CHij = CHij_temp ! save for output
-   if (present(CSij_out)) then
+   if (present(CSij_out)) then ! diagonalized Hamiltonian (eigenfunctions)
       CSij_out = CHij ! output
    endif
 
    !---------------------------------------
    ! Effective momentum operators:
-   select case (abs(numpar%optic_model))
-   case (2)  ! create matrix element for Trani method
+   !select case (abs(numpar%optic_model))
+   !case (2)  ! create matrix element for Trani method
+   if (abs(numpar%optic_model) == 2) then
       if (.not.allocated(cPRRx)) allocate(cPRRx(Nsiz,Nsiz))
       if (.not.allocated(cPRRy)) allocate(cPRRy(Nsiz,Nsiz))
       if (.not.allocated(cPRRz)) allocate(cPRRz(Nsiz,Nsiz))
@@ -2281,7 +2304,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                            cPRRz(k,l) = SH_1
                         endif
 
-                     else	! different atoms at distance {x,y,z}:
+                     else  ! different atoms at distance {x,y,z}:
                         SH_1 = CHij_non(k,l)
 !                         SH_1 = CHij_non(l,k)    ! testing
                         if (present(Sij)) then ! nonorthogonal Hamiltonian:
@@ -2330,7 +2353,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       cPRRz = cPRRz * temp
 
    !---------------------------------------
-   case (4:5) ! Graf-Vogl or Kubo-Greenwood
+   !case (4:5) ! Graf-Vogl or Kubo-Greenwood
+   elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
       if (.not.allocated(cPRRx)) allocate(cPRRx(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
       if (.not.allocated(cPRRy)) allocate(cPRRy(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
       if (.not.allocated(cPRRz)) allocate(cPRRz(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
@@ -2347,9 +2371,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                i = j
             else
                i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-               x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1)	! at this distance, X
-               y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2)	! at this distance, Y
-               z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3)	! at this distance, Z
+               x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
+               y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
+               z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
             endif ! (atom_2 .EQ. 0)
 
             if (i > 0) then
@@ -2496,11 +2520,19 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       cPRRy = cPRRy * temp
       cPRRz = cPRRz * temp
 
+      ! Term with k, according to
+      ! [B. Holst, M. French, R. Redmer, Phys. Rev. B 83, 235120 (2011)], Eq.(18):
+!       do n = 1, Nsiz
+!          cPRRx(n,n) = cPRRx(n,n) + DCMPLX( sqrt(kx**2 + ky**2 + kz**2)*1.0d10*g_h, 0.0d0 )
+!          cPRRy(n,n) = cPRRy(n,n) + DCMPLX( sqrt(kx**2 + ky**2 + kz**2)*1.0d10*g_h, 0.0d0 )
+!          cPRRz(n,n) = cPRRz(n,n) + DCMPLX( sqrt(kx**2 + ky**2 + kz**2)*1.0d10*g_h, 0.0d0 )
+!       enddo
+
       ! And kinetic energy:
       if (present(cTnn)) then
          cTnn = dble(cTnn_c) * temp/g_h*1.0d-10  ! [dimensionless]
       endif
-   end select
+   end if
 
    deallocate(CHij_temp, CHij_non)
    if (allocated(CSij_save)) deallocate(CSij_save)

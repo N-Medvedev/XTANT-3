@@ -159,7 +159,12 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%scc_mix = 1.0d0  ! maximal mixing
    numpar%t_NA = 1.0d-3	! [fs] start of the nonadiabatic
    numpar%acc_window = 5.0d0	! [eV] acceptance window for nonadiabatic coupling:
+   numpar%do_DOS = .false.    ! DOS calculation
    numpar%do_kappa = .false.  ! electron heat conductivity calculation
+   numpar%kappa_Te_min = 300.0d0 ! [K]
+   numpar%kappa_Te_max = 30000.0d0  ! [K]
+   numpar%kappa_dTe = 100.0d0 ! [K]
+   numpar%kappa_model = 0  ! default model index
    numpar%do_cool = .false.	! quenching excluded
    numpar%at_cool_start = 2500.0	! starting from when [fs]
    numpar%at_cool_dt = 40.0	! how often [fs]
@@ -6065,6 +6070,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
          call prepare_multiple_inputs(numpar, File_name, read_var, .true., num_phon, string=trim(adjustl(string)))   ! below
       else ! use default nuber of iterations
          call prepare_multiple_inputs(numpar, File_name, read_var, .true., string=trim(adjustl(string))) ! below
+         backspace(FN)
       endif
 
    case ('WATER', 'EMBED_WATER', 'EMBED_IN_WATER', 'Water', 'water', 'embed_water', 'Embed_Water', 'Embed_in_water')
@@ -6073,14 +6079,44 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
          numpar%N_water_mol = 100 ! use default
+         print*, 'Using default number of water molecules to embed (100)'
+         backspace(FN)
+         return
       elseif (numpar%N_water_mol < 0) then   ! don't use water
          numpar%embed_water = .false.
          numpar%N_water_mol = 0
+         print*, 'Cannot embed with negative numbner of water molecules!'
+      endif
+
+   case ('DOS', 'Dos', 'dos', 'do_DOS', 'get_DOS')
+      numpar%do_DOS = .true.  ! calculate DOS
+
+   case ('KAPPA', 'Kappa', 'kappa', 'conductivity', 'do_kappa', 'Do_kappa', 'Get_kappa', 'get_kappa')
+      print*, 'Electronic heat conductivity will be calculated'
+      numpar%do_kappa = .true.   ! calculate K, electron heat conductivity vs Te
+      read(FN,'(a)',IOSTAT=Reason) temp_ch
+      call read_file(Reason, count_lines, read_well)
+      read(temp_ch,*,IOSTAT=Reason) numpar%kappa_Te_min, numpar%kappa_Te_max, numpar%kappa_dTe
+      if (Reason /= 0) then   ! use default values
+         numpar%kappa_Te_min = 300.0d0
+         numpar%kappa_Te_max = 30000.0d0
+         numpar%kappa_dTe = 100.0d0
+         numpar%kappa_model = 0
+         print*, 'With default parameters of the model (Kubo-Greenwood)'
+         backspace(FN)
+         return
+      else  ! check if the model index provided
+         read(FN,*,IOSTAT=Reason) numpar%kappa_model
+         call read_file(Reason, count_lines, read_well)
+         if (Reason /= 0) then   ! model index not provided
+            print*, 'With default model (numerical Onsager coefficients)'
+            backspace(FN)
+            return
+         endif
       endif
 
    case ('PROBE', 'Probe', 'probe')
-
-      ! Calculate optical parameters, and with which model:
+      ! Calculate optical parameters (and electronic heat conductivity, ir requested), and with which model:
       read(FN,*,IOSTAT=Reason) numpar%optic_model, N, read_var
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
@@ -6089,6 +6125,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
          print*, trim(adjustl(Error_descript))
          return
       endif
+
       SCL:do i = 1, size(Scell) ! for all supercells
          if (numpar%optic_model /= 0) then ! yes, calculate optical coefficients:
             numpar%do_drude = .true.   ! included

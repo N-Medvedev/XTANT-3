@@ -21,3 +21,4 @@ use Optical_parameters, only : get_optical_parameters
 use MC_cross_sections, only : get_mfps, get_photon_attenuation
 use Monte_carlo, only : MC_Propagate, process_laser_parameters
 use ZBL_potential, only : get_total_ZBL
+use TB_complex, only : use_complex_Hamiltonian

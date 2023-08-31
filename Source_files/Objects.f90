@@ -641,6 +641,10 @@ type Super_cell
    real(8), dimension(:), allocatable :: Ce_part   ! band-resolved electron heat capacity [J/(m^3 K)]
    real(8), dimension(:), allocatable :: Ce_i   ! energy level resolved electron heat capacity [J/(m^3 K)]
    real(8) :: kappa_e  ! electron heat conductivity [W/(m K)]
+   real(8), dimension(:), allocatable :: kappa_e_vs_Te  ! electron heat conductivity [W/(m K)] vs Te [K]
+   real(8), dimension(:), allocatable :: kappa_Te_grid  ! Te grid for electron heat conductivity [K]
+   real(8), dimension(:), allocatable :: kappa_mu_grid  ! mu vs Te (in electron heat conductivity) [eV]
+   real(8), dimension(:), allocatable :: kappa_Ce_grid  ! Ce vs Te (in electron heat conductivity) [J/(m^3 K)]
    real(8), dimension(:), allocatable :: kappa_e_part   ! band-resolved electron heat conductivity [W/(m K)]
    ! Atoms:
    type(Atom), dimension(:), allocatable :: MDAtoms ! all atoms in MD
@@ -889,11 +893,13 @@ type Numerics_param
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate, save_fe_grid
    logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
-   logical :: do_elastic_MC, do_path_coordinate, do_kappa
+   logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS
    logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN
    integer :: Mulliken_model
    integer :: ind_fig_extention, change_size_step
    real(8) :: change_size_max, change_size_min
+   real(8) :: kappa_Te_min, kappa_Te_max, kappa_dTe
+   integer :: kappa_model
    character(4) :: fig_extention
    ! BOP parameters creation:
    logical :: create_BOP_repulse

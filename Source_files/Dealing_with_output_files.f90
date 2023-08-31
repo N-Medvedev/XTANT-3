@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 21.08.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 31.08.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -635,15 +635,22 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    ! Write electron heat conductivity if requesed:
    if (numpar%do_kappa) then
       ! Total kappa:
-      write(FN_kappa, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%kappa_e
+      !write(FN_kappa, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%kappa_e
+      do i = 1, size(Scell(NSC)%kappa_e_vs_Te)
+         write(FN_kappa, '(es25.16,es25.16, es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
+            Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_mu_grid(i), Scell(NSC)%kappa_Ce_grid(i)
+      enddo
+      write(FN_kappa, '(a)')
+      write(FN_kappa, '(a)')
+
       ! All shells resolved:
-      do i_at = 1, Nat
-         do i_types = 1, N_types
-            i_G1 = (i_at-1) * N_types + i_types
-            write(FN_kappa,'(es25.16)',advance='no') Scell(NSC)%kappa_e_part(i_G1)
-         enddo   ! i_types
-      enddo ! i_at
-      write(FN_kappa,'(a)') ''
+!       do i_at = 1, Nat
+!          do i_types = 1, N_types
+!             i_G1 = (i_at-1) * N_types + i_types
+!             write(FN_kappa,'(es25.16)',advance='no') Scell(NSC)%kappa_e_part(i_G1)
+!          enddo   ! i_types
+!       enddo ! i_at
+!       write(FN_kappa,'(a)') ''
    endif
 
 
@@ -1231,8 +1238,10 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       file_electron_heat_conductivity = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_conductivity)))
       numpar%FN_kappa = FN
-      ! We can use the same header here as for Ce:
-      call write_Ce_header(numpar%FN_kappa, Scell, 1, matter) ! below
+      !call create_file_header(numpar%FN_kappa, '#Time kappa')
+      !call create_file_header(numpar%FN_kappa, '#[fs]  [W/(K*m)]')
+      call create_file_header(numpar%FN_kappa, '#Te   kappa mu Ce')
+      call create_file_header(numpar%FN_kappa, '#[K]  [W/(K*m)]   [eV]  [J/(m^3*K)]')
    endif
 
    file_energies = trim(adjustl(file_path))//'OUTPUT_energies.dat'
@@ -1353,9 +1362,13 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       endif
    enddo
 
-   call create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, 'OUTPUT_temperatures.dat',  'OUTPUT_pressure_and_stress.dat', &
-   'OUTPUT_energies.dat', file_atoms_R, file_atoms_S, 'OUTPUT_supercell.dat', 'OUTPUT_electron_properties.dat', &
-   'OUTPUT_electron_hole_numbers.dat', 'OUTPUT_deep_shell_holes.dat', 'OUTPUT_optical_coefficients.dat', file_Ei, file_PCF, &
+   call create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, 'OUTPUT_temperatures.dat', &
+   'OUTPUT_pressure_and_stress.dat', &
+   'OUTPUT_energies.dat', file_atoms_R, file_atoms_S, &
+   'OUTPUT_supercell.dat', 'OUTPUT_electron_properties.dat', &
+   'OUTPUT_electron_heat_conductivity.dat', &
+   'OUTPUT_electron_hole_numbers.dat', 'OUTPUT_deep_shell_holes.dat', &
+   'OUTPUT_optical_coefficients.dat', file_Ei, file_PCF, &
    'OUTPUT_nearest_neighbors.dat', 'OUTPUT_electron_entropy.dat', 'OUTPUT_electron_temperatures.dat', &
    'OUTPUT_electron_chempotentials.dat')  ! below
 
@@ -1369,7 +1382,7 @@ subroutine create_file_header(FN, text)
 end subroutine create_file_header
 
 
-subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy, file_Te, file_mu)
+subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_capacity, file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy, file_Te, file_mu)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -1382,6 +1395,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    character(*) :: file_atoms_S	! atomic coordinates and velocities
    character(*) :: file_supercell	! supercell vectors
    character(*) :: file_electron_properties	! electron properties
+   character(*) :: file_heat_capacity  ! electronic heat capacity
    character(*) :: file_numbers	! total numbers of electrons and holes
    character(*) :: file_deep_holes	! deep-shell holes
    character(*) :: file_optics		! optical coefficients
@@ -1418,82 +1432,87 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a)') '@echo off'
 
-      write(FN, '(a)') 'echo Executing OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
+      if (numpar%do_kappa) then
+!          if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
+!          write(FN, '(a)') 'call OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
+      endif
+
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
 
-      write(FN, '(a)') 'echo Executing OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
 
       if (numpar%do_partial_thermal) then
-         write(FN, '(a)') 'echo Executing OUTPUT_electron_temperatures'//trim(adjustl(sh_cmd))
+         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_temperatures'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_temperatures'//trim(adjustl(sh_cmd))
 
-         write(FN, '(a)') 'echo Executing OUTPUT_electron_chempotentials'//trim(adjustl(sh_cmd))
+         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_chempotentials'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_chempotentials'//trim(adjustl(sh_cmd))
       endif
 
       if (numpar%do_drude) then 
-         write(FN, '(a)') 'echo Executing OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
+         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'echo Executing OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
+         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
       endif
       if (numpar%save_Ei) then
-         write(FN, '(a)') 'echo Executing OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
+         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (numpar%save_fe) then
-         write(FN, '(a)') 'echo Executing OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
+         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (numpar%save_fe_grid) then
-         write(FN, '(a)') 'echo Executing OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
+         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (numpar%DOS_splitting >= 1) then   ! Mulliken charges
          if (numpar%Mulliken_model >= 1) then
-            write(FN, '(a)') 'echo Executing OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
+            if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
             write(FN, '(a)') 'call OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
          endif
       endif
       if (numpar%save_NN) then
-         write(FN, '(a)') 'echo Executing OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
+         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
       endif
       if (Scell(1)%eps%tau > 0.0d0) then ! convolved files too:
@@ -1512,6 +1531,9 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') 'call OUTPUT_mu_and_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
+         if (numpar%do_kappa) then
+!             write(FN, '(a)') 'call OUTPUT_electron_heat_conductivity_CONVOLVED'//trim(adjustl(sh_cmd))
+         endif
          write(FN, '(a)') 'call OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
          if (numpar%do_partial_thermal) then
@@ -1542,6 +1564,9 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       write(FN, '(a)') './OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
+      if (numpar%do_kappa) then
+!          write(FN, '(a)') './OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
+      endif
       write(FN, '(a)') './OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
       if (numpar%do_partial_thermal) then
@@ -1584,6 +1609,9 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
          write(FN, '(a)') './OUTPUT_mu_and_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
+         if (numpar%do_kappa) then
+!             write(FN, '(a)') './OUTPUT_electron_heat_conductivity_CONVOLVED'//trim(adjustl(sh_cmd))
+         endif
          write(FN, '(a)') './OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
          if (numpar%do_partial_thermal) then
@@ -1648,6 +1676,13 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
    ! Electron heat capacity:
    File_name  = trim(adjustl(file_path))//'OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
    call gnu_capacity(File_name, file_electron_properties, t0, t_last, 'OUTPUT_electron_Ce.'//trim(adjustl(numpar%fig_extention))) ! below
+
+   ! Electron heat conductivity:
+   if (numpar%do_kappa) then
+      File_name  = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
+      call gnu_heat_conductivity(File_name, file_heat_capacity, t0, t_last, 'OUTPUT_electron_heat_conductivity.' &
+                        //trim(adjustl(numpar%fig_extention))) ! below
+   endif
 
    ! Electron entropy:
    File_name  = trim(adjustl(file_path))//'OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
@@ -1781,6 +1816,14 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
       ! Electron heat capacity:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
       call gnu_capacity(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electron_Ce_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+      ! Electron heat conductivity:
+      if (numpar%do_kappa) then
+         File_name  = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity_CONVOLVED'//trim(adjustl(sh_cmd))
+         call gnu_heat_conductivity(File_name, &
+         trim(adjustl(file_heat_capacity(1:len(trim(adjustl(file_heat_capacity)))-4)))//'_CONVOLVED.dat', &
+         t0, t_last, 'OUTPUT_electron_heat_conductivity.'//trim(adjustl(numpar%fig_extention))) ! below
+      endif
 
       ! Electron entropy:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -2477,6 +2520,36 @@ subroutine gnu_capacity(File_name, file_electron_properties, t0, t_last, eps_nam
 end subroutine gnu_capacity
 
 
+
+subroutine gnu_heat_conductivity(File_name, file_heat_capacity, t0, t_last, eps_name)
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_heat_capacity ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron K','Time (fs)', &
+            'Heat conductivity (W/(m^3 K))', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
+
+   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_heat_capacity)), &
+               ' "u 1:2 w l lw LW title "Electron heat capacity"  '
+   else ! It is linux
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_heat_capacity)), &
+               '\"u 1:2 w l lw \"$LW\" title \"Electron heat capacity\"  '
+   endif
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_heat_conductivity
+
+
 subroutine gnu_entropy(File_name, file_electron_entropy, t0, t_last, eps_name)
    character(*), intent(in) :: File_name   ! file to create
    character(*), intent(in) :: file_electron_entropy ! input file
@@ -2935,13 +3008,12 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
    !if (.not.file_opened) then
 !    print*, trim(adjustl(File_name)), file_opened, FN
 
-   ! Check if Parameters file is openen, and try to open if it wasn't:
+   ! Check if Parameters file is opened, and try to open if it wasn't:
    call open_parameters_file(numpar, matter, FN, INFO)   ! below
-   !print*, INFO, file_opened, FN
 
    if (INFO < 0) then
       INFO = 2
-      Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
+      Error_descript = 'Error in output_parameters_file: file could not be opened, the program terminates'
       call Save_error_details(Err, INFO, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 9999
@@ -2953,9 +3025,8 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
 #else
    call Print_title(FN, Scell, matter, laser, numpar, 4) ! below
 #endif
-   !close(FN)
-   inquire(file=trim(adjustl(File_name)),opened=file_opened)
-   if (file_opened) then
+
+   if (INFO >= 0) then
       write(FN, '(a)') 'Atomic data used for '//trim(adjustl(matter%Name))//' are:'
 
       do i = 1, matter%N_KAO
@@ -3718,7 +3789,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    SCL:do i = 1, size(Scell)
       select case (abs(numpar%optic_model))
       case (1) ! within the Drude model
-         write(print_to,'(a)') ' Probe-pulse is calculated within Drude model'
+         write(print_to,'(a)') '  Probe-pulse is calculated within Drude model'
          write(print_to,'(a)') ' with the following parameters of the probe:'
          write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, '[nm]; Angle:', &
             Scell(i)%eps%teta/g_Pi*(180.0d0), '[degrees]'
@@ -3726,7 +3797,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(print_to,'(a, es12.3, es12.3)') ' Effective mass of electron and hole: ', Scell(i)%eps%me_eff, Scell(i)%eps%mh_eff
          write(print_to,'(a, es12.3, es12.3)') ' Effective scattering time of electron and of hole: ', Scell(i)%eps%tau_e, Scell(i)%eps%tau_h
       case (2:3)  ! Trani model
-         write(print_to,'(a)') ' Probe-pulse is calculated with RPA (Trani et al.) approach ' ! [PRB 72, 075423 (2005)]'
+         write(print_to,'(a)') '  Probe-pulse is calculated with RPA (Trani et al.) approach ' ! [PRB 72, 075423 (2005)]'
          write(print_to,'(a)') ' with the following parameters of the probe:'
          write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', &
             Scell(i)%eps%teta/g_Pi*(180.0d0), '    [degrees]'
@@ -3747,11 +3818,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          endif
       case (4:5) ! Graf-Vogl model
          if (numpar%optic_model < 0) then
-            write(print_to,'(a)') ' Probe-pulse is calculated with Graf-Vogl approach'
+            write(print_to,'(a)') '  Probe-pulse is calculated with Graf-Vogl approach'
          else if (numpar%optic_model == 5) then
-            write(print_to,'(a)') ' Probe-pulse is calculated with Kubo-Greenwood (adjusted) approach'
+            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood (adjusted) approach'
          else
-            write(print_to,'(a)') ' Probe-pulse is calculated with Kubo-Greenwood approach'
+            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood approach'
          endif
          write(print_to,'(a)') ' with the following parameters of the probe:'
          write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', &
@@ -3772,7 +3843,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
             endif
          endif
       case default ! no optical coefficients needed
-         write(print_to,'(a)') ' No probe-pulse is calculated'
+         write(print_to,'(a)') '  No probe-pulse is calculated'
       end select
 
       if (Scell(i)%eps%all_w) then
@@ -4182,7 +4253,17 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    endif
 
    if (numpar%do_kappa) then
-      write(print_to,'(a)') ' Electronic heat conductivity'
+      write(print_to,'(a)') ' Electronic heat conductivity (and Ce, mu) vs Te'
+      write(text1, '(i10)') numpar%ixm
+      write(text2, '(i10)') numpar%iym
+      write(text3, '(i10)') numpar%izm
+      if (allocated(numpar%k_grid)) then
+         write(print_to,'(a,a,a,a,a,a)') ' Averaged over k-points (on user-defined grid): ', &
+               trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+      else
+         write(print_to,'(a,a,a,a,a,a)') ' Averaged over k-points (on Monkhorst-Pack grid): ', &
+               trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+      endif
       optional_output = .true.   ! there is at least some optional output
    !else
    !   write(print_to,'(a)') ' No calculation of electronic heat conductivity'

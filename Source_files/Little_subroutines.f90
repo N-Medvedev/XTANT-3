@@ -241,11 +241,21 @@ pure function Fermi_function(rcut, d, r) result(F)
 end function Fermi_function
 
 
-pure function d_Fermi_function(rcut, d, r) result(F)
+pure function d_Fermi_function(rcut, d, r, cut_off) result(F)
    real(8) F
    real(8), intent(in) :: rcut, d, r   ! [A]
+   logical, intent(in), optional :: cut_off  ! include cut-off, or not
+   !-----------
    real(8) :: exprd, exprd1
-   if (r >= rcut + 10.0d0*d) then
+   logical :: cutit
+
+   if (present(cut_off)) then
+      cutit = cut_off
+   else ! include cutoff by default
+      cutit = .true.
+   endif
+
+   if (cutit .and. (r >= rcut + 10.0d0*d)) then
       F = 0.0d0
    else
       exprd = exp( (r - rcut)/d )
