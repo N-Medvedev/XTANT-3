@@ -184,23 +184,16 @@ call Electron_thermalization(g_Scell, g_numpar, skip_thermalization=.true.) ! mo
 call get_glob_energy(g_Scell, g_matter) ! module "Electron_tools"
 if (g_numpar%verbose) call print_time_step('Initial energy prepared succesfully:', msec=.true.)
 
-! Get initial optical coefficients:
-! call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
-! if (g_numpar%verbose) call print_time_step('Optical parameters prepared succesfully:', msec=.true.)
-! ! Get initial DOS:
-! call get_DOS(g_numpar, g_matter, g_Scell, g_Err)   ! module "TB"
-! if (g_numpar%verbose) call print_time_step('DOS calculated succesfully:', msec=.true.)
-
 ! Get parameters that use complex Hamiltonian: DOS, CDF, kappa:
-!if ((abs(g_numpar%optic_model) > 0) .and. (g_numpar%optic_model < 4) ) then ! Trani or similar model, old-style DOS
+if ((abs(g_numpar%optic_model) > 0) .and. (g_numpar%optic_model < 4) ) then ! Trani or similar model, old-style DOS
    call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
    if (g_numpar%verbose) call print_time_step('Optical parameters prepared succesfully:', msec=.true.)
-   !call get_DOS(g_numpar, g_matter, g_Scell, g_Err)   ! module "TB"
-   !if (g_numpar%verbose) call print_time_step('DOS calculated succesfully:', msec=.true.)
-!else
-   call use_complex_Hamiltonian(g_numpar, g_matter, g_Scell, 1, g_Err)  ! module "TB_complex"
-   if (g_numpar%verbose) call print_time_step('Complex-Hamiltonian-dependent parameters (DOS, CDF, k) done:', msec=.true.)
-!endif
+endif
+!call get_DOS(g_numpar, g_matter, g_Scell, g_Err)   ! module "TB"
+!if (g_numpar%verbose) call print_time_step('DOS calculated succesfully:', msec=.true.)
+call use_complex_Hamiltonian(g_numpar, g_matter, g_Scell, 1, g_Err)  ! module "TB_complex"
+if (g_numpar%verbose) call print_time_step('Complex-Hamiltonian-dependent parameters (DOS, CDF, k) done:', msec=.true.)
+
 
 ! Get current Mulliken charges (average and individual), if required:
 call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)
@@ -321,18 +314,14 @@ do while (g_time .LT. g_numpar%t_total)
    if (g_dt_save .GE. g_numpar%dt_save - 1d-6) then
       ! Print out the curent time-step
       call print_time_step('Simulation time:', g_time, msec=.true.)   ! module "Little_subroutines"
-      ! Get current optical coefficients:
-!       call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
-!       ! Get current DOS:
-!       call get_DOS(g_numpar, g_matter, g_Scell, g_Err)   ! module "TB"
+
       ! Get parameters that use complex Hamiltonian: DOS, CDF, kappa:
-!       if ((abs(g_numpar%optic_model) > 0) .and. (g_numpar%optic_model < 4) ) then ! Trani or similar model, old-style DOS
+      if ((abs(g_numpar%optic_model) > 0) .and. (g_numpar%optic_model < 4) ) then ! Trani or similar model, old-style DOS
          call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
-!          call get_DOS(g_numpar, g_matter, g_Scell, g_Err)   ! module "TB"
-!       else  ! Kubo-Greenwood CDF, DOS,
-         call use_complex_Hamiltonian(g_numpar, g_matter, g_Scell, 1, g_Err)  ! module "TB_complex"
-!       endif
-      
+      endif
+      call use_complex_Hamiltonian(g_numpar, g_matter, g_Scell, 1, g_Err)  ! module "TB_complex"
+!      call get_DOS(g_numpar, g_matter, g_Scell, g_Err)   ! module "TB"
+
       ! Get current Mulliken charges, if required:
       call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)   ! module "TB"
 

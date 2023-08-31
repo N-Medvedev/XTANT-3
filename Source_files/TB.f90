@@ -1168,159 +1168,6 @@ end subroutine d_get_gamma_scc
 
 
 
-subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "Optical_parameters"
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function 
-   type(Solid), intent(in) :: matter     ! material parameters
-   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   type(Error_handling), intent(inout) :: Err	! error save
-   !=====================================
-   integer :: NSC, Nsiz, Ei_siz, i, n_types
-   real(8) :: dE, Estart, Emax
-   real(8), dimension(:), allocatable :: Ei_cur
-   
-   do NSC = 1, size(Scell) ! for all super-cells
-      if (numpar%save_DOS) then	! only calculate DOS if the user chose to do so:
-!           call print_time_step('Before DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
-         ! Set grid for DOS:
-         if (.not.allocated(Scell(NSC)%DOS)) then	! it's the first time, set it:
-            dE = 0.1d0	! [eV] uniform energy grid step for DOS
-            Ei_siz = size(Scell(NSC)%Ei)	! the uppermost energy level at the start
-            Emax = min(Scell(NSC)%Ei(Ei_siz),100.0)   ! no need to trace levels higher than 100 eV
-            Nsiz = CEILING( (Emax - Scell(NSC)%Ei(1) + 20.0d0*numpar%Smear_DOS)/dE )
-            allocate(Scell(NSC)%DOS(2,Nsiz))
-            Scell(NSC)%DOS = 0.0d0
-            ! Partial DOS if needed:
-            select case (numpar%DOS_splitting)
-            case (1)
-               n_types = size(numpar%mask_DOS,2)
-               allocate(Scell(NSC)%partial_DOS(matter%N_KAO, n_types, Nsiz))
-               Scell(NSC)%partial_DOS = 0.0d0
-            case default
-               ! No need to sort DOS per orbitals
-            endselect
-            
-            Estart = Scell(NSC)%Ei(1) - 10.0d0*numpar%Smear_DOS	! [eV]
-            !$omp PARALLEL private(i)
-            !$omp do
-            do i = 1, Nsiz	! set energy grid [eV]
-               Scell(NSC)%DOS(1,i) = Estart + dE*dble(i-1)
-            enddo
-            !$omp end do
-            !$omp end parallel
-         endif
-         
-!           print*, 'get_DOS test 1'
-         
-         ! Now calculate the DOS:
-         select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma!
-         case (2,4,5)   ! multiple k points
-
-            ! Partial DOS if needed:
-            select case (numpar%DOS_splitting)
-            case (1)
-               call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err, Scell(NSC)%partial_DOS, numpar%mask_DOS)	! see below
-            case default    ! No need to sort DOS per orbitals
-               call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err)	! see below
-            endselect
-         case default	! gamma point
-            ! Partial DOS if needed:
-            select case (numpar%DOS_splitting)
-            case (1)
-               call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS, Scell(NSC)%partial_DOS, numpar%mask_DOS, Hij = Scell(NSC)%Ha)	! module "Electron_tools"
-            case default    ! No need to sort DOS per orbitals
-               call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS)	! module "Electron_tools"
-            endselect
-         end select
-!           call print_time_step('After DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
-      endif !  (numpar%save_DOS)
-   enddo ! NSC = 1, size(Scell) ! for all super-cells
-end subroutine get_DOS
-
-
-
-subroutine get_DOS_sort_complex(numpar, Scell, NSC, DOS, smearing, Err, partial_DOS, masks_DOS)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function 
-   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   integer, intent(in) :: NSC ! number of supercell
-   real(8), dimension(:,:), intent(inout) :: DOS	! [eV] grid; [a.u.] DOS
-   real(8), intent(in) :: smearing	! [eV] smearing used for DOS calculations
-   type(Error_handling), intent(inout) :: Err	! error save
-   real(8), dimension(:,:,:), allocatable, intent(inout), optional :: partial_DOS    ! partial DOS made of each orbital type, if required to be constructed
-   logical, dimension(:,:,:), intent(in), optional :: masks_DOS   ! partial DOS made of each orbital type, if required to be constructed
-   !---------------------------   
-   real(8), dimension(:), allocatable :: Ei	! [eV] current energy levels at the selected k point
-   complex, dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
-   complex, dimension(:,:), allocatable :: CSij	! overlap matrix of the nonorthogonal hamiltonian
-   real(8), dimension(:,:), allocatable :: DOS_cur	! [eV] grid; [a.u.] DOS
-   real(8), dimension(:,:,:), allocatable :: part_DOS_cur	! [a.u.] DOS
-   real(8) :: kx, ky, kz
-   integer :: ix, iy, iz, ixm, iym, izm, Ne, schem, Nsiz, Ngp
-   real(8), pointer :: ARRAY
-   logical :: do_partial
-   
-   Ne = size(Scell(1)%Ei)	! total number of energy levels
-   do_partial = (present(partial_DOS) .and. present(masks_DOS))
-   
-   ! Number of k-points along each k-vector
-   ixm = numpar%ixm
-   iym = numpar%iym
-   izm = numpar%izm
-   if (allocated(numpar%k_grid)) then
-      schem = 1	! user-defined grid is present
-      Nsiz = size(numpar%k_grid,1)	! size of the user provided grid
-   else
-      schem = 0	! no user-defined grid
-      Nsiz = ixm*iym*izm
-   endif
-   
-! !$omp PARALLEL private(ix, iy, iz, kx, ky, kz, CHij, CSij, Ei, DOS_cur)
-   allocate(Ei(Ne))
-   allocate(CHij(Ne,Ne))
-   allocate(CSij(Ne,Ne))
-   allocate(DOS_cur(2,size(DOS,2)))
-   DOS_cur = 0.0d0
-   DOS_cur(1,:) = DOS(1,:)
-   if (do_partial) then
-      allocate(part_DOS_cur(size(partial_DOS,1), size(partial_DOS,2), size(partial_DOS,3)))
-      part_DOS_cur = 0.0d0
-   endif
-   
-! !$omp do reduction( + : DOS)
-   do ix = 1, ixm
-      do iy = 1, iym
-         do iz = 1, izm
-            Ngp = (ix-1)*iym*ixm + (iy-1)*ixm + iz	! number of grid point for user defined grid
-            if (Ngp <= Nsiz) then
-               call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid)	! below
-               write(*,'(i3,i3,i3,f,f,f,a)') ix, iy, iz, kx, ky, kz, ' DOS'
-
-               ! Construct complex Hamiltonian from the real one for the given k-point:
-               call get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err)	! see below
-
-               ! And get the DOS for this k point:
-               if (do_partial) then
-                  call get_DOS_sort(Ei, DOS_cur, smearing, part_DOS_cur, masks_DOS, CHij = CHij)	! module "Electron_tools"
-                  partial_DOS(:,:,:) = partial_DOS(:,:,:) + part_DOS_cur(:,:,:)  ! save contributions of partial DOS
-               else
-                  call get_DOS_sort(Ei, DOS_cur, smearing)	! module "Electron_tools"
-               endif
-               DOS(2,:) = DOS(2,:) + DOS_cur(2,:)	! save contributions from all k points
-            endif
-         enddo ! iz
-      enddo ! iy
-   enddo ! ix
-! !$omp end do
-   deallocate (Ei, CHij, CSij, DOS_cur)
-! !$omp END PARALLEL
-
-   DOS(2,:) = DOS(2,:)/dble(Nsiz)
-   if (do_partial) then 
-      partial_DOS = partial_DOS/dble(Nsiz)
-      deallocate (part_DOS_cur)
-   endif
-end subroutine get_DOS_sort_complex
-
-
 
 subroutine k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, UPG)
    integer, intent(in) :: schem  ! scheme for k-points samping: 0=Monkhorst-Pack; 1=user provided grid
@@ -4151,6 +3998,164 @@ subroutine C60_super_cell(Scell) ! set supercell size and relative coords
       Scell%MDatoms(i)%forces%rep(:) = 0.0d0 ! we start from zero and then calculate the forces
    end do
 end subroutine C60_super_cell
+
+
+!================================================
+! Obsolete subroutines:
+
+! This subroutine is superceeded by the module "TB_complex"
+subroutine get_DOS(numpar, matter, Scell, Err) ! Obsolete subroutine
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Solid), intent(in) :: matter     ! material parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Error_handling), intent(inout) :: Err	! error save
+   !=====================================
+   integer :: NSC, Nsiz, Ei_siz, i, n_types
+   real(8) :: dE, Estart, Emax
+   real(8), dimension(:), allocatable :: Ei_cur
+
+   do NSC = 1, size(Scell) ! for all super-cells
+      if (numpar%save_DOS) then	! only calculate DOS if the user chose to do so:
+!           call print_time_step('Before DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
+         ! Set grid for DOS:
+         if (.not.allocated(Scell(NSC)%DOS)) then	! it's the first time, set it:
+            dE = 0.1d0	! [eV] uniform energy grid step for DOS
+            Ei_siz = size(Scell(NSC)%Ei)	! the uppermost energy level at the start
+            Emax = min(Scell(NSC)%Ei(Ei_siz),100.0)   ! no need to trace levels higher than 100 eV
+            Nsiz = CEILING( (Emax - Scell(NSC)%Ei(1) + 20.0d0*numpar%Smear_DOS)/dE )
+            allocate(Scell(NSC)%DOS(2,Nsiz))
+            Scell(NSC)%DOS = 0.0d0
+            ! Partial DOS if needed:
+            select case (numpar%DOS_splitting)
+            case (1)
+               n_types = size(numpar%mask_DOS,2)
+               allocate(Scell(NSC)%partial_DOS(matter%N_KAO, n_types, Nsiz))
+               Scell(NSC)%partial_DOS = 0.0d0
+            case default
+               ! No need to sort DOS per orbitals
+            endselect
+
+            Estart = Scell(NSC)%Ei(1) - 10.0d0*numpar%Smear_DOS	! [eV]
+            !$omp PARALLEL private(i)
+            !$omp do
+            do i = 1, Nsiz	! set energy grid [eV]
+               Scell(NSC)%DOS(1,i) = Estart + dE*dble(i-1)
+            enddo
+            !$omp end do
+            !$omp end parallel
+         endif
+
+!           print*, 'get_DOS test 1'
+
+         ! Now calculate the DOS:
+         select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma!
+         case (2,4,5)   ! multiple k points
+
+            ! Partial DOS if needed:
+            select case (numpar%DOS_splitting)
+            case (1)
+               call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err, Scell(NSC)%partial_DOS, numpar%mask_DOS)	! see below
+            case default    ! No need to sort DOS per orbitals
+               call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err)	! see below
+            endselect
+         case default	! gamma point
+            ! Partial DOS if needed:
+            select case (numpar%DOS_splitting)
+            case (1)
+               call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS, Scell(NSC)%partial_DOS, numpar%mask_DOS, Hij = Scell(NSC)%Ha)	! module "Electron_tools"
+            case default    ! No need to sort DOS per orbitals
+               call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS)	! module "Electron_tools"
+            endselect
+         end select
+!           call print_time_step('After DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
+      endif !  (numpar%save_DOS)
+   enddo ! NSC = 1, size(Scell) ! for all super-cells
+end subroutine get_DOS
+
+
+! This subroutine is superceeded by the module "TB_complex"
+subroutine get_DOS_sort_complex(numpar, Scell, NSC, DOS, smearing, Err, partial_DOS, masks_DOS) ! Obsolete subroutine
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   real(8), dimension(:,:), intent(inout) :: DOS	! [eV] grid; [a.u.] DOS
+   real(8), intent(in) :: smearing	! [eV] smearing used for DOS calculations
+   type(Error_handling), intent(inout) :: Err	! error save
+   real(8), dimension(:,:,:), allocatable, intent(inout), optional :: partial_DOS    ! partial DOS made of each orbital type, if required to be constructed
+   logical, dimension(:,:,:), intent(in), optional :: masks_DOS   ! partial DOS made of each orbital type, if required to be constructed
+   !---------------------------
+   real(8), dimension(:), allocatable :: Ei	! [eV] current energy levels at the selected k point
+   complex, dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
+   complex, dimension(:,:), allocatable :: CSij	! overlap matrix of the nonorthogonal hamiltonian
+   real(8), dimension(:,:), allocatable :: DOS_cur	! [eV] grid; [a.u.] DOS
+   real(8), dimension(:,:,:), allocatable :: part_DOS_cur	! [a.u.] DOS
+   real(8) :: kx, ky, kz
+   integer :: ix, iy, iz, ixm, iym, izm, Ne, schem, Nsiz, Ngp
+   real(8), pointer :: ARRAY
+   logical :: do_partial
+
+   Ne = size(Scell(1)%Ei)	! total number of energy levels
+   do_partial = (present(partial_DOS) .and. present(masks_DOS))
+
+   ! Number of k-points along each k-vector
+   ixm = numpar%ixm
+   iym = numpar%iym
+   izm = numpar%izm
+   if (allocated(numpar%k_grid)) then
+      schem = 1	! user-defined grid is present
+      Nsiz = size(numpar%k_grid,1)	! size of the user provided grid
+   else
+      schem = 0	! no user-defined grid
+      Nsiz = ixm*iym*izm
+   endif
+
+! !$omp PARALLEL private(ix, iy, iz, kx, ky, kz, CHij, CSij, Ei, DOS_cur)
+   allocate(Ei(Ne))
+   allocate(CHij(Ne,Ne))
+   allocate(CSij(Ne,Ne))
+   allocate(DOS_cur(2,size(DOS,2)))
+   DOS_cur = 0.0d0
+   DOS_cur(1,:) = DOS(1,:)
+   if (do_partial) then
+      allocate(part_DOS_cur(size(partial_DOS,1), size(partial_DOS,2), size(partial_DOS,3)))
+      part_DOS_cur = 0.0d0
+   endif
+
+! !$omp do reduction( + : DOS)
+   do ix = 1, ixm
+      do iy = 1, iym
+         do iz = 1, izm
+            Ngp = (ix-1)*iym*ixm + (iy-1)*ixm + iz	! number of grid point for user defined grid
+            if (Ngp <= Nsiz) then
+               call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid)	! below
+               write(*,'(i3,i3,i3,f,f,f,a)') ix, iy, iz, kx, ky, kz, ' DOS'
+
+               ! Construct complex Hamiltonian from the real one for the given k-point:
+               call get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err)	! see below
+
+               ! And get the DOS for this k point:
+               if (do_partial) then
+                  call get_DOS_sort(Ei, DOS_cur, smearing, part_DOS_cur, masks_DOS, CHij = CHij)	! module "Electron_tools"
+                  partial_DOS(:,:,:) = partial_DOS(:,:,:) + part_DOS_cur(:,:,:)  ! save contributions of partial DOS
+               else
+                  call get_DOS_sort(Ei, DOS_cur, smearing)	! module "Electron_tools"
+               endif
+               DOS(2,:) = DOS(2,:) + DOS_cur(2,:)	! save contributions from all k points
+            endif
+         enddo ! iz
+      enddo ! iy
+   enddo ! ix
+! !$omp end do
+   deallocate (Ei, CHij, CSij, DOS_cur)
+! !$omp END PARALLEL
+
+   DOS(2,:) = DOS(2,:)/dble(Nsiz)
+   if (do_partial) then
+      partial_DOS = partial_DOS/dble(Nsiz)
+      deallocate (part_DOS_cur)
+   endif
+end subroutine get_DOS_sort_complex
+
 
 
 END MODULE TB
