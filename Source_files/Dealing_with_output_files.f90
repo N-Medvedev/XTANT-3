@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 22.08.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 31.08.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -640,6 +640,9 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
          write(FN_kappa, '(es25.16,es25.16, es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
             Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_mu_grid(i), Scell(NSC)%kappa_Ce_grid(i)
       enddo
+      write(FN_kappa, '(a)')
+      write(FN_kappa, '(a)')
+
       ! All shells resolved:
 !       do i_at = 1, Nat
 !          do i_types = 1, N_types
@@ -1238,7 +1241,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       !call create_file_header(numpar%FN_kappa, '#Time kappa')
       !call create_file_header(numpar%FN_kappa, '#[fs]  [W/(K*m)]')
       call create_file_header(numpar%FN_kappa, '#Te   kappa mu Ce')
-      call create_file_header(numpar%FN_kappa, '#[K]  [W/(K*m)]   [eV]  [J/(m^3 K)]')
+      call create_file_header(numpar%FN_kappa, '#[K]  [W/(K*m)]   [eV]  [J/(m^3*K)]')
    endif
 
    file_energies = trim(adjustl(file_path))//'OUTPUT_energies.dat'

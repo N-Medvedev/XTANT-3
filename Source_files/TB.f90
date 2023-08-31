@@ -33,7 +33,7 @@ use Atomic_tools, only : get_near_neighbours, total_forces, Potential_super_cell
                         Convert_reciproc_rel_to_abs, Rescale_atomic_velocities, get_kinetic_energy_abs, &
                         get_Ekin, save_last_timestep, Potential_super_cell_forces, &
                         make_time_step_atoms, make_time_step_supercell, make_time_step_atoms_Y4, make_time_step_supercell_Y4, &
-                        make_time_step_atoms_M
+                        make_time_step_atoms_M, distance_to_given_cell, shortest_distance
 use Electron_tools, only : set_initial_fe, update_fe, get_new_global_energy, find_band_gap, get_DOS_sort, &
                      get_electronic_heat_capacity, electronic_entropy, Diff_Fermi_E, get_low_e_energy, get_total_el_energy
 use Nonadiabatic, only : Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, Electron_ion_collision_int, get_G_ei
@@ -1212,40 +1212,28 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! optical coefficients, module "O
 !           print*, 'get_DOS test 1'
          
          ! Now calculate the DOS:
-         select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma
-         case (2)	! multiple k points
+         select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma!
+         case (2,4,5)   ! multiple k points
+
             ! Partial DOS if needed:
             select case (numpar%DOS_splitting)
             case (1)
-
-!                call print_time_step('DOSp:', 2.0, msec=.true.)   ! module "Little_subroutines"
-
                call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err, Scell(NSC)%partial_DOS, numpar%mask_DOS)	! see below
             case default    ! No need to sort DOS per orbitals
-
-!                call print_time_step('DOSc:', 2.0, msec=.true.)   ! module "Little_subroutines"
-
                call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err)	! see below
             endselect
          case default	! gamma point
             ! Partial DOS if needed:
-            
-            
             select case (numpar%DOS_splitting)
             case (1)
-!                 print*, 'get_DOS test 2a'
                call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS, Scell(NSC)%partial_DOS, numpar%mask_DOS, Hij = Scell(NSC)%Ha)	! module "Electron_tools"
-!                 print*, 'get_DOS test 3a'
             case default    ! No need to sort DOS per orbitals
-!                 print*, 'get_DOS test 2b'
                call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS)	! module "Electron_tools"
-!                 print*, 'get_DOS test 3b'
             endselect
          end select
 !           call print_time_step('After DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
-      endif	!  (numpar%save_DOS) 
-   enddo	! NSC = 1, size(Scell) ! for all super-cells
-!     print*, 'get_DOS test end'
+      endif !  (numpar%save_DOS)
+   enddo ! NSC = 1, size(Scell) ! for all super-cells
 end subroutine get_DOS
 
 
@@ -2102,9 +2090,10 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    complex(8), dimension(:,:), allocatable :: CHij_temp, CHij_non, CSij_save, CHij_orth, CWF_orth, cPPRx_0, cPPRy_0, cPPRz_0, CSij
    complex(8), dimension(:,:,:,:), allocatable :: cTnn_0, cTnn_c
    real(8), dimension(:), allocatable :: Norm1
-   integer :: Nsiz, j, nat, m, atom_2, i, j1, l, i1, k, norb, n, nn
+   real(8), dimension(3,3,3,3), target :: distances_to_image_cells
+   integer :: Nsiz, j, nat, m, atom_2, i, j1, l, i1, k, norb, n, nn, cell_x, cell_y, cell_z
    real(8), dimension(3,3) :: k_supce   ! reciprocal supercell vectors
-   real(8) :: temp, kx, ky, kz
+   real(8) :: temp, kx, ky, kz, zb(3), R, x, y, z
    real(8), target :: nol
    real(8), pointer :: x1, y1, z1
    complex(8) :: expfac, SH_1
@@ -2140,24 +2129,41 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    end if
 
 
+   if (.not.allocated(CSij_save)) allocate(CSij_save(Nsiz,Nsiz), source=cmplx(0.0d0,0.0d0))
    if (present(Sij)) then   ! it is nonorthogonal case:
       if (.not.allocated(CSij)) allocate(CSij(Nsiz,Nsiz))
-      if (.not.allocated(CSij_save)) allocate(CSij_save(Nsiz,Nsiz))
       CSij = dcmplx(0.0d0,0.0d0)	! to start with
-      CSij_save = dcmplx(0.0d0,0.0d0)	! to start with
       if (present(CSij_out)) then
          if (.not.allocated(CSij_out)) allocate(CSij_out(Nsiz,Nsiz), source=dcmplx(0.0d0,0.0d0))
       endif
    endif
    
+   ! Get reciprocal vectors:
    call Reciproc(Scell(NSC)%supce, k_supce) ! create reciprocal super-cell, module "Algebra_tools"
    call Convert_reciproc_rel_to_abs(ksx, ksy, ksz, k_supce, kx, ky, kz) ! get absolute k-values, molue "Atomic_tools"
+
+   ! Get distances to image cells:
+   do i = 1, 3 ! x
+      zb(1) = dble(i-2) ! -1:1
+      do j = 1, 3 ! y
+         zb(2) = dble(j-2) ! -1:1
+         do k = 1, 3 ! z
+            zb(3) = dble(k-2) ! -1:1
+            ! Get the distance to the replica of an atom #1 in the emage cell:
+            call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDAtoms, zb, 1, 1, R, x, y, z)  ! module "Atomic_tools"
+            ! Save it into an array:
+            distances_to_image_cells(i,j,k,1) = x
+            distances_to_image_cells(i,j,k,2) = y
+            distances_to_image_cells(i,j,k,3) = z
+         enddo ! k
+      enddo ! j
+   enddo ! i
 
 
    ! 1) Construct complex Hamiltonian and overlap:
    !$omp parallel
-   !$omp do private(j, m, atom_2, i, x1, y1, z1, expfac, j1, l, i1, k)
-   do j = 1,nat	! all atoms
+   !$omp do schedule(dynamic) private(j, m, atom_2, i, x1, y1, z1, R, cell_x, cell_y, cell_z, expfac, j1, l, i1, k)
+   do j = 1,nat   ! all atoms
       m = Scell(NSC)%Near_neighbor_size(j)
       do atom_2 = 0,m ! do only for atoms close to that one  
          if (atom_2 == 0) then
@@ -2167,9 +2173,20 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             z1 => nol
          else
             i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-            x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
-            y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
-            z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
+            !x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
+            !y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
+            !z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
+
+            ! Find the used image cell indices:
+            call shortest_distance(Scell(NSC), j, i, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
+            ! convert from cell index to array index:
+            cell_x = cell_x+2
+            cell_y = cell_y+2
+            cell_z = cell_z+2
+            ! get the distance to the given cell:
+            x1 => distances_to_image_cells(cell_x,cell_y,cell_z,1)
+            y1 => distances_to_image_cells(cell_x,cell_y,cell_z,2)
+            z1 => distances_to_image_cells(cell_x,cell_y,cell_z,3)
          endif ! (atom_2 .EQ. 0)
          
          if ((abs(kx) < 1.0d-14) .AND. (abs(ky) < 1.0d-14) .AND. (abs(kz) < 1.0d-14)) then
@@ -2222,6 +2239,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
       end if
    else  ! orthogonal
+      CSij_save = 0.0d0 ! exclude nonorthogonal contribution
       !select case (abs(numpar%optic_model))
       !case (2)   ! Trani
       if (abs(numpar%optic_model) == 2) then
@@ -2232,7 +2250,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       end if
    endif
    CHij = CHij_temp ! save for output
-   if (present(CSij_out)) then
+   if (present(CSij_out)) then ! diagonalized Hamiltonian (eigenfunctions)
       CSij_out = CHij ! output
    endif
 
@@ -2286,7 +2304,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                            cPRRz(k,l) = SH_1
                         endif
 
-                     else	! different atoms at distance {x,y,z}:
+                     else  ! different atoms at distance {x,y,z}:
                         SH_1 = CHij_non(k,l)
 !                         SH_1 = CHij_non(l,k)    ! testing
                         if (present(Sij)) then ! nonorthogonal Hamiltonian:
