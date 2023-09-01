@@ -1941,7 +1941,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    integer :: Nsiz, j, nat, m, atom_2, i, j1, l, i1, k, norb, n, nn, cell_x, cell_y, cell_z
    real(8), dimension(3,3) :: k_supce   ! reciprocal supercell vectors
    real(8) :: temp, kx, ky, kz, zb(3), R, x, y, z
-   real(8), target :: nol
+   real(8), target :: nol, dx, dy, dz
    real(8), pointer :: x1, y1, z1
    complex(8) :: expfac, SH_1
    character(200) :: Error_descript
@@ -2025,7 +2025,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             !z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
 
             ! Find the used image cell indices:
-            call shortest_distance(Scell(NSC), j, i, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
+            !call shortest_distance(Scell(NSC), j, i, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
+            call shortest_distance(Scell(NSC), i, j, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
             ! convert from cell index to array index:
             cell_x = cell_x+2
             cell_y = cell_y+2
@@ -2079,7 +2080,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       !select case (abs(numpar%optic_model))
       !case (2)   ! Trani
       if (abs(numpar%optic_model) == 2) then
-         call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth)    ! below
+         call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij)    ! below
       !case (4:5)   ! Graf-Vogl or KG
       elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
          !call diagonalize_complex8_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
@@ -2094,6 +2095,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       !case (4:5)  ! Graf-Vogl or KG
       elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CHij_orth=CHij_orth, CWF_orth=CWF_orth)    ! below
+         !CWF_orth = TRANSPOSE(CWF_orth)   ! test
       end if
    endif
    CHij = CHij_temp ! save for output
@@ -2143,9 +2145,6 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                            SH_1 = DCMPLX(0.27d0,0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
                            !SH_1 = DCMPLX(1.50d0,0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
 
-                           ! Testing alternative orthogonalized Hamiltonian:
-                           !SH_1 = DCMPLX(0.27d0,0.0d0) * CHij_orth(k,l)   ! wrong
-
                            cPRRx(k,l) = SH_1
                            cPRRy(k,l) = SH_1
                            cPRRz(k,l) = SH_1
@@ -2153,12 +2152,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 
                      else  ! different atoms at distance {x,y,z}:
                         SH_1 = CHij_non(k,l)
-!                         SH_1 = CHij_non(l,k)    ! testing
                         if (present(Sij)) then ! nonorthogonal Hamiltonian:
                            ! [1] Nonorthogonal expression:
                            SH_1 = SH_1 - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)  ! Correct
-                           ! Testing alternative orthogonalized Hamiltonian:
-                           !SH_1 = CHij_orth(k,l)  ! wrong
                         endif
 
                         cPRRx(k,l) = DCMPLX(x1,0.0d0)*SH_1
@@ -2210,18 +2206,23 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       endif
 
       !$omp parallel
-      !$omp do private(j, m, atom_2, i, x1, y1, z1, j1, l, i1, k, SH_1, n, nn)
-      do j = 1,nat	! all atoms
-         m = Scell(NSC)%Near_neighbor_size(j)
-         do atom_2 = 0,m ! do only for atoms close to that one
-            if (atom_2 == 0) then
-               i = j
-            else
-               i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-               x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
-               y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
-               z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
-            endif ! (atom_2 .EQ. 0)
+      !$omp do private(j, m, atom_2, i, x1, y1, z1, dx, dy, dz, j1, l, i1, k, SH_1, n, nn)
+      do j = 1,nat   ! all atoms
+         !m = Scell(NSC)%Near_neighbor_size(j)
+         !do atom_2 = 0,m ! do only for atoms close to that one
+            !if (atom_2 == 0) then
+            !   i = j
+            !else
+            !   i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+            !   x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
+            !   y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
+            !   z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
+            !endif ! (atom_2 .EQ. 0)
+         do i = 1,nat   ! all pairs of atoms
+            call shortest_distance(Scell(NSC), j, i, R, x1=dx, y1=dy, z1=dz) ! module "Atomic_tools"
+            x1 => dx
+            y1 => dy
+            z1 => dz
 
             if (i > 0) then
                do j1 = 1,norb	! all orbitals for sp3d5
@@ -2234,7 +2235,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                         else
                            ! Orthogonalized Hamiltonian:
                            ! i*(R-R') terms:
-                           SH_1 = DCMPLX(0.0d0, 0.27d0) * CHij_orth(k,l)
+                           !SH_1 = DCMPLX(0.0d0, 0.27d0) * CHij_orth(k,l)  ! standard
+                           SH_1 = -g_CI * DCMPLX(0.27d0, 0.0d0) * CHij_orth(k,l)   ! testing
 
                            cPRRx(k,l) = SH_1
                            cPRRy(k,l) = SH_1
@@ -2248,9 +2250,12 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                      else  ! different atoms at distance {x,y,z}:
                         SH_1 = CHij_orth(k,l)
                         ! i*(R-R') terms:
-                        cPRRx(k,l) = DCMPLX(0.0d0, x1)*SH_1
-                        cPRRy(k,l) = DCMPLX(0.0d0, y1)*SH_1
-                        cPRRz(k,l) = DCMPLX(0.0d0, z1)*SH_1
+!                         cPRRx(k,l) = DCMPLX(0.0d0, x1)*SH_1  ! standard
+!                         cPRRy(k,l) = DCMPLX(0.0d0, y1)*SH_1  ! standard
+!                         cPRRz(k,l) = DCMPLX(0.0d0, z1)*SH_1  ! standard
+                        cPRRx(k,l) = -g_CI * DCMPLX(x1, 0.0d0)*SH_1 ! testing
+                        cPRRy(k,l) = -g_CI * DCMPLX(y1, 0.0d0)*SH_1 ! testing
+                        cPRRz(k,l) = -g_CI * DCMPLX(z1, 0.0d0)*SH_1 ! testing
 
                         if (present(cTnn)) then
                            cTnn_c(k,l,1,1) = -(x1*x1) * CHij_orth(k,l)
@@ -2282,6 +2287,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       !$omp do
       do i = 1, Nsiz ! ensure WF normalization to 1
          Norm1(i) = SQRT( SUM( conjg(CWF_orth(:,i)) * CWF_orth(:,i) ) )
+         !print*, i, Norm1(i)    ! checked, it is 1
       enddo
       !$omp end do
       !$OMP BARRIER
@@ -2326,9 +2332,12 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       !$omp do
       do n = 1, Nsiz
          do nn = 1, Nsiz
-            cPRRx(n,nn) = SUM(conjg(CWF_orth(:,n))*cPPRx_0(:,nn)) / Norm1(n)
+            cPRRx(n,nn) = SUM(conjg(CWF_orth(:,n))*cPPRx_0(:,nn)) / Norm1(n)   ! correct
             cPRRy(n,nn) = SUM(conjg(CWF_orth(:,n))*cPPRy_0(:,nn)) / Norm1(n)
             cPRRz(n,nn) = SUM(conjg(CWF_orth(:,n))*cPPRz_0(:,nn)) / Norm1(n)
+!             cPRRx(n,nn) = SUM(conjg(CWF_orth(n,:))*cPPRx_0(:,nn)) / Norm1(n)  ! wrong
+!             cPRRy(n,nn) = SUM(conjg(CWF_orth(n,:))*cPPRy_0(:,nn)) / Norm1(n)
+!             cPRRz(n,nn) = SUM(conjg(CWF_orth(n,:))*cPPRz_0(:,nn)) / Norm1(n)
          enddo ! nn
       enddo ! n
       !$omp end do
@@ -2416,8 +2425,8 @@ subroutine diagonalize_complex_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
    Error_descript = ''  ! to start with, no error
    Nsiz = size(CHij,1)
    if (.not.allocated(Ei)) allocate(Ei(Nsiz))
-   ORTH: if (.not.present(CSij)) then ! orthogonal:
 
+   ORTH: if (.not.present(CSij)) then ! orthogonal:
       if (present(CHij_orth)) then  ! Save orthogonal Hamiltonian (for optical coefficients below)
          CHij_orth = CHij
       endif

@@ -2485,16 +2485,14 @@ subroutine distance_to_given_cell(Scell, NSC, atoms, zb, i1, j1, R, x, y, z, sx,
       z0 = z0 + (atoms(i1)%S(ik) - atoms(j1)%S(ik) + zb(ik))*Scell(NSC)%supce(ik,3) ! distance in Z
    enddo ! ik
    R = DSQRT(x0*x0 + y0*y0 + z0*z0) ! [A] get out distance
-   if (present(x) .and. present(y) .and. present(z)) then ! get out projections too:
-      x=x0
-      y=y0
-      z=z0
-   endif
-   if (present(sx) .AND. present(sy) .AND. present(sz)) then	! save the shortest distance projections
-      sx = atoms(i1)%S(1) - atoms(j1)%S(1) + zb(1)
-      sy = atoms(i1)%S(2) - atoms(j1)%S(2) + zb(2)
-      sz = atoms(i1)%S(3) - atoms(j1)%S(3) + zb(3)
-   endif
+   ! get out projections too:
+   if (present(x)) x=x0
+   if (present(y)) y=y0
+   if (present(z)) z=z0
+   ! save the shortest distance projections:
+   if (present(sx)) sx = atoms(i1)%S(1) - atoms(j1)%S(1) + zb(1)
+   if (present(sy)) sy = atoms(i1)%S(2) - atoms(j1)%S(2) + zb(2)
+   if (present(sz)) sz = atoms(i1)%S(3) - atoms(j1)%S(3) + zb(3)
 end subroutine distance_to_given_cell
 
 

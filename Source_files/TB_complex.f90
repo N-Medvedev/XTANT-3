@@ -123,13 +123,13 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       ! Get the parameters of the complex Hamiltonian:
       ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
          select type(ARRAY)
-         type is (TB_H_Pettifor) ! orthogonal
+         type is (TB_H_Pettifor)    ! orthogonal
             call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
             cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
-         type is (TB_H_Molteni)  ! orthogonal
+         type is (TB_H_Molteni)     ! orthogonal
             call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
             cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
-         type is (TB_H_Fu) ! orthogonal
+         type is (TB_H_Fu)          ! orthogonal
             call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
             cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
          type is (TB_H_NRL)   ! nonorthogonal
@@ -162,23 +162,24 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       !-------------------------------
       ! Get the parameters of the CDF:
       if ((numpar%optic_model == 4) .or. (numpar%optic_model == 5)) then ! if requested
-         call get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRRz, Ei, Eps_hw_temp)   ! below
+         call get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRRz, Ei, Eps_hw_temp)   ! module "Optical_parameters"
       else  ! skip it, if not reqired
          Eps_hw_temp = 0.0d0
       endif
-      ! Save data:
+      ! Save CDF data:
       Eps_hw = Eps_hw + Eps_hw_temp ! sum data at different k-points
 
       !-------------------------------
       ! If required, do Onsager coefficients (for electronic heat conductivity):
       if (numpar%do_kappa) then  ! if requested
          call get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
-                              Scell(NSC)%kappa_Te_grid, kappa_mu_grid_temp, kappa_Ce_grid_temp)   ! below
+                              Scell(NSC)%kappa_Te_grid, kappa_mu_grid_temp, kappa_Ce_grid_temp)   ! module "Optical_parameters"
       else  ! if not required
          kappa_temp = 0.0d0
          kappa_mu_grid_temp = 0.0d0
          kappa_Ce_grid_temp = 0.0d0
       endif
+      ! Save kappa - electronic heat conductivity data:
       kappa = kappa + kappa_temp ! sum up at different k-points
       kappa_mu_grid = kappa_mu_grid + kappa_mu_grid_temp    ! average mu
       kappa_Ce_grid = kappa_Ce_grid + kappa_Ce_grid_temp    ! average Ce

@@ -52,7 +52,7 @@ real(8), parameter :: m_gamm = 1.5d14  ! [1/s] gamma parameter
 
 real(8), parameter :: m_inv_sqrt_pi = 1.0d0/sqrt(g_Pi)
 real(8), parameter :: m_e_h = g_h/g_e
-real(8), parameter :: m_prefac = g_e**2 * g_Pi / (g_h*g_me**2)
+real(8), parameter :: m_prefac = g_e**2 / (g_h*g_me**2)
 
 
 
@@ -103,8 +103,8 @@ subroutine get_optical_parameters(numpar, matter, Scell, Err) ! optical coeffici
             ! nothing to do
          end select ! (numpar%optic_model)
 
-         ! Kappa (if requested):
-         if (numpar%do_kappa) call get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
+         ! Kappa (if requested): -- Obsolete. Kappa will be calculated separately in module "TB_complex"
+         !if (numpar%do_kappa) call get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, Scell(NSC)%eps%all_w, Err)    ! below
       endif ! do_together
       
       !-------------------------------------
