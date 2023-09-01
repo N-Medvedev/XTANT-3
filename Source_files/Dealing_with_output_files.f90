@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 31.08.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 01.09.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -4199,13 +4199,13 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(text2, '(i10)') numpar%iym
          write(text3, '(i10)') numpar%izm
          if (allocated(numpar%k_grid)) then
-            write(print_to,'(a,a,a,a,a,a)') ' сalculated on the user-defined grid for points: ', &
+            write(print_to,'(a,a,a,a,a,a)') ' calculated on the user-defined grid for points: ', &
                trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
          else
-            write(print_to,'(a,a,a,a,a,a)') ' сalculated on Monkhorst-Pack grid for points: ', &
+            write(print_to,'(a,a,a,a,a,a)') ' calculated on Monkhorst-Pack grid for points: ', &
                trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
          endif
-      case default	! gamma point
+      case default   ! gamma point
          write(print_to,'(a)') ' calculated at the Gamma point'
       end select
       optional_output = .true.   ! there is at least some optional output

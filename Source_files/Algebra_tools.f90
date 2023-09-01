@@ -1371,6 +1371,36 @@ end subroutine mkl_matrix_mult_c8
 
 ! Create a matrix of reciprocal vectors:
 subroutine Reciproc(M1, R1)
+   real(8), dimension(3,3), intent(in) :: M1    ! matrix of vectors
+   real(8), dimension(3,3), intent(out) :: R1   ! matrix of reciprocal-space vectors
+   real(8), dimension(3) :: vec
+   real(8) :: Vol, Pi2_Vol
+
+   ! Get volume:
+   call Det_3x3(M1,Vol) ! below
+
+   if (isnan(Vol)) then
+      print*, 'Error #1 in Reciproc, undefined volume: ', Vol
+      R1(:,:) = 0.0d0
+   elseif (Vol == 0.0d0) then
+      print*, 'Error #2 in Reciproc, zero volume: ', Vol
+      R1(:,:) = 0.0d0
+   else
+      Pi2_Vol = 2.0d0 * g_Pi / Vol
+
+      call Cross_Prod(M1(2,:), M1(3,:), vec) ! below
+      R1(1,:) = Pi2_Vol * vec(:)
+
+      call Cross_Prod(M1(3,:), M1(1,:), vec) ! below
+      R1(2,:) = Pi2_Vol * vec(:)
+
+      call Cross_Prod(M1(1,:), M1(2,:), vec) ! below
+      R1(3,:) = Pi2_Vol * vec(:)
+   endif
+end subroutine Reciproc
+
+
+subroutine Reciproc_old(M1, R1)
    real(8), dimension(3,3), intent(in) :: M1 ! matrix of vectors
    real(8), dimension(3,3), intent(out) :: R1 ! matrix of reciprocal-space vectors
    real(8), dimension(3) :: vec
@@ -1393,7 +1423,7 @@ subroutine Reciproc(M1, R1)
    if (isnan(R1(3,1))) print*, 'R1(3,1) is nan in "Reciproc"'
    if (isnan(R1(3,2))) print*, 'R1(3,2) is nan in "Reciproc"'
    if (isnan(R1(3,3))) print*, 'R1(3,3) is nan in "Reciproc"'
-end subroutine Reciproc
+end subroutine Reciproc_old
 
 
 ! This subroutine calculates the cross-product of two 3-d vectors:
