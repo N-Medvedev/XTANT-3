@@ -1878,7 +1878,7 @@ subroutine get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, kx, 
 end subroutine get_complex_Hamiltonian_new
 
 
-subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err)
+subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err, flag_old)
    type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -1887,6 +1887,7 @@ subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, 
    complex, dimension(:,:), intent(inout), allocatable :: CSij	! overlap matrix of the nonorthogonal hamiltonian
    real(8), intent(in) :: kx, ky, kz	! k point
    type(Error_handling), intent(inout) :: Err	! error save
+   logical, intent(in) :: flag_old  ! to eventually make a call of the new subroutine
    !-------------------------------
    ! Construct complex Hamiltonian from the real one for the given k-point:
    if ((abs(kx) < 1.0d-14) .AND. (abs(ky) < 1.0d-14) .AND. (abs(kz) < 1.0d-14)) then ! Gamma point:
@@ -2020,21 +2021,21 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             z1 => nol
          else
             i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-            !x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
-            !y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
-            !z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
+            x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
+            y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
+            z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
 
-            ! Find the used image cell indices:
-            !call shortest_distance(Scell(NSC), j, i, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
-            call shortest_distance(Scell(NSC), i, j, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
-            ! convert from cell index to array index:
-            cell_x = cell_x+2
-            cell_y = cell_y+2
-            cell_z = cell_z+2
-            ! get the distance to the given cell:
-            x1 => distances_to_image_cells(cell_x,cell_y,cell_z,1)
-            y1 => distances_to_image_cells(cell_x,cell_y,cell_z,2)
-            z1 => distances_to_image_cells(cell_x,cell_y,cell_z,3)
+!             ! Find the used image cell indices:
+!             !call shortest_distance(Scell(NSC), j, i, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
+!             call shortest_distance(Scell(NSC), i, j, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
+!             ! convert from cell index to array index:
+!             cell_x = cell_x+2
+!             cell_y = cell_y+2
+!             cell_z = cell_z+2
+!             ! get the distance to the given cell:
+!             x1 => distances_to_image_cells(cell_x,cell_y,cell_z,1)
+!             y1 => distances_to_image_cells(cell_x,cell_y,cell_z,2)
+!             z1 => distances_to_image_cells(cell_x,cell_y,cell_z,3)
          endif ! (atom_2 .EQ. 0)
          
          if ((abs(kx) < 1.0d-14) .AND. (abs(ky) < 1.0d-14) .AND. (abs(kz) < 1.0d-14)) then
@@ -2182,9 +2183,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       type is (TB_H_Fu)
          temp = 1.0d0
       type is (TB_H_NRL)
-         temp = 1.0d0   ! 0.5d0 for testing
+         temp = 0.5d0   ! factor of 2 missing somewhere...
       type is (TB_H_DFTB)
-         temp = 1.0d0
+         temp = 0.5d0   ! factor of 2 missing somewhere...
       type is (TB_H_3TB)
          temp = 1.0d0
       type is (TB_H_xTB)
@@ -2233,10 +2234,14 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                         if (j1 == i1) then
                            ! Skip the same orbital, no overlap
                         else
-                           ! Orthogonalized Hamiltonian:
                            ! i*(R-R') terms:
-                           !SH_1 = DCMPLX(0.0d0, 0.27d0) * CHij_orth(k,l)  ! standard
-                           SH_1 = -g_CI * DCMPLX(0.27d0, 0.0d0) * CHij_orth(k,l)   ! testing
+                           if (numpar%optic_model == 4) then ! orthogonal expression:
+                              ! Orthogonalized Hamiltonian:
+                              SH_1 = g_CI * DCMPLX(0.27d0, 0.0d0) * CHij_orth(k,l)   ! testing
+                           elseif (numpar%optic_model == 5) then
+                              ! [1] Nonorthogonal expression:
+                              SH_1 = g_CI * DCMPLX(0.27d0, 0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
+                           endif
 
                            cPRRx(k,l) = SH_1
                            cPRRy(k,l) = SH_1
@@ -2248,14 +2253,20 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                            endif
                         endif
                      else  ! different atoms at distance {x,y,z}:
-                        SH_1 = CHij_orth(k,l)
                         ! i*(R-R') terms:
-!                         cPRRx(k,l) = DCMPLX(0.0d0, x1)*SH_1  ! standard
-!                         cPRRy(k,l) = DCMPLX(0.0d0, y1)*SH_1  ! standard
-!                         cPRRz(k,l) = DCMPLX(0.0d0, z1)*SH_1  ! standard
-                        cPRRx(k,l) = -g_CI * DCMPLX(x1, 0.0d0)*SH_1 ! testing
-                        cPRRy(k,l) = -g_CI * DCMPLX(y1, 0.0d0)*SH_1 ! testing
-                        cPRRz(k,l) = -g_CI * DCMPLX(z1, 0.0d0)*SH_1 ! testing
+                        if (numpar%optic_model == 4) then ! orthogonalized expression:
+                           SH_1 = CHij_orth(k,l)
+                        elseif (numpar%optic_model == 5) then
+                           SH_1 = CHij_non(k,l)
+                           if (present(Sij)) then ! nonorthogonal Hamiltonian:
+                              ! [1] Nonorthogonal expression:
+                              SH_1 = SH_1 - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)  ! Correct
+                           endif
+                        endif
+
+                        cPRRx(k,l) = g_CI * DCMPLX(x1, 0.0d0)*SH_1
+                        cPRRy(k,l) = g_CI * DCMPLX(y1, 0.0d0)*SH_1
+                        cPRRz(k,l) = g_CI * DCMPLX(z1, 0.0d0)*SH_1
 
                         if (present(cTnn)) then
                            cTnn_c(k,l,1,1) = -(x1*x1) * CHij_orth(k,l)
@@ -4140,7 +4151,7 @@ subroutine get_DOS_sort_complex(numpar, Scell, NSC, DOS, smearing, Err, partial_
                write(*,'(i3,i3,i3,f,f,f,a)') ix, iy, iz, kx, ky, kz, ' DOS'
 
                ! Construct complex Hamiltonian from the real one for the given k-point:
-               call get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err)	! see below
+               call get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err, .true.)	! see below
 
                ! And get the DOS for this k point:
                if (do_partial) then

@@ -3820,9 +3820,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          if (numpar%optic_model < 0) then
             write(print_to,'(a)') '  Probe-pulse is calculated with Graf-Vogl approach'
          else if (numpar%optic_model == 5) then
-            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood (adjusted) approach'
+            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood non-orthogonal'
          else
-            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood approach'
+            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood orthogonalized'
          endif
          write(print_to,'(a)') ' with the following parameters of the probe:'
          write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', &
