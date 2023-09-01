@@ -2383,6 +2383,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 
       ! Convert in SI units of momentum:
       temp = g_me/g_h * g_e*1.0d-10 ! [kg*m/s]
+      if (present(Sij)) temp = temp*sqrt(0.5d0) ! correcting factor
       cPRRx = cPRRx * temp
       cPRRy = cPRRy * temp
       cPRRz = cPRRz * temp
