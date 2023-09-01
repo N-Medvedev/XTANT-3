@@ -2021,21 +2021,21 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             z1 => nol
          else
             i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
-            x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
-            y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
-            z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
+!             x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
+!             y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
+!             z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
 
-!             ! Find the used image cell indices:
-!             !call shortest_distance(Scell(NSC), j, i, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
-!             call shortest_distance(Scell(NSC), i, j, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
-!             ! convert from cell index to array index:
-!             cell_x = cell_x+2
-!             cell_y = cell_y+2
-!             cell_z = cell_z+2
-!             ! get the distance to the given cell:
-!             x1 => distances_to_image_cells(cell_x,cell_y,cell_z,1)
-!             y1 => distances_to_image_cells(cell_x,cell_y,cell_z,2)
-!             z1 => distances_to_image_cells(cell_x,cell_y,cell_z,3)
+            ! Find the used image cell indices:
+            !call shortest_distance(Scell(NSC), j, i, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
+            call shortest_distance(Scell(NSC), i, j, R, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z) ! module "Atomic_tools"
+            ! convert from cell index to array index:
+            cell_x = cell_x+2
+            cell_y = cell_y+2
+            cell_z = cell_z+2
+            ! get the distance to the given cell:
+            x1 => distances_to_image_cells(cell_x,cell_y,cell_z,1)
+            y1 => distances_to_image_cells(cell_x,cell_y,cell_z,2)
+            z1 => distances_to_image_cells(cell_x,cell_y,cell_z,3)
          endif ! (atom_2 .EQ. 0)
          
          if ((abs(kx) < 1.0d-14) .AND. (abs(ky) < 1.0d-14) .AND. (abs(kz) < 1.0d-14)) then
@@ -2383,7 +2383,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 
       ! Convert in SI units of momentum:
       temp = g_me/g_h * g_e*1.0d-10 ! [kg*m/s]
-      if (present(Sij)) temp = temp*sqrt(0.5d0) ! correcting factor
+      if ( present(Sij) .and. (numpar%optic_model /= 4) ) then ! for non-orthogonal calculations only
+         temp = temp*sqrt(0.5d0) ! correcting factor
+      endif
       cPRRx = cPRRx * temp
       cPRRy = cPRRy * temp
       cPRRz = cPRRz * temp
