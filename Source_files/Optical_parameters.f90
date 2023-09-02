@@ -637,21 +637,21 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
             select case(numpar%optic_model)
             case (4:5) ! full calculations
                ! (P) * (P) [2]:
-!                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
-!                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
-!                A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
+               A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
+               A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
+               A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
+
+               B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) + aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
+               B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) + aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
+               B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) + aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
+
+!                A_sigma(n,m,1,1) = dcmplx(dconjg(cPRRx(n,m))) * dcmplx(cPRRx(n,m))
+!                A_sigma(n,m,2,2) = dcmplx(dconjg(cPRRy(n,m))) * dcmplx(cPRRy(n,m))
+!                A_sigma(n,m,3,3) = dcmplx(dconjg(cPRRz(n,m))) * dcmplx(cPRRz(n,m))
 !
-!                B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) + aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
-!                B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) + aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
-!                B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) + aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
-
-               A_sigma(n,m,1,1) = dcmplx(dconjg(cPRRx(n,m))) * dcmplx(cPRRx(n,m))
-               A_sigma(n,m,2,2) = dcmplx(dconjg(cPRRy(n,m))) * dcmplx(cPRRy(n,m))
-               A_sigma(n,m,3,3) = dcmplx(dconjg(cPRRz(n,m))) * dcmplx(cPRRz(n,m))
-
-               B_sigma(n,m,1,1) = 0.0d0   !aimag(dconjg(cPRRx(n,m)) * cPRRx(n,m))
-               B_sigma(n,m,2,2) = 0.0d0   !aimag(dconjg(cPRRx(n,m)) * cPRRx(n,m))
-               B_sigma(n,m,3,3) = 0.0d0   !aimag(dconjg(cPRRx(n,m)) * cPRRx(n,m))
+!                B_sigma(n,m,1,1) = 0.0d0   !aimag(dconjg(cPRRx(n,m)) * cPRRx(n,m))
+!                B_sigma(n,m,2,2) = 0.0d0   !aimag(dconjg(cPRRx(n,m)) * cPRRx(n,m))
+!                B_sigma(n,m,3,3) = 0.0d0   !aimag(dconjg(cPRRx(n,m)) * cPRRx(n,m))
 
             case (-5) ! only real part, to test
                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
@@ -707,11 +707,11 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
             if ( (n /= m) .and. (abs(w_mn) > prec) ) then   ! nondegenerate levels
                w_mn = w_mn / m_e_h   ! [1/s] frequency point
 
-               !denom = (w_mn + w)**2 + m_gamm**2
-               denom = (-w_mn + w)**2 + m_gamm**2   ! test
+               denom = (w_mn + w)**2 + m_gamm**2
+               !denom = (-w_mn + w)**2 + m_gamm**2   ! test [M]
                g_sigma = m_gamm / denom
-               !w_sigma = (w_mn + w) / denom
-               w_sigma = (-w_mn + w) / denom  ! test
+               w_sigma = (w_mn + w) / denom
+               !w_sigma = (-w_mn + w) / denom  ! test [M]
 
                ! Optical conductivity / w:
                ! [ D ]
@@ -730,9 +730,9 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
 !                call split_into_orders(temp_2, Re_small(2,2), Re_mid(2,2), Re_large(2,2))   ! below
 !                call split_into_orders(temp_3, Re_small(3,3), Re_mid(3,3), Re_large(3,3))   ! below
 !
-!                temp_1 = f_nm_w_nm(n,m) * (-A_sigma(n,m,1,1) * w_sigma)
-!                temp_2 = f_nm_w_nm(n,m) * (-A_sigma(n,m,2,2) * w_sigma)
-!                temp_3 = f_nm_w_nm(n,m) * (-A_sigma(n,m,3,3) * w_sigma)
+!                temp_1 = f_nm_w_nm(n,m) * (-A_sigma(n,m,1,1) * w_sigma)   ! test [M]
+!                temp_2 = f_nm_w_nm(n,m) * (-A_sigma(n,m,2,2) * w_sigma)   ! test [M]
+!                temp_3 = f_nm_w_nm(n,m) * (-A_sigma(n,m,3,3) * w_sigma)   ! test [M]
 !                call split_into_orders(temp_1, Im_small(1,1), Im_mid(1,1), Im_large(1,1))   ! below
 !                call split_into_orders(temp_2, Im_small(2,2), Im_mid(2,2), Im_large(2,2))   ! below
 !                call split_into_orders(temp_3, Im_small(3,3), Im_mid(3,3), Im_large(3,3))   ! below
