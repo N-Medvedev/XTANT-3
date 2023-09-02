@@ -689,7 +689,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
             f_nm_w_nm(n,m) = (Scell(NSC)%fe(n) - Scell(NSC)%fe(m)) / w_mn**2
 
             select case(numpar%optic_model)
-            case (4) ! full calculations
+            case (4:5) ! full calculations
                ! (P) * (P) [2]:
                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
@@ -699,7 +699,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
                B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) + aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
                B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) + aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
 
-               ! (P*) * (P) [*]: SEEMS WRONG ?
+               ! (P*) * (P) [*]: WRONG
 !                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
 !                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
 !                A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
@@ -707,7 +707,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
 !                B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) - aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
 !                B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) - aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
 !                B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) - aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
-            case (5) ! only real part (empirical adjustment!)
+            case (-5) ! only real part, to test
                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n))
                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n))
                A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n))
@@ -764,34 +764,6 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
-
-            ! [ C ] IDENTICAL TO D
-!             Re_eps_ij(1,1) = Re_eps_ij(1,1) - f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma - B_sigma(n,m,1,1) * w_sigma)
-!             Re_eps_ij(2,2) = Re_eps_ij(2,2) - f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma - B_sigma(n,m,2,2) * w_sigma)
-!             Re_eps_ij(3,3) = Re_eps_ij(3,3) - f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma - B_sigma(n,m,3,3) * w_sigma)
-!
-!             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
-!             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
-!             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
-
-            ! [ B ] IDENTICAL TO D
-!             Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma + B_sigma(n,m,1,1) * w_sigma)
-!             Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma + B_sigma(n,m,2,2) * w_sigma)
-!             Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma + B_sigma(n,m,3,3) * w_sigma)
-!
-!             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma - B_sigma(n,m,1,1) * g_sigma)
-!             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma - B_sigma(n,m,2,2) * g_sigma)
-!             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma - B_sigma(n,m,3,3) * g_sigma)
-
-            ! [ A ] SEEMS WRONG ?
-!             Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
-!             Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
-!             Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
-!
-!             Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (-A_sigma(n,m,1,1) * g_sigma + B_sigma(n,m,1,1) * w_sigma)
-!             Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (-A_sigma(n,m,2,2) * g_sigma + B_sigma(n,m,2,2) * w_sigma)
-!             Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (-A_sigma(n,m,3,3) * g_sigma + B_sigma(n,m,3,3) * w_sigma)
-
 
          enddo ! m
       enddo ! n

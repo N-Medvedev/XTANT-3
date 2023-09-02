@@ -44,7 +44,7 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (update 01.09.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 02.09.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -3820,9 +3820,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          if (numpar%optic_model < 0) then
             write(print_to,'(a)') '  Probe-pulse is calculated with Graf-Vogl approach'
          else if (numpar%optic_model == 5) then
-            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood (adjusted) approach'
+            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood non-orthogonal'
          else
-            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood approach'
+            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood orthogonalized'
          endif
          write(print_to,'(a)') ' with the following parameters of the probe:'
          write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', &
