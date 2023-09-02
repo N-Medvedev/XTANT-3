@@ -3726,7 +3726,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    call XTANT_label(print_to, label_ind) ! below
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '*  XTANT: X-ray-induced Thermal And Nonthermal Transitions  '
-   write(print_to,'(a,a)') '*  Current version of the code: ', trim(adjustl(m_XTANT_version))
+   write(print_to,'(a,a)') '* Current version of the code: ', trim(adjustl(m_XTANT_version))
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  A hybrid approach consisting of: '
    write(print_to,'(a)') ' (1) Monte Carlo '

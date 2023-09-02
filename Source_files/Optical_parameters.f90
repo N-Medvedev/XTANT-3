@@ -440,7 +440,8 @@ subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, E
       ! [Petrov et al., Data in brief 28 (2020) 104980]
       !n_s = dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na) * (matter%At_dens*1d6) ! [1/m^3]
       ne = dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na)  ! electrons per atom
-      n_s = matter%At_dens*1d6 / (ne*3.0d0) ! [1/m^3] empirically adjusted
+      n_s = matter%At_dens*1d6 * ne    ! [1/m^3] standard
+      !n_s = matter%At_dens*1d6 / (ne*3.0d0) ! [1/m^3] empirically adjusted
       v_F = sqrt(2.0d0*(Scell(NSC)%E_VB_top - Scell(NSC)%E_VB_bottom)*g_e/g_me)  ! [m/s]
 !       if (numpar%verbose) write(6,'(a,f,es,f)') 'Fermi-velosity: ', dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na), n_s, v_F
       pref_ke = g_Pi**2/6.0d0 * n_s * g_h * v_F**2
@@ -568,97 +569,23 @@ subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_
 end subroutine get_Onsager_ABC
 
 
-subroutine get_Onsager_coeffs_fast(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa) ! Wrong, does not work!
-   ! Following Ref. [6] for evaluation of Onsager coefficients, Eqs.(6-7) (assuming w->0)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
-   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
-   integer, intent(in) :: NSC ! number of supercell
-   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
-   real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
-   real(8), intent(out) :: kappa ! electron heat conductivity tensor [W/(K*m)]
-   !----------------------------
-   real(8) :: prec, Vol, prefact, delta, Eij, eta, A, B, C, P2, A_cur, B_cur, C_cur, E_mu, f_nm, f_delt
-   integer :: Nsiz, n, m
 
-
-   Nsiz = size(Ev)   ! number of energy levels
-   prec = 1.0d-11 ! [eV] acceptance for degenerate levels
-   eta = m_gamm * m_e_h ! finite width of delta function [eV]
-   ! Supercell volume:
-   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
-
-   ! Calculate only if requested:
-   if (numpar%do_kappa) then ! only if requested
-      if (Scell(NSC)%Te < 35.0d0) then ! effectively zero Te [K]
-         kappa = 0.0d0
-      else ! non-zero Te
-         prefact = g_Pi * g_h / (g_me**2 * Vol * Scell(NSC)%Te) ! prefactor in L22
-
-         A = 0.0d0   ! to start with
-         B = 0.0d0   ! to start with
-         C = 0.0d0   ! to start with
-
-         !$omp PARALLEL private(n, Eij, P2, E_mu, A_cur, B_cur, C_cur, f_nm)
-         !$omp do schedule(dynamic)  reduction( + : A, B, C)
-         do n = 1, Nsiz ! all energy points
-
-            ! Assume thermalized Fermi distribution:
-            f_nm = -d_Fermi_function(Scell(NSC)%mu, Scell(NSC)%TeeV, Ev(n), .false.) ! [1/eV] module "Little_subroutines"
-
-            ! Average momentum operator:
-            ! P * P [ 2 ]:
-!               P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
-!               dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
-!               dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
-            ! (P*) * P [ * ]:
-            P2 = ( dble(cPRRx(n,n)) * dble(cPRRx(n,n)) + aimag(cPRRx(n,n)) * aimag(cPRRx(n,n)) + &
-                   dble(cPRRy(n,n)) * dble(cPRRy(n,n)) + aimag(cPRRy(n,n)) * aimag(cPRRy(n,n)) + &
-                   dble(cPRRz(n,n)) * dble(cPRRz(n,n)) + aimag(cPRRz(n,n)) * aimag(cPRRz(n,n)) ) / 3.0d0
-
-            ! Collect terms (without prefactors):
-            E_mu = ( Ev(n) - Scell(NSC)%mu )   ! [eV]
-
-            B_cur = abs(P2) * f_nm
-            C_cur = B_cur * E_mu
-            A_cur = C_cur * E_mu
-
-            ! Sum up the terms:
-            A = A + A_cur
-            B = B + B_cur
-            C = C + C_cur
-         enddo ! n
-         !$omp end do
-         !$omp end parallel
-
-         ! Collect terms to calculate thermal conductivity:
-         !print*, prefact, A, C, B
-         if (abs(B) > 0.0d0) then
-            kappa = prefact * (A - C**2/B)   ! [W/(K*m)]
-         else
-            kappa = 0.0d0
-         endif
-
-      endif ! (Scell(NSC)%Te < 35.0d0)
-   endif ! numpar%do_kappa
-end subroutine get_Onsager_coeffs_fast
-
-
-
-
-subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRRz, Ev, Eps_hw_temp)
+subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in, cPRRz_in, Ev, Eps_hw_temp)
    type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(in) :: w_grid ! frequency grid [1/s]
-   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   complex(8), dimension(:,:), intent(in) :: cPRRx_in, cPRRy_in, cPRRz_in  ! effective momentum operators
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
    real(8), dimension(:,:), intent(inout) :: Eps_hw_temp ! all CDF data
    !----------------------------
-   real(8), dimension(3,3) :: Re_eps_ij, Im_eps_ij
+   real(8), dimension(3,3) :: Re_eps_ij, Im_eps_ij, Re_small, Re_mid, Re_large, Im_small, Im_mid, Im_large
+   real(8), dimension(:), allocatable :: fe_temp
    real(8), dimension(:,:), allocatable :: f_nm_w_nm
    real(8), dimension(:,:,:,:), allocatable :: A_sigma, B_sigma
+   complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    complex(8) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
-   real(8) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, temp_1, temp_2
+   real(8) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, temp_1, temp_2, temp_3
    real(8) :: w, Vol, prefact, w_mn, g_sigma, w_sigma, denom, prec
    real(8) :: pxpx, pxpy, pxpz, pypx, pypy, pypz, pzpx, pzpy, pzpz
    integer :: i, j, Nsiz, m, n, N_w
@@ -668,13 +595,30 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
    Nsiz = size(Ev)   ! number of energy levels
    N_w = size(w_grid)   ! number of frequency grid points
 
+   allocate(cPRRx(Nsiz,Nsiz))
+   allocate(cPRRy(Nsiz,Nsiz))
+   allocate(cPRRz(Nsiz,Nsiz))
+
    ! Supercell volume:
    Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
    prefact = m_prefac*g_ke/Vol  ! prefactor of sigma
 
+   cPRRx = sqrt(prefact)*cPRRx_in
+   cPRRy = sqrt(prefact)*cPRRy_in
+   cPRRz = sqrt(prefact)*cPRRz_in
+
    allocate(f_nm_w_nm(Nsiz,Nsiz), source = 0.0d0)
    allocate(A_sigma(Nsiz,Nsiz,3,3), source = 0.0d0)
    allocate(B_sigma(Nsiz,Nsiz,3,3), source = 0.0d0)
+
+
+   ! Get the Fermi function, assuming the same Te and mu for all k-points
+   ! #Note: it is extremely important to set proper distribution for k-points,
+   ! accounting for the fact that the electronic 'sea' should have the same surface
+   ! across the entire k-langscape. Setting wrong distribution affects the CDF drammatically!
+   allocate(fe_temp(Nsiz), source = 0.0d0)
+   call set_Fermi(Ev, Scell(NSC)%TeeV, Scell(NSC)%mu, fe_temp) ! module "Electron_tools"
+
 
    !-------------------
    ! 1) Get frequency-independent terms:
@@ -685,32 +629,34 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
          w_mn = (Ev(n) - Ev(m))
          if ( (n /= m) .and. (abs(w_mn) > prec) ) then   ! nondegenerate levels
             w_mn = w_mn/m_e_h   ! [1/s] frequency point
-            !f_nm_w_nm(n,m) = (Scell(NSC)%fe(n) - Scell(NSC)%fe(m)) / w_mn
-            f_nm_w_nm(n,m) = (Scell(NSC)%fe(n) - Scell(NSC)%fe(m)) / w_mn**2
+            ! Keeping same distirbution for different k-points  does not work:
+            !f_nm_w_nm(n,m) = (Scell(NSC)%fe(n) - Scell(NSC)%fe(m)) / w_mn**2
+            ! Instead, use the distirbution with the same electornic surface across k-landscape:
+            f_nm_w_nm(n,m) = (fe_temp(n) - fe_temp(m)) / w_mn**2
 
             select case(numpar%optic_model)
             case (4:5) ! full calculations
                ! (P) * (P) [2]:
+!                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
+!                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
+!                A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
+!
+!                B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) + aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
+!                B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) + aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
+!                B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) + aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
+
+               A_sigma(n,m,1,1) = dcmplx(dconjg(cPRRx(n,m))) * dcmplx(cPRRx(n,m))
+               A_sigma(n,m,2,2) = dcmplx(dconjg(cPRRy(n,m))) * dcmplx(cPRRy(n,m))
+               A_sigma(n,m,3,3) = dcmplx(dconjg(cPRRz(n,m))) * dcmplx(cPRRz(n,m))
+
+               B_sigma(n,m,1,1) = 0.0d0   !aimag(dconjg(cPRRx(n,m)) * cPRRx(n,m))
+               B_sigma(n,m,2,2) = 0.0d0   !aimag(dconjg(cPRRx(n,m)) * cPRRx(n,m))
+               B_sigma(n,m,3,3) = 0.0d0   !aimag(dconjg(cPRRx(n,m)) * cPRRx(n,m))
+
+            case (-5) ! only real part, to test
                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
                A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
-
-               B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) + aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
-               B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) + aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
-               B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) + aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
-
-               ! (P*) * (P) [*]: WRONG
-!                A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
-!                A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
-!                A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
-!
-!                B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) - aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
-!                B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) - aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
-!                B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) - aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
-            case (-5) ! only real part, to test
-               A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n))
-               A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n))
-               A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n))
 
                B_sigma(n,m,1,1) = 0.0d0
                B_sigma(n,m,2,2) = 0.0d0
@@ -745,34 +691,62 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
       ! Get the real and imaginary parts of CDF [1]:
       Re_eps_ij = 0.0d0 ! to start wirh
       Im_eps_ij = 0.0d0 ! to start wirh
+      ! To sum up different parts, avoiding small-large numbers problem:
+      Re_small = 0.0d0
+      Re_mid = 0.0d0
+      Re_large = 0.0d0
+      Im_small = 0.0d0
+      Im_mid = 0.0d0
+      Im_large = 0.0d0
 
 !       !$omp PARALLEL private(n, m, w_mn, denom, g_sigma, w_sigma)
 !       !$omp do schedule(dynamic) reduction( + : Re_eps_ij, Im_eps_ij)
       do n = 1, Nsiz ! all energy points
          do m = 1, Nsiz ! all energy points
-            w_mn = (Ev(n) - Ev(m))/m_e_h   ! [1/s] frequency point
-            denom = (w_mn + w)**2 + m_gamm**2
-            g_sigma = m_gamm / denom
-            w_sigma = (w_mn + w) / denom
+            w_mn = (Ev(n) - Ev(m))   ! [eV] frequency point
+            if ( (n /= m) .and. (abs(w_mn) > prec) ) then   ! nondegenerate levels
+               w_mn = w_mn / m_e_h   ! [1/s] frequency point
 
-            ! Optical conductivity / w:
-            ! [ D ]
-            Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma - B_sigma(n,m,1,1) * w_sigma)
-            Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma - B_sigma(n,m,2,2) * w_sigma)
-            Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma - B_sigma(n,m,3,3) * w_sigma)
+               !denom = (w_mn + w)**2 + m_gamm**2
+               denom = (-w_mn + w)**2 + m_gamm**2   ! test
+               g_sigma = m_gamm / denom
+               !w_sigma = (w_mn + w) / denom
+               w_sigma = (-w_mn + w) / denom  ! test
 
-            Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
-            Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
-            Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
+               ! Optical conductivity / w:
+               ! [ D ]
+               Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma - B_sigma(n,m,1,1) * w_sigma)
+               Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma - B_sigma(n,m,2,2) * w_sigma)
+               Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma - B_sigma(n,m,3,3) * w_sigma)
 
+               Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
+               Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
+               Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
+
+!                temp_1 = f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma)
+!                temp_2 = f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma)
+!                temp_3 = f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma)
+!                call split_into_orders(temp_1, Re_small(1,1), Re_mid(1,1), Re_large(1,1))   ! below
+!                call split_into_orders(temp_2, Re_small(2,2), Re_mid(2,2), Re_large(2,2))   ! below
+!                call split_into_orders(temp_3, Re_small(3,3), Re_mid(3,3), Re_large(3,3))   ! below
+!
+!                temp_1 = f_nm_w_nm(n,m) * (-A_sigma(n,m,1,1) * w_sigma)
+!                temp_2 = f_nm_w_nm(n,m) * (-A_sigma(n,m,2,2) * w_sigma)
+!                temp_3 = f_nm_w_nm(n,m) * (-A_sigma(n,m,3,3) * w_sigma)
+!                call split_into_orders(temp_1, Im_small(1,1), Im_mid(1,1), Im_large(1,1))   ! below
+!                call split_into_orders(temp_2, Im_small(2,2), Im_mid(2,2), Im_large(2,2))   ! below
+!                call split_into_orders(temp_3, Im_small(3,3), Im_mid(3,3), Im_large(3,3))   ! below
+            endif
          enddo ! m
       enddo ! n
 !       !$omp end do
 !       !$omp end parallel
 
-      ! Get the prefactors:
-      Re_eps_ij = prefact * Re_eps_ij
-      Im_eps_ij = prefact * Im_eps_ij
+      ! Get the prefactors: (Prefactors were already included in cPRR above!)
+      !Re_eps_ij = prefact * Re_eps_ij
+      !Im_eps_ij = prefact * Im_eps_ij
+!       Re_eps_ij = Re_small + Re_mid + Re_large  ! sum app different-orders terms
+!       Im_eps_ij = Im_small + Im_mid + Im_large  ! sum app different-orders terms
 
       ! Convert conductivity into CDF:
       !Eps_xx = dcmplx( 1.0d0 - 4.0d0*g_Pi*Im_eps_ij(1,1) / w, 4.0d0*g_Pi*Re_eps_ij(1,1) / w )
@@ -786,7 +760,6 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
       ! Average CDF:
       Im_eps = aimag(Eps_xx + Eps_yy + Eps_zz) / 3.0d0
       Re_eps = dble (Eps_xx + Eps_yy + Eps_zz) / 3.0d0
-      !print*, 'get_Kubo_Greenwood_CDF', Im_eps, Re_eps
 
       ! DC-conductivity:
       dc_cond = Im_eps*w*g_e0     ! averaged over x, y, and z
@@ -801,7 +774,8 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRR
    enddo ! i
 
    ! Clean up:
-   deallocate(f_nm_w_nm)
+   deallocate(f_nm_w_nm, fe_temp)
+   deallocate(cPRRx, cPRRy, cPRRz)
 end subroutine get_Kubo_Greenwood_CDF
 
 

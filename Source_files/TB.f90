@@ -2199,12 +2199,15 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    !---------------------------------------
    !case (4:5) ! Graf-Vogl or Kubo-Greenwood
    elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
-      if (.not.allocated(cPRRx)) allocate(cPRRx(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
-      if (.not.allocated(cPRRy)) allocate(cPRRy(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
-      if (.not.allocated(cPRRz)) allocate(cPRRz(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
+      if (.not.allocated(cPRRx)) allocate(cPRRx(Nsiz,Nsiz))
+      if (.not.allocated(cPRRy)) allocate(cPRRy(Nsiz,Nsiz))
+      if (.not.allocated(cPRRz)) allocate(cPRRz(Nsiz,Nsiz))
       if (present(cTnn)) then
          if (.not.allocated(cTnn)) allocate(cTnn(Nsiz,Nsiz,3,3), source = 0.0d0)
       endif
+      cPRRx = dcmplx(0.0d0,0.0d0)	! to start with
+      cPRRy = dcmplx(0.0d0,0.0d0)	! to start with
+      cPRRz = dcmplx(0.0d0,0.0d0)	! to start with
 
       !$omp parallel
       !$omp do private(j, m, atom_2, i, x1, y1, z1, dx, dy, dz, j1, l, i1, k, SH_1, n, nn)
