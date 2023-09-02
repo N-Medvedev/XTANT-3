@@ -2238,7 +2238,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                            if (numpar%optic_model == 4) then ! orthogonal expression:
                               ! Orthogonalized Hamiltonian:
                               SH_1 = g_CI * DCMPLX(0.27d0, 0.0d0) * CHij_orth(k,l)   ! testing
-                           elseif (numpar%optic_model == 5) then
+                           else  ! nonorthogonal
                               ! [1] Nonorthogonal expression:
                               SH_1 = g_CI * DCMPLX(0.27d0, 0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
                            endif
@@ -2256,7 +2256,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                         ! i*(R-R') terms:
                         if (numpar%optic_model == 4) then ! orthogonalized expression:
                            SH_1 = CHij_orth(k,l)
-                        elseif (numpar%optic_model == 5) then
+                        else  ! nonorthogonal
                            SH_1 = CHij_non(k,l)
                            if (present(Sij)) then ! nonorthogonal Hamiltonian:
                               ! [1] Nonorthogonal expression:
@@ -2295,10 +2295,14 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       !$omp end do
       !$OMP BARRIER
 
+      if (numpar%optic_model /= 4) then ! use nonorthogonal wave-functions:
+         CWF_orth = CHij_temp ! copy them into this array used below
+      endif
+
       !$omp do
       do i = 1, Nsiz ! ensure WF normalization to 1
          Norm1(i) = SQRT( SUM( conjg(CWF_orth(:,i)) * CWF_orth(:,i) ) )
-         !print*, i, Norm1(i)    ! checked, it is 1
+         !print*, i, Norm1(i)  ! not 1 for non-orthogonal Hamiltonians
       enddo
       !$omp end do
       !$OMP BARRIER
@@ -2384,7 +2388,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       ! Convert in SI units of momentum:
       temp = g_me/g_h * g_e*1.0d-10 ! [kg*m/s]
       if ( present(Sij) .and. (numpar%optic_model /= 4) ) then ! for non-orthogonal calculations only
-         temp = temp*sqrt(0.5d0) ! correcting factor
+         temp = temp*0.5d0 ! correcting factor
       endif
       cPRRx = cPRRx * temp
       cPRRy = cPRRy * temp

@@ -5053,7 +5053,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       ! They are connected: either both are calculated for multiple (and the same) k-points,
       ! or DOS calculation takes precedence, and probe is switched off:
       if ((numpar%optic_model /= 2) .and. (abs(numpar%optic_model) /= 4) .and. (numpar%optic_model /= 5)) then
-         numpar%optic_model = -2    ! complex, for given number of k-points for DOS calculations
+         numpar%optic_model = -5    ! complex, for given number of k-points for DOS calculations
       endif
       numpar%save_DOS = .true.   ! included
    elseif (N == 1) then ! calculate with the same model used for the probe pulse (gamma-point or multiple k-points)
