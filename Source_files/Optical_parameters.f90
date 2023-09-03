@@ -529,7 +529,7 @@ subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_
          ! Get summ of P2:
          P2 = 0.0d0
          do m = 1, Nsiz
-            !if ( (n /= m) ) then   ! nondegenerate levels
+            if ( (n /= m) ) then   ! nondegenerate levels
                ! Average momentum operator:
                P2 = P2 + ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
                      dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
@@ -537,7 +537,7 @@ subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_
 !                P2 = P2 +( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
 !                      dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
 !                      dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
-            !endif ! (n /= m)
+            endif ! (n /= m)
          enddo ! m
 
          ! Collect terms (without prefactors)
