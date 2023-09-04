@@ -27,6 +27,7 @@
 !   "PENELOPE-2014 A Code System for Monte Carlo Simulation of Electron and Photon Transport", OECD (2014)
 ! [2] R. Rymzhanov et al. Phys. Status Solidi B 252, 159-164 (2015) / DOI 10.1002/pssb.201400130
 ! [3] M. Azzolini et al. J. Phys. Condens. Matter 31, 055901 (2019)
+! [4] N. Medvedev et al., Advanced Theory and Simulations 5, 2200091 (2022)
 
 
 
@@ -52,6 +53,43 @@ public :: Get_mfps, Get_photon_attenuation, TotIMFP
 
 !GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG
 !General functions:
+
+
+
+subroutine define_single_pole_CDF(n_at, me_eff, N_VB_el, Egap, E0, Gamm, A)
+   real(8), intent(in) :: n_at   ! [1/m^3] atomic density of the target
+   real(8), intent(in) :: me_eff ! [me] CB electron effective mass coefficient
+   real(8), intent(in) :: N_VB_el   ! VB or CB electrons per atom
+   real(8), intent(in) :: Egap   ! [eV] bandgap of the material
+   real(8), intent(out) :: E0, Gamm, A    ! CDF coefficients
+   !---------------------
+   real(8) :: Omega, ksum, fsum
+   real(8) :: A_arr(1), G_arr(1), E0_arr(1)  ! define the arrays
+
+   ! Set CDF coefficients according to the single-pole approximation [4]:
+
+   ! E0 is set at plasma frequency (with electron effective mass):
+   Omega = w_plasma(n_at, Mass=me_eff*g_me)  ! below
+   ! Define E0 coefficient:
+   E0_arr(1) = sqrt((g_h/g_e)*(g_h/g_e) * Omega * N_VB_el)  ! [eV]
+
+   ! Gamma set equal to E0 without effective mass (empirical approximation):
+   G_arr(1) = E0_arr(1)
+
+   ! A is set via normalization (sum rule):
+   A_arr(1) = 1.0d0   ! just to get sum rule to renormalize below
+   ! Get plasmon omega for free-electrons:
+   Omega = w_plasma(n_at)  ! module "CDF_Ritchi"
+   call sumrules(A_arr, E0_arr, G_arr, ksum, fsum, Egap, Omega)   ! below
+   A_arr(1) = N_VB_el/ksum
+
+   ! Output:
+   A = A_arr(1)
+   E0 = E0_arr(1)
+   Gamm = G_arr(1)
+end subroutine define_single_pole_CDF
+
+
 
 subroutine Mean_free_path(E, mfps, MFP_cur, inversed) ! finds total mean free path in [A]
 ! from arrays, when they are already precalculated
@@ -261,7 +299,7 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
          write(chtemp,'(i6)') INT(matter%Atoms(i)%Ip(j))
          if (j > 1) then    ! check if it's a degenerate level:
             if (INT(matter%Atoms(i)%Ip(j-1)) == INT(matter%Atoms(i)%Ip(j))) then
-               write(chtemp,'(i6)') INT(matter%Atoms(i)%Ip(j) - 0.5)    ! artificially shift it a little bit to make it not exactly degenerate
+               write(chtemp,'(i6)') INT(matter%Atoms(i)%Ip(j) - 0.5d0)    ! artificially shift it a little bit to make it not exactly degenerate
             endif
          endif
          
@@ -795,11 +833,22 @@ function Diel_func(A,E,Gamma,dE,dq) ! fit functions in Ritchi algorithm
     Diel_func = A*Gamma*dE/(dE2E02*dE2E02 + Gamma*Gamma*dE2)
 end function Diel_func
 
-function w_plasma(At_dens)
+
+function w_plasma(At_dens, Mass)
    real(8) w_plasma ! plasma frequency [1/s]
    real(8), intent(in) :: At_dens   ! atomic density [1/m^3]
-   w_plasma = (4.0d0*g_Pi*At_dens*g_e*g_e/(4.0d0*g_Pi*g_e0*g_me))
+   real(8), intent(in), optional :: Mass ! effective mass [kg]
+   !--------------------
+
+   !w_plasma = (4.0d0*g_Pi*At_dens*g_e*g_e/(4.0d0*g_Pi*g_e0*g_me))
+
+    if (present(Mass)) then  ! use user-provided mass:
+      w_plasma = At_dens*g_e*g_e/(g_e0*Mass)
+   else ! assume free electron
+      w_plasma = At_dens*g_e*g_e/(g_e0*g_me)
+   endif
 end function w_plasma
+
 
 subroutine sumrules(Afit, Efit, Gfit, ksum, fsum, x_min, Omega)
     real(8), dimension(:),  INTENT(in), target :: Afit ! A coefficient
@@ -823,6 +872,7 @@ subroutine sumrules(Afit, Efit, Gfit, ksum, fsum, x_min, Omega)
     fsum = f*2.0d0/g_Pi
     nullify(A1, E1, Gamma1)
 end subroutine sumrules
+
 
 function Int_Ritchi(A,E,Gamma,x) ! integral of the Ritchi function
     real(8) A, E, Gamma, x  ! parameters and variable

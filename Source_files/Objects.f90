@@ -894,12 +894,13 @@ type Numerics_param
    logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
    logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS
-   logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN
+   logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN, save_CDF
    integer :: Mulliken_model
    integer :: ind_fig_extention, change_size_step
    real(8) :: change_size_max, change_size_min
    real(8) :: kappa_Te_min, kappa_Te_max, kappa_dTe
    integer :: kappa_model
+   character(200) :: input_CDF_file
    character(4) :: fig_extention
    ! BOP parameters creation:
    logical :: create_BOP_repulse

@@ -35,11 +35,12 @@ use Objects
 use Atomic_tools, only : pair_correlation_function
 use Variables, only : g_numpar, g_matter
 use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution
-use Dealing_with_files, only : get_file_stat, copy_file, read_file
+use Dealing_with_files, only : get_file_stat, copy_file, read_file, close_file
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
 use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_dashline, &
                            m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL, m_Communication
+use Dealing_with_CDF, only : write_CDF_file
 
 implicit none
 PRIVATE
@@ -49,7 +50,7 @@ character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
 public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
-public :: XTANT_label, m_Error_log_file
+public :: XTANT_label, m_Error_log_file, printout_CDF_file
 
  contains
 
@@ -120,6 +121,28 @@ subroutine write_output_files(numpar, time, matter, Scell)
       
    enddo
 end subroutine write_output_files
+
+
+subroutine printout_CDF_file(numpar, matter, Scell)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   type(Solid), intent(in) :: matter ! parameters of the material
+   type(Super_cell), dimension(:), intent(in):: Scell ! super-cell with all the atoms inside
+   !----------------------------
+   character(200) :: file_name
+   integer :: NSC, FN
+   parameter (NSC = 1)  ! one supercell
+
+   if (numpar%save_CDF) then ! printout CDF file
+      file_name = trim(adjustl(numpar%output_path))//'OUTPUT_'//trim(adjustl(matter%Name))//'.cdf'
+      FN = 9998
+      open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'new')
+      ! Printout CDF-oscillators coefficients:
+      call write_CDF_file(FN, trim(adjustl(matter%Name)), trim(adjustl(matter%Chem)), matter%dens, &
+                           Scell(NSC)%mu, 0.0d0, matter%Atoms)   ! module "Dealing_with_CDF"
+
+      call close_file('close', FN=FN)  ! module "Dealing_with_files"
+   endif
+end subroutine printout_CDF_file
 
 
 
