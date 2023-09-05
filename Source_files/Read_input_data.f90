@@ -4487,6 +4487,9 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    !read(FN,*,IOSTAT=Reason) numpar%At_base
    read(FN, '(a)', IOSTAT=Reason) read_line
    read(read_line,*,IOSTAT=Reason) numpar%At_base, numpar%input_CDF_file, numpar%user_defined_E_gap
+   if (Reason /= 0) then ! try different order of variables
+      read(read_line,*,IOSTAT=Reason) numpar%At_base, numpar%user_defined_E_gap, numpar%input_CDF_file
+   endif
    if (Reason /= 0) then ! try 2 variables: including E_gap:
       numpar%user_defined_E_gap = -1.0d0  ! default
       numpar%input_CDF_file = ''  ! nullify it
