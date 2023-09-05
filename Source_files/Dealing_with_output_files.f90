@@ -45,7 +45,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 02.09.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 05.09.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -133,12 +133,12 @@ subroutine printout_CDF_file(numpar, matter, Scell)
    parameter (NSC = 1)  ! one supercell
 
    if (numpar%save_CDF) then ! printout CDF file
-      file_name = trim(adjustl(numpar%output_path))//'OUTPUT_'//trim(adjustl(matter%Name))//'.cdf'
+      file_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_Ritchie_'//trim(adjustl(matter%Name))//'.cdf'
       FN = 9998
       open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'new')
       ! Printout CDF-oscillators coefficients:
       call write_CDF_file(FN, trim(adjustl(matter%Name)), trim(adjustl(matter%Chem)), matter%dens, &
-                           Scell(NSC)%mu, 0.0d0, matter%Atoms)   ! module "Dealing_with_CDF"
+               (Scell(NSC)%E_VB_top-Scell(NSC)%E_VB_bottom), 0.0d0, matter%Atoms)   ! module "Dealing_with_CDF"
 
       call close_file('close', FN=FN)  ! module "Dealing_with_files"
    endif
@@ -4044,7 +4044,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    if (matter%dens < 1e6) then   ! real density:
       write(print_to,'(a,f10.3,a)') ' Density of the material: ', matter%dens,' [g/cm^3]'
       write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
-   else  ! in artificial cases, the dnsity may be wild:
+   else  ! in artificial cases, the density may be wild:
       write(print_to,'(a,es25.3,a)') ' Density of the material: ', matter%dens,' [g/cm^3]'
       write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
    endif

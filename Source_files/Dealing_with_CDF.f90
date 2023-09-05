@@ -198,25 +198,37 @@ subroutine write_CDF_file(FN, Material, Chem, dens, Efermi, c_sound, Atoms)
    type(At_data), dimension(:), intent(in) :: Atoms   ! all kinds of atoms of the compound
    !-------------------------
    integer :: N_KOA, i, j, k
+   character(200) :: line_to_write
 
    N_KOA = size(Atoms)  ! kinds of atoms
 
    write(FN,'(a)') trim(adjustl(Material)) ! material name
    write(FN,'(a)') trim(adjustl(Chem))     ! chemical formula
-   write(FN,'(f25.16, f25.16, f25.16, a)') dens, c_sound, Efermi, '   ! density [g/cm^3], speed of sound [m/s], Fermi level [eV]'
+   write(line_to_write,'(f15.6, f15.6, f15.6, a)') dens, c_sound, Efermi, '   ! density [g/cm^3], speed of sound [m/s], Fermi level [eV]'
+   write(FN,'(a)') trim(adjustl(line_to_write))
 
    AT_NUM:do i = 1, N_KOA ! for each kind of atoms:
-      write(FN,'(i4,a)') Atoms(i)%sh, '   ! number of shells in element: '//trim(adjustl(Atoms(i)%Name))
+      write(line_to_write,'(i4,a)') Atoms(i)%sh, '   ! number of shells in element: '//trim(adjustl(Atoms(i)%Name))
+      write(FN,'(a)') trim(adjustl(line_to_write))
 
-      SH_NUM:do j = 1, Atoms(i)%sh  ! for all shells
-         write(FN,'(i3, i4, f25.16, f25.16, es25.16E4, a)') Atoms(i)%N_CDF(j), Atoms(i)%Shl_dsgnr(j), &
+      if (allocated(Atoms(i)%N_CDF)) then
+         SH_NUM:do j = 1, Atoms(i)%sh  ! for all shells
+            write(line_to_write,'(i3, i4, f15.6, f15.6, es15.6E3, a)') Atoms(i)%N_CDF(j), Atoms(i)%Shl_dsgnr(j), &
                Atoms(i)%Ip(j), Atoms(i)%Ne_shell(j), Atoms(i)%Auger(j), &
                '  ! Oscillators, designator:'//trim(adjustl(Atoms(i)%Shell_name(j)))//', Ip [eV], Ne, Auger [fs]'
+            write(FN,'(a)') trim(adjustl(line_to_write))
 
-         CDF_NUM:do k = 1, Atoms(i)%N_CDF(j)  ! for all CDF-functions for this shell
-               write(FN,'(f25.16, f25.16, f25.16, a)') Atoms(i)%CDF(j)%E0(k), Atoms(i)%CDF(j)%A(k), Atoms(i)%CDF(j)%G(k), '   ! E0, A, G'
-         enddo CDF_NUM
-      enddo SH_NUM
+            CDF_NUM:do k = 1, Atoms(i)%N_CDF(j)  ! for all CDF-functions for this shell
+               write(line_to_write,'(f15.6, f15.6, f15.6, a)') Atoms(i)%CDF(j)%E0(k), Atoms(i)%CDF(j)%A(k), Atoms(i)%CDF(j)%G(k),&
+                                                                  '   ! E0, A, G'
+               write(FN,'(a)') trim(adjustl(line_to_write))
+            enddo CDF_NUM
+         enddo SH_NUM
+      else
+         write(FN,'(a)') '************************************************'
+         write(FN,'(a)') 'The Ritchie-Howie CDF-coefficients are undefined, cannot print them out!'
+         write(FN,'(a)') 'Probably, the cdf-file was not specified or specified incorrectly in INPUT.txt'
+      endif
    enddo AT_NUM
 end subroutine write_CDF_file
 

@@ -408,8 +408,14 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       ! Read atomic data:
       call read_atomic_parameters(matter, numpar, Err) ! below
       if (Err%Err) goto 3416  ! exit if something went wrong
-      Scell(i)%E_gap = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))	! [eV] band gap at the beginning
-      Scell(i)%N_Egap = -1	! just to start with something
+      if (numpar%user_defined_E_gap > -1.0d-14) then   ! user provided bandgap value, use it:
+         Scell(i)%E_gap = numpar%user_defined_E_gap ! [eV]
+         ! And redefine the Ip for the valence band:
+         matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) = Scell(i)%E_gap  ![eV]
+      else ! assume atomic energy level:
+         Scell(i)%E_gap = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))  ! [eV] band gap at the beginning
+      endif
+      Scell(i)%N_Egap = -1 ! just to start with something
       ! Read TB parameters:
       if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
          call read_TB_parameters(matter, numpar, Scell(i)%TB_Repuls, Scell(i)%TB_Hamil, &
@@ -652,8 +658,8 @@ subroutine read_atomic_parameters(matter, numpar, Err)
    character(200) :: File_name
    logical :: file_exist
    
-   select case (numpar%At_base)
-   case('CDF') ! read data from corresponding *.cdf file
+   select case (trim(adjustl(numpar%At_base)))
+   case('CDF', 'cdf', 'CDF_sp') ! read data from corresponding *.cdf file
 
       ! Check if file with CDF oscillator parameters exists:
       call check_CDF_file_exists(numpar, matter, File_name, file_exist) ! below
@@ -661,8 +667,9 @@ subroutine read_atomic_parameters(matter, numpar, Err)
       if (file_exist) then
          call get_CDF_data(matter, numpar, Err, File_name) ! see below
       else
-         print*, 'File ', trim(adjustl(File_name)), ' could not be found, use EADL instead of CDF'
-         numpar%At_base = 'EADL'
+         !print*, 'File ', trim(adjustl(File_name)), ' could not be found, use EADL instead of CDF'
+         print*, 'File '//trim(adjustl(File_name))//' could not be found, using single-pole CDF approximation'
+         numpar%At_base = 'CDF_sp'
          call get_EADL_data(matter, numpar, Err) ! see below
       endif
    case ('XATOM') ! get data from XATOM code
@@ -4476,9 +4483,20 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    if (temp3 == 0) numpar%r_periodic(3) = .false.	! along Z
 
    ! where to take atomic data from (EADL, CDF):
+   numpar%user_defined_E_gap = -1.0d0 ! default
    !read(FN,*,IOSTAT=Reason) numpar%At_base
    read(FN, '(a)', IOSTAT=Reason) read_line
-   read(read_line,*,IOSTAT=Reason) numpar%At_base, numpar%input_CDF_file
+   read(read_line,*,IOSTAT=Reason) numpar%At_base, numpar%input_CDF_file, numpar%user_defined_E_gap
+   if (Reason /= 0) then ! try 2 variables: including E_gap:
+      numpar%user_defined_E_gap = -1.0d0  ! default
+      numpar%input_CDF_file = ''  ! nullify it
+      read(read_line,*,IOSTAT=Reason) numpar%At_base, numpar%user_defined_E_gap
+   endif
+   if (Reason /= 0) then ! try to read 2 variables: including path to CDF-file:
+      numpar%user_defined_E_gap = -1.0d0 ! default
+      numpar%input_CDF_file = ''  ! nullify it
+      read(read_line,*,IOSTAT=Reason) numpar%At_base, numpar%input_CDF_file
+   endif
    if (Reason /= 0) then ! try to read just single variable:
       numpar%input_CDF_file = ''  ! nullify it
       read(read_line,*,IOSTAT=Reason) numpar%At_base
@@ -6898,13 +6916,15 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
          write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
          select case (trim(adjustl(read_next_line)))
-         case ('CDF', 'cdf', 'Cdf')
+         case ('CDF', 'cdf', 'Cdf') ! cdf from file
             numpar%At_base = 'CDF' ! where to take atomic data from (EADL, CDF, XATOM...)
-         case ('eald', 'EADL', 'Eadl', 'BEB', 'Beb', 'beb')
+         case ('CDF_SP', 'cdf_sp')  ! single-pole
+            numpar%At_base = 'CDF_sp' ! where to take atomic data from (EADL, CDF, XATOM...)
+         case ('eald', 'EADL', 'Eadl', 'BEB', 'Beb', 'beb') ! BEB cross sections
             numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, XATOM...)
          case default
             write(*,'(a,i5,a)') 'Could not interpret ATOMIC_DATA from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
+            write(*,'(a)') 'Using default (BEB) instead...'
             numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, XATOM...)
          endselect
       endif
