@@ -385,8 +385,10 @@ subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, E
 
    do i = 1, N_Te_grid
       !call find_mu_from_N_T( Ev, dble(Scell(NSC)%Ne), mu(i), Te_grid(i)*g_kb_EV) ! module "Electron_tools"
-      call get_Ce_and_mu(Scell, NSC, Te_grid(i), Ev, Ce(i), mu(i))   ! module "Electron_tools"
+      ! Instead of setting population in k-points, assume constant electornic 'sea' level across entire k-landscape (mu=mu(k=0)):
+      call get_Ce_and_mu(Scell, NSC, Te_grid(i), Ev, Ce(i), mu(i), .true.)   ! module "Electron_tools"
       call set_Fermi( Ev, Te_grid(i)*g_kb_EV, mu(i), fe_on_Te_grid(i,:) )   ! module "Electron_tools"
+
       ! Save chem.potential:
       mu_grid(i) = mu(i)
       ! Save heat capacity:
@@ -405,21 +407,14 @@ subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, E
    ! Calculate only if requested:
    if (numpar%do_kappa) then ! only if requested
 
-      if (.not. allocated(A)) then
-         allocate(A(N_Te_grid), source = 0.0d0) ! to start with
-      else
-         A = 0.0d0
-      endif
-      if (.not. allocated(B)) then
-         allocate(B(N_Te_grid), source = 0.0d0) ! to start with
-      else
-         B = 0.0d0
-      endif
-      if (.not. allocated(C)) then
-         allocate(C(N_Te_grid), source = 0.0d0) ! to start with
-      else
-         C = 0.0d0
-      endif
+      if (.not. allocated(A)) allocate(A(N_Te_grid)) ! to start with
+      A = 0.0d0
+
+      if (.not. allocated(B)) allocate(B(N_Te_grid)) ! to start with
+      B = 0.0d0
+
+      if (.not. allocated(C)) allocate(C(N_Te_grid)) ! to start with
+      C = 0.0d0
 
       ! Get the Onsager coefficients:
       call get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_dE_grid, A, B, C, model=numpar%kappa_model)   ! below
@@ -439,17 +434,17 @@ subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, E
       ! Add contribution of the electronic term:
       ! [Petrov et al., Data in brief 28 (2020) 104980]
       !n_s = dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na) * (matter%At_dens*1d6) ! [1/m^3]
-      ne = dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na)  ! electrons per atom
-      n_s = matter%At_dens*1d6 * ne    ! [1/m^3] standard
-      !n_s = matter%At_dens*1d6 / (ne*3.0d0) ! [1/m^3] empirically adjusted
-      v_F = sqrt(2.0d0*(Scell(NSC)%E_VB_top - Scell(NSC)%E_VB_bottom)*g_e/g_me)  ! [m/s]
-!       if (numpar%verbose) write(6,'(a,f,es,f)') 'Fermi-velosity: ', dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na), n_s, v_F
-      pref_ke = g_Pi**2/6.0d0 * n_s * g_h * v_F**2
-      do i = 1, N_Te_grid
-         kappa_e = pref_ke / Te_grid(i)
-         !print*, 'k', i, kappa(i), kappa_e
-         kappa(i) = 1.0d0 / ( 1.0d0/kappa(i) + 1.0d0/kappa_e )
-      enddo
+!       ne = dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na)  ! electrons per atom
+!       n_s = matter%At_dens*1d6 * ne    ! [1/m^3] standard
+!       !n_s = matter%At_dens*1d6 / (ne*3.0d0) ! [1/m^3] empirically adjusted
+!       v_F = sqrt(2.0d0*(Scell(NSC)%E_VB_top - Scell(NSC)%E_VB_bottom)*g_e/g_me)  ! [m/s]
+! !       if (numpar%verbose) write(6,'(a,f,es,f)') 'Fermi-velosity: ', dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na), n_s, v_F
+!       pref_ke = g_Pi**2/6.0d0 * n_s * g_h * v_F**2
+!       do i = 1, N_Te_grid
+!          kappa_e = pref_ke / Te_grid(i)
+!          !print*, 'k', i, kappa(i), kappa_e
+!          kappa(i) = 1.0d0 / ( 1.0d0/kappa(i) + 1.0d0/kappa_e )
+!       enddo
 
    endif ! numpar%do_kappa
 
@@ -534,7 +529,7 @@ subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_
          ! Get summ of P2:
          P2 = 0.0d0
          do m = 1, Nsiz
-            !if ( (n /= m) ) then   ! nondegenerate levels
+            if ( (n /= m) ) then   ! nondegenerate levels
                ! Average momentum operator:
                P2 = P2 + ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
                      dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
@@ -542,7 +537,7 @@ subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_
 !                P2 = P2 +( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
 !                      dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
 !                      dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
-            !endif ! (n /= m)
+            endif ! (n /= m)
          enddo ! m
 
          ! Collect terms (without prefactors)

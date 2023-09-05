@@ -1365,13 +1365,14 @@ end subroutine get_electronic_heat_capacity
 
 
 
-subroutine get_Ce_and_mu(Scell, NSC, Te_in, Ei, Ce, mu)
+subroutine get_Ce_and_mu(Scell, NSC, Te_in, Ei, Ce, mu, mu_on_gamma)
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), intent(in) :: Te_in   ! [K] electronic temperature
    real(8), dimension(:), intent(in) :: Ei   ! [eV] electronic energy levels
    real(8), intent(out) :: Ce ! electron heat capacity [J/(m^3 K)]
    real(8), intent(out) :: mu ! electron chemical potential [eV]
+   logical, intent(in), optional :: mu_on_gamma ! calculate chem.pot. in gamma point (or on given k-point)
    !-----------------
    real(8) :: Ntot   ! number of electrons
    real(8) :: nat    ! number of atoms
@@ -1379,6 +1380,13 @@ subroutine get_Ce_and_mu(Scell, NSC, Te_in, Ei, Ce, mu)
    real(8) :: dmu, dTe, mu0   ! electron differential chemical potential [eV], temperature [eV]
    real(8) :: Dens   ! atomic density
    real(8) :: coef   ! conversion coefficients with units
+   logical :: mu_gamma
+
+   if (present(mu_on_gamma)) then
+      mu_gamma = mu_on_gamma
+   else  ! by default, get mu in gamma point only
+      mu_gamma = .true.
+   endif
 
    Te = Te_in/g_kb      ! [eV] -> [K]
    ! Step in temperature for (d mu/ d Te):
@@ -1387,14 +1395,24 @@ subroutine get_Ce_and_mu(Scell, NSC, Te_in, Ei, Ce, mu)
    nat = dble(Scell(NSC)%Na)  ! number of atoms
 
    ! Numerical derivative of chem.pot.:
-   ! Get mu:
-   call Electron_Fixed_Te(Scell(NSC)%Ei, Ntot, mu, Te) ! below
-   ! Get mu0:
-   call Electron_Fixed_Te(Scell(NSC)%Ei, Ntot, mu0, Te+dTe) ! below
-   dmu = (mu0 - mu)/dTe    ! (d mu/ d Te)
+   if (mu_gamma) then ! on gamma-point:
+      ! Get mu:
+      call Electron_Fixed_Te(Scell(NSC)%Ei, Ntot, mu, Te) ! below
+      ! Get mu0:
+      call Electron_Fixed_Te(Scell(NSC)%Ei, Ntot, mu0, Te+dTe) ! below
+      dmu = (mu0 - mu)/dTe    ! (d mu/ d Te)
+!       ! Get Ce in arb.units:
+!       call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce) ! below
+   else ! on given k-point
+      ! Get mu:
+      call Electron_Fixed_Te(Ei, Ntot, mu, Te) ! below
+      ! Get mu0:
+      call Electron_Fixed_Te(Ei, Ntot, mu0, Te+dTe) ! below
+      dmu = (mu0 - mu)/dTe    ! (d mu/ d Te)
+   endif
 
    ! Get Ce in arb.units:
-   call Get_Ce(Scell(NSC)%Ei, Te+dTe/2.0d0, mu, dmu, Ce) ! below
+   call Get_Ce(Ei, Te+dTe/2.0d0, mu, dmu, Ce) ! below
 
    coef = 1.0d30*g_e/g_kb  ! [eV/A^3] -> [J/m^3/K]
    Dens = 1.0d0/(Scell(NSC)%V) ! [1/A^3]

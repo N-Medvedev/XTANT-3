@@ -39,6 +39,7 @@ use Dealing_with_3TB, only : m_3TB_directory, m_3TB_onsite_data, read_3TB_onsite
 use Dealing_with_xTB, only : m_xTB_directory, read_xTB_parameters, identify_basis_size_xTB, identify_AOs_xTB
 use Periodic_table, only : Decompose_compound
 use Algebra_tools, only : make_cubic_splines, cubic_function
+use Dealing_with_CDF, only : read_CDF_file
 
 ! Open_MP related modules from external libraries:
 #ifdef OMP_inside
@@ -161,6 +162,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%acc_window = 5.0d0	! [eV] acceptance window for nonadiabatic coupling:
    numpar%do_DOS = .false.    ! DOS calculation
    numpar%do_kappa = .false.  ! electron heat conductivity calculation
+   numpar%save_CDF = .false.    ! fitted oscillators CDF printout
    numpar%kappa_Te_min = 300.0d0 ! [K]
    numpar%kappa_Te_max = 30000.0d0  ! [K]
    numpar%kappa_dTe = 100.0d0 ! [K]
@@ -406,8 +408,14 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       ! Read atomic data:
       call read_atomic_parameters(matter, numpar, Err) ! below
       if (Err%Err) goto 3416  ! exit if something went wrong
-      Scell(i)%E_gap = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))	! [eV] band gap at the beginning
-      Scell(i)%N_Egap = -1	! just to start with something
+      if (numpar%user_defined_E_gap > -1.0d-14) then   ! user provided bandgap value, use it:
+         Scell(i)%E_gap = numpar%user_defined_E_gap ! [eV]
+         ! And redefine the Ip for the valence band:
+         matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) = Scell(i)%E_gap  ![eV]
+      else ! assume atomic energy level:
+         Scell(i)%E_gap = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))  ! [eV] band gap at the beginning
+      endif
+      Scell(i)%N_Egap = -1 ! just to start with something
       ! Read TB parameters:
       if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
          call read_TB_parameters(matter, numpar, Scell(i)%TB_Repuls, Scell(i)%TB_Hamil, &
@@ -647,20 +655,21 @@ subroutine read_atomic_parameters(matter, numpar, Err)
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Error_handling), intent(inout) :: Err	! error save
    integer i
-   character(200) :: Folder_name, File_name, Path
+   character(200) :: File_name
    logical :: file_exist
    
-   select case (numpar%At_base)
-   case('CDF') ! read data from corresponding *.cdf file
-      Folder_name = trim(adjustl(numpar%input_path))
-      Path = trim(adjustl(Folder_name))//trim(adjustl(matter%Name))
-      write(File_name, '(a,a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(matter%Name)), '.cdf'
-      inquire(file=trim(adjustl(File_name)),exist=file_exist)
+   select case (trim(adjustl(numpar%At_base)))
+   case('CDF', 'cdf', 'CDF_sp') ! read data from corresponding *.cdf file
+
+      ! Check if file with CDF oscillator parameters exists:
+      call check_CDF_file_exists(numpar, matter, File_name, file_exist) ! below
+
       if (file_exist) then
-         call get_CDF_data(matter, numpar, Err) ! see below
+         call get_CDF_data(matter, numpar, Err, File_name) ! see below
       else
-         print*, 'File ', trim(adjustl(File_name)), ' could not be found, use EADL instead of CDF'
-         numpar%At_base = 'EADL'
+         !print*, 'File ', trim(adjustl(File_name)), ' could not be found, use EADL instead of CDF'
+         print*, 'File '//trim(adjustl(File_name))//' could not be found, using single-pole CDF approximation'
+         numpar%At_base = 'CDF_sp'
          call get_EADL_data(matter, numpar, Err) ! see below
       endif
    case ('XATOM') ! get data from XATOM code
@@ -678,31 +687,11 @@ subroutine read_atomic_parameters(matter, numpar, Err)
 end subroutine read_atomic_parameters
 
 
-! subroutine get_table_of_ij_numbers(matter, numpar) ! table of elements number to locate TB parameterization for different combinations of atoms
-!    type(Solid), intent(in) :: matter  ! all material parameters
-!    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
-!    integer i, j, coun
-!    if (.not.allocated(numpar%El_num_ij)) then
-!       allocate(numpar%El_num_ij(matter%N_KAO,matter%N_KAO)) ! element correspondance
-!       numpar%El_num_ij = 0
-!    endif
-!    coun = 0
-!    do i = 1, matter%N_KAO
-!       do j = i, matter%N_KAO
-!          coun = coun + 1
-!          numpar%El_num_ij(i,j) = coun ! number of TB parrametrization
-!          numpar%El_num_ij(j,i) = numpar%El_num_ij(i,j)
-! !          print*, i, j, numpar%El_num_ij(i,j)
-!       enddo
-!    enddo
-! end subroutine get_table_of_ij_numbers
-
-
-
-subroutine get_CDF_data(matter, numpar, Err)
+subroutine get_CDF_data(matter, numpar, Err, File_name)
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Error_handling), intent(inout) :: Err	! error save
+   character(*), intent(in) :: File_name  ! CDF file
    !===============================================
    integer, dimension(:), allocatable :: at_numbers
    real(8), dimension(:), allocatable :: at_percentage
@@ -712,269 +701,80 @@ subroutine get_CDF_data(matter, numpar, Err)
    integer, dimension(:), allocatable :: at_NVE    ! number of valence electrons
    integer FN1, INFO, i, j, k, Z
    character(100) :: error_message, Error_descript
-   character(100) :: Folder_name, Folder_name2, File_name, Path
+   character(100) :: Folder_name, Folder_name2, Path
    logical file_exist, file_opened, read_well
    integer FN, Reason, count_lines, temp
    real(8) retemp
 
-   !Folder_name = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))
-   Folder_name = trim(adjustl(numpar%input_path))
-   Path = trim(adjustl(Folder_name))//trim(adjustl(matter%Name))
-   write(File_name, '(a,a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(matter%Name)), '.cdf'
+   ! Make sure this file exists:
    inquire(file=trim(adjustl(File_name)),exist=file_exist)
 
    if (file_exist) then
+
       !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old')
       FN = 103
       open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read')
       inquire(file=trim(adjustl(File_name)),opened=file_opened)
       if (.not.file_opened) then
-!          Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
          Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened'
          call Save_error_details(Err, 2, Error_descript)
          print*, trim(adjustl(Error_descript))
-         goto 3420
+         return
       endif
 
-      count_lines = 0
-      read(FN,*,IOSTAT=Reason)	! skip first line with the name of the material
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3420
-      endif
+      ! Read the file in the CDF format:
+      call read_CDF_file(FN, matter, numpar, Err, trim(adjustl(File_name)), &
+                        trim(adjustl(m_Atomic_parameters)), trim(adjustl(m_EADL_file)), INFO) ! module "Dealing_with_CDF"
 
-      read(FN,*,IOSTAT=Reason) matter%Chem ! chemical formula of the material
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3420
-      endif
-
-      !Folder_name2 = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))//'Atomic_parameters'
-      Folder_name2 = trim(adjustl(numpar%input_path))//trim(adjustl(m_Atomic_parameters))  ! 'Atomic_parameters'
-      call Decompose_compound(Folder_name2, matter%Chem, numpar%path_sep, INFO, error_message, matter%N_KAO, at_numbers, &
-                  at_percentage, at_short_names, at_names, at_masses, at_NVE) ! molude 'Periodic_table'
-      if (INFO .NE. 0) then
-         call Save_error_details(Err, INFO, error_message)
-         print*, trim(adjustl(error_message))
-         goto 3420
-      endif
-      if (.not.allocated(matter%Atoms)) allocate(matter%Atoms(matter%N_KAO))
-      
-      do i = 1, matter%N_KAO ! for all sorts of atoms
-         matter%Atoms(i)%Z = at_numbers(i)
-         matter%Atoms(i)%Name = at_short_names(i)
-         matter%Atoms(i)%Ma = at_masses(i)*g_Mp ! [kg]
-         matter%Atoms(i)%percentage = at_percentage(i)
-         matter%Atoms(i)%NVB = at_NVE(i)
-          !print*, matter%Atoms(i)%Name, matter%Atoms(i)%Ma, matter%Atoms(i)%NVB
-          !pause 'get_CDF_data'
-      enddo
-
-      read(FN,*,IOSTAT=Reason) retemp ! skip this line - density is given elsewhere
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3420
-      endif
-      if (matter%dens .LE. 0.0d0) matter%dens = retemp ! in case density is not given elsewhere
-
-      AT_NUM:do i = 1, matter%N_KAO ! for each kind of atoms:
-         read(FN,*,IOSTAT=Reason) matter%Atoms(i)%sh	! number of shells in this element
-         call read_file(Reason, count_lines, read_well)
-         if (.not. read_well) then
-            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-            call Save_error_details(Err, 3, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 3420
-         endif
-
-         if (.not. allocated(matter%Atoms(i)%Ne_shell)) allocate(matter%Atoms(i)%Ne_shell(matter%Atoms(i)%sh)) ! allocate number of electrons
-         if (.not. allocated(matter%Atoms(i)%Shell_name)) allocate(matter%Atoms(i)%Shell_name(matter%Atoms(i)%sh)) ! allocate shell names
-         if (.not. allocated(matter%Atoms(i)%Shl_dsgnr)) allocate(matter%Atoms(i)%Shl_dsgnr(matter%Atoms(i)%sh)) ! allocate shell disignator for each shell
-         if (.not. allocated(matter%Atoms(i)%N_CDF)) allocate(matter%Atoms(i)%N_CDF(matter%Atoms(i)%sh)) ! allocate number of electrons
-         if (.not. allocated(matter%Atoms(i)%Ip)) allocate(matter%Atoms(i)%Ip(matter%Atoms(i)%sh)) ! allocate ionization potentials
-         if (.not. allocated(matter%Atoms(i)%Ek)) allocate(matter%Atoms(i)%Ek(matter%Atoms(i)%sh)) ! allocate mean kinetic energies of the shells
-         if (.not. allocated(matter%Atoms(i)%TOCS)) allocate(matter%Atoms(i)%TOCS(matter%Atoms(i)%sh)) ! allocate type of cross-section to be used
-         if (.not. allocated(matter%Atoms(i)%El_MFP)) allocate(matter%Atoms(i)%El_MFP(matter%Atoms(i)%sh)) ! allocate electron MFPs
-         if (.not. allocated(matter%Atoms(i)%Ph_MFP)) allocate(matter%Atoms(i)%Ph_MFP(matter%Atoms(i)%sh)) ! allocate photon MFPs
-         matter%Atoms(i)%Ek = 0.0d0 ! starting value
-         !if (.not. allocated(matter%Atoms(i)%Radiat)) then
-         !   allocate(matter%Atoms(i)%Radiat(matter%Atoms%sh)) ! allocate Radiative-times
-         !   matter%Atoms(i)%Radiat = 1d24 ! to start with
-         !endif
-         if (.not. allocated(matter%Atoms(i)%Auger)) then
-            allocate(matter%Atoms(i)%Auger(matter%Atoms(i)%sh)) ! allocate Auger times
-            matter%Atoms(i)%Auger = 1d24 ! to start with
-         endif
-         if (.not. allocated(matter%Atoms(i)%CDF)) allocate(matter%Atoms(i)%CDF(matter%Atoms(i)%sh)) ! allocate CDF functions
-
-         do j = 1, matter%Atoms(i)%sh	! for all shells:
-            ! Number of CDF functions, shell-designator, ionization potential, number of electrons, Auger-time:
-            read(FN,*,IOSTAT=Reason) matter%Atoms(i)%N_CDF(j), matter%Atoms(i)%Shl_dsgnr(j), matter%Atoms(i)%Ip(j), matter%Atoms(i)%Ne_shell(j), matter%Atoms(i)%Auger(j)
-            call read_file(Reason, count_lines, read_well)
-            if (.not. read_well) then
-               write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-               call Save_error_details(Err, 3, Error_descript)
-               print*, trim(adjustl(Error_descript))
-               goto 3420
-            endif
-            matter%Atoms(i)%Shell_name(j) = ''  ! no name yet, to be defined  in the next subroutine
-
-            call check_atomic_data(matter, numpar, Err, i, j, matter%Atoms(i)%sh)   ! below
-
-            DOCDF:if (matter%Atoms(i)%N_CDF(j) .GT. 0) then ! do this shell with provided CDF coefficients
-               matter%Atoms(i)%TOCS(j) = 1 ! CDF cross-section
-               allocate(matter%Atoms(i)%CDF(j)%A(matter%Atoms(i)%N_CDF(j)))
-               allocate(matter%Atoms(i)%CDF(j)%E0(matter%Atoms(i)%N_CDF(j)))
-               allocate(matter%Atoms(i)%CDF(j)%G(matter%Atoms(i)%N_CDF(j)))
-
-               do k = 1, matter%Atoms(i)%N_CDF(j)	! for all CDF-functions for this shell
-                  read(FN,*,IOSTAT=Reason) matter%Atoms(i)%CDF(j)%E0(k), matter%Atoms(i)%CDF(j)%A(k), matter%Atoms(i)%CDF(j)%G(k)
-!                   write(*,*) matter%Atoms(i)%CDF(j)%E0(k), matter%Atoms(i)%CDF(j)%A(k), matter%Atoms(i)%CDF(j)%G(k)
-                  if (.not. read_well) then
-                     write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-                     call Save_error_details(Err, 3, Error_descript)
-                     print*, trim(adjustl(Error_descript))
-                     goto 3420
-                  endif
-               enddo
-
-            else DOCDF
-               matter%Atoms(i)%TOCS(j) = 0 ! BEB cross-section
-            endif DOCDF
-         enddo
-      enddo AT_NUM
+      ! When done, close the CDF file
       close(FN)
-   else
-      write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
+   else  ! no file with CDF-oscillator parameters found
+      write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, program terminates'
       call Save_error_details(Err, 1, Error_descript)
       print*, trim(adjustl(Error_descript))
-      goto 3420
+      return
    endif
-
-3420 continue
 end subroutine get_CDF_data
 
 
+subroutine check_CDF_file_exists(numpar, matter, File_name, file_exist)
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(Solid), intent(in) :: matter   ! all material parameters
+   character(*), intent(inout) :: File_name
+   logical, intent(inout) :: file_exist
+   !------------------
+   character(250) :: Folder_name, Path
 
-subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot)
-   type(Solid), intent(inout) :: matter	! all material parameters
-   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
-   type(Error_handling), intent(inout) :: Err	! error save
-   integer, intent(in) :: i, cur_shl, shl_tot	! No. of atom, current number of shell, total number of shells for this atom
-   !===============================================
-   character(200) :: Folder_name, File_name, Error_descript
-   integer FN, INFO, j, Z, imax, imin, N_shl
-   real(8), dimension(:), allocatable :: Nel   ! number of electrons in each shell
-   integer, dimension(:), allocatable :: Shl_num ! shell designator
-   character(11), dimension(:), allocatable :: Shell_name
-   logical :: file_exist, file_opened
+   Folder_name = trim(adjustl(numpar%input_path))
+   Path = trim(adjustl(Folder_name))//trim(adjustl(matter%Name))
 
-   ! Open eadl.all database:
-   !Folder_name = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))//'Atomic_parameters'
-   Folder_name = trim(adjustl(numpar%input_path))//trim(adjustl(m_Atomic_parameters))   !'Atomic_parameters'
-   !File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//'eadl.all'
-   File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(m_EADL_file))
-   
-   !call open_file('readonly', File_name, FN, INFO, Error_descript)
-   INFO = 0
-   inquire(file=trim(adjustl(File_name)),exist=file_exist)
-   if (.not.file_exist) then
-      INFO = 1
-      Error_descript = 'File '//trim(adjustl(File_name))//' does not exist, the program terminates'
-      call Save_error_details(Err, INFO, Error_descript)
-      print*, trim(adjustl(Error_descript))
-   else
-      !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old')
-      FN=104
-      open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read')
-      inquire(file=trim(adjustl(File_name)),opened=file_opened)
-      if (.not.file_opened) then
-         INFO = 2
-         Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
-         call Save_error_details(Err, INFO, Error_descript)
-         print*, trim(adjustl(Error_descript))
+   ! Try to find the file with CDF parameters:
+   if (LEN(trim(adjustl(numpar%input_CDF_file))) > 0) then  ! there is user-provided name
+      ! 1) assuming the full path is given:
+      write(File_name, '(a)') trim(adjustl(numpar%input_CDF_file))
+      inquire(file=trim(adjustl(File_name)),exist=file_exist)
+
+      if (.not.file_exist) then
+         ! 2) assume it is file-name in the input directory:
+         write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(numpar%input_CDF_file))
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      endif
+
+      if (.not.file_exist) then
+         ! 3) assume it is file-name without the extension in the input directory:
+         write(File_name, '(a,a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(numpar%input_CDF_file)), '.cdf'
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
       endif
    endif
 
-   select case (INFO)
-   case (0)
-      Z =  matter%Atoms(i)%Z ! atomic number
+   if (.not.file_exist) then
+      ! 4) assume the default name:
+      write(File_name, '(a,a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(matter%Name)), '.cdf'
+      inquire(file=trim(adjustl(File_name)),exist=file_exist)
+   endif
 
-      ! Shell name:
-      if (LEN(trim(adjustl(matter%Atoms(i)%Shell_name(cur_shl)))) < 1) then ! take if from EADL-database
-         if ( matter%Atoms(i)%Shl_dsgnr(cur_shl) >= 63 ) then
-            matter%Atoms(i)%Shell_name(cur_shl) = 'Valence'
-         else ! core shell
-            call READ_EADL_TYPE_FILE_int(FN, File_name, Z, 912, INFO, error_message=Error_descript, N_shl=N_shl, &
-                  Nel=Nel, Shell_name=Shell_name)    ! module "Dealing_with_EADL"
-            matter%Atoms(i)%Shell_name(cur_shl) = Shell_name(cur_shl)
-         endif
-      endif
-      ! Number of electrons in this shell:
-      if (matter%Atoms(i)%Ne_shell(cur_shl) .LT. 0) then ! take if from EADL-database
-         call READ_EADL_TYPE_FILE_int(FN, File_name, Z, 912, INFO, error_message=Error_descript, N_shl=N_shl, &
-                  Nel=Nel, Shl_num=Shl_num) ! module "Dealing_with_EADL"
-         if (INFO .NE. 0) then
-            call Save_error_details(Err, INFO, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 9999
-         endif
-         imax = 0
-         imin = 0
-         call select_imin_imax(imin, imax, matter%Atoms(i)%Shl_dsgnr(cur_shl)) ! sum subshells, module "Dealing_with_EADL"
-         if (imax .GT. 0) then
-            matter%Atoms(i)%Ne_shell(cur_shl) = SUM(Nel, MASK=((Shl_num .GE. imin) .AND. (Shl_num .LE. imax)))
-         else
-            matter%Atoms(i)%Ne_shell(cur_shl) = Nel(cur_shl)
-         endif 
-      endif
-      ! Ionization potential:
-      if (matter%Atoms(i)%Ip(cur_shl) .LT. 0.0d0) then ! take if from EADL-database
-         ! Read auger-times:
-         call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 913, matter%Atoms(i)%Ip, cur_shl=cur_shl, shl_tot=shl_tot, &
-               Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! module "Dealing_with_EADL"
-         if (INFO .NE. 0) then
-            call Save_error_details(Err, INFO, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 9999
-         endif
-         ! Read kinetic energies:
-         call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 914, matter%Atoms(i)%Ek, cur_shl=cur_shl, shl_tot=shl_tot, &
-               Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! module "Dealing_with_EADL"
-         if (INFO .NE. 0) then
-            call Save_error_details(Err, INFO, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 9999
-         endif
-         !matter%Atoms(i)%TOCS(cur_shl) = 0 ! BEB cross-section
-      endif
-      ! Auger-decay time:
-      if (matter%Atoms(i)%Auger(cur_shl).LT. 0.0d0) then ! take if from EADL-database
-        ! Read auger-times:
-        call READ_EADL_TYPE_FILE_real(FN, File_name, Z, 922, matter%Atoms(i)%Auger, cur_shl=cur_shl, shl_tot=shl_tot, &
-               Shl_dsgtr=matter%Atoms(i)%Shl_dsgnr(cur_shl), INFO=INFO, error_message=Error_descript) ! module "Dealing_with_EADL"
-        if (INFO .NE. 0) then
-            call Save_error_details(Err, INFO, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 9999
-         endif
-      endif
-      close (FN)
-   case default
-      call Save_error_details(Err, INFO, Error_descript)
-      print*, trim(adjustl(Error_descript))
-   end select
-9999 continue
-end subroutine check_atomic_data
+   if (numpar%verbose) call print_time_step('CDF-oscillators read from:'//trim(adjustl(File_name)), msec=.true.) ! modlue "Little_subroutines"
+end subroutine check_CDF_file_exists
 
 
 
@@ -4632,7 +4432,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    !---------------------------------
    integer FN, N, Reason, count_lines, i, NSC, temp1, temp2, temp3
    logical file_opened, read_well, old_file, add_data_present
-   character(100) Error_descript, temp_ch, temp_ch2
+   character(200) Error_descript, temp_ch, temp_ch2, read_line
 
    NSC = 1 ! for now, we only have 1 supercell...
    if (present(add_data)) then
@@ -4682,8 +4482,29 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    if (temp2 == 0) numpar%r_periodic(2) = .false.	! along Y   
    if (temp3 == 0) numpar%r_periodic(3) = .false.	! along Z
 
-   ! where to take atomic data from (EADL, CDF, XATOM...):
-   read(FN,*,IOSTAT=Reason) numpar%At_base
+   ! where to take atomic data from (EADL, CDF):
+   numpar%user_defined_E_gap = -1.0d0 ! default
+   !read(FN,*,IOSTAT=Reason) numpar%At_base
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%At_base, numpar%input_CDF_file, numpar%user_defined_E_gap
+   if (Reason /= 0) then ! try 2 variables: including E_gap:
+      numpar%user_defined_E_gap = -1.0d0  ! default
+      numpar%input_CDF_file = ''  ! nullify it
+      read(read_line,*,IOSTAT=Reason) numpar%At_base, numpar%user_defined_E_gap
+   endif
+   if (Reason /= 0) then ! try to read 2 variables: including path to CDF-file:
+      numpar%user_defined_E_gap = -1.0d0 ! default
+      numpar%input_CDF_file = ''  ! nullify it
+      read(read_line,*,IOSTAT=Reason) numpar%At_base, numpar%input_CDF_file
+   endif
+   if (Reason /= 0) then ! try to read just single variable:
+      numpar%input_CDF_file = ''  ! nullify it
+      read(read_line,*,IOSTAT=Reason) numpar%At_base
+      if (numpar%verbose) write(*,'(a)') 'No valid filename with CDF oscillators provided, assuming default'
+   else
+      ! Make sure that, if there is a path, the separator is correct:
+      call ensure_correct_path_separator(numpar%input_CDF_file, numpar%path_sep) ! module "Dealing_with_files"
+   endif
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
       write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
@@ -6091,6 +5912,9 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
    case ('DOS', 'Dos', 'dos', 'do_DOS', 'get_DOS')
       numpar%do_DOS = .true.  ! calculate DOS
 
+   case ('print_CDF', 'save_CDF', 'get_CDF', 'Print_CDF', 'Save_CDF', 'Get_CDF')
+      numpar%save_CDF = .true.   ! printout CDF file with oscillators
+
    case ('KAPPA', 'Kappa', 'kappa', 'conductivity', 'do_kappa', 'Do_kappa', 'Get_kappa', 'get_kappa')
       print*, 'Electronic heat conductivity will be calculated'
       numpar%do_kappa = .true.   ! calculate K, electron heat conductivity vs Te
@@ -7091,14 +6915,16 @@ subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, cou
       elseif (Reason > 0) then ! couldn't read the line
          write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
       else
-         selectcase (trim(adjustl(read_next_line)))
-         case ('CDF', 'cdf', 'Cdf')
+         select case (trim(adjustl(read_next_line)))
+         case ('CDF', 'cdf', 'Cdf') ! cdf from file
             numpar%At_base = 'CDF' ! where to take atomic data from (EADL, CDF, XATOM...)
-         case ('eald', 'EADL', 'Eadl', 'BEB', 'Beb', 'beb')
+         case ('CDF_SP', 'cdf_sp')  ! single-pole
+            numpar%At_base = 'CDF_sp' ! where to take atomic data from (EADL, CDF, XATOM...)
+         case ('eald', 'EADL', 'Eadl', 'BEB', 'Beb', 'beb') ! BEB cross sections
             numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, XATOM...)
          case default
             write(*,'(a,i5,a)') 'Could not interpret ATOMIC_DATA from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
+            write(*,'(a)') 'Using default (BEB) instead...'
             numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, XATOM...)
          endselect
       endif

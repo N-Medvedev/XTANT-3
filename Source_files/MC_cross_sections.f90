@@ -27,6 +27,7 @@
 !   "PENELOPE-2014 A Code System for Monte Carlo Simulation of Electron and Photon Transport", OECD (2014)
 ! [2] R. Rymzhanov et al. Phys. Status Solidi B 252, 159-164 (2015) / DOI 10.1002/pssb.201400130
 ! [3] M. Azzolini et al. J. Phys. Condens. Matter 31, 055901 (2019)
+! [4] N. Medvedev et al., Advanced Theory and Simulations 5, 2200091 (2022)
 
 
 
@@ -244,14 +245,13 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
 
 
          ! Check if CDF coefficients are set:
-         ! if not, use single-pole approximation
          if (.not. allocated(matter%Atoms(i)%CDF)) then
             allocate(matter%Atoms(i)%CDF(Nshl))
-            if (.not. allocated(matter%Atoms(i)%CDF(j)%A) ) then
-               call set_single_pole_CDF(Scell, NSC, matter, i, j)  ! below
-            endif
          endif
-
+         ! And if not, use single-pole approximation:
+         if (.not. allocated(matter%Atoms(i)%CDF(j)%A) ) then
+            call set_single_pole_CDF(Scell, NSC, matter, i, j)  ! below
+         endif
 
          if ((i .NE. 1) .or. (j .NE. 1)) then
             if (.not.allocated(matter%Atoms(i)%El_MFP(j)%E)) allocate(matter%Atoms(i)%El_MFP(j)%E(N_grid))
@@ -261,13 +261,20 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
          write(chtemp,'(i6)') INT(matter%Atoms(i)%Ip(j))
          if (j > 1) then    ! check if it's a degenerate level:
             if (INT(matter%Atoms(i)%Ip(j-1)) == INT(matter%Atoms(i)%Ip(j))) then
-               write(chtemp,'(i6)') INT(matter%Atoms(i)%Ip(j) - 0.5)    ! artificially shift it a little bit to make it not exactly degenerate
+               write(chtemp,'(i6)') INT(matter%Atoms(i)%Ip(j) - 0.5d0)    ! artificially shift it a little bit to make it not exactly degenerate
             endif
          endif
          
          select case (matter%Atoms(i)%TOCS(j)) ! which inelastic cross section to use (BEB vs CDF):
          case (1) ! CDF
-            write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(matter%Atoms(i)%Name))//'_CDF_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV.txt'
+            select case (trim(adjustl(numpar%At_base)))
+            case ('CDF', 'cdf', 'Cdf') ! cdf from file
+               write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+                  trim(adjustl(matter%Atoms(i)%Name))//'_CDF_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV.txt'
+            case ('CDF_SP', 'cdf_sp', 'CDF_sp') ! single-pole cdf
+               write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+                  trim(adjustl(matter%Atoms(i)%Name))//'_CDFsp_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV.txt'
+            end select
          case default ! BEB
             write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(matter%Atoms(i)%Name))//'_BEB_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV.txt'
          end select
@@ -309,20 +316,12 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
             enddo
             !!$omp end do
             !!$omp end parallel
-
-            ! And check the sum rules:
-            select case (matter%Atoms(i)%TOCS(j)) ! which inelastic cross section to use (BEB vs CDF):
-            case (1) ! CDF
-               Omega = w_plasma(1d6*matter%At_dens*SUM(matter%Atoms(:)%percentage)) ! function below, plasma frequency [1/s]
-               call sumrules(matter%Atoms(i)%CDF(j)%A, matter%Atoms(i)%CDF(j)%E0, matter%Atoms(i)%CDF(j)%G, ksum, fsum, matter%Atoms(i)%Ip(j), Omega)
-               write(*,'(a,f7.2,e12.2)') 'Sum rules for '//trim(adjustl(matter%Atoms(i)%Name))//', Ip='//trim(adjustl(chtemp))//'eV are (ps,f):', ksum, fsum !, Omega
-            end select
             print*, 'Electron IMFPs are saved into file:', trim(adjustl(File_name))
          else ! Just read MFPs from the file:
             !print*, 'Reding electron IMFPs from file: ', trim(adjustl(File_name))
             count_lines = 0
             do k = 1, N_grid
-               read(FN,*,IOSTAT=Reason)	Ele, L, dEdx ! read the line
+               read(FN,*,IOSTAT=Reason) Ele, L, dEdx ! read the line
                call read_file(Reason, count_lines, read_well)
                if (.not. read_well) then
                   redo = .true. ! no data, need to recalculate the MFPs
@@ -331,13 +330,26 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
                matter%Atoms(i)%El_MFP(j)%E(k) = Ele ! [eV] energy
                matter%Atoms(i)%El_MFP(j)%L(k) = L   ! [A] MFP
             enddo
-!             ! And check the sum rules:
-!             Omega = w_plasma(1d6*matter%At_dens*SUM(matter%Atoms(:)%percentage)) ! finction below, plasma frequency [1/s]
-!             call sumrules(matter%Atoms(i)%CDF(j)%A, matter%Atoms(i)%CDF(j)%E0, matter%Atoms(i)%CDF(j)%G, ksum, fsum, matter%Atoms(i)%Ip(j), Omega)
-!             write(*,'(a,f7.2,e12.2)') 'Sum rules for '//trim(adjustl(matter%Atoms(i)%Name))//', Ip='//trim(adjustl(chtemp))//'eV are (ps,f):', ksum, fsum !, Omega
          endif
          inquire(file=trim(adjustl(File_name)),opened=file_opened)
          if (file_opened) close(FN)
+
+         ! And check the sum rules, if needed:
+         if (redo .or. numpar%verbose) then
+            select case (matter%Atoms(i)%TOCS(j)) ! which inelastic cross section to use (BEB vs CDF):
+            case (1) ! CDF
+               Omega = w_plasma(1d6*matter%At_dens) ! function below, atomic-density plasma frequency [1/s^2]
+               if ( (i == 1) .and. (j == Nshl) ) then ! the valence band
+                  call sumrules(matter%Atoms(i)%CDF(j)%A, matter%Atoms(i)%CDF(j)%E0, matter%Atoms(i)%CDF(j)%G, &
+                                                ksum, fsum, Scell(NSC)%E_gap, Omega) ! below
+               else ! core shell
+                  call sumrules(matter%Atoms(i)%CDF(j)%A, matter%Atoms(i)%CDF(j)%E0, matter%Atoms(i)%CDF(j)%G, &
+                                                ksum, fsum, matter%Atoms(i)%Ip(j), Omega) ! below
+               endif
+               write(*,'(a,f7.2,e12.2)') 'Sum rules for '//trim(adjustl(matter%Atoms(i)%Name))//', Ip='// &
+                                                trim(adjustl(chtemp))//'eV are (k,f):', ksum, fsum !, sqrt(Omega)
+            end select
+         endif
 
       enddo SHELLS
       
@@ -416,21 +428,23 @@ subroutine set_single_pole_CDF(Scell, NSC, matter, i, j)  ! only for VB/CB
    type(Solid), intent(inout) :: matter ! parameters of the material
    integer, intent(in) :: i, j   ! index of atom and shell
    !----------------
-   real(8) :: Omega, NVB, ksum, fsum
+   real(8) :: Omega, NVB, ksum, fsum, Nat, contrib
    integer :: Nshl
 
    Nshl = size(matter%Atoms(1)%Ip)  ! index of the valence band
-   if ( (i == 1) .and. (j == Nshl) ) then ! do only for the valence band
 
-      if (.not. allocated(matter%Atoms(i)%N_CDF)) allocate(matter%Atoms(i)%N_CDF(matter%Atoms(i)%sh)) ! allocate number of electrons
+   if (.not. allocated(matter%Atoms(i)%N_CDF)) allocate(matter%Atoms(i)%N_CDF(matter%Atoms(i)%sh)) ! allocate number of electrons
 
-      if (.not.allocated(matter%Atoms(i)%CDF(j)%A)) then
-         matter%Atoms(i)%N_CDF(j) = 1  ! set single CDF, coefficients to be determined
-         allocate(matter%Atoms(i)%CDF(j)%A(matter%Atoms(i)%N_CDF(j)))
-         allocate(matter%Atoms(i)%CDF(j)%E0(matter%Atoms(i)%N_CDF(j)))
-         allocate(matter%Atoms(i)%CDF(j)%G(matter%Atoms(i)%N_CDF(j)))
-      endif
+   if (.not.allocated(matter%Atoms(i)%CDF(j)%A)) then
+      matter%Atoms(i)%N_CDF(j) = 1  ! set single CDF, coefficients to be determined
+      allocate(matter%Atoms(i)%CDF(j)%A(matter%Atoms(i)%N_CDF(j)))
+      allocate(matter%Atoms(i)%CDF(j)%E0(matter%Atoms(i)%N_CDF(j)))
+      allocate(matter%Atoms(i)%CDF(j)%G(matter%Atoms(i)%N_CDF(j)))
+   endif
 
+   matter%Atoms(i)%TOCS(j) = 1   ! mark it as CDF cross-section
+
+   if ( (i == 1) .and. (j == Nshl) ) then ! the valence band
       NVB = dble(Scell(NSC)%Ne) / dble(Scell(NSC)%Na) ! valence electrons per atom
 
       ! Set them according to the single-pole approximation:
@@ -442,10 +456,29 @@ subroutine set_single_pole_CDF(Scell, NSC, matter, i, j)  ! only for VB/CB
       ! A is set vie normalization (sum rule):
       matter%Atoms(i)%CDF(j)%A(1) = 1.0d0   ! just to get sum rule to renormalize below
       ! Get sum rule:
+      Omega = w_plasma(1d6*matter%At_dens)   ! below
       call sumrules(matter%Atoms(i)%CDF(j)%A, matter%Atoms(i)%CDF(j)%E0, matter%Atoms(i)%CDF(j)%G, ksum, fsum, Scell(NSC)%E_gap, Omega) ! below
 
       matter%Atoms(i)%CDF(j)%A(1) = NVB/ksum
 
+   else ! core shell
+      NVB = matter%Atoms(i)%Ne_shell(j) ! electrons in this shell
+      Nat = SUM(matter%Atoms(:)%percentage)  ! number of different kinds of atoms in the compound
+      contrib = matter%Atoms(i)%percentage/Nat  ! contribution of the atoms into the compound
+
+      ! Set them according to the single-pole approximation:
+      Omega = w_plasma(1d6*matter%At_dens*NVB*contrib) ! function below, plasma frequency [1/s]
+
+      matter%Atoms(i)%CDF(j)%E0(1) = matter%Atoms(i)%Ip(j)+10.0d0  ! [eV] -- approximation
+      ! Gamma set equal to E0 without effective mass (empirical approximation):
+      matter%Atoms(i)%CDF(j)%G(1) = matter%Atoms(i)%CDF(j)%E0(1)
+      ! A is set vie normalization (sum rule):
+      matter%Atoms(i)%CDF(j)%A(1) = 1.0d0   ! just to get sum rule to renormalize below
+      ! Get sum rule:
+      Omega = w_plasma(1d6*matter%At_dens)   ! below
+      call sumrules(matter%Atoms(i)%CDF(j)%A, matter%Atoms(i)%CDF(j)%E0, matter%Atoms(i)%CDF(j)%G, ksum, fsum, matter%Atoms(i)%Ip(j), Omega) ! below
+
+      matter%Atoms(i)%CDF(j)%A(1) = NVB/ksum
    endif !( (i == 1) .and. (j == Nshl) )
 end subroutine set_single_pole_CDF
 
@@ -472,7 +505,15 @@ subroutine IMFP_vs_Te_files(matter, laser, numpar, Te, N_Te)
 
    write(chtemp,'(i6)') INT(matter%Atoms(1)%Ip(Nshl))
    write(ch_Te,'(i6)') INT(Te*g_kb)
-   write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(matter%Atoms(1)%Name))//'_CDF_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV_'//trim(adjustl(ch_Te))//'K.txt'
+
+   select case (trim(adjustl(numpar%At_base)))
+   case ('CDF', 'cdf', 'Cdf') ! cdf from file
+      write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+      trim(adjustl(matter%Atoms(1)%Name))//'_CDF_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV_'//trim(adjustl(ch_Te))//'K.txt'
+   case ('CDF_SP', 'cdf_sp', 'CDF_sp') ! single-pole cdf
+      write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+      trim(adjustl(matter%Atoms(1)%Name))//'_CDFsp_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV_'//trim(adjustl(ch_Te))//'K.txt'
+   end select
    FN = 312+N_Te   ! file number
 
    inquire(file=trim(adjustl(File_name)),exist=file_exists) ! check if this file already exists
@@ -795,11 +836,22 @@ function Diel_func(A,E,Gamma,dE,dq) ! fit functions in Ritchi algorithm
     Diel_func = A*Gamma*dE/(dE2E02*dE2E02 + Gamma*Gamma*dE2)
 end function Diel_func
 
-function w_plasma(At_dens)
-   real(8) w_plasma ! plasma frequency [1/s]
+
+function w_plasma(At_dens, Mass)
+   real(8) w_plasma ! Squared plasma frequency [1/s]^2
    real(8), intent(in) :: At_dens   ! atomic density [1/m^3]
-   w_plasma = (4.0d0*g_Pi*At_dens*g_e*g_e/(4.0d0*g_Pi*g_e0*g_me))
+   real(8), intent(in), optional :: Mass ! effective mass [kg]
+   !--------------------
+
+   !w_plasma = (4.0d0*g_Pi*At_dens*g_e*g_e/(4.0d0*g_Pi*g_e0*g_me))
+
+    if (present(Mass)) then  ! use user-provided mass:
+      w_plasma = At_dens*g_e*g_e/(g_e0*Mass)
+   else ! assume free electron
+      w_plasma = At_dens*g_e*g_e/(g_e0*g_me)
+   endif
 end function w_plasma
+
 
 subroutine sumrules(Afit, Efit, Gfit, ksum, fsum, x_min, Omega)
     real(8), dimension(:),  INTENT(in), target :: Afit ! A coefficient
@@ -824,6 +876,7 @@ subroutine sumrules(Afit, Efit, Gfit, ksum, fsum, x_min, Omega)
     nullify(A1, E1, Gamma1)
 end subroutine sumrules
 
+
 function Int_Ritchi(A,E,Gamma,x) ! integral of the Ritchi function
     real(8) A, E, Gamma, x  ! parameters and variable
     real(8) Int_Ritchi ! function itself
@@ -833,6 +886,7 @@ function Int_Ritchi(A,E,Gamma,x) ! integral of the Ritchi function
     S = REAL(Sc)
     Int_Ritchi = A/S*ATAN( (2.0d0*(x*x-E*E) + Gamma*Gamma)/(Gamma*S) )
 end function Int_Ritchi
+
 
 function Int_Ritchi_x(A,E,Gamma,x) ! integral of the Ritchi*x (k-sum rule)
     real(8) A, E, Gamma, x  ! parameters and variable
@@ -857,6 +911,7 @@ function Int_Ritchi_x(A,E,Gamma,x) ! integral of the Ritchi*x (k-sum rule)
     Ic = (A*Gamma*(0.5d0*oneI*(log(1.0d0-oneI*arg)-log(1.0d0+oneI*arg))/s_minus_c*(1.0d0-Bc) + (0.5d0*oneI*(log(1.0d0-oneI*arg2)-log(1.0d0+oneI*arg2)))/s_plus_c*(1.0d0+Bc) ))
     Int_Ritchi_x = real(Ic)
 end function Int_Ritchi_x
+
 
 function Int_Ritchi_p_x(A,E,Gamma,x) ! integral of the Ritchi/x (ff-sum rule)
     real(8) A, E, Gamma, x  ! parameters and variable

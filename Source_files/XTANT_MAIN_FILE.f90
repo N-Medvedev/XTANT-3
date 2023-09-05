@@ -210,12 +210,15 @@ if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesf
 ! Calculate electron heat capacity, entropy:
 call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
+! Create CDF-file with fitted oscillators (Ritchi-Howie), if required:
+call printout_CDF_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_output_files"
+
 ! And save the (low-energy part of the) distribution on the grid, if required
 ! (its high-energy part is inside of MC_Propagate subroutine):
 call get_low_energy_distribution(g_Scell(1), g_numpar) ! module "Electron_tools"
 
 
-! Calculate configurational temperature:
+! Calculate configurational temperature (implemented only for Pettifor TB):
 ! call Get_configurational_temperature(g_Scell, g_numpar, g_Scell(1)%Tconf)	! module "TB"
 
 ! Save initial step in output:
