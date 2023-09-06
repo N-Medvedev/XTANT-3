@@ -97,28 +97,37 @@ end subroutine set_high_DOS
 
 
 
-subroutine update_cross_section(Scell, matter)
-   type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
-   type(solid), intent(inout) :: matter	! materil parameters
+subroutine update_cross_section(Scell, matter, Te_in)
+   type(Super_cell), intent(in) :: Scell  ! supercell with all the atoms as one object
+   type(solid), intent(inout) :: matter   ! materil parameters
+   real(8), intent(in), optional :: Te_in ! user-defined temperature [K]
+   !------------------------
    integer :: Nshl, i, N_Te
-   real(8) :: dT, T_left
+   real(8) :: dT, T_left, Te
    ! Get the mean free paths vs Te:
    Nshl = size(matter%Atoms(1)%Ip)
    select case (matter%Atoms(1)%TOCS(Nshl)) ! Valence band and CDF only
    case (1) ! CDF
-      if (Scell%Te > 100.0d0) then  ! recalculate:
+
+      if (present(Te_in)) then   ! provided
+         Te = Te_in
+      else  ! default
+         Te = Scell%Te
+      endif
+
+      if (Te > 100.0d0) then  ! recalculate:
          ! Temperature (grid defined in subroutine get_MFPs as Te_temp = dble((i-1)*1000)):
          dT = 1000.0d0 ! [K] grid step
-         T_left = FLOOR(Scell%Te/1000)*1000
-         N_Te = CEILING(Scell%Te/1000)
+         T_left = FLOOR(Te/1000)*1000
+         N_Te = CEILING(Te/1000)
          if (N_Te > size(matter%Atoms(1)%El_MFP_vs_T)) N_Te = size(matter%Atoms(1)%El_MFP_vs_T)   ! maximal energy set
          ! Interpolate valence band MFP for the given temperature:
          if (N_Te == 1) then
             matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) + &
-          (matter%Atoms(1)%El_MFP_vs_T(N_Te+1)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:))/dT * (Scell%Te-T_left)
+          (matter%Atoms(1)%El_MFP_vs_T(N_Te+1)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:))/dT * (Te-T_left)
          else
             matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) + &
-          (matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te-1)%L(:))/dT * (Scell%Te-T_left)
+          (matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te-1)%L(:))/dT * (Te-T_left)
          endif
       else ! no need to recalculate, the tempereature is too small:
          N_Te = 1
@@ -136,10 +145,11 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    type(solid), intent(inout) :: matter	! materil parameters
    type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
    !-----------
-   real(8) :: L, Ele
+   real(8) :: L, Ele, Egap_old
    integer :: i, sumNe, siz, j, Nshl, N_grid, k
 
    siz = size(wr)
+   Nshl = size(matter%Atoms(1)%Ip)  ! last shell, corresponding to bandgap
    
    if (Scell%N_Egap <= 0) then
       sumNe = 0
@@ -154,6 +164,8 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
       i = Scell%N_Egap
    endif
 
+   Egap_old = Scell%E_gap  ! store old gap to use below for MC cross section
+
    Scell%E_gap = ABS(wr(i+1) - wr(i))	! bandgap [eV]
    Scell%E_bottom = wr(i+1)	! bottom of the CB [eV]
    ! If top energy level is excluded (in parameterization, or just too high due to convergence issues)
@@ -166,8 +178,15 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    Scell%E_VB_bottom = wr(1)	! [eV] current bottom of the valence band
    Scell%E_VB_top = wr(i)		! [eV] current top of the valence band
    
+   !--------------------------
    ! Set MC high-energy electron cut-off energy equal to the uppermost level of CB:
    if (numpar%E_cut_dynamic) numpar%E_cut = Scell%E_top - Scell%E_bottom ! [eV]
+
+   ! Ionization potential of the valence band:
+   matter%Atoms(1)%Ip(Nshl) = Scell%E_gap ! [eV]
+
+   ! Update VB impact-ionization scattering CS:
+   call update_ionization_CS(matter, Nshl, Scell%E_gap - Egap_old)  ! below
 
    ! For noneuqilibrium distributions (BO or relaxation time), threshold cannot be higher than
    ! the topmost level of CB, otherwise, there is no way to place an incomming electron:
@@ -180,18 +199,23 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
       numpar%E_cut = min(numpar%E_cut, Scell%E_top-Scell%E_bottom) ! [eV]
 
       ! Also ionization potential and the cross-section may need to be adjusted:
-      Nshl = size(matter%Atoms(1)%Ip)  ! last shell, corresponding to bandgap
       if (matter%Atoms(1)%Ip(Nshl) > (Scell%E_top-Scell%E_bottom) ) then
          if (numpar%verbose) then
             print*, 'Ionization potential is smaller than CB width,', ' it will be reset to Ip=', Scell%E_top-Scell%E_bottom
             print*, 'Note that it will affect the cross-section'
          endif
+         Egap_old = matter%Atoms(1)%Ip(Nshl)
          matter%Atoms(1)%Ip(Nshl) = Scell%E_top-Scell%E_bottom ! change it to the width of CB
          N_grid = size( matter%Atoms(1)%El_MFP(Nshl)%E )
          do k = 1, N_grid  ! recalculate the cross-section of scattering on CB
-            Ele = matter%Atoms(1)%El_MFP(Nshl)%E(k) ! [eV] energy
-            call TotIMFP(Ele, matter, Scell%TeeV, 1, Nshl, L)  ! module "MC_cross_sections"
-            matter%Atoms(1)%El_MFP(Nshl)%L(k) = L ! [A] MFP
+            ! Total recalculation (very time-consuming!):
+            !Ele = matter%Atoms(1)%El_MFP(Nshl)%E(k) ! [eV] energy
+            !call TotIMFP(Ele, matter, Scell%TeeV, 1, Nshl, L)  ! module "MC_cross_sections"
+            !matter%Atoms(1)%El_MFP(Nshl)%L(k) = L ! [A] MFP
+
+            ! Alternatively, use a simple shift of the energy scale:
+            call update_ionization_CS(matter, Nshl, (matter%Atoms(1)%Ip(Nshl) - Egap_old) )  ! below
+
             if (numpar%verbose) call print_progress('Progress:', k, N_grid)    ! module "Little_subroutines"
          enddo
       endif
@@ -219,6 +243,17 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
 !    print*, 'Ne:', Scell%Ne_low, Scell%Ne, Scell%Na
 !    print*, 'E :', Scell%E_gap, Scell%E_VB_top, Scell%E_bottom
 end subroutine find_band_gap
+
+
+
+subroutine update_ionization_CS(matter, Nshl, dE)
+   type(solid), intent(inout) :: matter ! materil parameters
+   integer, intent(in) :: Nshl   ! VB index
+   real(8), intent(in) :: dE  ! energy shift
+
+   matter%Atoms(1)%El_MFP(Nshl)%E(:) = matter%Atoms(1)%El_MFP(Nshl)%E(:) + dE
+end subroutine update_ionization_CS
+
 
 
 subroutine get_number_of_CB_electrons(Scell, NSC)
@@ -1388,9 +1423,9 @@ subroutine get_Ce_and_mu(Scell, NSC, Te_in, Ei, Ce, mu, mu_on_gamma)
       mu_gamma = .true.
    endif
 
-   Te = Te_in/g_kb      ! [eV] -> [K]
+   Te = Te_in/g_kb      ! [eV] <- [K]
    ! Step in temperature for (d mu/ d Te):
-   dTe = 10.0d0/g_kb    ! [eV] -> [K]
+   dTe = 10.0d0/g_kb    ! [eV] <- [K]
    Ntot = dble(Scell(NSC)%Ne) ! number of electrons
    nat = dble(Scell(NSC)%Na)  ! number of atoms
 

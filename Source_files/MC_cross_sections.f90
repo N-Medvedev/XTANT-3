@@ -46,7 +46,7 @@ real(8), parameter :: m_two_third = 2.0d0/3.0d0
 
 
 public :: Mean_free_path, which_atom, which_shell, NRG_transfer_elastic_atomic, Electron_energy_transfer_inelastic
-public :: Get_mfps, Get_photon_attenuation, TotIMFP
+public :: get_MFPs, Get_photon_attenuation, TotIMFP, velosity_from_kinetic_energy
 
 
  contains

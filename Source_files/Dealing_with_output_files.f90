@@ -45,7 +45,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 05.09.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 06.09.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -657,11 +657,11 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
 
    ! Write electron heat conductivity if requesed:
    if (numpar%do_kappa) then
-      ! Total kappa:
-      !write(FN_kappa, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%kappa_e
-      do i = 1, size(Scell(NSC)%kappa_e_vs_Te)
-         write(FN_kappa, '(es25.16,es25.16, es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
-            Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_mu_grid(i), Scell(NSC)%kappa_Ce_grid(i)
+      do i = 1, size(Scell(NSC)%kappa_e_vs_Te)  ! electron temperature dependence
+         write(FN_kappa, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
+            1.0d0/ ( 1.0d0/Scell(NSC)%kappa_e_vs_Te(i) + 1.0d0/Scell(NSC)%kappa_ee_vs_Te(i) ), & ! total conductivity
+            Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_ee_vs_Te(i), & ! electron-phonon, electron-electron contributions
+            Scell(NSC)%kappa_mu_grid(i), Scell(NSC)%kappa_Ce_grid(i) ! chem.potential, electron heat capacity
       enddo
       write(FN_kappa, '(a)')
       write(FN_kappa, '(a)')
