@@ -406,14 +406,22 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
       ! Derivative of fe by Te:
       do i = 1, N_Te_grid
          do n = 1, Nsiz ! all energy points
-            dfe_dT_grid(i,n) = Diff_Fermi_Te(Te_grid(i)*g_kb_EV, mu(i), dmu(i), Ev(n))   ! module "Electron_tools"
+            !dfe_dT_grid(i,n) = Diff_Fermi_Te(Te_grid(i)*g_kb_EV, mu(i), dmu(i), Ev(n))   ! module "Electron_tools"
+            dfe_dT_grid(i,n) =1.0d0/(Te_grid(i)*g_kb_EV) * Diff_Fermi_E(Te_grid(i)*g_kb_EV, mu(i), Ev(n))   ! module "Electron_tools"
+            !print*, i, n, dfe_dT_grid(i,n), Te_grid(i)*g_kb_EV, mu(i), dmu(i), Ev(n)
          enddo
+         !pause 'get_kappa_e_e -- 0'
       enddo
 
       do n = 1, Nsiz ! all energy points
          ! Count energy from the bottom of VB (CB for metals); assume free-electron mass:
-         Ele = Ev(n) - Ev(1)
-         v(n) = velosity_from_kinetic_energy(Ele, g_me, afs=.false.)    ! [m/s] below
+         !Ele = Ev(n) - Ev(1)
+         if (Ev(n) < Scell(NSC)%E_VB_top) then ! formally, it's VB
+            Ele = abs(Ev(n) - Scell(NSC)%E_VB_top)  ! electron energy from fermi energy [eV]
+         else  ! formally, it's CB:
+            Ele = abs(Ev(n) - Scell(NSC)%E_bottom)  ! electron energy from fermi energy [eV]
+         endif
+         v(n) = velosity_from_kinetic_energy(Ele, g_me, afs=.false.)    ! [m/s] module "MC_cross_sections"
       enddo
 
 
@@ -432,12 +440,16 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
             ! its mean free path:
             call Mean_free_path(Ele, matter%El_MFP_tot, L) ! [A] module "MC_cross_sections"
 
-            kappa_ee(i) = kappa_ee(i) + dfe_dT_grid(i,n) * (Ev(n) - mu(i)) * v(n) * L
+            if (L < 1.0d5) then ! exclude infinities
+               kappa_ee(i) = kappa_ee(i) + dfe_dT_grid(i,n) * (Ev(n) - mu(i)) * v(n) * L
+            endif
+            !print*, i, n, kappa_ee(i), dfe_dT_grid(i,n), (Ev(n) - mu(i)), v(n), L
          enddo
+         !pause 'get_kappa_e_e'
       enddo ! i
 
       ! Include porefactors:
-      prefact = 1.0d0/(3.0d0 * Vol) * g_e/g_kb * 1.0d10
+      prefact = 1.0d0/(3.0d0 * Vol) * g_e/g_kb * 1.0d-10
       kappa_ee(:) = prefact * kappa_ee(:) ! -> [W/(K*m)]
 
       ! Restore the cross-section:

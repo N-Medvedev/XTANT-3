@@ -133,7 +133,8 @@ subroutine printout_CDF_file(numpar, matter, Scell)
    parameter (NSC = 1)  ! one supercell
 
    if (numpar%save_CDF) then ! printout CDF file
-      file_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_Ritchie_'//trim(adjustl(matter%Name))//'.cdf'
+      file_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_Ritchie_CDF_'// &
+                  trim(adjustl(matter%Name))//'.cdf'
       FN = 9998
       open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'new')
       ! Printout CDF-oscillators coefficients:
@@ -1263,8 +1264,8 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       numpar%FN_kappa = FN
       !call create_file_header(numpar%FN_kappa, '#Time kappa')
       !call create_file_header(numpar%FN_kappa, '#[fs]  [W/(K*m)]')
-      call create_file_header(numpar%FN_kappa, '#Te   kappa mu Ce')
-      call create_file_header(numpar%FN_kappa, '#[K]  [W/(K*m)]   [eV]  [J/(m^3*K)]')
+      call create_file_header(numpar%FN_kappa, '#Te   kappa_tot   kappa_e_ph  kappa_e_e mu Ce')
+      call create_file_header(numpar%FN_kappa, '#[K]  [W/(K*m)]   [W/(K*m)]   [W/(K*m)]   [eV]  [J/(m^3*K)]')
    endif
 
    file_energies = trim(adjustl(file_path))//'OUTPUT_energies.dat'
