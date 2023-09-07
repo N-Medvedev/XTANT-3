@@ -667,8 +667,7 @@ subroutine read_atomic_parameters(matter, numpar, Err)
       if (file_exist) then
          call get_CDF_data(matter, numpar, Err, File_name) ! see below
       else
-         !print*, 'File ', trim(adjustl(File_name)), ' could not be found, use EADL instead of CDF'
-         print*, 'File '//trim(adjustl(File_name))//' could not be found, using single-pole CDF approximation'
+         print*, 'File '//trim(adjustl(File_name))//' could not be found,', ' using single-pole CDF approximation'
          numpar%At_base = 'CDF_sp'
          call get_EADL_data(matter, numpar, Err) ! see below
       endif
@@ -773,7 +772,7 @@ subroutine check_CDF_file_exists(numpar, matter, File_name, file_exist)
       inquire(file=trim(adjustl(File_name)),exist=file_exist)
    endif
 
-   if (numpar%verbose) call print_time_step('CDF-oscillators read from:'//trim(adjustl(File_name)), msec=.true.) ! modlue "Little_subroutines"
+   if (numpar%verbose) call print_time_step('CDF-oscillators reading from:'//trim(adjustl(File_name)), msec=.true.) ! modlue "Little_subroutines"
 end subroutine check_CDF_file_exists
 
 
@@ -4487,6 +4486,9 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    !read(FN,*,IOSTAT=Reason) numpar%At_base
    read(FN, '(a)', IOSTAT=Reason) read_line
    read(read_line,*,IOSTAT=Reason) numpar%At_base, numpar%input_CDF_file, numpar%user_defined_E_gap
+   if (Reason /= 0) then ! try different order of variables
+      read(read_line,*,IOSTAT=Reason) numpar%At_base, numpar%user_defined_E_gap, numpar%input_CDF_file
+   endif
    if (Reason /= 0) then ! try 2 variables: including E_gap:
       numpar%user_defined_E_gap = -1.0d0  ! default
       numpar%input_CDF_file = ''  ! nullify it

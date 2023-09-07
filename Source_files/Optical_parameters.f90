@@ -34,7 +34,8 @@ MODULE Optical_parameters
 use Universal_constants
 use Objects
 use Algebra_tools, only : sym_diagonalize, numerical_delta
-use Electron_tools, only : get_number_of_CB_electrons, set_Fermi, set_Erf_distribution, find_mu_from_N_T, get_Ce_and_mu, Diff_Fermi_E
+use Electron_tools, only : get_number_of_CB_electrons, set_Fermi, set_Erf_distribution, find_mu_from_N_T, get_Ce_and_mu, &
+                           Diff_Fermi_E, Diff_Fermi_Te, update_cross_section
 use TB_Fu, only : Complex_Hamil_tot_F
 use TB_Pettifor, only : Complex_Hamil_tot
 use TB_Molteni, only : Complex_Hamil_tot_Molteni
@@ -42,6 +43,7 @@ use TB_NRL, only : Complex_Hamil_NRL
 use TB_DFTB, only : Complex_Hamil_DFTB, identify_DFTB_orbitals_per_atom
 use TB, only : k_point_choice, construct_complex_Hamiltonian
 use Little_subroutines, only : deallocate_array, Find_in_array_monoton, d_Fermi_function
+use MC_cross_sections, only : Mean_free_path, velosity_from_kinetic_energy
 
 USE OMP_LIB, only : OMP_GET_THREAD_NUM
 
@@ -56,7 +58,7 @@ real(8), parameter :: m_prefac = g_e**2 / (g_h*g_me**2)
 
 
 
-public :: get_optical_parameters, allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF
+public :: get_optical_parameters, allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF, get_kappa_e_e
 
 
  contains
@@ -143,7 +145,7 @@ end subroutine get_optical_parameters
 ! Kubo-GReenwood implementation in orthogonalized Hamiltonian (combined Refs.[2] and [5]):
 subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err)  ! From Ref. [2]
    type (Numerics_param), intent(inout) :: numpar  ! numerical parameters, including drude-function
-   type(Solid), intent(in) :: matter  ! Material parameters
+   type(Solid), intent(inout) :: matter  ! Material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell   ! supercell with all the atoms as one object
    integer, intent(in) :: NSC    ! number of supercell
    logical, intent(in) :: all_w  ! get all spectrum of hv, or only for given probe wavelength
@@ -157,7 +159,7 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err
    complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
    real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
    real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
-   real(8), dimension(:), allocatable :: kappa, kappa_temp    ! electron heat conductivity vs Te
+   real(8), dimension(:), allocatable :: kappa, kappa_ee, kappa_ee_temp, kappa_temp    ! electron heat conductivity vs Te
    real(8), dimension(:), allocatable :: kappa_mu_grid, kappa_mu_grid_temp, kappa_Ce_grid, kappa_Ce_grid_temp
    integer :: Nsiz_Te
    real(8) :: Te_min, Te_max, dTe
@@ -174,6 +176,7 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err
    if (.not.allocated(Scell(NSC)%kappa_Ce_grid)) allocate(Scell(NSC)%kappa_Ce_grid(Nsiz_Te), source = 0.0d0)   ! Ce [J/(m^3 K)]
 
    if (.not.allocated(kappa)) allocate(kappa(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(kappa_ee)) allocate(kappa_ee(Nsiz_Te), source = 0.0d0)
    if (.not.allocated(kappa_mu_grid)) allocate(kappa_mu_grid(Nsiz_Te), source = 0.0d0)   ! mu [eV]
    if (.not.allocated(kappa_Ce_grid)) allocate(kappa_Ce_grid(Nsiz_Te), source = 0.0d0)   ! Ce [J/(m^3 K)]
 
@@ -216,14 +219,16 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err
    endif
 
    kappa = 0.0d0  ! to start with
+   kappa_ee = 0.0d0  ! to start with
 
    !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, &
-   !$omp                  kappa_temp, kappa_mu_grid_temp, kappa_Ce_grid_temp)
+   !$omp                  kappa_temp, kappa_ee_temp, kappa_mu_grid_temp, kappa_Ce_grid_temp)
    if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N), source = 0.0d0) ! all are there
    if (.not.allocated(kappa_temp)) allocate(kappa_temp(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(kappa_ee_temp)) allocate(kappa_ee_temp(Nsiz_Te), source = 0.0d0)
    if (.not.allocated(kappa_mu_grid_temp)) allocate(kappa_mu_grid_temp(Nsiz_Te), source = 0.0d0)   ! mu [eV]
    if (.not.allocated(kappa_Ce_grid_temp)) allocate(kappa_Ce_grid_temp(Nsiz_Te), source = 0.0d0)   ! Ce
-   !$omp do schedule(dynamic) reduction( + : Eps_hw, kappa, kappa_mu_grid, kappa_Ce_grid)
+   !$omp do schedule(dynamic) reduction( + : Eps_hw, kappa, kappa_ee, kappa_mu_grid, kappa_Ce_grid)
    do Ngp = 1, Nsiz
       ! Split total index into 3 coordinates indices:
       ix = ceiling( dble(Ngp)/dble(iym*izm) )
@@ -282,15 +287,28 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err
          kappa_mu_grid_temp = 0.0d0
          kappa_Ce_grid_temp = 0.0d0
       endif
+
+      !-----------------------------------------
+      ! Add contribution of the electronic term:
+      if (numpar%do_kappa) then  ! if requested
+         call get_kappa_e_e(numpar, matter, Scell, NSC, Ei, kappa_mu_grid_temp, Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! below
+      else
+         kappa_ee_temp = 0.0d0
+      endif
+
+      !=========================================
+      ! Combine terms:
       kappa = kappa + kappa_temp ! sum up at different k-points
       kappa_mu_grid = kappa_mu_grid + kappa_mu_grid_temp    ! average mu
       kappa_Ce_grid = kappa_Ce_grid + kappa_Ce_grid_temp    ! average Ce
+      kappa_ee = kappa_ee + kappa_ee_temp ! sum up at different k-points
    enddo ! Ngp
    !$omp end do
    if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
    if (allocated(kappa_temp)) deallocate(kappa_temp)
    if (allocated(kappa_mu_grid_temp)) deallocate(kappa_mu_grid_temp)
    if (allocated(kappa_Ce_grid_temp)) deallocate(kappa_Ce_grid_temp)
+   if (allocated(kappa_ee_temp)) deallocate(kappa_ee_temp)
    !$omp end parallel
 
    ! Save the k-point averages:
@@ -317,6 +335,7 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err
    if (numpar%do_kappa) then  ! if requested
       Scell(NSC)%kappa_e = kappa(1)/dble(Nsiz)  ! room temperature
       Scell(NSC)%kappa_e_vs_Te = kappa/dble(Nsiz)  ! array vs Te
+      Scell(NSC)%kappa_ee_vs_Te = kappa_ee/dble(Nsiz)  ! array vs Te
       Scell(NSC)%kappa_mu_grid = kappa_mu_grid/dble(Nsiz)  ! array of mu vs Te
       Scell(NSC)%kappa_Ce_grid = kappa_Ce_grid/dble(Nsiz)  ! array of Ce vs Te
    endif
@@ -332,7 +351,120 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err
    if (allocated(kappa)) deallocate(kappa)
    if (allocated(kappa_mu_grid)) deallocate(kappa_mu_grid)
    if (allocated(kappa_Ce_grid)) deallocate(kappa_Ce_grid)
+   if (allocated(kappa_ee)) deallocate(kappa_ee)
 end subroutine get_Kubo_Greenwood_all_complex
+
+
+subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Solid), intent(inout) :: matter  ! Material parameters
+   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
+   real(8), dimension(:), intent(in) :: mu   ! chemical potential [eV]
+   real(8), dimension(:), intent(in) :: Te_grid    ! electronic temperature grid [K]
+   real(8), dimension(:), intent(out) :: kappa_ee  ! electron heat conductivity tensor [W/(K*m)] vs Te
+   !----------------------------
+   real(8), dimension(:,:), allocatable :: dfe_dT_grid
+   real(8), dimension(:), allocatable :: dmu, v, A, B, C
+   real(8) :: Vol, Ele, L, prefact, temp
+   integer :: i, n, Nsiz, N_Te_grid
+
+   if (numpar%do_kappa) then ! only if requested
+
+      Nsiz = size(Ev)   ! number of energy levels
+      N_Te_grid = size(Te_grid)
+
+
+      if (.not. allocated(dmu)) then
+         allocate(dmu(N_Te_grid), source = 0.0d0)
+      else
+         dmu = 0.0d0   ! to start with
+      endif
+
+      allocate(dfe_dT_grid(N_Te_grid, Nsiz), source = 0.0d0)
+      allocate(v(Nsiz), source = 0.0d0)
+      allocate(A(N_Te_grid), source = 0.0d0)
+      allocate(B(N_Te_grid), source = 0.0d0)
+      allocate(C(N_Te_grid), source = 0.0d0)
+
+
+      ! Supercell volume:
+      Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+
+      ! Get dmu:
+      dmu(1) = (mu(2) - mu(1)) / ((Te_grid(2)-Te_grid(1))*g_kb_EV)
+      do i = 2, N_Te_grid
+         dmu(i) = (mu(i) - mu(i-1)) / ((Te_grid(i)-Te_grid(i-1))*g_kb_EV)  !
+      enddo
+
+      ! Derivative of fe by Te:
+      do i = 1, N_Te_grid
+         do n = 1, Nsiz ! all energy points
+            !dfe_dT_grid(i,n) = Diff_Fermi_Te(Te_grid(i)*g_kb_EV, mu(i), dmu(i), Ev(n))   ! module "Electron_tools"
+            dfe_dT_grid(i,n) = 1.0d0/(Te_grid(i)*g_kb_EV) * Diff_Fermi_E(Te_grid(i)*g_kb_EV, mu(i), Ev(n))   ! module "Electron_tools"
+            !print*, i, n, dfe_dT_grid(i,n), Te_grid(i)*g_kb_EV, mu(i), dmu(i), Ev(n)
+         enddo
+         !pause 'get_kappa_e_e -- 0'
+      enddo
+
+      do n = 1, Nsiz ! all energy points
+         ! Count energy from the bottom of VB (CB for metals); assume free-electron mass:
+         Ele = Ev(n) - Ev(1) ! test
+         !if (Ev(n) < Scell(NSC)%E_VB_top) then ! formally, it's VB
+         !   Ele = abs(Ev(n) - Scell(NSC)%E_VB_top)  ! electron energy from fermi energy [eV]
+         !else  ! formally, it's CB:
+         !   Ele = abs(Ev(n) - Scell(NSC)%E_bottom)  ! electron energy from fermi energy [eV]
+         !endif
+         v(n) = velosity_from_kinetic_energy(Ele, g_me, afs=.false.)    ! [m/s] module "MC_cross_sections"
+      enddo
+
+
+      do i = 1, N_Te_grid  ! all temperatures
+
+         ! update cross-sections for different temrpeatures:
+         call update_cross_section(Scell(NSC), matter, Te_in=Te_grid(i))  ! module "Electron_tools"
+
+         do n = 1, Nsiz ! all energy points
+            ! Define electron energy to find mean free path:
+            if (Ev(n) < Scell(NSC)%E_VB_top) then ! formally, it's VB
+               Ele = abs(Ev(n) - Scell(NSC)%E_VB_top)  ! electron energy from fermi energy [eV]
+            else  ! formally, it's CB:
+               Ele = abs(Ev(n) - Scell(NSC)%E_bottom)  ! electron energy from fermi energy [eV]
+            endif
+            ! its mean free path:
+            call Mean_free_path(Ele, matter%El_MFP_tot, L) ! [A] module "MC_cross_sections"
+
+            if (L < 1.0d6) then ! exclude infinities
+               !kappa_ee(i) = kappa_ee(i) + dfe_dT_grid(i,n) * (Ev(n) - mu(i))**2 * v(n) * L
+               temp = dfe_dT_grid(i,n) * v(n) * L
+               A(i) = A(i) + temp * (Ev(n) - mu(i))**2
+               C(i) = C(i) + temp * (Ev(n) - mu(i))
+               B(i) = B(i) + temp
+            endif
+            !print*, i, n, kappa_ee(i), dfe_dT_grid(i,n), (Ev(n) - mu(i)), v(n), L
+         enddo
+
+         kappa_ee(i) = (A(i) - C(i)**2/B(i))
+         !pause 'get_kappa_e_e'
+      enddo ! i
+
+      ! Include porefactors:
+      prefact = 1.0d0/(3.0d0 * Vol) * g_e/g_kb * 1.0d-10
+      kappa_ee(:) = prefact * abs(kappa_ee(:))  ! -> [W/(K*m)]
+
+      ! Restore the cross-section:
+      call update_cross_section(Scell(NSC), matter)  ! module "Electron_tools"
+
+      ! Clean up:
+      if (allocated(dfe_dT_grid)) deallocate(dfe_dT_grid)
+      if (allocated(dmu)) deallocate(dmu)
+      if (allocated(v)) deallocate(v)
+   else
+      kappa_ee = 0.0d0
+   endif
+end subroutine get_kappa_e_e
+
 
 
 
@@ -430,21 +562,6 @@ subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, E
             kappa(i) = 0.0d0
          endif
       enddo ! i
-
-      ! Add contribution of the electronic term:
-      ! [Petrov et al., Data in brief 28 (2020) 104980]
-      !n_s = dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na) * (matter%At_dens*1d6) ! [1/m^3]
-!       ne = dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na)  ! electrons per atom
-!       n_s = matter%At_dens*1d6 * ne    ! [1/m^3] standard
-!       !n_s = matter%At_dens*1d6 / (ne*3.0d0) ! [1/m^3] empirically adjusted
-!       v_F = sqrt(2.0d0*(Scell(NSC)%E_VB_top - Scell(NSC)%E_VB_bottom)*g_e/g_me)  ! [m/s]
-! !       if (numpar%verbose) write(6,'(a,f,es,f)') 'Fermi-velosity: ', dble(Scell(NSC)%Ne)/dble(Scell(NSC)%Na), n_s, v_F
-!       pref_ke = g_Pi**2/6.0d0 * n_s * g_h * v_F**2
-!       do i = 1, N_Te_grid
-!          kappa_e = pref_ke / Te_grid(i)
-!          !print*, 'k', i, kappa(i), kappa_e
-!          kappa(i) = 1.0d0 / ( 1.0d0/kappa(i) + 1.0d0/kappa_e )
-!       enddo
 
    endif ! numpar%do_kappa
 

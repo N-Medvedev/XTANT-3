@@ -27,7 +27,7 @@ MODULE TB_complex
 use Universal_constants
 use Objects
 use TB, only : k_point_choice, construct_complex_Hamiltonian
-use Optical_parameters, only : allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF
+use Optical_parameters, only : allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF, get_kappa_e_e
 use Electron_tools, only : get_DOS_sort
 use Little_subroutines, only : Find_in_array_monoton
 
@@ -46,7 +46,7 @@ public :: use_complex_Hamiltonian
 
 subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref. [2]
    type (Numerics_param), intent(inout) :: numpar  ! numerical parameters, including drude-function
-   type(Solid), intent(in) :: matter  ! Material parameters
+   type(Solid), intent(inout) :: matter  ! Material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell   ! supercell with all the atoms as one object
    integer, intent(in) :: NSC    ! number of supercell
    type(Error_handling), intent(inout) :: Err   ! error save
@@ -59,7 +59,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
    real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
    real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
-   real(8), dimension(:), allocatable :: kappa, kappa_temp    ! electron heat conductivity vs Te
+   real(8), dimension(:), allocatable :: kappa, kappa_ee, kappa_temp, kappa_ee_temp    ! electron heat conductivity vs Te
    real(8), dimension(:), allocatable :: kappa_mu_grid, kappa_mu_grid_temp, kappa_Ce_grid, kappa_Ce_grid_temp
    integer :: Nsiz_Te, Nsiz_DOS_1, Nsiz_DOS_2, Nsiz_DOS_3
    real(8) :: Te_min, Te_max, dTe
@@ -83,7 +83,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    !-----------------------------------------------
    ! For electron-temperature-dependent quantities:
    ! Define electron temperature grid:
-   call set_temperature_grid(Scell(NSC), numpar, kappa, kappa_mu_grid, kappa_Ce_grid) ! below
+   call set_temperature_grid(Scell(NSC), numpar, kappa, kappa_ee, kappa_mu_grid, kappa_Ce_grid) ! below
    Nsiz_Te = size(kappa)
 
    !-----------------------------------------------
@@ -99,14 +99,15 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    !-----------------------------------------------
    ! Calculate what's required for all k-points:
    !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, &
-   !$omp                  kappa_temp, kappa_mu_grid_temp, kappa_Ce_grid_temp, DOS_temp, DOS_partial_temp)
+   !$omp                  kappa_temp, kappa_ee_temp, kappa_mu_grid_temp, kappa_Ce_grid_temp, DOS_temp, DOS_partial_temp)
    if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N_wgrid), source = 0.0d0) ! all are there
    if (.not.allocated(kappa_temp)) allocate(kappa_temp(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(kappa_ee_temp)) allocate(kappa_ee_temp(Nsiz_Te), source = 0.0d0)
    if (.not.allocated(kappa_mu_grid_temp)) allocate(kappa_mu_grid_temp(Nsiz_Te), source = 0.0d0)   ! mu [eV]
    if (.not.allocated(kappa_Ce_grid_temp)) allocate(kappa_Ce_grid_temp(Nsiz_Te), source = 0.0d0)   ! Ce
    if (.not.allocated(DOS_temp)) allocate(DOS_temp(2,Nsiz_DOS_3), source = DOS)   ! DOS
    if (.not.allocated(DOS_partial_temp)) allocate(DOS_partial_temp(Nsiz_DOS_1,Nsiz_DOS_2,Nsiz_DOS_3), source = 0.0d0)   ! DOS_partial
-   !$omp do schedule(dynamic) reduction( + : Eps_hw, kappa, kappa_mu_grid, kappa_Ce_grid, DOS, DOS_partial)
+   !$omp do schedule(dynamic) reduction( + : Eps_hw, kappa, kappa_ee, kappa_mu_grid, kappa_Ce_grid, DOS, DOS_partial)
    do Ngp = 1, Nsiz
       ! Split total index into 3 coordinates indices:
       ix = ceiling( dble(Ngp)/dble(iym*izm) )
@@ -172,21 +173,31 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       !-------------------------------
       ! If required, do Onsager coefficients (for electronic heat conductivity):
       if (numpar%do_kappa) then  ! if requested
+         ! Electron-phonon contribution:
          call get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
                               Scell(NSC)%kappa_Te_grid, kappa_mu_grid_temp, kappa_Ce_grid_temp)   ! module "Optical_parameters"
+
+         ! Contribution of the electronic term:
+         call get_kappa_e_e(numpar, matter, Scell, NSC, Ei, kappa_mu_grid_temp, &
+                              Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! module "Optical_parameters"
       else  ! if not required
          kappa_temp = 0.0d0
          kappa_mu_grid_temp = 0.0d0
          kappa_Ce_grid_temp = 0.0d0
+         kappa_ee_temp = 0.0d0
       endif
+
+      !-------------------------------
       ! Save kappa - electronic heat conductivity data:
       kappa = kappa + kappa_temp ! sum up at different k-points
+      kappa_ee = kappa_ee + kappa_ee_temp ! sum up at different k-points
       kappa_mu_grid = kappa_mu_grid + kappa_mu_grid_temp    ! average mu
       kappa_Ce_grid = kappa_Ce_grid + kappa_Ce_grid_temp    ! average Ce
    enddo ! Ngp
    !$omp end do
    if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
    if (allocated(kappa_temp)) deallocate(kappa_temp)
+   if (allocated(kappa_ee_temp)) deallocate(kappa_ee_temp)
    if (allocated(kappa_mu_grid_temp)) deallocate(kappa_mu_grid_temp)
    if (allocated(kappa_Ce_grid_temp)) deallocate(kappa_Ce_grid_temp)
    if (allocated(DOS_temp)) deallocate(DOS_temp)
@@ -221,6 +232,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    if (numpar%do_kappa) then  ! if requested
       Scell(NSC)%kappa_e = kappa(1)/dble(Nsiz)  ! room temperature
       Scell(NSC)%kappa_e_vs_Te = kappa/dble(Nsiz)  ! array vs Te
+      Scell(NSC)%kappa_ee_vs_Te = kappa_ee/dble(Nsiz)  ! e-e array vs Te
       Scell(NSC)%kappa_mu_grid = kappa_mu_grid/dble(Nsiz)  ! array of mu vs Te
       Scell(NSC)%kappa_Ce_grid = kappa_Ce_grid/dble(Nsiz)  ! array of Ce vs Te
    endif
@@ -245,6 +257,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    if (allocated(CHij)) deallocate(CHij)
    if (allocated(Eps_hw)) deallocate(Eps_hw)
    if (allocated(kappa)) deallocate(kappa)
+   if (allocated(kappa_ee)) deallocate(kappa_ee)
    if (allocated(kappa_mu_grid)) deallocate(kappa_mu_grid)
    if (allocated(kappa_Ce_grid)) deallocate(kappa_Ce_grid)
    if (allocated(DOS)) deallocate(DOS)
@@ -360,10 +373,10 @@ end subroutine set_frequency_grid
 
 
 
-subroutine set_temperature_grid(Scell, numpar, kappa, kappa_mu_grid, kappa_Ce_grid)
+subroutine set_temperature_grid(Scell, numpar, kappa, kappa_ee, kappa_mu_grid, kappa_Ce_grid)
    type (Super_cell), intent(inout) :: Scell   ! supercell with all the atoms as one object
    type (Numerics_param), intent(in) :: numpar  ! numerical parameters
-   real(8), dimension(:), allocatable :: kappa, kappa_mu_grid, kappa_Ce_grid
+   real(8), dimension(:), allocatable :: kappa, kappa_ee, kappa_mu_grid, kappa_Ce_grid
    !-----------------------------
    real(8) :: Te_min, Te_max, dTe
    integer :: Nsiz_Te, i
@@ -376,6 +389,7 @@ subroutine set_temperature_grid(Scell, numpar, kappa, kappa_mu_grid, kappa_Ce_gr
 
    ! Allocate the arrays:
    if (.not.allocated(kappa)) allocate(kappa(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(kappa_ee)) allocate(kappa_ee(Nsiz_Te), source = 0.0d0)
    if (.not.allocated(kappa_mu_grid)) allocate(kappa_mu_grid(Nsiz_Te), source = 0.0d0)   ! mu [eV]
    if (.not.allocated(kappa_Ce_grid)) allocate(kappa_Ce_grid(Nsiz_Te), source = 0.0d0)   ! Ce [J/(m^3 K)]
 
