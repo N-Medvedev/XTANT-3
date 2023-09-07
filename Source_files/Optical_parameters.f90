@@ -366,8 +366,8 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
    real(8), dimension(:), intent(out) :: kappa_ee  ! electron heat conductivity tensor [W/(K*m)] vs Te
    !----------------------------
    real(8), dimension(:,:), allocatable :: dfe_dT_grid
-   real(8), dimension(:), allocatable :: dmu, v
-   real(8) :: Vol, Ele, L, prefact
+   real(8), dimension(:), allocatable :: dmu, v, A, B, C
+   real(8) :: Vol, Ele, L, prefact, temp
    integer :: i, n, Nsiz, N_Te_grid
 
    if (numpar%do_kappa) then ! only if requested
@@ -375,11 +375,6 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
       Nsiz = size(Ev)   ! number of energy levels
       N_Te_grid = size(Te_grid)
 
-      if (.not. allocated(dfe_dT_grid)) then
-         allocate(dfe_dT_grid(N_Te_grid, Nsiz), source = 0.0d0)
-      else
-         dfe_dT_grid = 0.0d0   ! to start with
-      endif
 
       if (.not. allocated(dmu)) then
          allocate(dmu(N_Te_grid), source = 0.0d0)
@@ -387,11 +382,11 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
          dmu = 0.0d0   ! to start with
       endif
 
-      if (.not. allocated(v)) then
-         allocate(v(Nsiz), source = 0.0d0)
-      else
-         v = 0.0d0   ! to start with
-      endif
+      allocate(dfe_dT_grid(N_Te_grid, Nsiz), source = 0.0d0)
+      allocate(v(Nsiz), source = 0.0d0)
+      allocate(A(N_Te_grid), source = 0.0d0)
+      allocate(B(N_Te_grid), source = 0.0d0)
+      allocate(C(N_Te_grid), source = 0.0d0)
 
 
       ! Supercell volume:
@@ -415,12 +410,12 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
 
       do n = 1, Nsiz ! all energy points
          ! Count energy from the bottom of VB (CB for metals); assume free-electron mass:
-         Ele = Ev(n) - Ev(1)
-!          if (Ev(n) < Scell(NSC)%E_VB_top) then ! formally, it's VB
-!             Ele = abs(Ev(n) - Scell(NSC)%E_VB_top)  ! electron energy from fermi energy [eV]
-!          else  ! formally, it's CB:
-!             Ele = abs(Ev(n) - Scell(NSC)%E_bottom)  ! electron energy from fermi energy [eV]
-!          endif
+         Ele = Ev(n) - Ev(1) ! test
+         !if (Ev(n) < Scell(NSC)%E_VB_top) then ! formally, it's VB
+         !   Ele = abs(Ev(n) - Scell(NSC)%E_VB_top)  ! electron energy from fermi energy [eV]
+         !else  ! formally, it's CB:
+         !   Ele = abs(Ev(n) - Scell(NSC)%E_bottom)  ! electron energy from fermi energy [eV]
+         !endif
          v(n) = velosity_from_kinetic_energy(Ele, g_me, afs=.false.)    ! [m/s] module "MC_cross_sections"
       enddo
 
@@ -440,11 +435,17 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
             ! its mean free path:
             call Mean_free_path(Ele, matter%El_MFP_tot, L) ! [A] module "MC_cross_sections"
 
-            if (L < 1.0d5) then ! exclude infinities
-               kappa_ee(i) = kappa_ee(i) + dfe_dT_grid(i,n) * (Ev(n) - mu(i)) * v(n) * L
+            if (L < 1.0d6) then ! exclude infinities
+               !kappa_ee(i) = kappa_ee(i) + dfe_dT_grid(i,n) * (Ev(n) - mu(i))**2 * v(n) * L
+               temp = dfe_dT_grid(i,n) * v(n) * L
+               A(i) = A(i) + temp * (Ev(n) - mu(i))**2
+               C(i) = C(i) + temp * (Ev(n) - mu(i))
+               B(i) = B(i) + temp
             endif
             !print*, i, n, kappa_ee(i), dfe_dT_grid(i,n), (Ev(n) - mu(i)), v(n), L
          enddo
+
+         kappa_ee(i) = (A(i) - C(i)**2/B(i))
          !pause 'get_kappa_e_e'
       enddo ! i
 
