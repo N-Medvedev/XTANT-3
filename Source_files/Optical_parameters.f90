@@ -403,16 +403,17 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
       ! Derivative of fe by Te:
       do i = 1, N_Te_grid
          do n = 1, Nsiz ! all energy points
+            ! Derivative df/dT (wrong, should be by dE!)
             !dfe_dT_grid(i,n) = Diff_Fermi_Te(Te_grid(i)*g_kb_EV, mu(i), dmu(i), Ev(n))   ! module "Electron_tools"
+            ! Derivative df/dE * 1/Te
             dfe_dT_grid(i,n) = 1.0d0/(Te_grid(i)*g_kb_EV) * Diff_Fermi_E(Te_grid(i)*g_kb_EV, mu(i), Ev(n))   ! module "Electron_tools"
-            !print*, i, n, dfe_dT_grid(i,n), Te_grid(i)*g_kb_EV, mu(i), dmu(i), Ev(n)
          enddo
-         !pause 'get_kappa_e_e -- 0'
       enddo
 
       do n = 1, Nsiz ! all energy points
          ! Count energy from the bottom of VB (CB for metals); assume free-electron mass:
-         Ele = Ev(n) - Ev(1) ! test
+         Ele = Ev(n) - Ev(1)
+         ! Alternatively, count from the fermi-level (produces wrong results!)
          !if (Ev(n) < Scell(NSC)%E_VB_top) then ! formally, it's VB
          !   Ele = abs(Ev(n) - Scell(NSC)%E_VB_top)  ! electron energy from fermi energy [eV]
          !else  ! formally, it's CB:
