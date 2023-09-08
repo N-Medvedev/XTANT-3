@@ -11,7 +11,7 @@ It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matte
  
  d) Molecular dynamics (MD) for tracing atomic response to modification of the interatomic potential due to electronic excitation
  
- e) Random phase approximation (RPA) for calculation of the change of the optical properties of the material
+ e) Kubo-Greenwood (or Random phase approximation, RPA) for calculation of the optical properties and electronic heat conductivity of the material
 
 ## Disclaimer
 
