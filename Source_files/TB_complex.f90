@@ -51,12 +51,14 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    integer, intent(in) :: NSC    ! number of supercell
    type(Error_handling), intent(inout) :: Err   ! error save
    !--------------------
-   complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
+   complex, dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   complex, dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
    real(8) :: w, kx, ky, kz
    real(8), dimension(:), allocatable :: w_grid
    integer :: i, j, N, FN, ix, iy, iz, ixm, iym, izm, schem, Ngp, Nsiz, N_wgrid
    real(8), dimension(:), allocatable :: Ei	! energy levels [eV]
-   complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
    real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
    real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
    real(8), dimension(:), allocatable :: kappa, kappa_ee, kappa_temp, kappa_ee_temp    ! electron heat conductivity vs Te

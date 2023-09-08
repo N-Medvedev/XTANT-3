@@ -1104,7 +1104,7 @@ subroutine c8_diagonalize(M, Ev, Error_descript, print_Ei, check_M) ! double pre
 
    if (present(check_M)) then
       if (check_M) then
-         call check_Ha(M_save, M_work, Ev)   ! to make sure diagonalization went well
+         call check_Ha_c8(M_save, M_work, Ev)   ! to make sure diagonalization went well
 !          pause 'check_M'
       endif
    endif
