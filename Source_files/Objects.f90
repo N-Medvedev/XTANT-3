@@ -499,8 +499,10 @@ end type Supce_force
 type Drude
    real(8) :: ReEps, ReEps0 ! real part of the dielectric constant
    real(8) :: ImEps, ImEps0 ! imaginary part of the dielectric constant
-   complex(8) :: Eps_xx, Eps_yy, Eps_zz	! diagonal components of the complex dielectric tensor
-   complex(8) :: Eps_xy, Eps_xz, Eps_yx, Eps_yz, Eps_zx, Eps_zy	! off-diagonal components of the complex dielectric tensor
+   !complex(8) :: Eps_xx, Eps_yy, Eps_zz	! diagonal components of the complex dielectric tensor
+   !complex(8) :: Eps_xy, Eps_xz, Eps_yx, Eps_yz, Eps_zx, Eps_zy	! off-diagonal components of the complex dielectric tensor
+   complex :: Eps_xx, Eps_yy, Eps_zz	! diagonal components of the complex dielectric tensor
+   complex :: Eps_xy, Eps_xz, Eps_yx, Eps_yz, Eps_zx, Eps_zy	! off-diagonal components of the complex dielectric tensor
    real(8) :: n, k ! optical coefficients
    real(8) :: R, T, A ! reflectivity, transmittion, absorbtion
    real(8) :: dc_cond	! dc-conductivity []

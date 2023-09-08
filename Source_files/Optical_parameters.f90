@@ -131,7 +131,7 @@ subroutine get_optical_parameters(numpar, matter, Scell, Err) ! optical coeffici
          do i = 1, size(Scell(NSC)%eps%Eps_hw(1,:))
             call get_RTA_from_CDF(Scell(NSC)%eps%Eps_hw(2,i), Scell(NSC)%eps%Eps_hw(3,i), Scell(NSC)%eps%l, Scell(NSC)%eps%dd, Scell(NSC)%eps%teta, numpar%drude_ray, Scell(NSC)%eps%Eps_hw(5,i), Scell(NSC)%eps%Eps_hw(6,i), Scell(NSC)%eps%Eps_hw(7,i))
             call get_n_k(Scell(NSC)%eps%Eps_hw(2,i), Scell(NSC)%eps%Eps_hw(3,i), Scell(NSC)%eps%Eps_hw(8,i), Scell(NSC)%eps%Eps_hw(9,i))	! transfer Re(e) and Im(e) into n and k
-            call save_Eps_hw(Scell(NSC)%eps%Eps_hw, i, Scell(NSC)%eps%Eps_hw(1,i), Scell(NSC)%eps%Eps_hw(2,i), Scell(NSC)%eps%Eps_hw(3,i), Scell(NSC)%eps%Eps_hw(4,i), Scell(NSC)%eps%Eps_hw(5,i), Scell(NSC)%eps%Eps_hw(6,i), Scell(NSC)%eps%Eps_hw(7,i), Scell(NSC)%eps%Eps_hw(8,i), Scell(NSC)%eps%Eps_hw(9,i), dcmplx(Scell(NSC)%eps%Eps_hw(11,i),Scell(NSC)%eps%Eps_hw(12,i)), dcmplx(Scell(NSC)%eps%Eps_hw(13,i),Scell(NSC)%eps%Eps_hw(14,i)), dcmplx(Scell(NSC)%eps%Eps_hw(15,i),Scell(NSC)%eps%Eps_hw(16,i)),  Scell(NSC)%eps%Eps_hw(10,i))
+            call save_Eps_hw(Scell(NSC)%eps%Eps_hw, i, Scell(NSC)%eps%Eps_hw(1,i), Scell(NSC)%eps%Eps_hw(2,i), Scell(NSC)%eps%Eps_hw(3,i), Scell(NSC)%eps%Eps_hw(4,i), Scell(NSC)%eps%Eps_hw(5,i), Scell(NSC)%eps%Eps_hw(6,i), Scell(NSC)%eps%Eps_hw(7,i), Scell(NSC)%eps%Eps_hw(8,i), Scell(NSC)%eps%Eps_hw(9,i), cmplx(Scell(NSC)%eps%Eps_hw(11,i),Scell(NSC)%eps%Eps_hw(12,i)), cmplx(Scell(NSC)%eps%Eps_hw(13,i),Scell(NSC)%eps%Eps_hw(14,i)), cmplx(Scell(NSC)%eps%Eps_hw(15,i),Scell(NSC)%eps%Eps_hw(16,i)),  Scell(NSC)%eps%Eps_hw(10,i))
 !             write(*,'(f,es,es)') Scell(NSC)%eps%Eps_hw(1,i), Scell(NSC)%eps%Eps_hw(2,i), Scell(NSC)%eps%Eps_hw(3,i)
          enddo
       endif
@@ -151,12 +151,14 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err
    logical, intent(in) :: all_w  ! get all spectrum of hv, or only for given probe wavelength
    type(Error_handling), intent(inout) :: Err   ! error save
    !--------------------
-   complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
+   complex, dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz    ! effective momentum operators
+   complex, dimension(:,:), allocatable :: CHij    ! eigenvectors of the hamiltonian
    real(8) :: w, kx, ky, kz
    real(8), dimension(:), allocatable :: w_grid
    integer :: i, j, N, FN, ix, iy, iz, ixm, iym, izm, schem, Ngp, Nsiz
    real(8), dimension(:), allocatable :: Ei	! energy levels [eV]
-   complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
    real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
    real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
    real(8), dimension(:), allocatable :: kappa, kappa_ee, kappa_ee_temp, kappa_temp    ! electron heat conductivity vs Te
@@ -474,7 +476,8 @@ subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, E
    type(Solid), intent(in) :: matter  ! Material parameters
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   complex, dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
    real(8), dimension(:), intent(out) :: kappa ! electron heat conductivity tensor [W/(K*m)] vs Te
    real(8), dimension(:), intent(in) :: Te_grid ! electronic temperature grid [K]
@@ -574,7 +577,8 @@ end subroutine get_Onsager_coeffs
 
 
 subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_dE_grid, A, B, C, model)
-   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   complex, dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
    real(8), intent(in) :: eta
    real(8), dimension(:), intent(in) :: mu
@@ -687,7 +691,8 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(in) :: w_grid ! frequency grid [1/s]
-   complex(8), dimension(:,:), intent(in) :: cPRRx_in, cPRRy_in, cPRRz_in  ! effective momentum operators
+   !complex(8), dimension(:,:), intent(in) :: cPRRx_in, cPRRy_in, cPRRz_in  ! effective momentum operators
+   complex, dimension(:,:), intent(in) :: cPRRx_in, cPRRy_in, cPRRz_in  ! effective momentum operators
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
    real(8), dimension(:,:), intent(inout) :: Eps_hw_temp ! all CDF data
    !----------------------------
@@ -695,8 +700,10 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
    real(8), dimension(:), allocatable :: fe_temp
    real(8), dimension(:,:), allocatable :: f_nm_w_nm
    real(8), dimension(:,:,:,:), allocatable :: A_sigma, B_sigma
-   complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
-   complex(8) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
+   !complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !complex(8) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
+   complex, dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   complex :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
    real(8) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, temp_1, temp_2, temp_3
    real(8) :: w, Vol, prefact, w_mn, g_sigma, w_sigma, denom, prec
    real(8) :: pxpx, pxpy, pxpz, pypx, pypy, pypz, pzpx, pzpy, pzpz
@@ -902,7 +909,12 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
    type(Error_handling), intent(inout) :: Err   ! error save
    !--------------------
    real(8), dimension(:,:,:), allocatable :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
-   complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
+   !complex(8) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
+   complex, dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   complex, dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
+   complex :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
    real(8), dimension(:,:,:,:), allocatable :: cTnn ! kinetic energy-related [dimensionless]
    real(8), dimension(:,:), allocatable :: Eps
    real(8) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond
@@ -910,10 +922,8 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
    real(8), dimension(:), allocatable :: w_grid
    integer :: i, j, N, FN, ix, iy, iz, ixm, iym, izm, schem, Ngp, Nsiz, Nx, Ny, Nz
    real(8), dimension(:), allocatable :: Ei	! energy levels [eV]
-   complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
    real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
    real(8), dimension(:,:), allocatable :: Eps_hw_temp ! array of all eps vs hw
-   complex(8) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
    !--------------------
 
    ! Allocate the array of optical coefficients spectrum (if not allocated before):
@@ -1061,12 +1071,14 @@ subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, m_eff,
    type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   complex, dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
    real(8), dimension(:,:,:), intent(in) :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
    real(8), intent(in) :: w   ! frequency [1/s]
    real(8), intent(inout) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond
-   complex(8), intent(inout) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
+   !complex(8), intent(inout) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
+   complex, intent(inout) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
    !----------------------------
    real(8), dimension(3,3) :: Re_eps_ij, Im_eps_ij, Re_eps_ij_term1
    real(8) :: delt, eta, Vol, w_mn, prefact, Re_prefact, temp, term_1_SI, term_2_SI, Im_term_SI, f_P_term, ww, prec
@@ -1184,7 +1196,8 @@ end subroutine get_Graf_Vogl_CDF
 
 
 subroutine inv_effective_mass(cPRRx, cPRRy, cPRRz, cTnn, Ev, m_eff)  ! Ref.[2], Eq(8)
-   complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   complex, dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    real(8), dimension(:,:,:,:), intent(in) :: cTnn ! kinetic energy-related [dimensionless]
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
    real(8), dimension(:,:,:), intent(inout), allocatable :: m_eff ! [1/me] inverse effective mass (in units of electron mass)
@@ -1254,7 +1267,6 @@ subroutine get_trani_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref. [2
    real(8) w, kx, ky, kz
    integer i, j, N, FN, ix, iy, iz, ixm, iym, izm, schem, Ngp, Nsiz
    !integer*4 today(3), now(3)
-
    real(8), dimension(:), allocatable :: Ei	! energy levels [eV]
    complex, dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
    real(8), dimension(:,:), allocatable :: Eps_hw ! array of all eps vs hw
@@ -2087,7 +2099,8 @@ subroutine save_Eps_hw(Eps_hw, i, hw, Re_eps, Im_eps, LF, R, T, A, n, k, Eps_xx,
    real(8), dimension(:,:), intent(inout) :: Eps_hw
    integer, intent(in) :: i
    real(8), intent(in) :: hw, Re_eps, Im_eps, LF, R, T, A, n, k
-   complex(8), intent(in) :: Eps_xx, Eps_yy, Eps_zz
+   !complex(8), intent(in) :: Eps_xx, Eps_yy, Eps_zz
+   complex, intent(in) :: Eps_xx, Eps_yy, Eps_zz
    real(8), intent(in), optional :: dc_cond
    Eps_hw(1,i) = hw  ! energy
    Eps_hw(2,i) = Re_eps ! real part of CDF

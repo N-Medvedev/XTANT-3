@@ -753,8 +753,8 @@ subroutine Diff_cross_section(Ele, hw, matter, Nat, Nshl, Diff_IMFP)
 
     !qmin = sqrt(2.0d0*Mass*g_me)/g_h*(sqrt(Ee) - sqrt((Ee - dE))) ! min transferred momentum [kg*m/s]
     !qmax = sqrt(2.0d0*Mass*g_me)/g_h*(sqrt(Ee) + sqrt((Ee - dE))) ! max transferred momentum [kg*m/s]
-    qmin = sqrt(2.0d0*g_me)/g_h*(sqrt(Ee) - sqrt((Ee - dE))) ! min transferred momentum [kg*m/s]
-    qmax = sqrt(2.0d0*g_me)/g_h*(sqrt(Ee) + sqrt((Ee - dE))) ! max transferred momentum [kg*m/s]
+    qmin = sqrt(2.0d0*g_me)/g_h*(sqrt(Ee) - sqrt(abs(Ee - dE))) ! min transferred momentum [kg*m/s]
+    qmax = sqrt(2.0d0*g_me)/g_h*(sqrt(Ee) + sqrt(abs(Ee - dE))) ! max transferred momentum [kg*m/s]
 
     dLs = 0.0d0 ! starting integration, mean free path per energy [A/eV]^(-1)
     hq = qmin    ! transient transferred momentum for integration [kg*m/s]

@@ -27,7 +27,7 @@ MODULE TB
 use Universal_constants
 use Objects
 use Algebra_tools, only : Det_3x3, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points, sym_diagonalize, Reciproc, &
-                        mkl_matrix_mult, Invers_3x3
+                        mkl_matrix_mult, Invers_3x3, mkl_matrix_mult_c8, c8_diagonalize
 use Little_subroutines, only : number_of_types_of_orbitals, count_3d, deallocate_array
 use Atomic_tools, only : get_near_neighbours, total_forces, Potential_super_cell_forces, super_cell_forces, &
                         Convert_reciproc_rel_to_abs, Rescale_atomic_velocities, get_kinetic_energy_abs, &
@@ -1935,8 +1935,12 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    complex, dimension(:,:), intent(out), allocatable, optional :: CSij_out  ! complex overlap matrix of the nonorthogonal hamiltonian, to be created
    real(8), dimension(:,:,:,:), intent(out), allocatable, optional :: cTnn ! kinetic energy-related operators
    !-------------------------------------------------------------------------------
-   complex(8), dimension(:,:), allocatable :: CHij_temp, CHij_non, CSij_save, CHij_orth, CWF_orth, cPPRx_0, cPPRy_0, cPPRz_0, CSij
-   complex(8), dimension(:,:,:,:), allocatable :: cTnn_0, cTnn_c
+   !complex(8), dimension(:,:), allocatable :: CHij_temp, CHij_non, CSij_save, CHij_orth, CWF_orth, cPPRx_0, cPPRy_0, cPPRz_0, CSij
+   !complex(8), dimension(:,:,:,:), allocatable :: cTnn_0, cTnn_c
+   !complex(8) :: expfac, SH_1
+   complex, dimension(:,:), allocatable :: CHij_temp, CHij_non, CSij_save, CHij_orth, CWF_orth, cPPRx_0, cPPRy_0, cPPRz_0, CSij
+   complex, dimension(:,:,:,:), allocatable :: cTnn_0, cTnn_c
+   complex :: expfac, SH_1
    real(8), dimension(:), allocatable :: Norm1
    real(8), dimension(3,3,3,3), target :: distances_to_image_cells
    integer :: Nsiz, j, nat, m, atom_2, i, j1, l, i1, k, norb, n, nn, cell_x, cell_y, cell_z
@@ -1944,7 +1948,6 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    real(8) :: temp, kx, ky, kz, zb(3), R, x, y, z
    real(8), target :: nol, dx, dy, dz
    real(8), pointer :: x1, y1, z1
-   complex(8) :: expfac, SH_1
    character(200) :: Error_descript
 
    nol = 0.0d0
@@ -1955,24 +1958,24 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    
    ! Allocate complex parameters:
    if (.not.allocated(CHij)) allocate(CHij(Nsiz,Nsiz))
-   CHij = dcmplx(0.0d0,0.0d0)	! to start with
+   CHij = cmplx(0.0d0,0.0d0)	! to start with
    if (.not.allocated(CHij_temp)) allocate(CHij_temp(Nsiz,Nsiz))
    if (.not.allocated(CHij_non)) allocate(CHij_non(Nsiz,Nsiz))
-   CHij_non = dcmplx(0.0d0,0.0d0)	! to start with
-   CHij_temp = dcmplx(0.0d0,0.0d0)	! to start with
+   CHij_non = cmplx(0.0d0,0.0d0)	! to start with
+   CHij_temp = cmplx(0.0d0,0.0d0)	! to start with
    if (.not.allocated(CHij_orth)) allocate(CHij_orth(Nsiz,Nsiz))  ! orthogonalized Hamiltonian
-   CHij_orth = dcmplx(0.0d0,0.0d0)	! to start with
+   CHij_orth = cmplx(0.0d0,0.0d0)	! to start with
    !select case (abs(numpar%optic_model))
    !case (4:5) ! Graf-Vogl or Kubo-Greenwood
    if (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
-      if (.not.allocated(CWF_orth)) allocate(CWF_orth(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! orthogonalized Hamiltonian
+      if (.not.allocated(CWF_orth)) allocate(CWF_orth(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))  ! orthogonalized Hamiltonian
       if (.not.allocated(Norm1)) allocate(Norm1(Nsiz), source = 0.0d0)  ! normalization of WF
-      if (.not.allocated(cPPRx_0)) allocate(cPPRx_0(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! temporary
-      if (.not.allocated(cPPRy_0)) allocate(cPPRy_0(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! temporary
-      if (.not.allocated(cPPRz_0)) allocate(cPPRz_0(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))  ! temporary
+      if (.not.allocated(cPPRx_0)) allocate(cPPRx_0(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))  ! temporary
+      if (.not.allocated(cPPRy_0)) allocate(cPPRy_0(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))  ! temporary
+      if (.not.allocated(cPPRz_0)) allocate(cPPRz_0(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))  ! temporary
       if (present(cTnn)) then
-         if (.not.allocated(cTnn_0)) allocate(cTnn_0(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
-         if (.not.allocated(cTnn_c)) allocate(cTnn_c(Nsiz,Nsiz,3,3), source = dcmplx(0.0d0,0.0d0))  ! temporary
+         if (.not.allocated(cTnn_0)) allocate(cTnn_0(Nsiz,Nsiz,3,3), source = cmplx(0.0d0,0.0d0))  ! temporary
+         if (.not.allocated(cTnn_c)) allocate(cTnn_c(Nsiz,Nsiz,3,3), source = cmplx(0.0d0,0.0d0))  ! temporary
       endif
    end if
 
@@ -1980,9 +1983,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    if (.not.allocated(CSij_save)) allocate(CSij_save(Nsiz,Nsiz), source=cmplx(0.0d0,0.0d0))
    if (present(Sij)) then   ! it is nonorthogonal case:
       if (.not.allocated(CSij)) allocate(CSij(Nsiz,Nsiz))
-      CSij = dcmplx(0.0d0,0.0d0)	! to start with
+      CSij = cmplx(0.0d0,0.0d0)	! to start with
       if (present(CSij_out)) then
-         if (.not.allocated(CSij_out)) allocate(CSij_out(Nsiz,Nsiz), source=dcmplx(0.0d0,0.0d0))
+         if (.not.allocated(CSij_out)) allocate(CSij_out(Nsiz,Nsiz), source=cmplx(0.0d0,0.0d0))
       endif
    endif
    
@@ -2009,8 +2012,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 
 
    ! 1) Construct complex Hamiltonian and overlap:
-   !$omp parallel
-   !$omp do schedule(dynamic) private(j, m, atom_2, i, x1, y1, z1, R, cell_x, cell_y, cell_z, expfac, j1, l, i1, k)
+!    !$omp parallel
+!    !$omp do schedule(dynamic) private(j, m, atom_2, i, x1, y1, z1, R, cell_x, cell_y, cell_z, expfac, j1, l, i1, k)
    do j = 1,nat   ! all atoms
       m = Scell(NSC)%Near_neighbor_size(j)
       do atom_2 = 0,m ! do only for atoms close to that one  
@@ -2039,9 +2042,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
          endif ! (atom_2 .EQ. 0)
          
          if ((abs(kx) < 1.0d-14) .AND. (abs(ky) < 1.0d-14) .AND. (abs(kz) < 1.0d-14)) then
-            expfac = dcmplx(1.0d0,0.0d0)
+            expfac = cmplx(1.0d0,0.0d0)
          else
-            expfac = exp(g_CI*dcmplx(kx*x1 + ky*y1 + kz*z1,0.0d0))
+            expfac = exp(g_CI*cmplx(kx*x1 + ky*y1 + kz*z1,0.0d0))
          endif
 
          do j1 = 1,norb ! all orbitals
@@ -2049,7 +2052,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             do i1 = 1,norb ! all orbitals
                k = (i-1)*norb+i1
 
-               CHij_temp(k,l) = DCMPLX(H_non(k,l),0.0d0)*expfac
+               CHij_temp(k,l) = CMPLX(H_non(k,l),0.0d0)*expfac
                if ((isnan(real(CHij_temp(k,l)))) .OR. isnan(aimag(CHij_temp(k,l)))) then
                   Error_descript = 'CHij_temp ISNAN in construct_complex_Hamiltonian'
                   if (present(Err)) call Save_error_details(Err, 6, Error_descript)
@@ -2058,7 +2061,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                endif
                
                if (present(Sij)) then
-                  CSij(k,l) = DCMPLX(Sij(k,l),0.0d0)*expfac
+                  CSij(k,l) = CMPLX(Sij(k,l),0.0d0)*expfac
                   if ((isnan(real(CSij(k,l)))) .OR. isnan(aimag(CSij(k,l)))) then
                      Error_descript = 'CHij_temp ISNAN in construct_complex_Hamiltonian'
                      if (present(Err)) call Save_error_details(Err, 6, Error_descript)
@@ -2070,8 +2073,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
          enddo ! j1
       enddo ! atom_2
    enddo ! j
-   !$omp end do 
-   !$omp end parallel
+!    !$omp end do
+!    !$omp end parallel
 
 
    ! Temporarily save nonorthogonal Hamiltonian and overlap matrix:
@@ -2112,13 +2115,13 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       if (.not.allocated(cPRRx)) allocate(cPRRx(Nsiz,Nsiz))
       if (.not.allocated(cPRRy)) allocate(cPRRy(Nsiz,Nsiz))
       if (.not.allocated(cPRRz)) allocate(cPRRz(Nsiz,Nsiz))
-      cPRRx = dcmplx(0.0d0,0.0d0)	! to start with
-      cPRRy = dcmplx(0.0d0,0.0d0)	! to start with
-      cPRRz = dcmplx(0.0d0,0.0d0)	! to start with
+      cPRRx = cmplx(0.0d0,0.0d0)	! to start with
+      cPRRy = cmplx(0.0d0,0.0d0)	! to start with
+      cPRRz = cmplx(0.0d0,0.0d0)	! to start with
       ! Optical matrix elements for non-orthogonal TB are taken from:
       ! arXiv:1805.08918v1 -- https://128.84.21.199/abs/1805.08918
-      !$omp parallel
-      !$omp do private(j, m, atom_2, i, x1, y1, z1, j1, l, i1, k, SH_1)
+!       !$omp parallel
+!       !$omp do private(j, m, atom_2, i, x1, y1, z1, j1, l, i1, k, SH_1)
       do j = 1,nat	! all atoms
          m = Scell(NSC)%Near_neighbor_size(j)
          do atom_2 = 0,m ! do only for atoms close to that one
@@ -2143,7 +2146,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                         else
 
                            ! [1] Nonorthogonal expression:
-                           SH_1 = DCMPLX(0.27d0,0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
+                           SH_1 = CMPLX(0.27d0,0.0d0) * (CHij_non(k,l) - CMPLX(Ei(k),0.0d0)*CSij_save(k,l))
                            !SH_1 = DCMPLX(1.50d0,0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
 
                            cPRRx(k,l) = SH_1
@@ -2155,12 +2158,12 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                         SH_1 = CHij_non(k,l)
                         if (present(Sij)) then ! nonorthogonal Hamiltonian:
                            ! [1] Nonorthogonal expression:
-                           SH_1 = SH_1 - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)  ! Correct
+                           SH_1 = SH_1 - CMPLX(Ei(k),0.0d0)*CSij_save(k,l)  ! Correct
                         endif
 
-                        cPRRx(k,l) = DCMPLX(x1,0.0d0)*SH_1
-                        cPRRy(k,l) = DCMPLX(y1,0.0d0)*SH_1
-                        cPRRz(k,l) = DCMPLX(z1,0.0d0)*SH_1
+                        cPRRx(k,l) = CMPLX(x1,0.0d0)*SH_1
+                        cPRRy(k,l) = CMPLX(y1,0.0d0)*SH_1
+                        cPRRz(k,l) = CMPLX(z1,0.0d0)*SH_1
                      endif
                      if (dble(cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(k), x1
                      if (dble(cPRRy(k,l)) .GT. 1d10) print*, i, j, cPRRy(k,l)
@@ -2170,8 +2173,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             endif ! (i > 0)
          enddo ! atom_2
       enddo ! j
-      !$omp end do 
-      !$omp end parallel
+!       !$omp end do
+!       !$omp end parallel
       
       ! Normalization factors:
       ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
@@ -2205,12 +2208,12 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       if (present(cTnn)) then
          if (.not.allocated(cTnn)) allocate(cTnn(Nsiz,Nsiz,3,3), source = 0.0d0)
       endif
-      cPRRx = dcmplx(0.0d0,0.0d0)	! to start with
-      cPRRy = dcmplx(0.0d0,0.0d0)	! to start with
-      cPRRz = dcmplx(0.0d0,0.0d0)	! to start with
+      cPRRx = cmplx(0.0d0,0.0d0)	! to start with
+      cPRRy = cmplx(0.0d0,0.0d0)	! to start with
+      cPRRz = cmplx(0.0d0,0.0d0)	! to start with
 
-      !$omp parallel
-      !$omp do private(j, m, atom_2, i, x1, y1, z1, dx, dy, dz, j1, l, i1, k, SH_1, n, nn)
+!       !$omp parallel
+!       !$omp do private(j, m, atom_2, i, x1, y1, z1, dx, dy, dz, j1, l, i1, k, SH_1, n, nn)
       do j = 1,nat   ! all atoms
          !m = Scell(NSC)%Near_neighbor_size(j)
          !do atom_2 = 0,m ! do only for atoms close to that one
@@ -2240,10 +2243,10 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                            ! i*(R-R') terms:
                            if (numpar%optic_model == 4) then ! orthogonal expression:
                               ! Orthogonalized Hamiltonian:
-                              SH_1 = g_CI * DCMPLX(0.27d0, 0.0d0) * CHij_orth(k,l)   ! testing
+                              SH_1 = g_CI * CMPLX(0.27d0, 0.0d0) * CHij_orth(k,l)   ! testing
                            else  ! nonorthogonal
                               ! [1] Nonorthogonal expression:
-                              SH_1 = g_CI * DCMPLX(0.27d0, 0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
+                              SH_1 = g_CI * CMPLX(0.27d0, 0.0d0) * (CHij_non(k,l) - CMPLX(Ei(k),0.0d0)*CSij_save(k,l))
                            endif
 
                            cPRRx(k,l) = SH_1
@@ -2263,13 +2266,13 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                            SH_1 = CHij_non(k,l)
                            if (present(Sij)) then ! nonorthogonal Hamiltonian:
                               ! [1] Nonorthogonal expression:
-                              SH_1 = SH_1 - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)  ! Correct
+                              SH_1 = SH_1 - CMPLX(Ei(k),0.0d0)*CSij_save(k,l)  ! Correct
                            endif
                         endif
 
-                        cPRRx(k,l) = g_CI * DCMPLX(x1, 0.0d0)*SH_1
-                        cPRRy(k,l) = g_CI * DCMPLX(y1, 0.0d0)*SH_1
-                        cPRRz(k,l) = g_CI * DCMPLX(z1, 0.0d0)*SH_1
+                        cPRRx(k,l) = g_CI * CMPLX(x1, 0.0d0)*SH_1
+                        cPRRy(k,l) = g_CI * CMPLX(y1, 0.0d0)*SH_1
+                        cPRRz(k,l) = g_CI * CMPLX(z1, 0.0d0)*SH_1
 
                         if (present(cTnn)) then
                            cTnn_c(k,l,1,1) = -(x1*x1) * CHij_orth(k,l)
@@ -2295,21 +2298,21 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             endif ! (i > 0)
          enddo ! atom_2
       enddo ! j
-      !$omp end do
-      !$OMP BARRIER
+!       !$omp end do
+!       !$OMP BARRIER
 
       if (numpar%optic_model /= 4) then ! use nonorthogonal wave-functions:
          CWF_orth = CHij_temp ! copy them into this array used below
       endif
 
-      !$omp do
+!       !$omp do
       do i = 1, Nsiz ! ensure WF normalization to 1
          Norm1(i) = SQRT( SUM( conjg(CWF_orth(:,i)) * CWF_orth(:,i) ) )
          !print*, i, Norm1(i)  ! not 1 for non-orthogonal Hamiltonians
       enddo
-      !$omp end do
-      !$OMP BARRIER
-      !$omp do
+!       !$omp end do
+!       !$OMP BARRIER
+!       !$omp do
       do i = 1, Nsiz
          do nn = 1, Nsiz
             cPPRx_0(i,nn) = SUM(cPRRx(i,:)*CWF_orth(:,nn)) / Norm1(nn)
@@ -2317,12 +2320,12 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             cPPRz_0(i,nn) = SUM(cPRRz(i,:)*CWF_orth(:,nn)) / Norm1(nn)
          enddo ! j
       enddo ! i
-      !$omp end do
-      !$OMP BARRIER
+!       !$omp end do
+!       !$OMP BARRIER
 
 
       if (present(cTnn)) then
-         !$omp do
+!          !$omp do
          do i = 1, Nsiz ! upper triangle
             do nn = 1, Nsiz
                cTnn_0(i,nn,1,1) = SUM(cTnn_c(i,:,1,1)*CWF_orth(:,nn)) / Norm1(nn)
@@ -2333,9 +2336,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                cTnn_0(i,nn,3,3) = SUM(cTnn_c(i,:,3,3)*CWF_orth(:,nn)) / Norm1(nn)
             enddo ! j
          enddo ! i
-         !$omp end do
-         !$OMP BARRIER
-         !$omp do
+!          !$omp end do
+!          !$OMP BARRIER
+!          !$omp do
          do i = 1, Nsiz ! lower triangle
             do nn = 1, Nsiz
                cTnn_0(i,nn,2,1) = cTnn_0(i,nn,1,2) !SUM(cTnn(i,:,2,1)*CWF_orth(:,nn)) / Norm1(nn)
@@ -2343,11 +2346,11 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                cTnn_0(i,nn,3,2) = cTnn_0(i,nn,2,3) !SUM(cTnn(i,:,3,2)*CWF_orth(:,nn)) / Norm1(nn)
             enddo ! j
          enddo ! i
-         !$omp end do
-         !$OMP BARRIER
+!          !$omp end do
+!          !$OMP BARRIER
       endif
 
-      !$omp do
+!       !$omp do
       do n = 1, Nsiz
          do nn = 1, Nsiz
             cPRRx(n,nn) = SUM(conjg(CWF_orth(:,n))*cPPRx_0(:,nn)) / Norm1(n)   ! correct
@@ -2358,12 +2361,12 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 !             cPRRz(n,nn) = SUM(conjg(CWF_orth(n,:))*cPPRz_0(:,nn)) / Norm1(n)
          enddo ! nn
       enddo ! n
-      !$omp end do
-      !$OMP BARRIER
+!       !$omp end do
+!       !$OMP BARRIER
 
 
       if (present(cTnn)) then
-         !$omp do
+!          !$omp do
          do n = 1, Nsiz ! upper triangle
             do nn = 1, Nsiz
                cTnn_c(n,nn,1,1) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,1,1)) / Norm1(n)
@@ -2374,9 +2377,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                cTnn_c(n,nn,3,3) = SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,3)) / Norm1(n)
             enddo ! nn
          enddo ! n
-         !$omp end do
-         !$OMP BARRIER
-         !$omp do
+!          !$omp end do
+!          !$OMP BARRIER
+!          !$omp do
          do n = 1, Nsiz ! lower triangle
             do nn = 1, Nsiz
                cTnn_c(n,nn,2,1) = cTnn_c(n,nn,1,2)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,2,1)) / Norm1(n)
@@ -2384,9 +2387,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                cTnn_c(n,nn,3,2) = cTnn_c(n,nn,2,3)  !SUM(conjg(CWF_orth(:,n))*cTnn_0(:,nn,3,2)) / Norm1(n)
             enddo ! j
          enddo ! i
-         !$omp end do
+!          !$omp end do
       endif
-      !$omp end parallel
+!       !$omp end parallel
 
       ! Convert in SI units of momentum:
       temp = g_me/g_h * g_e*1.0d-10 ! [kg*m/s]
@@ -2509,7 +2512,7 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
    complex(8), dimension(:,:), intent(inout), optional ::  CWF_orth  ! Wave functions of orthogonalized Hamiltonian, if requested
    !----------------------------
    !complex(8), dimension(size(CHij,1), size(CHij,1)) :: CHij_use ! This way of defining size breaks down!
-   complex(8), dimension(:,:), allocatable :: CHij_use
+   complex(8), dimension(:,:), allocatable :: CHij_use, CHij_temp
    integer :: Nsiz, j
    character(200) :: Error_descript
 
@@ -2546,7 +2549,8 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       endif
 
       ! 2) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
-      call sym_diagonalize(CHij_use, Ei, Error_descript)   ! module "Algebra_tools"
+      !call sym_diagonalize(CHij_use, Ei, Error_descript)   ! module "Algebra_tools"
+      call c8_diagonalize(CHij_use, Ei, Error_descript)   ! module "Algebra_tools"
       if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
          Error_descript = 'diagonalize_complex8_Hamiltonian: '//trim(adjustl(Error_descript))
          !call Save_error_details(Err, 6, Error_descript)    ! module "Objects"
@@ -2559,7 +2563,10 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       print*, OMP_GET_THREAD_NUM(), 'sym_diagonalize done'
 
       ! 3) Convert the eigenvectors back into the non-orthogonal basis:
-      call mkl_matrix_mult('N', 'N', CSij, CHij_use, CHij)	! module "Algebra_tools"
+      !call mkl_matrix_mult('N', 'N', CSij, CHij_use, CHij)	! module "Algebra_tools"
+      allocate( CHij_temp(Nsiz,Nsiz), source = dcmplx( real(CHij), aimag(CHij)) )
+      call mkl_matrix_mult_c8('N', 'N', CSij, CHij_use, CHij_temp)  ! module "Algebra_tools"
+      CHij = cmplx( real(CHij_temp), aimag(CHij_temp) )  ! convert to cmplx (important for unix-based compileres)
 
       print*, OMP_GET_THREAD_NUM(), 'mkl_matrix_mult done'
    endif ORTH

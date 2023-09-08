@@ -987,9 +987,9 @@ subroutine Loewdin_Orthogonalization_c(Nsiz, Sij, Hij, Err) ! below
    ! Save the overlap matrix to test the orthogonalization later:
 !    allocate(Sijsave(Nsiz,Nsiz))
 !    Sijsave = Sij
-   allocate(Xij(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
-   allocate(Sij_temp(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
-   allocate(Xij_star(Nsiz,Nsiz), source = dcmplx(0.0d0,0.0d0))
+   allocate(Xij(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))
+   allocate(Sij_temp(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))
+   allocate(Xij_star(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))
    
    ! Orthogonalize the Hamiltonian, based on  [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144], in a few steps:
    ! 1) diagonalize S matrix:
@@ -1117,7 +1117,7 @@ subroutine Loewdin_Orthogonalization_c8(Nsiz, Sij, Hij, Err) ! below
    ! 3) construct X = S*s_mat [Szabo "Modern Quantum Chemistry" 1986, p. 144, Eq.(3.169)]
    !    Xij = matmul(Sij, dcmplx(s_mat,0.0d0))  ! same result with standart routine
    !call mkl_matrix_mult('N', 'N', Sij, cmplx(s_mat,0.0d0), Xij) ! module "Algebra_tools"
-   call mkl_matrix_mult_c8('N', 'N', Sij, cmplx(s_mat,0.0d0), Xij) ! module "Algebra_tools"
+   call mkl_matrix_mult_c8('N', 'N', Sij, dcmplx(s_mat,0.0d0), Xij) ! module "Algebra_tools"
 
    ! 4) orthoginalize the Cij matrix [Szabo "Modern Quantum Chemistry" 1986, p. 144, Eq.(3.177)]:
    ! Note that the matrix is Hermitian, not Symmetric, thus the following subroutine cannot be used!:
