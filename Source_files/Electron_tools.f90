@@ -27,7 +27,7 @@ use Objects
 use Algebra_tools, only : Two_Vect_Matr
 use Little_subroutines, only : Find_in_array_monoton, Fermi_interpolation, linear_interpolation, &
                         Find_in_monotonous_1D_array, Gaussian, print_progress
-use MC_cross_sections, only : TotIMFP
+use MC_cross_sections, only : TotIMFP, Mean_free_path
 
 implicit none
 PRIVATE
@@ -102,8 +102,8 @@ subroutine update_cross_section(Scell, matter, Te_in)
    type(solid), intent(inout) :: matter   ! materil parameters
    real(8), intent(in), optional :: Te_in ! user-defined temperature [K]
    !------------------------
-   integer :: Nshl, i, N_Te
-   real(8) :: dT, T_left, Te
+   integer :: Nshl, i, N_Te, j, N_Tmax
+   real(8) :: dT, T_left, Te, T_right
    ! Get the mean free paths vs Te:
    Nshl = size(matter%Atoms(1)%Ip)
    select case (matter%Atoms(1)%TOCS(Nshl)) ! Valence band and CDF only
@@ -115,24 +115,49 @@ subroutine update_cross_section(Scell, matter, Te_in)
          Te = Scell%Te
       endif
 
-      if (Te > 100.0d0) then  ! recalculate:
+      if (Te > 100.0d0) then  ! recalculate the VB/CB scattering:
          ! Temperature (grid defined in subroutine get_MFPs as Te_temp = dble((i-1)*1000)):
          dT = 1000.0d0 ! [K] grid step
-         T_left = FLOOR(Te/1000)*1000
-         N_Te = CEILING(Te/1000)
-         if (N_Te > size(matter%Atoms(1)%El_MFP_vs_T)) N_Te = size(matter%Atoms(1)%El_MFP_vs_T)   ! maximal energy set
+         T_left = floor((Te+1.0d-8)/1000.0d0)*1000.0d0
+         N_Te = ceiling((Te+1.0d-8)/1000.0d0)
+         T_right = dble(N_Te)*1000.0d0
+         N_Tmax = size(matter%Atoms(1)%El_MFP_vs_T)
          ! Interpolate valence band MFP for the given temperature:
-         if (N_Te == 1) then
-            matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) + &
-          (matter%Atoms(1)%El_MFP_vs_T(N_Te+1)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:))/dT * (Te-T_left)
-         else
-            matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) + &
-          (matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te-1)%L(:))/dT * (Te-T_left)
-         endif
+         if (N_Te == 1) then ! extrapolate to lower Te
+            matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) - &
+               (matter%Atoms(1)%El_MFP_vs_T(N_Te+1)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:))/dT * (T_right-Te) ! [1/A]
+         elseif (N_Te > N_Tmax) then  ! etrapolate to higher Te
+            matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Tmax)%L(:) + &
+               (matter%Atoms(1)%El_MFP_vs_T(N_Tmax)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Tmax-1)%L(:))/dT * (Te-T_left) ! [1/A]
+         else ! within the array of data
+            if (Te > T_left + 0.5d0*dT) then ! from above
+               matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) - &
+                  (matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te-1)%L(:))/dT * (T_right-Te) ! [1/A]
+            else ! from below
+               matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te-1)%L(:) + &
+                  (matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) - matter%Atoms(1)%El_MFP_vs_T(N_Te-1)%L(:))/dT * (Te-T_left) ! [1/A]
+            endif ! (Te > T_left + 0.5d0*dT)
+
+!             print*, 'N_Te', Te, N_Te, T_left, matter%Atoms(1)%El_MFP(Nshl)%L(10), matter%Atoms(1)%El_MFP_vs_T(N_Te-1)%L(10), matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(10)
+!             pause
+
+         endif ! (N_Te == 1)
+
       else ! no need to recalculate, the tempereature is too small:
          N_Te = 1
-         matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:)
-      endif
+         matter%Atoms(1)%El_MFP(Nshl)%L(:) = matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(:) ! [1/A]
+      endif ! (Te > 100.0d0)
+
+
+      !-------------------------------------------
+      ! Update the total inelastic mean free path:
+      matter%El_MFP_tot%L(:) = 0.0d0   ! to start with
+      do i = 1, size(matter%Atoms) ! for all atoms
+         Nshl = size(matter%Atoms(i)%Ip)
+         do j = 1, Nshl ! for all shells of this atom
+            matter%El_MFP_tot%L(:) = matter%El_MFP_tot%L(:) + matter%Atoms(i)%El_MFP(j)%L(:) ! [1/A] inverse MFP
+         enddo
+      enddo
    endselect
 
 !    print*, 'Te=', Scell%Te, matter%Atoms(1)%El_MFP(Nshl)%L(1), matter%Atoms(1)%El_MFP_vs_T(N_Te)%L(1)
@@ -207,14 +232,14 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
          Egap_old = matter%Atoms(1)%Ip(Nshl)
          matter%Atoms(1)%Ip(Nshl) = Scell%E_top-Scell%E_bottom ! change it to the width of CB
          N_grid = size( matter%Atoms(1)%El_MFP(Nshl)%E )
-         do k = 1, N_grid  ! recalculate the cross-section of scattering on CB
+         do k = 1, N_grid  ! recalculate the cross-section of scattering on CB (UNFINISHED, not combined with changes due to temperature!)
             ! Total recalculation (very time-consuming!):
             !Ele = matter%Atoms(1)%El_MFP(Nshl)%E(k) ! [eV] energy
             !call TotIMFP(Ele, matter, Scell%TeeV, 1, Nshl, L)  ! module "MC_cross_sections"
             !matter%Atoms(1)%El_MFP(Nshl)%L(k) = L ! [A] MFP
 
             ! Alternatively, use a simple shift of the energy scale:
-            call update_ionization_CS(matter, Nshl, (matter%Atoms(1)%Ip(Nshl) - Egap_old) )  ! below
+            !call update_ionization_CS(matter, Nshl, (matter%Atoms(1)%Ip(Nshl) - Egap_old) )  ! below
 
             if (numpar%verbose) call print_progress('Progress:', k, N_grid)    ! module "Little_subroutines"
          enddo
@@ -250,10 +275,29 @@ subroutine update_ionization_CS(matter, Nshl, dE)
    type(solid), intent(inout) :: matter ! materil parameters
    integer, intent(in) :: Nshl   ! VB index
    real(8), intent(in) :: dE  ! energy shift
+   !----------------------------------------
+   real(8) :: IMFP
+   integer :: i, j, iE, N_sh
 
    matter%Atoms(1)%El_MFP(Nshl)%E(:) = matter%Atoms(1)%El_MFP(Nshl)%E(:) + dE
-end subroutine update_ionization_CS
 
+   ! And total cross-section:
+   do i = 1, size(matter%Atoms) ! for all atoms
+      N_sh = size(matter%Atoms(i)%Ip)
+      do j = 1, N_sh ! for all shells of this atom
+         if ((i == 1) .and. (j==N_sh)) then ! VB
+            ! skip VB, to be added separately
+         else ! core shells
+            matter%El_MFP_tot%L(:) = matter%El_MFP_tot%L(:) + matter%Atoms(i)%El_MFP(j)%L(:) ! [1/A] inverse MFP
+         endif
+      enddo
+   enddo
+   ! Now, add the shifted VB:
+   do iE = 1, size(matter%Atoms(1)%El_MFP(Nshl)%E)
+      call Mean_free_path(matter%El_MFP_tot%E(iE), matter%Atoms(1)%El_MFP(Nshl), IMFP, inversed=.true.) ! [1/A], module "MC_cross_section"
+      matter%El_MFP_tot%L(:) = matter%El_MFP_tot%L(:) + IMFP ! [1/A] inverse MFP
+   enddo
+end subroutine update_ionization_CS
 
 
 subroutine get_number_of_CB_electrons(Scell, NSC)

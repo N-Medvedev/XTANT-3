@@ -259,7 +259,7 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
    real(8) hw	! transferred energy [eV]
    real(8) kind_of_coll ! elasctic vs inelastic
    real(8) RN, Ekin, IMFP, EMFP
-   integer j, shl, KOA
+   integer j, shl, KOA, i
    j = 1
    do while ((MC%noe - j) .GE. 0)  ! all electrons
       do while (MC%electrons(j)%ti .LT. tim) ! until time of this electron becomes larger than the current timestep
@@ -268,7 +268,7 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
          ! Get MFPs for inelastic and elastic scattering to compare:
          call Mean_free_path(Ekin, matter%El_MFP_tot, IMFP, inversed=.true.) ! inelastic MFP [1/A], module "MC_cross_section"
          call Mean_free_path(Ekin, matter%El_EMFP_tot, EMFP, inversed=.true.) ! elastic MFP [1/A], module "MC_cross_section"
-         
+
          elast_vs_inelast: if (RN <= IMFP/(IMFP + EMFP)) then ! it is inelastic scattering
 !              print*, 'Inelastic scattering event:', RN, j, Ekin, IMFP/(IMFP + EMFP), IMFP, EMFP
             
