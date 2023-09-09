@@ -53,7 +53,7 @@ PRIVATE
 
 ! Modular parameters:
 character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_MINIMUM, m_INPUT_ALL, m_Atomic_parameters, &
-                  m_Hubbard_U, m_Communication
+                  m_Hubbard_U, m_Communication, m_COPY_INPUT
 
 character(70), parameter :: m_starline = '*************************************************************'
 character(70), parameter :: m_dashline = '-------------------------------------------------------------'
@@ -68,6 +68,7 @@ parameter (m_INPUT_MATERIAL = 'INPUT_MATERIAL') ! old format, material and pulse
 parameter (m_NUMERICAL_PARAMETERS = 'NUMERICAL_PARAMETERS') ! old format, numerical parameters
 parameter (m_INPUT_MINIMUM = 'INPUT_MINIMUM') ! format with only parameters different from default (to be depricated)
 parameter (m_INPUT_ALL = 'INPUT') ! new format with all parameters together
+parameter (m_COPY_INPUT = 'Copy_input.txt') ! file with info on preparing multiple input files by copying INPUT
 parameter (m_Atomic_parameters = 'Atomic_parameters') ! data-file with atomic parameters
 parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat') ! data-file with Hubbard-U parameters (for SCC calculations)
 parameter (m_Communication = 'Communication.txt')  ! file for comunication with the user
@@ -357,9 +358,15 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
       endif TWO_OR_ONE_FILE
 
+
       INPUT_MATERIAL:if (file_exist) then
          call read_input_material(File_name, Scell, matter, numpar, laser, user_data, Err) ! see below
          if (Err%Err) goto 3416
+
+         ! Check multiple input files need to be created:
+         if (.not.present(Numb)) then ! first run, use default files:
+            call multiply_input_files(trim(adjustl(Folder_name)), trim(adjustl(File_name)))   ! below
+         endif
       else
          write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
          call Save_error_details(Err, 1, Error_descript)
@@ -5818,7 +5825,6 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
    enddo RDID
 
    if (numpar%verbose) call print_time_step('Verbose option is on, XTANT is going to be a chatterbox', msec=.true.) ! modlue "Little_subroutines"
-
    ! Close this file, it has been read through:
 3417  if (file_opened) close(FN)
 end subroutine read_input_material
@@ -6207,6 +6213,113 @@ end subroutine prepare_multiple_inputs
 
 
 
+subroutine multiply_input_files(Folder_name, File_name_in)
+   character(*), intent(in) :: Folder_name, File_name_in  ! input directory and file
+   !-----------------------
+   character(300), dimension(:), allocatable :: File_content
+   character(200) :: File_name, Copy_file_name
+   character(300) :: read_line, replace_line(100,50)
+   character(10) :: temp_ch
+   integer :: FN, FN1, FN2, N, i, j, k, Nsiz, count_lines, Reason, sz, line_num(100,50)
+   integer :: N_lines, i_block, i_line
+   logical :: file_opened, read_well, was_closed
+
+   !-----------------------
+   ! 1) Read input file:
+   inquire(file=trim(adjustl(File_name_in)), opened=file_opened, number=FN)
+   if (.not.file_opened) then
+      was_closed = .true.
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name_in)), action = 'read')
+   else
+      was_closed = .false.
+      rewind(FN)
+   endif
+   ! Get how many lines are in the file
+   call Count_lines_in_file(FN, N_lines)  ! module "Dealing_with_files"
+   allocate(File_content(N_lines))
+   ! Read the file:
+   count_lines = 0   ! to start with
+   do j = 1, N_lines
+      read(FN, '(a)', IOSTAT=Reason) File_content(j)   ! read the current line
+      call read_file(Reason, count_lines, read_well)   ! modlue "Dealing_with_files"
+      if ( (.not.read_well) .and. (Folder_name(LEN(Folder_name):LEN(Folder_name)) == '/') ) then ! if it is Linux
+         backspace(FN)  ! to reread the line
+         count_lines = count_lines - 1 ! reread the same line, don't count it as the next one
+         read(FN, '(a)', IOSTAT=Reason) File_content(j)(1:sz) ! read it again, not knowing the size
+         call read_file(Reason, count_lines, read_well) ! modlue "Dealing_with_files"
+      endif
+      if (.not.read_well) then
+         print*, 'Problem in multiply_input_files: cannot read line ', count_lines, ' in file '//trim(adjustl(File_name_in))
+         return
+      endif
+   enddo
+   if (was_closed) call close_file('close', FN=FN) ! module "Dealing_with_files"
+
+   !-----------------------
+   ! 2) Read copy-file data:
+   Copy_file_name = trim(adjustl(Folder_name))//trim(adjustl(m_COPY_INPUT))
+   open(NEWUNIT=FN1, FILE = trim(adjustl(Copy_file_name)), action = 'read')
+   ! Get how many lines are in the file:
+   call Count_lines_in_file(FN1, N_lines)  ! module "Dealing_with_files"
+   ! Count, how many copies are required:
+   replace_line = '' ! to start with
+   line_num = 0   ! to start with
+   i_block = 0 ! to start with
+   i_line = 0 ! to start with
+   Nsiz = 0 ! to start with
+   count_lines = 0 ! to start with
+   do i = 1, N_lines
+      read(FN1, '(a)', IOSTAT=Reason) read_line   ! read the current line
+      !print*, i, trim(adjustl(read_line))
+      call read_file(Reason, count_lines, read_well)   ! modlue "Dealing_with_files"
+      if (.not.read_well) then
+         print*, 'Problem in multiply_input_files: cannot read line ', count_lines, ' in file '//trim(adjustl(m_COPY_INPUT))
+         return
+      endif
+      select case (trim(adjustl(read_line)))
+      case ('NEW', 'New', 'new', 'COPY', 'Copy', 'copy') ! count as new copy
+         i_block = i_block + 1   ! count blocks
+         i_line = 0  ! restart line counter
+      case('') ! skipline
+      case default
+         if (i_block > 0) then
+            i_line = i_line + 1
+            read(read_line, *, IOSTAT=Reason) line_num(i_block,i_line)
+            if (line_num(i_block,i_line) < 10) then
+               replace_line(i_block,i_line) = trim(adjustl(read_line(3:)))
+            elseif (line_num(i_block,i_line) < 100) then
+               replace_line(i_block,i_line) = trim(adjustl(read_line(4:)))
+            endif
+            print*, i_block, i_line, line_num(i_block,i_line), trim(adjustl(replace_line(i_block,i_line)))
+         endif
+      end select
+   enddo ! i = 1, N_lines
+   call close_file('close', FN=FN1) ! module "Dealing_with_files"
+   Nsiz = i_block
+
+   !-----------------------
+   ! 3) Prepare copies of the input file (with requested modifications):
+   do i = 1, Nsiz
+      write(temp_ch,'(i0)') i
+      File_name = File_name_in(1:LEN(File_name_in)-4)//'_'//trim(adjustl(temp_ch))//'.txt'
+      open(NEWUNIT=FN2, FILE = trim(adjustl(File_name)))
+
+      ! Copy into this file everything from the INPUT, replacing only what's required:
+      k = 1 ! to start with
+      do j = 1, size(File_content)
+         if (j == line_num(i,k)) then ! replace this line
+            write(FN2, '(a)') trim(adjustl(replace_line(i,k)))
+            k = k + 1   ! counter
+         else ! copy the line unchanged
+            write(FN2, '(a)') trim(adjustl(File_content(j)))
+         endif
+      enddo
+
+      call close_file('close', FN=FN2) ! module "Dealing_with_files"
+   enddo ! i = 1, Nsiz
+
+
+end subroutine multiply_input_files
 
 
 
@@ -6332,6 +6445,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
 
       write(*,'(a)') trim(adjustl(m_starline))
       if (present(contin)) contin = .true.  ! stop calculations, user only wanted some help
+
    case ('info', 'INFO', 'Info')
       ! Filename with help:
       file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_INFO_file))

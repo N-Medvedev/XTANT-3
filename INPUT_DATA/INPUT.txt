@@ -1,4 +1,4 @@
-Coopper            ! material name directory; file with supercell and atomic coordinates
+Copper            ! material name directory; file with supercell and atomic coordinates
 Cu                  ! chemical formula
 300.0               ! initial electron temperature [K]
 273.0               ! initial atomic temperature [K]
