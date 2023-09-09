@@ -34,6 +34,9 @@ Richard P. Feynman
 "It is necessary to look at the results of observation objectively, because you, the experimenter, might like one result better than another."
 Richard P. Feynman
 
+"The best scientists are open to the possibility that they may be wrong, and they are willing to change their minds in the face of new evidence."
+Richard Feynman
+
 "If something is true, no amount of wishful thinking will change it."
 Richard Dawkins
 
@@ -46,7 +49,7 @@ Richard Dawkins
 "The feeling of awed wonder that science can give us is one of the highest experiences of which the human psyche is capable."
 Richard Dawkins
 
-"There’s real poetry in the real world. Science is the poetry of reality."
+"There's real poetry in the real world. Science is the poetry of reality."
 Richard Dawkins
 
 "It pays to keep an open mind, but not so open your brains fall out."
@@ -87,4 +90,25 @@ Marie Curie
 
 "Progress is made by trial and failure; the failures are generally a hundred times more numerous than the successes, yet they are usually left unchronicled."
 William Ramsay
+
+"The Universe is under no obligation to make sense to you."
+Neil deGrasse Tyson
+
+"The good thing about science is that it's true whether or not you believe in it."
+Neil deGrasse Tyson
+
+"In science, there are no shortcuts to truth."
+Karl Popper
+
+"The greatest enemy of knowledge is not ignorance, it is the illusion of knowledge."
+Stephen Hawking
+
+"Science is a way of thinking much more than it is a body of knowledge."
+Carl Sagan
+
+"Science is not about being right or wrong, it's about being willing to ask the right questions and follow the evidence wherever it leads."
+Neil deGrasse Tyson
+
+"The most exciting phrase to hear in science, the one that heralds new discoveries, is not "Eureka!" but "That's funny..."
+Isaac Asimov
 --
