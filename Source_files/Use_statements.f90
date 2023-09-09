@@ -8,7 +8,7 @@ use Read_input_data, only : get_add_data, Read_Input_Files, m_starline, m_INPUT_
         m_INPUT_directory, m_INPUT_ALL
 use Dealing_with_output_files, only : reset_dt, Print_title, prepare_output_files, write_output_files, convolve_output, &
         communicate, close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies, &
-        XTANT_label, m_Error_log_file, printout_CDF_file
+        XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comfoorting_message
 use Initial_configuration, only : set_initial_configuration
 use Atomic_tools, only : get_mean_square_displacement, save_last_timestep, Cooling_atoms, &
         Coordinates_rel_to_abs, velocities_abs_to_rel, shortest_distance, &

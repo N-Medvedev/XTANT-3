@@ -447,7 +447,10 @@ endif
  endif
  write(*,'(a)') trim(adjustl(m_starline))
 
+
 2016 continue
+! Just add some comforing message if something whent wrong :-(
+if (g_Err%Err) call print_a_comfoorting_message(6, g_numpar%path_sep)  ! module "Dealing_with_output_files"
 
 
 
