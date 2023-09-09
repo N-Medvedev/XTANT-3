@@ -35,7 +35,7 @@ use Objects
 use Atomic_tools, only : pair_correlation_function
 use Variables, only : g_numpar, g_matter
 use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution
-use Dealing_with_files, only : get_file_stat, copy_file, read_file, close_file
+use Dealing_with_files, only : get_file_stat, copy_file, read_file, close_file, Count_lines_in_file
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
 use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_dashline, &
@@ -45,12 +45,12 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 08.09.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 09.09.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
 public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
-public :: XTANT_label, m_Error_log_file, printout_CDF_file
+public :: XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comfoorting_message
 
  contains
 
@@ -4379,5 +4379,73 @@ subroutine XTANT_label_starred(print_to)
    write(print_to,'(a)') '     **   **    **  **      ** **   ***    **    '
    write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine XTANT_label_starred
+
+
+subroutine print_a_comfoorting_message(print_to, path_sep)
+   integer, intent(in) :: print_to ! the screen, or file
+   character(*), intent(in) :: path_sep ! file name
+   !----------------------
+   character(500), dimension(:), allocatable :: quote
+   character(50), dimension(:), allocatable :: author
+   character(500) :: file_name
+   character(50) :: ch_temp
+   integer :: FN, Nsiz, Reason, count_lines, i
+   logical :: file_exists, file_opened, read_well, read_text_well
+   real(8) :: RN
+   !----------------------
+
+   file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//'Quotes.txt'
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') 'Sorry that something went wrong; to lighten the mood a little,'
+   write(print_to,'(a)') 'here is a quote for you:'
+
+   inquire(file=trim(adjustl(file_name)),exist=file_exists)
+   if (.not.file_exists) then ! no file, cannot print help
+      write(print_to,'(a)') 'Could not find file ', trim(adjustl(file_name))
+      write(print_to,'(a)') 'Cannot print a quote, sorry.'
+   else ! (.not.file_exists)
+      FN=201
+      open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'old', action='READ')
+      inquire(file=trim(adjustl(file_name)),opened=file_opened)
+      if (.not.file_opened) then
+         write(print_to,'(a)') 'Could not open file ', trim(adjustl(file_name))
+         write(print_to,'(a)') 'Cannot print a quote, sorry.'
+      else ! (.not.file_opened)
+         ! Allocate arrays with quotes:
+         call Count_lines_in_file(FN, Nsiz)  ! module "Dealing_with_files"
+         Nsiz = Nsiz/3
+         allocate(quote(Nsiz))
+         allocate(author(Nsiz))
+         ! Now, read the quotes:
+         read_text_well = .true. ! to start with
+         count_lines = 0   ! to start with
+         do i = 1, Nsiz
+            read(FN,'(a)',IOSTAT=Reason) quote(i)
+            read(FN,'(a)',IOSTAT=Reason) author(i)
+            read(FN,'(a)',IOSTAT=Reason)  ! skip an empty line
+            !print*, i, quote(i), author(i)
+            call read_file(Reason, count_lines, read_text_well)   ! module "Dealing_with_files"
+            if (Reason > 0) then   ! something wrong in the line
+               write(print_to,'(a)') 'Problem reading file '//trim(adjustl(file_name))
+               write(ch_temp, '(i)') count_lines
+               write(print_to,'(a)') 'in line '//trim(adjustl(ch_temp))
+               read_well = .false.
+            elseif (Reason < 0) then ! end of file reached ...
+               close(FN)
+            endif
+         enddo
+
+         ! Once read all quates, now pick one at random to printout:
+         call random_number(RN)
+         i = ceiling(RN*Nsiz)
+         write(print_to,'(A)') trim(adjustl(quote(i)))
+         write(print_to,'(A)') '-- '//trim(adjustl(author(i)))
+
+      endif ! (.not.file_opened)
+   endif ! (.not.file_exists)
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine print_a_comfoorting_message
+
+
 
 END MODULE Dealing_with_output_files
