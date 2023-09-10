@@ -6222,7 +6222,12 @@ subroutine multiply_input_files(Folder_name, File_name_in)
    character(10) :: temp_ch
    integer :: FN, FN1, FN2, N, i, j, k, Nsiz, count_lines, Reason, sz, line_num(100,50)
    integer :: N_lines, i_block, i_line
-   logical :: file_opened, read_well, was_closed
+   logical :: file_exists, file_opened, read_well, was_closed
+
+   ! Check if the copy-instructions file is present at all:
+   Copy_file_name = trim(adjustl(Folder_name))//trim(adjustl(m_COPY_INPUT))
+   inquire(file=trim(adjustl(Copy_file_name)),exist=file_exists)
+   if (.not. file_exists) return ! nothing else to do here
 
    !-----------------------
    ! 1) Read input file:
@@ -6257,7 +6262,6 @@ subroutine multiply_input_files(Folder_name, File_name_in)
 
    !-----------------------
    ! 2) Read copy-file data:
-   Copy_file_name = trim(adjustl(Folder_name))//trim(adjustl(m_COPY_INPUT))
    open(NEWUNIT=FN1, FILE = trim(adjustl(Copy_file_name)), action = 'read')
    ! Get how many lines are in the file:
    call Count_lines_in_file(FN1, N_lines)  ! module "Dealing_with_files"
