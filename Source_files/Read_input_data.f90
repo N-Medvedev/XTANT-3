@@ -365,7 +365,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
 
          ! Check multiple input files need to be created:
          if (.not.present(Numb)) then ! first run, use default files:
-            call multiply_input_files(trim(adjustl(Folder_name)), trim(adjustl(File_name)))   ! below
+            call multiply_input_files(trim(adjustl(Folder_name)), trim(adjustl(File_name)), numpar%verbose)   ! below
          endif
       else
          write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
@@ -6213,8 +6213,9 @@ end subroutine prepare_multiple_inputs
 
 
 
-subroutine multiply_input_files(Folder_name, File_name_in)
+subroutine multiply_input_files(Folder_name, File_name_in, verbose)
    character(*), intent(in) :: Folder_name, File_name_in  ! input directory and file
+   logical, intent(in) :: verbose
    !-----------------------
    character(300), dimension(:), allocatable :: File_content
    character(200) :: File_name, Copy_file_name
@@ -6222,7 +6223,18 @@ subroutine multiply_input_files(Folder_name, File_name_in)
    character(10) :: temp_ch
    integer :: FN, FN1, FN2, N, i, j, k, Nsiz, count_lines, Reason, sz, line_num(100,50)
    integer :: N_lines, i_block, i_line
-   logical :: file_opened, read_well, was_closed
+   logical :: file_exists, file_opened, read_well, was_closed
+
+   ! Check if the copy-instructions file is present at all:
+   Copy_file_name = trim(adjustl(Folder_name))//trim(adjustl(m_COPY_INPUT))
+   inquire(file=trim(adjustl(Copy_file_name)),exist=file_exists)
+   if (.not. file_exists) then
+      return ! nothing else to do here
+   else
+      if (verbose) then
+         write(*,'(a)') ' Multiple input files will be created automatically from '//trim(adjustl(m_COPY_INPUT))
+      endif
+   endif
 
    !-----------------------
    ! 1) Read input file:
@@ -6257,7 +6269,6 @@ subroutine multiply_input_files(Folder_name, File_name_in)
 
    !-----------------------
    ! 2) Read copy-file data:
-   Copy_file_name = trim(adjustl(Folder_name))//trim(adjustl(m_COPY_INPUT))
    open(NEWUNIT=FN1, FILE = trim(adjustl(Copy_file_name)), action = 'read')
    ! Get how many lines are in the file:
    call Count_lines_in_file(FN1, N_lines)  ! module "Dealing_with_files"
@@ -6268,32 +6279,41 @@ subroutine multiply_input_files(Folder_name, File_name_in)
    i_line = 0 ! to start with
    Nsiz = 0 ! to start with
    count_lines = 0 ! to start with
-   do i = 1, N_lines
+   RDCL:do i = 1, N_lines
       read(FN1, '(a)', IOSTAT=Reason) read_line   ! read the current line
-      !print*, i, trim(adjustl(read_line))
       call read_file(Reason, count_lines, read_well)   ! modlue "Dealing_with_files"
-      if (.not.read_well) then
+      if (Reason .LT. 0) then ! end of file reached
+         exit RDCL
+      elseif (.not.read_well) then
          print*, 'Problem in multiply_input_files: cannot read line ', count_lines, ' in file '//trim(adjustl(m_COPY_INPUT))
          return
       endif
-      select case (trim(adjustl(read_line)))
-      case ('NEW', 'New', 'new', 'COPY', 'Copy', 'copy') ! count as new copy
-         i_block = i_block + 1   ! count blocks
-         i_line = 0  ! restart line counter
-      case('') ! skipline
-      case default
-         if (i_block > 0) then
-            i_line = i_line + 1
-            read(read_line, *, IOSTAT=Reason) line_num(i_block,i_line)
-            if (line_num(i_block,i_line) < 10) then
-               replace_line(i_block,i_line) = trim(adjustl(read_line(3:)))
-            elseif (line_num(i_block,i_line) < 100) then
-               replace_line(i_block,i_line) = trim(adjustl(read_line(4:)))
-            endif
-            print*, i_block, i_line, line_num(i_block,i_line), trim(adjustl(replace_line(i_block,i_line)))
-         endif
-      end select
-   enddo ! i = 1, N_lines
+
+      if (trim(adjustl(read_line(1:1))) /= '!') then ! it is not a commen line, try to interprete it
+         select case (trim(adjustl(read_line)))
+         case ('NEW', 'New', 'new', 'COPY', 'Copy', 'copy') ! count as new copy
+            i_block = i_block + 1   ! count blocks
+            i_line = 0  ! restart line counter
+         case('', '!') ! skipline
+         case default
+            if (i_block > 0) then
+               i_line = i_line + 1
+               read(read_line, *, IOSTAT=Reason) line_num(i_block,i_line)
+               call read_file(Reason, count_lines, read_well)   ! modlue "Dealing_with_files"
+               if (read_well) then
+                  if (line_num(i_block,i_line) < 10) then
+                     replace_line(i_block,i_line) = trim(adjustl(read_line(3:)))
+                  elseif (line_num(i_block,i_line) < 100) then
+                     replace_line(i_block,i_line) = trim(adjustl(read_line(4:)))
+                  endif
+               else ! nullify the wrong reading
+                  line_num(i_block,i_line) = 0
+               endif ! (read_well)
+               !print*, i_block, i_line, line_num(i_block,i_line), trim(adjustl(replace_line(i_block,i_line)))
+            endif ! (i_block > 0)
+         end select
+      endif ! (trim(adjustl(read_line(1:1))) /= '!')
+   enddo RDCL ! i = 1, N_lines
    call close_file('close', FN=FN1) ! module "Dealing_with_files"
    Nsiz = i_block
 

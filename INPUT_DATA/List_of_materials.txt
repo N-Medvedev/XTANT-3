@@ -21,6 +21,7 @@ B4C
 Ba
 Bi
 Biphenylene
+BN
 C
 C2H4n
 C60
@@ -42,6 +43,7 @@ C_mobius
 C_test
 Diamond
 Fe
+Fe-O
 Fe2O3
 Ga
 GaAs
@@ -57,16 +59,19 @@ H
 H2O
 HAl
 Hf
+I
 In
 Ir
 k-Al2O3
 LiF
 Mg
 Mg2SiO4
+MgAl2O4
 MgO
 MgO_3
 Mn
 Mo
+MoS2
 Mo_dimer
 Multilayer_AlCu
 Multilayer_AlSi
@@ -80,6 +85,10 @@ O
 Os
 Overdence_aC
 Pb
+Pb-I
+PbI2
+PbI2_2
+PbI2_3
 Pd
 Pentaheptite
 PMMA
@@ -96,6 +105,7 @@ Ru
 Ruthenium
 Ru_bcc
 Ru_NP
+Ru_on_Si
 Ru_test
 SarsCov2_spike_protein
 Sc
@@ -108,6 +118,7 @@ SiC
 SiC_test
 Silicon
 Silver
+Si_band
 Si_beta
 Si_BOP
 Si_dimer
@@ -121,9 +132,11 @@ TiO2
 TiO2_beta
 Titanium
 V
+VO2
 W
 Y
 Zn
 ZnO
+ZnS
 ZnSe
 Zr

@@ -97,6 +97,30 @@ Neil deGrasse Tyson
 "The good thing about science is that it's true whether or not you believe in it."
 Neil deGrasse Tyson
 
+"Science needs the light of free expression to flourish. It depends on the fearless questioning of authority, and the open exchange of ideas."
+Neil deGrasse Tyson
+
+"The very nature of science is discoveries, and the best of those discoveries are the ones you don’t expect."
+Neil deGrasse Tyson
+
+"Not only do we live among the stars, the stars live within us."
+Neil deGrasse Tyson
+
+"Curious that we spend more time congratulating people who have succeeded than encouraging people who have not."
+Neil deGrasse Tyson
+
+"Knowing how to think empowers you far beyond those who know only what to think."
+Neil deGrasse Tyson
+
+"There's no shame in admitting what you don't know. The only shame is pretending you know all the answers."
+Neil deGrasse Tyson
+
+"Curious fact that those who never fail are also those who never truly succeed."
+Neil deGrasse Tyson
+
+"Science is not about being right or wrong, it's about being willing to ask the right questions and follow the evidence wherever it leads."
+Neil deGrasse Tyson
+
 "In science, there are no shortcuts to truth."
 Karl Popper
 
@@ -106,9 +130,36 @@ Stephen Hawking
 "Science is a way of thinking much more than it is a body of knowledge."
 Carl Sagan
 
-"Science is not about being right or wrong, it's about being willing to ask the right questions and follow the evidence wherever it leads."
-Neil deGrasse Tyson
+"In our obscurity - in all this vastness - there is no hint that help will come from elsewhere to save us from ourselves. It is up to us."
+Carl Sagan
+
+"Absence of evidence is not evidence of absence."
+Carl Sagan
 
 "The most exciting phrase to hear in science, the one that heralds new discoveries, is not "Eureka!" but "That's funny..."
 Isaac Asimov
+
+"Self-education is, I firmly believe, the only kind of education there is."
+Isaac Asimov
+
+"If knowledge can create problems, it is not through ignorance that we can solve them."
+Isaac Asimov
+
+"A subtle thought that is in error may yet give rise to fruitful inquiry that can establish truths of great value."
+Isaac Asimov
+
+"It is, after all, impossible in the modern world to shield everyone from nonsense and stupidity."
+Lawrence M. Krauss
+
+"I cannot stress often enough that what science is all about is not proving things to be true but proving them to be false."
+Lawrence M. Krauss
+
+"If innovations were predictable, they wouldn't be discoveries."
+Lawrence M. Krauss
+
+"Physicists are made up of atoms. A physicist is an attempt by an atom to understand itself."
+Michio Kaku
+
+"The human brain has 100 billion neurons, each neuron connected to 10 thousand other neurons. Sitting on your shoulders is the most complicated object in the known universe."
+Michio Kaku
 --

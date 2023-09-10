@@ -1,9 +1,0 @@
-!new
-1	Aluminum
-2	Al
-26	3	2	2       ! number of unit-cells in X,Y,Z
-60	3*1         ! number of k-points in each direction (used only for Trani-k!)
-
-!new
-1	Gold
-2	Au
