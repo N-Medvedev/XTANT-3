@@ -79,6 +79,7 @@ subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_n
    integer :: FN_BL, k, NSC, n1, icur
    real(8) :: r_start, r_stop, dr, supcesize, Pot_shift, d_bond, ZBL_length, TB_d, ZBL_d, bond_length
    real(8), dimension(m_N_BOP_rep_grid) :: Ref_Pot, V_rep
+   integer, dimension(:), allocatable :: int_vec
 
    ! Region around the bond length where we smoothen the potentials:
    d_bond = 0.3d0   ! [A]
@@ -120,7 +121,9 @@ subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_n
 
    if (numpar%verbose) then
       write(*, '(a)', advance='no') 'Number of valence electrons: '
-      write(*, '(f12.5)') matter%Atoms(:)%NVB, ' (total: ', Scell(1)%Ne, ')'
+      allocate(int_vec(size(matter%Atoms(:)%NVB)), source=matter%Atoms(:)%NVB)
+      write(*,*) int_vec
+      write(*,*) ' (total: ', Scell(1)%Ne, ')'
    endif
 
    Scell(1)%Ne_low = Scell(1)%Ne ! at the start, all electrons are low-energy
@@ -1614,7 +1617,8 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
 
    if (numpar%verbose) then
       write(*, '(a)', advance='no') 'Number of valence electrons: '
-      write(*, '(f12.5)') matter%Atoms(:)%NVB, ' (total: ', Scell(1)%Ne, ')'
+      write(*,*) matter%Atoms(:)%NVB
+      write(*,*) ' (total: ', Scell(1)%Ne, ')'
    endif
 
 !     print*, 'Ne ', matter%Atoms(:)%NVB, Scell(SCN)%Na, Scell(SCN)%Ne

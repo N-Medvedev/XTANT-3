@@ -1,0 +1,273 @@
+! Metals
+
+copy
+1   Aluminum
+2   Al
+
+copy
+1   Ag
+2   Ag
+
+copy
+1   Gold
+2   Au
+
+copy
+1   Au
+2   Au
+
+copy
+1   Ba
+2   Ba
+23  3*5
+
+copy
+1   Ca
+2   Ca
+
+copy
+1   Cd
+2   Cd
+23  6	3	3	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Co
+2   Co
+23  5	3	4	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Cr
+2   Cr
+23  5	5	5	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Copper
+2   Co
+
+copy
+1   Fe
+2   Fe
+23  5	5	5	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Ga
+2   Ga
+23  4	2	4	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Graphite
+2   C
+23  5	4	2	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Hf
+2   Hf
+23  5	3	4	      ! number of unit-cells in X,Y,Z
+
+copy
+1   In
+2   In
+23  5	5	1	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Ir
+2   Ir
+
+copy
+1   Mg
+2   Mg
+
+copy
+1   Mn
+2   Mn
+23  2	2	2	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Mo
+2   Mo
+23  5	5	5	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Nb
+2   Nb
+23  5	5	5	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Nickel
+2   Ni
+
+copy
+1   Os
+2   Os
+23  5	3	4	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Pb
+2   Pb
+
+copy
+1   Pt
+2   Pt
+
+copy
+1   Re
+2   Re
+23  5	3	4	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Rh
+2   Rh
+
+copy
+1   Ruthenium
+2   Ru
+
+copy
+1   Ru
+2   Ru
+
+copy
+1   Sc
+2   Sc
+23  5	3	4	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Se
+2   Se
+
+copy
+1   SiAl
+2   SiAl
+23  5	5	5	    ! number of unit-cells in X,Y,Z
+
+copy
+1   Sn
+2   Sn
+23  3	3	3	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Sr
+2   Sr
+
+copy
+1   Ta
+2   Ta
+23  5	5	5	    ! number of unit-cells in X,Y,Z
+
+copy
+1   Te
+2   Te
+
+copy
+1   Titanium
+2   Ti
+
+copy
+1   V
+2   V
+23  5	5	5	    ! number of unit-cells in X,Y,Z
+
+copy
+1   W
+2   W
+23  5	5	5	    ! number of unit-cells in X,Y,Z
+
+copy
+1   Y
+2   Y
+
+copy
+1   Zn
+2   Zn
+23  5	4	3	      ! number of unit-cells in X,Y,Z
+
+copy
+1   Zr
+2   Zr
+
+
+! Semiconductors
+
+copy
+1   Silicon
+2   Si
+23  3*3
+25  CDF 1.17d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   Ge
+2   Ge
+23  3	3	3	      ! number of unit-cells in X,Y,Z
+25  CDF 0.74d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   AlAs
+2   AlAs
+23  3	3	3	      ! number of unit-cells in X,Y,Z
+25  CDF 2.12d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   AlP
+2   AlP
+23  3	3	3	      ! number of unit-cells in X,Y,Z
+25  CDF 2.5d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   B4C
+2   B4C
+23  3	2	1   ! number of unit-cells in X,Y,Z
+25  CDF 2.6d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   Cu2O
+2   Cu2O
+23  1   1   1       ! number of unit-cells in X,Y,Z
+25  CDF 2.17d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   GaAs
+2   GaAs
+23  3	3	3	      ! number of unit-cells in X,Y,Z
+25  CDF 1.43d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   GaP
+2   GaP
+23  3	3	3	      ! number of unit-cells in X,Y,Z
+25  CDF 2.25d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   GaSb
+2   GaSb
+23  3	3	3	      ! number of unit-cells in X,Y,Z
+25  CDF 0.68d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   PbI2
+2   PbI2
+23  1	1	1       ! number of unit-cells in X,Y,Z
+25  CDF 2.3d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   SiC	mp-7631_SiC.POSCAR                ! material name directory; file with supercell and atomic coordinates
+2   SiC
+23  4   4   1       ! number of unit-cells in X,Y,Z
+25  CDF 3.26d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   TiO2
+2   TiO2
+23  3   3   4       ! number of unit-cells in X,Y,Z
+25  CDF 3.2d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   ZnO
+2   ZnO
+23  4	4	3       ! number of unit-cells in X,Y,Z
+25  CDF 3.2d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
+
+copy
+1   ZnS
+2   ZnS
+23  1	1	1       ! number of unit-cells in X,Y,Z
+25  CDF 3.6d0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)

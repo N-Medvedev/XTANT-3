@@ -365,7 +365,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
 
          ! Check multiple input files need to be created:
          if (.not.present(Numb)) then ! first run, use default files:
-            call multiply_input_files(trim(adjustl(Folder_name)), trim(adjustl(File_name)))   ! below
+            call multiply_input_files(trim(adjustl(Folder_name)), trim(adjustl(File_name)), numpar%verbose)   ! below
          endif
       else
          write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
@@ -6213,8 +6213,9 @@ end subroutine prepare_multiple_inputs
 
 
 
-subroutine multiply_input_files(Folder_name, File_name_in)
+subroutine multiply_input_files(Folder_name, File_name_in, verbose)
    character(*), intent(in) :: Folder_name, File_name_in  ! input directory and file
+   logical, intent(in) :: verbose
    !-----------------------
    character(300), dimension(:), allocatable :: File_content
    character(200) :: File_name, Copy_file_name
@@ -6227,7 +6228,13 @@ subroutine multiply_input_files(Folder_name, File_name_in)
    ! Check if the copy-instructions file is present at all:
    Copy_file_name = trim(adjustl(Folder_name))//trim(adjustl(m_COPY_INPUT))
    inquire(file=trim(adjustl(Copy_file_name)),exist=file_exists)
-   if (.not. file_exists) return ! nothing else to do here
+   if (.not. file_exists) then
+      return ! nothing else to do here
+   else
+      if (verbose) then
+         write(*,'(a)') ' Multiple input files will be created automatically from '//trim(adjustl(m_COPY_INPUT))
+      endif
+   endif
 
    !-----------------------
    ! 1) Read input file:
