@@ -6268,32 +6268,41 @@ subroutine multiply_input_files(Folder_name, File_name_in)
    i_line = 0 ! to start with
    Nsiz = 0 ! to start with
    count_lines = 0 ! to start with
-   do i = 1, N_lines
+   RDCL:do i = 1, N_lines
       read(FN1, '(a)', IOSTAT=Reason) read_line   ! read the current line
-      !print*, i, trim(adjustl(read_line))
       call read_file(Reason, count_lines, read_well)   ! modlue "Dealing_with_files"
-      if (.not.read_well) then
+      if (Reason .LT. 0) then ! end of file reached
+         exit RDCL
+      elseif (.not.read_well) then
          print*, 'Problem in multiply_input_files: cannot read line ', count_lines, ' in file '//trim(adjustl(m_COPY_INPUT))
          return
       endif
-      select case (trim(adjustl(read_line)))
-      case ('NEW', 'New', 'new', 'COPY', 'Copy', 'copy') ! count as new copy
-         i_block = i_block + 1   ! count blocks
-         i_line = 0  ! restart line counter
-      case('') ! skipline
-      case default
-         if (i_block > 0) then
-            i_line = i_line + 1
-            read(read_line, *, IOSTAT=Reason) line_num(i_block,i_line)
-            if (line_num(i_block,i_line) < 10) then
-               replace_line(i_block,i_line) = trim(adjustl(read_line(3:)))
-            elseif (line_num(i_block,i_line) < 100) then
-               replace_line(i_block,i_line) = trim(adjustl(read_line(4:)))
-            endif
-            print*, i_block, i_line, line_num(i_block,i_line), trim(adjustl(replace_line(i_block,i_line)))
-         endif
-      end select
-   enddo ! i = 1, N_lines
+
+      if (trim(adjustl(read_line(1:1))) /= '!') then ! it is not a commen line, try to interprete it
+         select case (trim(adjustl(read_line)))
+         case ('NEW', 'New', 'new', 'COPY', 'Copy', 'copy') ! count as new copy
+            i_block = i_block + 1   ! count blocks
+            i_line = 0  ! restart line counter
+         case('', '!') ! skipline
+         case default
+            if (i_block > 0) then
+               i_line = i_line + 1
+               read(read_line, *, IOSTAT=Reason) line_num(i_block,i_line)
+               call read_file(Reason, count_lines, read_well)   ! modlue "Dealing_with_files"
+               if (read_well) then
+                  if (line_num(i_block,i_line) < 10) then
+                     replace_line(i_block,i_line) = trim(adjustl(read_line(3:)))
+                  elseif (line_num(i_block,i_line) < 100) then
+                     replace_line(i_block,i_line) = trim(adjustl(read_line(4:)))
+                  endif
+               else ! nullify the wrong reading
+                  line_num(i_block,i_line) = 0
+               endif ! (read_well)
+               !print*, i_block, i_line, line_num(i_block,i_line), trim(adjustl(replace_line(i_block,i_line)))
+            endif ! (i_block > 0)
+         end select
+      endif ! (trim(adjustl(read_line(1:1))) /= '!')
+   enddo RDCL ! i = 1, N_lines
    call close_file('close', FN=FN1) ! module "Dealing_with_files"
    Nsiz = i_block
 
