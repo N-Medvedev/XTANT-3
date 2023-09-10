@@ -28,7 +28,7 @@
 !
 ! as a part of research at
 ! CFEL at DESY, Hamburg, Germany 2011-2016,
-! and in the Institute of Physics of CAS, Prague, Czechia 2016-2022
+! and in the Institute of Physics of CAS, Prague, Czechia 2016-2023
 !
 ! The model is described in: 
 ! https://arxiv.org/abs/1805.07524
@@ -149,6 +149,9 @@ call prepare_output_files(g_Scell,g_matter, g_laser, g_numpar, g_Scell(1)%TB_Ham
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the output files, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Output directory prepared succesfully:', msec=.true.)
 
+! Create CDF-file with fitted oscillators (Ritchi-Howie), if required:
+call printout_CDF_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_output_files"
+
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Project-specific analysis of C60:
 ! call C60_vdW_vs_Coulomb(g_Scell, g_numpar, g_matter, layers=2) ! Module "TB"
@@ -209,9 +212,6 @@ if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesf
 
 ! Calculate electron heat capacity, entropy:
 call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
-
-! Create CDF-file with fitted oscillators (Ritchi-Howie), if required:
-call printout_CDF_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_output_files"
 
 ! And save the (low-energy part of the) distribution on the grid, if required
 ! (its high-energy part is inside of MC_Propagate subroutine):
@@ -450,7 +450,7 @@ endif
 
 2016 continue
 ! Just add some comforing message if something whent wrong :-(
-if (g_Err%Err) call print_a_comfoorting_message(6, g_numpar%path_sep)  ! module "Dealing_with_output_files"
+if (g_Err%Err) call print_a_comforting_message(6, g_numpar%path_sep)  ! module "Dealing_with_output_files"
 
 
 

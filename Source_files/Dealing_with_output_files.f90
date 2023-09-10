@@ -50,7 +50,7 @@ character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
 public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
-public :: XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comfoorting_message
+public :: XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comforting_message
 
  contains
 
@@ -4381,7 +4381,7 @@ subroutine XTANT_label_starred(print_to)
 end subroutine XTANT_label_starred
 
 
-subroutine print_a_comfoorting_message(print_to, path_sep)
+subroutine print_a_comforting_message(print_to, path_sep)
    integer, intent(in) :: print_to ! the screen, or file
    character(*), intent(in) :: path_sep ! file name
    !----------------------
@@ -4444,7 +4444,7 @@ subroutine print_a_comfoorting_message(print_to, path_sep)
       endif ! (.not.file_opened)
    endif ! (.not.file_exists)
    write(print_to,'(a)') trim(adjustl(m_starline))
-end subroutine print_a_comfoorting_message
+end subroutine print_a_comforting_message
 
 
 
