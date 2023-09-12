@@ -1,17 +1,20 @@
 # XTANT-3
- X-ray-induced Thermal And Nonthermal Transitions
- 
+`X-ray-induced Thermal And Nonthermal Transitions`
+
+![XTANT3_logo_med_small](https://github.com/N-Medvedev/XTANT-3/assets/104917286/dc0bb1f2-0df3-45a0-9803-380777cbffe9)
+
+
 It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matter. The code combines the following methods into one model with feed-backs:
 
- a) Monte Carlo (MC) method for modeling X-ray-induced electron kinetics
+> a) Monte Carlo (MC) method for modeling X-ray-induced electron kinetics
  
- b) Boltzmann equation for low-energy electrons: relaxation-time approximation (RTA) for electron-electron scattering; Boltzmann collision integrals (BCI) for nonadiabatic electron-ion (electron-phonon) coupling
+> b) Boltzmann equation for low-energy electrons: relaxation-time approximation (RTA) for electron-electron scattering; Boltzmann collision integrals (BCI) for nonadiabatic electron-ion (electron-phonon) coupling
  
- c) Transferable tight binding (TB) for tracing electronic structure and interatomic forces
+> c) Transferable tight binding (TB) for tracing electronic structure and interatomic forces
  
- d) Molecular dynamics (MD) for tracing atomic response to modification of the interatomic potential due to electronic excitation
+> d) Molecular dynamics (MD) for tracing atomic response to modification of the interatomic potential due to electronic excitation
  
- e) Kubo-Greenwood (or Random phase approximation, RPA) for calculation of the optical properties and electronic heat conductivity of the material
+> e) Kubo-Greenwood (or Random phase approximation, RPA) for calculation of the optical properties and electronic heat conductivity of the material
 
 ## Disclaimer
 
