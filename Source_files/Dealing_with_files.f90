@@ -173,13 +173,13 @@ subroutine read_file(Reason, i, read_well, Error_descript)
    IF (Reason .GT. 0)  THEN ! ... something wrong ...
        if (present(Error_descript)) then
           write(chi, '(i12)') i
-          write(Error_descript,'(a,a,a)') 'Problem reading input file in line ', trim(adjustl(chi)), ' ,wrong type of variable'
+          write(Error_descript,'(a,a,a)') 'Problem reading input file in line ', trim(adjustl(chi)), ', wrong type of variable'
        endif
        read_well = .false.
    ELSE IF (Reason .LT. 0) THEN ! ... end of file reached ...
        if (present(Error_descript)) then
           write(chi, '(i12)') i
-          write(Error_descript,'(a,a,a)') 'Problem reading input file in line ', trim(adjustl(chi)), ' ,unexpected END of file'
+          write(Error_descript,'(a,a,a)') 'Problem reading input file in line ', trim(adjustl(chi)), ', unexpected END of file'
        endif
        read_well = .false.
    ELSE   ! normal reading
