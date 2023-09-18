@@ -649,6 +649,7 @@ type Super_cell
    real(8), dimension(:), allocatable :: kappa_mu_grid  ! mu vs Te (in electron heat conductivity) [eV]
    real(8), dimension(:), allocatable :: kappa_Ce_grid  ! Ce vs Te (in electron heat conductivity) [J/(m^3 K)]
    real(8), dimension(:), allocatable :: kappa_e_part   ! band-resolved electron heat conductivity [W/(m K)]
+   real(8), dimension(:,:), allocatable :: Mij ! matrix element for electron-ion coupling or dynamic kappa
    ! Atoms:
    type(Atom), dimension(:), allocatable :: MDAtoms ! all atoms in MD
    type(Energies) :: nrg		! [eV] energies in the super-cell
@@ -887,7 +888,7 @@ type Numerics_param
    ! numbers of files:
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
-   integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_Se, FN_fe_on_grid, FN_Te, FN_mu
+   integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
    integer :: el_ion_scheme
@@ -898,7 +899,7 @@ type Numerics_param
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate, save_fe_grid
    logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
-   logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS
+   logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS, do_kappa_dyn
    logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN, save_CDF
    integer :: Mulliken_model
    integer :: ind_fig_extention, change_size_step

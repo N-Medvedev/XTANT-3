@@ -3188,6 +3188,8 @@ end subroutine get_new_energies
 
 
 subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
+! This subroutine calculates the nonadiabatic electron-ion (electron-phonon) coupling
+! and dynamical electronic heat conductivity (if required)
    real(8), intent(in) :: t ! [fs] current time
    type(solid), intent(inout) :: matter ! materil parameters
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
@@ -3204,8 +3206,8 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
       SC:do NSC = 1, size(Scell) ! for all supercells
          dE_nonadiabat = 0.0d0
          !print*, 'NA:', numpar%Nonadiabat, t, numpar%t_NA
-         if ((numpar%Nonadiabat) .AND. (t .GT. numpar%t_NA)) then ! electron-coupling included
-            ! Ensure Fermi distribution:
+         if ( ( (numpar%Nonadiabat) .or. (numpar%do_kappa_dyn)) .AND. (t .GT. numpar%t_NA)) then ! electron-coupling included
+            ! Ensure Fermi distribution (unless nonequilibrium simulation is used):
             call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
 !             print*, 'Electron_ion_coupling 1'
             
@@ -3300,9 +3302,17 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
 !                      print*, 'before', E0
 !                      select case (numpar%DOS_splitting) ! include analysis of partial coupling (contribution of atomic shells) or not:
 !                      case (1)
-                         call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, &
+                     if (numpar%Nonadiabat) then
+                        call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, &
                                  Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
                                  dE_nonadiabat, numpar%NA_kind, numpar%DOS_weights, Scell(NSC)%G_ei_partial) ! module "Nonadiabatic"
+                     endif
+
+                     ! Save Mij to calculate the dynamical electornic heat conductivity:
+                     if (numpar%do_kappa_dyn) then
+                        Scell(NSC)%Mij = Mij
+                     endif
+
 !                      case default    ! No need to sort per orbitals
 !                         call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
 !                             dE_nonadiabat, numpar%NA_kind) ! module "Nonadiabatic"

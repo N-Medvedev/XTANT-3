@@ -842,6 +842,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          if (.not.allocated(Scell(i)%H_non0)) allocate(Scell(i)%H_non0(n1,n1))	! nondiagonalized Hamiltonian
          if (.not.allocated(Scell(i)%Ei)) allocate(Scell(i)%Ei(n1))  ! energy levels, eigenvalues of the hamiltonian matrix
          if (.not.allocated(Scell(i)%Ei0)) allocate(Scell(i)%Ei0(n1))  ! energy levels0, eigenvalues of the hamiltonian matrix
+         if (.not.allocated(Scell(i)%Mij)) allocate(Scell(i)%Mij(n1,n1), source = 0.0d0)   ! dynamical coupling matrix
          if (.not.allocated(Scell(i)%Aij)) allocate(Scell(i)%Aij(n1,n1))	! coefficients used for forces in TB
          if ((numpar%scc) .and. (.not.allocated(Scell(i)%Ei_scc_part)) ) then
             allocate(Scell(i)%Ei_scc_part(n1))  ! energy levels of non-SCC part of the hamiltonian

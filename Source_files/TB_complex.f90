@@ -27,9 +27,9 @@ MODULE TB_complex
 use Universal_constants
 use Objects
 use TB, only : k_point_choice, construct_complex_Hamiltonian
-use Optical_parameters, only : allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF, get_kappa_e_e
+use Optical_parameters, only : allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF, get_kappa_e_e, get_Onsager_dynamic
 use Electron_tools, only : get_DOS_sort
-use Little_subroutines, only : Find_in_array_monoton
+use Little_subroutines, only : Find_in_array_monoton, linear_interpolation
 
 USE OMP_LIB, only : OMP_GET_THREAD_NUM
 
@@ -64,14 +64,15 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    real(8), dimension(:), allocatable :: kappa, kappa_ee, kappa_temp, kappa_ee_temp    ! electron heat conductivity vs Te
    real(8), dimension(:), allocatable :: kappa_mu_grid, kappa_mu_grid_temp, kappa_Ce_grid, kappa_Ce_grid_temp
    integer :: Nsiz_Te, Nsiz_DOS_1, Nsiz_DOS_2, Nsiz_DOS_3
-   real(8) :: Te_min, Te_max, dTe
+   real(8) :: Te_min, Te_max, dTe, kap_temp
    real(8), dimension(:,:), allocatable :: DOS, DOS_temp  ! [eV] grid; [a.u.] DOS
    real(8), dimension(:,:,:), allocatable :: DOS_partial, DOS_partial_temp ! partial DOS made of each orbital type
    logical :: anything_to_do
 
    !-----------------------------------------------
    ! Check if there is anything to do with the complex Hamiltonian:
-   anything_to_do = (numpar%save_DOS .or. numpar%do_kappa .or. (numpar%optic_model == 4) .or. (numpar%optic_model == 5))
+   anything_to_do = (numpar%save_DOS .or. numpar%do_kappa .or. numpar%do_kappa_dyn .or. &
+                     (numpar%optic_model == 4) .or. (numpar%optic_model == 5))
    if (.not.anything_to_do) return  ! nothing to do, exit
 
 
@@ -174,14 +175,34 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
 
       !-------------------------------
       ! If required, do Onsager coefficients (for electronic heat conductivity):
-      if (numpar%do_kappa) then  ! if requested
+      if (numpar%do_kappa .or. numpar%do_kappa_dyn) then  ! if requested
          ! Electron-phonon contribution:
-         call get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
+         if (numpar%do_kappa) then ! (static, KG)
+            call get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
                               Scell(NSC)%kappa_Te_grid, kappa_mu_grid_temp, kappa_Ce_grid_temp)   ! module "Optical_parameters"
 
-         ! Contribution of the electronic term:
-         call get_kappa_e_e(numpar, matter, Scell, NSC, Ei, kappa_mu_grid_temp, &
+            ! Contribution of the electronic term:
+            call get_kappa_e_e(numpar, matter, Scell, NSC, Ei, kappa_mu_grid_temp, &
                               Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! module "Optical_parameters"
+         endif
+
+         if (numpar%do_kappa_dyn) then ! (dynamic)
+            ! Only gamma-point calculations, so only 1 time:
+            if (Ngp == 1) then
+               call get_Onsager_dynamic(numpar, matter, Scell, NSC, kappa_temp) ! module "Optical_parameters"
+
+               ! Contribution of the electronic term:
+               call get_kappa_e_e(numpar, matter, Scell, NSC, Scell(NSC)%Ei, kappa_mu_grid_temp, &
+                              Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! module "Optical_parameters"
+
+               !print*, 'kappa_temp', kappa_temp
+               !print*, 'kappa_ee_temp', kappa_ee_temp
+            else
+               kappa_temp = 0.0d0
+               kappa_ee_temp = 0.0d0
+            endif
+         endif
+
       else  ! if not required
          kappa_temp = 0.0d0
          kappa_mu_grid_temp = 0.0d0
@@ -231,12 +252,27 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
 
    !-------------------------------
    ! Save electron heat conductivity, averaged over k-points:
-   if (numpar%do_kappa) then  ! if requested
-      Scell(NSC)%kappa_e = kappa(1)/dble(Nsiz)  ! room temperature
-      Scell(NSC)%kappa_e_vs_Te = kappa/dble(Nsiz)  ! array vs Te
-      Scell(NSC)%kappa_ee_vs_Te = kappa_ee/dble(Nsiz)  ! e-e array vs Te
+   if (numpar%do_kappa) then  ! (static, if requested)
+      Scell(NSC)%kappa_e = kappa(1)/dble(Nsiz)  ! transient temperature
+      Scell(NSC)%kappa_e_vs_Te = kappa/dble(Nsiz)       ! e-ph array vs Te
+      Scell(NSC)%kappa_ee_vs_Te = kappa_ee/dble(Nsiz)   ! e-e array vs Te
       Scell(NSC)%kappa_mu_grid = kappa_mu_grid/dble(Nsiz)  ! array of mu vs Te
       Scell(NSC)%kappa_Ce_grid = kappa_Ce_grid/dble(Nsiz)  ! array of Ce vs Te
+   endif
+   if (numpar%do_kappa_dyn) then ! (dynamic)
+      Scell(NSC)%kappa_e_vs_Te = kappa       ! e-ph
+      Scell(NSC)%kappa_ee_vs_Te = kappa_ee   ! e-e
+      Scell(NSC)%kappa_e = 0.0d0
+      if (kappa(1) > 0.0d0) Scell(NSC)%kappa_e = Scell(NSC)%kappa_e + 1.0d0/kappa(1)
+      ! e-e term for the given temperature:
+      call Find_in_array_monoton(Scell(NSC)%kappa_Te_grid, Scell(NSC)%Te, i)  ! module "Little_subroutines"
+      call linear_interpolation(Scell(NSC)%kappa_Te_grid, kappa_ee, Scell(NSC)%Te, kap_temp, i) ! module "Little_subroutines"
+      ! Save it to print out:
+      Scell(NSC)%kappa_ee_vs_Te(1) = kap_temp
+      if (kap_temp > 0.0d0) Scell(NSC)%kappa_e = Scell(NSC)%kappa_e + 1.0d0/kap_temp
+      ! Total kappa:
+      if (Scell(NSC)%kappa_e > 0.0d0) Scell(NSC)%kappa_e = 1.0d0 / Scell(NSC)%kappa_e ! total
+      !print*, 'use_complex_Hamiltonian:', kappa(1), kap_temp, Scell(NSC)%kappa_e
    endif
 
    !-------------------------------
@@ -395,7 +431,7 @@ subroutine set_temperature_grid(Scell, numpar, kappa, kappa_ee, kappa_mu_grid, k
    if (.not.allocated(kappa_mu_grid)) allocate(kappa_mu_grid(Nsiz_Te), source = 0.0d0)   ! mu [eV]
    if (.not.allocated(kappa_Ce_grid)) allocate(kappa_Ce_grid(Nsiz_Te), source = 0.0d0)   ! Ce [J/(m^3 K)]
 
-   if (numpar%do_kappa) then
+   if (numpar%do_kappa .or. numpar%do_kappa_dyn) then
       if (.not.allocated(Scell%kappa_Te_grid)) allocate(Scell%kappa_Te_grid(Nsiz_Te), source = 0.0d0)   ! Te [K]
       if (.not.allocated(Scell%kappa_e_vs_Te)) allocate(Scell%kappa_e_vs_Te(Nsiz_Te), source = 0.0d0)   ! kappa
       if (.not.allocated(Scell%kappa_mu_grid)) allocate(Scell%kappa_mu_grid(Nsiz_Te), source = 0.0d0)   ! mu [eV]

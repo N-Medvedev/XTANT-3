@@ -150,7 +150,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    matter%p_ext = g_P_atm	! External pressure [Pa] (0 = normal atmospheric pressure)
    numpar%el_ion_scheme = 0	! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO)
    numpar%t_Te_Ee = 1.0d-5	! when to start coupling
-   numpar%NA_kind = 1	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
+   numpar%NA_kind = -1	! -1=Landau; 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
    numpar%Nonadiabat = .true.  ! included
    numpar%tau_fe = 1.0d0   ! Characteristic electron relaxation time [fs]
    numpar%tau_fe_CB = -1.0d0  ! No separate thermalization of CB and VB by default
@@ -163,6 +163,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%acc_window = 5.0d0	! [eV] acceptance window for nonadiabatic coupling:
    numpar%do_DOS = .false.    ! DOS calculation
    numpar%do_kappa = .false.  ! electron heat conductivity calculation
+   numpar%do_kappa_dyn = .false.  ! dynamic electron heat conductivity calculation
    numpar%save_CDF = .false.    ! fitted oscillators CDF printout
    numpar%kappa_Te_min = 300.0d0 ! [K]
    numpar%kappa_Te_max = 30000.0d0  ! [K]
@@ -5892,6 +5893,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
    read_var = 0.0d0     ! unused variable in this case
 
    select case (trim(adjustl(string)))
+   !----------------------------------
    case ('el-ph', 'EL-PH', 'El-Ph', 'Coupling', 'COUPLING', 'coupling')
       read(FN,*,IOSTAT=Reason) num_phon   ! number of simulations for average electron-phonon coupling parameter
       call read_file(Reason, count_lines, read_well)
@@ -5902,6 +5904,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
          backspace(FN)
       endif
 
+   !----------------------------------
    case ('WATER', 'EMBED_WATER', 'EMBED_IN_WATER', 'Water', 'water', 'embed_water', 'Embed_Water', 'Embed_in_water')
       numpar%embed_water = .true.   ! save the flag for water embedding
       read(FN,*,IOSTAT=Reason) numpar%N_water_mol   ! number of water molecules to use
@@ -5917,15 +5920,27 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
          print*, 'Cannot embed with negative numbner of water molecules!'
       endif
 
+   !----------------------------------
    case ('DOS', 'Dos', 'dos', 'do_DOS', 'get_DOS')
       numpar%do_DOS = .true.  ! calculate DOS
 
+   !----------------------------------
    case ('print_CDF', 'save_CDF', 'get_CDF', 'Print_CDF', 'Save_CDF', 'Get_CDF')
       numpar%save_CDF = .true.   ! printout CDF file with oscillators
 
-   case ('KAPPA', 'Kappa', 'kappa', 'conductivity', 'do_kappa', 'Do_kappa', 'Get_kappa', 'get_kappa')
-      print*, 'Electronic heat conductivity will be calculated'
-      numpar%do_kappa = .true.   ! calculate K, electron heat conductivity vs Te
+   !----------------------------------
+   case ('KAPPA', 'Kappa', 'kappa', 'conductivity', 'do_kappa', 'Do_kappa', 'Get_kappa', 'get_kappa', &
+         'KAPPA_DYN', 'Kappa_dyn', 'kappa_dyn', 'Kappa_Dyn', 'Kappa_dynamical', 'kappa_dynamical')
+
+      select case (trim(adjustl(string)))
+      case ('KAPPA', 'Kappa', 'kappa', 'conductivity', 'do_kappa', 'Do_kappa', 'Get_kappa', 'get_kappa')
+         print*, 'Electronic heat conductivity will be calculated (static)'
+         numpar%do_kappa = .true.   ! statically calculate K (electron heat conductivity vs Te)
+      case ('KAPPA_DYN', 'Kappa_dyn', 'kappa_dyn', 'Kappa_Dyn', 'Kappa_dynamical', 'kappa_dynamical')
+         print*, 'Electronic heat conductivity will be calculated (dynamic)'
+         numpar%do_kappa_dyn = .true.   ! dynamically calculate K (for transient Te)
+      end select
+
       read(FN,'(a)',IOSTAT=Reason) temp_ch
       call read_file(Reason, count_lines, read_well)
       read(temp_ch,*,IOSTAT=Reason) numpar%kappa_Te_min, numpar%kappa_Te_max, numpar%kappa_dTe
@@ -5934,19 +5949,28 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
          numpar%kappa_Te_max = 30000.0d0
          numpar%kappa_dTe = 100.0d0
          numpar%kappa_model = 0
-         print*, 'With default parameters of the model (Kubo-Greenwood)'
+         if (numpar%do_kappa) then
+            print*, 'With default parameters of the model (Kubo-Greenwood)'
+         elseif (numpar%do_kappa_dyn) then
+            print*, 'With default parameters of the model (dynamical coupling)'
+         endif
          backspace(FN)
          return
       else  ! check if the model index provided
          read(FN,*,IOSTAT=Reason) numpar%kappa_model
          call read_file(Reason, count_lines, read_well)
          if (Reason /= 0) then   ! model index not provided
-            print*, 'With default model (numerical Onsager coefficients)'
+            if (numpar%do_kappa) then
+               print*, 'With default model (numerical Onsager coefficients)'
+            elseif (numpar%do_kappa_dyn) then
+               print*, 'With default model (dynamical coupling)'
+            endif
             backspace(FN)
             return
          endif
       endif
 
+   !----------------------------------
    case ('PROBE', 'Probe', 'probe')
       ! Calculate optical parameters (and electronic heat conductivity, ir requested), and with which model:
       read(FN,*,IOSTAT=Reason) numpar%optic_model, N, read_var
@@ -6005,6 +6029,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
          Scell(i)%eps%teta = Scell(i)%eps%teta*g_Pi/(180.0d0) !c [radians]
       enddo SCL
 
+   !----------------------------------
    case ('size', 'Size', 'SIZE')
       print*, 'Supercell size variation will be performed to plot potential energy curve'
       numpar%change_size = .true. ! do changing size
@@ -6026,6 +6051,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
       endif
       !write(*,'(a)') trim(adjustl(m_starline))
 
+   !----------------------------------
    case default
       ! Check if the user needs any additional info (by setting the flags):
       call interprete_additional_data(string, numpar%path_sep, change_size=numpar%change_size, contin=Err%Err, &
@@ -6598,946 +6624,12 @@ subroutine read_input_txt(File_name, Scell, matter, numpar, laser, Err)
    integer :: FN, count_lines, Reason, i
    character(200) :: Error_descript, read_line
    logical :: file_opened
-   FN=110
-   open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read')
-   inquire(file=trim(adjustl(File_name)),opened=file_opened)
-   if (.not.file_opened) then
-      Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
-      call Save_error_details(Err, 2, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3411
-   endif
-   
-   if (.not.allocated(Scell)) allocate(Scell(1)) ! just for start, 1 supercell
-   
-   ! Read all lines in the file one by one:
-   count_lines = 0
-   do
-      count_lines = count_lines + 1
-      read(FN,'(a)',IOSTAT=Reason) read_line
-      if (Reason < 0) then ! end of file
-         exit
-      elseif (Reason > 0) then ! couldn't read the line
-         write(Error_descript,'(a,i5,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         exit
-      else ! normal line, interprete it:
-         call interpret_input_line(matter, numpar, laser, Scell, trim(adjustl(read_line)), FN, count_lines)
-      endif
-   enddo
-3411 continue
-   if (file_opened) close(FN)
 
-   ! Check if FEL pulses are Gaussians, convert from FWHM into Gaussian sigma parameter:
-   do i = 1, size(laser)
-      if (laser(i)%KOP .EQ. 1) laser(i)%t = laser(i)%t/2.35482d0	! make a gaussian parameter out of it
-   enddo
+   Error_descript = 'Obsolete option to read '//trim(adjustl(File_name))//' is omitted, please use INPUT.txt format'
+   call Save_error_details(Err, 0, Error_descript)
+   print*, trim(adjustl(Error_descript))
+
 end subroutine read_input_txt
-
-
-
-subroutine interpret_input_line(matter, numpar, laser, Scell, read_line, FN, count_lines)
-   type(Solid), intent(inout) :: matter	! all material parameters
-   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
-   type(Pulse), dimension(:), allocatable, intent(inout) :: laser	! Laser pulse parameters
-   type(Super_cell), dimension(:), allocatable, intent(inout) :: Scell ! suoer-cell with all the atoms inside
-   character(*), intent(in) :: read_line ! file read from the input file
-   integer, intent(in) :: FN	! file number to read from
-   integer, intent(inout) :: count_lines	! count on which line we are now
-   !----------------------------------------------
-   real(8) :: temp
-   integer :: Reason, N, temp1, temp2, temp3
-   character(200) :: read_next_line, Error_descript, temp_ch
-   
-   if (.not.allocated(Scell)) allocate(Scell(1)) ! So far we only use 1 supercell
-   !---------------------------------------------------------------
-   select case (read_line)
-   !---------------------------------------------------------------
-   case ('NAME', 'name', 'Name', 'MATERIAL', 'material', 'Material')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         matter%Name = trim(adjustl(read_next_line)) ! material name
-      endif
-   !---------------------------------------------------------------   
-   case ('FORMULA', 'formula', 'Formula', 'CHEM', 'chem', 'Chem')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         matter%Chem = trim(adjustl(read_next_line)) ! chemical formula of the compound
-      endif
-   !---------------------------------------------------------------
-   case ('TE', 'Te', 'te', 'Electrons_T')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) Scell(1)%Te ! initial electron temperature [K]
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read Te from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default value instead...'
-            Scell(1)%Te = 300.0d0 ! initial electron temperature [K]
-         endif
-         Scell(1)%TeeV = Scell(1)%Te/g_kb ! [eV] electron temperature
-      endif
-   !---------------------------------------------------------------
-   case ('TA', 'Ta', 'ta', 'Atoms_T')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) Scell(1)%Ta ! initial atomic temperature [K]
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read Ta from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default value instead...'
-            Scell(1)%Ta = 300.0d0 ! initial electron temperature [K]
-         endif
-         Scell(1)%TaeV = Scell(1)%Ta/g_kb ! [eV] atomic temperature
-      endif
-   !---------------------------------------------------------------
-   case ('TIME', 'Time', 'time', 'DURATION', 'Duration', 'duration', 't_total')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-            count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,'(e25.16)', IOSTAT=Reason) numpar%t_total ! total duration of simulation [fs]
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read DURATION from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default value instead...'
-            numpar%t_total = 1000.0d0 ! [fs]
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('PULSES', 'Pulses', 'pulses', 'FEL')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason)  N ! How many pulses by default
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read NUMBER OF PULSES from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default value instead...'
-         else
-            call extend_laser(laser, N) ! see above
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('FLUENCE', 'Fluence', 'fluence', 'DOSE', 'Dose', 'dose')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason)  N, temp ! How many pulses by default
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read FLUENCE from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default value instead...'
-         else
-            ! if it's a new pulse, not mentioned before, first create an array element for it with default values:
-            if (N > size(laser)) call extend_laser(laser, N-size(laser)) ! see above
-            laser(N)%F = ABS(temp)  ! ABSORBED DOSE IN [eV/atom]
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('PHOTON_ENERGY', 'Photon_energy', 'photon_energy', 'photon', 'PHOTON', 'Photon', 'hw')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason)  N, temp ! How many pulses by default
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read PHOTON_ENERGY from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default value instead...'
-         else
-            ! if it's a new pulse, not mentioned before, first create an array element for it with default values:
-            if (N > size(laser)) call extend_laser(laser, N-size(laser)) ! see above
-            laser(N)%hw = ABS(temp)  ! PHOTON ENERGY IN [eV]
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('FWHM', 'PULSE_DURATION', 'Pulse_duration', 'pulse_duration')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason)  N, temp ! How many pulses by default
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read PULSE_DURATION from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default value instead...'
-         else
-            ! if it's a new pulse, not mentioned before, first create an array element for it with default values:
-            if (N > size(laser)) call extend_laser(laser, N-size(laser)) ! see above
-            laser(N)%t = temp	  ! PULSE FWHM-DURATION IN [fs]
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('PULSE_SHAPE', 'Pulse_shape', 'pulse_shape')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason)  N, temp_ch
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read PULSE_SHAPE from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default value instead...'
-         else
-            ! if it's a new pulse, not mentioned before, first create an array element for it with default values:
-            if (N > size(laser)) call extend_laser(laser, N-size(laser)) ! see above
-            
-            selectcase (trim(adjustl(temp_ch)))
-            case ('0', 'FLAT_TOP', 'Flat_top', 'flat_top')
-               laser(N)%KOP = 0  	  ! type of pulse: 0=rectangular, 1=Gaussian, 2=SASE
-            case ('2', 'SASE', 'sase', 'Sase')
-               laser(N)%KOP = 2  	  ! type of pulse: 0=rectangular, 1=Gaussian, 2=SASE
-            case default
-               laser(N)%KOP = 1  	  ! type of pulse: 0=rectangular, 1=Gaussian, 2=SASE
-               laser(N)%t = laser(N)%t/2.35482	! make a gaussian parameter out of it
-            endselect
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('PULSE_CENTER', 'Pulse_center', 'pulse_center', 'pulse_position')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason)  N, temp ! How many pulses by default
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read PULSE_CENTER from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default value instead...'
-         else
-            ! if it's a new pulse, not mentioned before, first create an array element for it with default values:
-            if (N > size(laser)) call extend_laser(laser, N-size(laser)) ! see above
-            laser(N)%t0 = temp	  ! POSITION OF THE MAXIMUM OF THE PULSE IN [fs]
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('OPTICAL', 'Optical', 'optical')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         select case (trim(adjustl(read_next_line)))
-         case ('T', 't', 'TRUE', 'True', 'true', '.true.', '1')
-            numpar%do_drude = .true.	! included optical calculations
-         case default
-            numpar%optic_model = 0 ! no optical calculations by default
-            numpar%do_drude = .false.	! excluded optical calculations
-         endselect
-      endif
-   !---------------------------------------------------------------
-   case ('OPTIC_MODEL', 'Optic_model', 'optic_model', 'optical_model', 'OPTICAL_MODEL')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         select case (trim(adjustl(read_next_line))) ! optical coefficients: 0=no, 1=Drude, 2=Trani-k, 3=Trani gamma
-         case ('1', 'DRUDE', 'Drude', 'drude')
-            numpar%optic_model = 1 ! no optical calculations by default
-            numpar%do_drude = .true.	! included optical calculations
-         case ('2', 'TRANI-K', 'Trani-k', 'trani-k', 'TREANI_K', 'Trani_k', 'trani_k')
-            numpar%optic_model = 2 ! no optical calculations by default
-            numpar%do_drude = .true.	! included optical calculations
-         case ('3', 'TRANI', 'Trani', 'trani', 'TRANI_GAMMA', 'Trani_gamma', 'trani_gamma')
-            numpar%optic_model = 3 ! no optical calculations by default
-            numpar%do_drude = .true.	! included optical calculations
-         case default
-            numpar%optic_model = 0 ! no optical calculations by default
-            numpar%do_drude = .false.	! excluded optical calculations
-         endselect
-      endif
-   !---------------------------------------------------------------
-   case ('RAYS', 'Rays', 'rays')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         select case (trim(adjustl(read_next_line))) ! Absorbtion of how many rays (0=exclude, 1=1st ray, 2=sum all)
-         case ('1', 'ONE', 'One', 'one', 'SINGLE', 'Single', 'single')
-            numpar%drude_ray = 1 ! no optical calculations by default
-            numpar%do_drude = .true.	! included optical calculations
-         case ('2', 'ALL', 'All', 'all', 'SUM', 'Sum', 'sum')
-            numpar%drude_ray = 2 ! no optical calculations by default
-            numpar%do_drude = .true.	! included optical calculations
-         case default
-            numpar%drude_ray = 0
-            numpar%do_drude = .false.	! excluded optical calculations
-         endselect
-      endif
-   !---------------------------------------------------------------
-   case ('PROBE_SPECTRUM', 'Probe_spectrum', 'probe_spectrum')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%E_min, Scell(1)%eps%E_max, Scell(1)%eps%dE
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read PROBE_SPECTRUM parameters from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            Scell(1)%eps%E_min = 0.05d0 ! starting point of the grid of energy [eV]
-            Scell(1)%eps%E_max = 50.0d0 ! ending point of the grid of energy [eV]
-            Scell(1)%eps%dE = 0.1d0    ! grid step of energy [eV]
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('PROBE', 'Probe', 'probe', 'probe_wavelength')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%l ! probe-pulse wavelength [nm]
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read PROBE wavelength from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            Scell(1)%eps%l = 800.0d0	! probe-pulse wavelength [nm]
-         endif
-         Scell(1)%eps%w = 2.0d0*g_Pi*g_cvel/(Scell(1)%eps%l*1d-9) ! [1/sec] frequency
-      endif
-   !---------------------------------------------------------------
-   case ('PROBE_DURATION', 'Probe_duration', 'probe_duration', 'probe_tau', 'PROBE_TAU', 'Probe_tau')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%tau ! probe duration FWHM [fs]
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read PROBE_DURATION from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            Scell(1)%eps%tau = -10.0d0	! probe duration FWHM [fs]
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('PROBE_ANGLE', 'Probe_angle', 'probe_angle', 'probe_theta')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%teta ! Angle of prob-pulse with respect to normal [degrees]
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read PROBE_ANGLE from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            Scell(1)%eps%teta = 0.0d0	! Angle of prob-pulse with respect to normal [degrees]
-         endif
-         Scell(1)%eps%teta = Scell(1)%eps%teta*g_Pi/(180.0d0) !c [radians]
-      endif
-   !---------------------------------------------------------------
-   case ('THICKNESS', 'Thickness', 'thickness', 'LAYER', 'Layer', 'layer')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%dd	! material thickness [nm]
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read LAYER THICKNESS from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            Scell(1)%eps%dd = 100.0d0	! material thickness [nm]
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('SUPERCELL', 'Supercell', 'supercell')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) matter%cell_x, matter%cell_y, matter%cell_z ! number of unit-cells in X,Y,Z
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read SUPERCELL from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-             matter%cell_x = 1
-             matter%cell_y = 1
-             matter%cell_z = 1
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('PERIODIC', 'Periodic', 'periodic')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) temp1, temp2, temp3	! periodic or not
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read PERIODIC from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            numpar%r_periodic(:) = .true.
-         else
-            if (temp1 == 1) then
-               numpar%r_periodic(1) = .true.
-            else
-               numpar%r_periodic(1) = .false.
-            endif
-            if (temp2 == 1) then
-               numpar%r_periodic(2) = .true.
-            else
-               numpar%r_periodic(2) = .false.
-            endif
-            if (temp3 == 1) then
-               numpar%r_periodic(3) = .true.
-            else
-               numpar%r_periodic(3) = .false.
-            endif
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('ATOMIC_DATA', 'Atomic_data', 'atomic_data')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         select case (trim(adjustl(read_next_line)))
-         case ('CDF', 'cdf', 'Cdf') ! cdf from file
-            numpar%At_base = 'CDF' ! where to take atomic data from (EADL, CDF, XATOM...)
-         case ('CDF_SP', 'cdf_sp')  ! single-pole
-            numpar%At_base = 'CDF_sp' ! where to take atomic data from (EADL, CDF, XATOM...)
-         case ('eald', 'EADL', 'Eadl', 'BEB', 'Beb', 'beb') ! BEB cross sections
-            numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, XATOM...)
-         case default
-            write(*,'(a,i5,a)') 'Could not interpret ATOMIC_DATA from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default (BEB) instead...'
-            numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, XATOM...)
-         endselect
-      endif
-   !---------------------------------------------------------------
-   case ('DENSITY', 'Density', 'density', 'MC_Density')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) matter%dens
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read MC_DENSITY from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            matter%dens = -1.0d0 ! [g/cm^3] density of the material (negative = use MD supercell to evaluate it)
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('MC_ITERATIONS', 'MC_iterations', 'ITERATIONS', 'Iterations', 'interations')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%NMC
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read MC_ITERATIONS from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            numpar%NMC = 30000	! number of iterations in the MC module
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('NO_ELASTIC_MC', 'No_elastic_MC', 'NO_ELASTIC', 'no_elastic_mc', 'no_elastic', 'MC_NO_ELASTIC', 'MC_no_elastic')      
-      numpar%do_elastic_MC = .false.	! don't allow elastic scattering of electrons on atoms within MC module
-   !---------------------------------------------------------------
-   case ('THREADS', 'Threads', 'threads', 'Openmp', 'OpenMP', 'OMP', 'OMP_threads', 'OMP_THREADS')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%NOMP
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read OMP_threads from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-#ifdef OMP_inside
-            numpar%NOMP = omp_get_max_threads()	! number of processors available by default
-#else ! if you set to use OpenMP in compiling: 'make OMP=no'
-            numpar%NOMP = 1	! unparallelized by default
-#endif
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('FROZEN', 'Frozen', 'frozen', 'FROZEN_ATOMS', 'Frozen_atoms', 'frozen_atoms')
-      numpar%do_atoms = .false.	! Atoms are NOT allowed to move
-   !---------------------------------------------------------------
-   case ('W_PR', 'Parrinello_Rahman_MASS', 'SUPERCELL_MASS', 'Supercell_mass', 'supercell_mass')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) matter%W_PR
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read Parinello_Rahman_MASS from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            matter%W_PR = 25.5d0  ! Parinello-Rahman super-vell mass coefficient
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('dt', 'DT', 'Dt', 'MD_dt', 'MD_DT', 'MD_timestep', 'MD_TIMESTEP', 'TIME_STEP', 'Time_step', 'time_step', 'timestep', 'Timestep', 'TIMESTEP')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%dt
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read MD_TIMESTEP from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            numpar%dt = 0.01d0 	! Time step for MD [fs]
-         endif
-         numpar%halfdt = numpar%dt/2.0d0            ! dt/2, often used
-         numpar%dtsqare = numpar%dt*numpar%halfdt   ! dt*dt/2, often used
-         numpar%dt3 = numpar%dt**3/6.0d0            ! dt^3/6, often used
-         numpar%dt4 = numpar%dt*numpar%dt3/8.0d0    ! dt^4/48, often used
-      endif
-   !---------------------------------------------------------------
-   case ('Save_dt', 'SAVE_DT', 'Save_Dt', 'SAVE', 'Save', 'save')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%dt_save
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read SAVE_DT from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            numpar%dt_save = 1.0d0	! save data into files every [fs]
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('Const_P', 'CONST_P', 'NPH', 'CONSTANT_P', 'Constant_P', 'Constant_pressure')
-      numpar%p_const = .true.	! P=const
-   !---------------------------------------------------------------
-   case ('Const_V', 'CONST_V', 'NVE', 'CONSTANT_V', 'Constant_V', 'Constant_volume')
-      numpar%p_const = .false.	! V=const
-   !---------------------------------------------------------------
-   case ('Pressure', 'PRESSURE', 'pressure')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) matter%p_ext
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read PRESSURE from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using atmospheric pressure instead...'
-            matter%p_ext = g_P_atm	! External pressure [Pa] (0 = normal atmospheric pressure)
-         else
-            numpar%p_const = .true.	! P=const
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('SCHEME', 'Scheme', 'scheme')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) N
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read EL_ION_SCHEME from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            numpar%el_ion_scheme = 0	! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO)
-         else
-            selectcase(N)
-            case (1:3)
-               numpar%el_ion_scheme = N	! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO)
-            case default
-               numpar%el_ion_scheme = 0	! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO)
-            endselect
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('NVE_STARTS', 'START_NVE', 'Start_NVE', 'NVE_starts')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%t_Te_Ee ! time when we switch from Te=const, to Ee=const [fs] 
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read START_NVE from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            numpar%t_Te_Ee = 1.0d-3	! time when we switch from Te=const, to Ee=const [fs] 
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('COUPLING_MODEL', 'Coupling_model', 'COUPLING', 'Coupling', 'coupling')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         selectcase (trim(adjustl(read_next_line)))
-         case ('0', 'NO', 'No', 'Exclude', 'EXCLUDE', 'exclude')
-            numpar%NA_kind = 0	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
-            numpar%Nonadiabat = .false.  ! included
-         case ('2', 'FGR', 'Fermi', 'FERMI', 'FERMI_GOLDEN_RULE')
-            numpar%NA_kind = 2	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
-            numpar%Nonadiabat = .true.  ! included
-         case default
-            numpar%NA_kind = 1	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
-            numpar%Nonadiabat = .true.  ! included
-         endselect
-      endif
-   !---------------------------------------------------------------
-   case ('COUPLING_INCLUDE', 'INCLUDE_COUPLING')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         selectcase (trim(adjustl(read_next_line)))
-         case ('0', 'NO', 'No', 'Exclude', 'EXCLUDE', 'exclude')
-            numpar%NA_kind = 0	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
-         case ('2', 'FGR', 'Fermi', 'FERMI', 'FERMI_GOLDEN_RULE')
-            numpar%NA_kind = 2	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
-         case default
-            numpar%NA_kind = 1	! 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
-         endselect
-      endif
-   !---------------------------------------------------------------
-   case ('COUPLING_STARTS', 'START_COUPLING', 'Start_coupling', 'Coupling_starts')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%t_NA
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read START_COUPLING from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            numpar%t_NA = 1.0d-3	! [fs] start of the nonadiabatic coupling
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('WINDOW', 'Window', 'window', 'ACCEPTANCE', 'Acceptance', 'acceptance')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%acc_window
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read ACCEPTANCE_WINDOW from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            numpar%acc_window = 5.0d0	! [eV] acceptance window for nonadiabatic coupling:
-         endif
-      endif   
-   !---------------------------------------------------------------
-   case ('QUENCHING', 'Quenching', 'quenching')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%at_cool_start, numpar%at_cool_dt ! starting from when [fs] and how often [fs]
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read QUENCHING parameteres from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            numpar%at_cool_start = 2500.0	! starting from when [fs]
-            numpar%at_cool_dt = 40.0	! how often [fs]
-            numpar%do_cool = .false.	! quenching excluded 
-         else
-            numpar%do_cool = .true.	! quenching included 
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('TRANSPORT', 'Transport', 'transport')
-   read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) matter%T_bath, matter%tau_bath ! [K] bath temperature? [fs] time constant of cooling
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read TRANSPORT parameteres from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            matter%T_bath = 300.0d0	! [K] bath temperature
-            matter%T_bath = matter%T_bath/g_kb	! [eV] thermostat temperature
-            matter%tau_bath = 300.0d0	! [fs] time constant of cooling
-            numpar%Transport = .false. ! excluded heat transport
-         else
-            numpar%Transport = .true. ! excluded heat transport
-            matter%T_bath = matter%T_bath/g_kb	! [eV] thermostat temperature
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('CUT_OFF', 'Cut_off', 'cut_off')
-   read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         selectcase (trim(adjustl(read_next_line)))
-         case ('DYNAMIC', 'Dynamic', 'dynamic', 'DYNAMICAL', 'Dynamical', 'dynamical')
-            numpar%E_cut = -10.0d0 ! [eV] cut-off energy for high
-            numpar%E_cut_dynamic = .true. ! do not change E_cut
-         case default
-            read(read_next_line,*, IOSTAT=Reason) numpar%E_cut ! [K] bath temperature? [fs] time constant of cooling
-            if (Reason /= 0) then
-               write(*,'(a,i5,a)') 'Could not read MC CUT_OFF parameteres from line ', count_lines, ' in file input file after line: '//read_line
-               write(*,'(a)') 'Using default values instead...'
-               numpar%E_cut = 10.0d0 ! [eV] cut-off energy for high
-               numpar%E_cut_dynamic = .false. ! do not change E_cut
-            else
-               if (numpar%E_cut <= 0.0d0 ) numpar%E_cut_dynamic = .true. ! E_cut = upper bound of TB energy levels of the CB
-            endif
-         endselect
-      endif
-   !---------------------------------------------------------------
-   case ('WORK_FUNCTION', 'Work_function', 'work_function')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%E_work ! [K] bath temperature? [fs] time constant of cooling
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read WORK FUNCTION parameteres from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            numpar%E_work = 1.0d30 ! [eV] work function (exclude electron emission)
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('EMISSION_COLLISIONS', 'Emission_collisions', 'emission_collisions')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%E_work ! [K] bath temperature? [fs] time constant of cooling
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read EMISSION_COLLISIONS parameteres from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using NO EMISSION instead...'
-            numpar%E_work = 1.0d30 ! [eV] work function (exclude electron emission)
-         else
-            numpar%E_work = -numpar%E_work
-         endif
-      endif   
-   !---------------------------------------------------------------
-   case ('PRINT_Ei', 'Print_Ei', 'print_Ei', 'print_energy_levels')
-      numpar%save_Ei = .true.	! included printout energy levels (band structure)
-   !---------------------------------------------------------------
-   case ('PRINT_DOS', 'Print_DOS', 'print_DOS', 'print_dos')
-      numpar%save_DOS = .true.	! included printout of DOS
-   !---------------------------------------------------------------
-   case ('SMEARING_DOS', 'Smearing_DOS', 'smearing_DOS', 'smearing_dos')
-      read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%Smear_DOS ! [eV] smearing function for DOS
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read SMEARING DOS parameter from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            numpar%Smear_DOS = 0.05d0	! [eV]
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('PRINT_fe', 'Print_fe', 'print_fe', 'print_distribution')
-      numpar%save_fe = .true.	! included printout distribution function
-   !---------------------------------------------------------------
-   case ('PRINT_PCF', 'Print_PCF', 'print_PCD', 'print_pair_correlation_function')
-      numpar%save_PCF = .true.	! included printout pair correlation function
-   !---------------------------------------------------------------
-   case ('PRINT_XYZ', 'Print_XYZ', 'print_XYZ', 'print_xyz_format')
-      numpar%save_XYZ = .true.	! included printout atomic coordinates in XYZ format
-   case ('NO_XYZ', 'No_XYZ', 'no_XYZ', 'no_xyz_format')
-      numpar%save_XYZ = .false.	! excluded printout atomic coordinates in XYZ format
-   !---------------------------------------------------------------
-   case ('PRINT_CIF', 'Print_CIF', 'print_CIF', 'print_cif')
-      numpar%save_CIF = .true.	! included printout atomic coordinates in CIF format
-   case ('NO_CIF', 'No_CIF', 'no_CIF', 'no_cif_format')
-      numpar%save_CIF = .false.	! excluded printout atomic coordinates in CIF format
-   !---------------------------------------------------------------
-   case ('PRINT_RAW', 'Print_RAW', 'print_RAW', 'print_raw')
-      numpar%save_raw = .true.	! included printout of raw data on atomic coordinates and velocities
-   case ('NO_RAW', 'No_RAW', 'no_RAW', 'no_raw_data')
-      numpar%save_raw = .false.	! excluded printout of raw data on atomic coordinates and velocities
-   !---------------------------------------------------------------
-   case ('OPTICAL_N_K', 'Optical_n_k', 'optical_n_k')
-   read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%n, Scell(1)%eps%k	! initial n and k coeffs
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read OPTICAL_N_K parameteres from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            Scell(1)%eps%n = 1.0d0
-            Scell(1)%eps%k = 0.0d0	! initial n and k coeffs
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('K_POINTS', 'K_points', 'k_points')
-   read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) numpar%ixm, numpar%iym, numpar%izm 
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read K_POINTS from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            ! number of k-points in each direction (used only for Trani-k!):
-            numpar%ixm = 1
-            numpar%iym = 1
-            numpar%izm = 1
-         endif
-      endif
-   !---------------------------------------------------------------
-   case ('EFFECTIVE_MASSES', 'Effective_masses', 'effective_masses', 'me_eff')
-   read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%me_eff, Scell(1)%eps%mh_eff
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read EFFECTIVE_MASSES from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            ! [me] effective mass of CB electron and VB hole:
-            Scell(1)%eps%me_eff = 1.0d0
-            Scell(1)%eps%mh_eff = 1.0d0
-         endif
-         Scell(1)%eps%me_eff = Scell(1)%eps%me_eff*g_me	! [kg]
-         Scell(1)%eps%mh_eff = Scell(1)%eps%mh_eff*g_me	! [kg]
-      endif
-   !---------------------------------------------------------------
-   case ('SCATTERING_TIMES', 'Scattering_times', 'scattering_times', 'tau_eff')
-   read(FN,'(a)',IOSTAT=Reason) read_next_line
-      count_lines = count_lines + 1   
-      if (Reason < 0) then ! end of file
-         write(*,'(a)') 'Clould not complete action: end of input file after line: '//read_line
-      elseif (Reason > 0) then ! couldn't read the line
-         write(*,'(a,i5,a)') 'Could not read line ', count_lines, ' in file input file after line: '//read_line
-      else
-         read(read_next_line,*, IOSTAT=Reason) Scell(1)%eps%tau_e, Scell(1)%eps%tau_h
-         if (Reason /= 0) then
-            write(*,'(a,i5,a)') 'Could not read EFFECTIVE_MASSES from line ', count_lines, ' in file input file after line: '//read_line
-            write(*,'(a)') 'Using default values instead...'
-            ! [fs] mean scattering times of electrons and holes:
-            Scell(1)%eps%tau_e = 1.0d0
-            Scell(1)%eps%tau_h = 1.0d0
-         endif
-      endif
-   !---------------------------------------------------------------
-   case default ! just skip the line that is not interpretable
-      select case (read_line(1:1))
-      case ('!', 'c', 'C', '%', '#')
-         ! this is a commentary line, just skip it
-      case default
-         print*, 'Could not interpret the line from input file: ', read_line
-      endselect
-   endselect
-   !---------------------------------------------------------------
-end subroutine interpret_input_line
-
 
 
 end MODULE Read_input_data
