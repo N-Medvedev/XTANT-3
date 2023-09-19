@@ -175,39 +175,27 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
 
       !-------------------------------
       ! If required, do Onsager coefficients (for electronic heat conductivity):
-      if (numpar%do_kappa .or. numpar%do_kappa_dyn) then  ! if requested
-         ! Electron-phonon contribution:
-         if (numpar%do_kappa) then ! (static, KG)
-            call get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
+      kappa_temp = 0.0d0   ! to start with
+      kappa_mu_grid_temp = 0.0d0
+      kappa_Ce_grid_temp = 0.0d0
+      kappa_ee_temp = 0.0d0
+      ! Electron-phonon contribution:
+      if (numpar%do_kappa) then ! (static, KG)
+         call get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
                               Scell(NSC)%kappa_Te_grid, kappa_mu_grid_temp, kappa_Ce_grid_temp)   ! module "Optical_parameters"
 
-            ! Contribution of the electronic term:
-            call get_kappa_e_e(numpar, matter, Scell, NSC, Ei, kappa_mu_grid_temp, &
+         ! Contribution of the electronic term:
+         call get_kappa_e_e(numpar, matter, Scell, NSC, Ei, kappa_mu_grid_temp, &
                               Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! module "Optical_parameters"
-         endif
+      endif
 
-         if (numpar%do_kappa_dyn) then ! (dynamic)
-            ! Only gamma-point calculations, so only 1 time:
-            if (Ngp == 1) then
-               call get_Onsager_dynamic(numpar, matter, Scell, NSC, kappa_temp) ! module "Optical_parameters"
+      if (numpar%do_kappa_dyn .and. (Ngp == 1)) then ! (dynamic)
+         ! Only gamma-point calculations, so only 1 time:
+         call get_Onsager_dynamic(numpar, matter, Scell, NSC, kappa_temp) ! module "Optical_parameters"
 
-               ! Contribution of the electronic term:
-               call get_kappa_e_e(numpar, matter, Scell, NSC, Scell(NSC)%Ei, kappa_mu_grid_temp, &
+         ! Contribution of the electronic term:
+         call get_kappa_e_e(numpar, matter, Scell, NSC, Scell(NSC)%Ei, kappa_mu_grid_temp, &
                               Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! module "Optical_parameters"
-
-               !print*, 'kappa_temp', kappa_temp
-               !print*, 'kappa_ee_temp', kappa_ee_temp
-            else
-               kappa_temp = 0.0d0
-               kappa_ee_temp = 0.0d0
-            endif
-         endif
-
-      else  ! if not required
-         kappa_temp = 0.0d0
-         kappa_mu_grid_temp = 0.0d0
-         kappa_Ce_grid_temp = 0.0d0
-         kappa_ee_temp = 0.0d0
       endif
 
       !-------------------------------

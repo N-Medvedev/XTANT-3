@@ -32,7 +32,7 @@ use Atomic_tools, only : Maxwell_int_shifted
 implicit none
 PRIVATE
 
-public :: Electron_ion_collision_int, get_G_ei, Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, get_Mij2
+public :: Electron_ion_collision_int, get_G_ei, Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, get_Mij2, get_nonadiabatic_Pij
 
  contains
 
@@ -330,6 +330,41 @@ end subroutine get_Mij2
 
 
 
+subroutine get_nonadiabatic_Pij(i, j, Mij, dt_small, vi, vj, P2)
+   integer, intent(in) :: i, j   ! index of the orbitals overlap
+   real(8), dimension(:,:), intent(in) :: Mij  ! Matrix element precalculated with "Electron_ion_coupling_Mij" below
+   real(8), intent(in) :: dt_small  ! timestep [fs]
+   real(8), dimension(3), intent(in) :: vi, vj   ! [m/s] atomic velosity
+   real(8), intent(out) :: P2 ! squared matric element of he momentum opereator
+   !--------------
+   real(8) :: Mij2, vi2, vj2
+   Mij2 = (Mij(i,j) / dt_small)
+   Mij2 = Mij2**2 ! [1/s]
+
+   ! Square velosities:
+   vi2 = sum(vi(:)*vi(:))
+   vj2 = sum(vj(:)*vj(:))
+
+   P2 = -g_h**2 / (vi2*vj2) * sum(vi(:)*vj(:))/3.0d0 * Mij2    ! [(kg*m/s)^2]
+end subroutine get_nonadiabatic_Pij
+
+
+
+subroutine get_nonadiabatic_Pij_abs(i, j, Mij, dt_small, v, P2)
+   integer, intent(in) :: i, j   ! index of the orbitals overlap
+   real(8), dimension(:,:), intent(in) :: Mij  ! Matrix element precalculated with "Electron_ion_coupling_Mij" below
+   real(8), intent(in) :: dt_small  ! timestep [fs]
+   real(8), intent(in) :: v   ! [m/s] atomic velosity
+   real(8), intent(out) :: P2 ! squared matric element of he momentum opereator
+   !--------------
+   real(8) :: Mij2
+   Mij2 = (Mij(i,j) / dt_small)
+   Mij2 = Mij2**2 ! [1/s]
+
+   P2 = -(g_h/v)**2 * Mij2    ! [(kg*m/s)^2]
+end subroutine get_nonadiabatic_Pij_abs
+
+
 ! Get contributions from different shells analogously to Mulliken charge calculations:
 pure subroutine Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)
    integer, intent(in) :: i, j
@@ -362,11 +397,12 @@ end subroutine Get_Gei_shells_contrib
 
 
 subroutine Electron_ion_coupling_Mij(wr, Ha, Ha0, Mij, kind_M, Sij) ! calculates the electron-ion coupling matrix element
+   ! Mij = [Psi(t)*Psi(t+dt) - Psi(t+dt)*Psi(t) ] / 2  (without division by dt), see Tully 1994
    real(8), dimension(:), intent(in) ::  wr ! electron energy levels [eV], after diagonalization of Ha
    real(8), dimension(:,:), intent(in) :: Ha  ! diagonilized Hamiltonian Ha, eigenvectors
    real(8), dimension(:,:), intent(in) :: Ha0 ! eigenvectors on the previous time-step
-   real(8), dimension(:,:), allocatable, intent(inout) :: Mij  ! Matrix element coupling electron WF via ion motion
-!    real(8), dimension(:), intent(out) ::  Norm_WF   ! WF normalization coefficient
+   real(8), dimension(:,:), allocatable, intent(inout) :: Mij  ! Matrix element coupling electron WF via ion motion:
+   !    real(8), dimension(:), intent(out) ::  Norm_WF   ! WF normalization coefficient
    integer, intent(in), optional :: kind_M ! what kind of matrix element to use
    real(8), dimension(:,:), intent(in), optional :: Sij ! overlap matrix, in case of non-orthogonal basis set
    !----------------------------
