@@ -681,7 +681,7 @@ subroutine read_atomic_parameters(matter, numpar, Err)
       endif
    case ('XATOM') ! get data from XATOM code
       ! to be integrated with XATOM later...
-   case default ! ('EADL'), read data from EADL database
+   case default ! ('EADL', 'BEB'), read data from EADL database
       call get_EADL_data(matter, numpar, Err) ! see below
    end select
    

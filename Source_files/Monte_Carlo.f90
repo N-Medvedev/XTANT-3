@@ -58,6 +58,8 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
 
    if (numpar%NMC > 0) then ! if there are MC iterations at all
       call total_photons(laser, numpar, tim, Nphot) ! estimate the total number of absorbed photons
+      !print*, 'MC_Propagate:', tim, Nphot
+
       ! Do MC run only if we have particles to trace (photons, high-energy-electrons, or core-holes):
       IF_MC:if ( (Nphot .GT. 1d-10) .OR. ( (Scell(NSC)%Ne_high-Scell(NSC)%Ne_emit) .GT. 1d-10) .OR. (Scell(NSC)%Nh .GT. 1d-10) ) then
 
@@ -1161,6 +1163,7 @@ subroutine total_photons(laser, numpar, tim, Nphot)
    N = size(laser) ! how many pulses
    call photons_per_pulse(laser, numpar, tim, Nphot_pulses)
    Nphot = SUM(Nphot_pulses) ! total number in all pulses
+   !print*, 'total_photons', tim, Nphot, Nphot_pulses, size(laser), laser(1)%KOP, laser(1)%Nph
 end subroutine total_photons
 
 
@@ -1298,6 +1301,11 @@ subroutine process_laser_parameters(Scell, matter, laser, numpar)
          ! Absorbed dose:
          laser(i)%F = F_abs/(g_e * matter%At_dens * (d*1e-8))    ! [eV/atom]
          !print*, i, Ltot, F_abs, matter%At_dens, laser(i)%F
+
+         ! Absorbed energy total:
+         laser(i)%Fabs = laser(i)%F*dble(Scell%Na) ! total absorbed energy by supercell [eV]
+         ! Number of absorbed photons:
+         laser(i)%Nph = laser(i)%Fabs/laser(i)%hw     ! number of photons absorbed in supercell
       endif
    enddo
    !pause 'process_laser_parameters'

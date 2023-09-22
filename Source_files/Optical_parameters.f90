@@ -768,7 +768,7 @@ subroutine get_Onsager_ABC_dynamic(numpar, Scell, NSC, Mij, eta, A, B, C)
             !call get_nonadiabatic_Pij(n, m, Mij, dt_small, v, P2) ! module "Nonadiabatic"
             call get_nonadiabatic_Pij(n, m, Mij, dt_small, Scell(NSC)%MDatoms(i)%V*1.0d5, Scell(NSC)%MDatoms(j)%V*1.0d5, P2) ! module "Nonadiabatic"
             P2 = abs(P2)   ! [ (kg*m/s) ^2 ]
-            if (P2 > 0.0d0) print*, 'p', n, m, sqrt(P2)
+            !if (P2 > 0.0d0) print*, 'p', n, m, sqrt(P2)
 
             ! Collect terms (without prefactors)
             !f_nm = Scell(NSC)%fe(n) - Scell(NSC)%fe(m)
