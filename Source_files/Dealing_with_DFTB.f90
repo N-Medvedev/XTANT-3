@@ -60,6 +60,7 @@ subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_pot)
    error_message = ''   ! no error at the start
    N_basis = 10 ! number of overlap functions for sp3d5
    count_lines = 0
+   temp_ch = ''   ! to start with
    read(FN,*,IOSTAT=Reason) temp_ch
    if (temp_ch(1:1) == '@') then    ! it is parameterization with f orbital, currently not suported!
       error_message = 'DFTB parameterization includes f orbital, not supported in XTANT!'
@@ -67,7 +68,17 @@ subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_pot)
    endif
    backspace(FN)    ! to read it again
    
-   read(FN,*,IOSTAT=Reason) dr, Ngrid   ! radial grid step [Bohr], size of the grid
+   read(FN,'(a)',IOSTAT=Reason) temp_ch
+   dr = 0.0d0
+   Ngrid = 0   ! to start with
+   !read(FN,*,IOSTAT=Reason) dr, Ngrid   ! radial grid step [Bohr], size of the grid
+   read(temp_ch,*,IOSTAT=Reason) dr, Ngrid   ! radial grid step [Bohr], size of the grid
+   if (Reason /= 0) then   ! try to skip the first character, in case there is something wrong with it
+      print*, 'Problem in read_skf_file: first line is unreadable: ', trim(adjustl(temp_ch))
+      ! Try to skip possible functional characters befor the number:
+      read(temp_ch(4:LEN(temp_ch)),*,IOSTAT=Reason) dr, Ngrid
+   endif
+
    call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
    if (.not.read_well) goto 2012 ! exit
    Ngrid = Ngrid - 1
@@ -97,7 +108,7 @@ subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_pot)
       TB_Hamil%Up = 0.0d0
       TB_Hamil%Ud = 0.0d0
    endif
-   
+
    ! Read parameters of repulsive potential in the polinomial form:
    read(FN,*,IOSTAT=Reason) temp_r, TB_Rep%c(:), TB_Rep%rcut   ! [a.u.] coefficients for repulsive potential in polinomial form
    call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"

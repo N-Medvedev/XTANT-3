@@ -32,7 +32,7 @@ use Atomic_tools, only : Maxwell_int_shifted
 implicit none
 PRIVATE
 
-public :: Electron_ion_collision_int, get_G_ei, Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex
+public :: Electron_ion_collision_int, get_G_ei, Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, get_Mij2, get_nonadiabatic_Pij
 
  contains
 
@@ -259,23 +259,7 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
           ! Exclude too large jumps, and quasidegenerate levels:
           large_jumps:if ( (wij < numpar%acc_window) .and. (wij > numpar%degeneracy_eV) ) then
                ! Select which scheme for the matrix element to use:
-               select case (kind_M)
-               case (-1)    ! Landau nonperturbative expression (with ad hoc correction):
-                  dtij = coef_inv !/ wij
-                  Mij2 = Mij(i,j)*Mij(i,j) / dt_small * dtij/dt_small
-               case(0)
-                  Mij2 = 0.0d0 ! no coupling
-               case(2)  ! Fermi's golden rule:
-                  dtij = coef_inv !/ wij
-                  ViVj = (wr(i)+wr0(i) - (wr(j)+wr0(j)))/2.0d0 ! for matrix element:
-                  !Mij2 = Mij(i,j)*Mij(i,j)*ViVj*ViVj*g_Pi*coef   ! OLD
-                  Mij2 = Mij(i,j)*Mij(i,j)*ViVj*ViVj*g_Pi*coef * (dtij/dt_small)**2 ! trying...
-               case(3)  ! incomplete Fermi golden rule:
-                  ViVj = (wr(i)+wr0(i) - (wr(j)+wr0(j)))/2.0d0 ! for matrix element:
-                  Mij2 = Mij(i,j)*Mij(i,j)*ViVj*sin(ViVj*g_e/g_h*dt_small)*coef
-               case default ! Tully's expression:
-                  Mij2 = Mij(i,j)*Mij(i,j)/dt_small !/dble(N_steps)
-               end select
+               call get_Mij2(i, j, kind_M, Mij, dt_small, wr, wr0, coef, coef_inv, Mij2)   ! below
 
                ! analytical integration of maxwell function:
                if (i > j) then
@@ -315,6 +299,72 @@ end subroutine get_el_ion_kernel
 
 
 
+subroutine get_Mij2(i, j, kind_M, Mij, dt_small, wr, wr0, coef, coef_inv, Mij2)
+   integer, intent(in) :: i, j, kind_M    ! index of the model used for the matri element calculation
+   real(8), dimension(:,:), intent(in) :: Mij  ! Matrix element coupling electron energy levels via ion motion
+   real(8), dimension(:), intent(in) :: wr, wr0  ! electron energy levels [eV], on current and last timesteps
+   real(8), intent(in) :: dt_small  ! timestep [fs]
+   real(8), intent(in) :: coef, coef_inv
+   real(8), intent(out) :: Mij2  ! squared matric element with prefactor
+   !--------------
+   real(8) :: dtij, ViVj
+
+   select case (kind_M)
+   case (-1)    ! Landau nonperturbative expression (with ad hoc correction):
+      dtij = coef_inv !/ wij
+      Mij2 = Mij(i,j)*Mij(i,j) / dt_small * dtij/dt_small
+   case(0)
+      Mij2 = 0.0d0 ! no coupling
+   case(2)  ! Fermi's golden rule:
+      dtij = coef_inv !/ wij
+      ViVj = (wr(i)+wr0(i) - (wr(j)+wr0(j)))/2.0d0 ! for matrix element:
+      !Mij2 = Mij(i,j)*Mij(i,j)*ViVj*ViVj*g_Pi*coef   ! OLD
+      Mij2 = Mij(i,j)*Mij(i,j)*ViVj*ViVj*g_Pi*coef * (dtij/dt_small)**2 ! trying...
+   case(3)  ! incomplete Fermi golden rule:
+      ViVj = (wr(i)+wr0(i) - (wr(j)+wr0(j)))/2.0d0 ! for matrix element:
+      Mij2 = Mij(i,j)*Mij(i,j)*ViVj*sin(ViVj*g_e/g_h*dt_small)*coef
+   case default ! Tully's expression:
+      Mij2 = Mij(i,j)*Mij(i,j)/dt_small !/dble(N_steps)
+   end select
+end subroutine get_Mij2
+
+
+
+subroutine get_nonadiabatic_Pij(i, j, Mij, dt_small, vi, vj, P2)
+   integer, intent(in) :: i, j   ! index of the orbitals overlap
+   real(8), dimension(:,:), intent(in) :: Mij  ! Matrix element precalculated with "Electron_ion_coupling_Mij" below
+   real(8), intent(in) :: dt_small  ! timestep [fs]
+   real(8), dimension(3), intent(in) :: vi, vj   ! [m/s] atomic velosity
+   real(8), intent(out) :: P2 ! squared matric element of he momentum opereator
+   !--------------
+   real(8) :: Mij2, vi2, vj2
+   Mij2 = (Mij(i,j) / dt_small)
+   Mij2 = Mij2**2 ! [1/s]
+
+   ! Square velosities:
+   vi2 = sum(vi(:)*vi(:))
+   vj2 = sum(vj(:)*vj(:))
+
+   P2 = -g_h**2 / (vi2*vj2) * sum(vi(:)*vj(:))/3.0d0 * Mij2    ! [(kg*m/s)^2]
+end subroutine get_nonadiabatic_Pij
+
+
+
+subroutine get_nonadiabatic_Pij_abs(i, j, Mij, dt_small, v, P2)
+   integer, intent(in) :: i, j   ! index of the orbitals overlap
+   real(8), dimension(:,:), intent(in) :: Mij  ! Matrix element precalculated with "Electron_ion_coupling_Mij" below
+   real(8), intent(in) :: dt_small  ! timestep [fs]
+   real(8), intent(in) :: v   ! [m/s] atomic velosity
+   real(8), intent(out) :: P2 ! squared matric element of he momentum opereator
+   !--------------
+   real(8) :: Mij2
+   Mij2 = (Mij(i,j) / dt_small)
+   Mij2 = Mij2**2 ! [1/s]
+
+   P2 = -(g_h/v)**2 * Mij2    ! [(kg*m/s)^2]
+end subroutine get_nonadiabatic_Pij_abs
+
+
 ! Get contributions from different shells analogously to Mulliken charge calculations:
 pure subroutine Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)
    integer, intent(in) :: i, j
@@ -347,11 +397,12 @@ end subroutine Get_Gei_shells_contrib
 
 
 subroutine Electron_ion_coupling_Mij(wr, Ha, Ha0, Mij, kind_M, Sij) ! calculates the electron-ion coupling matrix element
+   ! Mij = [Psi(t)*Psi(t+dt) - Psi(t+dt)*Psi(t) ] / 2  (without division by dt), see Tully 1994
    real(8), dimension(:), intent(in) ::  wr ! electron energy levels [eV], after diagonalization of Ha
    real(8), dimension(:,:), intent(in) :: Ha  ! diagonilized Hamiltonian Ha, eigenvectors
    real(8), dimension(:,:), intent(in) :: Ha0 ! eigenvectors on the previous time-step
-   real(8), dimension(:,:), allocatable, intent(inout) :: Mij  ! Matrix element coupling electron WF via ion motion
-!    real(8), dimension(:), intent(out) ::  Norm_WF   ! WF normalization coefficient
+   real(8), dimension(:,:), allocatable, intent(inout) :: Mij  ! Matrix element coupling electron WF via ion motion:
+   !    real(8), dimension(:), intent(out) ::  Norm_WF   ! WF normalization coefficient
    integer, intent(in), optional :: kind_M ! what kind of matrix element to use
    real(8), dimension(:,:), intent(in), optional :: Sij ! overlap matrix, in case of non-orthogonal basis set
    !----------------------------
@@ -362,26 +413,18 @@ subroutine Electron_ion_coupling_Mij(wr, Ha, Ha0, Mij, kind_M, Sij) ! calculates
    real(8), dimension(size(wr),size(wr)) :: tij
    real(8) :: eps, Norm_val0, Norm_val1
    
-!    print*, 'Electron_ion_coupling_Mij start'
-   
    N = size(wr)
    if (.not. allocated(Mij)) allocate(Mij(N,N))
    Mij = 0.0d0
    eps = 1.0d-13    ! acceptable error
    
-!    print*, 'Electron_ion_coupling_Mij 0'
-   
    if (present (kind_M)) then
       select case (kind_M)
       case(-1) ! the full probability by Landau
          
-!          print*, 'Electron_ion_coupling_Mij 1'
-         
          !$omp PARALLEL private(i, j, k, psi0, psi_back, Norm_val1) shared(Norm0, Norm1, tij)
          allocate(psi0(N))
          allocate(psi_back(N))
-         
-!          print*, 'Electron_ion_coupling_Mij 2'
          
          ! Ensure WF normalization to 1: 
          !$omp do
@@ -391,11 +434,8 @@ subroutine Electron_ion_coupling_Mij(wr, Ha, Ha0, Mij, kind_M, Sij) ! calculates
          enddo
          !$omp end do
          !$OMP BARRIER
-         
-!          print*, 'Electron_ion_coupling_Mij 3'
-         
+
          if (present(Sij)) then ! non-orthogonal
-!             print*, 'Test 0 '
             !$omp do
             do i = 1, N ! all energy levels
                do k = 1, N
@@ -408,40 +448,29 @@ subroutine Electron_ion_coupling_Mij(wr, Ha, Ha0, Mij, kind_M, Sij) ! calculates
             enddo !  i = 1, N
             !$omp end do
             !$OMP BARRIER
-!             print*, 'Electron_ion_coupling_Mij 4'
          endif
 
          !$omp do
          do i = 1, N ! all energy levels
-!             psi0(:) = Ha0(:,i)
             if (Norm0(i) < eps) then
                psi0(:) = 0.0d0
             else
                psi0(:) = Ha0(:,i) / Norm0(i)
             endif
             
-!             print*, 'Electron_ion_coupling_Mij 5'
-            
-!             psi_back(:) = Ha(:,i)
             do j = i, N ! only upper triangle, using symmetry
-!             do j = 1, N
                if (i .NE. j) then
                   if ( Norm1(j) < eps ) then
                      Norm_val1 = 0.0d0
                   else 
                      Norm_val1 = 1.0d0/Norm1(j)
                   endif
-                  
-!                   print*, 'Electron_ion_coupling_Mij 6'
-                  
+
                   if (present(Sij)) then ! non-orthogonal
-!                      print*, 'Test 1 ', i, j
                      Mij(i,j) = SUM( psi0(:)* tij(j,:) )
                   else ! orthogonal
                      Mij(i,j) = SUM( psi0(:) * Ha(:,j)*Norm_val1 )
                   endif ! (present(Sij))
-                  
-!                   print*, 'Electron_ion_coupling_Mij 7'
 
                   ! Use symmetry:
                   Mij(j,i) = Mij(i,j)
@@ -451,8 +480,6 @@ subroutine Electron_ion_coupling_Mij(wr, Ha, Ha0, Mij, kind_M, Sij) ! calculates
          !$omp end do !!end PARALLEL do
          deallocate(psi0,psi_back)
          !$omp end parallel
-         
-!          print*, 'Electron_ion_coupling_Mij 8'
          
       case default ! Tully's expression
          !$omp PARALLEL private(i, j, psi0, psi_back, Norm_val1, Norm_val0) shared(Norm0, Norm1, tij)
@@ -514,7 +541,6 @@ subroutine Electron_ion_coupling_Mij(wr, Ha, Ha0, Mij, kind_M, Sij) ! calculates
                      Mij(i,j) = SUM(psi0(:)*(Ha(:,j)*Norm_val1) - (Ha0(:,j)*Norm_val0)*psi_back(:) )
                      Mij(j,i) = Mij(i,j)
                   endif ! (present(Sij))
-!                    if (j==129) print*, 'M', i, j, Mij(i,j)
                endif ! (i .NE. j)
             enddo
          enddo
@@ -526,8 +552,6 @@ subroutine Electron_ion_coupling_Mij(wr, Ha, Ha0, Mij, kind_M, Sij) ! calculates
       
 !       Norm_WF = Norm1   ! save normalization coefficient
    endif ! present(kind_M)
-
-!    print*, 'Electron_ion_coupling_Mij end'
 
 end subroutine Electron_ion_coupling_Mij
 

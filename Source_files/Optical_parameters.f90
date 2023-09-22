@@ -41,9 +41,10 @@ use TB_Pettifor, only : Complex_Hamil_tot
 use TB_Molteni, only : Complex_Hamil_tot_Molteni
 use TB_NRL, only : Complex_Hamil_NRL
 use TB_DFTB, only : Complex_Hamil_DFTB, identify_DFTB_orbitals_per_atom
-use TB, only : k_point_choice, construct_complex_Hamiltonian
+use TB, only : k_point_choice, construct_complex_Hamiltonian, get_coupling_matrix_elements
 use Little_subroutines, only : deallocate_array, Find_in_array_monoton, d_Fermi_function
 use MC_cross_sections, only : Mean_free_path, velosity_from_kinetic_energy
+use Nonadiabatic, only : get_Mij2, get_nonadiabatic_Pij
 
 USE OMP_LIB, only : OMP_GET_THREAD_NUM
 
@@ -58,7 +59,7 @@ real(8), parameter :: m_prefac = g_e**2 / (g_h*g_me**2)
 
 
 
-public :: get_optical_parameters, allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF, get_kappa_e_e
+public :: get_optical_parameters, allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF, get_kappa_e_e, get_Onsager_dynamic
 
 
  contains
@@ -372,7 +373,7 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
    real(8) :: Vol, Ele, L, prefact, temp
    integer :: i, n, Nsiz, N_Te_grid
 
-   if (numpar%do_kappa) then ! only if requested
+   if (numpar%do_kappa .or. numpar%do_kappa_dyn) then ! only if requested
 
       Nsiz = size(Ev)   ! number of energy levels
       N_Te_grid = size(Te_grid)
@@ -685,6 +686,111 @@ subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_
    end select
 end subroutine get_Onsager_ABC
 
+
+
+subroutine get_Onsager_dynamic(numpar, matter, Scell, NSC, kappa)
+   ! Following Ref. [6] for evaluation of Onsager coefficients, Eqs.(6-7) (assuming w->0)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Solid), intent(in) :: matter  ! Material parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   real(8), dimension(:), intent(out) :: kappa ! electron heat conductivity tensor [W/(K*m)] vs Te
+   !----------------------------
+   real(8) :: Vol, prefact, eta
+   real(8) :: A, B, C
+   integer :: i
+
+   kappa(:) = 0.0d0  ! to start with
+
+   eta = m_gamm * m_e_h ! finite width of delta function [eV]
+   ! Supercell volume:
+   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+
+   ! Calculate only if requested:
+   if (numpar%do_kappa_dyn) then ! only if requested
+      A = 0.0d0
+      B = 0.0d0
+      C = 0.0d0
+
+      ! Get the Onsager coefficients:
+      call get_Onsager_ABC_dynamic(numpar, Scell, NSC, Scell(NSC)%Mij, eta, A, B, C) ! below
+
+      ! Collect terms to calculate thermal conductivity:
+      prefact = g_Pi * g_h / (g_me**2 * Vol * Scell(NSC)%Te) ! prefactor in L22
+      if (abs(B) > 0.0d0) then
+         kappa(1) = prefact * (A - C**2/B)   ! [W/(K*m)]
+      endif
+      !print*, 'get_Onsager_dynamic', kappa(1), A, B, C
+   endif
+end subroutine get_Onsager_dynamic
+
+
+subroutine get_Onsager_ABC_dynamic(numpar, Scell, NSC, Mij, eta, A, B, C)
+   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   real(8), dimension(:,:), allocatable, intent(inout) :: Mij ! matrix element for electron-ion coupling
+   real(8), intent(in) :: eta ! [eV]
+   real(8), intent(inout) :: A, B, C
+   !---------------------
+   real(8) :: prec, delta, Eij, P2, E_mu, A_cur, B_cur, C_cur, f_nm, f_delt, coef, coef_inv, dt_small, vn, vm
+   integer :: n, m, i, j, Nsiz, N_orb, N_at
+
+   prec = 1.0d-10 ! [eV] acceptance for degenerate levels
+   Nsiz = size(Scell(NSC)%Ei)   ! number of energy levels
+!    coef = 2.0d0*g_e/g_h
+!    coef_inv = numpar%M2_scaling*g_h/(g_e)   ! [s] with scaling factor added (e.g. 2 from d|a|^2/dt)
+   dt_small = numpar%dt*(1d-15)  ! [fs]
+   N_at = size(Scell(NSC)%MDatoms)  ! number of atoms
+   N_orb = Nsiz / N_at  ! number of orbitals per atom
+
+   ! Calculate Tully's nonadiabatic-coupling matrix element:
+   call get_coupling_matrix_elements(1, Scell, NSC, 1, 1, 1, 1, 1, 1, Mij)  ! module "TB"
+
+   !$omp PARALLEL private(n, m, Eij, delta, P2, E_mu, A_cur, B_cur, C_cur, f_nm, f_delt, i, j)
+   !$omp do schedule(dynamic)  reduction( + : A, B, C)
+   do n = 1, Nsiz ! all energy points
+      i = 1 + (n-1)/N_orb  ! atomic index
+      !vn = sqrt( SUM(Scell(NSC)%MDatoms(i)%V(:)*Scell(NSC)%MDatoms(i)%V(:)) ) * 1.0d5  ! [(m/s)]
+
+      do m = 1, Nsiz
+         j = 1 + (m-1)/N_orb  ! atomic index
+         !vm = sqrt( SUM(Scell(NSC)%MDatoms(j)%V(:)*Scell(NSC)%MDatoms(j)%V(:)) ) * 1.0d5  ! [(m/s)]
+
+         !Eij = (Scell(NSC)%Ei(m) - Scell(NSC)%Ei(n))   ! [eV]
+         Eij = (Scell(NSC)%Ei(n) - Scell(NSC)%Ei(m))   ! [eV] test
+
+         ! Get approximate delta-function:
+         delta = numerical_delta(Eij, eta)   ! [1/eV] module "Algebra_tools"
+
+         if ( (n /= m) .and. (abs(Eij) > prec) .and. (abs(delta) > prec) ) then   ! nondegenerate levels
+            ! Average momentum operator:
+            !call get_nonadiabatic_Pij(n, m, Mij, dt_small, v, P2) ! module "Nonadiabatic"
+            call get_nonadiabatic_Pij(n, m, Mij, dt_small, Scell(NSC)%MDatoms(i)%V*1.0d5, Scell(NSC)%MDatoms(j)%V*1.0d5, P2) ! module "Nonadiabatic"
+            P2 = abs(P2)   ! [ (kg*m/s) ^2 ]
+            !if (P2 > 0.0d0) print*, 'p', n, m, sqrt(P2)
+
+            ! Collect terms (without prefactors)
+            !f_nm = Scell(NSC)%fe(n) - Scell(NSC)%fe(m)
+            f_nm = Scell(NSC)%fe(m) - Scell(NSC)%fe(n)   ! test
+            E_mu = ( (Scell(NSC)%Ei(n) + Scell(NSC)%Ei(m))*0.5d0 - Scell(NSC)%mu )   ! [eV]
+            f_delt = f_nm * delta
+
+            B_cur = abs(P2) * f_delt / Eij
+            C_cur = B_cur * E_mu
+            A_cur = C_cur * E_mu
+
+            ! Sum up the terms:
+            A = A + A_cur
+            B = B + B_cur
+            C = C + C_cur
+         endif ! (n /= m)
+         !print*, 'dyn', n, m, A, B, C, P2, f_delt
+      enddo ! m
+   enddo ! n
+   !$omp end do
+   !$omp end parallel
+end subroutine get_Onsager_ABC_dynamic
 
 
 subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in, cPRRz_in, Ev, Eps_hw_temp)

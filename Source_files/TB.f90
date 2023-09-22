@@ -68,7 +68,7 @@ PRIVATE
 
 public :: get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_parameters, &
          vdW_interplane, Electron_ion_coupling, update_nrg_after_change, get_DOS_masks, k_point_choice, &
-         construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step, get_Mullikens_all
+         construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step, get_Mullikens_all, get_coupling_matrix_elements
 
  contains
 
@@ -3188,6 +3188,8 @@ end subroutine get_new_energies
 
 
 subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
+! This subroutine calculates the nonadiabatic electron-ion (electron-phonon) coupling
+! and dynamical electronic heat conductivity (if required)
    real(8), intent(in) :: t ! [fs] current time
    type(solid), intent(inout) :: matter ! materil parameters
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
@@ -3198,16 +3200,12 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
    real(8) :: dE_nonadiabat, E0
    integer NSC, ixm, iym, izm, ix, iy, iz, i, j
 
-!    print*, 'Electron_ion_coupling 0'
-   
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
       SC:do NSC = 1, size(Scell) ! for all supercells
          dE_nonadiabat = 0.0d0
-         !print*, 'NA:', numpar%Nonadiabat, t, numpar%t_NA
-         if ((numpar%Nonadiabat) .AND. (t .GT. numpar%t_NA)) then ! electron-coupling included
-            ! Ensure Fermi distribution:
+         if ( ( (numpar%Nonadiabat) .or. (numpar%do_kappa_dyn)) .AND. (t .GT. numpar%t_NA)) then ! electron-coupling included
+            ! Ensure Fermi distribution (unless nonequilibrium simulation is used):
             call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
-!             print*, 'Electron_ion_coupling 1'
             
             !--------------------------------
             ! For multiple k-points:
@@ -3222,71 +3220,7 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
                   do iz = 1, izm
            
                      ! Calculate nonadiabatic-coupling matrix element:
-                     ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:)) ! this is the sintax we have to use to check the class of defined types
-                        ! Different expressions for orthogonal and non-orthogonal bases:
-                        select type(ARRAY)
-                        type is (TB_H_Pettifor) ! TB parametrization according to Pettifor: orthogonal
-                            if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
-                                !call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij) ! module "Nonadiabatic"
-                                call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, numpar%NA_kind) ! module "Nonadiabatic"
-                                
-!                                 do i = 1, size(Mij,1)
-!                                    do j = 1, size(Mij,2)
-!                                       i = 100
-!                                       j = 60
-!                                       print*, 'n', i, j, Mij(i,j)
-!                                     enddo
-!                                 enddo
-!                                 call Electron_ion_coupling_Mij_OLD(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, numpar%NA_kind) ! module "Nonadiabatic"
-!                                 do i = 1, size(Mij,1)
-!                                    do j = 1, size(Mij,2)
-!                                       print*, 'o', i, j, Mij(i,j)
-!                                     enddo
-!                                 enddo
-                                
-                            else ! non-gamma k-point, complex Hamiltonian needed:
-                                call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, numpar%NA_kind) ! module "Nonadiabatic"
-                            endif
-                        type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni: orthogonal
-                            if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
-                                !call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij) ! module "Nonadiabatic"
-                                call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, numpar%NA_kind) ! module "Nonadiabatic"
-                            else ! non-gamma k-point, complex Hamiltonian needed:
-                                call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, numpar%NA_kind) ! module "Nonadiabatic"
-                            endif
-                        type is (TB_H_Fu)  ! TB parametrization accroding to Fu: orthogonal
-                            if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
-                                call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, numpar%NA_kind) ! module "Nonadiabatic"
-                            else ! non-gamma k-point, complex Hamiltonian needed:
-                                call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, numpar%NA_kind) ! module "Nonadiabatic"
-                            endif
-                        type is (TB_H_NRL)  ! TB parametrization accroding to NRL method: non-orthogonal
-                            if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
-                                call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, numpar%NA_kind, Scell(NSC)%Sij) ! module "Nonadiabatic"
-                            else ! non-gamma k-point, complex Hamiltonian needed:
-                                call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, numpar%NA_kind) ! module "Nonadiabatic"
-                            endif
-                        type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB: non-orthogonal
-                            if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
-                                call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, numpar%NA_kind, Sij=Scell(NSC)%Sij) ! module "Nonadiabatic"
-                            else ! non-gamma k-point, complex Hamiltonian needed:
-                                call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, numpar%NA_kind) ! module "Nonadiabatic"
-                            endif
-                        type is (TB_H_3TB)  ! TB parametrization accroding to 3TB: non-orthogonal
-                            if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
-                                call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, numpar%NA_kind, Sij=Scell(NSC)%Sij) ! module "Nonadiabatic"
-                            else ! non-gamma k-point, complex Hamiltonian needed:
-                                call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, numpar%NA_kind) ! module "Nonadiabatic"
-                            endif
-                        type is (TB_H_xTB)  ! TB parametrization accroding to xTB: non-orthogonal
-                            if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
-                                call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, numpar%NA_kind, Sij=Scell(NSC)%Sij) ! module "Nonadiabatic"
-                            else ! non-gamma k-point, complex Hamiltonian needed:
-                                call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, numpar%NA_kind) ! module "Nonadiabatic"
-                            endif
-                        end select
-                     END ASSOCIATE
-                     
+                     call get_coupling_matrix_elements(numpar%NA_kind, Scell, NSC, ix, iy, iz, ixm, iym, izm, Mij)  ! below
                      
                      !sssssssssssssssssssssss
                      ! Project-specific subroutine:
@@ -3295,26 +3229,21 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
                      !sssssssssssssssssssssss
                     
                      ! Calculate the electron-ion collision integral and energy exchange via it:
-!                      print*, 'Electron_ion_coupling 4', numpar%DOS_splitting
-!                      E0 = Scell(NSC)%nrg%El_low
-!                      print*, 'before', E0
-!                      select case (numpar%DOS_splitting) ! include analysis of partial coupling (contribution of atomic shells) or not:
-!                      case (1)
-                         call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, &
+                     if (numpar%Nonadiabat) then
+                        call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, &
                                  Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
                                  dE_nonadiabat, numpar%NA_kind, numpar%DOS_weights, Scell(NSC)%G_ei_partial) ! module "Nonadiabatic"
-!                      case default    ! No need to sort per orbitals
-!                         call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
-!                             dE_nonadiabat, numpar%NA_kind) ! module "Nonadiabatic"
-!                      endselect
-!                      print*, 'Electron_ion_coupling 5'
+                     endif
+
+                     ! Save Mij to calculate the dynamical electornic heat conductivity:
+!                      if (numpar%do_kappa_dyn) then
+!                         Scell(NSC)%Mij = Mij
+!                      endif
                   enddo ! iz
                enddo ! iy
             enddo ! ix
             ! Averaging over multiple k-points
 
-!             print*, 'middle', Scell(NSC)%nrg%El_low+dE_nonadiabat, E0-(Scell(NSC)%nrg%El_low+dE_nonadiabat)
-            
             ! Redistribute this energy exchanged between electrons and atoms:
             ! New electron distribution:
             call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
@@ -3329,16 +3258,73 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
             call save_last_timestep(Scell) ! module "Atomic_tools"
             ! Calculate electron-ion coupling parameter:
             
-!             print*, 'Electron_ion_coupling 6'
             call get_G_ei(Scell, NSC, numpar, dE_nonadiabat) ! module "Nonadiabatic"
-            
-!             print*, 'Electron_ion_coupling 7'
             
          endif
       enddo SC
    endif DO_TB
 end subroutine Electron_ion_coupling
 
+
+
+subroutine get_coupling_matrix_elements(NA_kind, Scell, NSC, ix, iy, iz, ixm, iym, izm, Mij)
+   integer, intent(in) :: NA_kind   ! kind of model for matrix elements
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! supercell with all the atoms as one object
+   real(8), dimension(:,:), allocatable, intent(inout) :: Mij ! matrix element for electron-ion coupling
+   integer, intent(in) :: NSC, ixm, iym, izm, ix, iy, iz
+   !=====================================
+
+   ! Calculate nonadiabatic-coupling matrix element:
+   ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:)) ! this is the sintax we have to use to check the class of defined types
+      ! Different expressions for orthogonal and non-orthogonal bases:
+      select type(ARRAY)
+      type is (TB_H_Pettifor) ! TB parametrization according to Pettifor: orthogonal
+         if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
+            !call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij) ! module "Nonadiabatic"
+            call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, NA_kind) ! module "Nonadiabatic"
+         else ! non-gamma k-point, complex Hamiltonian needed:
+            call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, NA_kind) ! module "Nonadiabatic"
+         endif
+      type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni: orthogonal
+         if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
+            !call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij) ! module "Nonadiabatic"
+            call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, NA_kind) ! module "Nonadiabatic"
+         else ! non-gamma k-point, complex Hamiltonian needed:
+            call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, NA_kind) ! module "Nonadiabatic"
+         endif
+      type is (TB_H_Fu)  ! TB parametrization accroding to Fu: orthogonal
+         if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
+            call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, NA_kind) ! module "Nonadiabatic"
+         else ! non-gamma k-point, complex Hamiltonian needed:
+            call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, NA_kind) ! module "Nonadiabatic"
+         endif
+      type is (TB_H_NRL)  ! TB parametrization accroding to NRL method: non-orthogonal
+         if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
+            call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, NA_kind, Scell(NSC)%Sij) ! module "Nonadiabatic"
+         else ! non-gamma k-point, complex Hamiltonian needed:
+            call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, NA_kind) ! module "Nonadiabatic"
+         endif
+      type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB: non-orthogonal
+         if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
+            call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, NA_kind, Sij=Scell(NSC)%Sij) ! module "Nonadiabatic"
+         else ! non-gamma k-point, complex Hamiltonian needed:
+            call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, NA_kind) ! module "Nonadiabatic"
+         endif
+      type is (TB_H_3TB)  ! TB parametrization accroding to 3TB: non-orthogonal
+         if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
+            call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, NA_kind, Sij=Scell(NSC)%Sij) ! module "Nonadiabatic"
+         else ! non-gamma k-point, complex Hamiltonian needed:
+            call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, NA_kind) ! module "Nonadiabatic"
+         endif
+      type is (TB_H_xTB)  ! TB parametrization accroding to xTB: non-orthogonal
+         if ( (ix == 1) .and. (iy == 1) .and. (iz == 1) ) then ! Gamma-point, real Hamiltonian is sufficient:
+            call Electron_ion_coupling_Mij(Scell(NSC)%Ei, Scell(NSC)%Ha, Scell(NSC)%Ha0, Mij, NA_kind, Sij=Scell(NSC)%Sij) ! module "Nonadiabatic"
+         else ! non-gamma k-point, complex Hamiltonian needed:
+            call Electron_ion_coupling_Mij_complex(Scell(NSC)%H_non, Scell(NSC)%CHa, Scell(NSC)%CHa0, Mij, ix, iy, iz, ixm, iym, izm, NA_kind) ! module "Nonadiabatic"
+         endif
+      end select
+   END ASSOCIATE
+end subroutine get_coupling_matrix_elements
 
 
 subroutine Construct_Aij(Ha, distre, Aij)

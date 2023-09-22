@@ -65,7 +65,11 @@ subroutine Mean_free_path(E, mfps, MFP_cur, inversed) ! finds total mean free pa
    call Find_in_array_monoton(mfps%E, E, N_temmp) ! module "Little_subroutines"
    call linear_interpolation(mfps%E, mfps%L, E, MFP_temp, N_temmp)	! module "Little_subroutines"
    if (.not.present(inversed)) then
-      MFP_cur = 1.0d0/MFP_temp ! [A] inverse it back
+      if (MFP_temp < 1.0d-12) then ! avoid divide by zero
+         MFP_cur = 1.3d21  ! infinity
+      else
+         MFP_cur = 1.0d0/MFP_temp ! [A] inverse it back
+      endif
    else
       MFP_cur = MFP_temp ! give inverse MFP as output [1/A]
    endif
@@ -250,7 +254,7 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
          endif
          ! And if not, use single-pole approximation:
          if (.not. allocated(matter%Atoms(i)%CDF(j)%A) ) then
-            call set_single_pole_CDF(Scell, NSC, matter, i, j)  ! below
+            call set_single_pole_CDF(Scell, NSC, matter, numpar, i, j)  ! below
          endif
 
          if ((i .NE. 1) .or. (j .NE. 1)) then
@@ -261,12 +265,14 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
          write(chtemp,'(i6)') INT(matter%Atoms(i)%Ip(j))
          if (j > 1) then    ! check if it's a degenerate level:
             if (INT(matter%Atoms(i)%Ip(j-1)) == INT(matter%Atoms(i)%Ip(j))) then
-               write(chtemp,'(i6)') INT(matter%Atoms(i)%Ip(j) - 0.5d0)    ! artificially shift it a little bit to make it not exactly degenerate
+               ! artificially shift it a little bit to make it not exactly degenerate:
+               write(chtemp,'(i6)') INT(matter%Atoms(i)%Ip(j) - 0.5d0)
             endif
          endif
          
          select case (matter%Atoms(i)%TOCS(j)) ! which inelastic cross section to use (BEB vs CDF):
          case (1) ! CDF
+            !print*, 'get_MFPs-1:', matter%Atoms(i)%TOCS(j), trim(adjustl(numpar%At_base))
             select case (trim(adjustl(numpar%At_base)))
             case ('CDF', 'cdf', 'Cdf') ! cdf from file
                write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
@@ -276,7 +282,9 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
                   trim(adjustl(matter%Atoms(i)%Name))//'_CDFsp_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV.txt'
             end select
          case default ! BEB
-            write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(matter%Atoms(i)%Name))//'_BEB_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV.txt'
+            !print*, 'get_MFPs-0:', matter%Atoms(i)%TOCS(j), trim(adjustl(numpar%At_base))
+            write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+            trim(adjustl(matter%Atoms(i)%Name))//'_BEB_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV.txt'
          end select
          FN = 112+i*Nshl+j
 
@@ -422,10 +430,11 @@ end subroutine get_MFPs
 
 
 
-subroutine set_single_pole_CDF(Scell, NSC, matter, i, j)  ! only for VB/CB
+subroutine set_single_pole_CDF(Scell, NSC, matter, numpar, i, j)  ! only for VB/CB
    type(Super_cell), dimension(:), intent(in) :: Scell ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! supercell index
    type(Solid), intent(inout) :: matter ! parameters of the material
+   type(Numerics_param), intent(in) :: numpar  ! all numerical parameters
    integer, intent(in) :: i, j   ! index of atom and shell
    !----------------
    real(8) :: Omega, NVB, ksum, fsum, Nat, contrib
@@ -442,7 +451,13 @@ subroutine set_single_pole_CDF(Scell, NSC, matter, i, j)  ! only for VB/CB
       allocate(matter%Atoms(i)%CDF(j)%G(matter%Atoms(i)%N_CDF(j)))
    endif
 
-   matter%Atoms(i)%TOCS(j) = 1   ! mark it as CDF cross-section
+   ! Check if the flag for CS needs to be changed:
+   select case (trim(adjustl(numpar%At_base)))
+   case('CDF', 'cdf', 'CDF_sp', 'cdf_sp')
+      matter%Atoms(i)%TOCS(j) = 1   ! mark it as CDF cross-section
+   case default   ! EADL, BEB
+      ! do not change the flag
+   end select
 
    if ( (i == 1) .and. (j == Nshl) ) then ! the valence band
       NVB = dble(Scell(NSC)%Ne) / dble(Scell(NSC)%Na) ! valence electrons per atom
@@ -995,13 +1010,17 @@ end subroutine get_grid_4CS
 !BEB_BEB_BEB_BEB_BEB_BEB_BEB_BEB_BEB_BEB_BEB_BEB_BEB_BEB
 ! Ionization of an atom: BEB cross-section
 ! Eq.(57) from [Y.K.Kim, M.E.Rudd, Phys.Rev.A 50 (1994) 3954]
-function Sigma_BEB(T,B,U,N)
+function Sigma_BEB(T, B_in, U, N)
    real(8) Sigma_BEB ! cross-section [A^2]
-   real(8) T	! kinetic energy of incident electron [eV]
-   real(8) B	! bindning energy of atomic electron [eV]
-   real(8) U	! mean kinetic energy of electron in sub-shell [eV]
-   real(8) N	! ocupation number of electrons in this shell
-   real(8) t0, u0, S
+   real(8), intent(in) :: T   ! kinetic energy of incident electron [eV]
+   real(8), intent(in) :: B_in   ! bindning energy of atomic electron [eV]
+   real(8), intent(in) :: U   ! mean kinetic energy of electron in sub-shell [eV]
+   real(8), intent(in) :: N   ! ocupation number of electrons in this shell
+   real(8) t0, u0, S, B, eps
+
+   eps = 1.0d-3   ! precision [eV]
+   B = max(eps, B_in)  ! to exclude too small Ip or Egap
+
    if ((T .LE. B) .or. (abs(B) < 1.0d-6)) then
       Sigma_BEB = 0.0d0 ! [A^2] cross section for energies lower than the Ip
    else
@@ -1018,56 +1037,59 @@ function Sigma_BEB(T,B,U,N)
 end function Sigma_BEB
 
 
-function dSigma_int_BEB(T, w, B, U, N)
+function dSigma_int_BEB(T, w, B_in, U, N)
    real(8), intent(in) :: w 	! [eV] transferred energy
    real(8), intent(in) :: T 	! [eV] kinetic energy of the electron
-   real(8), intent(in) ::  B	! bindning energy of atomic electron [eV]
+   real(8), intent(in) ::  B_in	! bindning energy of atomic electron [eV]
    real(8), intent(in) ::  U	! mean kinetic energy of electron in the sub-shell [eV]
    real(8), intent(in) ::  N	! ocupation number of electrons in this shell
    real(8) :: dSigma_int_BEB    ! differential cross-section
 
-   real(8) t0, u0, w0, S, Sigma, dSigma0
+   real(8) t0, u0, w0, S, Sigma, dSigma0, B, eps
 
-!   if (w .LE. B) then ! for the case if transferred energy is lower than the Ip
-!      dSigma_int_BEB = 0.0d0
-!   else
-      S = 4.0d0*g_Pi*g_a0*g_a0*N*(g_Ry/B)*(g_Ry/B) ! Eq.(4)
-      t0 = T/B	! energy normalized to the Rydberg constant ! Eq.(4)
-      u0 = U/B  	! kinetic energy normalized
-      w0 = w/B	! transferred energy normalized
+   eps = 1.0d-3   ! precision [eV]
+   B = max(eps, B_in)  ! to exclude too small Ip or Egap
 
-      dSigma0 = dSigma_dw_int(S, t0, u0, 0.0d0) ! function see below
-      dSigma_int_BEB = dSigma_dw_int(S, t0, u0, w0) - dSigma0
-!   endif
+   S = 4.0d0*g_Pi*g_a0*g_a0*N*(g_Ry/B)*(g_Ry/B) ! Eq.(4)
+   t0 = T/B    ! energy normalized to the Rydberg constant ! Eq.(4)
+   u0 = U/B    ! kinetic energy normalized
+   w0 = w/B    ! transferred energy normalized
+
+   dSigma0 = dSigma_dw_int(S, t0, u0, 0.0d0) ! function see below
+   dSigma_int_BEB = dSigma_dw_int(S, t0, u0, w0) - dSigma0
 end function dSigma_int_BEB
+
 
 function dSigma_dw_int(S, t0, u0, w0)
    real(8) t0, w0, u0, S, dSigma_dw_int
-   dSigma_dw_int = S/(t0+u0+1.0d0)*(-(log(w0+1.0d0)-log(abs(t0-w0)))/(t0+1.0d0) + (1.0d0/(t0-w0)-1.0d0/(w0+1.0d0)) + log(t0)*0.5d0*(1.0d0/((t0-w0)*(t0-w0)) - 1.0d0/((w0+1.0d0)*(w0+1.0d0))))
+   dSigma_dw_int = S/(t0+u0+1.0d0) * (-(log(w0+1.0d0)-log(abs(t0-w0)))/(t0+1.0d0) + &
+                  (1.0d0/(t0-w0)-1.0d0/(w0+1.0d0)) + &
+                  log(t0)*0.5d0*(1.0d0/((t0-w0)*(t0-w0)) - &
+                  1.0d0/((w0+1.0d0)*(w0+1.0d0))))
 end function dSigma_dw_int
 
 
-function dSigma_w_int_BEB(T, w, B, U, N)
+function dSigma_w_int_BEB(T, w, B_in, U, N)
    real(8), intent(in) :: w 	! [eV] transferred energy
    real(8), intent(in) :: T 	! [eV] kinetic energy of the electron
-   real(8), intent(in) ::  B	! bindning energy of atomic electron [eV]
+   real(8), intent(in) ::  B_in	! bindning energy of atomic electron [eV]
    real(8), intent(in) ::  U	! mean kinetic energy of electron in the sub-shell [eV]
    real(8), intent(in) ::  N	! ocupation number of electrons in this shell
    real(8) :: dSigma_w_int_BEB ! differential cross-section
-   real(8) t0, u0, w0, S, Sigma, dSigma0
+   real(8) t0, u0, w0, S, Sigma, dSigma0, B, eps
 
-!   if (w .LE. B) then ! for the case if incident electron kinetic energy is lower than the Ip
-!      dSigma_w_int_BEB = 0.0d0
-!   else
-      S = 4.0e0*g_Pi*g_a0*g_a0*N*(g_Ry/B)*(g_Ry/B) ! Eq.(4)
-      t0 = T/B	! energy normalized to the Rydberg constant ! Eq.(4)
-      u0 = U/B  ! kinetic energy normalized
-      w0 = w/B	! transferred energy normalized
+   eps = 1.0d-3   ! precision [eV]
+   B = max(eps, B_in)  ! to exclude too small Ip or Egap
 
-      dSigma0 = dSigma_dw_w_int(S, t0, u0, 0.0d0) ! function see below
-      dSigma_w_int_BEB = B*(dSigma_dw_w_int(S, t0, u0, w0) - dSigma0)
-!   endif
+   S = 4.0e0*g_Pi*g_a0*g_a0*N*(g_Ry/B)*(g_Ry/B) ! Eq.(4)
+   t0 = T/B    ! energy normalized to the Rydberg constant ! Eq.(4)
+   u0 = U/B    ! kinetic energy normalized
+   w0 = w/B    ! transferred energy normalized
+
+   dSigma0 = dSigma_dw_w_int(S, t0, u0, 0.0d0) ! function see below
+   dSigma_w_int_BEB = B*(dSigma_dw_w_int(S, t0, u0, w0) - dSigma0)
 end function dSigma_w_int_BEB
+
 
 function dSigma_dw_w_int(S, t0, u0, w0)
    real(8) t0, w0, u0, S, dSigma_dw_w_int
