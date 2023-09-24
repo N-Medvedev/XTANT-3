@@ -1,8 +1,6 @@
-# XTANT-3
+![XTANT3_logo_small_new](https://github.com/N-Medvedev/XTANT-3/assets/104917286/4258b260-88ed-42a3-bfc5-5e228591ce27)
+
 `X-ray-induced Thermal And Nonthermal Transitions`
-
-![XTANT3_logo_small](https://github.com/N-Medvedev/XTANT-3/assets/104917286/d4d9cd43-49c6-4b45-b733-fe8a78a458ee)
-
 
 It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matter. The code combines the following methods into one model with feed-backs:
 
