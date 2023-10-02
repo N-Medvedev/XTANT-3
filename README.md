@@ -33,9 +33,10 @@ https://github.com/N-Medvedev/XTANT-3_coupling_data
 
 ## How to cite
 
-The use of the code is at your own risk. Should you chose to use it, an appropriate citation is mandatory. The manual and the code can be cited as:
+The use of the code is at your own risk. Should you chose to use it, please cite the code and/or the manual:
+* N. Medvedev (2023). XTANT-3 (Version XTANT-3-v22.09.2023) [Computer software]. https://doi.org/10.5281/zenodo.8392569
 
-* N. Medvedev “_XTANT-3: X-ray-induced Thermal And Nonthermal Transitions in Matter: theory, numerical details, user manual_” (2023) https://doi.org/10.48550/arXiv.2307.03953; https://github.com/N-Medvedev/XTANT-3
+* N. Medvedev “_XTANT-3: X-ray-induced Thermal And Nonthermal Transitions in Matter: theory, numerical details, user manual_” (2023) https://doi.org/10.48550/arXiv.2307.03953
 
 Journal citations may be used as follows: 
 
