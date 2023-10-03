@@ -4427,7 +4427,7 @@ end subroutine read_xTB_Params
 
 
 
-subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err, add_data)
+subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, user_data, Err, add_data, count_lines_in)
    character(*), intent(in) :: File_name
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -4436,6 +4436,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    type(User_overwrite_data), intent(inout) :: user_data   ! atomic data provided by the user
    type(Error_handling), intent(inout) :: Err	! error save
    logical, intent(in), optional :: add_data   ! read stricktly numpar data, no additional data
+   integer, intent(inout), optional :: count_lines_in ! what line we already arrived to in the file (if not starting)
    !---------------------------------
    integer FN, N, Reason, count_lines, i, NSC, temp1, temp2, temp3
    logical file_opened, read_well, old_file, add_data_present
@@ -4446,6 +4447,12 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       add_data_present = add_data ! user defines whether to read additional data
    else
       add_data_present = .true. ! by default, read possible additional data
+   endif
+
+   if (present(count_lines_in)) then
+      count_lines = count_lines_in   ! mark that we start from this line in the file
+   else
+      count_lines = 0   ! mark that we start from top of the file
    endif
 
    !inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -4466,24 +4473,18 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
    ! number of unit-cells in X,Y,Z:
-   read(FN,*,IOSTAT=Reason) matter%cell_x, matter%cell_y, matter%cell_z 
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
-   
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) matter%cell_x, matter%cell_y, matter%cell_z
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
+
    ! periodicity along X,Y,Z directions:
-   read(FN,*,IOSTAT=Reason) temp1, temp2, temp3
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) temp1, temp2, temp3
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    numpar%r_periodic(:) = .true.	! periodic by default
    if (temp1 == 0) numpar%r_periodic(1) = .false.	! along X
    if (temp2 == 0) numpar%r_periodic(2) = .false.	! along Y   
@@ -4515,67 +4516,48 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       ! Make sure that, if there is a path, the separator is correct:
       call ensure_correct_path_separator(numpar%input_CDF_file, numpar%path_sep) ! module "Dealing_with_files"
    endif
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
 
    ! [g/cm^3] density of the material (used in MC in case of EADL parameters):
-   read(FN,*,IOSTAT=Reason) matter%dens
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) matter%dens
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
 
    ! number of iterations in the MC module:
-   read(FN,*,IOSTAT=Reason) numpar%NMC
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%NMC
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (numpar%NMC < 0) numpar%NMC = 0  ! by default, no MC
 
    ! number of threads for OPENMP:
-   read(FN,*,IOSTAT=Reason) numpar%NOMP
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%NOMP
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (numpar%NOMP < 1) then ! use default: maximum number of available threads
       numpar%NOMP = omp_get_max_threads() ! number of processors available by default
    endif
    
    ! MD algorithm (0=Verlet, 2d order; 1=Yoshida, 4th order)
-   read(FN,*,IOSTAT=Reason) numpar%MD_algo
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%MD_algo
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
 
    ! Include (1) or exclude (0) atopmic motion:
-   read(FN,*,IOSTAT=Reason) N
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) N
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (N .EQ. 1) then
       numpar%do_atoms = .true.	! Atoms move
    else
@@ -4583,48 +4565,35 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
    ! Parinello-Rahman super-vell mass coefficient
-   read(FN,*,IOSTAT=Reason) matter%W_PR
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) matter%W_PR
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (matter%W_PR < 0.0d0) matter%W_PR = 1.0d0 ! use default value
 
    ! Time step for MD [fs]:
-   read(FN,*,IOSTAT=Reason) numpar%MD_step_grid_file ! file with time grid, or timestep for md [fs]
-   call read_file(Reason, count_lines, read_well)
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%MD_step_grid_file ! file with time grid, or timestep for md [fs]
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    ! If read well, interpret it and set timestep or time-grid:
    call set_MD_step_grid(numpar%MD_step_grid_file, numpar, read_well, Error_descript)    ! below
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
-
 
    ! save data into files every 'dt_save_time' [fs]
-   read(FN,*,IOSTAT=Reason) numpar%dt_save  ! save data into files every 'dt_save_time' [fs]
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%dt_save  ! save data into files every 'dt_save_time' [fs]
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
 
    ! it's = 1 if P=const, or = 0 if V=const:
-   read(FN,*,IOSTAT=Reason) N	! It's = 0 if P=const, or = 1 if V=const
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) N	! It's = 0 if P=const, or = 1 if V=const
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (N .EQ. 1) then
       numpar%p_const = .true.	! P=const
    else
@@ -4632,48 +4601,19 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
    ! external pressure [Pa] (0 = normal atmospheric pressure):
-   read(FN,*,IOSTAT=Reason) matter%p_ext  ! External pressure [Pa] (0 = normal atmospheric pressure)
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) matter%p_ext  ! External pressure [Pa] (0 = normal atmospheric pressure)
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
 !    if (matter%p_ext < 0.0d0) matter%p_ext = g_P_atm	! atmospheric pressure
 
    ! SCC:
-   read(FN,*,IOSTAT=Reason) numpar%scc, numpar%scc_gam_ind, numpar%scc_mix
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
-
-
-   !! 3 numbers :
-   !! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO; 4=relaxation time);
-   !! when to start coupling [fs]; (legacy format, depricated!)
-   !! Characteristic relaxation time [fs];
-   !read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee, numpar%tau_fe (legacy format, depricated!)
-   !call read_file(Reason, count_lines, read_well)
-   !if (Reason /= 0) then   ! probably only two number are given (legacy format)
-   !   numpar%tau_fe = 1.0d0   ! [fs]
-   !   print*, 'Relaxation time is not provided, assuming default value:', numpar%tau_fe, '[fs]'
-   !   ! Trying to read the first 2 numbers from the same line:
-   !   backspace(FN)  ! back one line
-   !   count_lines = count_lines - 1 ! renumber it to continue from the same line
-   !   read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%t_Te_Ee  ! try reading it again
-   !   call read_file(Reason, count_lines, read_well)
-   !   if (.not. read_well) then
-   !      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-   !      call Save_error_details(Err, 3, Error_descript)
-   !      print*, trim(adjustl(Error_descript))
-   !      goto 3418
-   !   endif
-   !endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%scc, numpar%scc_gam_ind, numpar%scc_mix
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
 
    ! 4 numbers:
    ! 1) Scheme of propagation of electronic ensemble:
@@ -4681,29 +4621,21 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    ! 2) Global characteristic relaxation time of ALL electrons [fs];
    ! 3) Characteristic relaxation time of electrons in CB (above Fermi-level) [fs];
    ! 3) Characteristic relaxation time of electrons in VB (below Fermi-level) [fs];
-   read(FN,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%tau_fe, numpar%tau_fe_CB, numpar%tau_fe_VB
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      print*, 'Maybe old format of input is used, update your INPUT file to the new format'
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%el_ion_scheme, numpar%tau_fe, numpar%tau_fe_CB, numpar%tau_fe_VB
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    numpar%do_partial_thermal = ( (numpar%tau_fe_CB > -1.0d-8) .and. (numpar%tau_fe_VB > -1.0d-8) )
    if (numpar%tau_fe_CB < 0.0d0) numpar%tau_fe_CB = 0.0d0   ! eliminate nigative values (even within precision)
    if (numpar%tau_fe_VB < 0.0d0) numpar%tau_fe_VB = 0.0d0   ! eliminate nigative values (even within precision)
 
-
    ! -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule (DO NOT USE!):
-   read(FN,*,IOSTAT=Reason) numpar%NA_kind
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%NA_kind
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (numpar%NA_kind .EQ. 0) then
       numpar%Nonadiabat = .false. ! excluded
    else
@@ -4711,49 +4643,25 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
    ! [fs] when to switch on the nonadiabatic coupling:
-   read(FN,*,IOSTAT=Reason) numpar%t_NA, numpar%M2_scaling ! [fs] start of the nonadiabatic coupling; scaling factor
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%t_NA, numpar%M2_scaling ! [fs] start of the nonadiabatic coupling; scaling factor
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
 
    ! [eV] acceptance window and quasidegeneracy window for nonadiabatic coupling:
-   read(FN,*,IOSTAT=Reason) numpar%acc_window, numpar%degeneracy_eV
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
-
-   ! calculate electornic heat conductivity (0=no, 1=yes): -- DOES NOT WORK, EXCLUDED UNTIL SOLVED
-!    read(FN,*,IOSTAT=Reason) N
-!    call read_file(Reason, count_lines, read_well)
-!    if (.not. read_well) then
-!       write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-!       call Save_error_details(Err, 3, Error_descript)
-!       print*, trim(adjustl(Error_descript))
-!       goto 3418
-!    endif
-!    if (N .EQ. 1) then
-!       numpar%do_kappa = .true.	! included
-!    else
-!       numpar%do_kappa = .false.	! excluded
-!    endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%acc_window, numpar%degeneracy_eV
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
 
    ! atoms quenching (0=no, 1=yes); starting from when [fs]; how often [fs]:
-   read(FN,*,IOSTAT=Reason) N, numpar%at_cool_start, numpar%at_cool_dt ! include atomic cooling? When to start? How often?
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) N, numpar%at_cool_start, numpar%at_cool_dt ! include atomic cooling? When to start? How often?
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (N .EQ. 1) then
       numpar%do_cool = .true.	! included
    else
@@ -4761,9 +4669,12 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
    ! 0=no heat transport, 1=include heat transport; thermostat temperature for ATOMS [K]:
-   read(FN,*,IOSTAT=Reason) N, matter%T_bath, matter%tau_bath
-   call read_file(Reason, count_lines, read_well)
-   if (read_well) then
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) N, matter%T_bath, matter%tau_bath
+   if (Reason == 0) then
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+      if (Err%Err) goto 3418
       if (N .EQ. 1) then
          numpar%Transport = .true.	 ! included
       else
@@ -4771,30 +4682,24 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       endif
       matter%T_bath = matter%T_bath/g_kb	! [eV] thermostat temperature for atoms
    else ! maybe there is a filename given to read from instead of numbers:
-      backspace(FN)  ! go back and try to read the line again
-      read(FN,*,IOSTAT=Reason) numpar%At_bath_step_grid_file  ! name of file with parameters
-      call read_file(Reason, count_lines, read_well)
-      !print*, numpar%At_bath_step_grid_file, Reason
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
-      endif
+      read(read_line,*,IOSTAT=Reason) numpar%At_bath_step_grid_file  ! name of file with parameters
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+      if (Err%Err) goto 3418
       ! If read well, try to interpret it and set parameters on time-grid:
       call set_Bath_grid_atoms(numpar, read_well, Error_descript)    ! below
       if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
          goto 3418
       endif
    endif
 
    ! 0=no heat transport, 1=include heat transport; thermostat temperature for ELECTRONS [K]:
-   read(FN,*,IOSTAT=Reason) N, matter%T_bath_e, matter%tau_bath_e
-   call read_file(Reason, count_lines, read_well)
-   if (read_well) then
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) N, matter%T_bath_e, matter%tau_bath_e
+   if (Reason == 0) then
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+      if (Err%Err) goto 3418
       if (N .EQ. 1) then
          numpar%Transport_e = .true.	 ! included
       else
@@ -4803,35 +4708,23 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       matter%T_bath_e = matter%T_bath_e/g_kb	! [eV] thermostat temperature for electrons
    else
       ! maybe there is a filename given to read from instead of numbers:
-      backspace(FN)  ! go back and try to read the line again
-      read(FN,*,IOSTAT=Reason) numpar%El_bath_step_grid_file  ! name of file with parameters
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
-      endif
+      read(read_line,*,IOSTAT=Reason) numpar%El_bath_step_grid_file  ! name of file with parameters
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+      if (Err%Err) goto 3418
       ! If read well, try to interpret it and set parameters on time-grid:
       call set_Bath_grid_electrons(numpar, read_well, Error_descript)    ! below
       if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
          goto 3418
       endif
    endif
 
-
    ! [eV] cut-off energy, separating low-energy-electrons from high-energy-electrons:
-   read(FN,*,IOSTAT=Reason) numpar%E_cut  ! [eV] cut-off energy for high-energy-electrons
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%E_cut  ! [eV] cut-off energy for high-energy-electrons
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (numpar%E_cut <= 0.0d0) then ! use dynamical evolution of E_cut adjusting it to top-most CB level
       numpar%E_cut_dynamic = .true.  ! change E_cut
    else
@@ -4839,14 +4732,11 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
    ! [eV] work function, for electron emission:
-   read(FN,*,IOSTAT=Reason) numpar%E_work  ! [eV] work function for electron emission
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%E_work  ! [eV] work function for electron emission
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (numpar%E_work <= 0.0d0) then ! it is a condition on the counter of collisions:
       ! don't forget to exclude electrons that made more collisions than allowed
    else if (numpar%E_work <= numpar%E_cut) then ! exclude it from the calculations:
@@ -4854,14 +4744,11 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
    
    ! save electron energy levels (1) or not (0):
-   read(FN,*,IOSTAT=Reason) N  ! save electron energy levels (1) or not (0)
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) N  ! save electron energy levels (1) or not (0)
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (N .EQ. 1) then
       numpar%save_Ei = .true.	! included
    else
@@ -4869,14 +4756,11 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
    
    ! save DOS (1=Gamma; 2=k-points) or not (0):
-   read(FN,*,IOSTAT=Reason) N, numpar%Smear_DOS, numpar%DOS_splitting ! save DOS (1) or not (0), smearing width, do partial DOS or no
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) N, numpar%Smear_DOS, numpar%DOS_splitting ! save DOS (1) or not (0), smearing width, do partial DOS or no
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (abs(N) == 2) then
       ! if the user wanted complex k-points, leave it be, otherwise, overwrite it with the option of complex k for DOS
       ! * Note that it SWITCHES OFF the probe-pulse calculations in this case
@@ -4893,27 +4777,21 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       numpar%save_DOS = .false.  ! excluded
    endif
 !    print*, 'DOS_in:', numpar%save_DOS, numpar%optic_model
-   
+
    ! save Mulliken or not, and within which model: (0) no; (1) for atom types; 
-   read(FN,*,IOSTAT=Reason) numpar%Mulliken_model
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%Mulliken_model
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
 
    ! save electron electron distribution (1) or not (0):
    !read(FN,*,IOSTAT=Reason) N  ! save electron distribution function (1) or not (0)
-   read(FN,'(a)',IOSTAT=Reason) temp_ch   ! read parameters to interpret them in a subroutine
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) temp_ch   ! read parameters to interpret them in a subroutine
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    call interprete_distribution_input(temp_ch, numpar, Scell(1), read_well) ! below
    if (.not. read_well) then
       write(Error_descript,'(a,i5,a,$)') 'Could not interprete line ', count_lines, ' in file '//trim(adjustl(File_name))
@@ -4923,45 +4801,32 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
    ! save atomic pair correlation function (1) or not (0):
-   read(FN,*,IOSTAT=Reason) N  ! save atomic pair correlation function (1) or not (0)
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) N  ! save atomic pair correlation function (1) or not (0)
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (N .EQ. 1) then
       numpar%save_PCF = .true.	! included
    else
       numpar%save_PCF = .false.	! excluded
    endif
 
-
    ! save atomic positions in XYZ (1) or not (0):
    !read(FN,*,IOSTAT=Reason) N  ! save atomic positions in XYZ (1) or not (0)
-   read(FN,'(a)',IOSTAT=Reason) temp_ch   ! read parameters to interpret them below
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) temp_ch   ! read parameters to interpret them below
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    read(temp_ch,*,IOSTAT=Reason) N, temp_ch2
-   count_lines = count_lines - 1 ! reading the same line
-   call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
-   if (.not. read_well) then ! something wrong with the user-defined grid
+   if (Reason /= 0) then ! something wrong with the user-defined grid
       ! try reading just the first flag, no grid parameters
       read(temp_ch,*,IOSTAT=Reason) N
       count_lines = count_lines - 1 ! still reading the same line
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3418
-      endif
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+      if (Err%Err) goto 3418
       ! And no additional input:
       temp_ch2 = ''
    endif
@@ -4972,56 +4837,43 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
    call interpret_additional_XYZ_input(temp_ch2, numpar%save_XYZ_extra) ! below
 
-
    ! save atomic positions in CIF (1) or not (0):
-   read(FN,*,IOSTAT=Reason) N  ! save atomic positions in CIF (1) or not (0)
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) N  ! save atomic positions in CIF (1) or not (0)
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (N .EQ. 1) then
       numpar%save_CIF = .true.	! included printout atomic coordinates in CIF format
    else
       numpar%save_CIF = .false.	! excluded printout atomic coordinates in CIF format
    endif
-   
+
    ! save raw data for atomic positions and velocities (1) or not (0):
-   read(FN,*,IOSTAT=Reason) N
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) N
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (N .EQ. 1) then
       numpar%save_raw = .true.	! included printout raw data
    else
       numpar%save_raw = .false.	! excluded printout raw data
    endif
-   
+
    ! read power of mean displacement to print out (set integer N: <u^N>-<u0^N>):
-   read(FN,*,IOSTAT=Reason) numpar%MSD_power
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
-   
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%MSD_power
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
+
    ! save number of nearest neighbors within the digen radius (>0) or not (<=0):
-   read(FN,*,IOSTAT=Reason) numpar%NN_radius
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%NN_radius
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    if (numpar%NN_radius > 1.0e-2) then
       numpar%save_NN = .true.	! included printout nearest neighbors
    else
@@ -5029,14 +4881,11 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
    !  which format to use to plot figures: eps, jpeg, gif, png, pdf
-   read(FN,*,IOSTAT=Reason) numpar%fig_extention
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%fig_extention
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
    select case ( trim(adjustl(numpar%fig_extention)) )
    case ('JPEG', 'JPEg', 'JPeg', 'Jpeg', 'jpeg', 'JPG', 'jpg')
       numpar%fig_extention = 'jpeg'
@@ -5054,16 +4903,13 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       numpar%fig_extention = 'eps'
       numpar%ind_fig_extention = 1
    end select
-   
+
    ! number of k-points in each direction (used only for Trani-k!):
-   read(FN,*,IOSTAT=Reason) numpar%ixm, numpar%iym, numpar%izm
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3418
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%ixm, numpar%iym, numpar%izm
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   if (Err%Err) goto 3418
 
    !----------------------------------------
    ! Read optional data provided by the user (e.g., to overwrite default atomic data):
@@ -5247,7 +5093,8 @@ subroutine set_Bath_grid_atoms(numpar, read_well_out, Error_descript)
          read(FN,*,IOSTAT=Reason) numpar%At_bath_reset_grid(i), numpar%At_bath_grid_Ta(i), numpar%At_bath_grid_tau(i)
          call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
          if (.not. read_well) then ! something wrong with the user-defined grid
-            write(Error_descript,'(a,i3)') 'In the file '//trim(adjustl(numpar%At_bath_step_grid_file))//' could not read line ', count_lines
+            write(Error_descript,'(a,i3)') 'In the file '//trim(adjustl(numpar%At_bath_step_grid_file))// &
+                              ' could not read line ', count_lines
             goto 9998  ! couldn't read the data, exit the cycle
          endif
       enddo
@@ -5587,6 +5434,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
 
    !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
    ! Material parameters:
+   count_lines = 0   ! to start with
 
    ! Material name (and possibly the file name with coordinates):
    read(FN, '(a)', IOSTAT=Reason) read_line
@@ -5602,64 +5450,42 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       ! Check if such a file exists:
       call check_coordinates_filename(numpar%Cell_filename, numpar%verbose) ! see below
    endif
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3417
-   endif
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
+   if (Err%Err) goto 3417
    !print*, trim(adjustl(matter%Name)), ' : ', trim(adjustl(numpar%Cell_filename))
 
    ! chemical formula of the compound (used in MC in case of EADL parameters):
    read(FN,*,IOSTAT=Reason) matter%Chem
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3417
-   endif
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
+   if (Err%Err) goto 3417
 
    if (.not.allocated(Scell)) allocate(Scell(1)) ! just for start, 1 supercell
    do i = 1, size(Scell) ! for all supercells
 
       ! initial electron temperature [K] or filename with the distribution function:
-      read(FN,*,IOSTAT=Reason) Scell(i)%Te
+      read(FN, '(a)', IOSTAT=Reason) read_line
+      read(read_line,*,IOSTAT=Reason) Scell(i)%Te
       if (Reason == 0) then ! there was a number, interpret it as electronic temperature
-         call read_file(Reason, count_lines, read_well)
-         if (.not. read_well) then
-            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-            call Save_error_details(Err, 3, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 3417
-         endif
+         call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                                 add_error_info='Line: '//trim(adjustl(read_line))) !below
+         if (Err%Err) goto 3417
          numpar%fe_filename = '' ! user provided no filename for distribution (use Fermi with given tempreature instead)
       else ! maybe there was a name of the file with electronic distribution:
          Scell(i)%Te = -1.0d0 ! Just to indicate nonequilibrium distribution
-         backspace(FN)  ! get back and try to read the line again:
-         count_lines = count_lines - 1
-         read(FN,*,IOSTAT=Reason) numpar%fe_filename  ! read filename
-         call read_file(Reason, count_lines, read_well)
-         if (.not. read_well) then
-            write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-            call Save_error_details(Err, 3, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 3417
-         endif
+         read(read_line,*,IOSTAT=Reason) numpar%fe_filename  ! read filename
+         call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                                 add_error_info='Line: '//trim(adjustl(read_line))) !below
+         if (Err%Err) goto 3417
       endif
       Scell(i)%TeeV = Scell(i)%Te/g_kb ! [eV] electron temperature
 
       ! initial atomic temperature [K]:
-      read(FN,*,IOSTAT=Reason) Scell(i)%Ta	
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
-      endif
+      read(FN, '(a)', IOSTAT=Reason) read_line
+      read(read_line,*,IOSTAT=Reason) Scell(i)%Ta
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
+      if (Err%Err) goto 3417
       Scell(i)%TaeV = Scell(i)%Ta/g_kb ! [eV] atomic temperature
+
    enddo !Scell
 
 
@@ -5667,38 +5493,26 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
    ! Basic parameters of the simulation:
 
    ! Start of the simulation [fs]:
-   read(FN,*,IOSTAT=Reason) numpar%t_start
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3417
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%t_start
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
+   if (Err%Err) goto 3417
 
    ! total duration of simulation [fs]:
-   read(FN,*,IOSTAT=Reason) numpar%t_total	
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3417
-   endif
-
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) numpar%t_total
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
+   if (Err%Err) goto 3417
 
    !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
    ! Laser parameters:
 
    ! Number of laser pulses to model:
-   read(FN,*,IOSTAT=Reason) N          ! How many pulses
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 3417
-   endif
+   read(FN, '(a)', IOSTAT=Reason) read_line
+   read(read_line,*,IOSTAT=Reason) N          ! How many pulses
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
+   if (Err%Err) goto 3417
+
    ! For multiple pulses, parameters for each:
    PULS:if (N >= 0) then ! If there is at least one pulse:
     if (allocated(laser)) deallocate(laser)
@@ -5709,13 +5523,8 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
 
       ! Read the laser pulse fluence or dose:
       read(FN, '(a)', IOSTAT=Reason) read_line  ! to interprete the text below
-      call read_file(Reason, count_lines, read_well)  ! to keep proper counting of lines, do this
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
-      endif
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
+      if (Err%Err) goto 3417
 
       ! Check if there are specifications provided, or just the number (assuming default):
       if (it_is_number(read_line)) then ! function from module "Little_subroutines"
@@ -5732,6 +5541,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
          write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript)), read_var(:)
+         print*, 'Line: ', trim(adjustl(read_line))
          goto 3417
       endif
       ! Check if there was single fluence, or a grid:
@@ -5749,47 +5559,35 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       call check_pulse_specifications(trim(adjustl(text)), laser(i), read_var(1))   ! below
 
 
-      read(FN,*,IOSTAT=Reason) laser(i)%hw, laser(i)%FWHM_hw  ! photon energy in [eV], and FWHM width of distribution [eV]
+      read(FN, '(a)', IOSTAT=Reason) read_line
+      read(read_line,*,IOSTAT=Reason) laser(i)%hw, laser(i)%FWHM_hw  ! photon energy in [eV], and FWHM width of distribution [eV]
       if (Reason /= 0) then ! probably only energy provided, not the distribution width, so assume FWHM_hw=0
          laser(i)%FWHM_hw = 0.0d0
-         backspace(FN)  ! get back and try to read the line again:
-         count_lines = count_lines - 1
-         read(FN,*,IOSTAT=Reason) laser(i)%hw  ! photon energy in [eV] only, no distribution
-         call read_file(Reason, count_lines, read_well)
-      endif
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
+         read(read_line,*,IOSTAT=Reason) laser(i)%hw  ! photon energy in [eV] only, no distribution
+         call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                                 add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+         if (Err%Err) goto 3417
+      else
+         call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                                 add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+         if (Err%Err) goto 3417
       endif
 
-      read(FN,*,IOSTAT=Reason) laser(i)%t	  ! PULSE FWHM-DURATION IN [fs]
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
-      endif
+      read(FN, '(a)', IOSTAT=Reason) read_line
+      read(read_line,*,IOSTAT=Reason) laser(i)%t	  ! PULSE FWHM-DURATION IN [fs]
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
+      if (Err%Err) goto 3417
 
-      read(FN,*,IOSTAT=Reason) laser(i)%KOP ! type of pulse: 0=rectangular, 1=Gaussian, 2=SASE
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
-      endif
+      read(FN, '(a)', IOSTAT=Reason) read_line
+      read(read_line,*,IOSTAT=Reason) laser(i)%KOP ! type of pulse: 0=rectangular, 1=Gaussian, 2=SASE
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
+      if (Err%Err) goto 3417
 
-      read(FN,*,IOSTAT=Reason) laser(i)%t0  ! POSITION OF THE MAXIMUM OF THE PULSE IN [fs]
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 3417
-      endif
+      read(FN, '(a)', IOSTAT=Reason) read_line
+      read(read_line,*,IOSTAT=Reason) laser(i)%t0  ! POSITION OF THE MAXIMUM OF THE PULSE IN [fs]
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+      if (Err%Err) goto 3417
 
       if (laser(i)%KOP .EQ. 1) laser(i)%t = laser(i)%t/2.35482	! make a gaussian parameter out of it
      enddo ! have read parameters for all pulses
@@ -5820,7 +5618,8 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
             'NUMERICAL_PARAMETERS', 'Numerical_Parameters', 'numerical_parameters', &
             'NUMERICS', 'Numerics', 'numerics')
          numpar%numpar_in_input = .true.  ! mark that the num.parameters were read from here
-         call read_numerical_parameters(trim(adjustl(File_name)), matter, numpar, laser, Scell, user_data, Err, add_data=.false.) ! below
+         call read_numerical_parameters(trim(adjustl(File_name)), matter, numpar, laser, Scell, &
+                                       user_data, Err, add_data=.false., count_lines_in=count_lines) ! below
          if (Err%Err) exit RDID  ! end of file, stop reading
       end select
    enddo RDID
@@ -5830,6 +5629,32 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
 3417  if (file_opened) close(FN)
 end subroutine read_input_material
 
+
+
+subroutine check_if_read_well(Reason, count_lines, File_name, Err, add_error_info)
+   integer, intent(in) :: Reason ! IO flag from intrinsic fortran: read(FN,*,IOSTAT=Reason)
+   integer, intent(inout) :: count_lines  ! conter in which line the error appeared
+   character(*), intent(in) :: File_name  ! which file we are reading now
+   type(Error_handling), intent(inout) :: Err   ! error description construct
+   character(*), intent(in), optional :: add_error_info  ! additional info about the error to print
+   !-------------------
+   logical :: read_well
+   character(200) :: Error_descript
+
+   ! Check the Reason, if it read well:
+   call read_file(Reason, count_lines, read_well)  ! module "Dealing_with_files"
+
+   if (.not. read_well) then
+      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      call Save_error_details(Err, 3, Error_descript)
+      ! Print main error message on the screen
+      print*, trim(adjustl(Error_descript))
+      ! Print additional error info:
+      if (present(add_error_info)) then
+         print*, trim(adjustl(add_error_info))
+      endif
+   endif
+end subroutine check_if_read_well
 
 
 subroutine check_pulse_specifications(text, laser, read_var)

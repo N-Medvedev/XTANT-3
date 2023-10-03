@@ -967,16 +967,23 @@ end type
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
  contains
 ! How to write the log about an error:
-subroutine Save_error_details(Err_name, Err_num, Err_data)
+subroutine Save_error_details(Err_name, Err_num, Err_data, Err_data2)
    class(Error_handling) :: Err_name
    integer, intent(in) :: Err_num
    character(*), intent(in) :: Err_data
+   character(*), intent(in), optional :: Err_data2
+   !-----------------------
    integer FN
    FN = Err_name%File_Num
    Err_name%Err = .true.
    Err_name%Err_Num = Err_num
    Err_name%Err_descript = Err_data
+   ! Main error info:
    write(FN, '(a,i2,1x,a)') 'Error #', Err_name%Err_Num, trim(adjustl(Err_name%Err_descript))
+   ! Additional indo:
+   if (present(Err_data2)) then
+      write(FN, '(a)') Err_data2
+   endif
 
 !  Reminder:
 !    Error #1: file not found

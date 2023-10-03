@@ -45,7 +45,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 22.09.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 03.10.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -630,7 +630,8 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
 
    ! Write electron properties:
    write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, &
-      Scell(NSC)%Ne_low/dble(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
+      !Scell(NSC)%Ne_low/dble(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
+      Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
       Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
    Nat = size(matter%Atoms(:)) ! number of elements
    do i = 1, Nat    ! index starting from 11
