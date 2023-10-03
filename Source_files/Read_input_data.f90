@@ -5879,7 +5879,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
    !----------------------------------
    case default
       ! Check if the user needs any additional info (by setting the flags):
-      call interprete_additional_data(string, numpar%path_sep, change_size=numpar%change_size, contin=Err%Err, &
+      call interprete_additional_data(string, numpar%path_sep, change_size=numpar%change_size, contin=Err%Stopsignal, &
                   allow_rotate=numpar%allow_rotate, verbose=numpar%verbose) ! module "Read_input_data"
 
    endselect
@@ -6268,7 +6268,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
 
    case ('test', 'TEST', 'Test')
       print*, 'Wow, it really works!'
-      !if (present(contin)) contin = .false.
+      if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
       write(*,'(a)') trim(adjustl(m_starline))
 
    case ('Matter', 'matter', 'MATTER', 'Materials', 'materials', 'list', 'LIST', 'List')

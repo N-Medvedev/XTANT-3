@@ -4477,8 +4477,8 @@ subroutine print_a_comforting_message(print_to, path_sep)
 
    file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//'Quotes.txt'
    write(print_to,'(a)') trim(adjustl(m_starline))
-   write(print_to,'(a)') 'Sorry that something went wrong; to lighten the mood a little,'
-   write(print_to,'(a)') 'here is a quote for you:'
+   write(print_to,'(a)') 'Sorry that something went wrong.'
+   write(print_to,'(a)') 'To lighten the mood a little, here is a quote for you:'
 
    inquire(file=trim(adjustl(file_name)),exist=file_exists)
    if (.not.file_exists) then ! no file, cannot print help

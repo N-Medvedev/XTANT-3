@@ -956,9 +956,10 @@ end type MC_data
 !==============================================
 ! Error handling as an object:
 type Error_handling
-   LOGICAL Err		! indicates that an error occured
-   integer Err_Num	! assign a number to an error
-   integer File_Num		! number of the file with error log
+   logical :: Err          ! indicates that an error occured
+   logical :: Stopsignal   ! flag to stop calculations, even if there was no error
+   integer :: Err_Num      ! assign a number to an error
+   integer :: File_Num     ! number of the file with error log
    character(300) Err_descript	! describes more details about the error
 end type
 !==============================================
@@ -967,23 +968,40 @@ end type
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
  contains
 ! How to write the log about an error:
-subroutine Save_error_details(Err_name, Err_num, Err_data, Err_data2)
+subroutine Save_error_details(Err_name, Err_num, Err_data, Err_data2, empty)
    class(Error_handling) :: Err_name
    integer, intent(in) :: Err_num
    character(*), intent(in) :: Err_data
    character(*), intent(in), optional :: Err_data2
+   logical, intent(in), optional :: empty
    !-----------------------
-   integer FN
-   FN = Err_name%File_Num
-   Err_name%Err = .true.
-   Err_name%Err_Num = Err_num
-   Err_name%Err_descript = Err_data
-   ! Main error info:
-   write(FN, '(a,i2,1x,a)') 'Error #', Err_name%Err_Num, trim(adjustl(Err_name%Err_descript))
-   ! Additional indo:
-   if (present(Err_data2)) then
-      write(FN, '(a)') Err_data2
+   integer :: FN
+   logical :: no_err
+
+   if (present(empty)) then ! maybe just initialize with no error
+      no_err = empty
+   else  ! by default, describe error
+      no_err = .false.
    endif
+
+   if (no_err) then  ! no error, just initialize
+      Err_name%Err = .false.
+      Err_name%Stopsignal = .false.
+      Err_name%Err_descript = '' ! start with an empty string
+      Err_name%File_Num = 99     ! default file number for error message
+   else ! there is an error, describe it
+      FN = Err_name%File_Num
+      Err_name%Err = .true.
+      Err_name%Stopsignal = .false.
+      Err_name%Err_Num = Err_num
+      Err_name%Err_descript = Err_data
+      ! Main error info:
+      write(FN, '(a,i2,1x,a)') 'Error #', Err_name%Err_Num, trim(adjustl(Err_name%Err_descript))
+      ! Additional indo:
+      if (present(Err_data2)) then
+         write(FN, '(a)') Err_data2
+      endif
+   endif ! (no_err)
 
 !  Reminder:
 !    Error #1: file not found
