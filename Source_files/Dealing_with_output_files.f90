@@ -45,7 +45,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 22.09.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 03.10.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -630,7 +630,8 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
 
    ! Write electron properties:
    write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, &
-      Scell(NSC)%Ne_low/dble(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
+      !Scell(NSC)%Ne_low/dble(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
+      Scell(NSC)%Ne_low/Scell(NSC)%Na, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
       Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
    Nat = size(matter%Atoms(:)) ! number of elements
    do i = 1, Nat    ! index starting from 11
@@ -803,8 +804,6 @@ end subroutine write_coulping
 
 
 
-
-
 subroutine write_atomic_relatives(FN, atoms)
    integer, intent(in) :: FN	! file number
    type(Atom), dimension(:), intent(in) :: atoms	! atomic parameters
@@ -819,14 +818,21 @@ subroutine write_atomic_relatives(FN, atoms)
 end subroutine write_atomic_relatives
 
 
+
 subroutine write_numbers(FN, time, Scell)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: time	! [fs]
    type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
-   write(FN,'(f25.16,f25.16,es,es25.16,es25.16,es25.16,es25.16)') time, Scell%Ne_low/dble(Scell%Na), Scell%Ne_CB/dble(Scell%Na), &
-      Scell%Ne_high/dble(Scell%Na), Scell%Nh/dble(Scell%Na), (dble(Scell%Ne)-(Scell%Ne_low+Scell%Ne_high-Scell%Nh))/dble(Scell%Na), &
-      Scell%Nph/dble(Scell%Na)
+   !write(FN,'(f25.16,f25.16,es,es25.16,es25.16,es25.16,es25.16)') time, Scell%Ne_low/dble(Scell%Na), Scell%Ne_CB/dble(Scell%Na), &
+   write(FN,'(f25.16,f25.16,es,es25.16,es25.16,es25.16,es25.16)') time, &
+      (Scell%Ne_low-Scell%Ne_CB)/dble(Scell%Na), &    ! valence-band electrons (below E_fermi)
+      Scell%Ne_CB/dble(Scell%Na), &                   ! conduction-band electrons (above E_fermi)
+      Scell%Ne_high/dble(Scell%Na), &                 ! high-energy electrons (in MC)
+      Scell%Nh/dble(Scell%Na), &                      ! all core holes
+      (dble(Scell%Ne)-(Scell%Ne_low+Scell%Ne_high-Scell%Nh))/dble(Scell%Na), &   ! error in particle conservation
+      Scell%Nph/dble(Scell%Na)                        ! photons
 end subroutine write_numbers
+
 
 
 subroutine write_pressure(FN, time, Pressure, Stress)
@@ -1219,8 +1225,10 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    file_electron_properties = trim(adjustl(file_path))//'OUTPUT_electron_properties.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_properties)))
    numpar%FN_electron_properties = FN
-   call create_file_header(numpar%FN_electron_properties, '#Time	Ne	mu	band_gap	Ce	Coupling_parameter	VB_bottom	VB_top	CB_bottom	CB_top Mullikens(:)')
-   call create_file_header(numpar%FN_electron_properties, '#[fs]	[%]	[eV]	[eV]	[J/(m^3K)]	[W/(m^3K)]	[eV]	[eV]	[eV]	[eV]  [e](:)')
+   call create_file_header(numpar%FN_electron_properties, &
+      '#Time	Ne	mu	band_gap	Ce	Coupling_parameter	VB_bottom	VB_top	CB_bottom	CB_top Mullikens(:)')
+   call create_file_header(numpar%FN_electron_properties, &
+      '#[fs]	[1/atom]	[eV]	[eV]	[J/(m^3K)]	[W/(m^3K)]	[eV]	[eV]	[eV]	[eV]  [e](:)')
 
    file_electron_heat_capacity = trim(adjustl(file_path))//'OUTPUT_electron_Ce.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_capacity)))
@@ -1276,8 +1284,10 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    file_energies = trim(adjustl(file_path))//'OUTPUT_energies.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_energies)))
    numpar%FN_energies = FN
-   call create_file_header(numpar%FN_energies, '#Time	Electrons	Holes	Potential	Kinetic	Atoms	Atoms_n_electrons	Atom_all_electrons	Total	van_der_Waals   Short-range')
-   call create_file_header(numpar%FN_energies, '#[fs]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]  [eV/atom]')
+   call create_file_header(numpar%FN_energies, &
+   '#Time	Electrons	Holes	Potential	Kinetic	Atoms	Atoms_n_electrons	Atom_all_electrons	Total	van_der_Waals   Short-range')
+   call create_file_header(numpar%FN_energies, &
+   '#[fs]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]  [eV/atom]')
 
    file_numbers = trim(adjustl(file_path))//'OUTPUT_electron_hole_numbers.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_numbers)))
