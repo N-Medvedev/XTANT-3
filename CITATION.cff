@@ -4,8 +4,8 @@ authors:
   - family-names: Medvedev
     given-names: Nikita
     orcid: https://orcid.org/0000-0003-0491-1090
-title: XTANT-3 (update 22.09.2023)
-version: XTANT-3-v22.09.2023
-date-released: 2023-09-22
+title: XTANT-3 (update 03.10.2023)
+version: XTANT-3-v03.10.2023
+date-released: 2023-10-03
 doi: 10.5281/zenodo.8392569
 url: "https://github.com/N-Medvedev/XTANT-3"
