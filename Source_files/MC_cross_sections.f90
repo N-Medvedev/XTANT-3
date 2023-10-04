@@ -369,6 +369,12 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
       
    enddo ATOMS
 
+   ! Printout plasmon frequency:
+   Omega = w_plasma(1d6*matter%At_dens* Scell(NSC)%Ne/dble(Scell(NSC)%Na) ) ! function below, plasma frequency^2 [1/s^2]
+   matter%hw_plasma = g_h/g_e*sqrt(Omega) ! [eV]
+   write(*,'(a,es12.2,a,es12.2,a)') 'Estimated plasmon frequency: ', sqrt(Omega), ' [1/s],', g_h/g_e*sqrt(Omega), ' [eV]'
+
+
    ! Total inelastic mean free path:
    write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(matter%Name))//'_Total_Electron_IMFP.txt'
    FN = FN + 1
