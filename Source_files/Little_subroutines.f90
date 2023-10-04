@@ -69,13 +69,59 @@ end interface deallocate_array
 public :: Find_in_array, Find_in_array_monoton, extend_array_size, deallocate_array, Find_monotonous_LE, Fermi_interpolation, &
 linear_interpolation, Find_in_monotonous_1D_array, Gaussian, print_time_step, fast_pow, count_3d, print_progress, &
 interpolate_data_on_grid, number_of_types_of_orbitals, name_of_orbitals, order_of_time, set_starting_time, convolution, &
-sample_gaussian, Fermi_function, d_Fermi_function, print_time, parse_yes_no, parse_time, it_is_number
+sample_gaussian, Fermi_function, d_Fermi_function, print_time, parse_yes_no, parse_time, it_is_number, find_order_of_number, &
+exclude_doubles
 
 
 
 
  contains
  
+
+pure subroutine exclude_doubles(array)
+   real(8), dimension(:), allocatable, intent(inout) :: array
+   !-----------
+   real(8), dimension(:), allocatable :: array_copy
+   integer, dimension(:), allocatable :: ind
+   integer :: i, k, Nsiz, Ndub, coun, coun_ind
+
+   Nsiz = size(array)
+   allocate(array_copy(Nsiz), source = array)   ! copy array
+   allocate(ind(Nsiz), source = 0)  ! indices of the points with doubles, to exclude
+
+   ! Mark doubles:
+   coun_ind = 0
+   do i = 1, Nsiz-1
+      do k = i+1, Nsiz
+         if (array(i) == array(k)) then ! exclude this point
+            coun_ind = coun_ind + 1
+            ind(coun_ind) = min(i,k) ! this element to be excluded
+         endif
+      enddo
+   enddo
+
+   ! count doubles:
+   Ndub = count(ind > 0)
+
+   ! exclude doubles:
+   deallocate(array)
+   allocate(array(Nsiz-Ndub), source = 0.0d0)   ! make it smaller, excluding doubles
+   coun = 0
+   coun_ind = 1
+   do i = 1, Nsiz
+      if (i == ind(coun_ind)) then  ! it's a double, exclude
+         coun_ind = coun_ind + 1
+      else  ! it's not a double, save
+         coun = coun + 1
+         array(coun) = array_copy(i)
+      endif
+   enddo
+
+   ! Clean up:
+   deallocate(array_copy, ind)
+end subroutine exclude_doubles
+
+
 
 pure function it_is_number(text) result(f)
    logical f   ! check if the first character in the string is a number

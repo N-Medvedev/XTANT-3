@@ -136,6 +136,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
    numpar%NOMP = 1	! unparallelized by default
 #endif
+   numpar%redo_MFP = .false.  ! no need to recalculate mean free paths by default
    numpar%N_basis_size = 0  ! DFTB, BOP or 3TB basis set default (0=s, 1=sp3, 2=sp3d5)
    numpar%do_atoms = .true.	! Atoms are allowed to move
    matter%W_PR = 25.5d0  ! Parinello-Rahman super-vell mass coefficient
@@ -5718,6 +5719,11 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
    read_var = 0.0d0     ! unused variable in this case
 
    select case (trim(adjustl(string)))
+   !----------------------------------
+   case ('redo_MFP', 'MFP', 'REDO_MFP')
+      ! recalcaulte mean free path:
+      numpar%redo_MFP = .true.
+
    !----------------------------------
    case ('el-ph', 'EL-PH', 'El-Ph', 'Coupling', 'COUPLING', 'coupling')
       read(FN,*,IOSTAT=Reason) num_phon   ! number of simulations for average electron-phonon coupling parameter

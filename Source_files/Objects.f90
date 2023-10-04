@@ -804,13 +804,14 @@ endtype User_overwrite_data
 
 
 type Numerics_param
-   ! Subcell parameters for linear scaling TB:
+   ! Subcell parameters for linear scaling TB (not ready):
    integer :: lin_scal    ! use linear scaling TB (1), or not (0)
    integer, dimension(3) :: N_subcels   ! number of subcells along each axis: X, Y, Z
    real(8), dimension(:), allocatable :: Subcell_coord_sx, Subcell_coord_sy, Subcell_coord_sz
    ! Other parameters:
-   integer :: which_input ! number of input file used (for using more then one sequentially)
+   integer :: which_input  ! number of input file used (for using more then one sequentially)
    logical :: verbose
+   logical :: redo_MFP     ! flag to recalculate mean free paths, if needed
    ! Electronic distribution function parameters:
    logical :: fe_input_exists ! flag to use the distribution from a file
    character(100) :: fe_filename ! file name with user-provided initial electronic distribution
@@ -897,8 +898,8 @@ type Numerics_param
    logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
    ! Different output, what to save:
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate, save_fe_grid
-   logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
+   logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS, do_kappa_dyn
    logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN, save_CDF
    integer :: Mulliken_model

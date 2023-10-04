@@ -34,9 +34,11 @@
 MODULE MC_cross_sections
 use Objects
 use Universal_constants
-use Little_subroutines, only : Find_in_array_monoton, linear_interpolation, print_progress, interpolate_data_on_grid
+use Little_subroutines, only : Find_in_array_monoton, linear_interpolation, print_progress, &
+                              interpolate_data_on_grid, find_order_of_number, exclude_doubles
 use Dealing_with_files, only : Count_lines_in_file, read_file
 use Dealing_with_EADL, only : m_EPDL_file, READ_EPDL_TYPE_FILE_real, next_designator, Read_EPDL_data
+use Algebra_tools, only : sort_array
 
 implicit none
 PRIVATE
@@ -213,7 +215,7 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
    integer OMP_GET_THREAD_NUM, OMP_GET_NUM_THREADS
    
    ! Set grid for MFPs:
-   call get_grid_4CS(N_grid, maxval(laser(:)%hw), matter%Atoms(1)%El_MFP(1)%E)
+   call get_grid_4CS(N_grid, maxval(laser(:)%hw), matter%Atoms(1)%El_MFP(1)%E, matter) ! below
 
    if (.not.allocated(matter%Atoms(1)%El_MFP(1)%L)) allocate(matter%Atoms(1)%El_MFP(1)%L(N_grid))
 
@@ -245,7 +247,8 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
    ATOMS:do i = 1, size(matter%Atoms) ! for all atoms
       Nshl = size(matter%Atoms(i)%Ip)
       SHELLS:do j = 1, Nshl ! for all shells of this atom
-         redo = .false. ! may be there is no need to recalculate MFPs
+         !redo = .false. ! may be there is no need to recalculate MFPs
+         redo = numpar%redo_MFP  ! user defined, if there is a need to recalculate MFPs
 
 
          ! Check if CDF coefficients are set:
@@ -951,58 +954,151 @@ function Int_Ritchi_p_x(A,E,Gamma,x) ! integral of the Ritchi/x (ff-sum rule)
 end function Int_Ritchi_p_x
 
 
-subroutine get_grid_4CS(N, Emax_given, grid_array)
-   real(8), intent(in), optional :: Emax_given ! [eV] up to which energy we need electron cross-sections
+subroutine get_grid_4CS(N, Emax_given, grid_array, matter)
    integer, intent(out) :: N ! number of grid points
-   real(8), intent(out), dimension(:), allocatable, optional :: grid_array ! array of these grid points
-   real(8) :: Emin, Emax, dE
-   integer Va, Ord, N2
-   Emin = 1.0d0    ! [eV] we start with this minimum
-   if (present(Emax_given)) then
-      if (Emax_given .GT. 30.0d3) then
-         Emax = Emax_given ! [eV] maximum energy for cross section (or mean free path)
-      else
-         Emax = 30.0d3   ! [eV] maximum energy for cross section (or mean free path)
-      endif
-   else ! use default value
-      Emax = 30.0d3   ! [eV] maximum energy for cross section (or mean free path)
-   endif
-   N = 0
-   Ord = 0 ! start with 1
-   Va = int(Emin)
-   dE = Emin
-   do while (dE .LT. Emax)
-      N = N + 1
-      if (Va .GE. 100) then
-         Va = Va - 90
-         Ord = Ord + 1
-      endif
-      dE = dE + 10.0d0**Ord
-      Va = Va + 1
-      !print*, N, dE
-   enddo ! while (dE .LT. Emax)
-   N = N + 1
-   if (present(grid_array)) then ! save the grid
-      if (.not.allocated(grid_array)) then 
-         allocate(grid_array(N))
-      endif
-      N2 = 0
-      Ord = 0 ! start with 1
-      Va = int(Emin)
-      dE = Emin
-      grid_array(N2+1) = dE
-      do while (dE .LT. Emax)
-         N2 = N2 + 1
-         if (Va .GE. 100) then
-            Va = Va - 90
-            Ord = Ord + 1
-         endif
-         dE = dE + 10.0d0**Ord
-         Va = Va + 1
-         grid_array(N2+1) = dE
-      enddo ! while (dE .LT. Emax)
-   endif
+   real(8), intent(in) :: Emax_given ! [eV] up to which energy we need electron cross-sections
+   real(8), intent(out), dimension(:), allocatable :: grid_array ! array of these grid points
+   type(Solid), intent(in) :: matter ! parameters of the material: ionization potentials to set special points
+   !-----------------------------
+   real(8), dimension(:), allocatable :: special_point
+   real(8) :: Emin, Emax, E_sp_eps
+   integer :: i, NP
+
+   ! Initial definitions:
+   Emin = 0.1d0   ! [eV] we start with this minimum
+   Emax = 50.0d3  ! [eV] defaul value, may be changed below
+   if (Emax_given .GT. Emax) Emax = Emax_given ! [eV] maximum energy for cross section (or mean free path)
+   E_sp_eps = 1.0d-3 ! how close a grid point should be around a special point
+
+   ! Get the special points associated with the ionization potentials of all shells:
+   call define_special_points(matter, special_point)  ! below
+
+   ! Count how many points, to allocate the grid:
+   call go_thru_grid(Emin, Emax, E_sp_eps, special_point, Ngrid=N)   ! below
+
+   ! Save the grid:
+   allocate(grid_array(N), source = 0.0d0)
+   call go_thru_grid(Emin, Emax, E_sp_eps, special_point, array=grid_array)   ! below
+
+!    do i = 1, size(grid_array)
+!       print*, i, grid_array(i)
+!    enddo
+!    pause 'get_grid_4CS'
 end subroutine get_grid_4CS
+
+
+subroutine go_thru_grid(Emin, Emax, E_sp_eps, special_point, Ngrid, array)
+   real(8), intent(in) :: Emin, Emax, E_sp_eps   ! grid start and end; precision around a special point
+   real(8), dimension(:), intent(in) :: special_point
+   integer, intent(inout), optional :: Ngrid ! number of grid points
+   real(8), dimension(:), intent(inout), optional :: array ! save grid
+   !--------------
+   integer :: SP_count, N
+   real(8) :: E_cur, dE, dE_min
+   logical :: point_is_here
+
+   SP_count = 1
+   N = 0
+   dE_min = 0.1d0
+   E_cur = Emin - dE_min  ! start from min
+   do while (E_cur < Emax)
+      N = N + 1   ! count points
+      if (E_cur < 1.0d0-dE_min) then
+         dE = dE_min
+      else if (E_cur < 100.0d0) then
+         dE = 1.0d0
+      else
+         dE = 10.0d0**(find_order_of_number(E_cur)-2) ! module "Little_subroutines"
+      endif
+      E_cur = E_cur + dE
+
+      ! save grid points:
+      if (present(array)) then
+         if (N <= size(array)) then
+            array(N) = E_cur
+         else
+            print*, 'Mismatch #1 of array size in go_thru_grid:', N, size(array)
+            return
+         endif
+      endif
+
+      ! Check if the special points are still there:
+      point_is_here = .false. ! by default
+      if (SP_count <= size(special_point)) then ! there may be a specila point:
+         if ( (E_cur >= special_point(SP_count)) .and. ((E_cur-dE) < special_point(SP_count)) ) then ! special point inside interval
+            SP_count = SP_count + 1 ! this special point is done, do the next one
+            point_is_here = .true.
+         endif
+      endif
+
+      ! Save grid point:
+      if (point_is_here) then
+         if (present(array)) then
+            if (N+2 <= size(array)) then
+               ! add two points:
+               ! 1) below the special point:
+               N = N + 1
+               array(N) = special_point(SP_count-1) - E_sp_eps
+               ! 2) above the special point:
+               N = N + 1
+               array(N) = special_point(SP_count-1) + E_sp_eps
+            else
+               print*, 'Mismatch #2 of array size in go_thru_grid', N, size(array)
+               return
+            endif
+         else
+            ! add 2 extra points around the special point
+            N = N + 2
+         endif
+      endif
+
+   enddo ! while (E_cur .LT. Emax)
+
+   ! prepare output:
+   if (present(Ngrid)) Ngrid = N ! save grid size
+
+   if (present(array)) then   ! make sure the array is sorted increasing
+      call sort_array(array)  ! module "Algebra_tools"
+   endif
+end subroutine go_thru_grid
+
+
+
+subroutine define_special_points(matter, special_point)
+   type(Solid), intent(in) :: matter ! parameters of the material: ionization potentials to set special points
+   real(8), dimension(:), allocatable :: special_point
+   !-----------------------------
+   integer :: Nsiz, i, k, sh, coun
+
+   ! Count how many Ip's are there:
+   Nsiz = 0
+   do i = 1, size(matter%Atoms)  ! for all elements
+      Nsiz = Nsiz + size(matter%Atoms(i)%Ip)
+   enddo
+
+   ! allocate and set special_points:
+   allocate(special_point(Nsiz), source = 0.0d0)
+
+   ! Copy the special points (ionization potentials):
+   coun = 0
+   do i = 1, size(matter%Atoms)  ! for all elements
+      sh = size(matter%Atoms(i)%Ip)
+      do k = 1, sh
+         coun = coun + 1
+         special_point(coun) = matter%Atoms(i)%Ip(k)
+      enddo
+   enddo
+
+   ! Sort the array increasing:
+   call sort_array(special_point)   ! module "Algebra_tools"
+
+   ! Exclude copies of points, if any:
+   call exclude_doubles(special_point) ! module "Little_subroutines"
+
+!    do i = 1, size(special_point)  ! for all elements
+!       print*, i, special_point(i)
+!    enddo
+end subroutine define_special_points
 
 
 
@@ -1486,7 +1582,7 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
    indVB = size(matter%Atoms(1)%Ip) ! the last shell of the first element is VB
 
    if (.not.allocated(matter%Atoms(1)%Ph_MFP(1)%E)) then
-      call get_grid_4CS(N_grid, maxval(laser(:)%hw), matter%Atoms(1)%Ph_MFP(1)%E)
+      call get_grid_4CS(N_grid, maxval(laser(:)%hw), matter%Atoms(1)%Ph_MFP(1)%E, matter) ! above
    else
       N_grid = size(matter%Atoms(1)%Ph_MFP(1)%E)
    endif
@@ -1555,7 +1651,10 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
    
       Nshl = size(matter%Atoms(i)%Ip)
       SHELLS:do j = 1, Nshl ! for all shells of this atom
-         redo = .false.
+         !redo = .false.
+         redo = numpar%redo_MFP  ! user defined if MFP need to be recalculated
+
+
          if ((i .NE. 1) .or. (j .NE. 1)) then
             if (.not.allocated(matter%Atoms(i)%Ph_MFP(j)%E)) allocate(matter%Atoms(i)%Ph_MFP(j)%E(N_grid))
             matter%Atoms(i)%Ph_MFP(j)%E = matter%Atoms(1)%Ph_MFP(1)%E
