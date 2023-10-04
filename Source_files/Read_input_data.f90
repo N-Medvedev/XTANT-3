@@ -898,9 +898,14 @@ subroutine get_EADL_data(matter, numpar, Err)
       endif
 
       if (.not. allocated(matter%Atoms(i)%TOCS)) then
-         allocate(matter%Atoms(i)%TOCS(matter%Atoms(i)%sh)) ! allocate type of cross-section to be used
+         allocate(matter%Atoms(i)%TOCS(matter%Atoms(i)%sh)) ! allocate type of cross-section to be used for electrons
          matter%Atoms(i)%TOCS = 0 ! do all BEB cross-sections
       endif
+
+      if (.not. allocated(matter%Atoms(i)%TOCSph)) then
+         allocate(matter%Atoms(i)%TOCSph(matter%Atoms(i)%sh), source = 0) ! allocate type of cross-section to be used for photons
+      endif
+
 
       if (.not. allocated(matter%Atoms(i)%El_MFP)) allocate(matter%Atoms(i)%El_MFP(matter%Atoms(i)%sh)) ! allocate electron MFPs
       if (.not. allocated(matter%Atoms(i)%Ph_MFP)) allocate(matter%Atoms(i)%Ph_MFP(matter%Atoms(i)%sh)) ! allocate photon MFPs

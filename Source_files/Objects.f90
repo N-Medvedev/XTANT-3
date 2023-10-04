@@ -747,8 +747,9 @@ type At_data
    real(8), dimension(:), allocatable :: Ne_shell  ! number of electrons in each shell
    !logical, dimension(:), allocatable :: valent    ! flag if this shell is valent or core-shell
    real(8), dimension(:), allocatable :: Auger  ! [fs] Auger-decay times for all shells
-   integer, dimension(:), allocatable :: TOCS   ! type of cross-section used for each shell
+   integer, dimension(:), allocatable :: TOCS   ! type of electron scattering cross-section used for each shell
    integer, dimension(:), allocatable :: N_CDF  ! number of CDF-functions in each shell
+   integer, dimension(:), allocatable :: TOCSph ! type of photon absorption cross-section used for each shell
    type(Ritchi), dimension(:), allocatable :: CDF  ! coefficients of CDF
    real(8), dimension(:), allocatable :: Nh_shell  ! current number of deep-shell holes in each shell
    type(MFP), dimension(:), allocatable :: El_MFP  ! electron inelastic mean free paths for each shell (inversed [1/A])
@@ -880,8 +881,8 @@ type Numerics_param
    real(8), dimension(:,:,:), allocatable :: DOS_weights ! to identify and separate different bands
    character(200) :: input_path	        ! input folder address
    character(200) :: output_path	! output folder address
-   character(1) :: path_sep	! path separator
-   character(10) :: At_base	! where to take atomic data from (EADL, CDF, XATOM...)
+   character(1) :: path_sep   ! path separator
+   character(10) :: At_base   ! where to take atomic data from (EADL, CDF, XATOM...)
    real(8) :: user_defined_E_gap ! [eV] to start with, user-defined gap
    ! Setting supercell for biomolecules, embedding in water:
    logical :: embed_water  ! flag for embedding in water

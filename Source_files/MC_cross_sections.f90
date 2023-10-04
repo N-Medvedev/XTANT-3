@@ -483,6 +483,7 @@ subroutine set_single_pole_CDF(Scell, NSC, matter, numpar, i, j)  ! only for VB/
       NVB = matter%Atoms(i)%Ne_shell(j) ! electrons in this shell
       Nat = SUM(matter%Atoms(:)%percentage)  ! number of different kinds of atoms in the compound
       contrib = matter%Atoms(i)%percentage/Nat  ! contribution of the atoms into the compound
+      !print*, i, matter%Atoms(i)%Name, contrib
 
       ! Set them according to the single-pole approximation:
       Omega = w_plasma(1d6*matter%At_dens*NVB*contrib) ! function below, plasma frequency [1/s]
