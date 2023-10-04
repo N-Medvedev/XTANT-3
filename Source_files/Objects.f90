@@ -772,6 +772,7 @@ type Solid
    real(8) :: p_ext	! [Pa] external pressure applied
    real(8) :: dens	! [g/cm^3] density of the material to be used in MC in case of BEB-cross-sections
    real(8) :: At_dens   ! [1/cm^3] atomic density of the material to be used in MC in case of BEB-cross-sections
+   real(8) :: hw_plasma ! [eV] plasmon energy
    real(8) :: T_bath	! [K] Bath temeprature for Berendsen thermostat for atoms
    real(8) :: T_bath_e	! [K] Bath temeprature for Berendsen thermostat for electrons
    real(8) :: tau_bath	! [fs] time constant of cooling via thermostat for atoms

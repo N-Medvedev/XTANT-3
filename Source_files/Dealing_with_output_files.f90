@@ -39,7 +39,7 @@ use Dealing_with_files, only : get_file_stat, copy_file, read_file, close_file, 
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
 use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_dashline, &
-                           m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL, m_Communication
+                           m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL, m_Communication, m_QUOTES_file
 use Dealing_with_CDF, only : write_CDF_file
 
 implicit none
@@ -3125,7 +3125,10 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
 #endif
 
    if (INFO >= 0) then
-      write(FN, '(a)') 'Atomic data used for '//trim(adjustl(matter%Name))//' are:'
+      write(chtemp(1), '(f12.2)') dble(matter%hw_plasma)
+      write(FN, '(a,a,a)') ' Estimated plasmon energy: ', trim(adjustl(chtemp(1))), ' [eV]'
+
+      write(FN, '(a)') ' Atomic data used for '//trim(adjustl(matter%Name))//' are:'
 
       do i = 1, matter%N_KAO
          write(FN,'(a)') trim(adjustl(m_dashline))
@@ -4475,7 +4478,7 @@ subroutine print_a_comforting_message(print_to, path_sep)
    real(8) :: RN
    !----------------------
 
-   file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//'Quotes.txt'
+   file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_QUOTES_file))
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') 'Sorry that something went wrong.'
    write(print_to,'(a)') 'To lighten the mood a little, here is a quote for you:'
