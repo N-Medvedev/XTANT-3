@@ -3126,9 +3126,9 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
 
    if (INFO >= 0) then
       write(chtemp(1), '(f12.2)') dble(matter%hw_plasma)
-      write(FN, '(a,a,a)') 'Estimated plasmon energy: ', trim(adjustl(chtemp(1))), ' [eV]'
+      write(FN, '(a,a,a)') ' Estimated plasmon energy: ', trim(adjustl(chtemp(1))), ' [eV]'
 
-      write(FN, '(a)') 'Atomic data used for '//trim(adjustl(matter%Name))//' are:'
+      write(FN, '(a)') ' Atomic data used for '//trim(adjustl(matter%Name))//' are:'
 
       do i = 1, matter%N_KAO
          write(FN,'(a)') trim(adjustl(m_dashline))
