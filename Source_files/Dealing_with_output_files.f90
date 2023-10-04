@@ -45,7 +45,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 03.10.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 04.10.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -4477,8 +4477,8 @@ subroutine print_a_comforting_message(print_to, path_sep)
 
    file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//'Quotes.txt'
    write(print_to,'(a)') trim(adjustl(m_starline))
-   write(print_to,'(a)') 'Sorry that something went wrong; to lighten the mood a little,'
-   write(print_to,'(a)') 'here is a quote for you:'
+   write(print_to,'(a)') 'Sorry that something went wrong.'
+   write(print_to,'(a)') 'To lighten the mood a little, here is a quote for you:'
 
    inquire(file=trim(adjustl(file_name)),exist=file_exists)
    if (.not.file_exists) then ! no file, cannot print help

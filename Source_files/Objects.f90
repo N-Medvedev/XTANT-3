@@ -747,8 +747,9 @@ type At_data
    real(8), dimension(:), allocatable :: Ne_shell  ! number of electrons in each shell
    !logical, dimension(:), allocatable :: valent    ! flag if this shell is valent or core-shell
    real(8), dimension(:), allocatable :: Auger  ! [fs] Auger-decay times for all shells
-   integer, dimension(:), allocatable :: TOCS   ! type of cross-section used for each shell
+   integer, dimension(:), allocatable :: TOCS   ! type of electron scattering cross-section used for each shell
    integer, dimension(:), allocatable :: N_CDF  ! number of CDF-functions in each shell
+   integer, dimension(:), allocatable :: TOCSph ! type of photon absorption cross-section used for each shell
    type(Ritchi), dimension(:), allocatable :: CDF  ! coefficients of CDF
    real(8), dimension(:), allocatable :: Nh_shell  ! current number of deep-shell holes in each shell
    type(MFP), dimension(:), allocatable :: El_MFP  ! electron inelastic mean free paths for each shell (inversed [1/A])
@@ -804,13 +805,14 @@ endtype User_overwrite_data
 
 
 type Numerics_param
-   ! Subcell parameters for linear scaling TB:
+   ! Subcell parameters for linear scaling TB (not ready):
    integer :: lin_scal    ! use linear scaling TB (1), or not (0)
    integer, dimension(3) :: N_subcels   ! number of subcells along each axis: X, Y, Z
    real(8), dimension(:), allocatable :: Subcell_coord_sx, Subcell_coord_sy, Subcell_coord_sz
    ! Other parameters:
-   integer :: which_input ! number of input file used (for using more then one sequentially)
+   integer :: which_input  ! number of input file used (for using more then one sequentially)
    logical :: verbose
+   logical :: redo_MFP     ! flag to recalculate mean free paths, if needed
    ! Electronic distribution function parameters:
    logical :: fe_input_exists ! flag to use the distribution from a file
    character(100) :: fe_filename ! file name with user-provided initial electronic distribution
@@ -879,8 +881,8 @@ type Numerics_param
    real(8), dimension(:,:,:), allocatable :: DOS_weights ! to identify and separate different bands
    character(200) :: input_path	        ! input folder address
    character(200) :: output_path	! output folder address
-   character(1) :: path_sep	! path separator
-   character(10) :: At_base	! where to take atomic data from (EADL, CDF, XATOM...)
+   character(1) :: path_sep   ! path separator
+   character(10) :: At_base   ! where to take atomic data from (EADL, CDF, XATOM...)
    real(8) :: user_defined_E_gap ! [eV] to start with, user-defined gap
    ! Setting supercell for biomolecules, embedding in water:
    logical :: embed_water  ! flag for embedding in water
@@ -897,8 +899,8 @@ type Numerics_param
    logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
    ! Different output, what to save:
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate, save_fe_grid
-   logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
+   logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS, do_kappa_dyn
    logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN, save_CDF
    integer :: Mulliken_model
@@ -956,9 +958,10 @@ end type MC_data
 !==============================================
 ! Error handling as an object:
 type Error_handling
-   LOGICAL Err		! indicates that an error occured
-   integer Err_Num	! assign a number to an error
-   integer File_Num		! number of the file with error log
+   logical :: Err          ! indicates that an error occured
+   logical :: Stopsignal   ! flag to stop calculations, even if there was no error
+   integer :: Err_Num      ! assign a number to an error
+   integer :: File_Num     ! number of the file with error log
    character(300) Err_descript	! describes more details about the error
 end type
 !==============================================
@@ -967,23 +970,40 @@ end type
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
  contains
 ! How to write the log about an error:
-subroutine Save_error_details(Err_name, Err_num, Err_data, Err_data2)
+subroutine Save_error_details(Err_name, Err_num, Err_data, Err_data2, empty)
    class(Error_handling) :: Err_name
    integer, intent(in) :: Err_num
    character(*), intent(in) :: Err_data
    character(*), intent(in), optional :: Err_data2
+   logical, intent(in), optional :: empty
    !-----------------------
-   integer FN
-   FN = Err_name%File_Num
-   Err_name%Err = .true.
-   Err_name%Err_Num = Err_num
-   Err_name%Err_descript = Err_data
-   ! Main error info:
-   write(FN, '(a,i2,1x,a)') 'Error #', Err_name%Err_Num, trim(adjustl(Err_name%Err_descript))
-   ! Additional indo:
-   if (present(Err_data2)) then
-      write(FN, '(a)') Err_data2
+   integer :: FN
+   logical :: no_err
+
+   if (present(empty)) then ! maybe just initialize with no error
+      no_err = empty
+   else  ! by default, describe error
+      no_err = .false.
    endif
+
+   if (no_err) then  ! no error, just initialize
+      Err_name%Err = .false.
+      Err_name%Stopsignal = .false.
+      Err_name%Err_descript = '' ! start with an empty string
+      Err_name%File_Num = 99     ! default file number for error message
+   else ! there is an error, describe it
+      FN = Err_name%File_Num
+      Err_name%Err = .true.
+      Err_name%Stopsignal = .false.
+      Err_name%Err_Num = Err_num
+      Err_name%Err_descript = Err_data
+      ! Main error info:
+      write(FN, '(a,i2,1x,a)') 'Error #', Err_name%Err_Num, trim(adjustl(Err_name%Err_descript))
+      ! Additional indo:
+      if (present(Err_data2)) then
+         write(FN, '(a)') Err_data2
+      endif
+   endif ! (no_err)
 
 !  Reminder:
 !    Error #1: file not found

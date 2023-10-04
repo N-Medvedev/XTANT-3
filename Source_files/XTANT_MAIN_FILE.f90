@@ -63,19 +63,19 @@ implicit none
 #endif
 
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+! Set some starting default values:
 g_numpar%which_input = 0 ! starting with the default input files
 g_numpar%allow_rotate = .false. ! do not allow rotation of the target, remove angular momentum from initial conditions
-1984 g_Err%Err = .false.
-g_Err%Err_descript = '' ! start with an empty string
-g_Err%File_Num = 99
-!open(UNIT = g_Err%File_Num, FILE = 'OUTPUT_Error_log.dat')
+1984 call Save_error_details(g_Err, 0, '', empty=.true.) ! module "Objects"
 open(UNIT = g_Err%File_Num, FILE = trim(adjustl(m_Error_log_file)))
 
 ! Check if the user needs any additional info (by setting the flags):
-call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_Err%Err, &
+call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_Err%Stopsignal, &
                   allow_rotate=g_numpar%allow_rotate, verbose=g_numpar%verbose) ! module "Read_input_data"
 
-if (g_Err%Err) goto 2016     ! if the USER does not want to run the calculations
+if (g_Err%Err) goto 2016     ! if something when wrong, cannot proceed
+if (g_Err%Stopsignal) goto 2016     ! if the USER does not want to run the calculations, stop
+
 ! Otherwise, run the calculations:
 call random_seed() ! standard FORTRAN seeding of random numbers
 call date_and_time(values=g_c1) ! standard FORTRAN time and date
@@ -94,6 +94,8 @@ else ! it is the first run:
    call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err) ! module "Read_input_data"
 endif
 if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
+if (g_Err%Stopsignal) goto 2016     ! if the USER does not want to run the calculations, stop
+
 ! Printout additional info, if requested:
 if (g_numpar%verbose) call print_time_step('Input files read succesfully:', msec=.true.)
 

@@ -136,6 +136,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
    numpar%NOMP = 1	! unparallelized by default
 #endif
+   numpar%redo_MFP = .false.  ! no need to recalculate mean free paths by default
    numpar%N_basis_size = 0  ! DFTB, BOP or 3TB basis set default (0=s, 1=sp3, 2=sp3d5)
    numpar%do_atoms = .true.	! Atoms are allowed to move
    matter%W_PR = 25.5d0  ! Parinello-Rahman super-vell mass coefficient
@@ -897,9 +898,14 @@ subroutine get_EADL_data(matter, numpar, Err)
       endif
 
       if (.not. allocated(matter%Atoms(i)%TOCS)) then
-         allocate(matter%Atoms(i)%TOCS(matter%Atoms(i)%sh)) ! allocate type of cross-section to be used
+         allocate(matter%Atoms(i)%TOCS(matter%Atoms(i)%sh)) ! allocate type of cross-section to be used for electrons
          matter%Atoms(i)%TOCS = 0 ! do all BEB cross-sections
       endif
+
+      if (.not. allocated(matter%Atoms(i)%TOCSph)) then
+         allocate(matter%Atoms(i)%TOCSph(matter%Atoms(i)%sh), source = 0) ! allocate type of cross-section to be used for photons
+      endif
+
 
       if (.not. allocated(matter%Atoms(i)%El_MFP)) allocate(matter%Atoms(i)%El_MFP(matter%Atoms(i)%sh)) ! allocate electron MFPs
       if (.not. allocated(matter%Atoms(i)%Ph_MFP)) allocate(matter%Atoms(i)%Ph_MFP(matter%Atoms(i)%sh)) ! allocate photon MFPs
@@ -5719,6 +5725,11 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
 
    select case (trim(adjustl(string)))
    !----------------------------------
+   case ('redo_MFP', 'MFP', 'REDO_MFP')
+      ! recalcaulte mean free path:
+      numpar%redo_MFP = .true.
+
+   !----------------------------------
    case ('el-ph', 'EL-PH', 'El-Ph', 'Coupling', 'COUPLING', 'coupling')
       read(FN,*,IOSTAT=Reason) num_phon   ! number of simulations for average electron-phonon coupling parameter
       call read_file(Reason, count_lines, read_well)
@@ -5879,7 +5890,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
    !----------------------------------
    case default
       ! Check if the user needs any additional info (by setting the flags):
-      call interprete_additional_data(string, numpar%path_sep, change_size=numpar%change_size, contin=Err%Err, &
+      call interprete_additional_data(string, numpar%path_sep, change_size=numpar%change_size, contin=Err%Stopsignal, &
                   allow_rotate=numpar%allow_rotate, verbose=numpar%verbose) ! module "Read_input_data"
 
    endselect
@@ -6268,7 +6279,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
 
    case ('test', 'TEST', 'Test')
       print*, 'Wow, it really works!'
-      !if (present(contin)) contin = .false.
+      if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
       write(*,'(a)') trim(adjustl(m_starline))
 
    case ('Matter', 'matter', 'MATTER', 'Materials', 'materials', 'list', 'LIST', 'List')
