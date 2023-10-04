@@ -61,6 +61,7 @@ character(70), parameter :: m_dashline = '--------------------------------------
 character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
 character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT info
 character(15), parameter :: m_HELP_file = 'HELP.txt'  ! file with the helpful info
+character(15), parameter :: m_QUOTES_file = 'Quotes.txt' ! file with comforting quotes
 character(25), parameter :: m_List_ofmaterials = 'List_of_materials.txt'  ! list of materials existing
 
 parameter (m_INPUT_directory = 'INPUT_DATA')    ! directory with all the input data
@@ -77,7 +78,7 @@ character(25), parameter :: m_short_pot = 'TB_short.txt'  ! filename for short-r
 character(25), parameter :: m_wall_pot = 'TB_wall.txt'  ! obsolete filename for short-range potential
 
 public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
-public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL
+public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_QUOTES_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL
 public :: Read_Input_Files, get_add_data, m_Communication, m_dashline
 
  contains
