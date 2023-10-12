@@ -45,7 +45,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 05.10.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 12.10.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -3120,15 +3120,17 @@ subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
          write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
          write(FN, '(a)') 'set logscale y'
+         write(FN, '(a)') 'set format y "10^{%L}"'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
-         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] "'//trim(adjustl(file_fe))// &
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:200] "'//trim(adjustl(file_fe))// &
                   '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1)'// &
                   '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ')'
       else  ! Linux
          write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
          write(FN, '(a)') 'set logscale y'
+         write(FN, '(a)') 'set format y \"10^{%L}\"'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
-         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] \"'//trim(adjustl(file_fe))// &
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:200] \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1)'// &
                   '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ')'
       endif
@@ -3890,7 +3892,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    write(print_to,'(a)') ' (2) Boltzmann collision integrals '
    write(print_to,'(a)') ' (3) Transferable Tight Binding '
    write(print_to,'(a)') ' (4) Molecular Dynamics '
-
+   write(print_to,'(a)') ' DOI: https://doi.org/10.5281/zenodo.8392569'
    write(print_to,'(a)') trim(adjustl(m_starline))
 
    write(print_to,'(a)') '  Calculations performed for the following parameters:'

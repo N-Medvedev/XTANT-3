@@ -2399,9 +2399,22 @@ end function w_plasma
 subroutine get_n_k(ReEps, ImEps, n, k)
    real(8), intent(in) :: ReEps, ImEps	! real and imagenary parts of dialectric function 
    real(8), intent(out) :: n, k	! n and k optical coefficients
+   !------------------
+   complex(8) :: CDF, sqrtCDF
+   CDF = cmplx(ReEps,ImEps)
+   sqrtCDF = sqrt(CDF)
+   n =  dble( sqrtCDF )
+   k = aimag( sqrtCDF )
+end subroutine get_n_k
+
+
+subroutine get_n_k_old(ReEps, ImEps, n, k)
+   real(8), intent(in) :: ReEps, ImEps	! real and imagenary parts of dialectric function
+   real(8), intent(out) :: n, k	! n and k optical coefficients
    n = sqrt((ReEps + sqrt(ReEps*ReEps+ImEps*ImEps))*0.5d0)
    k =sqrt((-ReEps + sqrt(ReEps*ReEps+ImEps*ImEps))*0.5d0)
-end subroutine get_n_k
+end subroutine get_n_k_old
+
 
 subroutine get_Re_and_Im(ReEps, ImEps, n, k)
    real(8), intent(out) :: ReEps, ImEps	! real and imagenary parts of dialectric function 
