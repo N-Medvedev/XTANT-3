@@ -45,7 +45,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 04.10.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 12.10.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1502,8 +1502,11 @@ file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_ele
       if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
 
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_Egap_Gnuplot'//trim(adjustl(sh_cmd))
+      write(FN, '(a)') 'call OUTPUT_Egap_Gnuplot'//trim(adjustl(sh_cmd))
+
+      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_mu_and_Ne_Gnuplot'//trim(adjustl(sh_cmd))
+      write(FN, '(a)') 'call OUTPUT_mu_and_Ne_Gnuplot'//trim(adjustl(sh_cmd))
 
       if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') 'call OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
@@ -1576,7 +1579,8 @@ file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_ele
          write(FN, '(a)') 'call OUTPUT_CB_electrons_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_deep_shell_holes_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_volume_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_mu_and_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') 'call OUTPUT_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') 'call OUTPUT_mu_and_Ne_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') 'call OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
          if (numpar%do_kappa) then
@@ -1612,7 +1616,8 @@ file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_ele
       write(FN, '(a)') './OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
+      write(FN, '(a)') './OUTPUT_Egap_Gnuplot'//trim(adjustl(sh_cmd))
+      write(FN, '(a)') './OUTPUT_mu_and_Ne_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
       write(FN, '(a)') './OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
       if (numpar%do_kappa) then
@@ -1660,7 +1665,8 @@ file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_ele
          write(FN, '(a)') './OUTPUT_CB_electrons_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_deep_shell_holes_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_volume_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_mu_and_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') './OUTPUT_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
+         write(FN, '(a)') './OUTPUT_mu_and_Ne_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          write(FN, '(a)') './OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
          if (numpar%do_kappa) then
@@ -1722,9 +1728,13 @@ file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_ele
    File_name  = trim(adjustl(file_path))//'OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
    call gnu_holes(File_name, file_deep_holes, t0, t_last, matter, 'OUTPUT_deep_shell_holes.'//trim(adjustl(numpar%fig_extention))) ! below
 
-   ! Chemical potential and band gap:
-   File_name  = trim(adjustl(file_path))//'OUTPUT_mu_and_Egap_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_Egap(File_name, file_electron_properties, t0, t_last, 'OUTPUT_mu_and_Egap.'//trim(adjustl(numpar%fig_extention))) ! below
+   ! Band gap:
+   File_name  = trim(adjustl(file_path))//'OUTPUT_Egap_Gnuplot'//trim(adjustl(sh_cmd))
+   call gnu_Egap(File_name, file_electron_properties, t0, t_last, 'OUTPUT_Egap.'//trim(adjustl(numpar%fig_extention))) ! below
+
+   ! Chemical potential and Ne:
+   File_name  = trim(adjustl(file_path))//'OUTPUT_mu_and_Ne_Gnuplot'//trim(adjustl(sh_cmd))
+   call gnu_mu(File_name, file_electron_properties, t0, t_last, 'OUTPUT_mu_and_Ne.'//trim(adjustl(numpar%fig_extention))) ! below
    
    ! Boundaries of the bands:
    File_name  = trim(adjustl(file_path))//'OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
@@ -1867,9 +1877,13 @@ file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_ele
       File_name  = trim(adjustl(file_path))//'OUTPUT_deep_shell_holes_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
       call gnu_holes(File_name, trim(adjustl(file_deep_holes(1:len(trim(adjustl(file_deep_holes)))-4)))//'_CONVOLVED.dat', t0, t_last, matter, 'OUTPUT_deep_shell_holes_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
-      ! Chemical potential and band gap:
-      File_name  = trim(adjustl(file_path))//'OUTPUT_mu_and_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_Egap(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_mu_and_Egap_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+      ! Band gap:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
+      call gnu_Egap(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_Egap_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+      ! Chemical potential and Ne:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_mu_and_Ne_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
+      call gnu_mu(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_mu_and_Ne_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       
       ! Boundaries of the bands:
       File_name  = trim(adjustl(file_path))//'OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -2278,9 +2292,8 @@ subroutine gnu_numbers(File_name, file_numbers, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   !call write_gnuplot_script_header(FN, 1, 3, 'Numbers','Time (fs)', 'Particles per atoms (arb.units)', trim(adjustl(file_path))//'OUTPUT_electrons_holes.'//trim(adjustl(g_numpar%fig_extention)))
-   !call write_gnuplot_script_header(FN, 1, 3.0d0, 'Numbers','Time (fs)', 'Particles per atoms (arb.units)', trim(adjustl(eps_name)))
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Numbers','Time (fs)', 'Particles (per atoms)', trim(adjustl(eps_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Numbers', 'Time (fs)', &
+                        'Particles (1/atom)', trim(adjustl(eps_name)), g_numpar%path_sep, 1) ! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_numbers)), ' "u 1:4 w l lw LW title "High-energy electrons" ,\'
@@ -2512,18 +2525,58 @@ subroutine gnu_Egap(File_name, file_electron_properties, t0, t_last, eps_name)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'mu and Egap','Time (fs)', 'Energy (eV)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Egap','Time (fs)', 'Bandgap (eV)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
    
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_properties)), ' "u 1:3 w l lw LW title "Chemical potnential" ,\'
-      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_electron_properties)), ' "u 1:4 w l lw LW title "Band gap" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_properties)), '"u 1:4 w l lw LW title "Band gap" '
    else ! It is linux
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_properties)), '\"u 1:3 w l lw \"$LW\" title \"Chemical potnential\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_properties)), '\"u 1:4 w l lw \"$LW\" title \"Band gap \" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_properties)), '\"u 1:4 w l lw \"$LW\" title \"Band gap \" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
 end subroutine gnu_Egap
+
+
+
+subroutine gnu_mu(File_name, file_electron_properties, t0, t_last, eps_name)
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_electron_properties ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'mu and Ne', &
+            'Time (fs)', 'Energy (eV)', trim(adjustl(eps_name)), g_numpar%path_sep, 0) ! module "Gnuplotting"
+
+   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      ! Make the right axis with difference scale and ticks for Ne:
+      write(FN, '(a)') 'set y2tics 0.1 nomirror tc lt 2'
+      write(FN, '(a)') 'set y2label "Electron density (1/atom)" font "arial,18" '
+
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_electron_properties)), &
+                  ' "u 1:3 w l lw LW title "Chemical potential" ,\'
+      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_electron_properties)), &
+                  ' "u 1:2 w l lw LW axes x1y2 title "Electron density" '
+   else ! It is linux
+      ! Make the right axis with difference scale and ticks for Ne:
+      write(FN, '(a)') 'set y2tics 0.1 nomirror tc lt 2'
+      write(FN, '(a)') 'set y2label \"Electron density (1/atom)\" font \"arial,18\" '
+
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_properties)), &
+                  '\"u 1:3 w l lw \"$LW\" title \"Chemical potential\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_properties)), &
+                  '\"u 1:2 w l lw \"$LW\" axes x1y2 title \"Electron density\" '
+   endif
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_mu
 
 
 subroutine gnu_Ebands(File_name, file_electron_properties, t0, t_last, eps_name)
@@ -2547,13 +2600,13 @@ subroutine gnu_Ebands(File_name, file_electron_properties, t0, t_last, eps_name)
       write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_electron_properties)), ' "u 1:9 w l lw LW title "Bottom of CB",\'
       write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_electron_properties)), ' "u 1:8 w l lw LW title "Top of VB",\'
       write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_electron_properties)), ' "u 1:7 w l lw LW title "Bottom of VB",\'
-      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_electron_properties)), ' "u 1:3 w l lt rgb "#000000" lw LW title "Chemical potnential" '
+      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_electron_properties)), ' "u 1:3 w l lt rgb "#000000" lw LW title "Chemical potential" '
    else ! It is linux
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_electron_properties)), '\"u 1:10 w l lw \"$LW\" title \"Top of CB \" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_properties)), '\"u 1:9 w l lw \"$LW\" title \"Bottom of CB\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_properties)), '\"u 1:8 w l lw \"$LW\" title \"Top of VB\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_properties)), '\"u 1:7 w l lw \"$LW\" title \"Bottom of VB\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_properties)), '\"u 1:3 w l lt rgb \"#000000\"  lw \"$LW\" title \"Chemical potnential\" '
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_electron_properties)), '\"u 1:3 w l lt rgb \"#000000\"  lw \"$LW\" title \"Chemical potential\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -3010,7 +3063,7 @@ subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
 
             write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
                   '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
-                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+                  trim(adjustl(ch_temp2))// ')*' // trim(adjustl(ch_temp3)) //') '
          !else
          !   write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
          !         '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
@@ -3032,7 +3085,7 @@ subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
 
             write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
-                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+                  trim(adjustl(ch_temp2))// ')*' // trim(adjustl(ch_temp3)) //') '
          !else
          !   write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
          !         '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
@@ -3055,26 +3108,31 @@ subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
 
    do NSC = 1, size(Scell)
       ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
-      write(ch_temp,'(f)') 100.0d0      ! Scell(NSC)%E_top
-      write(ch_temp2,'(f)') numpar%t_start
-      write(ch_temp3,'(f)') numpar%dt_save
+      write(ch_temp,'(f16.2)') 100.0d0      ! Scell(NSC)%E_top
+      write(ch_temp2,'(f16.2)') numpar%t_start
+      if (numpar%t_start > 0.0d0) then ! positive, add plus
+         ch_temp2 = '+'//trim(adjustl(ch_temp2))
+      endif
+      write(ch_temp3,'(f13.6)') numpar%dt_save
 
       ! minimal energy grid:
       write(ch_temp4,'(f)') -25.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
          write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
          write(FN, '(a)') 'set logscale y'
+         write(FN, '(a)') 'set format y "10^{%L}"'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
-         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] "'//trim(adjustl(file_fe))// &
-                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
-                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:200] "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1)'// &
+                  '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ')'
       else  ! Linux
          write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
          write(FN, '(a)') 'set logscale y'
+         write(FN, '(a)') 'set format y \"10^{%L}\"'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
-         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:] \"'//trim(adjustl(file_fe))// &
-                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
-                  trim(adjustl(ch_temp2))// ')/' // trim(adjustl(ch_temp3)) //') '
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:200] \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1)'// &
+                  '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ')'
       endif
       write(FN, '(a)') '}'
    enddo
@@ -3834,7 +3892,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    write(print_to,'(a)') ' (2) Boltzmann collision integrals '
    write(print_to,'(a)') ' (3) Transferable Tight Binding '
    write(print_to,'(a)') ' (4) Molecular Dynamics '
-
+   write(print_to,'(a)') ' DOI: https://doi.org/10.5281/zenodo.8392569'
    write(print_to,'(a)') trim(adjustl(m_starline))
 
    write(print_to,'(a)') '  Calculations performed for the following parameters:'
