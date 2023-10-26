@@ -698,7 +698,7 @@ subroutine TotIMFP(Ele, matter, TeeV, Nat, Nshl, Sigma, dEdx)
 
     Emin = matter%Atoms(Nat)%Ip(Nshl) ! [eV] ionization potential of the shell is minimum possible transferred energy
 
-    if (Emin .LE. 1.0d-3) Emin = 1.0d-3 ! for metals there is no band gap
+    if (Emin .LE. 1.0d-2) Emin = 1.0d-2 ! for metals there is no band gap
     Emax = (Ele + Emin)/2.0d0 ! [eV] maximum energy transfer, accounting for equality of electrons
 
     select case (matter%Atoms(Nat)%TOCS(Nshl)) ! which inelastic cross section to use (BEB vs CDF):
@@ -988,9 +988,11 @@ subroutine get_grid_4CS(N, Emax_given, grid_array, matter)
    call go_thru_grid(Emin, Emax, E_sp_eps, special_point, array=grid_array)   ! below
 
 !    do i = 1, size(grid_array)
-!       print*, i, grid_array(i)
+!        print*, i, grid_array(i)
 !    enddo
 !    pause 'get_grid_4CS'
+
+   if (allocated(special_point)) deallocate(special_point)
 end subroutine get_grid_4CS
 
 
@@ -1032,7 +1034,8 @@ subroutine go_thru_grid(Emin, Emax, E_sp_eps, special_point, Ngrid, array)
       ! Check if the special points are still there:
       point_is_here = .false. ! by default
       if (SP_count <= size(special_point)) then ! there may be a specila point:
-         if ( (E_cur >= special_point(SP_count)) .and. ((E_cur-dE) < special_point(SP_count)) ) then ! special point inside interval
+         if ( (E_cur >= special_point(SP_count)) .and. &
+              ( ((E_cur-dE) < special_point(SP_count)) .or. (N == 1) ) )  then ! special point inside interval
             SP_count = SP_count + 1 ! this special point is done, do the next one
             point_is_here = .true.
          endif
@@ -1044,8 +1047,10 @@ subroutine go_thru_grid(Emin, Emax, E_sp_eps, special_point, Ngrid, array)
             if (N+2 <= size(array)) then
                ! add two points:
                ! 1) below the special point:
-               N = N + 1
-               array(N) = special_point(SP_count-1) - E_sp_eps
+               if (special_point(SP_count-1) - E_sp_eps > 0.0d0) then
+                  N = N + 1
+                  array(N) = special_point(SP_count-1) - E_sp_eps
+               endif
                ! 2) above the special point:
                N = N + 1
                array(N) = special_point(SP_count-1) + E_sp_eps
@@ -1054,8 +1059,12 @@ subroutine go_thru_grid(Emin, Emax, E_sp_eps, special_point, Ngrid, array)
                return
             endif
          else
-            ! add 2 extra points around the special point
-            N = N + 2
+            ! add extra points around the special point
+            if (special_point(SP_count-1) - E_sp_eps < 0.0d0) then
+               N = N + 1
+            else ! 2 extra points, around the chosen one
+               N = N + 2
+            endif
          endif
       endif
 
@@ -1648,10 +1657,10 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
 !          enddo
 !          pause 'Phot_abs_CS_shl'
 !          
-         Phot_abs_CS_tot(1,:) = Phot_abs_CS_tot(1,:)*1.0d6	! Conver [MeV] -> [eV]
-         Phot_abs_CS_tot(2,:) = Phot_abs_CS_tot(2,:)*1.0d-8	! Conver [b] -> [A^2]
-         Phot_abs_CS_shl(:,1,:) = Phot_abs_CS_shl(:,1,:)*1.0d6	! Conver [MeV] -> [eV]
-         Phot_abs_CS_shl(:,2,:) = Phot_abs_CS_shl(:,2,:)*1.0d-8	! Conver [b] -> [A^2]
+         Phot_abs_CS_tot(1,:) = Phot_abs_CS_tot(1,:)*1.0d6	! Convert [MeV] -> [eV]
+         Phot_abs_CS_tot(2,:) = Phot_abs_CS_tot(2,:)*1.0d-8	! Convert [b] -> [A^2]
+         Phot_abs_CS_shl(:,1,:) = Phot_abs_CS_shl(:,1,:)*1.0d6	! Convert [MeV] -> [eV]
+         Phot_abs_CS_shl(:,2,:) = Phot_abs_CS_shl(:,2,:)*1.0d-8	! Convert [b] -> [A^2]
        end select
       endif ! (size(matter%Atoms(i)%TOCS) > 0)
       !------------------------------------------------------------------------------------
