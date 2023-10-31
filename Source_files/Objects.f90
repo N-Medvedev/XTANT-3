@@ -814,6 +814,7 @@ type Numerics_param
    integer :: which_input  ! number of input file used (for using more then one sequentially)
    logical :: verbose
    logical :: redo_MFP     ! flag to recalculate mean free paths, if needed
+   logical :: print_MFP    ! flag to printout mean free paths
    ! Electronic distribution function parameters:
    logical :: fe_input_exists ! flag to use the distribution from a file
    character(100) :: fe_filename ! file name with user-provided initial electronic distribution

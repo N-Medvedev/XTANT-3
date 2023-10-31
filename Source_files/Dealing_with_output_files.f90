@@ -45,12 +45,12 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 12.10.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 31.10.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
 public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
-public :: XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comforting_message
+public :: XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comforting_message, printout_MFP_file
 
  contains
 
@@ -144,6 +144,336 @@ subroutine printout_CDF_file(numpar, matter, Scell)
       call close_file('close', FN=FN)  ! module "Dealing_with_files"
    endif
 end subroutine printout_CDF_file
+
+
+subroutine printout_MFP_file(numpar, matter, Scell)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   type(Solid), intent(in) :: matter ! parameters of the material
+   type(Super_cell), dimension(:), intent(in):: Scell ! super-cell with all the atoms inside
+   !----------------------------
+   real(8) :: t0, t_last, x_tics
+   character(200) :: file_name, text_var, file_electron_IMFP, file_electron_EMFP, file_photon_MFP, gnu_electron_MFP, gnu_photon_MFP
+   character(11) :: chtemp11, sh_cmd, call_slash
+   character(8) :: temp, time_order, col, col_VB
+   integer :: NSC, FN, Nsiz, i, Nshl, j, k, N_grid, j_start, count_col
+   parameter (NSC = 1)  ! one supercell
+
+   if (numpar%print_MFP) then ! printout MFP file
+
+      !-----------------------
+      ! Inelastic electron MFP:
+      text_var = 'OUTPUT_'
+      write(text_var,'(a)') trim(adjustl(text_var))//trim(adjustl(matter%Name))//'_Electron_IMFP'
+
+      file_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(text_var))//'.dat'
+      file_electron_IMFP = trim(adjustl(text_var))//'.dat'
+
+      FN = 9998
+      open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'new')
+
+      ! Printout MFPs:
+      ! 1) Create the comment lines:
+      write(FN,'(a)',advance='no') '#Energy   '
+      do i = 1, size(matter%Atoms) ! for all atoms
+         Nshl = size(matter%Atoms(i)%Ip)
+         do j = 1, Nshl ! for all shells of this atom
+            if ((i == 1) .and. (j == Nshl)) then ! valence
+               ! skip and print at the end
+               !write(FN,'(a)',advance='no') '   '//trim(adjustl(matter%Atoms(i)%Shell_name(j)))
+            else ! core shell
+               write(FN,'(a)',advance='no') '   '//trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(i)%Shell_name(j)))
+            endif
+         enddo ! j
+      enddo ! i
+      Nshl = size(matter%Atoms(1)%Ip)
+      write(FN,'(a)') '   '//trim(adjustl(matter%Atoms(1)%Shell_name(Nshl)))//'  Total'
+
+      ! 2) Save MFPs for all shells and total:
+      N_grid = size(matter%Atoms(1)%El_MFP(1)%E)
+      do k = 1, N_grid
+         write(FN,'(f16.4)',advance='no') matter%Atoms(1)%El_MFP(1)%E(k)
+         ATOMS:do i = 1, size(matter%Atoms) ! for all atoms
+            Nshl = size(matter%Atoms(i)%Ip)
+            SHELLS:do j = 1, Nshl ! for all shells of this atom
+               if ((i == 1) .and. (j == Nshl)) then ! valence
+                  ! skip and print at the end
+                  !write(FN,'(a)',advance='no') '   '//trim(adjustl(matter%Atoms(i)%Shell_name(j)))
+               else ! core shell
+                  write(FN,'(es24.8)',advance='no') 1.0d0/matter%Atoms(i)%El_MFP(j)%L(k)  ! MFP for ionizing this shell
+               endif
+            enddo SHELLS
+         enddo ATOMS
+         Nshl = size(matter%Atoms(1)%Ip)
+         write(FN,'(es24.8, es24.8)') 1.0d0/matter%Atoms(1)%El_MFP(Nshl)%L(k), 1.0d0/matter%El_MFP_tot%L(k)  ! total
+      enddo ! k
+      call close_file('close', FN=FN)  ! module "Dealing_with_files"
+
+
+      !-----------------------
+      ! Elastic electron MFP:
+      write(text_var,'(a,a,a)') 'OUTPUT_', trim(adjustl(matter%Name))//'_Electron_EMFP'
+      file_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(text_var))//'.dat'
+      file_electron_EMFP = trim(adjustl(text_var))//'.dat'
+
+      FN = 9695
+      open(UNIT=FN, FILE = trim(adjustl(file_name)))
+      ! Printout MFPs:
+      ! 1) Create the comment lines:
+      write(FN,'(a)',advance='no') '#Energy   '
+      do i = 1, size(matter%Atoms) ! for all atoms
+         write(FN,'(a)',advance='no') '   '//trim(adjustl(matter%Atoms(i)%Name))
+      enddo ! i
+      write(FN,'(a)') '  Total'
+
+      ! 2) Save MFPs for all shells and total:
+      N_grid = size(matter%El_EMFP_tot%E)
+      do k = 1, N_grid
+         write(FN,'(f16.4)',advance='no') matter%El_EMFP_tot%E(k)
+         do i = 1, size(matter%Atoms) ! for all atoms
+            write(FN,'(es24.8)',advance='no') 1.0d0/matter%Atoms(i)%El_EMFP%L(k) ! elastic MFP
+         enddo
+         write(FN,'(es24.8)') 1.0d0/matter%El_EMFP_tot%L(k)  ! total
+      enddo
+      call close_file('close', FN=FN)  ! module "Dealing_with_files"
+
+
+      !-----------------------
+      ! Photon attenuation length:
+      text_var = 'OUTPUT_'
+      write(text_var,'(a)') trim(adjustl(text_var))//trim(adjustl(matter%Name))//'_Photon_IMFP'
+
+      file_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(text_var))//'.dat'
+      file_photon_MFP = trim(adjustl(text_var))//'.dat'
+
+      FN = 9997
+      open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'new')
+
+      ! Printout MFPs:
+      ! 1) Create the comment lines:
+      write(FN,'(a)',advance='no') '#Energy   '
+      do i = 1, size(matter%Atoms) ! for all atoms
+         Nshl = size(matter%Atoms(i)%Ip)
+         do j = 1, Nshl ! for all shells of this atom
+            if ((i == 1) .and. (j == Nshl)) then ! valence
+               ! skip and print at the end
+               !write(FN,'(a)',advance='no') '   '//trim(adjustl(matter%Atoms(i)%Shell_name(j)))
+            else ! core shell
+               write(FN,'(a)',advance='no') '   '//trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(i)%Shell_name(j)))
+            endif
+         enddo ! j
+      enddo ! i
+      Nshl = size(matter%Atoms(1)%Ip)
+      write(FN,'(a)') '   '//trim(adjustl(matter%Atoms(1)%Shell_name(Nshl)))//'  Total'
+
+      ! 2) Save MFPs for all shells and total:
+      N_grid = size(matter%Atoms(1)%Ph_MFP(1)%E)
+      do k = 1, N_grid
+         write(FN,'(f16.4)',advance='no') matter%Atoms(1)%Ph_MFP(1)%E(k)
+         ATOMS2:do i = 1, size(matter%Atoms) ! for all atoms
+            Nshl = size(matter%Atoms(i)%Ip)
+            SHELLS2:do j = 1, Nshl ! for all shells of this atom
+               if ((i == 1) .and. (j == Nshl)) then ! valence
+                  ! skip and print at the end
+                  !write(FN,'(a)',advance='no') '   '//trim(adjustl(matter%Atoms(i)%Shell_name(j)))
+               else ! core shell
+                  write(FN,'(es24.8)',advance='no') 1.0d0/matter%Atoms(i)%Ph_MFP(j)%L(k)  ! MFP for ionizing this shell
+               endif
+            enddo SHELLS2
+         enddo ATOMS2
+         Nshl = size(matter%Atoms(1)%Ip)
+         write(FN,'(es24.8, es24.8)') 1.0d0/matter%Atoms(1)%Ph_MFP(Nshl)%L(k), 1.0d0/matter%Ph_MFP_tot%L(k)  ! total
+      enddo ! k
+      call close_file('close', FN=FN)  ! module "Dealing_with_files"
+
+
+      !=======================================================
+      ! Gnuplot the data:
+      if (numpar%path_sep .EQ. '\') then	! if it is Windows
+         call_slash = 'call '
+         sh_cmd = '.cmd'
+      else ! It is linux
+         call_slash = './'
+         sh_cmd = '.sh'
+      endif
+
+      N_grid = size(matter%Atoms(1)%Ph_MFP(1)%E)
+      t0 = matter%Atoms(1)%Ph_MFP(1)%E(1)
+      t_last = matter%Atoms(1)%Ph_MFP(1)%E(N_grid)
+
+      ! 1) Electron MFPs gnuplotting:
+      gnu_electron_MFP = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_electron_MFPs'//trim(adjustl(sh_cmd))
+      open(NEWUNIT=FN, FILE = trim(adjustl(gnu_electron_MFP)), action="write", status="replace")
+
+      x_tics = 10.0d0
+      call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics,  'MFPs', &
+         'Electron energy (eV)', 'Mean free path (A)', 'OUTPUT_MFP_electron.'//trim(adjustl(numpar%fig_extention)), &
+         numpar%path_sep, setkey=1, set_x_log=.true., set_y_log=.true.)  ! module "Gnuplotting"
+
+      if (numpar%path_sep .EQ. '\') then  ! if it is Windows
+         count_col = 2  ! to start with
+         write(FN, '(a,es15.6,a,a,a)') 'p [1.0e-2:', t_last, '][1:1e5] "' , trim(adjustl(file_electron_IMFP)), &
+            ' "u 1:2 w l lw LW title "'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
+            //'" ,\'
+         do i = 1, size(matter%Atoms) ! for all atoms
+            Nshl = size(matter%Atoms(i)%Ip)
+            if (i == 1) then
+               j_start = 2
+            else
+               j_start = 1
+            endif
+
+            do j = j_start, Nshl    ! for all shells of this atom
+               if ((i == 1) .and. (j == Nshl)) then ! valence
+                  ! skip here, plot later
+               else ! core shell
+                  count_col = count_col + 1  ! number of columns
+                  write(col, '(i4)') count_col
+                  write(FN, '(a)') '"'//trim(adjustl(file_electron_IMFP))// &
+                     ' "u 1:'//trim(adjustl(col))//' w l lw LW title "' &
+                     //trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j))) &
+                     //'" ,\'
+               endif
+            enddo
+         enddo
+         count_col = count_col + 1  ! number of columns
+         write(col, '(i4)') count_col  ! Valence
+         write(FN, '(a)') '"'//trim(adjustl(file_electron_IMFP))// &
+                     ' "u 1:'//trim(adjustl(col))//' w l lw LW title "Valence" ,\'
+         count_col = count_col + 1  ! number of columns
+         write(col, '(i4)') count_col  ! Total
+         write(FN, '(a)') '"'//trim(adjustl(file_electron_IMFP))// &
+                     ' "u 1:'//trim(adjustl(col))//' w l lw LW title "Total inelastic" ,\'
+         ! Elastic MFP:
+         write(col, '(i4)') 1+size(matter%Atoms)+1
+         write(FN, '(a)') '"'//trim(adjustl(file_electron_EMFP))// &
+                     ' "u 1:'//trim(adjustl(col))//' w l lw LW title "Elastic" '
+      else  ! Linux
+         count_col = 2  ! to start with
+         write(FN, '(a,es15.6,a,a,a)') 'p [1.0e-2:', t_last, '][1:1e5] \"' , trim(adjustl(file_electron_IMFP)), &
+            ' \"u 1:2 w l lw LW title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
+            //'\" ,\'
+         do i = 1, size(matter%Atoms) ! for all atoms
+            Nshl = size(matter%Atoms(i)%Ip)
+            if (i == 1) then
+               j_start = 2
+            else
+               j_start = 1
+            endif
+
+            do j = j_start, Nshl    ! for all shells of this atom
+               if ((i == 1) .and. (j == Nshl)) then ! valence
+                  ! skip here, plot later
+               else ! core shell
+                  count_col = count_col + 1  ! number of columns
+                  write(col, '(i4)') count_col
+                  write(FN, '(a)') '\"'//trim(adjustl(file_electron_IMFP))// &
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"' &
+                     //trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j))) &
+                     //'\" ,\'
+               endif
+            enddo
+         enddo
+         count_col = count_col + 1  ! number of columns
+         write(col, '(i4)') count_col  ! Valence
+         write(FN, '(a)') '\"'//trim(adjustl(file_electron_IMFP))// &
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Valence\" ,\'
+         count_col = count_col + 1  ! number of columns
+         write(col, '(i4)') count_col  ! Total
+         write(FN, '(a)') '\"'//trim(adjustl(file_electron_IMFP))// &
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Total inelastic\" ,\'
+         ! Elastic MFP:
+         write(col, '(i4)') 1+size(matter%Atoms)+1
+         write(FN, '(a)') '\"'//trim(adjustl(file_electron_EMFP))// &
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Elastic\" '
+      endif
+      call write_gnuplot_script_ending(FN, File_name, 1)
+      close(FN)
+
+      !--------------------
+      ! 2) Photon attenuation lengths gnuplotting:
+      gnu_photon_MFP = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_photon_MFPs'//trim(adjustl(sh_cmd))
+      open(NEWUNIT=FN, FILE = trim(adjustl(gnu_photon_MFP)), action="write", status="replace")
+
+      x_tics = 10.0d0
+      call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics,  'MFPs', &
+         'Photon energy (eV)', 'Attenuation length (A)', 'OUTPUT_MFP_photon.'//trim(adjustl(numpar%fig_extention)), &
+         numpar%path_sep, setkey=1, set_x_log=.true., set_y_log=.true.)  ! module "Gnuplotting"
+
+      if (numpar%path_sep .EQ. '\') then  ! if it is Windows
+         count_col = 2  ! to start with
+         write(FN, '(a,es15.6,a,a,a)') 'p [1.0e-2:', t_last, '][10:1e7] "' , trim(adjustl(file_photon_MFP)), &
+            ' "u 1:2 w l lw LW title "'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
+            //'" ,\'
+         do i = 1, size(matter%Atoms) ! for all atoms
+            Nshl = size(matter%Atoms(i)%Ip)
+            if (i == 1) then
+               j_start = 2
+            else
+               j_start = 1
+            endif
+
+            do j = j_start, Nshl    ! for all shells of this atom
+               if ((i == 1) .and. (j == Nshl)) then ! valence
+                  ! skip here, plot later
+               else ! core shell
+                  count_col = count_col + 1  ! number of columns
+                  write(col, '(i4)') count_col
+                  write(FN, '(a)') '"'//trim(adjustl(file_photon_MFP))// &
+                     ' "u 1:'//trim(adjustl(col))//' w l lw LW title "' &
+                     //trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j))) &
+                     //'" ,\'
+               endif
+            enddo
+         enddo
+         count_col = count_col + 1  ! number of columns
+         write(col, '(i4)') count_col  ! Valence
+         write(FN, '(a)') '"'//trim(adjustl(file_photon_MFP))// &
+                     ' "u 1:'//trim(adjustl(col))//' w l lw LW title "Valence" ,\'
+         count_col = count_col + 1  ! number of columns
+         write(col, '(i4)') count_col  ! Total
+         write(FN, '(a)') '"'//trim(adjustl(file_photon_MFP))// &
+                     ' "u 1:'//trim(adjustl(col))//' w l lw LW title "Total" '
+      else  ! Linux
+         count_col = 2  ! to start with
+         write(FN, '(a,es15.6,a,a,a)') 'p [1.0e-2:', t_last, '][10:1e7] \"' , trim(adjustl(file_photon_MFP)), &
+            ' \"u 1:2 w l lw LW title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
+            //'\" ,\'
+         do i = 1, size(matter%Atoms) ! for all atoms
+            Nshl = size(matter%Atoms(i)%Ip)
+            if (i == 1) then
+               j_start = 2
+            else
+               j_start = 1
+            endif
+
+            do j = j_start, Nshl    ! for all shells of this atom
+               if ((i == 1) .and. (j == Nshl)) then ! valence
+                  ! skip here, plot later
+               else ! core shell
+                  count_col = count_col + 1  ! number of columns
+                  write(col, '(i4)') count_col
+                  write(FN, '(a)') '\"'//trim(adjustl(file_photon_MFP))// &
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"' &
+                     //trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j))) &
+                     //'\" ,\'
+               endif
+            enddo
+         enddo
+         count_col = count_col + 1  ! number of columns
+         write(col, '(i4)') count_col  ! Valence
+         write(FN, '(a)') '\"'//trim(adjustl(file_photon_MFP))// &
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Valence\" ,\'
+         count_col = count_col + 1  ! number of columns
+         write(col, '(i4)') count_col  ! Total
+         write(FN, '(a)') '\"'//trim(adjustl(file_photon_MFP))// &
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Total\"'
+
+      endif
+      call write_gnuplot_script_ending(FN, File_name, 1)
+      close(FN)
+
+   endif
+end subroutine printout_MFP_file
 
 
 
@@ -1468,233 +1798,6 @@ file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_ele
       sh_cmd = '.sh'
    endif
    
-   ! Shell-script for execution of all gnuplot files:
-   File_name  = trim(adjustl(file_path))//'OUTPUT_Gnuplot_all'//trim(adjustl(sh_cmd))
-   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-   
-   if (numpar%path_sep .EQ. '\') then	! if it is Windows
-      write(FN, '(a)') '@echo off'
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_Egap_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_Egap_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_mu_and_Ne_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_mu_and_Ne_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
-
-      if (numpar%do_kappa) then
-!          if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
-!          write(FN, '(a)') 'call OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
-      endif
-
-      if (numpar%do_kappa_dyn) then
-         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_heat_conductivity_dyn'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_electron_heat_conductivity_dyn'//trim(adjustl(sh_cmd))
-      endif
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
-
-      if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') 'call OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
-
-      if (numpar%do_partial_thermal) then
-         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_temperatures'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_electron_temperatures'//trim(adjustl(sh_cmd))
-
-         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_chempotentials'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_electron_chempotentials'//trim(adjustl(sh_cmd))
-      endif
-
-      if (numpar%do_drude) then 
-         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
-         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
-      endif
-      if (numpar%save_Ei) then
-         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
-      endif
-      if (numpar%save_fe) then
-         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
-      endif
-      if (numpar%save_fe_grid) then
-         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
-      endif
-      if (numpar%DOS_splitting >= 1) then   ! Mulliken charges
-         if (numpar%Mulliken_model >= 1) then
-            if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
-            write(FN, '(a)') 'call OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
-         endif
-      endif
-      if (numpar%save_NN) then
-         if (numpar%verbose) write(FN, '(a)') 'echo Executing OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
-      endif
-      if (Scell(1)%eps%tau > 0.0d0) then ! convolved files too:
-         write(FN, '(a)') 'call Executing convolved files...'
-         write(FN, '(a)') 'call OUTPUT_optical_coefficients_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_optical_n_and_k_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_energies_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_temperatures_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_mean_displacement_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))         
-         write(FN, '(a)') 'call OUTPUT_pressure_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_stress_tensor_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_electrons_and_holes_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_CB_electrons_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_deep_shell_holes_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_volume_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_mu_and_Ne_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
-         if (numpar%do_kappa) then
-!             write(FN, '(a)') 'call OUTPUT_electron_heat_conductivity_CONVOLVED'//trim(adjustl(sh_cmd))
-         endif
-         if (numpar%do_kappa_dyn) then
-            write(FN, '(a)') 'call OUTPUT_electron_heat_conductivity_dyn_CONVOLVED'//trim(adjustl(sh_cmd))
-         endif
-         write(FN, '(a)') 'call OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') 'call OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
-         if (numpar%do_partial_thermal) then
-            write(FN, '(a)') 'call OUTPUT_electron_temperatures_CONVOLVED'//trim(adjustl(sh_cmd))
-            write(FN, '(a)') 'call OUTPUT_electron_chempotentials_CONVOLVED'//trim(adjustl(sh_cmd))
-         endif
-
-         if (numpar%do_partial_thermal) then
-            write(FN, '(a)') 'call OUTPUT_electron_temperatures_CONVOLVED'//trim(adjustl(sh_cmd))
-            write(FN, '(a)') 'call OUTPUT_electron_chempotentials_CONVOLVED'//trim(adjustl(sh_cmd))
-         endif
-         if (numpar%Mulliken_model >= 1) then
-            write(FN, '(a)') 'call OUTPUT_Mulliken_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         endif
-      endif
-   else ! It is linux
-      write(FN, '(a)') '#!/bin/bash'
-      !write(FN, '(a)') 'cd ../'
-      write(FN, '(a)') './OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_stress_tensor_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_deep_shell_holes_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_Egap_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_mu_and_Ne_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_bands_Gnuplot'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_electron_Ce'//trim(adjustl(sh_cmd))
-      if (numpar%do_kappa) then
-!          write(FN, '(a)') './OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
-      endif
-      if (numpar%do_kappa_dyn) then
-         write(FN, '(a)') './OUTPUT_electron_heat_conductivity_dyn'//trim(adjustl(sh_cmd))
-      endif
-      write(FN, '(a)') './OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
-      write(FN, '(a)') './OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
-      if (numpar%do_partial_thermal) then
-         write(FN, '(a)') './OUTPUT_electron_temperatures'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_electron_chempotentials'//trim(adjustl(sh_cmd))
-      endif
-      if (numpar%do_drude) then 
-         write(FN, '(a)') './OUTPUT_optical_coefficients'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_optical_n_and_k'//trim(adjustl(sh_cmd))
-      endif
-      if (numpar%save_Ei) then
-         write(FN, '(a)') './OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
-      endif
-      if (numpar%save_fe) then
-         write(FN, '(a)') './OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
-      endif
-      if (numpar%save_fe_grid) then
-         write(FN, '(a)') './OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
-      endif
-      if (numpar%DOS_splitting >= 1) then   ! Mulliken charges
-         if (numpar%Mulliken_model >= 1) then
-            write(FN, '(a)') './OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
-         endif
-      endif
-      if (numpar%save_NN) then
-         write(FN, '(a)') './OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
-      endif
-      if (Scell(1)%eps%tau > 0.0d0) then ! convolved files too:
-         write(FN, '(a)') './OUTPUT_optical_coefficients_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_optical_n_and_k_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_energies_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_temperatures_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_mean_displacement_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_pressure_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_stress_tensor_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_electrons_and_holes_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_CB_electrons_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_deep_shell_holes_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_volume_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_Egap_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_mu_and_Ne_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_bands_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_electron_Ce_CONVOLVED'//trim(adjustl(sh_cmd))
-         if (numpar%do_kappa) then
-!             write(FN, '(a)') './OUTPUT_electron_heat_conductivity_CONVOLVED'//trim(adjustl(sh_cmd))
-         endif
-         if (numpar%do_kappa_dyn) then
-            write(FN, '(a)') './OUTPUT_electron_heat_conductivity_dyn_CONVOLVED'//trim(adjustl(sh_cmd))
-         endif
-         write(FN, '(a)') './OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
-         write(FN, '(a)') './OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
-         if (numpar%do_partial_thermal) then
-            write(FN, '(a)') './OUTPUT_electron_temperatures_CONVOLVED'//trim(adjustl(sh_cmd))
-            write(FN, '(a)') './OUTPUT_electron_chempotentials_CONVOLVED'//trim(adjustl(sh_cmd))
-         endif
-         if (numpar%Mulliken_model >= 1) then
-            write(FN, '(a)') './OUTPUT_Mulliken_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
-         endif
-      endif
-   endif
-   write(FN, '(a)') 'echo Gnuplot scripts are executed, see created plots.'
-   close(FN)
-   if (numpar%path_sep .EQ. '\') then	! if it is Windows
-   else ! It is linux
-      !call system('chmod +x '//trim(adjustl(File_name))) ! make the output-script executable
-      command = 'chmod +x '//trim(adjustl(File_name))
-      iret = system(command)
-   endif
-
    ! Energies:
    File_name  = trim(adjustl(file_path))//'OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
    call gnu_energies(numpar, File_name, file_energies, t0, t_last, 'OUTPUT_energies.'//trim(adjustl(numpar%fig_extention))) ! below

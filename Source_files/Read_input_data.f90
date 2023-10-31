@@ -133,15 +133,16 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    matter%dens = -1.0d0 ! [g/cm^3] density of the material (negative = use MD supercell to evaluate it)
    numpar%NMC = 30000	! number of iterations in the MC module
 #ifdef OMP_inside
-   numpar%NOMP = omp_get_max_threads()	! number of processors available by default
+   numpar%NOMP = omp_get_max_threads()    ! number of processors available by default
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
-   numpar%NOMP = 1	! unparallelized by default
+   numpar%NOMP = 1   ! unparallelized by default
 #endif
-   numpar%redo_MFP = .false.  ! no need to recalculate mean free paths by default
-   numpar%N_basis_size = 0  ! DFTB, BOP or 3TB basis set default (0=s, 1=sp3, 2=sp3d5)
-   numpar%do_atoms = .true.	! Atoms are allowed to move
-   matter%W_PR = 25.5d0  ! Parinello-Rahman super-vell mass coefficient
-   numpar%dt = 0.01d0 	! Time step for MD [fs]
+   numpar%redo_MFP = .false.     ! no need to recalculate mean free paths by default
+   numpar%print_MFP = .false.    ! no need to printout mean free paths by default
+   numpar%N_basis_size = 0    ! DFTB, BOP or 3TB basis set default (0=s, 1=sp3, 2=sp3d5)
+   numpar%do_atoms = .true.   ! Atoms are allowed to move
+   matter%W_PR = 25.5d0    ! Parinello-Rahman super-vell mass coefficient
+   numpar%dt = 0.01d0      ! Time step for MD [fs]
    numpar%halfdt = numpar%dt/2.0d0      ! dt/2, often used
    numpar%dtsqare = numpar%dt*numpar%halfdt ! dt*dt/2, often used
    numpar%dt3 = numpar%dt**3/6.0d0            ! dt^3/6, often used
@@ -5726,8 +5727,13 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
 
    select case (trim(adjustl(string)))
    !----------------------------------
+   case ('print_MFP', 'Print_MFP', 'PRINT_MFP')
+      ! Printout mean free paths:
+      numpar%print_MFP = .true.
+
+   !----------------------------------
    case ('redo_MFP', 'MFP', 'REDO_MFP')
-      ! recalcaulte mean free path:
+      ! recalcaulte mean free paths:
       numpar%redo_MFP = .true.
 
    !----------------------------------
