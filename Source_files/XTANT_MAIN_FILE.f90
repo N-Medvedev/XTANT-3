@@ -154,6 +154,9 @@ if (g_numpar%verbose) call print_time_step('Output directory prepared succesfull
 ! Create CDF-file with fitted oscillators (Ritchi-Howie), if required:
 call printout_CDF_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_output_files"
 
+! Printout mean free paths, if required:
+call printout_MFP_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_output_files"
+
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Project-specific analysis of C60:
 ! call C60_vdW_vs_Coulomb(g_Scell, g_numpar, g_matter, layers=2) ! Module "TB"
@@ -395,7 +398,8 @@ write(*,'(a)') trim(adjustl(m_starline))
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 if (.not.g_Err%Err) then
    write(*,'(a)')  'Executing gnuplot scripts to create plots...'
-   call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
+   !call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
+   call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)) ) ! module "Gnuplotting"
    if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully', msec=.true.)
 endif
 
