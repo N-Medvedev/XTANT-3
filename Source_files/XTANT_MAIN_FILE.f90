@@ -143,10 +143,15 @@ if (.not.g_numpar%do_path_coordinate) then  ! only for real calculations, not fo
 endif
 
 ! Process the laser pulse parameters:
+if (maxval(g_laser(:)%F) < -1.0d-6) then  ! mark if the fluence or dose is used
+   logitest = .true.  ! need to check for warning here (could not check because read fluence instead of dose)
+else
+   logitest = .false. ! no need to chack for warning, it was checked before while reading input dose
+endif
 call process_laser_parameters(g_Scell(1), g_matter, g_laser, g_numpar) ! module "MC_cross_sections"
 if (g_numpar%verbose) call print_time_step('Laser pulse parameters converted succesfully:', msec=.true.)
 ! Printout warning if absorbed dose is too high:
-if (maxval(g_laser(:)%F) >= 10.0) then
+if (logitest .and. (maxval(g_laser(:)%F) >= 10.0)) then
    write(chtest,'(f16.3)') maxval(g_laser(:)%F)
    call printout_warning(6, 4, text_to_add=trim(adjustl(chtest)) ) ! module "Read_input_data"
 endif

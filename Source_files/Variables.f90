@@ -46,7 +46,7 @@ type(Super_cell), dimension(:), allocatable :: g_Scell  ! supercell with all the
 type(MC_data), dimension(:), allocatable :: g_MC        ! all MC arrays for photons, electrons and holes
 
 ! Minor and testing variables:
-logical :: file_exists, file_opened, file_named  ! checking if file exists or opened well
+logical :: file_exists, file_opened, file_named, logitest  ! checking if file exists or opened well
 character(200) chtest   ! file names and so on
 character(3) chtest2   ! numbers so on
 real(8) testvar
