@@ -45,7 +45,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 31.10.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 02.11.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -297,11 +297,12 @@ subroutine printout_MFP_file(numpar, matter, Scell)
       endif
 
       N_grid = size(matter%Atoms(1)%Ph_MFP(1)%E)
-      t0 = matter%Atoms(1)%Ph_MFP(1)%E(1)
-      t_last = matter%Atoms(1)%Ph_MFP(1)%E(N_grid)
+      !t0 = matter%Atoms(1)%Ph_MFP(1)%E(1)
+      t0 = 1.0d0  ! [eV] starting energy point
+      t_last = matter%Atoms(1)%Ph_MFP(1)%E(N_grid) ! ending energy point
 
       ! 1) Electron MFPs gnuplotting:
-      gnu_electron_MFP = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_electron_MFPs'//trim(adjustl(sh_cmd))
+      gnu_electron_MFP = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_MFP_electron'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(gnu_electron_MFP)), action="write", status="replace")
 
       x_tics = 10.0d0
@@ -311,7 +312,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
 
       if (numpar%path_sep .EQ. '\') then  ! if it is Windows
          count_col = 2  ! to start with
-         write(FN, '(a,es15.6,a,a,a)') 'p [1.0e-2:', t_last, '][1:1e5] "' , trim(adjustl(file_electron_IMFP)), &
+         write(FN, '(a,es15.6,a,es15.6,a,a,a)') 'p [', t0, ':', t_last, '][1:1e5] "' , trim(adjustl(file_electron_IMFP)), &
             ' "u 1:2 w l lw LW title "'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
             //'" ,\'
          do i = 1, size(matter%Atoms) ! for all atoms
@@ -349,7 +350,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
                      ' "u 1:'//trim(adjustl(col))//' w l lw LW title "Elastic" '
       else  ! Linux
          count_col = 2  ! to start with
-         write(FN, '(a,es15.6,a,a,a)') 'p [1.0e-2:', t_last, '][1:1e5] \"' , trim(adjustl(file_electron_IMFP)), &
+         write(FN, '(a,es15.6,a,es15.6,a,a,a)') 'p [', t0, ':', t_last, '][1:1e5] \"' , trim(adjustl(file_electron_IMFP)), &
             ' \"u 1:2 w l lw LW title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
             //'\" ,\'
          do i = 1, size(matter%Atoms) ! for all atoms
@@ -391,7 +392,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
 
       !--------------------
       ! 2) Photon attenuation lengths gnuplotting:
-      gnu_photon_MFP = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_photon_MFPs'//trim(adjustl(sh_cmd))
+      gnu_photon_MFP = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_MFP_photon'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(gnu_photon_MFP)), action="write", status="replace")
 
       x_tics = 10.0d0
@@ -401,7 +402,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
 
       if (numpar%path_sep .EQ. '\') then  ! if it is Windows
          count_col = 2  ! to start with
-         write(FN, '(a,es15.6,a,a,a)') 'p [1.0e-2:', t_last, '][10:1e7] "' , trim(adjustl(file_photon_MFP)), &
+         write(FN, '(a,es15.6,a,es15.6,a,a,a)') 'p [',t0, ':', t_last, '][10:1e7] "' , trim(adjustl(file_photon_MFP)), &
             ' "u 1:2 w l lw LW title "'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
             //'" ,\'
          do i = 1, size(matter%Atoms) ! for all atoms
@@ -435,7 +436,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
                      ' "u 1:'//trim(adjustl(col))//' w l lw LW title "Total" '
       else  ! Linux
          count_col = 2  ! to start with
-         write(FN, '(a,es15.6,a,a,a)') 'p [1.0e-2:', t_last, '][10:1e7] \"' , trim(adjustl(file_photon_MFP)), &
+         write(FN, '(a,es15.6,a,es15.6,a,a,a)') 'p [', t0, ':', t_last, '][10:1e7] \"' , trim(adjustl(file_photon_MFP)), &
             ' \"u 1:2 w l lw LW title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
             //'\" ,\'
          do i = 1, size(matter%Atoms) ! for all atoms
