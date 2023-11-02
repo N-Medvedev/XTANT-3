@@ -157,6 +157,10 @@ call printout_CDF_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_out
 ! Printout mean free paths, if required:
 call printout_MFP_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_output_files"
 
+! Collect all gnuplot files into one script to execute all together later:
+call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)), skip_execution=.true.) ! module "Gnuplotting"
+
+
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Project-specific analysis of C60:
 ! call C60_vdW_vs_Coulomb(g_Scell, g_numpar, g_matter, layers=2) ! Module "TB"
@@ -398,8 +402,8 @@ write(*,'(a)') trim(adjustl(m_starline))
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 if (.not.g_Err%Err) then
    write(*,'(a)')  'Executing gnuplot scripts to create plots...'
-   !call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
-   call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)) ) ! module "Gnuplotting"
+   call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
+   !call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)) ) ! module "Gnuplotting"
    if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully', msec=.true.)
 endif
 

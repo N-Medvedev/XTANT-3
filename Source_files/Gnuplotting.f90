@@ -39,8 +39,9 @@ public :: write_gnu_printout, write_gnuplot_script_header_new, collect_gnuplots
 
 !===================================================
 ! Gnuplotting all the scripts:
-subroutine collect_gnuplots(path_sep, out_path)
+subroutine collect_gnuplots(path_sep, out_path, skip_execution)
    character(*), intent(in) :: path_sep, out_path    ! folder with the cmd-files
+   logical, intent(in) :: skip_execution  ! if you don't want to execute all gnuplots
    !------------------------
    character(200) :: File_name, command, Gnuplot_all_file
    integer :: FN, N_f, i, n_slash
@@ -48,6 +49,13 @@ subroutine collect_gnuplots(path_sep, out_path)
    character(200), dimension(:), allocatable :: All_files
    character(300) :: output_path
    character(5) ::  call_slash, sh_cmd
+   logical :: skip_exec
+
+   if (present(skip_execution)) then   ! if requested, you may skip exewcution of gnuplot scripts
+      skip_exec = skip_execution
+   else  ! be default, execute gnuplot scripts
+      skip_exec = .false.
+   endif
 
    ! In which directory to collect all gnu scripts:
    output_path = out_path
@@ -116,8 +124,10 @@ subroutine collect_gnuplots(path_sep, out_path)
    endif
    !pause 'Execute all'
 
+
    !--------------
-   ! Execute all the gnuplot scripts:
+   if (skip_exec) return   ! If execution of gnuplot scripts is not requested, we are done;
+   ! otherwise, execute all the gnuplot scripts, if requested:
    idir = chdir(trim(adjustl(output_path))) ! go into the directory with output files
    !call chdir(trim(adjustl(output_path))) ! go into the directory with output files
 
