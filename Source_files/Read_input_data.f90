@@ -57,6 +57,7 @@ character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_
 
 character(70), parameter :: m_starline = '*************************************************************'
 character(70), parameter :: m_dashline = '-------------------------------------------------------------'
+character(70), parameter :: m_warnline = ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::'
 
 character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
 character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT info
@@ -79,7 +80,7 @@ character(25), parameter :: m_wall_pot = 'TB_wall.txt'  ! obsolete filename for 
 
 public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
 public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_QUOTES_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL
-public :: Read_Input_Files, get_add_data, m_Communication, m_dashline
+public :: Read_Input_Files, get_add_data, m_Communication, m_dashline, printout_warning, check_all_warnings
 
  contains
 
@@ -5486,6 +5487,11 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
          if (Err%Err) goto 3417
       endif
       Scell(i)%TeeV = Scell(i)%Te/g_kb ! [eV] electron temperature
+      ! Printout warning if electron temperature is too high:
+      if (Scell(i)%TeeV >= 5.0) then
+         write(text,'(f16.3)',IOSTAT=Reason) Scell(i)%TeeV
+         call printout_warning(6, 2, text_to_add=trim(adjustl(text)) ) ! below
+      endif
 
       ! initial atomic temperature [K]:
       read(FN, '(a)', IOSTAT=Reason) read_line
@@ -5493,6 +5499,11 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
       if (Err%Err) goto 3417
       Scell(i)%TaeV = Scell(i)%Ta/g_kb ! [eV] atomic temperature
+      ! Printout warning if atomic temperature is too high:
+      if (Scell(i)%TaeV >= 1.0) then
+         write(text,'(f16.3)',IOSTAT=Reason) Scell(i)%TaeV
+         call printout_warning(6, 3, text_to_add=trim(adjustl(text)) ) ! below
+      endif
 
    enddo !Scell
 
@@ -5565,6 +5576,11 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
 
       ! Check if there are additional pulse specifications:
       call check_pulse_specifications(trim(adjustl(text)), laser(i), read_var(1))   ! below
+      ! Printout warning if absorbed dose is too high:
+      if (laser(i)%F >= 10.0) then
+         write(text,'(f16.3)',IOSTAT=Reason) laser(i)%F
+         call printout_warning(6, 4, text_to_add=trim(adjustl(text)) ) ! below
+      endif
 
 
       read(FN, '(a)', IOSTAT=Reason) read_line
@@ -5579,6 +5595,11 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
          call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                                  add_error_info='Line: '//trim(adjustl(read_line)))  ! below
          if (Err%Err) goto 3417
+      endif
+      ! Printout warning if photon energy is too high:
+      if (laser(i)%hw >= 1.0d5) then
+         write(text,'(f16.3)',IOSTAT=Reason) laser(i)%hw
+         call printout_warning(6, 1, text_to_add=trim(adjustl(text)) ) ! below
       endif
 
       read(FN, '(a)', IOSTAT=Reason) read_line
@@ -6449,6 +6470,127 @@ subroutine Get_list_of_materials(path_sep)
    call close_file('delete', trim(adjustl(File_scratch)))   ! module "Dealing_with_files"
    call close_file('close', FN=FN)  ! module "Dealing_with_files"
 end subroutine Get_list_of_materials
+
+
+!WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
+
+subroutine check_all_warnings(print_to, laser, Scell, Err)
+   integer, intent(in) :: print_to  ! file number to print to
+   type(Super_cell), dimension(:), intent(in) :: Scell   ! suoer-cell with all the atoms inside
+   type(Pulse), dimension(:), intent(in) :: laser        ! Laser pulse parameters
+   type(Error_handling), intent(inout), optional :: Err  ! errors and warnings save
+   !---------------------
+   character(100) :: text
+   integer :: i, Reason
+
+   do i = 1, size(laser)   ! for all pulses
+      ! Printout warning if absorbed dose is too high:
+      if (laser(i)%F >= 10.0) then
+         write(text,'(f16.3)',IOSTAT=Reason) laser(i)%F
+         call printout_warning(print_to, 4, text_to_add=trim(adjustl(text)) ) ! below
+         if (present(Err)) call Save_error_details(Err, 0, '', empty=.true., Warn=.true.) ! module "Objects"
+      endif
+
+      ! Printout warning if photon energy is too high:
+      if (laser(i)%hw >= 1.0d5) then
+         write(text,'(f16.3)',IOSTAT=Reason) laser(i)%hw
+         call printout_warning(print_to, 1, text_to_add=trim(adjustl(text)) ) ! below
+         if (present(Err)) call Save_error_details(Err, 0, '', empty=.true., Warn=.true.) ! module "Objects"
+      endif
+   enddo
+
+   do i = 1, size(Scell)   ! for all supercells
+      ! Printout warning if electron temperature is too high:
+      if (Scell(i)%TeeV >= 5.0) then
+         write(text,'(f16.3)',IOSTAT=Reason) Scell(i)%TeeV
+         call printout_warning(print_to, 2, text_to_add=trim(adjustl(text)) ) ! below
+         if (present(Err)) call Save_error_details(Err, 0, '', empty=.true., Warn=.true.) ! module "Objects"
+      endif
+
+      ! Printout warning if atomic temperature is too high:
+      if (Scell(i)%TaeV >= 1.0) then
+         write(text,'(f16.3)',IOSTAT=Reason) Scell(i)%TaeV
+         call printout_warning(print_to, 3, text_to_add=trim(adjustl(text)) ) ! below
+         if (present(Err)) call Save_error_details(Err, 0, '', empty=.true., Warn=.true.) ! module "Objects"
+      endif
+   enddo
+
+end subroutine check_all_warnings
+
+
+subroutine printout_warning(print_to, ind, text_to_print, text_to_add) ! standardized format for warning printouts
+   integer, intent(in) :: print_to  ! file number to print to
+   integer, intent(in) :: ind    ! index of the warning to be printed out
+   character(*), intent(in), optional :: text_to_print   ! optional text to printout TOGETHER with the warning
+   character(*), intent(in), optional :: text_to_add     ! optional text to printout INSIDE the warning
+   !-------------------------
+   character(500) :: ch_lng
+   character(5) :: ch_sh
+
+   ! Warning title:
+   write(print_to, '(a)') ''
+   write(print_to, '(a)') trim(adjustl(m_warnline))
+   write(ch_sh, '(i5)') ind
+   !write(print_to, '(a)') '   WARNING #'//trim(adjustl(ch_sh))//':'
+   write(print_to, '(a)') '                     >>> WARNING <<<'
+   if (present(text_to_print)) then
+      write(print_to, '(a)') trim(adjustl(text_to_print))
+   endif
+
+   !---------------------
+   select case (ind)
+   !---------------------
+   case (1) ! too high photon energy
+      if (present(text_to_add)) then
+         write(ch_lng,'(a)') '('//trim(adjustl(text_to_add))//' eV)'
+      else
+         write(ch_lng,'(a)') ''
+      endif
+      write(print_to, '(a)') 'Photon energy is too high '//trim(adjustl(ch_lng))
+      write(print_to, '(a)') 'Relativistic effects are not included in XTANT-3'
+      write(print_to, '(a)') 'Thus, high-energy electron kinetics is unreliable!'
+      write(print_to, '(a)') 'Proceed with caution, or reduce the photon energy below ~100 keV'
+   !---------------------
+   case (2) ! too high Te
+      if (present(text_to_add)) then
+         write(ch_lng,'(a)') '('//trim(adjustl(text_to_add))//' eV)'
+      else
+         write(ch_lng,'(a)') ''
+      endif
+      write(print_to, '(a)') 'Electronic temperature is too high '//trim(adjustl(ch_lng))
+      write(print_to, '(a)') 'Tight binding approximation may not handle it well.'
+      write(print_to, '(a)') 'Band structure and interatomic forces may not be reliable!'
+      write(print_to, '(a)') 'Proceed with caution, or reduce the electron tempreature below ~5-10 eV'
+   !---------------------
+   case (3) ! too high Ta
+      if (present(text_to_add)) then
+         write(ch_lng,'(a)') '('//trim(adjustl(text_to_add))//' eV)'
+      else
+         write(ch_lng,'(a)') ''
+      endif
+      write(print_to, '(a)') 'Atomic temperature is too high '//trim(adjustl(ch_lng))
+      write(print_to, '(a)') 'Tight binding molecular dynamics may not handle it well.'
+      write(print_to, '(a)') 'Atoma coming too close may pose trouble, if short-range repulsion is not taken care of.'
+      write(print_to, '(a)') 'Proceed with caution, or reduce the atomic tempreature below ~1 eV'
+   !---------------------
+   case (4) ! too high dose / fluence
+      if (present(text_to_add)) then
+         write(ch_lng,'(a)') '('//trim(adjustl(text_to_add))//' eV/atom)'
+      else
+         write(ch_lng,'(a)') ''
+      endif
+      write(print_to, '(a)') 'Absorbed dose is too high '//trim(adjustl(ch_lng))
+      write(print_to, '(a)') 'Tight binding may not handle it well.'
+      write(print_to, '(a)') 'Resulting in too high excitation may pose trouble!'
+      write(print_to, '(a)') 'Proceed with caution, or reduce the dose (fluence) below ~10 eV/atom'
+
+   !---------------------
+   end select
+
+   ! Warning ending:
+   write(print_to, '(a)') trim(adjustl(m_warnline))
+   write(print_to, '(a)') ''
+end subroutine printout_warning
 
 
 

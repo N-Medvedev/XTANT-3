@@ -41,7 +41,7 @@ public :: write_gnu_printout, write_gnuplot_script_header_new, collect_gnuplots
 ! Gnuplotting all the scripts:
 subroutine collect_gnuplots(path_sep, out_path, skip_execution)
    character(*), intent(in) :: path_sep, out_path    ! folder with the cmd-files
-   logical, intent(in) :: skip_execution  ! if you don't want to execute all gnuplots
+   logical, intent(in), optional :: skip_execution  ! if you don't want to execute all gnuplots
    !------------------------
    character(200) :: File_name, command, Gnuplot_all_file
    integer :: FN, N_f, i, n_slash

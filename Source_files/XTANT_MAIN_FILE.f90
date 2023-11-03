@@ -234,6 +234,13 @@ call get_low_energy_distribution(g_Scell(1), g_numpar) ! module "Electron_tools"
 call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
 if (g_numpar%verbose) call print_time_step('Initial output files set succesfully:', msec=.true.)
 
+!WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
+! Signal possible warning for parameters defined:
+! Print on the screen:
+call check_all_warnings(6, g_laser, g_Scell)  ! module "Read_input_data"
+! Save in the Error file:
+call check_all_warnings(g_Err%File_Num, g_laser, g_Scell, g_Err)  ! module "Read_input_data"
+
 !DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD
 ! Now we can proceed with time:
 ! Print out the starting time:
@@ -367,9 +374,9 @@ if (file_opened) then
    flush(g_Err%File_Num)
 endif
 ! Closing the opened files:
-if (g_Err%Err) then
+if (g_Err%Err .or. g_Err%Warn) then ! error or warning was printed in the file
    call close_file('close', FN=g_Err%File_Num) ! module "Dealing_with_files"
-else ! if there was no error, no need to keep the file, delete it
+else ! if there was no error or warning, no need to keep the file, delete it
    call close_file('delete', FN=g_Err%File_Num) ! module "Dealing_with_files"
 endif
 call close_save_files()           ! module "Dealing_with_files"
