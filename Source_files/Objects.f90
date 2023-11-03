@@ -961,6 +961,7 @@ end type MC_data
 ! Error handling as an object:
 type Error_handling
    logical :: Err          ! indicates that an error occured
+   logical :: Warn         ! indicates that an warning (not an error) occured
    logical :: Stopsignal   ! flag to stop calculations, even if there was no error
    integer :: Err_Num      ! assign a number to an error
    integer :: File_Num     ! number of the file with error log
@@ -972,12 +973,12 @@ end type
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
  contains
 ! How to write the log about an error:
-subroutine Save_error_details(Err_name, Err_num, Err_data, Err_data2, empty)
+subroutine Save_error_details(Err_name, Err_num, Err_data, Err_data2, empty, Warn)
    class(Error_handling) :: Err_name
    integer, intent(in) :: Err_num
    character(*), intent(in) :: Err_data
    character(*), intent(in), optional :: Err_data2
-   logical, intent(in), optional :: empty
+   logical, intent(in), optional :: empty, Warn
    !-----------------------
    integer :: FN
    logical :: no_err
@@ -990,6 +991,11 @@ subroutine Save_error_details(Err_name, Err_num, Err_data, Err_data2, empty)
 
    if (no_err) then  ! no error, just initialize
       Err_name%Err = .false.
+      if (present(Warn)) then ! warning present
+         Err_name%Warn = Warn
+      else
+         Err_name%Warn = .false.
+      endif
       Err_name%Stopsignal = .false.
       Err_name%Err_descript = '' ! start with an empty string
       Err_name%File_Num = 99     ! default file number for error message

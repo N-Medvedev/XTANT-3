@@ -299,16 +299,19 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
                inquire(file=trim(adjustl(File_name)),opened=file_opened)
                redo = .true. ! no data, need to recalculate the MFPs
+               print*, 'Could not open file with MFP => recalculating MFP'
             else
                call Count_lines_in_file(FN, N) ! get how many lines in the file
                !print*, 'N:', N, N_grid
                if (N .NE. N_grid) then ! replace file
                   redo = .true. ! not enough data, need to recalculate the MFPs
+                  print*, 'Energy grid mismatch in MFP file => recalculating MFP'
                endif
             endif
          else
             open(UNIT=FN, FILE = trim(adjustl(File_name)))
             redo = .true. ! no data, need to recalculate the MFPs
+            if (numpar%verbose) print*, 'No file with MFP present => calculating MFP'
          endif
 
 9900     if (redo) then ! recalculate the MFPs:
@@ -549,16 +552,19 @@ subroutine IMFP_vs_Te_files(matter, laser, numpar, Te, N_Te)
          open(UNIT=FN, FILE = trim(adjustl(File_name)))
          inquire(file=trim(adjustl(File_name)),opened=file_opened)
          redo = .true. ! no data, need to recalculate the MFPs
+         print*, 'Could not open file with MFP => recalculating MFP'
       else
          call Count_lines_in_file(FN, N) ! get how many lines in the file
          !print*, 'N:', N, N_grid
          if (N .NE. N_grid) then ! replace file
             redo = .true. ! not enough data, need to recalculate the MFPs
+            print*, 'Energy grid mismatch in MFP file => recalculating MFP'
          endif
       endif
    else
       open(UNIT=FN, FILE = trim(adjustl(File_name)))
       redo = .true. ! no data, need to recalculate the MFPs
+      if (numpar%verbose) print*, 'No file with MFP present => calculating MFP'
    endif
 
 9901 if (redo) then ! recalculate the MFPs:
@@ -1284,16 +1290,19 @@ subroutine Elastic_MFP(i_at, numpar, matter) ! elastic mean free path for scatte
          open(UNIT=FN, FILE = trim(adjustl(File_name)))
          inquire(file=trim(adjustl(File_name)),opened=file_opened)
          redo = .true. ! no data, need to recalculate the MFPs
+         print*, 'Could not open file with MFP => recalculating MFP'
       else
          call Count_lines_in_file(FN, N) ! get how many lines in the file, module "Dealing_with_files"
          !If something is wrong in the file, number of lines is not the same as what we need:
          if (N .NE. N_grid) then ! replace file
             redo = .true. ! not enough data, need to recalculate the EMFPs
+            print*, 'Energy grid mismatch in MFP file => recalculating MFP'
          endif
       endif
    else ! there is no file with EMFPs:
       open(UNIT=FN, FILE = trim(adjustl(File_name)))
       redo = .true. ! no data, need to recalculate the EMFPs
+      if (numpar%verbose) print*, 'No file with MFP present => calculating MFP'
    endif
    
    ! If file exists and opened well:
@@ -1703,15 +1712,18 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
                inquire(file=trim(adjustl(File_name)),opened=file_opened)
                redo = .true. ! no data, need to recalculate the MFPs
+               print*, 'Could not open file with MFP => recalculating MFP'
             else
                call Count_lines_in_file(FN, N) ! get how many lines in the file
                if (N .NE. N_grid) then ! replace file
                   redo = .true. ! not enough data, need to recalculate the MFPs
+                  print*, 'Energy grid mismatch in MFP file => recalculating MFP'
                endif
             endif
          else
             open(UNIT=FN, FILE = trim(adjustl(File_name)))
             redo = .true. ! no data, need to recalculate the MFPs
+            if (numpar%verbose) print*, 'No file with MFP present => calculating MFP'
          endif
 
 9900   if (redo) then ! recalculate the MFPs:

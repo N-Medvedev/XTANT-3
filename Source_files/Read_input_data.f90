@@ -80,7 +80,7 @@ character(25), parameter :: m_wall_pot = 'TB_wall.txt'  ! obsolete filename for 
 
 public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
 public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_QUOTES_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL
-public :: Read_Input_Files, get_add_data, m_Communication, m_dashline, printout_warning
+public :: Read_Input_Files, get_add_data, m_Communication, m_dashline, printout_warning, check_all_warnings
 
  contains
 
@@ -6473,6 +6473,51 @@ end subroutine Get_list_of_materials
 
 
 !WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
+
+subroutine check_all_warnings(print_to, laser, Scell, Err)
+   integer, intent(in) :: print_to  ! file number to print to
+   type(Super_cell), dimension(:), intent(in) :: Scell   ! suoer-cell with all the atoms inside
+   type(Pulse), dimension(:), intent(in) :: laser        ! Laser pulse parameters
+   type(Error_handling), intent(inout), optional :: Err  ! errors and warnings save
+   !---------------------
+   character(100) :: text
+   integer :: i, Reason
+
+   do i = 1, size(laser)   ! for all pulses
+      ! Printout warning if absorbed dose is too high:
+      if (laser(i)%F >= 10.0) then
+         write(text,'(f16.3)',IOSTAT=Reason) laser(i)%F
+         call printout_warning(print_to, 4, text_to_add=trim(adjustl(text)) ) ! below
+         if (present(Err)) call Save_error_details(Err, 0, '', empty=.true., Warn=.true.) ! module "Objects"
+      endif
+
+      ! Printout warning if photon energy is too high:
+      if (laser(i)%hw >= 1.0d5) then
+         write(text,'(f16.3)',IOSTAT=Reason) laser(i)%hw
+         call printout_warning(print_to, 1, text_to_add=trim(adjustl(text)) ) ! below
+         if (present(Err)) call Save_error_details(Err, 0, '', empty=.true., Warn=.true.) ! module "Objects"
+      endif
+   enddo
+
+   do i = 1, size(Scell)   ! for all supercells
+      ! Printout warning if electron temperature is too high:
+      if (Scell(i)%TeeV >= 5.0) then
+         write(text,'(f16.3)',IOSTAT=Reason) Scell(i)%TeeV
+         call printout_warning(print_to, 2, text_to_add=trim(adjustl(text)) ) ! below
+         if (present(Err)) call Save_error_details(Err, 0, '', empty=.true., Warn=.true.) ! module "Objects"
+      endif
+
+      ! Printout warning if atomic temperature is too high:
+      if (Scell(i)%TaeV >= 1.0) then
+         write(text,'(f16.3)',IOSTAT=Reason) Scell(i)%TaeV
+         call printout_warning(print_to, 3, text_to_add=trim(adjustl(text)) ) ! below
+         if (present(Err)) call Save_error_details(Err, 0, '', empty=.true., Warn=.true.) ! module "Objects"
+      endif
+   enddo
+
+end subroutine check_all_warnings
+
+
 subroutine printout_warning(print_to, ind, text_to_print, text_to_add) ! standardized format for warning printouts
    integer, intent(in) :: print_to  ! file number to print to
    integer, intent(in) :: ind    ! index of the warning to be printed out
@@ -6487,7 +6532,7 @@ subroutine printout_warning(print_to, ind, text_to_print, text_to_add) ! standar
    write(print_to, '(a)') trim(adjustl(m_warnline))
    write(ch_sh, '(i5)') ind
    !write(print_to, '(a)') '   WARNING #'//trim(adjustl(ch_sh))//':'
-   write(print_to, '(a)') '>>> WARNING <<<'
+   write(print_to, '(a)') '                     >>> WARNING <<<'
    if (present(text_to_print)) then
       write(print_to, '(a)') trim(adjustl(text_to_print))
    endif
