@@ -351,7 +351,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
       else  ! Linux
          count_col = 2  ! to start with
          write(FN, '(a,es15.6,a,es15.6,a,a,a)') 'p [', t0, ':', t_last, '][1:1e5] \"' , trim(adjustl(file_electron_IMFP)), &
-            ' \"u 1:2 w l lw LW title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
+            ' \"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
             //'\" ,\'
          do i = 1, size(matter%Atoms) ! for all atoms
             Nshl = size(matter%Atoms(i)%Ip)
@@ -368,7 +368,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
                   count_col = count_col + 1  ! number of columns
                   write(col, '(i4)') count_col
                   write(FN, '(a)') '\"'//trim(adjustl(file_electron_IMFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"' &
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"' &
                      //trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j))) &
                      //'\" ,\'
                endif
@@ -377,15 +377,15 @@ subroutine printout_MFP_file(numpar, matter, Scell)
          count_col = count_col + 1  ! number of columns
          write(col, '(i4)') count_col  ! Valence
          write(FN, '(a)') '\"'//trim(adjustl(file_electron_IMFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Valence\" ,\'
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Valence\" ,\'
          count_col = count_col + 1  ! number of columns
          write(col, '(i4)') count_col  ! Total
          write(FN, '(a)') '\"'//trim(adjustl(file_electron_IMFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Total inelastic\" ,\'
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Total inelastic\" ,\'
          ! Elastic MFP:
          write(col, '(i4)') 1+size(matter%Atoms)+1
          write(FN, '(a)') '\"'//trim(adjustl(file_electron_EMFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Elastic\" '
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Elastic\" '
       endif
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
@@ -437,7 +437,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
       else  ! Linux
          count_col = 2  ! to start with
          write(FN, '(a,es15.6,a,es15.6,a,a,a)') 'p [', t0, ':', t_last, '][10:1e7] \"' , trim(adjustl(file_photon_MFP)), &
-            ' \"u 1:2 w l lw LW title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
+            ' \"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
             //'\" ,\'
          do i = 1, size(matter%Atoms) ! for all atoms
             Nshl = size(matter%Atoms(i)%Ip)
@@ -454,7 +454,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
                   count_col = count_col + 1  ! number of columns
                   write(col, '(i4)') count_col
                   write(FN, '(a)') '\"'//trim(adjustl(file_photon_MFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"' &
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"' &
                      //trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j))) &
                      //'\" ,\'
                endif
@@ -463,11 +463,11 @@ subroutine printout_MFP_file(numpar, matter, Scell)
          count_col = count_col + 1  ! number of columns
          write(col, '(i4)') count_col  ! Valence
          write(FN, '(a)') '\"'//trim(adjustl(file_photon_MFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Valence\" ,\'
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Valence\" ,\'
          count_col = count_col + 1  ! number of columns
          write(col, '(i4)') count_col  ! Total
          write(FN, '(a)') '\"'//trim(adjustl(file_photon_MFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Total\"'
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Total\"'
 
       endif
       call write_gnuplot_script_ending(FN, File_name, 1)
