@@ -36,7 +36,7 @@ public :: get_low_e_energy, find_band_gap, get_DOS_sort, Diff_Fermi_E, get_numbe
 public :: set_Erf_distribution, update_fe, Electron_thermalization, get_glob_energy, update_cross_section
 public :: Do_relaxation_time, set_initial_fe, find_mu_from_N_T, set_total_el_energy, Electron_Fixed_Etot
 public :: get_new_global_energy, get_electronic_heat_capacity, get_total_el_energy, electronic_entropy
-public :: get_low_energy_distribution, set_high_DOS, get_Ce_and_mu, Diff_Fermi_Te
+public :: get_low_energy_distribution, set_high_DOS, get_Ce_and_mu, Diff_Fermi_Te, get_orbital_resolved_data
 
  contains
 
@@ -1346,6 +1346,53 @@ subroutine set_Erf_distribution(Ei,Te,mu,fe, Error_desript, norm_fe)
       endif
    endif
 end subroutine set_Erf_distribution
+
+
+
+
+subroutine get_orbital_resolved_data(Scell, matter, DOS_weights)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(solid), intent(in) :: matter   ! materil parameters
+   real(8), dimension(:,:,:), intent(in) :: DOS_weights ! weigths of the particular type of orbital on each energy level
+   !-----------------
+   integer :: Nat, Nsh, i, j
+   real(8) :: N_MDat
+
+   ! Number of kinds of atoms:
+   Nat = size(matter%Atoms)
+   ! Numer of atoms in the supercell:
+   N_MDat = dble(Scell%Na)
+
+   !N_at = size(DOS_weights,1)    ! number of kinds of atoms
+   ! consistency test:
+   if (Nat /= size(DOS_weights,1)) then
+      print*, 'Problem in get_orbital_resolved_data, inconsistent sizes:', Nat, size(DOS_weights,1)
+      print*, 'Cannot get orbital-resolved electron data.'
+      return
+   endif
+   ! Make sure output data are allocated:
+   if (.not.allocated(Scell%Orb_data)) allocate(Scell%Orb_data(Nat))
+
+   ! For all kinds of atoms
+   do i = 1, Nat
+      Nsh = size(DOS_weights,2) ! number of atomic shells (basis set size)
+      ! Make sure output data are allocated:
+      if (.not.allocated(Scell%Orb_data(i)%Ne)) allocate(Scell%Orb_data(i)%Ne(Nsh), source = 0.0d0)
+      if (.not.allocated(Scell%Orb_data(i)%Ee)) allocate(Scell%Orb_data(i)%Ee(Nsh), source = 0.0d0)
+      ! For all orbitals:
+      do j = 1, Nsh
+         ! Number of electrons in each orbital:
+         Scell%Orb_data(i)%Ne(j) = SUM( Scell%fe(:) * DOS_weights(i, j, :) )
+         ! Energy of electrons in each orbital:
+         Scell%Orb_data(i)%Ee(j) = SUM( Scell%Ei(:) * Scell%fe(:) * DOS_weights(i, j, :) )
+         ! Normalize the data per atom:
+         Scell%Orb_data(i)%Ne(j) = Scell%Orb_data(i)%Ne(j) / N_MDat   ! [electron/atom]
+         Scell%Orb_data(i)%Ee(j) = Scell%Orb_data(i)%Ee(j) / N_MDat   ! [eV/atom]
+      enddo ! j
+   enddo ! i
+
+end subroutine get_orbital_resolved_data
+
 
 
 

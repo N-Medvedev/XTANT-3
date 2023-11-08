@@ -39,13 +39,14 @@ use Dealing_with_files, only : get_file_stat, copy_file, read_file, close_file, 
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
 use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_dashline, &
-                           m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL, m_Communication, m_QUOTES_file
+                           m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL, m_Communication, &
+                           m_QUOTES_file, printout_warning
 use Dealing_with_CDF, only : write_CDF_file
 
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 03.11.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 08.11.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -76,17 +77,20 @@ subroutine write_output_files(numpar, time, matter, Scell)
       Stress = Scell(NSC)%Stress * 1.0d-9
       nrg = Scell(NSC)%nrg
       nrg%E_coul_scc = nrg%E_coul_scc/dble(Scell(NSC)%Na)  ! -> per atom
-      call write_pressure(numpar%FN_pressure, time, Pressure, Stress)
-      call write_energies(numpar%FN_energies, time, nrg)
-      call write_numbers(numpar%FN_numbers, time, Scell(NSC))
-      call write_holes(numpar%FN_deep_holes, time, matter, Scell(NSC))
-      if (numpar%save_raw) call write_atomic_relatives(numpar%FN_atoms_S, Scell(NSC)%MDatoms)
-      call write_super_cell(numpar%FN_supercell, time, Scell(NSC))
+
+      ! All writing subroutines are in this file below:
+      call write_pressure(numpar%FN_pressure, time, Pressure, Stress)   ! pressure tensore
+      call write_energies(numpar%FN_energies, time, nrg) ! energies in various subsystems
+      call write_numbers(numpar%FN_numbers, time, Scell(NSC))  ! total numbers
+      call write_orb_resolved(numpar%FN_orb_resolved, time, Scell(NSC), matter) ! orbital-resolved electronic data
+      call write_holes(numpar%FN_deep_holes, time, matter, Scell(NSC))  ! core holes
+      if (numpar%save_raw) call write_atomic_relatives(numpar%FN_atoms_S, Scell(NSC)%MDatoms)   ! atomic coords and velocities
+      call write_super_cell(numpar%FN_supercell, time, Scell(NSC))   ! supercell parameters
       call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, &
-               numpar%FN_Ce, numpar%FN_kappa, numpar%FN_kappa_dyn, numpar%FN_Se, numpar%FN_Te, numpar%FN_mu)
+               numpar%FN_Ce, numpar%FN_kappa, numpar%FN_kappa_dyn, numpar%FN_Se, numpar%FN_Te, numpar%FN_mu) ! TB electron parameters
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:), &
                print_mass=numpar%save_XYZ_extra(1), print_charge=numpar%save_XYZ_extra(2), print_Ekin=numpar%save_XYZ_extra(3))   ! below
-      if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time)
+      if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time) ! CIF format
       if (numpar%save_Ei) then
          if (numpar%scc) then ! Energy levels include SCC term:
             call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei_scc_part)
@@ -94,7 +98,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
             call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei)
          endif
       endif
-      if (numpar%save_DOS) then
+      if (numpar%save_DOS) then  ! Material DOS
          select case (numpar%DOS_splitting)
          case (1) ! with partial DOS
             call save_DOS(numpar%FN_DOS, time, Scell(1)%DOS, Scell(1)%partial_DOS)
@@ -102,24 +106,23 @@ subroutine write_output_files(numpar, time, matter, Scell)
             call save_DOS(numpar%FN_DOS, time, Scell(1)%DOS)
          end select
       endif
-      select case (numpar%DOS_splitting)
+      select case (numpar%DOS_splitting)  ! orbital-resolved data
          case (1) ! with partial DOS
-         call write_coulping(numpar%FN_coupling, time, Scell, NSC, numpar)
+         call write_coulping(numpar%FN_coupling, time, Scell, NSC, numpar) ! electron-ion coupling
       end select
       if (numpar%save_fe) then
-         if (numpar%do_partial_thermal) then
+         if (numpar%do_partial_thermal) then ! Electron distribution functions on TB energy levels
             call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq, Scell(1)%fe_eq_VB, Scell(1)%fe_eq_CB)
          else
             call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq)
          endif
       endif
-      if (numpar%save_fe_grid) call electronic_distribution_on_grid(Scell(1), numpar, time)  ! below
-      if (numpar%save_PCF) call write_PCF(numpar%FN_PCF, Scell(1)%MDatoms, matter, Scell, 1)
-      if (numpar%do_drude) call write_optical_coefs(numpar%FN_optics, time, Scell(1)%eps)
-      if (Scell(1)%eps%all_w) call write_optical_all_hw(numpar%FN_all_w, time, Scell(1)%eps)
-      if (numpar%save_NN) call save_nearest_neighbors(numpar%FN_neighbors, Scell, 1, time)
-      
-   enddo
+      if (numpar%save_fe_grid) call electronic_distribution_on_grid(Scell(1), numpar, time)  ! distribution on grid
+      if (numpar%save_PCF) call write_PCF(numpar%FN_PCF, Scell(1)%MDatoms, matter, Scell, 1) ! pair correlation function
+      if (numpar%do_drude) call write_optical_coefs(numpar%FN_optics, time, Scell(1)%eps)    ! optical coeffs
+      if (Scell(1)%eps%all_w) call write_optical_all_hw(numpar%FN_all_w, time, Scell(1)%eps) ! CDF spectrum
+      if (numpar%save_NN) call save_nearest_neighbors(numpar%FN_neighbors, Scell, 1, time)   ! atomic nearest neighbors
+   enddo ! NSC
 end subroutine write_output_files
 
 
@@ -351,7 +354,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
       else  ! Linux
          count_col = 2  ! to start with
          write(FN, '(a,es15.6,a,es15.6,a,a,a)') 'p [', t0, ':', t_last, '][1:1e5] \"' , trim(adjustl(file_electron_IMFP)), &
-            ' \"u 1:2 w l lw LW title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
+            ' \"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
             //'\" ,\'
          do i = 1, size(matter%Atoms) ! for all atoms
             Nshl = size(matter%Atoms(i)%Ip)
@@ -368,7 +371,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
                   count_col = count_col + 1  ! number of columns
                   write(col, '(i4)') count_col
                   write(FN, '(a)') '\"'//trim(adjustl(file_electron_IMFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"' &
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"' &
                      //trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j))) &
                      //'\" ,\'
                endif
@@ -377,17 +380,17 @@ subroutine printout_MFP_file(numpar, matter, Scell)
          count_col = count_col + 1  ! number of columns
          write(col, '(i4)') count_col  ! Valence
          write(FN, '(a)') '\"'//trim(adjustl(file_electron_IMFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Valence\" ,\'
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Valence\" ,\'
          count_col = count_col + 1  ! number of columns
          write(col, '(i4)') count_col  ! Total
          write(FN, '(a)') '\"'//trim(adjustl(file_electron_IMFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Total inelastic\" ,\'
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Total inelastic\" ,\'
          ! Elastic MFP:
          write(col, '(i4)') 1+size(matter%Atoms)+1
          write(FN, '(a)') '\"'//trim(adjustl(file_electron_EMFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Elastic\" '
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Elastic\" '
       endif
-      call write_gnuplot_script_ending(FN, File_name, 1)
+      call write_gnuplot_script_ending(FN, gnu_electron_MFP, 1)   ! below
       close(FN)
 
       !--------------------
@@ -437,7 +440,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
       else  ! Linux
          count_col = 2  ! to start with
          write(FN, '(a,es15.6,a,es15.6,a,a,a)') 'p [', t0, ':', t_last, '][10:1e7] \"' , trim(adjustl(file_photon_MFP)), &
-            ' \"u 1:2 w l lw LW title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
+            ' \"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(matter%Atoms(1)%Name))//' '//trim(adjustl(matter%Atoms(1)%Shell_name(1))) &
             //'\" ,\'
          do i = 1, size(matter%Atoms) ! for all atoms
             Nshl = size(matter%Atoms(i)%Ip)
@@ -454,7 +457,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
                   count_col = count_col + 1  ! number of columns
                   write(col, '(i4)') count_col
                   write(FN, '(a)') '\"'//trim(adjustl(file_photon_MFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"' &
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"' &
                      //trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j))) &
                      //'\" ,\'
                endif
@@ -463,14 +466,14 @@ subroutine printout_MFP_file(numpar, matter, Scell)
          count_col = count_col + 1  ! number of columns
          write(col, '(i4)') count_col  ! Valence
          write(FN, '(a)') '\"'//trim(adjustl(file_photon_MFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Valence\" ,\'
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Valence\" ,\'
          count_col = count_col + 1  ! number of columns
          write(col, '(i4)') count_col  ! Total
          write(FN, '(a)') '\"'//trim(adjustl(file_photon_MFP))// &
-                     ' \"u 1:'//trim(adjustl(col))//' w l lw LW title \"Total\"'
+                     ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Total\"'
 
       endif
-      call write_gnuplot_script_ending(FN, File_name, 1)
+      call write_gnuplot_script_ending(FN, gnu_photon_MFP, 1)  ! below
       close(FN)
 
    endif
@@ -1100,6 +1103,92 @@ subroutine write_Ce_header(FN, Scell, NSC, matter)
 end subroutine write_Ce_header
 
 
+subroutine write_orb_resolved_header(FN, Scell, matter)
+   integer, intent(in) :: FN	! file number
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter	! Material parameters
+   !--------------------------------
+   integer :: N_at, N_types, Nsiz, i_at, i_types, nat, norb
+   character(2) :: chtemp1
+
+   N_at = matter%N_KAO    ! number of kinds of atoms
+   ! Find number of orbitals per atom:
+   nat = size(Scell%MDatoms) ! number of atoms
+   Nsiz = size(Scell%Ha,1) ! total number of orbitals
+   norb =  Nsiz/nat ! orbitals per atom
+   ! Find number of different orbital types:
+   N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+
+   ! Ne:
+   write(FN, '(a)', advance='no') ' #Time   Total_Ne   '
+   ! All shells resolved:
+   do i_at = 1, N_at
+      do i_types = 1, N_types
+         chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+         write(FN,'(a)',advance='no') trim(adjustl(matter%Atoms(i_at)%Name))//'_'//trim(adjustl(chtemp1))//'   '
+      enddo   ! i_types
+   enddo ! i_at
+
+   ! Ee:
+   write(FN, '(a)', advance='no') 'Total_Ee   '
+   ! All shells resolved:
+   do i_at = 1, N_at
+      do i_types = 1, N_types
+         chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+         write(FN,'(a)',advance='no') 'Ee:'//trim(adjustl(matter%Atoms(i_at)%Name))//'_'//trim(adjustl(chtemp1))//'   '
+      enddo   ! i_types
+   enddo ! i_at
+
+   write(FN,'(a)') ''
+end subroutine write_orb_resolved_header
+
+
+subroutine write_orb_resolved(FN, time, Scell, matter) ! orbital-resolved electronic data
+   integer, intent(in) :: FN	! file number
+   real(8), intent(in) :: time	! [fs]
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter	! Material parameters
+   !--------------------------------
+   real(8) :: Ne_tot, Ee_tot
+   integer :: Nat, n_at, N_types, Nsiz, i_at, i_types, norb
+   character(2) :: chtemp1
+
+   ! Write band-resolved electron heat capacity:
+   Nat = matter%N_KAO      ! number of kinds of atoms
+   n_at = size(Scell%MDatoms) ! number of atoms
+   Nsiz = size(Scell%Ha,1) ! total number of orbitals
+   norb =  Nsiz/n_at ! orbitals per atom
+   ! Find number of different orbital types:
+   N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+   ! Total Ne and Ee:
+   Ne_tot = 0.0d0 ! to start with
+   Ee_tot = 0.0d0 ! to start with
+   do i_at = 1, Nat
+      do i_types = 1, N_types
+         Ne_tot = Ne_tot  + Scell%Orb_data(i_at)%Ne(i_types)   ! [1/atom]
+         Ee_tot = Ee_tot  + Scell%Orb_data(i_at)%Ee(i_types)   ! [eV/atom]
+      enddo ! i_types
+   enddo ! i_at
+
+   ! Electron densities:
+   write(FN, '(f16.8,f16.8)', advance='no') time, Ne_tot
+   ! All shells resolved:
+   do i_at = 1, Nat
+      do i_types = 1, N_types
+         write(FN,'(f16.8)',advance='no') Scell%Orb_data(i_at)%Ne(i_types)
+      enddo   ! i_types
+   enddo ! i_at
+   ! Electron energies:
+   write(FN, '(f16.8)', advance='no') Ee_tot
+   ! All shells resolved:
+   do i_at = 1, Nat
+      do i_types = 1, N_types
+         write(FN,'(f16.8)',advance='no') Scell%Orb_data(i_at)%Ee(i_types)
+      enddo   ! i_types
+   enddo ! i_at
+   write(FN,'(a)') ''
+end subroutine write_orb_resolved
+
 
 subroutine write_coulping(FN, time, Scell, NSC, numpar)
    integer, intent(in) :: FN	! file number
@@ -1471,6 +1560,7 @@ subroutine close_output_files(Scell, numpar)
    close(numpar%FN_energies)
    close(numpar%FN_supercell)
    close(numpar%FN_numbers)
+   close(numpar%FN_orb_resolved)
    close(numpar%FN_deep_holes)
    if (numpar%do_kappa) close(numpar%FN_kappa)
    if (numpar%do_kappa_dyn) close(numpar%FN_kappa_dyn)
@@ -1516,6 +1606,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    character(100) :: file_electron_temperatures ! electron temperatures (for band-resolved calculations)
    character(100) :: file_electron_chempot ! electron chemical potentials (for band-resolved calculations)
    character(100) :: file_numbers	! total numbers of electrons and holes
+   character(100) :: file_orb_resolved ! orbital-resolved electronic data
    character(100) :: file_deep_holes	! number of deep-shell holes in each shell
    character(100) :: file_Ei		! energy levels
    character(100) :: file_DOS	! DOS
@@ -1626,6 +1717,13 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    write(numpar%FN_numbers, '(a)') '#Time	VB_electrons	CB_electrons	High_energy_electrons	Deep_holes	Error	Photons'
    write(numpar%FN_numbers, '(a)') '#[fs]	[1/atom]	[1/atom]	[1/atom]	[1/atom]	[1/atom]	[1/atom]'
 
+
+   file_orb_resolved = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_data.dat'
+   open(NEWUNIT=FN, FILE = trim(adjustl(file_orb_resolved)))
+   numpar%FN_orb_resolved = FN
+   call write_orb_resolved_header(numpar%FN_orb_resolved, Scell(1), matter) ! below
+
+
    file_deep_holes = trim(adjustl(file_path))//'OUTPUT_deep_shell_holes.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_deep_holes)))
    numpar%FN_deep_holes = FN
@@ -1732,15 +1830,24 @@ subroutine create_output_files(Scell,matter,laser,numpar)
       endif
    enddo
 
+   ! Prepare gnuplot scripts to plot all the output data:
    call create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, &
    'OUTPUT_temperatures.dat', &
    'OUTPUT_pressure_and_stress.dat', &
-   'OUTPUT_energies.dat', file_atoms_R, file_atoms_S, &
-   'OUTPUT_supercell.dat', 'OUTPUT_electron_properties.dat', &
-   'OUTPUT_electron_heat_conductivity.dat', 'OUTPUT_electron_heat_conductivity_dyn.dat', &
-   'OUTPUT_electron_hole_numbers.dat', 'OUTPUT_deep_shell_holes.dat', &
-   'OUTPUT_optical_coefficients.dat', file_Ei, file_PCF, &
-   'OUTPUT_nearest_neighbors.dat', 'OUTPUT_electron_entropy.dat', 'OUTPUT_electron_temperatures.dat', &
+   'OUTPUT_energies.dat', &
+   file_atoms_R, file_atoms_S, &
+   'OUTPUT_supercell.dat', &
+   'OUTPUT_electron_properties.dat', &
+   'OUTPUT_electron_heat_conductivity.dat', &
+   'OUTPUT_electron_heat_conductivity_dyn.dat', &
+   'OUTPUT_electron_hole_numbers.dat', &
+   'OUTPUT_orbital_resolved_data.dat', &
+   'OUTPUT_deep_shell_holes.dat', &
+   'OUTPUT_optical_coefficients.dat', &
+   file_Ei, file_PCF, &
+   'OUTPUT_nearest_neighbors.dat', &
+   'OUTPUT_electron_entropy.dat', &
+   'OUTPUT_electron_temperatures.dat', &
    'OUTPUT_electron_chempotentials.dat')  ! below
 
 end subroutine create_output_files
@@ -1755,7 +1862,7 @@ end subroutine create_file_header
 
 subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, &
 file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
-file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy, file_Te, file_mu)
+file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy, file_Te, file_mu)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -1771,6 +1878,7 @@ file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_ele
    character(*) :: file_heat_capacity  ! electronic heat capacity
    character(*) :: file_heat_capacity_dyn  ! electronic heat conductivity dynamical
    character(*) :: file_numbers	! total numbers of electrons and holes
+   character(*) :: file_orb   ! orbital-resolved electron parameters
    character(*) :: file_deep_holes	! deep-shell holes
    character(*) :: file_optics		! optical coefficients
    character(*) :: file_Ei		! energy levels
@@ -1823,6 +1931,11 @@ file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_ele
    ! Numbers of particles:
    File_name  = trim(adjustl(file_path))//'OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
    call gnu_numbers(File_name, file_numbers, t0, t_last, 'OUTPUT_electrons_holes.'//trim(adjustl(numpar%fig_extention))) ! below
+
+   ! Orbital-resolved electron parameters:
+   File_name  = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_Gnuplot'//trim(adjustl(sh_cmd))
+   call gnu_orbital_resolved(Scell(1), matter, numpar, File_name, file_orb, t0, t_last, 'OUTPUT_orbital_resolved_Ne.'// &
+               trim(adjustl(numpar%fig_extention))) ! below
 
    ! Numbers of CB electrons:
    File_name  = trim(adjustl(file_path))//'OUTPUT_CB_electrons_Gnuplot'//trim(adjustl(sh_cmd))
@@ -1972,6 +2085,12 @@ file_numbers, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_ele
       ! Numbers of particles:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electrons_and_holes_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
       call gnu_numbers(File_name, trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electrons_holes_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+      ! Orbital-resolved electron parameters:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
+      call gnu_orbital_resolved(Scell(1), matter, numpar, File_name, &
+               trim(adjustl(file_orb(1:len(trim(adjustl(file_orb)))-4)))//'_CONVOLVED.dat', &
+               t0, t_last, 'OUTPUT_orbital_resolved_Ne_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Numbers of CB electrons:
       File_name  = trim(adjustl(file_path))//'OUTPUT_CB_electrons_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -2415,6 +2534,91 @@ subroutine gnu_numbers(File_name, file_numbers, t0, t_last, eps_name)
 end subroutine gnu_numbers
 
 
+
+! Orbital-resolved electron parameters:
+subroutine gnu_orbital_resolved(Scell, matter, numpar, File_name, file_orb, t0, t_last, eps_name)
+   type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Solid), intent(in) :: matter
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters, including lists of earest neighbors
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_orb ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   !------------------------
+   integer :: FN, i_at, i_types, N_at, N_types, norb, i_col, Nsiz, NKOA
+   real(8) :: x_tics
+   character(8) :: temp, time_order, chtemp1, chtemp, ch_col
+
+   ! Find number of orbitals per atom:
+   NKOA = matter%N_KAO      ! number of kinds of atoms
+   N_at = size(Scell%MDatoms) ! number of atoms
+   Nsiz = size(Scell%Ha,1) ! total number of orbitals
+   norb = Nsiz/N_at ! orbitals per atom
+   ! Find number of different orbital types:
+   N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Numbers', 'Time (fs)', &
+                        'Electrons (1/atom)', trim(adjustl(eps_name)), g_numpar%path_sep, 1) ! module "Gnuplotting"
+
+   if (numpar%path_sep .EQ. '\') then	! if it is Windows
+
+      ! All shells resolved:
+      i_col = 2   ! to start with
+      do i_at = 1, NKOA
+         do i_types = 1, N_types
+            chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+            write(chtemp,'(a)') trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
+            i_col = i_col + 1 ! column number
+            write(ch_col, '(i4)') i_col
+
+            if ( (i_at == 1) .and. (i_types == 1) ) then ! first line
+               write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_orb)), '" u 1:'//trim(adjustl(ch_col))// &
+                        ' w l lw LW title "'//trim(adjustl(chtemp))//'" ,\'
+            else ! regular orrbital
+               write(FN, '(a,a,a)') ' "', trim(adjustl(file_orb)), '" u 1:'//trim(adjustl(ch_col))//' w l lw LW title "'// &
+                        trim(adjustl(chtemp))//'" ,\'
+            endif
+         enddo   ! i_types
+      enddo ! i_at
+      ! Last: total Ne:
+      write(FN, '(a)') ' "'//trim(adjustl(file_orb))//'" u 1:2 w l lw LW title "Total" '
+
+   else
+      ! All shells resolved:
+      i_col = 2   ! to start with
+      do i_at = 1, NKOA
+         do i_types = 1, N_types
+            chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+            write(chtemp,'(a)') trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
+            i_col = i_col + 1 ! column number
+            write(ch_col, '(i4)') i_col
+
+            if ( (i_at == 1) .and. (i_types == 1) ) then ! first line
+               write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_orb)), '\" u 1:'//trim(adjustl(ch_col))// &
+                        ' w l lw \"$LW\" title \"'//trim(adjustl(chtemp))//'\" ,\'
+            else ! regular orrbital
+               write(FN, '(a,a,a)') ' "', trim(adjustl(file_orb)), '\" u 1:'//trim(adjustl(ch_col))//' w l lw \"$LW\" title \"'// &
+                        trim(adjustl(chtemp))//'\" ,\'
+            endif
+         enddo   ! i_types
+      enddo ! i_at
+      ! Last: total Ne:
+      write(FN, '(a)') ' \"'//trim(adjustl(file_orb))//'\" u 1:2 w l lw \"$LW\" title \"Total\" '
+   endif
+
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_orbital_resolved
+
+
+
+
 subroutine gnu_CB_electrons(File_name, file_numbers, t0, t_last, eps_name)
    character(*), intent(in) :: File_name   ! file to create
    character(*), intent(in) :: file_numbers ! input file
@@ -2759,7 +2963,7 @@ subroutine gnu_heat_conductivity_dyn(File_name, file_heat_capacity, t0, t_last, 
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron Kappa','Time (fs)', 'Heat capacity (W/(m K))', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron Kappa','Time (fs)', 'Heat conductivity (W/(m K))', trim(adjustl(eps_name)), g_numpar%path_sep, 0)	! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_heat_capacity)), ' "u 1:2 w l lw LW title "kappa total",\'
@@ -3332,7 +3536,7 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
    endif
 
    ! Save pulse parameters conversion, if required:
-   call printout_fluence_dose_conversion(Scell(1), laser, numpar, matter, INFO)   ! below
+   call printout_fluence_dose_conversion(Scell(1), laser, numpar, matter, INFO, Err%File_Num)   ! below
    if (INFO < 0) then
       INFO = 9
       Error_descript = 'Specified photon energy does not allow for conversion of fluence into dose, the program terminates'
@@ -3572,12 +3776,13 @@ end subroutine open_parameters_file
 
 
 
-subroutine printout_fluence_dose_conversion(Scell, laser, numpar, matter, INFO)
+subroutine printout_fluence_dose_conversion(Scell, laser, numpar, matter, INFO, FN_err)
    type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
    type(Solid), intent(in) :: matter ! parameters of the material
    integer, intent(inout) :: INFO   ! flag
+   integer, intent(in) :: FN_err ! error-file number
    !---------------------------
    character(30) :: F_in, Dose, PN, hw
    integer :: i, Nsiz, FN, i_CS
@@ -3627,8 +3832,9 @@ subroutine printout_fluence_dose_conversion(Scell, laser, numpar, matter, INFO)
             write(6, '(a)') 'Conversion from incoming fluence to dose CANNOT be done!'
          elseif ( (laser(i)%hw < 30.0d0) .and. (i_CS < 1) ) then ! Print warning for too low photon energy:
             INFO = 1
-            write(6, '(a)') 'WARNING: Photon energy is too low (<30 eV): '//trim(adjustl(hw))//' [eV]'
-            write(6, '(a)') 'Conversion from incoming fluence to dose may not work well!'
+            !write(6, '(a)') 'WARNING: Photon energy is too low (<30 eV): '//trim(adjustl(hw))//' [eV]'
+            !write(6, '(a)') 'Conversion from incoming fluence to dose may not work well!'
+            call printout_warning(6, 5, text_to_add=trim(adjustl(hw)) ) ! module "Read_input_data"
          endif
 
          ! Print in the file too:
@@ -3642,8 +3848,11 @@ subroutine printout_fluence_dose_conversion(Scell, laser, numpar, matter, INFO)
                write(FN, '(a)') 'ERROR: Photon energy is too low (<E_gap): '//trim(adjustl(hw))//' [eV]'
                write(FN, '(a)') 'Conversion from incoming fluence to dose CANNOT be done!'
             elseif ( (laser(i)%hw < 30.0d0) .and. (i_CS < 1) ) then ! Print warning for too low photon energy:
-               write(FN, '(a)') 'WARNING: Photon energy is too low (<30 eV): '//trim(adjustl(hw))//' [eV]'
-               write(FN, '(a)') 'Conversion from incoming fluence to dose may not work well!'
+               !write(FN, '(a)') 'WARNING: Photon energy is too low (<30 eV): '//trim(adjustl(hw))//' [eV]'
+               !write(FN, '(a)') 'Conversion from incoming fluence to dose may not work well!'
+               call printout_warning(FN, 5, text_to_add=trim(adjustl(hw)) ) ! module "Read_input_data"
+               ! Annd in the error-file too:
+               call printout_warning(FN_err, 5, text_to_add=trim(adjustl(hw)) ) ! module "Read_input_data"
             endif
          endif
 

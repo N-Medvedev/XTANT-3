@@ -6585,6 +6585,18 @@ subroutine printout_warning(print_to, ind, text_to_print, text_to_add) ! standar
       write(print_to, '(a)') 'Proceed with caution, or reduce the dose (fluence) below ~10 eV/atom'
 
    !---------------------
+   case (5) ! too low photon energy
+      if (present(text_to_add)) then
+         write(ch_lng,'(a)') '('//trim(adjustl(text_to_add))//' eV)'
+      else
+         write(ch_lng,'(a)') ''
+      endif
+      write(print_to, '(a)') 'Photon energy is too low (<30 eV) '//trim(adjustl(ch_lng))
+      write(print_to, '(a)') 'Conversion from incoming fluence to dose may not work well!'
+      write(print_to, '(a)') 'Used atmoic photon cross section is unreliable at such energies.'
+      write(print_to, '(a)') 'Proceed with caution, or increase photon energy above ~30 eV,'
+      write(print_to, '(a)') 'or change the cross-section from atomic to CDF-based.'
+   !---------------------
    end select
 
    ! Warning ending:
