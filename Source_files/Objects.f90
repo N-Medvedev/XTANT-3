@@ -571,6 +571,13 @@ type :: MC_atoms ! to treat holes in each shell of each atom
    real(8), dimension(:), allocatable :: Noh	! total number of holes in all shells of this atom
 end type MC_atoms
 
+
+type :: Orbital_resolved_data ! to count electrons in orbitals separately
+   real(8), dimension(:), allocatable :: Ne  ! number of electrons in each orbital
+   real(8), dimension(:), allocatable :: Ee  ! energy of electrons in each orbital
+end type Orbital_resolved_data
+
+
 !==============================================
 ! Subcells for linear scaling TB (NOT READY):
 type Sub_cell
@@ -602,7 +609,7 @@ end type Sub_cell
 ! Supercell as object:
 type Super_cell
    ! Sub-cells for linear scaling TB, if used:
-   type(Sub_cell), dimension(:,:,:), allocatable :: Subcell ! Subcells along 3 axes: X, Y, Z
+   type(Sub_cell), dimension(:,:,:), allocatable :: Subcell ! Subcells along 3 axes: X, Y, Z (currently unused)
    ! Data for the entire simulation box:
    ! How many electrons and atoms in the super-cell:
    integer :: Na, Ne	! number of atoms, electrons, in the super-cell
@@ -634,6 +641,8 @@ type Super_cell
    real(8), dimension(:), allocatable :: fe_eq_CB  ! equivalent Fermi electron distribution in CB
    real(8), dimension(:), allocatable :: fe_eq_VB  ! equivalent Fermi electron distribution in VB
    real(8) :: Se_VB, Se_eq_VB, Se_CB, Se_eq_CB  ! equivalent electron entropy in VB and CB [K/eV]
+   ! Orbital-specified parameters:
+   type(Orbital_resolved_data), dimension(:), allocatable :: Orb_data ! electron data in different orbitals of each kind of atom
    ! grid for electron distribution; distribution on this grid; high-energy electrons distribution on grid:
    real(8), dimension(:), allocatable :: E_fe_grid, fe_on_grid, fe_high_on_grid  ! electron spectrum on grid (fe*DOS)
    real(8), dimension(:), allocatable :: fe_norm_on_grid, fe_norm_high_on_grid   ! electron distribution on grid (fe)
@@ -663,7 +672,7 @@ type Super_cell
    real(8), dimension(:,:), allocatable :: Hij	! Non-orthogonal TB Hamiltonian
    real(8), dimension(:,:), allocatable :: Hij_sol ! Eigenvectors of non-orthogonal TB Hamiltonian
    real(8), dimension(:), allocatable :: eigen_S   ! eigenvalues of the hamiltonian overlap matrix
-   real(8), dimension(:), allocatable :: Ei	! energy levels, eigenvalues of the hamiltonian matrix
+   real(8), dimension(:), allocatable :: Ei	    ! energy levels, eigenvalues of the hamiltonian matrix
    real(8), dimension(:), allocatable :: Ei0	! energy levels, eigenvalues of the hamiltonian matrix on the last step
    real(8), dimension(:), allocatable :: Ei_scc_part  ! eigenvalues of the non-SCC part of the hamiltonian
    real(8), dimension(:,:), allocatable :: Aij	! coefficients used for forces in TB
@@ -682,12 +691,12 @@ type Super_cell
    real(8), dimension(3,3) :: supce 	! [A] length of super-cell
    real(8), dimension(3,3) :: supce0 	! [A] length of super-cell on the previous time-step
    real(8), dimension(3,3) :: supce_t	! [A] transposed super-cell
-   real(8), dimension(3,3) :: GG	! [A^2] super-cell^2, g-matrix
+   real(8), dimension(3,3) :: GG	    ! [A^2] super-cell^2, g-matrix
    real(8), dimension(3,3) :: Vsupce    ! Derivatives of Super-cell vectors (velocities)
    real(8), dimension(3,3) :: Vsupce0   ! Derivatives of Super-cell vectors (velocities) on last time-step
    real(8), dimension(3,3) :: k_supce 	! [1/A] length of the reciprocal super-cell
    real(8), dimension(3,3) :: supce_eq 	! [A] equilibrium lengths of super-cell
-   real(8) :: V		! super-cell volume [A^3]
+   real(8) :: V      ! super-cell volume [A^3]
    ! For atmoic calculations, lists of nearest neighbors:
    integer, dimension(:,:), allocatable :: Near_neighbor_list  	! list of nearest neighbors for all atoms
    real(8), dimension(:,:,:), allocatable :: Near_neighbor_dist	! distances to this atoms [A]
@@ -892,7 +901,7 @@ type Numerics_param
    ! numbers of files:
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
-   integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu
+   integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
    integer :: el_ion_scheme

@@ -35,7 +35,8 @@ use Atomic_tools, only : get_near_neighbours, total_forces, Potential_super_cell
                         make_time_step_atoms, make_time_step_supercell, make_time_step_atoms_Y4, make_time_step_supercell_Y4, &
                         make_time_step_atoms_M, distance_to_given_cell, shortest_distance
 use Electron_tools, only : set_initial_fe, update_fe, get_new_global_energy, find_band_gap, get_DOS_sort, &
-                     get_electronic_heat_capacity, electronic_entropy, Diff_Fermi_E, get_low_e_energy, get_total_el_energy
+                     get_electronic_heat_capacity, electronic_entropy, Diff_Fermi_E, get_low_e_energy, get_total_el_energy, &
+                     get_orbital_resolved_data
 use Nonadiabatic, only : Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, Electron_ion_collision_int, get_G_ei
 use TB_Fu, only : dHij_s_F, Attract_TB_Forces_Press_F, dErdr_s_F, dErdr_Pressure_s_F, construct_TB_H_Fu, &
                      Complex_Hamil_tot_F, Attract_TB_Forces_Press_F, get_Erep_s_F, dErdr_Pressure_s_F
@@ -1615,6 +1616,10 @@ subroutine get_electronic_thermal_parameters(numpar, Scell, NSC, matter, Err)
       call electronic_entropy(Scell(NSC)%fe, Scell(NSC)%Se_CB, i_start=Scell(NSC)%N_Egap+1) ! module "Electron_tools"
       call electronic_entropy(Scell(NSC)%fe_eq_CB, Scell(NSC)%Se_eq_CB, i_start=Scell(NSC)%N_Egap+1) ! module "Electron_tools"
    endif
+
+   !----------------------------
+   ! 3) Orbital-resolved electronic parameters:
+   call get_orbital_resolved_data(Scell(NSC), matter, numpar%DOS_weights)  ! module "Electron_tools"
 
    !----------------------------
    ! Electron heat conductivity, if required (does not work well...).
