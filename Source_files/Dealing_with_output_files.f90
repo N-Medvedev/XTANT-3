@@ -4363,6 +4363,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    write(print_to,'(a)') ' DOI: https://doi.org/10.5281/zenodo.8392569'
    write(print_to,'(a)') trim(adjustl(m_starline))
 
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') '  Calculations performed for the following parameters:'
    write(print_to,'(a,a)') ' Target material: ', trim(adjustl(matter%Name))
    write(print_to,'(a)') ' Chemical formula interpreted as: '
@@ -4412,6 +4413,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       enddo
    endif ! FEL included or not?
    
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    SCL:do i = 1, size(Scell)
       select case (abs(numpar%optic_model))
@@ -4482,6 +4484,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       endif
    enddo SCL
 
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  The model parameters used are:'
    write(text, '(f15.5)') numpar%t_total
@@ -4653,6 +4656,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
    endif
 
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  The following numerical parameters are used:'
    write(print_to,'(a,i6)') ' Number of iterations in the MC module: ', numpar%NMC
@@ -4693,6 +4697,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a)') ' Atoms were FROZEN instead of moving in MD!'
    endif AT_MOVE
 
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  The schemes for electron populations used are:'
 
@@ -4810,6 +4815,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    endif
 
 
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    optional_output = .false.  ! to start with
    write(print_to,'(a)') '  Optional output:'
@@ -4845,6 +4851,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
    if (numpar%save_fe) then
       write(print_to,'(a)') ' Electron distribution on energy levels'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_fe_orb) then
+      write(print_to,'(a)') ' Orbital-resolved electron distribution on energy levels'
       optional_output = .true.   ! there is at least some optional output
    endif
 
