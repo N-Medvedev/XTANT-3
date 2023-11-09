@@ -575,6 +575,7 @@ end type MC_atoms
 type :: Orbital_resolved_data ! to count electrons in orbitals separately
    real(8), dimension(:), allocatable :: Ne  ! number of electrons in each orbital
    real(8), dimension(:), allocatable :: Ee  ! energy of electrons in each orbital
+   real(8), dimension(:,:), allocatable :: fe  ! electron distribution function over TB levels in each orbital
 end type Orbital_resolved_data
 
 
@@ -909,7 +910,8 @@ type Numerics_param
    real(8), dimension(:,:), allocatable :: k_grid	! for the case of user-provided grid for k-space (for CDF and DOS calculations)
    logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
    ! Different output, what to save:
-   logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate, save_fe_grid
+   logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate
+   logical :: save_fe_grid, save_fe_orb
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
    logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS, do_kappa_dyn

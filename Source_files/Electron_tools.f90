@@ -1350,12 +1350,13 @@ end subroutine set_Erf_distribution
 
 
 
-subroutine get_orbital_resolved_data(Scell, matter, DOS_weights)
+subroutine get_orbital_resolved_data(Scell, matter, DOS_weights, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(solid), intent(in) :: matter   ! materil parameters
    real(8), dimension(:,:,:), intent(in) :: DOS_weights ! weigths of the particular type of orbital on each energy level
+   type(Numerics_param), intent(in) :: numpar  ! numerical parameters
    !-----------------
-   integer :: Nat, Nsh, i, j
+   integer :: Nat, Nsh, i, j, Nsiz
    real(8) :: N_MDat
 
    ! Number of kinds of atoms:
@@ -1379,6 +1380,10 @@ subroutine get_orbital_resolved_data(Scell, matter, DOS_weights)
       ! Make sure output data are allocated:
       if (.not.allocated(Scell%Orb_data(i)%Ne)) allocate(Scell%Orb_data(i)%Ne(Nsh), source = 0.0d0)
       if (.not.allocated(Scell%Orb_data(i)%Ee)) allocate(Scell%Orb_data(i)%Ee(Nsh), source = 0.0d0)
+      if (numpar%save_fe_orb) then
+         Nsiz = size(Scell%fe)
+         if (.not.allocated(Scell%Orb_data(i)%fe)) allocate(Scell%Orb_data(i)%fe(Nsh, Nsiz), source = 0.0d0)
+      endif
       ! For all orbitals:
       do j = 1, Nsh
          ! Number of electrons in each orbital:
@@ -1388,6 +1393,10 @@ subroutine get_orbital_resolved_data(Scell, matter, DOS_weights)
          ! Normalize the data per atom:
          Scell%Orb_data(i)%Ne(j) = Scell%Orb_data(i)%Ne(j) / N_MDat   ! [electron/atom]
          Scell%Orb_data(i)%Ee(j) = Scell%Orb_data(i)%Ee(j) / N_MDat   ! [eV/atom]
+         ! Orbital-resolved distribution function, if requested:
+         if (numpar%save_fe_orb) then
+            Scell%Orb_data(i)%fe(j,:) = Scell%fe(:) * DOS_weights(i, j, :)
+         endif
       enddo ! j
    enddo ! i
 

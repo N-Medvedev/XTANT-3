@@ -191,6 +191,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%save_DOS = .false.	! excluded calculation and printout of DOS
    numpar%Smear_DOS = 0.05d0	! [eV] default smearing for DOS calculations
    numpar%save_fe = .false.	! excluded printout distribution function
+   numpar%save_fe_orb = .false.	! excluded printout orbital-resolved distribution function
    numpar%save_fe_grid = .false.	! excluded printout distribution function on the grid
    numpar%save_PCF = .false.	! excluded printout pair correlation function
    numpar%save_XYZ = .true.	! included printout atomic coordinates in XYZ format
@@ -4971,6 +4972,7 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
    read_well = .true.   ! to start with
    ! Default values:
    numpar%save_fe = .false.
+   numpar%save_fe_orb = .false.
    numpar%save_fe_grid = .false.
    dE_min = 1.0d-4   ! [eV] minimal allowed grid step
    dE = 0.1d0  ! [eV] energy grid step
@@ -4997,8 +4999,12 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
    select case (N)
    case (1) ! printout distribution on TB energy levels
       numpar%save_fe = .true.
+   case (-1)   ! printout orbital-resolved distribution
+      numpar%save_fe = .true.
+      numpar%save_fe_orb = .true.
    case (2) ! printout distribution on TB energy levels and on the user-defined grid
       numpar%save_fe = .true.
+      !numpar%save_fe_orb = .true.
       numpar%save_fe_grid = .true.
    case (-2) ! printout distribution on the user-defined grid, but not on TB energy levels
       numpar%save_fe_grid = .true.

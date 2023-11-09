@@ -30,7 +30,7 @@ use Dealing_with_files, only: Count_lines_in_file
 implicit none 
 PRIVATE
 
-public :: write_gnu_printout, write_gnuplot_script_header_new, collect_gnuplots
+public :: write_gnu_printout, write_gnuplot_script_header_new, collect_gnuplots, write_gnuplot_script_ending_new
 
 
  contains
