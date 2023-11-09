@@ -46,7 +46,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 08.11.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 09.11.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -112,9 +112,10 @@ subroutine write_output_files(numpar, time, matter, Scell)
       end select
       if (numpar%save_fe) then
          if (numpar%do_partial_thermal) then ! Electron distribution functions on TB energy levels
-            call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq, Scell(1)%fe_eq_VB, Scell(1)%fe_eq_CB)
+            call save_distribution(numpar%FN_fe, numpar, Scell(1), time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq, &
+                                    Scell(1)%fe_eq_VB, Scell(1)%fe_eq_CB)
          else
-            call save_distribution(numpar%FN_fe, time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq)
+            call save_distribution(numpar%FN_fe, numpar, Scell(1), time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq)
          endif
       endif
       if (numpar%save_fe_grid) call electronic_distribution_on_grid(Scell(1), numpar, time)  ! distribution on grid
@@ -390,7 +391,8 @@ subroutine printout_MFP_file(numpar, matter, Scell)
          write(FN, '(a)') '\"'//trim(adjustl(file_electron_EMFP))// &
                      ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Elastic\" '
       endif
-      call write_gnuplot_script_ending(FN, gnu_electron_MFP, 1)   ! below
+      !call write_gnuplot_script_ending(FN, gnu_electron_MFP, 1)   ! below
+      call write_gnuplot_script_ending_new(FN, gnu_electron_MFP, numpar%path_sep) ! module "Gnuplotting"
       close(FN)
 
       !--------------------
@@ -473,7 +475,8 @@ subroutine printout_MFP_file(numpar, matter, Scell)
                      ' \"u 1:'//trim(adjustl(col))//' w l lw \"$LW\" title \"Total\"'
 
       endif
-      call write_gnuplot_script_ending(FN, gnu_photon_MFP, 1)  ! below
+      !call write_gnuplot_script_ending(FN, gnu_photon_MFP, 1)  ! below
+      call write_gnuplot_script_ending_new(FN, gnu_photon_MFP, numpar%path_sep) ! module "Gnuplotting"
       close(FN)
 
    endif
@@ -742,30 +745,71 @@ subroutine write_PCF(FN, atoms, matter, Scell, NSC)
 end subroutine write_PCF
 
 
-subroutine save_distribution(FN, tim, wr, fe, fe_eq, fe_eq_VB, fe_eq_CB)
+subroutine save_distribution(FN, numpar, Scell, tim, wr, fe, fe_eq, fe_eq_VB, fe_eq_CB)
    integer, intent(in) :: FN
+   type(Numerics_param), intent(in) :: numpar  ! numerical parameters
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    real(8), intent(in) :: tim
    real(8), dimension(:), intent(in) :: wr
    real(8), dimension(:), intent(in) :: fe
    real(8), dimension(:), allocatable, intent(in) :: fe_eq
    real(8), dimension(:), intent(in), optional :: fe_eq_VB, fe_eq_CB ! equivalent distr. in VB and CB
-   integer i
+   integer i, j, k
    write(FN,'(a,f25.16)') '#', tim
    if (allocated(fe_eq)) then ! there is equivalent-temperature Fermi distribution
       if (present(fe_eq_VB) .and. present(fe_eq_CB)) then
-         do i = 1, size(fe)
-            write(FN,'(f25.16,f25.16,f25.16,f25.16,f25.16)') wr(i), fe(i), fe_eq(i), fe_eq_VB(i), fe_eq_CB(i)
-         enddo
+         if (numpar%save_fe_orb) then  ! orbital-resolved distributions
+            do i = 1, size(fe)
+               write(FN,'(f25.16,f25.16,f25.16,f25.16,f25.16)', advance='no') wr(i), fe(i), fe_eq(i), fe_eq_VB(i), fe_eq_CB(i)
+               ! Add orbital-resolved distributions:
+               do j = 1, size(Scell%Orb_data)  ! all kinds of atoms
+                  do k = 1, size(Scell%Orb_data(j)%Ne)  ! all orbital types
+                     write(FN,'(f25.16)', advance='no') Scell%Orb_data(j)%fe(k,i)
+                  enddo ! k
+               enddo ! j
+               write(FN,'(a)') ''
+            enddo ! i
+         else  ! no orbital-resolved distributions
+            do i = 1, size(fe)
+               write(FN,'(f25.16,f25.16,f25.16,f25.16,f25.16)') wr(i), fe(i), fe_eq(i), fe_eq_VB(i), fe_eq_CB(i)
+            enddo
+         endif ! numpar%save_fe_orb
       else  ! without band-resolved part
-         do i = 1, size(fe)
-            write(FN,'(f25.16,f25.16,f25.16)') wr(i), fe(i), fe_eq(i)
-         enddo
-      endif
+         if (numpar%save_fe_orb) then  ! orbital-resolved distributions
+            do i = 1, size(fe)
+               write(FN,'(f25.16,f25.16,f25.16)', advance='no') wr(i), fe(i), fe_eq(i)
+               ! Add orbital-resolved distributions:
+               do j = 1, size(Scell%Orb_data)  ! all kinds of atoms
+                  do k = 1, size(Scell%Orb_data(j)%Ne)  ! all orbital types
+                     write(FN,'(f25.16)', advance='no') Scell%Orb_data(j)%fe(k,i)
+                  enddo ! k
+               enddo ! j
+               write(FN,'(a)') ''
+            enddo ! i
+         else  ! no orbital-resolved distributions
+            do i = 1, size(fe)
+               write(FN,'(f25.16,f25.16,f25.16)') wr(i), fe(i), fe_eq(i)
+            enddo
+         endif ! numpar%save_fe_orb
+      endif ! (present(fe_eq_VB) .and. present(fe_eq_CB))
    else  ! fe is Fermi, no equivalent distribution needed
-      do i = 1, size(fe)
-         write(FN,'(f25.16,f25.16)') wr(i), fe(i)
-      enddo
-   endif
+      if (numpar%save_fe_orb) then  ! orbital-resolved distributions
+         do i = 1, size(fe)
+            write(FN,'(f25.16,f25.16)', advance='no') wr(i), fe(i)
+            ! Add orbital-resolved distributions:
+            do j = 1, size(Scell%Orb_data)  ! all kinds of atoms
+               do k = 1, size(Scell%Orb_data(j)%Ne)  ! all orbital types
+                  write(FN,'(f25.16)', advance='no') Scell%Orb_data(j)%fe(k,i)
+               enddo ! k
+            enddo ! j
+            write(FN,'(a)') ''
+         enddo ! i
+      else  ! no orbital-resolved distributions
+         do i = 1, size(fe)
+            write(FN,'(f25.16,f25.16)') wr(i), fe(i)
+         enddo
+      endif ! numpar%save_fe_orb
+   endif ! (allocated(fe_eq))
    write(FN,*) ''
    write(FN,*) ''
 end subroutine save_distribution
@@ -2037,6 +2081,18 @@ file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN
       close(FN)
    endif
 
+   ! Orbital-resoloved distribution function of electrons:
+   if (numpar%save_fe_orb) then
+      ! Distribution function can only be plotted as animated gif:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_fe_Gnuplot'//trim(adjustl(sh_cmd))
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 5.0d0, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_orbital_resolved_fe.gif', numpar%path_sep, setkey=0)
+      !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
+      call write_orb_distribution_gnuplot(FN, Scell, numpar, matter, 'OUTPUT_electron_distribution.dat')   ! below
+      call write_gnuplot_script_ending(FN, File_name, 1)
+      close(FN)
+   endif
+
    ! Distribution function of all electrons on the grid:
    if (numpar%save_fe_grid) then
       ! Distribution function can only be plotted as animated gif:
@@ -2603,7 +2659,7 @@ subroutine gnu_orbital_resolved(Scell, matter, numpar, File_name, file_orb, t0, 
                write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_orb)), '\" u 1:'//trim(adjustl(ch_col))// &
                         ' w l lw \"$LW\" title \"'//trim(adjustl(chtemp))//'\" ,\'
             else ! regular orrbital
-               write(FN, '(a,a,a)') ' "', trim(adjustl(file_orb)), '\" u 1:'//trim(adjustl(ch_col))//' w l lw \"$LW\" title \"'// &
+               write(FN, '(a,a,a)') '\"', trim(adjustl(file_orb)), '\" u 1:'//trim(adjustl(ch_col))//' w l lw \"$LW\" title \"'// &
                         trim(adjustl(chtemp))//'\" ,\'
             endif
          enddo   ! i_types
@@ -2612,7 +2668,7 @@ subroutine gnu_orbital_resolved(Scell, matter, numpar, File_name, file_orb, t0, 
       write(FN, '(a)') ' \"'//trim(adjustl(file_orb))//'\" u 1:2 w l lw \"$LW\" title \"Total\" '
    endif
 
-   call write_gnuplot_script_ending(FN, File_name, 1)
+   call write_gnuplot_script_ending(FN, trim(adjustl(File_name)), 1) ! below
    close(FN)
 end subroutine gnu_orbital_resolved
 
@@ -3403,6 +3459,105 @@ subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
       write(FN, '(a)') '}'
    enddo
 end subroutine write_distribution_gnuplot
+
+
+subroutine write_orb_distribution_gnuplot(FN, Scell, numpar, matter, file_fe)
+   integer, intent(in) :: FN            ! file to write into
+   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(Solid), intent(in) :: matter	! Material parameters
+   character(*), intent(in) :: file_fe  ! file with electronic distribution function
+   !-----------------------
+   integer :: N_at, N_types, Nsiz, i_at, i_types, nat, norb
+   integer :: i, M, NSC, col, i_col, NKOA
+   character(2) :: chtemp1
+   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4, ch_name, ch_col
+   logical :: do_fe_eq
+
+   do NSC = 1, size(Scell)
+
+      NKOA = matter%N_KAO    ! number of kinds of atoms
+      ! Find number of orbitals per atom:
+      nat = size(Scell(NSC)%MDatoms) ! number of atoms
+      Nsiz = size(Scell(NSC)%Ha,1) ! total number of orbitals
+      norb =  Nsiz/nat ! orbitals per atom
+      ! Find number of different orbital types:
+      N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+
+
+      ! minimal energy grid:
+      write(ch_temp4,'(f)') -20.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
+      ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
+      write(ch_temp,'(f)') 25.0d0      ! Scell(NSC)%E_top
+      write(ch_temp2,'(f)') numpar%t_start
+      write(ch_temp3,'(f)') numpar%dt_save
+
+      if (numpar%do_partial_thermal) then ! includes band-resolved equivalent distributions
+         col = 5  ! column number after which orbital-resolved data start
+      else
+         select case (numpar%el_ion_scheme)
+            case (3:4)
+               col = 3  ! column number after which orbital-resolved data start
+            case default
+               col = 2  ! column number after which orbital-resolved data start
+         endselect
+      endif
+
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+
+         i_col = col ! to start with
+         do i_at = 1, NKOA
+            do i_types = 1, N_types
+               chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+               write(ch_name,'(a)') trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
+               i_col = i_col + 1 ! column number
+               write(ch_col, '(i4)') i_col
+
+               if ( (i_at == 1) .and. (i_types == 1) ) then ! first column
+                  write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
+                      '" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title sprintf("%i fs ' // trim(adjustl(ch_name)) // &
+                      '",(i-1+'// trim(adjustl(ch_temp2))// ')*' // trim(adjustl(ch_temp3)) //') ,\'
+               elseif ( (i_at == NKOA) .and. (i_types == N_types) ) then ! last column
+                  write(FN, '(a)') '"'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title "'// trim(adjustl(ch_name))//'"'
+               else  ! normal column
+                  write(FN, '(a)') '"'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title "'// trim(adjustl(ch_name))//'" ,\'
+               endif
+            enddo ! i_types
+         enddo ! i_at
+
+      else  ! Linux
+         write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+         i_col = col ! to start with
+         do i_at = 1, NKOA
+            do i_types = 1, N_types
+               chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+               write(ch_name,'(a)') trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
+               i_col = i_col + 1 ! column number
+               write(ch_col, '(i4)') i_col
+
+               if ( (i_at == 1) .and. (i_types == 1) ) then ! first column
+                  write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
+                      '\" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title sprintf(\"\%i fs ' // trim(adjustl(ch_name)) // &
+                      '\",(i-1+'// trim(adjustl(ch_temp2))// ')*' // trim(adjustl(ch_temp3)) //') ,\'
+               elseif ( (i_at == NKOA) .and. (i_types == N_types) ) then ! last column
+                  write(FN, '(a)') '\"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title \"'// trim(adjustl(ch_name))//'\"'
+               else  ! normal column
+                  write(FN, '(a)') '\"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title \"'// trim(adjustl(ch_name))//'\" ,\'
+               endif
+            enddo ! i_types
+         enddo ! i_at
+
+      endif
+      write(FN, '(a)') '}'
+   enddo
+end subroutine write_orb_distribution_gnuplot
 
 
 subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
@@ -4208,6 +4363,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    write(print_to,'(a)') ' DOI: https://doi.org/10.5281/zenodo.8392569'
    write(print_to,'(a)') trim(adjustl(m_starline))
 
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') '  Calculations performed for the following parameters:'
    write(print_to,'(a,a)') ' Target material: ', trim(adjustl(matter%Name))
    write(print_to,'(a)') ' Chemical formula interpreted as: '
@@ -4257,6 +4413,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       enddo
    endif ! FEL included or not?
    
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    SCL:do i = 1, size(Scell)
       select case (abs(numpar%optic_model))
@@ -4327,6 +4484,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       endif
    enddo SCL
 
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  The model parameters used are:'
    write(text, '(f15.5)') numpar%t_total
@@ -4498,6 +4656,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
    endif
 
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  The following numerical parameters are used:'
    write(print_to,'(a,i6)') ' Number of iterations in the MC module: ', numpar%NMC
@@ -4538,6 +4697,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a)') ' Atoms were FROZEN instead of moving in MD!'
    endif AT_MOVE
 
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  The schemes for electron populations used are:'
 
@@ -4655,6 +4815,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    endif
 
 
+   !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    optional_output = .false.  ! to start with
    write(print_to,'(a)') '  Optional output:'
@@ -4690,6 +4851,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
    if (numpar%save_fe) then
       write(print_to,'(a)') ' Electron distribution on energy levels'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_fe_orb) then
+      write(print_to,'(a)') ' Orbital-resolved electron distribution on energy levels'
       optional_output = .true.   ! there is at least some optional output
    endif
 

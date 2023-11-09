@@ -1619,7 +1619,7 @@ subroutine get_electronic_thermal_parameters(numpar, Scell, NSC, matter, Err)
 
    !----------------------------
    ! 3) Orbital-resolved electronic parameters:
-   call get_orbital_resolved_data(Scell(NSC), matter, numpar%DOS_weights)  ! module "Electron_tools"
+   call get_orbital_resolved_data(Scell(NSC), matter, numpar%DOS_weights, numpar)  ! module "Electron_tools"
 
    !----------------------------
    ! Electron heat conductivity, if required (does not work well...).
