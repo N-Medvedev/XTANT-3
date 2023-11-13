@@ -4825,12 +4825,12 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    ! save atomic positions in XYZ (1) or not (0):
    !read(FN,*,IOSTAT=Reason) N  ! save atomic positions in XYZ (1) or not (0)
    read(FN, '(a)', IOSTAT=Reason) read_line
-   read(read_line,*,IOSTAT=Reason) temp_ch   ! read parameters to interpret them below
+   read(read_line,'(a)',IOSTAT=Reason) temp_ch   ! read parameters to interpret them below
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
    read(temp_ch,*,IOSTAT=Reason) N, temp_ch2
-   if (Reason /= 0) then ! something wrong with the user-defined grid
+   if (Reason /= 0) then ! something wrong with input
       ! try reading just the first flag, no grid parameters
       read(temp_ch,*,IOSTAT=Reason) N
       count_lines = count_lines - 1 ! still reading the same line
@@ -4845,7 +4845,10 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    else
       numpar%save_XYZ = .false.	! excluded
    endif
+   !print*, 'temp_ch2', temp_ch2
+
    call interpret_additional_XYZ_input(temp_ch2, numpar%save_XYZ_extra) ! below
+   !pause 'interpret_additional_XYZ_input'
 
    ! save atomic positions in CIF (1) or not (0):
    read(FN, '(a)', IOSTAT=Reason) read_line
