@@ -46,7 +46,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 09.11.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 13.11.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -88,8 +88,10 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_super_cell(numpar%FN_supercell, time, Scell(NSC))   ! supercell parameters
       call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, &
                numpar%FN_Ce, numpar%FN_kappa, numpar%FN_kappa_dyn, numpar%FN_Se, numpar%FN_Te, numpar%FN_mu) ! TB electron parameters
+
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:), &
                print_mass=numpar%save_XYZ_extra(1), print_charge=numpar%save_XYZ_extra(2), print_Ekin=numpar%save_XYZ_extra(3))   ! below
+
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time) ! CIF format
       if (numpar%save_Ei) then
          if (numpar%scc) then ! Energy levels include SCC term:
@@ -3426,8 +3428,8 @@ subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
             endif
 
             write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
-                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
-                  trim(adjustl(ch_temp2))// ')*' // trim(adjustl(ch_temp3)) //') '
+                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) '
          !else
          !   write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
          !         '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1+'// &
@@ -3448,8 +3450,8 @@ subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
             endif
 
             write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
-                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
-                  trim(adjustl(ch_temp2))// ')*' // trim(adjustl(ch_temp3)) //') '
+                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) '
          !else
          !   write(FN, '(a)') 'p [:'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
          !         '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1+'// &
@@ -3490,7 +3492,7 @@ subroutine write_orb_distribution_gnuplot(FN, Scell, numpar, matter, file_fe)
       ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
       write(ch_temp,'(f)') 25.0d0      ! Scell(NSC)%E_top
       write(ch_temp2,'(f)') numpar%t_start
-      write(ch_temp3,'(f)') numpar%dt_save
+      write(ch_temp3,'(f10.4)') numpar%dt_save
 
       if (numpar%do_partial_thermal) then ! includes band-resolved equivalent distributions
          col = 5  ! column number after which orbital-resolved data start
@@ -3518,7 +3520,7 @@ subroutine write_orb_distribution_gnuplot(FN, Scell, numpar, matter, file_fe)
                if ( (i_at == 1) .and. (i_types == 1) ) then ! first column
                   write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:2] "'//trim(adjustl(file_fe))// &
                       '" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title sprintf("%i fs ' // trim(adjustl(ch_name)) // &
-                      '",(i-1+'// trim(adjustl(ch_temp2))// ')*' // trim(adjustl(ch_temp3)) //') ,\'
+                      '",(i*' // trim(adjustl(ch_temp3)) //'+'// trim(adjustl(ch_temp2))// ')) ,\'
                elseif ( (i_at == NKOA) .and. (i_types == N_types) ) then ! last column
                   write(FN, '(a)') '"'//trim(adjustl(file_fe))// &
                   '" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title "'// trim(adjustl(ch_name))//'"'
@@ -3543,7 +3545,7 @@ subroutine write_orb_distribution_gnuplot(FN, Scell, numpar, matter, file_fe)
                if ( (i_at == 1) .and. (i_types == 1) ) then ! first column
                   write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:2] \"'//trim(adjustl(file_fe))// &
                       '\" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title sprintf(\"\%i fs ' // trim(adjustl(ch_name)) // &
-                      '\",(i-1+'// trim(adjustl(ch_temp2))// ')*' // trim(adjustl(ch_temp3)) //') ,\'
+                      '\",(i*'// trim(adjustl(ch_temp3)) //'+'// trim(adjustl(ch_temp2))// ')) ,\'
                elseif ( (i_at == NKOA) .and. (i_types == N_types) ) then ! last column
                   write(FN, '(a)') '\"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title \"'// trim(adjustl(ch_name))//'\"'
