@@ -20,11 +20,7 @@ It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matte
 
 _This code is work in progress, anything might change without a notice, bugfixes and patches are expected!_
 
-Although we endeavour to ensure that the code XTANT and results delivered are correct, no warranty is given as to its accuracy. We assume no responsibility for possible errors or omissions. We shall not be liable for any damage arising from the use of this code or its parts or any results produced with it, or from any action or decision taken as a result of using this code or any related material.
-
-This code is distributed _as is_ for non-commercial peaceful purposes only, such as research and education. It is __explicitly prohibited__ to use the code, its parts, its results or any related material for military-related or other than peaceful purposes.
-
-By using this code or its materials, you agree with these terms and conditions. 
+Although we endeavour to ensure that the code XTANT and results delivered are correct, no warranty is given as to its accuracy (for details, see GPL-3.0 license). This code was developed for non-commercial peaceful purposes only, such as research and education.
 
 ## Tables with calculated electron-phonon coupling
 
