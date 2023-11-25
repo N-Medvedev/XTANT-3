@@ -5007,9 +5007,16 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
       numpar%save_fe_orb = .true.
    case (2) ! printout distribution on TB energy levels and on the user-defined grid
       numpar%save_fe = .true.
-      !numpar%save_fe_orb = .true.
       numpar%save_fe_grid = .true.
    case (-2) ! printout distribution on the user-defined grid, but not on TB energy levels
+      numpar%save_fe_grid = .true.
+   case (3) ! printout distribution on TB energy levels, orbital-resolved, and on the user-defined grid
+      numpar%save_fe = .true.
+      numpar%save_fe_orb = .true.
+      numpar%save_fe_grid = .true.
+   case (-3) ! printout orbital-resolved distribution, and on the user-defined grid
+      !numpar%save_fe = .true.   ! but not the total one, for some reason
+      numpar%save_fe_orb = .true.
       numpar%save_fe_grid = .true.
    end select
 
