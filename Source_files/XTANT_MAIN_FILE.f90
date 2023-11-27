@@ -170,15 +170,15 @@ call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%ou
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! If user set '-size' option to vary the super-cell size:
 if (g_numpar%change_size) then
-   call vary_size(Err=g_Err%Err) ! see below, used for testing
-   if (g_Err%Err) goto 2012      ! if the USER does not want to run the calculations
+   call vary_size(Err=g_Err%Stopsignal) ! see below, used for testing
+   if (g_Err%Stopsignal .or. g_Err%Err) goto 2012      ! if the USER does not want to run the calculations
 endif
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! If user set to calculate the coordinate path between two phases of material:
 
 if (g_numpar%do_path_coordinate) then
    call coordinate_path( )  ! below
-   if (g_Err%Err) goto 2012      ! if the USER does not want to run the calculations
+   if (g_Err%Err .or. g_Err%Stopsignal) goto 2012      ! if the USER does not want to run the calculations
 endif
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 
@@ -554,6 +554,8 @@ subroutine coordinate_path( )
       
       ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
       call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 1, g_Err, g_time) ! module "TB"
+      ! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
+      call Electron_thermalization(g_Scell, g_numpar, skip_thermalization=.true.) ! module "Electron_tools"
 
       ! Get global energy of the system at the beginning:
       call get_glob_energy(g_Scell, g_matter) ! module "Electron_tools"
@@ -574,7 +576,8 @@ subroutine coordinate_path( )
    close(100)
    write(6, '(a)') 'Subroutine coordinate_path completed, file OUTPUT_coordinate_path.dat is created'
    write(6, '(a)') 'XTANT is terminating now...'
-   g_Err%Err = .true.   ! not to continue with the real calculations
+   !g_Err%Err = .true.   ! not to continue with the real calculations
+   g_Err%Stopsignal = .true.  ! not to continue with the real calculations
 end subroutine coordinate_path
 
 
@@ -615,6 +618,7 @@ subroutine vary_size(do_forces, Err)
    i_min = g_numpar%change_size_min
    i_max = g_numpar%change_size_max
    N_points = g_numpar%change_size_step-1
+   N_points = max(1,N_points) ! to make sure it is not smaller than 1
    d_i = (i_max - i_min)/dble(N_points)   ! step size in units of Supce
 
    !print*, 'vary_size:', i_min, i_max, N_points, d_i
@@ -676,6 +680,9 @@ subroutine vary_size(do_forces, Err)
       call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 1, g_Err, g_time) ! module "TB"
       if (g_numpar%verbose) call print_time_step('Hamiltonian constructed and diagonalized', msec=.true.)
 
+      ! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
+      call Electron_thermalization(g_Scell, g_numpar, skip_thermalization=.true.) ! module "Electron_tools"
+
       ! Get global energy of the system at the beginning:
       call get_glob_energy(g_Scell, g_matter) ! module "Electron_tools"
 
@@ -710,7 +717,8 @@ subroutine vary_size(do_forces, Err)
       else
          write(*,'(a,X1i0,a,X1i0,X1i0,f14.6,f14.6,f14.6)') 'Supercell size:', i_test-1, &
          ' '//trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
-         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)), at1, at2, rescale_factor, g_time, &
+         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)), &
+         at1, at2, rescale_factor, g_time, &
          g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
          write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, &
                g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, &
