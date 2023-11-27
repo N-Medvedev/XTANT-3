@@ -22,6 +22,7 @@
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
 ! This module contains universal constants
+! The values are taken from: http://physics.nist.gov/constants
 
 MODULE Universal_constants
  implicit none
@@ -45,7 +46,7 @@ parameter (g_Pi 	= 3.1415926535897932384626433832795d0)	! Pi
 parameter (g_2Pi   = 2.0d0*g_Pi)        ! 2*Pi
 parameter (g_half_Pi   = 0.5d0*g_Pi)    ! Pi/2
 parameter (g_exp 	= dexp(1.0d0))		! e
-parameter (g_e 		= 1.602176487d-19)	! Electron charge	[Coulomb]
+parameter (g_e 		= 1.602176634d-19)	! Electron charge	[Coulomb]
 parameter (g_e_ESU	= 4.8032068d-10)	! Electron charge magnitude	[esu]
 parameter (g_me	= 9.1093821545d-31)	    ! Electron mass	[kg]
 parameter (g_me_MeV	= 0.51099906d0)		! Electron mass	[MeV/c^2]
