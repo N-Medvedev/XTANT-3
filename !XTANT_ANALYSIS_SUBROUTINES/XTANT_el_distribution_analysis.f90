@@ -139,12 +139,12 @@ endif
 ! Get the size of the array for the distribution and allocate arrays:
 call get_size_of_distribution(FN_distr, FN_fe, Ei, distr, Ei_fe, fe, Ei_gridded, Grid_dE, norm_present, print_fe, print_on_grid)  ! below
 print*, 'Distribution size is known, proceeding to reading files'
-if (.not.print_fe) then
+if (print_fe) then
    print*, '1) Distribution on energy levels is provided to average'
 else
    print*, '1) No distribution on energy levels provided'
 endif
-if (.not.print_on_grid) then
+if (print_on_grid) then
    print*, '2) Distribution on grid is provided to average'
    if (.not.norm_present) then
       print*, 'Normalized distribution is NOT provided, only spectrum'
