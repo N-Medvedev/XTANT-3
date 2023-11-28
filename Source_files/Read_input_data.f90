@@ -4797,12 +4797,11 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 
    ! save electron electron distribution (1) or not (0):
    !read(FN,*,IOSTAT=Reason) N  ! save electron distribution function (1) or not (0)
-   read(FN, '(a)', IOSTAT=Reason) read_line
-   read(read_line,*,IOSTAT=Reason) temp_ch   ! read parameters to interpret them in a subroutine
+   read(FN, '(a)', IOSTAT=Reason) read_line  ! read parameters to interpret them in a subroutine
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
-   call interprete_distribution_input(temp_ch, numpar, Scell(1), read_well) ! below
+   call interprete_distribution_input(read_line, numpar, Scell(1), read_well) ! below
    if (.not. read_well) then
       write(Error_descript,'(a,i5,a,$)') 'Could not interprete line ', count_lines, ' in file '//trim(adjustl(File_name))
       call Save_error_details(Err, 3, Error_descript)
@@ -4984,6 +4983,7 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
 
    read(temp_ch,*,IOSTAT=Reason) N, dE, Emax
    call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
+
    if (.not. read_well) then ! something wrong with the user-defined grid
       ! try reading just the first flag, no grid parameters
       read(temp_ch,*,IOSTAT=Reason) N
@@ -5022,7 +5022,7 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
 
    if (numpar%save_fe_grid) then
       ! Now we know the grid parameters:
-      Nsiz = INT((Emax-Emin)/dE)
+      Nsiz = INT((Emax-Emin)/dE)+1
       ! Set the default grids:
       allocate(Scell%E_fe_grid(Nsiz), source=0.0d0)
       allocate(Scell%fe_on_grid(Nsiz), source=0.0d0)
@@ -5032,7 +5032,7 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
       allocate(Scell%fe_norm_high_on_grid(Nsiz), source=0.0d0)
       ! Create the grid:
       Scell%E_fe_grid(1) = Emin
-      do i = 2, Nsiz
+      do i = 2, Nsiz+1
          Scell%E_fe_grid(i) = Scell%E_fe_grid(i-1) + dE
       enddo
    endif
@@ -5385,6 +5385,8 @@ subroutine set_MD_step_grid(File_name, numpar, read_well_out, Error_descript)
    Path = trim(adjustl(m_INPUT_directory))//numpar%path_sep    ! where to find the file with the data
    full_file_name = trim(adjustl(Path))//trim(adjustl(File_name))   ! to read the file from the INPUT_DATA directory
    inquire(file=trim(adjustl(full_file_name)),exist=file_exist) ! check if input file is there
+   !print*, File_name, file_exist
+
    if (file_exist) then ! try to read it, if there is a grid provided
       open(newunit = FN, FILE = trim(adjustl(full_file_name)), status = 'old', action='read')
       ! Find the grid size from the file:
@@ -5404,6 +5406,7 @@ subroutine set_MD_step_grid(File_name, numpar, read_well_out, Error_descript)
             write(Error_descript,'(a,i3)') 'In the file '//trim(adjustl(File_name))//' could not read line ', count_lines
             goto 9993  ! couldn't read the data, exit the cycle
          endif
+         !print*, i, numpar%dt_MD_reset_grid(i), numpar%dt_MD_grid(i)
       enddo
       read_well_out = .true.    ! we read the grid from the file well
       numpar%i_dt = 0   ! to start with
@@ -5427,7 +5430,7 @@ subroutine set_MD_step_grid(File_name, numpar, read_well_out, Error_descript)
    numpar%dt3 = numpar%dt**3/6.0d0           ! dt^3/6, often used
    numpar%dt4 = numpar%dt*numpar%dt3/8.0d0   ! dt^4/48, often used
 
-!    pause 'set_MD_step_grid'
+   !pause 'set_MD_step_grid'
 end subroutine set_MD_step_grid
 
 

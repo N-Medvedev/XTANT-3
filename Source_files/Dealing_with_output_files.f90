@@ -46,7 +46,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 25.11.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 28.11.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2097,14 +2097,31 @@ file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN
 
    ! Distribution function of all electrons on the grid:
    if (numpar%save_fe_grid) then
+      ! Find order of the max energy grid, and set number of tics as tenth of it:
+      call order_of_time((Scell(1)%E_fe_grid(size(Scell(1)%E_fe_grid)) - 30.0), time_order, temp, x_tics)	! module "Little_subroutines"
+
       ! Distribution function can only be plotted as animated gif:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 10.0d0, 'Distribution', 'Energy (eV)', 'Electron density (1/(V*E))', 'OUTPUT_electron_distribution_on_grid.gif', numpar%path_sep, setkey=0)
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Electron density (1/(V*E))', 'OUTPUT_electron_distribution_on_grid.gif', numpar%path_sep, setkey=0)
       !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
       call write_distribution_on_grid_gnuplot(FN, Scell, numpar, 'OUTPUT_electron_distribution_on_grid.dat')   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
+   endif
+
+   ! DOS of electrons:
+   if (numpar%save_DOS) then  ! Material DOS
+      select case (numpar%DOS_splitting)
+      case (1) ! with partial DOS
+         ! DOS can only be plotted as animated gif:
+         File_name  = trim(adjustl(file_path))//'OUTPUT_DOS_Gnuplot'//trim(adjustl(sh_cmd))
+         open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+         call write_gnuplot_script_header_new(FN, 6, 1.0d0, 5.0d0, 'DOS', 'Energy (eV)', 'DOS (electrons/eV)', 'OUTPUT_DOS.gif', numpar%path_sep, setkey=0)
+         call write_DOS_gnuplot(FN, Scell, numpar, matter, 'OUTPUT_DOS.dat')   ! below
+         call write_gnuplot_script_ending(FN, File_name, 1)
+         close(FN)
+      endselect
    endif
 
    ! Optical coefficients
@@ -3568,12 +3585,14 @@ subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    character(*), intent(in) :: file_fe  ! file with electronic distribution function
    !-----------------------
+   real(8) :: E_max
    integer :: i, M, NSC
    character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
 
    do NSC = 1, size(Scell)
       ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
-      write(ch_temp,'(f16.2)') 100.0d0      ! Scell(NSC)%E_top
+      E_max = Scell(1)%E_fe_grid(size(Scell(1)%E_fe_grid))
+      write(ch_temp,'(f16.2)') E_max
       write(ch_temp2,'(f16.2)') numpar%t_start
       if (numpar%t_start > 0.0d0) then ! positive, add plus
          ch_temp2 = '+'//trim(adjustl(ch_temp2))
@@ -3602,6 +3621,101 @@ subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
       write(FN, '(a)') '}'
    enddo
 end subroutine write_distribution_on_grid_gnuplot
+
+
+
+
+subroutine write_DOS_gnuplot(FN, Scell, numpar, matter, file_fe)
+   integer, intent(in) :: FN            ! file to write into
+   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(Solid), intent(in) :: matter	! Material parameters
+   character(*), intent(in) :: file_fe  ! file with electronic distribution function
+   !-----------------------
+   integer :: N_at, N_types, Nsiz, i_at, i_types, nat, norb
+   integer :: i, M, NSC, col, i_col, NKOA
+   character(2) :: chtemp1
+   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4, ch_name, ch_col
+   logical :: do_fe_eq
+
+   do NSC = 1, size(Scell)
+
+      NKOA = matter%N_KAO    ! number of kinds of atoms
+      ! Find number of orbitals per atom:
+      nat = size(Scell(NSC)%MDatoms) ! number of atoms
+      Nsiz = size(Scell(NSC)%Ha,1) ! total number of orbitals
+      norb =  Nsiz/nat ! orbitals per atom
+      ! Find number of different orbital types:
+      N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+
+
+      ! minimal energy grid:
+      write(ch_temp4,'(f)') -20.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
+      ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
+      write(ch_temp,'(f)') 25.0d0      ! Scell(NSC)%E_top
+      write(ch_temp2,'(f)') numpar%t_start
+      write(ch_temp3,'(f10.4)') numpar%dt_save
+
+      col = 2  ! column number after which orbital-resolved data start
+
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:] "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:2 w l lw 2 lt rgb "black" title sprintf("%i fs Total",(i-1)'// &
+                  '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ') ,\'
+
+         i_col = col ! to start with
+         do i_at = 1, NKOA
+            do i_types = 1, N_types
+               chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+               write(ch_name,'(a)') trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
+               i_col = i_col + 1 ! column number
+               write(ch_col, '(i4)') i_col
+
+               if ( (i_at == NKOA) .and. (i_types == N_types) ) then ! last column
+                  write(FN, '(a)') '"'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' w l lw 2 title "'// trim(adjustl(ch_name))//'"'
+               else  ! normal column
+                  write(FN, '(a)') '"'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' w l lw 2 title "'// trim(adjustl(ch_name))//'" ,\'
+               endif
+            enddo ! i_types
+         enddo ! i_at
+
+      else  ! Linux
+         write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:] \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:2 w l lw 2 lt rgb \"black\" title sprintf(\"%i fs Total\",(i-1)'// &
+                  '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ') ,\'
+
+         i_col = col ! to start with
+         do i_at = 1, NKOA
+            do i_types = 1, N_types
+               chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+               write(ch_name,'(a)') trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
+               i_col = i_col + 1 ! column number
+               write(ch_col, '(i4)') i_col
+
+               if ( (i_at == NKOA) .and. (i_types == N_types) ) then ! last column
+                  write(FN, '(a)') '\"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title \"'// trim(adjustl(ch_name))//'\"'
+               else  ! normal column
+                  write(FN, '(a)') '\"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title \"'// trim(adjustl(ch_name))//'\" ,\'
+               endif
+            enddo ! i_types
+         enddo ! i_at
+
+      endif
+      write(FN, '(a)') '}'
+   enddo
+end subroutine write_DOS_gnuplot
+
+
 
 
 subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err)
@@ -4437,7 +4551,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
             write(text1, '(i10)') numpar%ixm
             write(text2, '(i10)') numpar%iym
             write(text3, '(i10)') numpar%izm
-             if (allocated(numpar%k_grid)) then
+            if (allocated(numpar%k_grid)) then
                write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on user-defined grid): ', &
                   trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
             else
