@@ -46,7 +46,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 27.11.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 28.11.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2097,10 +2097,13 @@ file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN
 
    ! Distribution function of all electrons on the grid:
    if (numpar%save_fe_grid) then
+      ! Find order of the max energy grid, and set number of tics as tenth of it:
+      call order_of_time((Scell(1)%E_fe_grid(size(Scell(1)%E_fe_grid)) - 30.0), time_order, temp, x_tics)	! module "Little_subroutines"
+
       ! Distribution function can only be plotted as animated gif:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 10.0d0, 'Distribution', 'Energy (eV)', 'Electron density (1/(V*E))', 'OUTPUT_electron_distribution_on_grid.gif', numpar%path_sep, setkey=0)
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Electron density (1/(V*E))', 'OUTPUT_electron_distribution_on_grid.gif', numpar%path_sep, setkey=0)
       !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
       call write_distribution_on_grid_gnuplot(FN, Scell, numpar, 'OUTPUT_electron_distribution_on_grid.dat')   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
@@ -3582,12 +3585,14 @@ subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    character(*), intent(in) :: file_fe  ! file with electronic distribution function
    !-----------------------
+   real(8) :: E_max
    integer :: i, M, NSC
    character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
 
    do NSC = 1, size(Scell)
       ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
-      write(ch_temp,'(f16.2)') 100.0d0      ! Scell(NSC)%E_top
+      E_max = Scell(1)%E_fe_grid(size(Scell(1)%E_fe_grid))
+      write(ch_temp,'(f16.2)') E_max
       write(ch_temp2,'(f16.2)') numpar%t_start
       if (numpar%t_start > 0.0d0) then ! positive, add plus
          ch_temp2 = '+'//trim(adjustl(ch_temp2))
@@ -4546,7 +4551,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
             write(text1, '(i10)') numpar%ixm
             write(text2, '(i10)') numpar%iym
             write(text3, '(i10)') numpar%izm
-             if (allocated(numpar%k_grid)) then
+            if (allocated(numpar%k_grid)) then
                write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on user-defined grid): ', &
                   trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
             else

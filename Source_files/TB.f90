@@ -2096,6 +2096,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
          !call diagonalize_complex8_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
+      else  ! gamma point, no need to diagonalize
+         allocate(Ei(size(Scell(NSC)%Ei)), source=Scell(NSC)%Ei)
+         !CHij_temp = Scell(NSC)%Hij
       end if
    else  ! orthogonal
       CSij_save = 0.0d0 ! exclude nonorthogonal contribution
@@ -2107,6 +2110,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
          call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CHij_orth=CHij_orth, CWF_orth=CWF_orth)    ! below
          !CWF_orth = TRANSPOSE(CWF_orth)   ! test
+      else  ! gamma point, no need to diagonalize
+         allocate(Ei(size(Scell(NSC)%Ei)), source=Scell(NSC)%Ei)
+         !CHij_temp = Scell(NSC)%Hij
       end if
    endif
    CHij = CHij_temp ! save for output
