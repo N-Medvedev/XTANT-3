@@ -3702,10 +3702,10 @@ subroutine write_DOS_gnuplot(FN, Scell, numpar, matter, file_fe)
 
                if ( (i_at == NKOA) .and. (i_types == N_types) ) then ! last column
                   write(FN, '(a)') '\"'//trim(adjustl(file_fe))// &
-                  '\" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title \"'// trim(adjustl(ch_name))//'\"'
+                  '\" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' w l lw 2 title \"'// trim(adjustl(ch_name))//'\"'
                else  ! normal column
                   write(FN, '(a)') '\"'//trim(adjustl(file_fe))// &
-                  '\" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' pt 7 ps 1 title \"'// trim(adjustl(ch_name))//'\" ,\'
+                  '\" index (i-1) u 1:' // trim(adjustl(ch_col)) // ' w l lw 2 title \"'// trim(adjustl(ch_name))//'\" ,\'
                endif
             enddo ! i_types
          enddo ! i_at

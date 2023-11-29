@@ -12,10 +12,10 @@ subsystem:
 	cd Source_files && $(MAKE)
 
 # Copy created executable into the parent directory:
-	scp -r Source_files/XTANT.x XTANT.x
+	scp -r Source_files/*.x .
 
 # Delete executable from the Source_files directory:
-	rm -r Source_files/XTANT.x
+	rm -r Source_files/*.x
 
 # Compile post-processing subroutines:
 	cd \!XTANT_ANALYSIS_SUBROUTINES && $(MAKE)
@@ -31,7 +31,7 @@ clean:
 	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.mod
 	rm -f \!XTANT_ANALYSIS_SUBROUTINES/*.obj
 
-	rm -f *.x
+#	rm -f *.x
 
 # Clean all results:
 cleanresults:
