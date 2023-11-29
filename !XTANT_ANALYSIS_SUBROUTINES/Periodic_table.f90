@@ -1,24 +1,24 @@
 ! 000000000000000000000000000000000000000000000000000000000000
-! This file is part of XTANT
+! This file is part of XTANT-3
+! available at: https://doi.org/10.48550/arXiv.2307.03953
+! or at: https://github.com/N-Medvedev/XTANT-3
 !
-! Copyright (C) 2016-2023 Nikita Medvedev
+! Developed by Nikita Medvedev
 !
-! XTANT is free software: you can redistribute it and/or modify it under
+! XTANT-3 is free software: you can redistribute it and/or modify it under
 ! the terms of the GNU Lesser General Public License as published by
 ! the Free Software Foundation, either version 3 of the License, or
 ! (at your option) any later version.
 !
-! Although we endeavour to ensure that the code XTANT and results delivered are correct,
+! Although we endeavour to ensure that the code XTANT-3 and results delivered are correct,
 ! no warranty is given as to its accuracy. We assume no responsibility for possible errors or omissions.
 ! We shall not be liable for any damage arising from the use of this code or its parts
 ! or any results produced with it, or from any action or decision taken
 ! as a result of using this code or any related material.
 !
 ! This code is distributed as is for non-commercial peaceful purposes only,
-! such as research and education. It is explicitly prohibited to use the code,
-! its parts, its results or any related material for military-related and other than peaceful purposes.
-!
-! By using this code or its materials, you agree with these terms and conditions.
+! such as research and education. The code, its parts, its results or any related material
+! should never be used for military-related and other than peaceful purposes.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
 ! This module reads and interpretes the data from an external file with the Periodic Table.
@@ -37,7 +37,7 @@ type Atomic_data    ! our internal atomic database "INPUT_atomic_data.dat"
    integer :: Z     ! atomic number
    real(8) :: Mass  ! atomic mass [atomic units]
    character(15) :: Full_Name   ! Full atomic name
-   character(3) :: El_Name         ! element name 
+   character(3) :: El_Name         ! element name
    real(8) :: Nvb   ! number of valence electrons
    real(8) :: r_cov ! covalent radius [A]
    real(8) :: EN    ! electronegativity
@@ -93,7 +93,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
    endif
 
    inquire(file=trim(adjustl(File_name)),exist=file_exists) ! check if input file is there
-   exists:if (file_exists) then   
+   exists:if (file_exists) then
       FN = 101
       open (unit=FN, file=trim(adjustl(File_name)))
       !open (newunit=FN, file=trim(adjustl(File_name)))
@@ -151,7 +151,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
             coun = 0         ! to start
             devide = .false. ! to start
             El = '   '       ! start a new name
-            El = trim(adjustl(El))//El_Name(i:i)   ! write it's name 
+            El = trim(adjustl(El))//El_Name(i:i)   ! write it's name
          else if (verify(trim(adjustl(El_Name(i:i))),trim(adjustl(LowCase))) == 0) then ! it's a lower-case latine letter
          ! the element name still goes on
             if (i == 1) then ! it's the first symbol, it must be an element!
@@ -166,7 +166,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
                INFO = 4
                goto 911
             endif
-            devide =.true. 
+            devide =.true.
          else ! it's another symbol
          ! no idea what that might be...
             write(error_message,*) 'Symbol ', trim(adjustl(El_Name(i:i))), ' in the compound formula could not be identified'
@@ -312,7 +312,7 @@ subroutine Count_lines(File_num, N, skip_lines)
     integer i
     if (present(skip_lines)) then
        do i=1,skip_lines
-          read(File_num,*, end=604) 
+          read(File_num,*, end=604)
        enddo
        604 continue
     endif

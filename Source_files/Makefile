@@ -5,7 +5,11 @@
 
 EXEPATH = .
 
-EXE = $(EXEPATH)/XTANT.x
+ifeq ($(db),y)
+	EXE = $(EXEPATH)/XTANT_DEBUG.x
+else
+	EXE = $(EXEPATH)/XTANT.x
+endif
 LD = ld
 
 # choose the compilers among gfortran, gfortran6.1.0, ifort2011, ifort2013
@@ -90,11 +94,11 @@ $(EXE):	$(OBJS)
 clean:
 	rm -f *.o
 	rm -f *.mod
-	rm -f XTANT.x
+	rm -f *.x
 
 # cleaning and removing all results - be careful!
 # cleanall:
 #	rm -f *.o
 #	rm -f *.mod
-#	rm -f XTANT.x
+#	rm -f *.x
 #	rm -rf OUT*
