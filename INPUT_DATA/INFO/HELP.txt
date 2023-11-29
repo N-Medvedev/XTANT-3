@@ -18,6 +18,7 @@ Error #5: inconsistent TB parametrization (only the same type of parametrization
 Error #6: diagonalization subroutine with LAPACK failed (uses MKL library)
 Error #7: some errors in low-energy electrons (probably in tempereature or chem.potential calculation)
 Error #8: error in optical coefficients (probably in complex Hamiltonian)
+Error #9: error in conversion between fluence and dose
 
 *************************************************************
 You can communicate with the program on-the-fly
