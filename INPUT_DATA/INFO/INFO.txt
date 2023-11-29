@@ -23,9 +23,13 @@ Although we endeavour to ensure that the code XTANT and results delivered are co
 *************************************************************
 HOW TO CITE
 
-The use of the code is at your own risk. Should you chose to use it, an appropriate citation is mandatory. The manual and the code can be cited as:
+The use of the code is at your own risk. Should you chose to use it, please cite appropriate works. The manual and the code can be cited as:
 
 N. Medvedev "XTANT-3: X-ray-induced Thermal And Nonthermal Transitions in Matter: theory, numerical details, user manual" (2023) https://doi.org/10.48550/arXiv.2307.03953; https://github.com/N-Medvedev/XTANT-3
+
+The software citation:
+N. Medvedev (2023). XTANT-3 [Computer software]. https://doi.org/10.5281/zenodo.8392569
+
 Journal citations may be used as follows:
 
 N. Medvedev, V. Tkachenko, V. Lipp, Z. Li, B. Ziaja, "Various damage mechanisms in carbon and silicon materials under femtosecond x-ray irradiation", 4open. 1 (2018) 3. https://doi.org/10.1051/fopen/2018003
