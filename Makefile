@@ -18,6 +18,7 @@ subsystem:
 	rm -r Source_files/*.x
 
 # Compile post-processing subroutines:
+add:
 	cd \!XTANT_ANALYSIS_SUBROUTINES && $(MAKE)
 
 

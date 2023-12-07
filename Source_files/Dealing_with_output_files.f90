@@ -46,7 +46,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 28.11.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 07.12.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -236,7 +236,11 @@ subroutine printout_MFP_file(numpar, matter, Scell)
       do k = 1, N_grid
          write(FN,'(f16.4)',advance='no') matter%El_EMFP_tot%E(k)
          do i = 1, size(matter%Atoms) ! for all atoms
-            write(FN,'(es24.8)',advance='no') 1.0d0/matter%Atoms(i)%El_EMFP%L(k) ! elastic MFP
+            if (matter%Atoms(i)%El_EMFP%L(k) > 0.0d0) then
+               write(FN,'(es24.8)',advance='no') 1.0d0/matter%Atoms(i)%El_EMFP%L(k) ! elastic MFP
+            else  ! zero CS
+               write(FN,'(es24.8)',advance='no') 1.0d20  ! elastic MFP
+            endif
          enddo
          write(FN,'(es24.8)') 1.0d0/matter%El_EMFP_tot%L(k)  ! total
       enddo
