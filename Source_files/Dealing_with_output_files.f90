@@ -46,7 +46,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 07.12.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 08.12.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -5047,7 +5047,9 @@ subroutine XTANT_label(print_to, ind)
    integer, intent(in) :: ind    ! which label to print
    select case (ind)
    case default   ! regular
-      call XTANT_label_bold(print_to)  ! below
+      call XTANT_label_3(print_to)  ! below
+   case (-2)   ! old regular
+      call XTANT_label_old(print_to)  ! below
    case (-1)       ! none
       ! Print nothing
    case (0)       ! small
@@ -5062,6 +5064,23 @@ subroutine XTANT_label(print_to, ind)
 end subroutine XTANT_label
 
 
+
+subroutine XTANT_label_3(print_to)
+   integer, intent(in) :: print_to ! the screen, or file
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') '*   __    __  _______     __       __    _   _______        *'
+   write(print_to,'(a)') '*   \ \  / / |__   __|   /  \     |  \  | | |__   __|       *'
+   write(print_to,'(a)') '*    \ \/ /     | |     / /\ \    |   \ | |    | |  ____    *'
+   write(print_to,'(a)') '*     )  (      | |    / /__\ \   | |\ \| |    | | |__  )   *'
+   write(print_to,'(a)') '*    / /\ \     | |   / ______ \  | | \   |    | |   / /    *'
+   write(print_to,'(a)') '*   /_/  \_\    |_|  /_/      \_\ |_|  \__|    |_|   \ \    *'
+   write(print_to,'(a)') '*                                                  ___) )   *'
+   write(print_to,'(a)') '*                                                 /____/    *'
+   write(print_to,'(a)') '*                                                           *'
+   write(print_to,'(a)') trim(adjustl(m_starline))
+end subroutine XTANT_label_3
+
+
 subroutine XTANT_label_small(print_to)
    integer, intent(in) :: print_to ! the screen, or file
    write(print_to,'(a)') trim(adjustl(m_starline))
@@ -5069,12 +5088,12 @@ subroutine XTANT_label_small(print_to)
    write(print_to,'(a)') '       \ \  / / |__   __|  /  \    |  \ | | |__   __|'
    write(print_to,'(a)') '        \ \/ /     | |    / /\ \   |   \| |    | |   '
    write(print_to,'(a)') '        / /\ \     | |   / ___  \  | |\   |    | |   '
-   write(print_to,'(a)') '       /_/  \_\    |_|  /_/    \_\ |_| \__|    |_|   '
+   write(print_to,'(a)') '       /_/  \_\    |_|  /_/    \_\ |_| \__|    |_| 3 '
    write(print_to,'(a)') ' '
    write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine XTANT_label_small
 
-subroutine XTANT_label_bold(print_to)
+subroutine XTANT_label_old(print_to)
    integer, intent(in) :: print_to ! the screen, or file
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '     __    __  _______     __       __    _   _______ '
@@ -5082,9 +5101,9 @@ subroutine XTANT_label_bold(print_to)
    write(print_to,'(a)') '      \ \/ /     | |     / /\ \    |   \ | |    | |   '
    write(print_to,'(a)') '       )  (      | |    / /__\ \   | |\ \| |    | |   '
    write(print_to,'(a)') '      / /\ \     | |   / ______ \  | | \   |    | |   '
-   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \_\ |_|  \__|    |_|   '
+   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \_\ |_|  \__|    |_| 3 '
    write(print_to,'(a)') trim(adjustl(m_starline))
-end subroutine XTANT_label_bold
+end subroutine XTANT_label_old
 
 subroutine XTANT_label_shade(print_to)
    integer, intent(in) :: print_to ! the screen, or file
@@ -5094,19 +5113,19 @@ subroutine XTANT_label_shade(print_to)
    write(print_to,'(a)') '      \ \///     | |     / /\\\    |   \ |||    | |   '
    write(print_to,'(a)') '       ) |(      | |    / /__\\\   | |\ \|||    | |   '
    write(print_to,'(a)') '      / /\\\     | |   / ______\\  | | \  ||    | |   '
-   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \\\ |_|  \__|    |_|   '
+   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \\\ |_|  \__|    |_| 3 '
    write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine XTANT_label_shade
 
 subroutine XTANT_label_filled(print_to)
    integer, intent(in) :: print_to ! the screen, or file
    write(print_to,'(a)') trim(adjustl(m_starline))
-   write(print_to,'(a)') '     __    __  _______     __       __    _   _______ '
-   write(print_to,'(a)') '     \*\  /*/ |__***__|   /**\     |**\  |*| |__***__|'
-   write(print_to,'(a)') '      \*\/*/     |*|     /*/\*\    |***\ |*|    |*|   '
-   write(print_to,'(a)') '       )**(      |*|    /*/__\*\   |*|\*\|*|    |*|   '
-   write(print_to,'(a)') '      /*/\*\     |*|   /*______*\  |*| \***|    |*|   '
-   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \_\ |_|  \__|    |_|   '
+   write(print_to,'(a)') '     __    __  _______     __       __    _   _______  '
+   write(print_to,'(a)') '     \*\  /*/ |__***__|   /**\     |**\  |*| |__***__| '
+   write(print_to,'(a)') '      \*\/*/     |*|     /*/\*\    |***\ |*|    |*|    '
+   write(print_to,'(a)') '       )**(      |*|    /*/__\*\   |*|\*\|*|    |*|    '
+   write(print_to,'(a)') '      /*/\*\     |*|   /*______*\  |*| \***|    |*|    '
+   write(print_to,'(a)') '     /_/  \_\    |_|  /_/      \_\ |_|  \__|    |_| *3 '
    write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine XTANT_label_filled
 
@@ -5117,7 +5136,7 @@ subroutine XTANT_label_starred(print_to)
    write(print_to,'(a)') '      ** **     **     ****    ****  **    **    '
    write(print_to,'(a)') '       ***      **    **  **   ** ** **    **    '
    write(print_to,'(a)') '      ** **     **   ********  **  ****    **    '
-   write(print_to,'(a)') '     **   **    **  **      ** **   ***    **    '
+   write(print_to,'(a)') '     **   **    **  **      ** **   ***    **  3 '
    write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine XTANT_label_starred
 
