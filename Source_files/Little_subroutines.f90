@@ -70,12 +70,29 @@ public :: Find_in_array, Find_in_array_monoton, extend_array_size, deallocate_ar
 linear_interpolation, Find_in_monotonous_1D_array, Gaussian, print_time_step, fast_pow, count_3d, print_progress, &
 interpolate_data_on_grid, number_of_types_of_orbitals, name_of_orbitals, order_of_time, set_starting_time, convolution, &
 sample_gaussian, Fermi_function, d_Fermi_function, print_time, parse_yes_no, parse_time, it_is_number, find_order_of_number, &
-exclude_doubles
+exclude_doubles, convert_hw_to_wavelength, convert_wavelength_to_hw
 
 
 
 
  contains
+
+
+pure function convert_hw_to_wavelength(E) result(lambda)
+   real(8) lambda ! [nm] wavelength correpsonding to the given photon energy
+   real(8), intent(in) :: E   ! [eV] photon energy
+   !-----------------------
+   lambda = g_2Pi * g_cvel * g_h / (E * g_e) * 1.0d9 ! [nm]
+end function convert_hw_to_wavelength
+
+
+pure function convert_wavelength_to_hw(lambda) result(E)
+   real(8) E   ! [eV] photon energy correpsonding to the given wavelength
+   real(8), intent(in) :: lambda ! [nm] wavelength
+   !-----------------------
+   E = g_2Pi * g_cvel * g_h / (lambda * 1.0d-9) / g_e  ! [eV]
+end function convert_wavelength_to_hw
+
  
 
 pure subroutine exclude_doubles(array)
