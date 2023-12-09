@@ -70,12 +70,20 @@ public :: Find_in_array, Find_in_array_monoton, extend_array_size, deallocate_ar
 linear_interpolation, Find_in_monotonous_1D_array, Gaussian, print_time_step, fast_pow, count_3d, print_progress, &
 interpolate_data_on_grid, number_of_types_of_orbitals, name_of_orbitals, order_of_time, set_starting_time, convolution, &
 sample_gaussian, Fermi_function, d_Fermi_function, print_time, parse_yes_no, parse_time, it_is_number, find_order_of_number, &
-exclude_doubles, convert_hw_to_wavelength, convert_wavelength_to_hw
+exclude_doubles, convert_hw_to_wavelength, convert_wavelength_to_hw, convert_frequency_to_hw
 
 
 
 
  contains
+
+
+pure function convert_frequency_to_hw(f) result(E)
+   real(8) E   ! [eV] photon energy correpsonding to the given frequency
+   real(8), intent(in) :: f ! [1/s] laser frequency
+   !-----------------------
+   E = g_2Pi * g_h * f / g_e  ! [eV]
+end function convert_frequency_to_hw
 
 
 pure function convert_hw_to_wavelength(E) result(lambda)

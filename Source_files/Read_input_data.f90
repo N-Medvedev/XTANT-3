@@ -26,7 +26,7 @@
 MODULE Read_input_data
 use Objects
 use Universal_constants
-use Little_subroutines, only : print_time_step, it_is_number, convert_wavelength_to_hw
+use Little_subroutines, only : print_time_step, it_is_number, convert_wavelength_to_hw, convert_frequency_to_hw
 use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file, get_file_extension, &
                               ensure_correct_path_separator
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
@@ -5810,7 +5810,7 @@ subroutine interprete_photon_units(ch_temp, var_in, var_out, print_message)
    real(8), intent(out) :: var_out
    logical, intent(in) :: print_message
    !--------------------
-   real(8) :: nm, coef_out
+   real(8) :: nm, coef_out, f
 
    !print*, 'interprete_photon_units:', ch_temp, var_in, var_out
    if (trim(adjustl(ch_temp(1:1))) == '!') then ! it is a comment line, not units
@@ -5874,6 +5874,35 @@ subroutine interprete_photon_units(ch_temp, var_in, var_out, print_message)
       nm = 1.0d-3
       ! Convertion coefficient from [nm] to [eV]:
       var_out = convert_wavelength_to_hw(nm*var_in)   ! module "Little_subroutines"
+   case ('a0', 'A0', 'Bohr', 'BOHR', 'bohr') ! wavelength -> [eV]
+      ! Convert wavelength into [nm]:
+      nm = 0.1d0 * g_au2A  ! a0 -> nm
+      ! Convertion coefficient from [nm] to [eV]:
+      var_out = convert_wavelength_to_hw(nm*var_in)   ! module "Little_subroutines"
+
+   case ('hertz', 'Hz', 'hz', 'HZ', 'Hertz', 'HERTZ') ! frequency -> [eV]
+      ! Convert frequency into [Hz]:
+      f = 1.0d0
+      ! Convertion coefficient from [Hz] to [eV]:
+      var_out = convert_frequency_to_hw(f*var_in)   ! module "Little_subroutines"
+
+   case ('GHz', 'Ghz', 'GHZ', 'ghz') ! frequency -> [eV]
+      ! Convert frequency into [Hz]:
+      f = 1.0d9
+      ! Convertion coefficient from [Hz] to [eV]:
+      var_out = convert_frequency_to_hw(f*var_in)   ! module "Little_subroutines"
+
+   case ('THz', 'Thz', 'THZ', 'thz') ! frequency -> [eV]
+      ! Convert frequency into [Hz]:
+      f = 1.0d12
+      ! Convertion coefficient from [Hz] to [eV]:
+      var_out = convert_frequency_to_hw(f*var_in)   ! module "Little_subroutines"
+
+   case ('PHz', 'Phz', 'PHZ', 'phz') ! frequency -> [eV]
+      ! Convert frequency into [Hz]:
+      f = 1.0d15
+      ! Convertion coefficient from [Hz] to [eV]:
+      var_out = convert_frequency_to_hw(f*var_in)   ! module "Little_subroutines"
 
    case ('%', 'percent') ! wavelength -> [eV]
       ! Take care to find the absolute values externally:
