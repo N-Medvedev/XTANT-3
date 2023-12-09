@@ -26,7 +26,7 @@
 MODULE Read_input_data
 use Objects
 use Universal_constants
-use Little_subroutines, only : print_time_step, it_is_number
+use Little_subroutines, only : print_time_step, it_is_number, convert_wavelength_to_hw, convert_frequency_to_hw
 use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file, get_file_extension, &
                               ensure_correct_path_separator
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
@@ -5603,23 +5603,16 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
 
 
       read(FN, '(a)', IOSTAT=Reason) read_line
-      read(read_line,*,IOSTAT=Reason) laser(i)%hw, laser(i)%FWHM_hw  ! photon energy in [eV], and FWHM width of distribution [eV]
-      if (Reason /= 0) then ! probably only energy provided, not the distribution width, so assume FWHM_hw=0
-         laser(i)%FWHM_hw = 0.0d0
-         read(read_line,*,IOSTAT=Reason) laser(i)%hw  ! photon energy in [eV] only, no distribution
-         call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
-                                 add_error_info='Line: '//trim(adjustl(read_line)))  ! below
-         if (Err%Err) goto 3417
-      else
-         call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
-                                 add_error_info='Line: '//trim(adjustl(read_line)))  ! below
-         if (Err%Err) goto 3417
-      endif
+      ! Few options for input of the photon energy or wavelength:
+      ! May contain photon energy or wavelength of the laser, may contain units, may contain FWHM of spectral distribuition and units:
+      call get_photon_parameters(read_line, laser, i, count_lines, File_name, Err) ! below
+      if (Err%Err) goto 3417
       ! Printout warning if photon energy is too high:
       if (laser(i)%hw >= 1.0d5) then
          write(text,'(f16.3)',IOSTAT=Reason) laser(i)%hw
          call printout_warning(6, 1, text_to_add=trim(adjustl(text)) ) ! below
       endif
+
 
       read(FN, '(a)', IOSTAT=Reason) read_line
       read(read_line,*,IOSTAT=Reason) laser(i)%t	  ! PULSE FWHM-DURATION IN [fs]
@@ -5676,6 +5669,256 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
    ! Close this file, it has been read through:
 3417  if (file_opened) close(FN)
 end subroutine read_input_material
+
+
+
+subroutine get_photon_parameters(read_line, laser, i, count_lines, File_name, Err)
+   character(*), intent(in) :: read_line  ! line read from the input file
+   type(Pulse), dimension(:), intent(inout) :: laser ! Laser pulse parameters
+   integer, intent(in) :: i ! laser pulse index
+   integer, intent(inout) :: count_lines  ! conter in which line the error appeared
+   character(*), intent(in) :: File_name  ! which file we are reading now
+   type(Error_handling), intent(inout) :: Err   ! error save
+   !--------------------
+   integer :: Reason
+   real(8) :: temp1, temp2, temp2_rel
+   character(12) :: ch_temp1, ch_temp2
+
+   ! A few options to set input:
+   !--------------------
+   ! 1) lets try to read 4 variables: photon energy/wavelength, its units, FWHM spectral width, its units:
+   read(read_line,*,IOSTAT=Reason) temp1, ch_temp1, temp2, ch_temp2
+   if (Reason == 0) then ! 4 variables in order, interprete them:
+      ! Interprete units of the mean:
+      call photon_units(ch_temp1, temp1, laser(i)%hw, .true.) ! below
+      ! Construct the spread (FWHM):
+      if (temp2 <= 0.0d0) then
+         temp2_rel = 0.0d0
+      elseif (trim(adjustl(ch_temp2(1:1))) == '%') then  ! given in relative units
+         temp2_rel = abs(temp2) * 1.0d-2
+      else  ! given in absolute units -> get it in relative units
+         temp2_rel = abs(temp2/temp1)
+      endif
+      laser(i)%FWHM_hw = temp2_rel * laser(i)%hw
+
+      return ! done, can exit the subroutine
+   endif
+
+   !--------------------
+   ! 2) lets try to read 3 variable: photon energy/wavelength, FWHM, units (same for both):
+   read(read_line,*,IOSTAT=Reason) temp1, temp2, ch_temp1
+   !print*, 'get_photon_parameters:', temp1, temp2, ch_temp1
+   if (Reason == 0) then ! 3 variables in order, interprete them:
+      ! Construct the spread (FWHM):
+      if (temp2 <= 0.0d0) then
+         temp2_rel = 0.0d0
+      elseif (trim(adjustl(ch_temp1(1:1))) == '%') then  ! given in relative units
+         laser(i)%hw = temp1  ! assume photon energy is given in [eV]
+         temp2_rel = abs(temp2) * 1.0d-2
+      else  ! given in absolute units -> get it in relative units
+         ! Interprete units of the mean:
+         call photon_units(ch_temp1, temp1, laser(i)%hw, .true.) ! below
+         temp2_rel = abs(temp2/temp1)
+      endif
+      laser(i)%FWHM_hw = temp2_rel * laser(i)%hw
+
+      return ! done, can exit the subroutine
+   endif
+
+   !--------------------
+   ! 3) lets try to read 3 variable: photon energy/wavelength, units, FWHM (assuming the same units as in photon energy/wavelength):
+   read(read_line,*,IOSTAT=Reason) temp1, ch_temp1, temp2
+   if (Reason == 0) then  ! 3 variables in order, interprete them:
+      ! Interprete units of the mean:
+      call photon_units(ch_temp1, temp1, laser(i)%hw, .true.) ! below
+      ! Construct the spread (FWHM):
+      if (temp2 <= 0.0d0) then
+         temp2_rel = 0.0d0
+      elseif (trim(adjustl(ch_temp1(1:1))) == '%') then  ! given in relative units
+         temp2_rel = abs(temp2) * 1.0d-2
+      else  ! given in absolute units -> get it in relative units
+         temp2_rel = abs(temp2/temp1)
+      endif
+      laser(i)%FWHM_hw = temp2_rel * laser(i)%hw
+
+      return ! done, can exit the subroutine
+   endif
+
+   !--------------------
+   ! 4) lets try to read 2 variables: photon energy/wavelength, FWHM (both assuming eV)
+   read(read_line,*,IOSTAT=Reason) temp1, temp2
+   if (Reason == 0) then  ! 3 variables in order, interprete them:
+      ! Interprete units of the mean:
+      laser(i)%hw = temp1
+      ! The spread (FWHM):
+      laser(i)%FWHM_hw = abs(temp2)
+
+      return ! done, can exit the subroutine
+   endif
+
+   !--------------------
+   ! 5) lets try to read 2 variables: photon energy/wavelength and its units (assuming monochromatic pulse, no FWHM)
+   read(read_line,*,IOSTAT=Reason) temp1, ch_temp1
+   if (Reason == 0) then  ! 3 variables in order, interprete them:
+      ! Interprete units of the mean:
+      call photon_units(ch_temp1, temp1, laser(i)%hw, .true.) ! below
+      ! No spread (FWHM):
+      laser(i)%FWHM_hw = 0.0d0
+      return ! done, can exit the subroutine
+   endif
+
+   !--------------------
+   ! 6) lets try to read 1 variable: photon energy (assuming [eV], monochromatic pulse, no FWHM)
+   read(read_line,*,IOSTAT=Reason) laser(i)%hw
+   if (Reason == 0) then  ! 3 variables in order, interprete them:
+      ! No spread (FWHM):
+      laser(i)%FWHM_hw = 0.0d0
+      return ! done, can exit the subroutine
+   endif
+
+   !--------------------
+   ! After all options, check if it read well:
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                           add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+
+end subroutine get_photon_parameters
+
+
+
+subroutine photon_units(ch_temp, var_in, var_out, print_message, ch_temp_alt)
+   character(*), intent(in) :: ch_temp   ! units to be interpred
+   real(8), intent(in) :: var_in    ! variable to be renormalized according to the units
+   real(8), intent(out) :: var_out  ! variable renormalized according to the units
+   logical, intent(in) :: print_message
+   character(*), intent(in), optional :: ch_temp_alt   ! alternative units that may be used if the main ones fail
+   !--------------------
+
+   call interprete_photon_units(ch_temp, var_in, var_out, print_message) ! below
+
+   ! If relative units are used '%' then read the absolute units:
+   if ((var_out < 0.0d0) .and. present(ch_temp_alt)) then
+      call interprete_photon_units(ch_temp_alt, var_in, var_out, print_message)   ! below
+   endif
+
+   var_out = abs(var_out)
+end subroutine photon_units
+
+
+subroutine interprete_photon_units(ch_temp, var_in, var_out, print_message)
+   character(*), intent(in) :: ch_temp    ! units to be interpred
+   real(8), intent(in) :: var_in
+   real(8), intent(out) :: var_out
+   logical, intent(in) :: print_message
+   !--------------------
+   real(8) :: nm, coef_out, f
+
+   !print*, 'interprete_photon_units:', ch_temp, var_in, var_out
+   if (trim(adjustl(ch_temp(1:1))) == '!') then ! it is a comment line, not units
+      var_out = -var_in
+      return   ! no need to continue
+   endif
+
+
+   select case (trim(adjustl(ch_temp)))
+   case ('eV', 'EV', 'ev') ! [eV]
+      var_out = var_in
+
+   case ('keV', 'KEV', 'kev') ! -> [eV]
+      coef_out = 1.0d3
+      var_out = coef_out * var_in
+
+   case ('RY', 'Ry', 'ry') ! -> [eV]
+      coef_out = g_Ry
+      var_out = coef_out * var_in
+
+   case ('au', 'a.u.', 'AU', 'A.U.') ! -> [eV]
+      coef_out = g_au2ev
+      var_out = coef_out * var_in
+
+   case ('nm', 'Nm', 'NM') ! wavelength -> [eV]
+      ! Convertion coefficient from 1 nm to eV:
+      nm = 1.0d0
+      var_out = convert_wavelength_to_hw(nm*var_in)   ! module "Little_subroutines"
+
+   case ('A', 'a', 'angstrom', 'Angstrom') ! wavelength -> [eV]
+      ! Convert wavelength into [nm]:
+      nm = 0.1d0
+      ! Convertion coefficient from [nm] to [eV]:
+      var_out = convert_wavelength_to_hw(nm*var_in)   ! module "Little_subroutines"
+
+   case ('cm', 'CM', 'Cm', 'cantimeter') ! wavelength -> [eV]
+      ! Convert wavelength into [nm]:
+      nm = 1.0d7
+      var_out = convert_wavelength_to_hw(nm*var_in)   ! module "Little_subroutines"
+
+   case ('m', 'M', 'meter') ! wavelength -> [eV]
+      ! Convert wavelength into [nm]:
+      nm = 1.0d9
+      ! Convertion coefficient from [nm] to [eV]:
+      var_out = convert_wavelength_to_hw(nm*var_in)   ! module "Little_subroutines"
+
+   case ('mm', 'Mm', 'MM', 'millimeter') ! wavelength -> [eV]
+      ! Convert wavelength into [nm]:
+      nm = 1.0d6
+      ! Convertion coefficient from [nm] to [eV]:
+      var_out = convert_wavelength_to_hw(nm*var_in)   ! module "Little_subroutines"
+
+   case ('mkm', 'Mkm', 'MKM', 'micron', 'Micron', 'MICRON') ! wavelength -> [eV]
+      ! Convert wavelength into [nm]:
+      nm = 1.0d3
+      ! Convertion coefficient from [nm] to [eV]:
+      var_out = convert_wavelength_to_hw(nm*var_in)   ! module "Little_subroutines"
+
+   case ('pm', 'PM', 'Pm', 'picometer') ! wavelength -> [eV]
+      ! Convert wavelength into [nm]:
+      nm = 1.0d-3
+      ! Convertion coefficient from [nm] to [eV]:
+      var_out = convert_wavelength_to_hw(nm*var_in)   ! module "Little_subroutines"
+   case ('a0', 'A0', 'Bohr', 'BOHR', 'bohr') ! wavelength -> [eV]
+      ! Convert wavelength into [nm]:
+      nm = 0.1d0 * g_au2A  ! a0 -> nm
+      ! Convertion coefficient from [nm] to [eV]:
+      var_out = convert_wavelength_to_hw(nm*var_in)   ! module "Little_subroutines"
+
+   case ('hertz', 'Hz', 'hz', 'HZ', 'Hertz', 'HERTZ') ! frequency -> [eV]
+      ! Convert frequency into [Hz]:
+      f = 1.0d0
+      ! Convertion coefficient from [Hz] to [eV]:
+      var_out = convert_frequency_to_hw(f*var_in)   ! module "Little_subroutines"
+
+   case ('GHz', 'Ghz', 'GHZ', 'ghz') ! frequency -> [eV]
+      ! Convert frequency into [Hz]:
+      f = 1.0d9
+      ! Convertion coefficient from [Hz] to [eV]:
+      var_out = convert_frequency_to_hw(f*var_in)   ! module "Little_subroutines"
+
+   case ('THz', 'Thz', 'THZ', 'thz') ! frequency -> [eV]
+      ! Convert frequency into [Hz]:
+      f = 1.0d12
+      ! Convertion coefficient from [Hz] to [eV]:
+      var_out = convert_frequency_to_hw(f*var_in)   ! module "Little_subroutines"
+
+   case ('PHz', 'Phz', 'PHZ', 'phz') ! frequency -> [eV]
+      ! Convert frequency into [Hz]:
+      f = 1.0d15
+      ! Convertion coefficient from [Hz] to [eV]:
+      var_out = convert_frequency_to_hw(f*var_in)   ! module "Little_subroutines"
+
+   case ('%', 'percent') ! wavelength -> [eV]
+      ! Take care to find the absolute values externally:
+      coef_out = -1.0d-2
+      var_out = coef_out*var_in
+
+   case default   ! no renormalization
+      var_out = var_in
+
+      if (print_message) then
+         write(6, '(a)') 'Could not interprete units of photon pulse "'//trim(adjustl(ch_temp))//'"'
+         write(6, '(a)') 'Assuming defult: photon energy in [eV]'
+      endif
+   end select
+end subroutine interprete_photon_units
+
 
 
 

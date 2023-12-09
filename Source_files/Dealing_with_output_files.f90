@@ -34,7 +34,8 @@ use Universal_constants
 use Objects
 use Atomic_tools, only : pair_correlation_function
 use Variables, only : g_numpar, g_matter
-use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution
+use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution, &
+                              convert_hw_to_wavelength, convert_wavelength_to_hw
 use Dealing_with_files, only : get_file_stat, copy_file, read_file, close_file, Count_lines_in_file
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
@@ -46,7 +47,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 08.12.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 09.12.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -4468,6 +4469,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    integer :: i, j
    character(100) :: text, text1, text2, text3
    logical :: optional_output
+   real(8) :: lambda
 
    write(print_to,'(a)') trim(adjustl(m_starline))
    call XTANT_label(print_to, label_ind) ! below
@@ -4517,6 +4519,18 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
             write(print_to,'(a,i2,a)') ' Parameters of the pulse number #', i, ' are:' 
          endif
          write(print_to,'(a,f12.3,a)') ' Photon energy ' , laser(i)%hw, ' [eV]'
+
+         ! Get the wavelength corresponding to the given photon energy:
+         lambda = convert_hw_to_wavelength(laser(i)%hw)  ! module "Little_subroutines"
+         write(print_to,'(a,f12.3,a)') ' Corresponding to the wavelength ' , lambda, ' [nm]'
+         !write(print_to,'(a,f12.3,a)') ' Corresponding to photon energy  ' , convert_wavelength_to_hw(lambda), ' [eV]'
+
+         if (laser(i)%FWHM_hw > 0.0d0) then
+            write(print_to,'(a,f12.3,a)') ' with the spectral width ' , laser(i)%FWHM_hw, ' [eV] FWHM'
+         else
+            write(print_to,'(a)') ' Monochromatic pulse is used'
+         endif
+
          select case (laser(i)%KOP)
          case (0)
             write(print_to,'(a)') ' Flat top pulse is used with'
