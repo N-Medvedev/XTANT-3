@@ -550,7 +550,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
          SAVED_ATOMS:if (numpar%do_path_coordinate) then ! read from the files with initial and final configurations to do the path coordinate plots
 
-            if (numpar%verbose) print*, 'Atomic coordinates from files: ', trim(adjustl(File_name_S1)), trim(adjustl(File_name_S2))
+            if (numpar%verbose) print*, 'Atomic coordinates from files (coord-path): ', trim(adjustl(File_name_S1)), trim(adjustl(File_name_S2))
 
             ! Save the flag for output:
             numpar%save_files_used = 2  ! path coordinate
@@ -587,7 +587,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          !----------------------------
          elseif (file_exist) then SAVED_ATOMS    ! read from SAVE file with atomic coordinates:
 
-            if (numpar%verbose) print*, 'Atomic coordinates from file: ', trim(adjustl(File_name2))
+            if (numpar%verbose) print*, 'Atomic coordinates from file (save): ', trim(adjustl(File_name2))
 
             ! Save the flag for output:
             numpar%save_files_used = 1  ! Save files read
@@ -615,7 +615,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          !----------------------------
          elseif (XYZ_file_exists) then SAVED_ATOMS ! XYZ file contains atomic coordinates
 
-            if (numpar%verbose) print*, 'Atomic coordinates from file: ', trim(adjustl(File_name_XYZ))
+            if (numpar%verbose) print*, 'Atomic coordinates from file (xyz): ', trim(adjustl(File_name_XYZ))
 
             open(UNIT=FN_XYZ, FILE = trim(adjustl(File_name_XYZ)), status = 'old', action='read')
             inquire(file=trim(adjustl(File_name_XYZ)),opened=file_opened)
@@ -648,7 +648,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          !----------------------------
          elseif (POSCAR_file_exists) then SAVED_ATOMS ! POSCAR file contains atomic coordinates
 
-            if (numpar%verbose) print*, 'Atomic coordinates from file: ', trim(adjustl(File_name_POSCAR))
+            if (numpar%verbose) print*, 'Atomic coordinates from file (poscar): ', trim(adjustl(File_name_POSCAR))
 
             open(UNIT=FN_POSCAR, FILE = trim(adjustl(File_name_POSCAR)), status = 'old', action='read')
             inquire(file=trim(adjustl(File_name_POSCAR)),opened=file_opened)
@@ -677,10 +677,10 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             inquire(file=trim(adjustl(File_name_POSCAR)),opened=file_opened)
             if (file_opened) close (FN_POSCAR)
 
-          !----------------------------
-          elseif (mol2_file_exists) then SAVED_ATOMS ! mol2 file contains atomic coordinates
+         !----------------------------
+         elseif (mol2_file_exists) then SAVED_ATOMS ! mol2 file contains atomic coordinates
 
-            if (numpar%verbose) print*, 'Atomic coordinates from file: ', trim(adjustl(File_name_mol2))
+            if (numpar%verbose) print*, 'Atomic coordinates from file (mol2): ', trim(adjustl(File_name_mol2))
 
             open(UNIT=FN_mol2, FILE = trim(adjustl(File_name_mol2)), status = 'old', action='read')
             inquire(file=trim(adjustl(File_name_mol2)),opened=file_opened)
@@ -718,7 +718,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                                        'Unit_cell_atom_relative_coordinates.txt'
 
-            if (numpar%verbose) print*, 'Atomic coordinates from file: ', trim(adjustl(File_name2))
+            if (numpar%verbose) print*, 'Atomic coordinates from file (unitc cell): ', trim(adjustl(File_name2))
 
             inquire(file=trim(adjustl(File_name2)),exist=file_exist)
             INPUT_ATOMS:if (file_exist) then
@@ -1769,6 +1769,8 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
          matter%Atoms(j)%percentage = perc(j)
       endif
    enddo
+   !print*, 'Scell(SCN)%Ne', allocated(matter%Atoms), Scell(SCN)%Na, matter%Atoms(:)%percentage, matter%Atoms(:)%NVB
+
    Scell(SCN)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)/SUM(matter%Atoms(:)%percentage)*Scell(SCN)%Na
    Scell(SCN)%Ne_low = Scell(SCN)%Ne ! at the start, all electrons are low-energy
 
