@@ -40,6 +40,7 @@ use Dealing_with_xTB, only : m_xTB_directory, read_xTB_parameters, identify_basi
 use Periodic_table, only : Decompose_compound
 use Algebra_tools, only : make_cubic_splines, cubic_function
 use Dealing_with_CDF, only : read_CDF_file
+use Atomic_tools, only : update_atomic_masks_displ
 
 ! Open_MP related modules from external libraries:
 #ifdef OMP_inside
@@ -4873,9 +4874,12 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       numpar%save_raw = .false.	! excluded printout raw data
    endif
 
-   ! read power of mean displacement to print out (set integer N: <u^N>-<u0^N>):
+   ! read information about displacement:
+   ! command, filename, or power of mean displacement to print out (set integer N: <u^N>-<u0^N>):
    read(FN, '(a)', IOSTAT=Reason) read_line
-   read(read_line,*,IOSTAT=Reason) numpar%MSD_power
+   !read(read_line,*,IOSTAT=Reason) numpar%MSD_power
+   call interprete_displacement_command(read_line, Scell(1), numpar, Reason) ! below
+
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
@@ -4933,6 +4937,422 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 3418 continue
    if (.not.old_file .and. file_opened) close(FN)
 end subroutine read_numerical_parameters
+
+
+
+subroutine interprete_displacement_command(read_line, Scell, numpar, Reason)
+   character(*), intent(in) :: read_line
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
+   integer, intent(inout) :: Reason
+   !-------------------------------
+   character(200) :: Folder_name, File_name, sting_temp
+   character(10) :: ch_temp
+   logical :: file_exists
+   integer :: FN1, ch_int, i
+
+   ! Try to interprete it as a number (power of mean displacement)
+   ! to make back-compatible with the legacy format:
+   read(read_line,*,IOSTAT=Reason) numpar%MSD_power
+   if (Reason == 0) then
+      if (numpar%verbose) print*, 'Atomic displacement analysis is set in legacy format'
+      return ! it was a number, nothing more to do
+   endif
+
+   !---------------
+   ! If it was not a command, check if it was a file
+   Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep   ! directory with input files
+   read(read_line,*,IOSTAT=Reason) sting_temp   ! read first block
+   File_name = trim(adjustl(Folder_name))//trim(adjustl(sting_temp))  ! file name with masks
+   inquire(file=trim(adjustl(File_name)),exist=file_exists)
+   if (file_exists) then
+      FN1 = 4001
+      open(UNIT=FN1, FILE = trim(adjustl(File_name)), status = 'old', action='read')
+      read(FN1,*,IOSTAT=Reason) ch_temp, ch_int
+      if (Reason == 0) then   ! if read number of masks well
+         ! Allocate displacements data objects:
+         allocate(Scell%Displ(ch_int))
+         ! Read parameters of the masks:
+         do i = 1, ch_int  ! for all masks:
+            read(FN1,'(a)',IOSTAT=Reason) sting_temp
+            if (Reason == 0) then
+               call read_displacement_command(trim(adjustl(sting_temp)), Scell, numpar, Reason, i, FN1) ! below
+
+            else
+               print*, 'Could not read atomic masks from file: ', trim(adjustl(File_name))
+               print*, 'Using default mean displacement only'
+               Reason = -1
+               exit
+            endif
+         enddo ! i
+      endif ! (Reason == 0)
+      close (FN1)
+      if (Reason == 0) then
+         if (numpar%verbose) print*, 'Atomic masks for displacements are read from file: ', trim(adjustl(File_name))
+         return ! read all, nothing more to do
+      endif
+   else ! check if it is a command:
+      ! if it is not a number, check if it is a command:
+      call read_displacement_command(trim(adjustl(read_line)), Scell, numpar, Reason, 1) ! below
+      if (Reason == 0) then
+         if (numpar%verbose) print*, 'Atomic masks for displacements are set by command'
+         return ! it was a number, nothing more to do
+      else
+         print*, 'Could not interprete command for atomic masks'
+         print*, 'Using default mean displacement only'
+      endif
+   endif
+
+   !---------------
+   ! 4) if it was none of the above, just use default: mean displacement N=1:
+   numpar%MSD_power = 1
+   Reason = 0
+   if (numpar%verbose) print*, 'Default atomic displacement analysis is used'
+end subroutine interprete_displacement_command
+
+
+subroutine read_displacement_command(read_line, Scell, numpar, Reason, mask_num, FN1)
+   character(*), intent(in) :: read_line
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
+   integer, intent(inout) :: Reason
+   integer, intent(in) :: mask_num  ! number of mask
+   integer, intent(in), optional :: FN1 ! file number with masks definition
+   !-------------------------------
+   integer :: Nsiz, N_char, N_len, i
+   character(100) :: ch_comm, ch_val
+   character(200) :: ch_temp
+
+   Reason = -1 ! to start with
+
+   !---------------
+   ! Make sure the array is allocated
+   if (.not.allocated(Scell%Displ)) then
+      allocate(Scell%Displ(1))
+   endif
+
+   !---------------
+   ! Set defaults:
+   Scell%Displ(mask_num)%MSD_power = 1.0d0   ! default: linear mean displacement
+   write(ch_temp, '(i6)') mask_num
+   Scell%Displ(mask_num)%mask_name = 'mask_'//trim(adjustl(ch_temp)) ! default namae
+   Scell%Displ(mask_num)%print_r = .false.   ! no axis-resolved displacement, unles requested
+
+   !---------------
+   ! Interprete the input line:
+   N_len = LEN(read_line)  ! length of the string
+   N_char = 1  ! to start with
+   do while (N_char < N_len)  ! read the entire line
+      read(read_line(N_char:N_len),*,IOSTAT=Reason) ch_temp ! read this block
+      N_char = N_char + LEN(trim(ch_temp)) + 1  ! mark begining of the next block to read
+
+      ! Split the string into command and its value:
+      call split_command_separator(trim(adjustl(ch_temp)), ':', ch_comm, ch_val)  ! below
+      ! If the command is incorrect, nothing more to do
+      if (LEN(trim(adjustl(ch_comm))) == 0) cycle
+      if (LEN(trim(adjustl(ch_val))) == 0) cycle
+
+      select case(trim(adjustl(ch_comm)))
+      !==========
+      case ('NAME', 'Name', 'name')   ! mask name
+         Scell%Displ(mask_num)%mask_name = trim(adjustl(ch_val))
+         Reason = 0
+
+         ! Identify the mask format, and read extra parameters if any:
+         select case (trim(adjustl(Scell%Displ(mask_num)%mask_name(1:7)))) ! define section
+         case ('section', 'Section', 'SECTION')
+            ! Read one more line with the definition of the section:
+            if (present(FN1)) then ! read next line from this file
+               call read_and_define_section(FN1, Scell, mask_num) ! below
+            endif
+
+         case ('all', 'All', 'ALL')
+            ! Nothing to do, all atoms are included
+         end select
+
+      !==========
+      case ('POWER', 'Power', 'power')   ! power of mean displacement
+         read(ch_val,*,IOSTAT=Reason) Scell%Displ(mask_num)%MSD_power
+         Reason = 0
+
+      !==========
+      case ('axis', 'Axis', 'AXIS', 'axes', 'Axes', 'AXES')   ! axis-resolved data
+         do i = 1, LEN(trim(adjustl(ch_val)))   ! interprete all letters
+            select case(trim(adjustl(ch_val(i:i))))
+            case ('X', 'x')
+               Scell%Displ(mask_num)%print_r(1) = .true.
+            case ('Y', 'y')
+               Scell%Displ(mask_num)%print_r(2) = .true.
+            case ('Z', 'z')
+               Scell%Displ(mask_num)%print_r(3) = .true.
+            endselect
+         enddo
+         Reason = 0
+      end select
+
+!       print*, mask_num, trim(adjustl(Scell%Displ(mask_num)%mask_name))
+!       print*, Scell%Displ(mask_num)%MSD_power
+!       print*, 'Axis:', Scell%Displ(mask_num)%print_r
+      if (LEN(trim(adjustl(ch_temp))) < 1) exit ! nothing more to read
+   enddo
+
+   !pause 'read_displacement_command'
+end subroutine read_displacement_command
+
+
+
+subroutine read_and_define_section(FN1, Scell, mask_num)
+   integer, intent(in) :: FN1 ! file number
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: mask_num  ! mask number
+   !---------------------------
+   character(200) :: sting_temp
+   character(100) :: ch_comm, ch_val, block1, block2
+   integer :: Reason
+
+   read(FN1,'(a)',IOSTAT=Reason) sting_temp
+   if (Reason /= 0) then   ! couldn't read, use default
+      ! No mask parameters, cannot do section, use all instead
+      Scell%Displ(mask_num)%mask_name = 'all'
+      return
+   else  ! read something, attempt to interprete it:
+      ! Define default parameters of the section:
+      Scell%Displ(mask_num)%logical_and = .false.  ! to start with
+      Scell%Displ(mask_num)%logical_or = .false.   ! to start with
+      Scell%Displ(mask_num)%r_start = -1.0d10   ! start at -infinity
+      Scell%Displ(mask_num)%r_end = 1.0d10      ! end at +infinity
+
+      !---------------
+      ! Check if there is an 'and':
+      call split_command_separator(trim(adjustl(sting_temp)), 'and', ch_comm, ch_val)  ! below
+      ! Check other possible ways:
+      if (LEN(trim(adjustl(ch_comm))) == 0) then
+         call split_command_separator(trim(adjustl(sting_temp)), 'AND', ch_comm, ch_val)  ! below
+      endif
+      if (LEN(trim(adjustl(ch_comm))) == 0) then
+         call split_command_separator(trim(adjustl(sting_temp)), 'And', ch_comm, ch_val)  ! below
+      endif
+      ! If there was 'and', save two blocks:
+      if (LEN(trim(adjustl(ch_comm))) /= 0) then
+         Scell%Displ(mask_num)%logical_and = .true.
+         block1 = ch_comm
+         block2 = ch_val
+      endif
+
+      !---------------
+      ! Check if there is an 'or':
+      call split_command_separator(trim(adjustl(sting_temp)), 'or', ch_comm, ch_val)  ! below
+      ! Check other possible ways:
+      if (LEN(trim(adjustl(ch_comm))) == 0) then
+         call split_command_separator(trim(adjustl(sting_temp)), 'OR', ch_comm, ch_val)  ! below
+      endif
+      if (LEN(trim(adjustl(ch_comm))) == 0) then
+         call split_command_separator(trim(adjustl(sting_temp)), 'Or', ch_comm, ch_val)  ! below
+      endif
+      ! If there was 'or', save two blocks:
+      if (LEN(trim(adjustl(ch_comm))) /= 0) then
+         Scell%Displ(mask_num)%logical_or = .true.
+         block1 = ch_comm
+         block2 = ch_val
+      endif
+
+      !---------------
+      ! interprete the line:
+      if (Scell%Displ(mask_num)%logical_and .or. Scell%Displ(mask_num)%logical_or) then ! interprete 2 blocks
+         ! block 1:
+         call identify_section_axis(Scell, block1, mask_num, 1) ! below
+
+         ! block 2:
+         call identify_section_axis(Scell, block2, mask_num, 2) ! below
+
+      else ! interprete single line
+         ! whole line:
+         call identify_section_axis(Scell, sting_temp, mask_num, 1) ! below
+      endif
+
+      !print*, 'read_and_define_section: ', Scell%Displ(mask_num)%logical_and, Scell%Displ(mask_num)%logical_or, &
+      !trim(adjustl(block1))//' ', trim(adjustl(block2))
+      !print*, 'sta', mask_num, Scell%Displ(mask_num)%r_start(1, :)
+      !print*, 'end', mask_num, Scell%Displ(mask_num)%r_end(1, :)
+      !print*, 'sta', mask_num, Scell%Displ(mask_num)%r_start(2, :)
+      !print*, 'end', mask_num, Scell%Displ(mask_num)%r_end(2, :)
+
+   endif
+   !pause 'PAUSE read_and_define_section'
+end subroutine read_and_define_section
+
+
+subroutine identify_section_axis(Scell, read_line, mask_num, axis_ind)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   character(*), intent(in) :: read_line  ! line with two command separated by a given symbol
+   integer, intent(in) :: mask_num, axis_ind
+   !-----------------
+   character(100) :: command1, command2, ch_num
+   integer :: Reason, len1, len2, axis_num, ind_larger, ind_smaller
+   real(8) :: r_temp
+
+   ! section along X:
+   call split_command_separator(trim(adjustl(read_line)), 'x', command1, command2)  ! below
+   if (LEN(trim(adjustl(command1))) == 0) then   ! another possible way of writing it
+      call split_command_separator(trim(adjustl(read_line)), 'X', command1, command2)  ! below
+   endif
+   command1 = trim(adjustl(command1))
+   command2 = trim(adjustl(command2))
+   len1 = LEN(trim(adjustl(command1)))
+   len2 = LEN(trim(adjustl(command2)))
+
+   if ( (len1 /= 0) .or. (len2 /=0) ) then   ! section along X:
+      axis_num = 1
+      Scell%Displ(mask_num)%axis_ind(axis_ind) = axis_num  ! X
+
+      ! Block #1:
+      ! Check if there is an angebraic sign:
+      ind_larger = INDEX(trim(adjustl(command1)), '>')
+      ind_smaller = INDEX(trim(adjustl(command1)), '<')
+      ! Assign the start of the axis, if it is:
+      call assign_atomic_section(ind_larger, command1, Scell, mask_num, axis_ind, axis_num, 1)   ! below
+      ! Assign the end of the axis, if it is:
+      call assign_atomic_section(ind_smaller, command1, Scell, mask_num, axis_ind, axis_num, 2)   ! below
+
+      ! Block #2:
+      ! Check if there is an angebraic sign:
+      ind_larger = INDEX(trim(adjustl(command2)), '>')
+      ind_smaller = INDEX(trim(adjustl(command2)), '<')
+      ! Assign the start of the axis, if it is:
+      call assign_atomic_section(ind_larger, command2, Scell, mask_num, axis_ind, axis_num, 1)   ! below
+      ! Assign the end of the axis, if it is:
+      call assign_atomic_section(ind_smaller, command2, Scell, mask_num, axis_ind, axis_num, 2)   ! below
+   endif
+
+   ! section along Y:
+   call split_command_separator(trim(adjustl(read_line)), 'y', command1, command2)  ! below
+   if (LEN(trim(adjustl(command1))) == 0) then   ! another possible way of writing it
+      call split_command_separator(trim(adjustl(read_line)), 'Y', command1, command2)  ! below
+   endif
+   command1 = trim(adjustl(command1))
+   command2 = trim(adjustl(command2))
+   len1 = LEN(trim(adjustl(command1)))
+   len2 = LEN(trim(adjustl(command2)))
+   if ( (len1 /= 0) .or. (len2 /=0) ) then ! section along Y
+      axis_num = 2
+      Scell%Displ(mask_num)%axis_ind(axis_ind) = axis_num  ! Y
+
+      ! Block #1:
+      ! Check if there is an angebraic sign:
+      ind_larger = INDEX(trim(adjustl(command1)), '>')
+      ind_smaller = INDEX(trim(adjustl(command1)), '<')
+      ! Assign the start of the axis, if it is:
+      call assign_atomic_section(ind_larger, command1, Scell, mask_num, axis_ind, axis_num, 1)   ! below
+      ! Assign the end of the axis, if it is:
+      call assign_atomic_section(ind_smaller, command1, Scell, mask_num, axis_ind, axis_num, 2)   ! below
+
+      ! Block #2:
+      ! Check if there is an angebraic sign:
+      ind_larger = INDEX(trim(adjustl(command2)), '>')
+      ind_smaller = INDEX(trim(adjustl(command2)), '<')
+      ! Assign the start of the axis, if it is:
+      call assign_atomic_section(ind_larger, command2, Scell, mask_num, axis_ind, axis_num, 1)   ! below
+      ! Assign the end of the axis, if it is:
+      call assign_atomic_section(ind_smaller, command2, Scell, mask_num, axis_ind, axis_num, 2)   ! below
+   endif
+
+   ! section along Z:
+   call split_command_separator(trim(adjustl(read_line)), 'z', command1, command2)  ! below
+   if (LEN(trim(adjustl(command1))) == 0) then   ! another possible way of writing it
+      call split_command_separator(trim(adjustl(read_line)), 'Z', command1, command2)  ! below
+   endif
+   command1 = trim(adjustl(command1))
+   command2 = trim(adjustl(command2))
+   len1 = LEN(trim(adjustl(command1)))
+   len2 = LEN(trim(adjustl(command2)))
+   if ( (len1 /= 0) .or. (len2 /=0) ) then   ! section along Z
+      axis_num = 3
+      Scell%Displ(mask_num)%axis_ind(axis_ind) = axis_num  ! Z
+
+      ! Block #1:
+      ! Check if there is an angebraic sign:
+      ind_larger = INDEX(trim(adjustl(command1)), '>')
+      ind_smaller = INDEX(trim(adjustl(command1)), '<')
+      ! Assign the start of the axis, if it is:
+      call assign_atomic_section(ind_larger, command1, Scell, mask_num, axis_ind, axis_num, 1)   ! below
+      ! Assign the end of the axis, if it is:
+      call assign_atomic_section(ind_smaller, command1, Scell, mask_num, axis_ind, axis_num, 2)   ! below
+
+      ! Block #2:
+      ! Check if there is an angebraic sign:
+      ind_larger = INDEX(trim(adjustl(command2)), '>')
+      ind_smaller = INDEX(trim(adjustl(command2)), '<')
+      ! Assign the start of the axis, if it is:
+      call assign_atomic_section(ind_larger, command2, Scell, mask_num, axis_ind, axis_num, 1)   ! below
+      ! Assign the end of the axis, if it is:
+      call assign_atomic_section(ind_smaller, command2, Scell, mask_num, axis_ind, axis_num, 2)   ! below
+   endif
+end subroutine identify_section_axis
+
+
+
+subroutine assign_atomic_section(ind_given, command, Scell, mask_num, ind_sec, ind_axis, start_or_end)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: ind_given, mask_num, ind_sec, ind_axis, start_or_end
+   character(*), intent(in) :: command
+   !-----------------
+   integer :: Reason, len1
+   real(8) :: r_temp
+   logical :: left_boundary
+
+   left_boundary = .false. ! to start with
+
+   if (ind_given > 0) then ! there is a '>' or '<'
+      Reason = -1 ! to start with
+      len1 = LEN(trim(adjustl(command)))
+
+      if (ind_given == 1) then  ! it is on the left of the number
+         read(command(2:len1), *, IOSTAT=Reason) r_temp
+         if (start_or_end == 1) then   ! '>' it is the lower boundary
+            left_boundary = .true.
+         endif
+      elseif (ind_given == len1) then ! it is on the right of the number
+         read(command(1:len1-1), *, IOSTAT=Reason) r_temp
+         if (start_or_end == 2) then   ! '<' it is the lower boundary
+            left_boundary = .true.
+         endif
+      endif ! (ind_given == len1)
+      !print*, 'r_temp', r_temp
+
+      if (Reason == 0) then   ! read it well, use it
+         if (left_boundary) then ! '>'
+            Scell%Displ(mask_num)%r_start(ind_sec, ind_axis) = max ( r_temp, Scell%Displ(mask_num)%r_start(ind_sec, ind_axis) )
+         else  ! '<'
+            Scell%Displ(mask_num)%r_end(ind_sec, ind_axis) = min ( r_temp, Scell%Displ(mask_num)%r_end(ind_sec, ind_axis) )
+         endif
+      endif ! (Reason == 0)
+      !print*, Scell%Displ(mask_num)%r_start(ind_sec, ind_axis), Scell%Displ(mask_num)%r_end(ind_sec, ind_axis)
+   endif ! (ind_given > 0)
+end subroutine assign_atomic_section
+
+
+subroutine split_command_separator(read_line, separator, command1, command2)
+   character(*), intent(in) :: read_line  ! line with two command separated by a given symbol
+   character(*), intent(in) :: separator  ! separator symbol
+   character(*), intent(out) :: command1  ! command #1, before separator
+   character(*), intent(out) :: command2  ! command #2, after separator
+   !-----------------------
+   integer :: N_sep, sep_len
+
+   ! Find the position of the separator:
+   N_sep = 0   ! to start with
+   N_sep = INDEX(read_line, separator) ! intrinsic
+   sep_len = LEN(trim(adjustl(separator)))
+
+   ! If separator is there, read commands:
+   if (N_sep > 0) then
+      command1 = read_line(1:N_sep-1)
+      command2 = read_line(N_sep+sep_len:)
+   else ! no separator in the string
+      command1 = ''  ! undefined
+      command2 = ''  ! undefined
+   endif
+end subroutine split_command_separator
 
 
 

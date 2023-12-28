@@ -47,7 +47,8 @@ Reciproc_rel_to_abs, total_forces, Potential_super_cell_forces, super_cell_force
 get_mean_square_displacement, Cooling_atoms, Coordinates_abs_to_rel, get_Ekin, make_time_step_supercell_Y4, make_time_step_atoms_M, &
 remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_atoms_Y4, check_periodic_boundaries, &
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
-Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles
+Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
+update_atomic_masks_displ
 
 
 !=======================================
@@ -1924,6 +1925,11 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
    if (.not.allocated(MSDP)) allocate(MSDP(matter%N_KAO))
    
    N = size(Scell(1)%MDAtoms)	! number of atoms
+
+   ! Check if user defined any atomic masks:
+   if (allocated(Scell(1)%Displ)) then
+      call update_atomic_masks_displ(Scell(1), matter) ! below
+   endif
    
    ! Get equilibrium relative coordinates from given absolute coordinates inside of the current supercell:
    call get_coords_in_new_supce(Scell, 1)	! below (S_eq arae updated, R_eq do not change)
@@ -1982,6 +1988,37 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
    
    nullify(S,S0,KOA)
 end subroutine get_mean_square_displacement
+
+
+subroutine update_atomic_masks_displ(Scell, matter)
+   type(Super_cell), intent(inout) :: Scell ! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter     ! material parameters
+   !-----------------
+   integer :: N_at, Nsiz, i
+
+   N_at = size(Scell%MDAtoms)	! number of atoms
+
+   Nsiz = size(Scell%Displ)
+   do i = 1, Nsiz ! for all requested masks
+      ! Make sure the arrays are allocated:
+      if (.not.allocated(Scell%Displ(i)%mean_disp_sort)) allocate(Scell%Displ(i)%mean_disp_sort(matter%N_KAO))
+      if (.not.allocated(Scell%Displ(i)%mean_disp_r_sort)) allocate(Scell%Displ(i)%mean_disp_r_sort(matter%N_KAO,3))
+      if (.not.allocated(Scell%Displ(i)%Atomic_mask)) allocate(Scell%Displ(i)%Atomic_mask(N_at))
+
+      ! Create or update the masks:
+      ! What type of mask is it:
+      select case( trim(adjustl(Scell%Displ(i)%mask_name)) )
+      case default ! all atoms, no selection
+         Scell%Displ(i)%Atomic_mask = .true. ! all atoms included
+
+      case ('Section', 'section', 'SECTION') ! spatial section of atoms
+         Scell%Displ(i)%Atomic_mask = .true.
+
+      end select
+
+   enddo
+end subroutine update_atomic_masks_displ
+
 
 
 subroutine get_coords_in_new_supce(Scell, NSC) !  (S_eq are updated, R_eq do not change)
