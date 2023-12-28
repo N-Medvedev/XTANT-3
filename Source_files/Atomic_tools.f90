@@ -1917,7 +1917,7 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
    real(8), dimension(:), allocatable, intent(out) :: MSDP ! [A] mean displacement of atoms for each sort of atoms in a compound
    integer, intent(in) :: MSD_power ! power of mean displacement to print out (set integer N: <u^N>-<u0^N>)
    !-------------------------
-   integer :: N, iat, ik, i,  j, k, Nat
+   integer :: N, iat, ik, i,  j, k, Nat, Nsiz, i_masks
    integer, pointer :: KOA
    real(8) :: zb(3), x, y, z, a_r, r1, x0, y0, z0
    real(8), dimension(:), pointer :: S, S0
@@ -1929,6 +1929,12 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
    ! Check if user defined any atomic masks:
    if (allocated(Scell(1)%Displ)) then
       call update_atomic_masks_displ(Scell(1), matter) ! below
+      ! Restart counting for this step:
+      Nsiz = size(Scell(1)%Displ)
+      do i_masks = 1, Nsiz ! for all requested masks
+         Scell(1)%Displ(i_masks)%mean_disp = 0.0d0
+         Scell(1)%Displ(i_masks)%mean_disp_sort(:) = 0.0d0
+      enddo
    endif
    
    ! Get equilibrium relative coordinates from given absolute coordinates inside of the current supercell:
@@ -1973,7 +1979,21 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
       enddo ! i
       MSD = MSD + a_r**MSD_power ! mean displacement^N
       MSDP(KOA) = MSDP(KOA) + a_r**MSD_power    ! mean displacement^N
+
+      ! Section of atoms according to masks, if any:
+      if (allocated(Scell(1)%Displ)) then
+         Nsiz = size(Scell(1)%Displ)
+         do i_masks = 1, Nsiz ! for all requested masks
+            if (Scell(1)%Displ(i_masks)%Atomic_mask(iat)) then ! this atom is included in the mask
+               r1 = a_r**Scell(1)%Displ(i_masks)%MSD_power  ! [A^N] displacement
+               Scell(1)%Displ(i_masks)%mean_disp = Scell(1)%Displ(i_masks)%mean_disp + r1
+               Scell(1)%Displ(i_masks)%mean_disp_sort(KOA) = Scell(1)%Displ(i_masks)%mean_disp_sort(KOA) + r1
+            endif
+         enddo ! i_masks
+      endif ! (allocated(Scell(1)%Displ))
+
    enddo ! iat
+
    MSD = MSD/dble(N)	! averaged over all atoms
    ! For all elements:
    do i = 1, matter%N_KAO
@@ -1994,7 +2014,8 @@ subroutine update_atomic_masks_displ(Scell, matter)
    type(Super_cell), intent(inout) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter     ! material parameters
    !-----------------
-   integer :: N_at, Nsiz, i
+   integer :: N_at, Nsiz, i, iat
+   logical :: mask_1, mask_2
 
    N_at = size(Scell%MDAtoms)	! number of atoms
 
@@ -2007,13 +2028,49 @@ subroutine update_atomic_masks_displ(Scell, matter)
 
       ! Create or update the masks:
       ! What type of mask is it:
-      select case( trim(adjustl(Scell%Displ(i)%mask_name)) )
+      select case( trim(adjustl(Scell%Displ(i)%mask_name(1:7))) )
       case default ! all atoms, no selection
          Scell%Displ(i)%Atomic_mask = .true. ! all atoms included
 
       case ('Section', 'section', 'SECTION') ! spatial section of atoms
-         Scell%Displ(i)%Atomic_mask = .true.
+         Scell%Displ(i)%Atomic_mask = .false. ! to start with
+         do iat = 1, N_at  ! for all atoms
+            mask_1 = .false.  ! to start with
+            mask_2 = .false.  ! to start with
 
+            ! Mask #1:
+            if ( (Scell%MDAtoms(iat)%R(1) > Scell%Displ(i)%r_start(1, 1) ) .and. &
+                 (Scell%MDAtoms(iat)%R(1) < Scell%Displ(i)%r_end(1, 1) )  .and. & ! X
+                 (Scell%MDAtoms(iat)%R(2) > Scell%Displ(i)%r_start(1, 2) ) .and. &
+                 (Scell%MDAtoms(iat)%R(2) < Scell%Displ(i)%r_end(1, 2) )  .and. & ! Y
+                 (Scell%MDAtoms(iat)%R(3) > Scell%Displ(i)%r_start(1, 3) ) .and. &
+                 (Scell%MDAtoms(iat)%R(3) < Scell%Displ(i)%r_end(1, 3) ) ) then ! Z
+               mask_1 = .true.
+            endif
+
+            ! Mask #2, if present:
+            if (Scell%Displ(i)%logical_and .or. Scell%Displ(i)%logical_or) then
+               if (  (Scell%MDAtoms(iat)%R(1) > Scell%Displ(i)%r_start(2, 1) ) .and. &
+                     (Scell%MDAtoms(iat)%R(1) < Scell%Displ(i)%r_end(2, 1) )  .and. & ! X
+                     (Scell%MDAtoms(iat)%R(2) > Scell%Displ(i)%r_start(2, 2) ) .and. &
+                     (Scell%MDAtoms(iat)%R(2) < Scell%Displ(i)%r_end(2, 2) )  .and. & ! Y
+                     (Scell%MDAtoms(iat)%R(3) > Scell%Displ(i)%r_start(2, 3) ) .and. &
+                     (Scell%MDAtoms(iat)%R(3) < Scell%Displ(i)%r_end(2, 3) ) ) then ! Z
+
+                  Scell%Displ(i)%Atomic_mask(iat) = Scell%Displ(i)%Atomic_mask(iat)
+               endif
+            endif
+
+            ! Combine masks:
+            if (Scell%Displ(i)%logical_and) then  ! both
+               Scell%Displ(i)%Atomic_mask(iat) = (mask_1 .and. mask_2)
+            elseif (Scell%Displ(i)%logical_or) then  ! either
+               Scell%Displ(i)%Atomic_mask(iat) = (mask_1 .or. mask_2)
+            else  ! only one mask:
+               Scell%Displ(i)%Atomic_mask(iat) = mask_1
+            endif
+
+         enddo ! iat = 1, N_at
       end select
 
    enddo
