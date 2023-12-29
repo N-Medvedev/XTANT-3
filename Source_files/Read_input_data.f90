@@ -5090,9 +5090,6 @@ subroutine read_displacement_command(read_line, Scell, numpar, Reason, mask_num,
          Reason = 0
       end select
 
-!       print*, mask_num, trim(adjustl(Scell%Displ(mask_num)%mask_name))
-!       print*, Scell%Displ(mask_num)%MSD_power
-!       print*, 'Axis:', Scell%Displ(mask_num)%print_r
       if (LEN(trim(adjustl(ch_temp))) < 1) exit ! nothing more to read
    enddo
 
@@ -5106,9 +5103,10 @@ subroutine read_and_define_section(FN1, Scell, mask_num)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: mask_num  ! mask number
    !---------------------------
-   character(200) :: sting_temp
+   character(200) :: sting_temp, sting_temp2
+   character(200), dimension(3) :: string_part
    character(100) :: ch_comm, ch_val, block1, block2
-   integer :: Reason
+   integer :: Reason, i
 
    read(FN1,'(a)',IOSTAT=Reason) sting_temp
    if (Reason /= 0) then   ! couldn't read, use default
@@ -5123,62 +5121,86 @@ subroutine read_and_define_section(FN1, Scell, mask_num)
       Scell%Displ(mask_num)%r_end = 1.0d10      ! end at +infinity
 
       !---------------
-      ! Check if there is an 'and':
-      call split_command_separator(trim(adjustl(sting_temp)), 'and', ch_comm, ch_val)  ! below
-      ! Check other possible ways:
-      if (LEN(trim(adjustl(ch_comm))) == 0) then
-         call split_command_separator(trim(adjustl(sting_temp)), 'AND', ch_comm, ch_val)  ! below
-      endif
-      if (LEN(trim(adjustl(ch_comm))) == 0) then
-         call split_command_separator(trim(adjustl(sting_temp)), 'And', ch_comm, ch_val)  ! below
-      endif
-      ! If there was 'and', save two blocks:
-      if (LEN(trim(adjustl(ch_comm))) /= 0) then
-         Scell%Displ(mask_num)%logical_and = .true.
-         block1 = ch_comm
-         block2 = ch_val
+      ! Check if there is a separator:
+      string_part = ''  ! to start with
+
+      call split_command_separator(trim(adjustl(sting_temp)), ';', string_part(1), string_part(2))  ! below
+      if (LEN(trim(adjustl(string_part(2)))) /= 0) then
+         sting_temp2 = string_part(2)
+         call split_command_separator(trim(adjustl(sting_temp2)), ';', string_part(2), string_part(3))  ! below
       endif
 
-      !---------------
-      ! Check if there is an 'or':
-      call split_command_separator(trim(adjustl(sting_temp)), 'or', ch_comm, ch_val)  ! below
-      ! Check other possible ways:
-      if (LEN(trim(adjustl(ch_comm))) == 0) then
-         call split_command_separator(trim(adjustl(sting_temp)), 'OR', ch_comm, ch_val)  ! below
-      endif
-      if (LEN(trim(adjustl(ch_comm))) == 0) then
-         call split_command_separator(trim(adjustl(sting_temp)), 'Or', ch_comm, ch_val)  ! below
-      endif
-      ! If there was 'or', save two blocks:
-      if (LEN(trim(adjustl(ch_comm))) /= 0) then
-         Scell%Displ(mask_num)%logical_or = .true.
-         block1 = ch_comm
-         block2 = ch_val
-      endif
+      ! Read and interprete all 3 parts:
+      do i = 1, 3
+         block1 = '' ! to start with
+         block2 = '' ! to start with
+         ch_comm = '' ! to start with
+         ch_val = '' ! to start with
 
-      !---------------
-      ! interprete the line:
-      if (Scell%Displ(mask_num)%logical_and .or. Scell%Displ(mask_num)%logical_or) then ! interprete 2 blocks
-         ! block 1:
-         call identify_section_axis(Scell, block1, mask_num, 1) ! below
+         if (LEN(trim(adjustl(string_part(i)))) > 0) then
+            sting_temp = trim(adjustl(string_part(i)))
+         else  ! no text to interprete here
+            if (i > 1) cycle  ! nothing else to do, skip it
+         endif
 
-         ! block 2:
-         call identify_section_axis(Scell, block2, mask_num, 2) ! below
+         !---------------
+         ! Check if there is an 'and':
+         call split_command_separator(trim(adjustl(sting_temp)), 'and', ch_comm, ch_val)  ! below
+         ! Check other possible ways:
+         if (LEN(trim(adjustl(ch_comm))) == 0) then
+            call split_command_separator(trim(adjustl(sting_temp)), 'AND', ch_comm, ch_val)  ! below
+         endif
+         if (LEN(trim(adjustl(ch_comm))) == 0) then
+            call split_command_separator(trim(adjustl(sting_temp)), 'And', ch_comm, ch_val)  ! below
+         endif
+         ! If there was 'and', save two blocks:
+         if (LEN(trim(adjustl(ch_comm))) /= 0) then
+            Scell%Displ(mask_num)%logical_and = .true.
+            block1 = ch_comm
+            block2 = ch_val
+         endif
 
-      else ! interprete single line
-         ! whole line:
-         call identify_section_axis(Scell, sting_temp, mask_num, 1) ! below
-      endif
+         !---------------
+         ! Check if there is an 'or':
+         call split_command_separator(trim(adjustl(sting_temp)), 'or', ch_comm, ch_val)  ! below
+         ! Check other possible ways:
+         if (LEN(trim(adjustl(ch_comm))) == 0) then
+            call split_command_separator(trim(adjustl(sting_temp)), 'OR', ch_comm, ch_val)  ! below
+         endif
+         if (LEN(trim(adjustl(ch_comm))) == 0) then
+            call split_command_separator(trim(adjustl(sting_temp)), 'Or', ch_comm, ch_val)  ! below
+         endif
+         ! If there was 'or', save two blocks:
+         if (LEN(trim(adjustl(ch_comm))) /= 0) then
+            Scell%Displ(mask_num)%logical_or = .true.
+            block1 = ch_comm
+            block2 = ch_val
+         endif
 
+         !---------------
+         ! interprete the line:
+         !if (Scell%Displ(mask_num)%logical_and .or. Scell%Displ(mask_num)%logical_or) then ! interprete 2 blocks
+         if ((LEN(trim(adjustl(block1))) > 0) .and. (LEN(trim(adjustl(block2))) > 0) ) then  ! interprete 2 blocks
+            ! block 1:
+            call identify_section_axis(Scell, block1, mask_num, 1) ! below
+
+            ! block 2:
+            call identify_section_axis(Scell, block2, mask_num, 2) ! below
+
+         else ! interprete single line
+            ! whole line:
+            call identify_section_axis(Scell, sting_temp, mask_num, 1) ! below
+         endif
+      enddo ! i = 1,3
       !print*, 'read_and_define_section: ', Scell%Displ(mask_num)%logical_and, Scell%Displ(mask_num)%logical_or, &
       !trim(adjustl(block1))//' ', trim(adjustl(block2))
-      !print*, 'sta', mask_num, Scell%Displ(mask_num)%r_start(1, :)
-      !print*, 'end', mask_num, Scell%Displ(mask_num)%r_end(1, :)
-      !print*, 'sta', mask_num, Scell%Displ(mask_num)%r_start(2, :)
-      !print*, 'end', mask_num, Scell%Displ(mask_num)%r_end(2, :)
+!       print*, 'sta', mask_num, Scell%Displ(mask_num)%r_start(1, :)
+!       print*, 'end', mask_num, Scell%Displ(mask_num)%r_end(1, :)
+!       print*, 'sta', mask_num, Scell%Displ(mask_num)%r_start(2, :)
+!       print*, 'end', mask_num, Scell%Displ(mask_num)%r_end(2, :)
 
    endif
-   !pause 'PAUSE read_and_define_section'
+!    pause 'PAUSE read_and_define_section'
 end subroutine read_and_define_section
 
 
@@ -5218,6 +5240,7 @@ subroutine identify_section_axis(Scell, read_line, mask_num, axis_ind)
       ! Check if there is an angebraic sign:
       ind_larger = INDEX(trim(adjustl(command2)), '>')
       ind_smaller = INDEX(trim(adjustl(command2)), '<')
+
       ! Assign the start of the axis, if it is:
       call assign_atomic_section(ind_larger, command2, Scell, mask_num, axis_ind, axis_num, 1)   ! below
       ! Assign the end of the axis, if it is:

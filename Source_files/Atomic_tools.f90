@@ -1989,6 +1989,10 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
                Scell(1)%Displ(i_masks)%mean_disp = Scell(1)%Displ(i_masks)%mean_disp + r1
                Scell(1)%Displ(i_masks)%mean_disp_sort(KOA) = Scell(1)%Displ(i_masks)%mean_disp_sort(KOA) + r1
             endif
+
+            print*, 'i_masks', i_masks, MSD, Scell(1)%Displ(i_masks)%mean_disp
+            print*, MSDP(:)
+            print*, Scell(1)%Displ(i_masks)%mean_disp_sort(:)
          enddo ! i_masks
       endif ! (allocated(Scell(1)%Displ))
 
