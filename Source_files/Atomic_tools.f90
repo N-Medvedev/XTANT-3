@@ -1862,15 +1862,7 @@ subroutine get_kinetic_energy_abs(Scell, NSC, matter, nrg)
       Scell(NSC)%Ta_sub(1) = Scell(NSC)%Ta  ! [K]
    endif
    
-   ! CORRECT KINETIC ENERGY OF THE SUPERCELL:
-!    Ekin = matter%W_PR*(SUM(Scell(NSC)%Vsupce(1,:)*Scell(NSC)%Vsupce(1,:)) + &
-!                        SUM(Scell(NSC)%Vsupce(2,:)*Scell(NSC)%Vsupce(2,:)) + &
-!                        SUM(Scell(NSC)%Vsupce(3,:)*Scell(NSC)%Vsupce(3,:)))*1d10/2.0d0/g_e ! kinetic part of the energy of the supercell [eV]
    Ekin = Supce_kin_energy(Scell, NSC, matter%W_PR)    ! function below
-
-!    Ekin = matter%W_PR*(SUM(Scell(NSC)%Vsupce(:,1)*Scell(NSC)%Vsupce(:,1)) + &
-!                        SUM(Scell(NSC)%Vsupce(:,2)*Scell(NSC)%Vsupce(:,2)) + &
-!                        SUM(Scell(NSC)%Vsupce(:,3)*Scell(NSC)%Vsupce(:,3)))*1d10/2.0d0/g_e ! kinetic part of the energy of the supercell [eV]
 
    Epot = (matter%p_ext*Scell(NSC)%V)*1d-30/g_e	! potential part of the energy of the supercell [eV]
    nrg%E_supce = (Ekin + Epot)/dble(N) 	! total energy of the supercell [eV/atom]
@@ -1934,6 +1926,8 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
       do i_masks = 1, Nsiz ! for all requested masks
          Scell(1)%Displ(i_masks)%mean_disp = 0.0d0
          Scell(1)%Displ(i_masks)%mean_disp_sort(:) = 0.0d0
+         Scell(1)%Displ(i_masks)%mean_disp_r(:) = 0.0d0
+         Scell(1)%Displ(i_masks)%mean_disp_r_sort = 0.0d0
       enddo
    endif
    
@@ -1988,17 +1982,39 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
                r1 = a_r**Scell(1)%Displ(i_masks)%MSD_power  ! [A^N] displacement
                Scell(1)%Displ(i_masks)%mean_disp = Scell(1)%Displ(i_masks)%mean_disp + r1
                Scell(1)%Displ(i_masks)%mean_disp_sort(KOA) = Scell(1)%Displ(i_masks)%mean_disp_sort(KOA) + r1
+               ! Along axes:
+               r1 = x**Scell(1)%Displ(i_masks)%MSD_power
+               Scell(1)%Displ(i_masks)%mean_disp_r(1) = Scell(1)%Displ(i_masks)%mean_disp_r(1) + r1
+               Scell(1)%Displ(i_masks)%mean_disp_r_sort(KOA,1) = Scell(1)%Displ(i_masks)%mean_disp_r_sort(KOA,1) + r1
+               r1 = y**Scell(1)%Displ(i_masks)%MSD_power
+               Scell(1)%Displ(i_masks)%mean_disp_r(2) = Scell(1)%Displ(i_masks)%mean_disp_r(2) + r1
+               Scell(1)%Displ(i_masks)%mean_disp_r_sort(KOA,2) = Scell(1)%Displ(i_masks)%mean_disp_r_sort(KOA,2) + r1
+               r1 = z**Scell(1)%Displ(i_masks)%MSD_power
+               Scell(1)%Displ(i_masks)%mean_disp_r(3) = Scell(1)%Displ(i_masks)%mean_disp_r(3) + r1
+               Scell(1)%Displ(i_masks)%mean_disp_r_sort(KOA,3) = Scell(1)%Displ(i_masks)%mean_disp_r_sort(KOA,3) + r1
             endif
-
-            print*, 'i_masks', i_masks, MSD, Scell(1)%Displ(i_masks)%mean_disp
-            print*, MSDP(:)
-            print*, Scell(1)%Displ(i_masks)%mean_disp_sort(:)
          enddo ! i_masks
       endif ! (allocated(Scell(1)%Displ))
-
    enddo ! iat
 
+
    MSD = MSD/dble(N)	! averaged over all atoms
+   ! Section of atoms according to masks, if any:
+   if (allocated(Scell(1)%Displ)) then
+      Nsiz = size(Scell(1)%Displ)
+      do i_masks = 1, Nsiz ! for all requested masks
+         Nat = COUNT(MASK = Scell(1)%Displ(i_masks)%Atomic_mask)
+         if (Nat > 0) then
+            Scell(1)%Displ(i_masks)%mean_disp = Scell(1)%Displ(i_masks)%mean_disp / Nat
+            Scell(1)%Displ(i_masks)%mean_disp_r(:) = Scell(1)%Displ(i_masks)%mean_disp_r(:) / Nat
+         else
+            Scell(1)%Displ(i_masks)%mean_disp = 0.0d0
+            Scell(1)%Displ(i_masks)%mean_disp_r(:) = 0.0d0
+         endif
+      enddo
+   endif
+
+
    ! For all elements:
    do i = 1, matter%N_KAO
       ! how many atoms of this kind are in the supercell:
@@ -2008,8 +2024,31 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
       else
          MSDP(i) = 0.0d0
       endif
+
+      ! Section of atoms according to masks, if any:
+      if (allocated(Scell(1)%Displ)) then
+         Nsiz = size(Scell(1)%Displ)
+         do i_masks = 1, Nsiz ! for all requested masks
+            Nat = COUNT(MASK = (Scell(1)%Displ(i_masks)%Atomic_mask(:) .and. (Scell(1)%MDatoms(:)%KOA == i) ))
+            if (Nat > 0) then
+               Scell(1)%Displ(i_masks)%mean_disp_sort(i) = Scell(1)%Displ(i_masks)%mean_disp_sort(i) / Nat
+               Scell(1)%Displ(i_masks)%mean_disp_r_sort(i,:) = Scell(1)%Displ(i_masks)%mean_disp_r_sort(i,:) / Nat
+            else
+               Scell(1)%Displ(i_masks)%mean_disp_sort(i) = 0.0d0
+               Scell(1)%Displ(i_masks)%mean_disp_r_sort(i,:) = 0.0d0
+            endif
+         enddo
+      endif
    enddo
-   
+
+!    do i_masks = 1, Nsiz ! for all requested masks
+!       print*, trim(adjustl(Scell(1)%Displ(i_masks)%mask_name)), i_masks, MSD, Scell(1)%Displ(i_masks)%mean_disp
+!       print*, MSDP(:)
+!       print*, Scell(1)%Displ(i_masks)%mean_disp_sort(:)
+!       print*, Scell(1)%Displ(i_masks)%mean_disp_r(:)
+!       print*, 'K', Scell(1)%Displ(i_masks)%mean_disp_r_sort
+!    enddo
+
    nullify(S,S0,KOA)
 end subroutine get_mean_square_displacement
 

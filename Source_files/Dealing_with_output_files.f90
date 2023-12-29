@@ -90,10 +90,16 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, &
                numpar%FN_Ce, numpar%FN_kappa, numpar%FN_kappa_dyn, numpar%FN_Se, numpar%FN_Te, numpar%FN_mu) ! TB electron parameters
 
+      ! Section of atoms according to masks, if any:
+      if (allocated(Scell(1)%Displ)) then
+         call write_sectional_displacements(numpar%FN_displacements, time, Scell(NSC), matter) ! atomic displaecements
+      endif
+
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:), &
                print_mass=numpar%save_XYZ_extra(1), print_charge=numpar%save_XYZ_extra(2), print_Ekin=numpar%save_XYZ_extra(3))   ! below
 
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time) ! CIF format
+
       if (numpar%save_Ei) then
          if (numpar%scc) then ! Energy levels include SCC term:
             call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei_scc_part)
@@ -101,6 +107,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
             call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei)
          endif
       endif
+
       if (numpar%save_DOS) then  ! Material DOS
          select case (numpar%DOS_splitting)
          case (1) ! with partial DOS
@@ -109,10 +116,12 @@ subroutine write_output_files(numpar, time, matter, Scell)
             call save_DOS(numpar%FN_DOS, time, Scell(1)%DOS)
          end select
       endif
+
       select case (numpar%DOS_splitting)  ! orbital-resolved data
          case (1) ! with partial DOS
          call write_coulping(numpar%FN_coupling, time, Scell, NSC, numpar) ! electron-ion coupling
       end select
+
       if (numpar%save_fe) then
          if (numpar%do_partial_thermal) then ! Electron distribution functions on TB energy levels
             call save_distribution(numpar%FN_fe, numpar, Scell(1), time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq, &
@@ -121,6 +130,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
             call save_distribution(numpar%FN_fe, numpar, Scell(1), time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq)
          endif
       endif
+
       if (numpar%save_fe_grid) call electronic_distribution_on_grid(Scell(1), numpar, time)  ! distribution on grid
       if (numpar%save_PCF) call write_PCF(numpar%FN_PCF, Scell(1)%MDatoms, matter, Scell, 1) ! pair correlation function
       if (numpar%do_drude) call write_optical_coefs(numpar%FN_optics, time, Scell(1)%eps)    ! optical coeffs
@@ -1377,6 +1387,32 @@ subroutine write_temperatures_n_displacements(FN, time, Te, Ta, Ta_sub, MSD, MSD
 end subroutine write_temperatures_n_displacements
 
 
+
+subroutine write_sectional_displacements(FN_displacements, time, Scell, matter) ! atomic displaecements
+   integer, dimension(:), intent(in) :: FN_displacements   ! file numbers to write to
+   real(8), intent(in) :: time   ! [fs]
+   type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Solid), intent(in) :: matter ! parameters of the material
+   !-------------------------------
+   integer :: Nsiz, i, j, N_at
+
+   ! Atomic masks for sectional displacements:
+   Nsiz = size(Scell%Displ)   ! how many masks
+   do i = 1, Nsiz    ! for all masks
+      write(FN_displacements(i), '(es25.16,$)') time, Scell%Displ(i)%mean_disp, Scell%Displ(i)%mean_disp_r(:)
+      ! Now for kinds of atoms:
+      N_at = matter%N_KAO    ! number of kinds of atoms
+      do j = 1, N_at
+         write(FN_displacements(i), '(es25.16,$)') Scell%Displ(i)%mean_disp_sort(j), &
+            Scell%Displ(i)%mean_disp_r_sort(j,:)
+      enddo
+      write(FN_displacements(i),'(a)') ! make a new line
+   enddo ! i
+end subroutine write_sectional_displacements
+
+
+
+
 subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter ! parameters of the material
@@ -1603,7 +1639,10 @@ end subroutine close_save_files
 subroutine close_output_files(Scell, numpar)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   !-------------------
    !logical file_opened
+   integer :: Nsiz, i
+
    close(numpar%FN_temperatures)
    close(numpar%FN_pressure)
    close(numpar%FN_electron_properties)
@@ -1632,16 +1671,23 @@ subroutine close_output_files(Scell, numpar)
       close(numpar%FN_Te)
       close(numpar%FN_mu)
    endif
+
+   if (allocated(Scell(1)%Displ)) then
+      Nsiz = size(Scell(1)%Displ)   ! how many masks
+      do i = 1, Nsiz ! for all atomic masks
+         close(numpar%FN_displacements(i))
+      enddo
+   endif
 end subroutine close_output_files
 
 
-subroutine create_output_files(Scell,matter,laser,numpar)
+subroutine create_output_files(Scell, matter, laser, numpar)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    character(200) :: file_path, file_name
-   integer :: FN, i, j, Nshl
+   integer :: FN, i, j, Nshl, Nsiz, N_at
    ! OUTPUT files, name and address:
    character(100) :: file_temperatures	! time [fs], Te [K], Ta [K]
    character(100) :: file_pressure	! time [fs], stress_tensore(3,3) [GPa], Pressure [GPa]
@@ -1669,6 +1715,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    character(100) :: file_optics	! optical coefficients
    character(100) :: file_all_w		! optical coeffs for all hw
    character(100) :: file_NN		! nearest neighbors
+   character(100) :: file_sect_displ   ! sectional displacements
    character(100) :: chtemp
    character(11) :: chtemp11
 
@@ -1688,6 +1735,33 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    endif
 !    call create_file_header(numpar%FN_temperatures, '#Time	Te	Ta(kin)	Ta(conf)	Displacement')
 !    call create_file_header(numpar%FN_temperatures, '#[fs]	[K]	[K]	[K]	[A]')
+
+   ! Atomic masks for sectional displacements:
+   if (allocated(Scell(1)%Displ)) then
+      Nsiz = size(Scell(1)%Displ)   ! how many masks
+      if (.not. allocated(numpar%FN_displacements)) then  ! allocate and open files
+         allocate(numpar%FN_displacements(Nsiz))
+      endif
+      do i = 1, Nsiz ! for all masks
+         file_sect_displ = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(i)%mask_name))//'.dat'
+         open(NEWUNIT=FN, FILE = trim(adjustl(file_sect_displ)))
+         numpar%FN_displacements(i) = FN
+
+         N_at = matter%N_KAO    ! number of kinds of atoms
+         chtemp = ''  ! to start with
+         do j = 1, N_at
+            chtemp = trim(adjustl(chtemp))//'   '//trim(adjustl(matter%Atoms(j)%Name))//':total   X  Y  Z'
+         enddo
+         call create_file_header(numpar%FN_displacements(i), '#Time  Total X  Y  Z  '//trim(adjustl(chtemp)) )
+         if (INT(Scell(1)%Displ(i)%MSD_power) > 1) then
+            write(chtemp11,'(i2)') INT(Scell(1)%Displ(i)%MSD_power)
+            call create_file_header(numpar%FN_displacements(i), '#[fs]   [A^'//trim(adjustl(chtemp11))//'](:)')
+         else
+            call create_file_header(numpar%FN_displacements(i), '#[fs]   [A](:)')
+         endif
+      enddo
+   endif
+
    
    file_pressure = trim(adjustl(file_path))//'OUTPUT_pressure_and_stress.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_pressure)))

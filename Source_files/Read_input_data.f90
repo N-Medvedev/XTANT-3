@@ -5036,7 +5036,7 @@ subroutine read_displacement_command(read_line, Scell, numpar, Reason, mask_num,
    Scell%Displ(mask_num)%MSD_power = 1.0d0   ! default: linear mean displacement
    write(ch_temp, '(i6)') mask_num
    Scell%Displ(mask_num)%mask_name = 'mask_'//trim(adjustl(ch_temp)) ! default namae
-   Scell%Displ(mask_num)%print_r = .false.   ! no axis-resolved displacement, unles requested
+   Scell%Displ(mask_num)%print_r = .true.   ! all axis-resolved displacement
 
    !---------------
    ! Interprete the input line:
