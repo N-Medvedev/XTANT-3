@@ -1,41 +1,39 @@
-Copper    Setting_cell_Si.xyz         ! material name directory; file with supercell and atomic coordinates
-Cu                ! chemical formula
+C2H4n             ! material name directory; file with supercell and atomic coordinates
+C2H4               ! chemical formula
 273.0             ! initial electron temperature [K] / filename with electron distribution
 273.0             ! initial atomic temperature [K]
--100.0             ! start of simulation [fs]
-1000.0              ! end of simulation [fs]
+0.0               ! start of simulation [fs]
+10.0              ! end of simulation [fs]
 1                 ! number of laser pulses
-d	1.0e0	!40.0d0  38.0e0   ! f/d (fluence [J/cm^2]/dose[eV/atom]); value (min, max, step);
-950.0   eV  1.5   %  ! hw, mean photon energy (or wavelength); units; spectral FWHM; units (% vs. abs)
-15.0e0              ! pulse FWHM-duration [fs]
+d	0.0e0	!40.0d0  38.0e0   ! f/d (fluence [J/cm^2]/dose[eV/atom]); value (min, max, step);
+50.0    !eV  1.5   %  ! hw, mean photon energy (or wavelength); units; spectral FWHM; units (% vs. abs)
+10.0e0              ! pulse FWHM-duration [fs]
 1                   ! type of pulse to be analysed: 0=rectangular, 1=Gaussian, 2=SASE
 0.0e0               ! position of the maximum of the laser pulse [fs]
-!size
-!0.8	2.0	100
 !verbose
 !print_CDF
 !redo_MFP
-!print_MFP
+print_MFP
 NUMERICAL_PARAMETERS
-4   4   4       ! number of unit-cells in X,Y,Z
+2   2   2       ! number of unit-cells in X,Y,Z
 1   1   1       ! periodicity along X,Y,Z directions (1=yes, 0=no)
 CDF	0.0e0       ! where to take material parameters from (EADL, CDF); E_gap [eV]; file with cdf (optional)
 -1.0d0          ! [g/cm^3] density of the material (used in MC in case of EADL parameters), if <0 uses data from MD supercell
 5000            ! number of MC iterations
--1               ! number of threads for OPENMP (<1 = max threads available)
+2               ! number of threads for OPENMP (<1 = max threads available)
 2               ! MD algorithm: 0=Verlet (2d order); 1=Yoshida (4th order, slow); 2=Martyna (4th order, fast)
 1               ! frozen atoms (=0), or moving normally (=1)
 25.5d0          ! Parinello-Rahman super-cell mass coefficient
-1.0d0   dt_grid.txt     ! time step for MD [fs] (or a file name with the variable time-grid)
+0.5d0   dt_grid.txt     ! time step for MD [fs] (or a file name with the variable time-grid)
 1.0d0           ! printout data into files every 'dt_save_time' [fs]
 0               ! it's = 1 if P=const (NPH), or = 0 if V=const (NVE)
 0.0d0           ! external pressure [Pa]
-F   0   0.35    ! include SCC (True, False), model of gamma (default 0); mixing factor (default 0.35)ss
+F   0   0.35    ! include SCC (True, False), model of gamma (default 0); mixing factor (default 0.35)
 4   1.0e0   -10.0e0    50.0e0   ! 0=decoupled; 1=E_tot=const; 2=T=const; 3=BO; 4=Relaxation time; full tau [fs]; tau_CB; tau_VB
--1               ! -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule
+-1              ! -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule
 -1.0d+3    4.0d0    ! [fs] when to switch on the nonadiabatic coupling; scaling factor (if needed; default=4.0)
 5.0d0	0.001d0     ! [eV] acceptance window for nonadiabatic coupling; [eV] tolerance for quasidegenerate levels
-0   -50.0   30.0     ! quenching (0=no, 1=yes); starting from when [fs]; how often [fs]
+0   -50.0   5.0     ! quenching (0=no, 1=yes); starting from when [fs]; how often [fs]
 0   273.0   30.0    ! Berendsen thermostat for atoms (0=no, 1=yes); bath temperature [K]; cooling time [fs]
 0   273.0   10.0    ! Berendsen thermostat for electrons (0=no, 1=yes); bath temperature [K]; cooling time [fs]
 15.0d0          ! [eV] cut-off energy in MC (<0 means Ecut=top of CB)
@@ -48,7 +46,7 @@ F   0   0.35    ! include SCC (True, False), model of gamma (default 0); mixing 
 1   qe      ! printout atomic positions in XYZ (1) or not (0); additionally: q=charge, e=E_kin, m=mass
 0           ! printout atomic positions in CIF (1) or not (0)
 0           ! printout raw data file OUTPUT_coordinates_and_velosities.dat (1) or not (0)
-1           ! power of mean displacement to print out (set integer N: <[R(t)-R(t=0)]^N>)
+name:all	power:1    !Atomic_masks.txt   ! displacement to print out (set integer N: <[R(t)-R(t=0)]^N>) or filename
 -2.5e0      ! printout numbers of nearest neighbors within the given radius (<=0 No, >0 = radius in [A])
 png         ! which format to use to plot figures: eps, jpeg, gif, png, pdf
 3*1         ! number of k-points in each direction (used only for Trani-k!)
@@ -56,3 +54,5 @@ png         ! which format to use to plot figures: eps, jpeg, gif, png, pdf
 4   1   1.0d-1  40.0d0  1.0d-1  ! optic coefs: 0=no, 1=Drude, 2=Trani-k, 3=Gamma, 4=KG; spectr (1) w/ KK (2), or no (0); min, max, d_hw (eV)
 2   800.0   -10.0   ! how many rays (0=exclude, 1=1st ray, (>1)=sum all); probe-pulse wavelength [nm]; FWHM probe pulse [fs]
 0.0    50.0d0      ! angle of prob-pulse with respect to normal [degrees]; material thickness [nm]
+!size
+!0.8	2.0	100
