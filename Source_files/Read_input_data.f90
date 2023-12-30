@@ -59,6 +59,9 @@ character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_
 character(70), parameter :: m_starline = '*************************************************************'
 character(70), parameter :: m_dashline = '-------------------------------------------------------------'
 character(70), parameter :: m_warnline = ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::'
+character(*), parameter :: m_numbers = '0123456789'
+character(*), parameter :: m_LowCase = 'abcdefghijklmnopqrstuvwxyz'
+character(*), parameter :: m_UpCase  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
 character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT info
@@ -5019,7 +5022,7 @@ subroutine read_displacement_command(read_line, Scell, numpar, Reason, mask_num,
    integer, intent(in) :: mask_num  ! number of mask
    integer, intent(in), optional :: FN1 ! file number with masks definition
    !-------------------------------
-   integer :: Nsiz, N_char, N_len, i
+   integer :: Nsiz, N_char, N_len, i, j
    character(100) :: ch_comm, ch_val
    character(200) :: ch_temp
 
@@ -5054,29 +5057,32 @@ subroutine read_displacement_command(read_line, Scell, numpar, Reason, mask_num,
 
       select case(trim(adjustl(ch_comm)))
       !==========
-      case ('NAME', 'Name', 'name')   ! mask name
+      case ('name', 'Name', 'NAME')   ! mask name
+         ! Make sure the name does not repeat:
+         call number_atomic_mask(ch_val, Scell, mask_num) ! below
          Scell%Displ(mask_num)%mask_name = trim(adjustl(ch_val))
          Reason = 0
 
          ! Identify the mask format, and read extra parameters if any:
-         select case (trim(adjustl(Scell%Displ(mask_num)%mask_name(1:7)))) ! define section
-         case ('section', 'Section', 'SECTION')
+         select case (trim(adjustl(Scell%Displ(mask_num)%mask_name(1:3)))) ! define section
+         case ('sec', 'Sec', 'SEC') ! Spatial section
             ! Read one more line with the definition of the section:
             if (present(FN1)) then ! read next line from this file
                call read_and_define_section(FN1, Scell, mask_num) ! below
             endif
 
-         case ('all', 'All', 'ALL')
+         case ('all', 'All', 'ALL') ! all atoms
             ! Nothing to do, all atoms are included
          end select
 
       !==========
-      case ('POWER', 'Power', 'power')   ! power of mean displacement
+      case ('power', 'Power', 'POWER')   ! power of mean displacement
          read(ch_val,*,IOSTAT=Reason) Scell%Displ(mask_num)%MSD_power
          Reason = 0
 
       !==========
       case ('axis', 'Axis', 'AXIS', 'axes', 'Axes', 'AXES')   ! axis-resolved data
+      ! (specification unused, all axis are printed out)
          do i = 1, LEN(trim(adjustl(ch_val)))   ! interprete all letters
             select case(trim(adjustl(ch_val(i:i))))
             case ('X', 'x')
@@ -5095,6 +5101,37 @@ subroutine read_displacement_command(read_line, Scell, numpar, Reason, mask_num,
 
    !pause 'read_displacement_command'
 end subroutine read_displacement_command
+
+
+subroutine number_atomic_mask(mask_name, Scell, mask_num)
+   character(*), intent(inout) :: mask_name
+   type(Super_cell), intent(in) :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: mask_num
+   !---------------
+   integer :: j, rep_num, Reason
+   character(100) :: string_part1, string_part2, string_temp, ch_mask_num
+
+   do j = 1, mask_num
+      string_temp = trim(adjustl(Scell%Displ(j)%mask_name))  ! to work with
+      ! If the name repeats, add a number to it at the end:
+      if ( trim(adjustl(mask_name)) == trim(adjustl(string_temp)) ) then
+         ! Find if there is already a number assigned:
+         call split_command_separator(trim(adjustl(string_temp)), '_', string_part1, string_part2, back=.true.)  ! below
+
+         if (LEN(trim(adjustl(string_part2))) == 0) then ! no numnber in the name
+            mask_name = trim(adjustl(mask_name))//'_1'   ! make it the first
+         else  ! there is a number, add to it
+            read(string_part2, *, iostat=Reason) rep_num
+            if (Reason == 0) then ! read well
+               write(ch_mask_num, '(i5)') rep_num+1   ! next number
+               mask_name = trim(adjustl(string_part1))//'_'//trim(adjustl(ch_mask_num))   ! add this number to the name
+            else  ! not a number, just underscore in the name
+               mask_name = trim(adjustl(string_temp))//'_1' ! add the first number
+            endif
+         endif
+      endif
+   enddo
+end subroutine number_atomic_mask
 
 
 
@@ -5354,17 +5391,25 @@ subroutine assign_atomic_section(ind_given, command, Scell, mask_num, ind_sec, i
 end subroutine assign_atomic_section
 
 
-subroutine split_command_separator(read_line, separator, command1, command2)
+subroutine split_command_separator(read_line, separator, command1, command2, back)
    character(*), intent(in) :: read_line  ! line with two command separated by a given symbol
    character(*), intent(in) :: separator  ! separator symbol
    character(*), intent(out) :: command1  ! command #1, before separator
    character(*), intent(out) :: command2  ! command #2, after separator
+   logical, intent(in), optional :: back  ! to search from the backend
    !-----------------------
    integer :: N_sep, sep_len
+   logical :: back_search
+
+   if (present(back)) then ! read what user set
+      back_search = back
+   else  ! by default, search from the start
+      back_search = .false.
+   endif
 
    ! Find the position of the separator:
    N_sep = 0   ! to start with
-   N_sep = INDEX(read_line, separator) ! intrinsic
+   N_sep = INDEX(read_line, separator, back=back_search) ! intrinsic
    sep_len = LEN(trim(adjustl(separator)))
 
    ! If separator is there, read commands:
