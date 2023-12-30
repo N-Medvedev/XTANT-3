@@ -47,7 +47,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 09.12.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 30.12.2023)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -90,10 +90,16 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, &
                numpar%FN_Ce, numpar%FN_kappa, numpar%FN_kappa_dyn, numpar%FN_Se, numpar%FN_Te, numpar%FN_mu) ! TB electron parameters
 
+      ! Section of atoms according to masks, if any:
+      if (allocated(Scell(1)%Displ)) then
+         call write_sectional_displacements(numpar%FN_displacements, time, Scell(NSC), matter) ! atomic displaecements
+      endif
+
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:), &
                print_mass=numpar%save_XYZ_extra(1), print_charge=numpar%save_XYZ_extra(2), print_Ekin=numpar%save_XYZ_extra(3))   ! below
 
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time) ! CIF format
+
       if (numpar%save_Ei) then
          if (numpar%scc) then ! Energy levels include SCC term:
             call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei_scc_part)
@@ -101,6 +107,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
             call save_energy_levels(numpar%FN_Ei, time, Scell(1)%Ei)
          endif
       endif
+
       if (numpar%save_DOS) then  ! Material DOS
          select case (numpar%DOS_splitting)
          case (1) ! with partial DOS
@@ -109,10 +116,12 @@ subroutine write_output_files(numpar, time, matter, Scell)
             call save_DOS(numpar%FN_DOS, time, Scell(1)%DOS)
          end select
       endif
+
       select case (numpar%DOS_splitting)  ! orbital-resolved data
          case (1) ! with partial DOS
          call write_coulping(numpar%FN_coupling, time, Scell, NSC, numpar) ! electron-ion coupling
       end select
+
       if (numpar%save_fe) then
          if (numpar%do_partial_thermal) then ! Electron distribution functions on TB energy levels
             call save_distribution(numpar%FN_fe, numpar, Scell(1), time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq, &
@@ -121,6 +130,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
             call save_distribution(numpar%FN_fe, numpar, Scell(1), time, Scell(1)%Ei, Scell(1)%fe, Scell(1)%fe_eq)
          endif
       endif
+
       if (numpar%save_fe_grid) call electronic_distribution_on_grid(Scell(1), numpar, time)  ! distribution on grid
       if (numpar%save_PCF) call write_PCF(numpar%FN_PCF, Scell(1)%MDatoms, matter, Scell, 1) ! pair correlation function
       if (numpar%do_drude) call write_optical_coefs(numpar%FN_optics, time, Scell(1)%eps)    ! optical coeffs
@@ -540,7 +550,8 @@ end subroutine save_distribution_on_grid
 subroutine convolve_output(Scell, numpar)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
-   integer i, FN
+   !------------------
+   integer i, FN, j, Nsiz
    logical file_exist, file_opened, file_named
    character(200) :: File_name, file_path
       
@@ -620,6 +631,20 @@ subroutine convolve_output(Scell, numpar)
             open(UNIT=FN, FILE = trim(adjustl(File_name)))   
             call convolution(FN, Scell(i)%eps%tau) ! temperatures
             close(FN)
+         endif
+
+         ! Atomic masks for sectional displacements:
+         if (allocated(Scell(i)%Displ)) then
+            Nsiz = size(Scell(i)%Displ)   ! how many masks
+            do j = 1, Nsiz    ! for all masks
+               File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(i)%Displ(j)%mask_name))//'.dat'
+               inquire(file=trim(adjustl(File_name)),exist=file_exist)
+               if (file_exist) then
+                  open(UNIT=FN, FILE = trim(adjustl(File_name)))
+                  call convolution(FN, Scell(i)%eps%tau) ! displacements
+                  close(FN)
+               endif
+            enddo ! i
          endif
          
          File_name = trim(adjustl(file_path))//'OUTPUT_pressure_and_stress.dat'
@@ -1377,6 +1402,32 @@ subroutine write_temperatures_n_displacements(FN, time, Te, Ta, Ta_sub, MSD, MSD
 end subroutine write_temperatures_n_displacements
 
 
+
+subroutine write_sectional_displacements(FN_displacements, time, Scell, matter) ! atomic displaecements
+   integer, dimension(:), intent(in) :: FN_displacements   ! file numbers to write to
+   real(8), intent(in) :: time   ! [fs]
+   type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Solid), intent(in) :: matter ! parameters of the material
+   !-------------------------------
+   integer :: Nsiz, i, j, N_at
+
+   ! Atomic masks for sectional displacements:
+   Nsiz = size(Scell%Displ)   ! how many masks
+   do i = 1, Nsiz    ! for all masks
+      write(FN_displacements(i), '(es25.16,$)') time, Scell%Displ(i)%mean_disp, Scell%Displ(i)%mean_disp_r(:)
+      ! Now for kinds of atoms:
+      N_at = matter%N_KAO    ! number of kinds of atoms
+      do j = 1, N_at
+         write(FN_displacements(i), '(es25.16,$)') Scell%Displ(i)%mean_disp_sort(j), &
+            Scell%Displ(i)%mean_disp_r_sort(j,:)
+      enddo
+      write(FN_displacements(i),'(a)') ! make a new line
+   enddo ! i
+end subroutine write_sectional_displacements
+
+
+
+
 subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter ! parameters of the material
@@ -1603,7 +1654,10 @@ end subroutine close_save_files
 subroutine close_output_files(Scell, numpar)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   !-------------------
    !logical file_opened
+   integer :: Nsiz, i
+
    close(numpar%FN_temperatures)
    close(numpar%FN_pressure)
    close(numpar%FN_electron_properties)
@@ -1632,16 +1686,23 @@ subroutine close_output_files(Scell, numpar)
       close(numpar%FN_Te)
       close(numpar%FN_mu)
    endif
+
+   if (allocated(Scell(1)%Displ)) then
+      Nsiz = size(Scell(1)%Displ)   ! how many masks
+      do i = 1, Nsiz ! for all atomic masks
+         close(numpar%FN_displacements(i))
+      enddo
+   endif
 end subroutine close_output_files
 
 
-subroutine create_output_files(Scell,matter,laser,numpar)
+subroutine create_output_files(Scell, matter, laser, numpar)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    character(200) :: file_path, file_name
-   integer :: FN, i, j, Nshl
+   integer :: FN, i, j, Nshl, Nsiz, N_at
    ! OUTPUT files, name and address:
    character(100) :: file_temperatures	! time [fs], Te [K], Ta [K]
    character(100) :: file_pressure	! time [fs], stress_tensore(3,3) [GPa], Pressure [GPa]
@@ -1669,6 +1730,7 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    character(100) :: file_optics	! optical coefficients
    character(100) :: file_all_w		! optical coeffs for all hw
    character(100) :: file_NN		! nearest neighbors
+   character(100), dimension(:), allocatable :: file_sect_displ, file_sect_displ_short  ! sectional displacements
    character(100) :: chtemp
    character(11) :: chtemp11
 
@@ -1688,6 +1750,38 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    endif
 !    call create_file_header(numpar%FN_temperatures, '#Time	Te	Ta(kin)	Ta(conf)	Displacement')
 !    call create_file_header(numpar%FN_temperatures, '#[fs]	[K]	[K]	[K]	[A]')
+
+   ! Atomic masks for sectional displacements:
+   if (allocated(Scell(1)%Displ)) then
+      Nsiz = size(Scell(1)%Displ)   ! how many masks
+      if (.not. allocated(numpar%FN_displacements)) then  ! allocate and open files
+         allocate(numpar%FN_displacements(Nsiz))
+      endif
+      if (.not. allocated(file_sect_displ)) then  ! allocate and open files
+         allocate(file_sect_displ(Nsiz))
+         allocate(file_sect_displ_short(Nsiz))
+      endif
+      do i = 1, Nsiz ! for all masks
+         file_sect_displ_short(i) = 'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(i)%mask_name))//'.dat'
+         file_sect_displ(i) = trim(adjustl(file_path))//trim(adjustl(file_sect_displ_short(i)))
+         open(NEWUNIT=FN, FILE = trim(adjustl(file_sect_displ(i))))
+         numpar%FN_displacements(i) = FN
+
+         N_at = matter%N_KAO    ! number of kinds of atoms
+         chtemp = ''  ! to start with
+         do j = 1, N_at
+            chtemp = trim(adjustl(chtemp))//'   '//trim(adjustl(matter%Atoms(j)%Name))//':total   X  Y  Z'
+         enddo
+         call create_file_header(numpar%FN_displacements(i), '#Time  Total X  Y  Z  '//trim(adjustl(chtemp)) )
+         if (INT(Scell(1)%Displ(i)%MSD_power) > 1) then
+            write(chtemp11,'(i2)') INT(Scell(1)%Displ(i)%MSD_power)
+            call create_file_header(numpar%FN_displacements(i), '#[fs]   [A^'//trim(adjustl(chtemp11))//'](:)')
+         else
+            call create_file_header(numpar%FN_displacements(i), '#[fs]   [A](:)')
+         endif
+      enddo
+   endif
+
    
    file_pressure = trim(adjustl(file_path))//'OUTPUT_pressure_and_stress.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_pressure)))
@@ -1899,8 +1993,11 @@ subroutine create_output_files(Scell,matter,laser,numpar)
    'OUTPUT_nearest_neighbors.dat', &
    'OUTPUT_electron_entropy.dat', &
    'OUTPUT_electron_temperatures.dat', &
-   'OUTPUT_electron_chempotentials.dat')  ! below
+   'OUTPUT_electron_chempotentials.dat', &
+   file_sect_displ_short)  ! below
 
+   ! clean up:
+   if (allocated(file_sect_displ)) deallocate(file_sect_displ, file_sect_displ_short)
 end subroutine create_output_files
 
 
@@ -1913,35 +2010,37 @@ end subroutine create_file_header
 
 subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, &
 file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
-file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy, file_Te, file_mu)
+file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy, file_Te, file_mu, &
+file_sect_displ)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
-   character(*) :: file_path
-   character(*) :: file_temperatures	! time [fs], Te [K], Ta [K]
-   character(*) :: file_pressure	! pressure and stress tensore
-   character(*) :: file_energies	! energies [eV]
-   character(*) :: file_atoms_R	! atomic coordinates and velocities
-   character(*) :: file_atoms_S	! atomic coordinates and velocities
-   character(*) :: file_supercell	! supercell vectors
-   character(*) :: file_electron_properties	! electron properties
-   character(*) :: file_heat_capacity  ! electronic heat capacity
-   character(*) :: file_heat_capacity_dyn  ! electronic heat conductivity dynamical
-   character(*) :: file_numbers	! total numbers of electrons and holes
-   character(*) :: file_orb   ! orbital-resolved electron parameters
-   character(*) :: file_deep_holes	! deep-shell holes
-   character(*) :: file_optics		! optical coefficients
-   character(*) :: file_Ei		! energy levels
-   character(*) :: file_PCF		! pair correlation function
-   character(*) :: file_NN      ! nearest neighbors
-   character(*) :: file_electron_entropy  ! electron netropy
-   character(*) :: file_Te ! electron temperatures
-   character(*) :: file_mu ! electron chem.potentials
+   character(*), intent(in) :: file_path
+   character(*), intent(in) :: file_temperatures	! time [fs], Te [K], Ta [K]
+   character(*), intent(in) :: file_pressure	! pressure and stress tensore
+   character(*), intent(in) :: file_energies	! energies [eV]
+   character(*), intent(in) :: file_atoms_R	! atomic coordinates and velocities
+   character(*), intent(in) :: file_atoms_S	! atomic coordinates and velocities
+   character(*), intent(in) :: file_supercell	! supercell vectors
+   character(*), intent(in) :: file_electron_properties	! electron properties
+   character(*), intent(in) :: file_heat_capacity  ! electronic heat capacity
+   character(*), intent(in) :: file_heat_capacity_dyn  ! electronic heat conductivity dynamical
+   character(*), intent(in) :: file_numbers	! total numbers of electrons and holes
+   character(*), intent(in) :: file_orb   ! orbital-resolved electron parameters
+   character(*), intent(in) :: file_deep_holes	! deep-shell holes
+   character(*), intent(in) :: file_optics		! optical coefficients
+   character(*), intent(in) :: file_Ei		! energy levels
+   character(*), intent(in) :: file_PCF		! pair correlation function
+   character(*), intent(in) :: file_NN      ! nearest neighbors
+   character(*), intent(in) :: file_electron_entropy  ! electron netropy
+   character(*), intent(in) :: file_Te ! electron temperatures
+   character(*), intent(in) :: file_mu ! electron chem.potentials
+   character(*), dimension(:), intent(in) :: file_sect_displ
    !----------------
    character(200) :: File_name, File_name2
    real(8) :: t0, t_last, x_tics
-   integer FN, i, j, Nshl, counter, iret
+   integer FN, i, j, Nshl, counter, iret, Nsiz
    character(200) :: chtemp, command
    character(11) :: chtemp11, sh_cmd, call_slash
    character(8) :: temp, time_order
@@ -1970,6 +2069,32 @@ file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN
    File_name  = trim(adjustl(file_path))//'OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
    call gnu_MSD(File_name, file_temperatures, t0, t_last, 'OUTPUT_mean_displacement.'//trim(adjustl(numpar%fig_extention)), &
                 numpar%MSD_power) ! below
+
+
+   ! Mean square displacement:
+   File_name  = trim(adjustl(file_path))//'OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
+   call gnu_MSD(File_name, file_temperatures, t0, t_last, 'OUTPUT_mean_displacement.'//trim(adjustl(numpar%fig_extention)), &
+                numpar%MSD_power) ! below
+
+   ! Atomic masks for sectional displacements:
+   if (allocated(Scell(1)%Displ)) then
+      Nsiz = size(Scell(1)%Displ)   ! how many masks
+      do j = 1, Nsiz    ! for all masks
+         File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(j)%mask_name))// &
+                  '_Gnuplot'//trim(adjustl(sh_cmd))
+         call gnu_displacements(File_name, file_sect_displ(j), t0, t_last, 'OUTPUT_mean_displacement_'// &
+               trim(adjustl(Scell(1)%Displ(j)%mask_name))//'.'//trim(adjustl(numpar%fig_extention)), &
+               Scell(1)%Displ(j)%MSD_power) ! below
+         ! Partial by elements, if there is more than one:
+         File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(j)%mask_name))// &
+                  '_partial_Gnuplot'//trim(adjustl(sh_cmd))
+         if (matter%N_KAO > 1) then
+            call gnu_displacements_partial(File_name, file_sect_displ(j), t0, t_last, 'OUTPUT_mean_displacement_'// &
+               trim(adjustl(Scell(1)%Displ(j)%mask_name))//'_partial.'//trim(adjustl(numpar%fig_extention)), &
+               Scell(1)%Displ(j)%MSD_power, matter) ! below
+         endif
+      enddo ! j
+   endif
    
    ! Pressure:
    File_name  = trim(adjustl(file_path))//'OUTPUT_pressure_Gnuplot'//trim(adjustl(sh_cmd))
@@ -2154,6 +2279,28 @@ file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN
       call gnu_MSD(File_name, trim(adjustl(file_temperatures(1:len(trim(adjustl(file_temperatures)))-4)))//'_CONVOLVED.dat', t0, t_last, &
             'OUTPUT_mean_displacement_CONVOLVED.'//trim(adjustl(numpar%fig_extention)), numpar%MSD_power) ! below
       
+      ! Atomic masks for sectional displacements:
+      if (allocated(Scell(1)%Displ)) then
+         Nsiz = size(Scell(1)%Displ)   ! how many masks
+         do i = 1, Nsiz    ! for all masks
+            File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(j)%mask_name))// &
+                  '_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
+            call gnu_displacements(File_name, trim(adjustl(file_sect_displ(i)(1:len(trim(adjustl(file_sect_displ(i))))-4) )), &
+                  t0, t_last, 'OUTPUT_mean_displacement_'// &
+                  trim(adjustl(Scell(1)%Displ(j)%mask_name))//'_CONVOLVED.' &
+                  //trim(adjustl(numpar%fig_extention)), Scell(1)%Displ(i)%MSD_power) ! below
+            ! Partial by elements, if there is more than one:
+            File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(j)%mask_name))// &
+                  '_partial_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
+            if (matter%N_KAO > 1) then
+               call gnu_displacements_partial(File_name, trim(adjustl(file_sect_displ(i)(1:len(trim(adjustl(file_sect_displ(i))))-4) )), &
+                  t0, t_last, 'OUTPUT_mean_displacement_'// &
+                  trim(adjustl(Scell(1)%Displ(j)%mask_name))//'_partial_CONVOLVED.' &
+                  //trim(adjustl(numpar%fig_extention)), Scell(1)%Displ(i)%MSD_power, matter) ! below
+            endif
+         enddo ! i
+      endif
+
       ! Pressure:
       File_name  = trim(adjustl(file_path))//'OUTPUT_pressure_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
       call gnu_pressure(File_name, trim(adjustl(file_pressure(1:len(trim(adjustl(file_pressure)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_pressure_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
@@ -2419,6 +2566,121 @@ subroutine gnu_MSD(File_name, file_MSD, t0, t_last, eps_name, MSD_power)
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
 end subroutine gnu_MSD
+
+
+
+subroutine gnu_displacements(File_name, file_MSD, t0, t_last, eps_name, MSD_power)
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_MSD	! input file
+   real(8), intent(in) :: t0, t_last ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   real(8), intent(in) :: MSD_power ! power of MSD
+   integer :: FN, i, i_start
+   real(8) :: x_tics
+   character(8) :: temp, time_order, chtemp, MSD_text
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   if (MSD_power > 1) then
+      ! Power of MSD:
+      write(MSD_text,'(i2)') int(MSD_power)
+
+      call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Mean displacement', 'Time (fs)', &
+        'Mean displacement (A^'//trim(adjustl(MSD_text))//')', trim(adjustl(eps_name)), g_numpar%path_sep, 2)	! module "Gnuplotting"
+   else
+      call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Mean displacement', 'Time (fs)', &
+        'Mean displacement (A)', trim(adjustl(eps_name)), g_numpar%path_sep, 2)	! module "Gnuplotting"
+   endif
+
+   i_start = 2
+   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a,i3,a)') 'p [', t0, ':][] "' , trim(adjustl(file_MSD)), ' "u 1:', i_start ,' w l lw LW title "Average" ,\'
+      write(FN, '(a,i3,a,a,a)') ' "" u 1:', i_start+1 ,' w l lw LW title " ', 'X'  ,' " ,\'
+      write(FN, '(a,i3,a,a,a)') ' "" u 1:', i_start+2 ,' w l lw LW title " ', 'Y'  ,' " ,\'
+      write(FN, '(a,i3,a,a,a)') ' "" u 1:', i_start+3 ,' w l lw LW title " ', 'Z'  ,' " '
+   else
+      write(FN, '(a,es25.16,a,a,a,i3,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_MSD)), '\"u 1:', i_start, &
+                                          ' w l lw \"$LW\" title \"Average\" ,\'
+      write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+1, ' w l lw \"$LW\" title \" ', 'X' ,'\" ,\'
+      write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+2, ' w l lw \"$LW\" title \" ', 'Y' ,'\" ,\'
+      write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+3, ' w l lw \"$LW\" title \" ', 'Z' ,'\"'
+   endif
+
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_displacements
+
+
+
+subroutine gnu_displacements_partial(File_name, file_MSD, t0, t_last, eps_name, MSD_power, matter)
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_MSD	! input file
+   real(8), intent(in) :: t0, t_last ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   real(8), intent(in) :: MSD_power ! power of MSD
+   type(Solid), intent(in) :: matter     ! material parameters
+   !------------------------
+   integer :: FN, i, i_start
+   real(8) :: x_tics
+   character(8) :: temp, time_order, chtemp, MSD_text
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   if (MSD_power > 1) then
+      ! Power of MSD:
+      write(MSD_text,'(i2)') int(MSD_power)
+
+      call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Mean displacement', 'Time (fs)', &
+        'Mean displacement (A^'//trim(adjustl(MSD_text))//')', trim(adjustl(eps_name)), g_numpar%path_sep, 2)	! module "Gnuplotting"
+   else
+      call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Mean displacement', 'Time (fs)', &
+        'Mean displacement (A)', trim(adjustl(eps_name)), g_numpar%path_sep, 2)	! module "Gnuplotting"
+   endif
+
+   i_start = 6
+   do i = 1, matter%N_KAO
+      chtemp = trim(adjustl(matter%Atoms(i)%Name))
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         if (i == 1) then
+            write(FN, '(a,es25.16,a,a,a,i3,a)') 'p [', t0, ':][] "' , trim(adjustl(file_MSD)), ' "u 1:', i_start , &
+                     ' w l lw LW title "'//trim(adjustl(chtemp))//'" ,\'
+         else
+            write(FN, '(a,i3,a,a,a)') ' "" u 1:', i_start + (i-1)*4,' w l lw LW title "'//trim(adjustl(chtemp))//'" ,\'
+         endif
+         write(FN, '(a,i3,a,a,a)') ' "" u 1:', i_start+1+(i-1)*4 ,' w l lw LW title " ', trim(adjustl(chtemp))//':X'  ,' " ,\'
+         write(FN, '(a,i3,a,a,a)') ' "" u 1:', i_start+2+(i-1)*4,' w l lw LW title " ', trim(adjustl(chtemp))//':Y'  ,' " ,\'
+         if (i /= matter%N_KAO) then
+            write(FN, '(a,i3,a,a,a)') ' "" u 1:', i_start+3+(i-1)*4,' w l lw LW title " ', trim(adjustl(chtemp))//':Z'  ,' " ,\'
+         else
+            write(FN, '(a,i3,a,a,a)') ' "" u 1:', i_start+3+(i-1)*4,' w l lw LW title " ', trim(adjustl(chtemp))//':Z'  ,' " '
+         endif
+
+      else
+         if (i == 1) then
+            write(FN, '(a,es25.16,a,a,a,i3,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_MSD)), '\"u 1:', i_start, &
+                                          ' w l lw \"$LW\" title \"'//trim(adjustl(chtemp))//'\" ,\'
+         else
+            write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+(i-1)*4, ' w l lw \"$LW\" title title \"'//trim(adjustl(chtemp))//'\" ,\'
+         endif
+         write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+1+(i-1)*4, ' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))//':X' ,'\" ,\'
+         write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+2+(i-1)*4, ' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))//':Y' ,'\" ,\'
+
+         if (i /= matter%N_KAO) then
+            write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+3+(i-1)*4, ' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))//':Z' ,'\" ,\'
+         else
+            write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+3+(i-1)*4, ' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))//':Z' ,'\"'
+         endif
+      endif
+   enddo
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_displacements_partial
 
 
 subroutine gnu_Mulliken_charges(File_name, file_electron_properties, t0, t_last, eps_name)

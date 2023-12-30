@@ -607,6 +607,25 @@ end type Sub_cell
 
 
 !==============================================
+type Displacement_analysis
+   character(100) :: mask_name   ! name of the mask
+   real(8) :: MSD_power          ! power of the mean displacement for this particular analysis
+   real(8) :: mean_disp          ! [A^MSD_power] mean displacement of all atoms
+   real(8), dimension(:), allocatable :: mean_disp_sort     ! [A^MSD_power] mean displacement of atoms by sort
+   logical, dimension(3) :: print_r       ! along which exis the user requirested the analysis
+   real(8), dimension(3) :: mean_disp_r   ! [A^MSD_power] mean displacements along X, Y, Z axes
+   real(8), dimension(:,:), allocatable :: mean_disp_r_sort   ! [A^MSD_power] mean displacements along X, Y, Z axes by sort
+   logical, dimension(:), allocatable :: Atomic_mask  ! atomic mask to be used
+   ! Definition of spatial-section mask:
+   ! Currently, only 2 sections are supported, connected by a logical operator 'and' or 'or':
+   logical :: logical_and, logical_or  ! which one is used
+   integer, dimension(2) :: axis_ind   ! index of the axis for the section
+   real(8), dimension(2,3) :: r_start, r_end   ! section starting and ending points
+end type Displacement_analysis
+
+
+
+!==============================================
 ! Supercell as object:
 type Super_cell
    ! Sub-cells for linear scaling TB, if used:
@@ -631,6 +650,7 @@ type Super_cell
    real(8), dimension(3,3) :: Stress	! [Pa] stress tensor in the atomic system
    real(8) :: MSD	! [A^2] mean square displacements average over all atoms
    real(8), dimension(:), allocatable :: MSDP	! [A^2] mean square displacements for atoms of different sorts
+   type(Displacement_analysis), dimension(:), allocatable :: Displ ! [A] mean displacements for atoms masked
    real(8) :: mu	! [eV] electron chemical potential
    real(8), dimension(:), allocatable :: fe ! low-energy electron distribution
    real(8), dimension(:), allocatable :: fe_eq ! equivalent Fermi electron distribution
@@ -846,6 +866,7 @@ type Numerics_param
    real(8), dimension(:), allocatable :: dt_MD_grid         ! grid, which MD timestep to use
    integer :: i_dt        ! which timestep from the array "dt_MD_grid" to use now
    character(100) :: MD_step_grid_file   ! filename with MD time step grid
+   !logical, dimension(:), allocatable :: Atomic_masks ! user-defined masks for atomic analysis
    !-----------------
    real(8), dimension(:), allocatable :: At_bath_reset_grid   ! grid, when to change the Atomic bath parameters
    real(8), dimension(:), allocatable :: At_bath_grid_Ta         ! Atomic bath temperatures array [K]
@@ -903,6 +924,7 @@ type Numerics_param
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
+   integer, dimension(:), allocatable :: FN_displacements
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
    integer :: el_ion_scheme

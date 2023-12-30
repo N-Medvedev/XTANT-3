@@ -53,6 +53,7 @@ subroutine read_POSCAR(FN_POSCAR, File_name_POSCAR, Scell, SCN, matter, numpar, 
    integer, dimension(:), allocatable :: i_temp
    logical :: read_well
    character(1000) :: read_line, Error_descript
+   character(10) :: ch_temp
    character(3), dimension(:), allocatable :: El_name
    character(*), parameter :: numbers = '0123456789'
 
@@ -132,8 +133,10 @@ subroutine read_POSCAR(FN_POSCAR, File_name_POSCAR, Scell, SCN, matter, numpar, 
       goto 4400
    endif
    ! Check if the line contains optional names, or the mandatory numbers:
-   if (verify(trim(adjustl(read_line(1:1))), trim(adjustl(numbers))) /= 0) then ! it was optional line with names
-      Ncol = number_of_columns(read_line) ! module "Dealing_with_files"
+   !if (verify(trim(adjustl(read_line(1:1))), trim(adjustl(numbers))) /= 0) then ! it was optional line with names
+   read(read_line,*,IOSTAT=Reason) ch_temp
+   if (verify(trim(adjustl(ch_temp(1:1))), trim(adjustl(numbers))) /= 0) then ! it was optional line with names
+      Ncol = number_of_columns(trim(adjustl(read_line))) ! module "Dealing_with_files"
       allocate(El_name(Ncol))
       read(read_line,*,IOSTAT=Reason) El_name(:) ! read kinds of species
 
@@ -148,11 +151,13 @@ subroutine read_POSCAR(FN_POSCAR, File_name_POSCAR, Scell, SCN, matter, numpar, 
       endif
    endif
    ! Having the numbers of species, get the total number of atoms:
-   Ncol = number_of_columns(read_line) ! module "Dealing_with_files"
+   Ncol = number_of_columns(trim(adjustl(read_line))) ! module "Dealing_with_files"
    allocate(i_temp(Ncol), source = 0)
    read(read_line,*,IOSTAT=Reason) i_temp(:) ! read numbers of species
+   !print*, 'Ncol', Ncol
    Nat = SUM(i_temp) ! count all the atoms
    !print*, 'Nat=', Nat, size(i_temp), i_temp, ': ', read_line
+   !pause 'poscar'
    Scell(SCN)%Na = Nat
    allocate(Scell(SCN)%MDAtoms(Nat))
 
