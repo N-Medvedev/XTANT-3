@@ -655,6 +655,9 @@ type Super_cell
    real(8), dimension(:), allocatable :: fe ! low-energy electron distribution
    real(8), dimension(:), allocatable :: fe_eq ! equivalent Fermi electron distribution
    real(8) :: Se, Se_eq  ! electron entropy [K/eV], and equivalent equilibrium entropy
+   ! Atomic distribution function:
+   real(8), dimension(:), allocatable :: Ea_grid ! energy grid for atomic distribution
+   real(8), dimension(:), allocatable :: fa, fa_eq ! atomic distribution and equivalent Maxwell distribution
    ! Separate for VB and CB, if needed:
    real(8) :: Ne_low_CB, Ne_low_VB, El_low_CB, El_low_VB ! number and energy of electrons in VB and CB
    real(8) :: Te_VB, Te_CB ! [eV] electron temperatures for conduction and valence bands
@@ -924,6 +927,7 @@ type Numerics_param
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
+   integer :: FN_fa
    integer, dimension(:), allocatable :: FN_displacements
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
@@ -933,7 +937,7 @@ type Numerics_param
    logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
    ! Different output, what to save:
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate
-   logical :: save_fe_grid, save_fe_orb
+   logical :: save_fe_grid, save_fe_orb, save_fa
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
    logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS, do_kappa_dyn

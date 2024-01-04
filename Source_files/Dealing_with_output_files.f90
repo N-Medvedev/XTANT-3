@@ -131,6 +131,11 @@ subroutine write_output_files(numpar, time, matter, Scell)
          endif
       endif
 
+      if (numpar%save_fa) then
+         call save_atomic_distribution(numpar%FN_fa, numpar, Scell(1), time, Scell(1)%Ea_grid, Scell(1)%fa, Scell(1)%fa_eq)
+      endif
+
+
       if (numpar%save_fe_grid) call electronic_distribution_on_grid(Scell(1), numpar, time)  ! distribution on grid
       if (numpar%save_PCF) call write_PCF(numpar%FN_PCF, Scell(1)%MDatoms, matter, Scell, 1) ! pair correlation function
       if (numpar%do_drude) call write_optical_coefs(numpar%FN_optics, time, Scell(1)%eps)    ! optical coeffs
@@ -845,6 +850,32 @@ subroutine save_distribution(FN, numpar, Scell, tim, wr, fe, fe_eq, fe_eq_VB, fe
    write(FN,*) ''
    write(FN,*) ''
 end subroutine save_distribution
+
+
+
+subroutine save_atomic_distribution(FN, numpar, Scell, tim, Ea_grid, fa, fa_eq)
+   integer, intent(in) :: FN
+   type(Numerics_param), intent(in) :: numpar  ! numerical parameters
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   real(8), intent(in) :: tim
+   real(8), dimension(:), intent(in) :: Ea_grid
+   real(8), dimension(:), intent(in) :: fa
+   real(8), dimension(:), allocatable, intent(in) :: fa_eq
+   integer i, j, k
+
+   write(FN,'(a,f25.16)') '#', tim
+   if (allocated(fa_eq)) then ! there is equivalent-temperature Maxwell distribution
+      do i = 1, size(fa)
+         write(FN,'(f25.16,f25.16,f25.16)') Ea_grid(i), fa(i), fa_eq(i)
+      enddo
+   else  ! fe is Maxwell, no equivalent distribution needed
+      do i = 1, size(fa)
+         write(FN,'(f25.16,f25.16)') Ea_grid(i), fa(i)
+      enddo
+   endif ! (allocated(fe_eq))
+   write(FN,*) ''
+   write(FN,*) ''
+end subroutine save_atomic_distribution
 
 
 
@@ -1676,6 +1707,7 @@ subroutine close_output_files(Scell, numpar)
    if (numpar%save_Ei)  close(numpar%FN_Ei)
    if (numpar%save_DOS)  close(numpar%FN_DOS)
    if (numpar%DOS_splitting == 1) close(numpar%FN_coupling)
+   if (numpar%save_fa)  close(numpar%FN_fa)
    if (numpar%save_fe)  close(numpar%FN_fe)
    if (numpar%save_fe_grid)  close(numpar%FN_fe_on_grid)
    if (numpar%save_PCF) close(numpar%FN_PCF)
@@ -1726,6 +1758,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100) :: file_fe		! electron distribution (low-energy part)
    !character(100) :: file_fe_partial   ! band-resolved electron distributions (low-energy part)
    character(100) :: file_fe_on_grid   ! electron distribution (full: low- + high-energy)
+   character(100) :: file_fa		! atomic distribution
    character(100) :: file_PCF		! pair correlation function
    character(100) :: file_optics	! optical coefficients
    character(100) :: file_all_w		! optical coeffs for all hw
@@ -1954,6 +1987,12 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       numpar%FN_fe_on_grid = FN
    endif
 
+   if (numpar%save_fa) then
+      file_fa = trim(adjustl(file_path))//'OUTPUT_atomic_distribution.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_fa)))
+      numpar%FN_fa = FN
+   endif
+
    if (numpar%save_PCF) then
       file_PCF = trim(adjustl(file_path))//'OUTPUT_pair_correlation_function.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_PCF)))
@@ -1976,7 +2015,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    enddo
 
    ! Prepare gnuplot scripts to plot all the output data:
-   call create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, &
+   call create_gnuplot_scripts(Scell, matter, numpar, laser, file_path, &
    'OUTPUT_temperatures.dat', &
    'OUTPUT_pressure_and_stress.dat', &
    'OUTPUT_energies.dat', &
@@ -2239,6 +2278,20 @@ file_sect_displ)
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
    endif
+
+
+   ! Distribution function of atoms:
+   if (numpar%save_fa) then
+      ! Distribution function can only be plotted as animated gif:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_atoms_distribution_Gnuplot'//trim(adjustl(sh_cmd))
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 5.0d0, 'Distribution', 'Energy (eV)', 'Atomic distribution (a.u.)', 'OUTPUT_atomic_distribution.gif', numpar%path_sep, setkey=0)
+      call write_atomic_distribution_gnuplot(FN, Scell, numpar, 'OUTPUT_atomic_distribution.dat')   ! below
+      call write_gnuplot_script_ending(FN, File_name, 1)
+      close(FN)
+   endif
+
+
 
    ! DOS of electrons:
    if (numpar%save_DOS) then  ! Material DOS
@@ -3669,6 +3722,60 @@ subroutine write_energy_levels_gnuplot(FN, Scell, file_Ei)
       endif
    enddo
 end subroutine write_energy_levels_gnuplot
+
+
+
+subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe)
+   integer, intent(in) :: FN            ! file to write into
+   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   character(*), intent(in) :: file_fe  ! file with atomic distribution function
+   !-----------------------
+   integer :: i, M, NSC
+   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
+   logical :: do_fe_eq
+
+   do NSC = 1, size(Scell)
+      ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
+      write(ch_temp,'(f)')  Scell(NSC)%Ea_grid(size(Scell(NSC)%Ea_grid))
+      write(ch_temp2,'(f)') numpar%t_start
+      write(ch_temp3,'(f)') numpar%dt_save
+
+      select case (numpar%el_ion_scheme)
+         case (3:4)
+            do_fe_eq = .true.
+         case default
+            do_fe_eq = .false.
+      endselect
+      ! minimal energy grid:
+      write(ch_temp4,'(f)') 0.0d0
+
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:1] "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:3 w l lw 2 lt rgb "grey" title "Equivalent Maxwell" ,\'
+
+         write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
+                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) '
+
+      else  ! Linux
+         write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:1] \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:3 w l lw 2 lt rgb \"grey\" title \"Equivalent Maxwell\" ,\'
+
+         write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
+                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) '
+
+      endif
+      write(FN, '(a)') '}'
+   enddo
+end subroutine write_atomic_distribution_gnuplot
 
 
 subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
@@ -5257,6 +5364,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
    if (numpar%save_fe_grid) then
       write(print_to,'(a)') ' Electron distribution on the grid'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+    if (numpar%save_fa) then
+      write(print_to,'(a)') ' Atomic distribution'
       optional_output = .true.   ! there is at least some optional output
    endif
 

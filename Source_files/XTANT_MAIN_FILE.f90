@@ -118,6 +118,9 @@ call reset_dt(g_numpar, g_matter, g_time)   ! module "Dealing_with_output_files"
 call set_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err) ! module "Initial_configuration"
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the initial configuration, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true.)
+! Get atomic distribution:
+call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_tools"
+if (g_numpar%verbose) call print_time_step('Atomic distribution calculated succesfully:', msec=.true.)
 
 
 ! Print the title of the program and used parameters on the screen:
@@ -340,6 +343,9 @@ do while (g_time .LT. g_numpar%t_total)
 
       ! Get current Mulliken charges, if required:
       call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)   ! module "TB"
+
+      ! Get atomic distribution:
+      call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_tools"
 
       ! Get current pressure in the system:
       call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
@@ -691,6 +697,9 @@ subroutine vary_size(do_forces, Err)
 
       call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)   ! module "TB"
       call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
+
+      ! Get atomic distribution:
+      call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_tools"
 
       ! Save initial step in output:
       call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
