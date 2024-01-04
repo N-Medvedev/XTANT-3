@@ -47,7 +47,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 30.12.2023)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 04.01.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -3754,7 +3754,7 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe)
          write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
 
-         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:1] "'//trim(adjustl(file_fe))// &
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:5] "'//trim(adjustl(file_fe))// &
                   '" index (i-1) u 1:3 w l lw 2 lt rgb "grey" title "Equivalent Maxwell" ,\'
 
          write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
@@ -3765,7 +3765,7 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe)
          write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
 
-         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:1] \"'//trim(adjustl(file_fe))// &
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:5] \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:3 w l lw 2 lt rgb \"grey\" title \"Equivalent Maxwell\" ,\'
 
          write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &

@@ -348,16 +348,49 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
             if (j > 1) j = j - 1
          endif
 
-         Scell(NSC)%fa(j) = Scell(NSC)%fa(j) + 1.0d0  ! add an atom into the ditribution
+         if (j == 1) then
+            dE = Scell(NSC)%Ea_grid(j+1) - Scell(NSC)%Ea_grid(j)
+         else
+            dE = Scell(NSC)%Ea_grid(j) - Scell(NSC)%Ea_grid(j-1)
+         endif
+
+         Scell(NSC)%fa(j) = Scell(NSC)%fa(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
 
          !print*, i, Scell(NSC)%MDAtoms(i)%Ekin, Scell(NSC)%Ea_grid(j), Scell(NSC)%Ea_grid(j+1)
       enddo ! i
 
       ! Normalize it to the number of atoms:
       Scell(NSC)%fa = Scell(NSC)%fa/dble(Nat)
+
+      ! Also get the equivalent Maxwell distribution:
+      call set_Maxwell_distribution(numpar, Scell, NSC, matter)
+
    endif ! (numpar%save_fa)
    !pause 'get_atomic_distribution done'
 end subroutine get_atomic_distribution
+
+
+subroutine set_Maxwell_distribution(numpar, Scell, NSC, matter)
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in) :: matter    ! material parameters
+   !----------------------------------
+   integer :: j, Nsiz
+   real(8) :: arg, Tfact
+
+   if (numpar%save_fa) then
+      Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
+
+      if (.not.allocated(Scell(NSC)%fa_eq)) allocate(Scell(NSC)%fa_eq(Nsiz), source = 0.0d0)
+
+      Tfact = (1.0d0 / Scell(NSC)%TaeV)**1.5d0
+      do j = 1, Nsiz
+         arg = Scell(NSC)%Ea_grid(j) / Scell(NSC)%TaeV
+         Scell(NSC)%fa_eq(j) = 2.0d0 * sqrt(Scell(NSC)%Ea_grid(j) / g_Pi) * Tfact * exp(-arg)
+      enddo
+   endif
+end subroutine set_Maxwell_distribution
 
 
 !NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN
