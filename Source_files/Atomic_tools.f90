@@ -48,7 +48,7 @@ get_mean_square_displacement, Cooling_atoms, Coordinates_abs_to_rel, get_Ekin, m
 remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_atoms_Y4, check_periodic_boundaries, &
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
 Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
-update_atomic_masks_displ
+update_atomic_masks_displ, get_atomic_distribution
 
 
 !=======================================
@@ -248,20 +248,22 @@ pure subroutine Velocity_rescaling(Scell, i_at, ind, factr)
 end subroutine Velocity_rescaling
 
 
+!DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD
+
 subroutine Get_random_velocity(T, Mass, Vx, Vy, Vz, ind)
    real(8), intent(in) :: T ! [eV] Temperature to set the velocities accordingly
    real(8), intent(in) :: Mass ! [kg] mass of the atom
    real(8), intent(out) :: Vx, Vy, Vz ! velocities [A/fs]
    integer, intent(in) :: ind ! which distribution to use
    select case (ind)
-   case (1) ! linear distributino of random values
+   case (1) ! linear distribution of random values
       call Random_RN(T, Mass, Vx, Vy, Vz)
    case (2) ! Maxwellian distribution
       call Maxwell_RN(T, Mass, Vx, vy, Vz)
    end select
 end subroutine Get_random_velocity
 
- 
+
 ! Sample according to Maxwell distribution:
 subroutine Maxwell_RN(T, Mass, Vx, vy, Vz)
    real(8), intent(in) :: T ! [eV] Temperature to set the velocities accordingly
@@ -302,7 +304,7 @@ subroutine Maxwell_RN(T, Mass, Vx, vy, Vz)
 end subroutine Maxwell_RN
 
 
-subroutine Random_RN(T, Mass, Vx, Vy, Vz)
+subroutine Random_RN(T, Mass, Vx, Vy, Vz) ! uniform distribution of atomic velosities
    real(8), intent(in) :: T ! [eV] Temperature to set the velocities accordingly
    real(8), intent(in) :: Mass ! [kg] mass of the atom
    real(8), intent(out) :: Vx, Vy, Vz ! velocities [A/fs]
@@ -316,6 +318,80 @@ subroutine Random_RN(T, Mass, Vx, Vy, Vz)
    call random_number(xr)
    Vz = V_temp*(-1.0d0 + 2.0d0*xr) ! [A/fs] atomic velocity Z
 end subroutine Random_RN
+
+
+subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in) :: matter    ! material parameters
+   real(8), optional :: Emax_in, dE_in  ! [eV] maximal energy and grid step for atomic distribution
+   !----------------------------------
+   integer :: i, Nat, j, Nsiz
+   real(8) :: Emax, dE
+
+   if (numpar%save_fa) then
+      Nat = size(Scell(NSC)%MDAtoms) ! total number of atoms
+      Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
+
+      ! Distribute atoms:
+      Scell(NSC)%fa = 0.0d0   ! to start with
+      ! Get the kinetic energies of atoms:
+      call Atomic_kinetic_energies(Scell, NSC, matter)   ! below
+
+      ! Construct the atomic distribution:
+      do i = 1, Nat
+         if (Scell(NSC)%MDAtoms(i)%Ekin >= Scell(NSC)%Ea_grid(Nsiz)) then  ! above the max grid point
+            j = Nsiz
+         else ! inside the grid
+            call Find_in_array_monoton(Scell(NSC)%Ea_grid, Scell(NSC)%MDAtoms(i)%Ekin, j) ! module "Little_subroutines"
+            if (j > 1) j = j - 1
+         endif
+
+         if (j == 1) then
+            dE = Scell(NSC)%Ea_grid(j+1) - Scell(NSC)%Ea_grid(j)
+         else
+            dE = Scell(NSC)%Ea_grid(j) - Scell(NSC)%Ea_grid(j-1)
+         endif
+
+         Scell(NSC)%fa(j) = Scell(NSC)%fa(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
+
+         !print*, i, Scell(NSC)%MDAtoms(i)%Ekin, Scell(NSC)%Ea_grid(j), Scell(NSC)%Ea_grid(j+1)
+      enddo ! i
+
+      ! Normalize it to the number of atoms:
+      Scell(NSC)%fa = Scell(NSC)%fa/dble(Nat)
+
+      ! Also get the equivalent Maxwell distribution:
+      call set_Maxwell_distribution(numpar, Scell, NSC, matter)
+
+   endif ! (numpar%save_fa)
+   !pause 'get_atomic_distribution done'
+end subroutine get_atomic_distribution
+
+
+subroutine set_Maxwell_distribution(numpar, Scell, NSC, matter)
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in) :: matter    ! material parameters
+   !----------------------------------
+   integer :: j, Nsiz
+   real(8) :: arg, Tfact
+
+   if (numpar%save_fa) then
+      Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
+
+      if (.not.allocated(Scell(NSC)%fa_eq)) allocate(Scell(NSC)%fa_eq(Nsiz), source = 0.0d0)
+
+      Tfact = (1.0d0 / Scell(NSC)%TaeV)**1.5d0
+      do j = 1, Nsiz
+         arg = Scell(NSC)%Ea_grid(j) / Scell(NSC)%TaeV
+         Scell(NSC)%fa_eq(j) = 2.0d0 * sqrt(Scell(NSC)%Ea_grid(j) / g_Pi) * Tfact * exp(-arg)
+      enddo
+   endif
+end subroutine set_Maxwell_distribution
+
 
 !NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN
 ! create a list of nearest neighbors:

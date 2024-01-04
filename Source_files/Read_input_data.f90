@@ -5455,8 +5455,10 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    logical, intent(inout) :: read_well
    !--------------------
-   integer :: count_lines, Reason, N, Nsiz, i
-   real(8) :: dE, Emax, Emin, dE_min
+   integer :: count_lines, Reason, N, Nsiz, i, Na
+   real(8) :: dE, Emax, Emin, dE_min, dEa, Ea_max
+   character(100) :: ch_temp1, ch_temp2
+   logical :: read_well_at
 
    count_lines = 0
    read_well = .true.   ! to start with
@@ -5468,7 +5470,10 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
    dE = 0.1d0  ! [eV] energy grid step
    Emin = -30.0d0 ! [eV] energy grid start
    Emax = 100.0d0 ! [eV] energy grid end
+   numpar%save_fa = .false.
 
+   !-----------------------------------
+   ! Read electronic distribution part:
    read(temp_ch,*,IOSTAT=Reason) N, dE, Emax
    call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
 
@@ -5524,6 +5529,42 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
          Scell%E_fe_grid(i) = Scell%E_fe_grid(i-1) + dE
       enddo
    endif
+
+
+   !-----------------------------------
+   ! Read atomic distribution part, if any:
+   ! check if there is a command for atomic distribution provided:
+   ch_temp1 = ''  ! to start with
+   ch_temp2 = ''  ! to start with
+   call split_command_separator(trim(adjustl(temp_ch)), 'fa ', ch_temp1, ch_temp2)  ! below
+   if (LEN(trim(adjustl(ch_temp1))) > 0) then   ! printout atomic distribution
+      numpar%save_fa = .true.
+      !print*, 'Atomic didstribution will be printed out', trim(adjustl(ch_temp1))//':', trim(adjustl(ch_temp2))
+   else
+      !print*, 'Atomic didstribution will not be printed out', trim(adjustl(ch_temp1))//':', trim(adjustl(ch_temp2))
+   endif
+
+   read_well_at = .false.  ! to start with
+   if (numpar%save_fa) then
+      read(ch_temp2,*,IOSTAT=Reason) dEa, Ea_max
+      call read_file(Reason, count_lines, read_well_at)    ! module "Dealing_with_files"
+   endif
+   if (.not.read_well_at) then   ! use defaults
+      Ea_max = 10.0d0  ! [eV] default value
+      dEa = 0.01d0    ! [eV] default value
+   endif
+
+   ! Assume equidistrant grid:
+   Nsiz = INT(Ea_max/dEa)+1
+   allocate(Scell%fa(Nsiz), source = 0.0d0)
+   allocate(Scell%Ea_grid(Nsiz))
+   ! Set the grid:
+   Scell%Ea_grid(1) = 0.0d0 ! starting point
+   do i = 2, Nsiz
+      Scell%Ea_grid(i) = Scell%Ea_grid(i-1) + dEa
+      !print*, i, Scell%Ea_grid(i)
+   enddo ! i
+   !pause 'interprete_distribution_input'
 end subroutine interprete_distribution_input
 
 
