@@ -2282,10 +2282,12 @@ file_sect_displ)
 
    ! Distribution function of atoms:
    if (numpar%save_fa) then
+      call order_of_time((Scell(1)%Ea_grid(size(Scell(1)%Ea_grid))), time_order, temp, x_tics)	! module "Little_subroutines"
+
       ! Distribution function can only be plotted as animated gif:
       File_name  = trim(adjustl(file_path))//'OUTPUT_atoms_distribution_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 5.0d0, 'Distribution', 'Energy (eV)', 'Atomic distribution (a.u.)', 'OUTPUT_atomic_distribution.gif', numpar%path_sep, setkey=0)
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Atomic distribution (a.u.)', 'OUTPUT_atomic_distribution.gif', numpar%path_sep, setkey=0)
       call write_atomic_distribution_gnuplot(FN, Scell, numpar, 'OUTPUT_atomic_distribution.dat')   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
