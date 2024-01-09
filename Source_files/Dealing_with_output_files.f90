@@ -132,7 +132,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
       endif
 
       if (numpar%save_fa) then
-         call save_atomic_distribution(numpar%FN_fa, numpar, Scell(1), time, Scell(1)%Ea_grid, Scell(1)%fa, Scell(1)%fa_eq)
+         call save_atomic_distribution(numpar%FN_fa, numpar, Scell(1), time, Scell(1)%Ea_grid_out, Scell(1)%fa_out, Scell(1)%fa_eq_out)
       endif
 
 
@@ -2282,7 +2282,7 @@ file_sect_displ)
 
    ! Distribution function of atoms:
    if (numpar%save_fa) then
-      call order_of_time((Scell(1)%Ea_grid(size(Scell(1)%Ea_grid))), time_order, temp, x_tics)	! module "Little_subroutines"
+      call order_of_time((Scell(1)%Ea_grid_out(size(Scell(1)%Ea_grid_out))), time_order, temp, x_tics)	! module "Little_subroutines"
 
       ! Distribution function can only be plotted as animated gif:
       File_name  = trim(adjustl(file_path))//'OUTPUT_atoms_distribution_Gnuplot'//trim(adjustl(sh_cmd))
@@ -3739,7 +3739,7 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe)
 
    do NSC = 1, size(Scell)
       ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
-      write(ch_temp,'(f)')  Scell(NSC)%Ea_grid(size(Scell(NSC)%Ea_grid))
+      write(ch_temp,'(f)')  Scell(NSC)%Ea_grid_out(size(Scell(NSC)%Ea_grid_out))
       write(ch_temp2,'(f)') numpar%t_start
       write(ch_temp3,'(f)') numpar%dt_save
 

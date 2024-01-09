@@ -656,8 +656,9 @@ type Super_cell
    real(8), dimension(:), allocatable :: fe_eq ! equivalent Fermi electron distribution
    real(8) :: Se, Se_eq  ! electron entropy [K/eV], and equivalent equilibrium entropy
    ! Atomic distribution function:
-   real(8), dimension(:), allocatable :: Ea_grid ! energy grid for atomic distribution
-   real(8), dimension(:), allocatable :: fa, fa_eq ! atomic distribution and equivalent Maxwell distribution
+   real(8), dimension(:), allocatable :: Ea_grid, Ea_grid_out   ! energy grid for atomic distribution
+   real(8), dimension(:), allocatable :: fa, fa_eq, fa_out, fa_eq_out ! atomic distribution and equivalent Maxwell distribution
+   real(8) :: Sa, Sa_eq  ! atomic entropy [K/eV], and equivalent equilibrium entropy
    ! Separate for VB and CB, if needed:
    real(8) :: Ne_low_CB, Ne_low_VB, El_low_CB, El_low_VB ! number and energy of electrons in VB and CB
    real(8) :: Te_VB, Te_CB ! [eV] electron temperatures for conduction and valence bands
@@ -845,7 +846,7 @@ type Numerics_param
    real(8), dimension(:), allocatable :: Subcell_coord_sx, Subcell_coord_sy, Subcell_coord_sz
    ! Other parameters:
    integer :: which_input  ! number of input file used (for using more then one sequentially)
-   logical :: verbose
+   logical :: verbose, nonverbose
    logical :: redo_MFP     ! flag to recalculate mean free paths, if needed
    logical :: print_MFP    ! flag to printout mean free paths
    ! Electronic distribution function parameters:
