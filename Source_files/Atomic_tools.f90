@@ -412,19 +412,54 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa_eq, Scell(NSC)%Sa_eq)  ! below
 
    !print*, 'Sa=', Scell(NSC)%Sa, Scell(NSC)%Se, Scell(NSC)%Sa+Scell(NSC)%Se
-   write(*,'(a,f,f,f,f)') 'Sa=', Scell(NSC)%Sa, Scell(NSC)%Sa_eq, Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Sa_eq/Maxwell_entropy(Scell(NSC)%TaeV)
+   write(*,'(a,f,f,f,f,f,f,f)') 'Sa=', Scell(NSC)%Sa, Scell(NSC)%Sa_eq, Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Sa_eq/Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Ta, get_temperature_from_entropy(Scell(NSC)%Sa), get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa)
    !pause 'get_atomic_distribution done'
 end subroutine get_atomic_distribution
 
 
 
-function Maxwell_entropy(Ta) result(Sa) ! for equilibrium Maxwell distribution
+pure function Maxwell_entropy(Ta) result(Sa) ! for equilibrium Maxwell distribution
    real(8) Sa
    real(8), intent(in) :: Ta  ! [eV]
    !------------------
    !Sa = g_kb_EV * (log(2.0d0 * g_sqrt_Pi * sqrt(Ta)) + g_Eulers_gamma - 0.5d0)   ! [eV/K]
    Sa = g_kb_EV * (log(g_sqrt_Pi * Ta) + (g_Eulers_gamma + 1.0d0)*0.5d0)   ! [eV/K]
 end function Maxwell_entropy
+
+
+pure function get_temperature_from_entropy(Sa) result(Ta)
+   real(8) Ta  ! [K]
+   real(8), intent(in) :: Sa
+   !--------------------
+   Ta = 1.0d0/g_sqrt_Pi * exp(Sa / g_kb_EV - 0.5d0*(g_Eulers_gamma + 1.0d0))  ! [eV]
+   Ta = Ta * g_kb ! [K]
+end function get_temperature_from_entropy
+
+
+
+pure function get_temperature_from_distribution(E_grid, fa) result(Ta)
+   real(8) Ta  ! [K]
+   real(8), dimension(:), intent(in) :: E_grid, fa
+   !--------------------
+   real(8), dimension(size(fa)) :: dE
+   real(8) :: Ekin
+   integer :: i, j, Nsiz
+
+   Nsiz = size(E_grid)
+   Ekin = 0.0d0   ! to start with
+   do j = 1, Nsiz-1
+      if (j == 1) then
+         dE(j) = E_grid(j+1) - E_grid(j)
+      else
+         dE(j) = E_grid(j) - E_grid(j-1)
+      endif
+      Ekin = Ekin + (E_grid(j+1) + E_grid(j))*0.5d0 * fa(j) * dE(j)
+   enddo
+
+   Ta = 2.0d0/3.0d0 * Ekin * g_kb ! [K]
+end function get_temperature_from_distribution
+
+
 
 
 subroutine atomic_entropy(E_grid, fa, Sa, i_start, i_end)
