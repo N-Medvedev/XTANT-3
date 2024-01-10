@@ -5559,7 +5559,7 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
    ! Assume equidistrant grid:
    ! For internal use:
    Ea_max = 1.0d0 ! to srtart with
-   Nsiz = 200
+   Nsiz = 300
    dEa = Ea_max/dble(Nsiz)
    allocate(Scell%fa(Nsiz), source = 0.0d0)
    allocate(Scell%fa_eq(Nsiz), source = 0.0d0)
