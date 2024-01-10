@@ -68,7 +68,7 @@ open(UNIT = g_Err%File_Num, FILE = trim(adjustl(m_Error_log_file)))
 
 ! Check if the user needs any additional info (by setting the flags):
 call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_Err%Stopsignal, &
-                  allow_rotate=g_numpar%allow_rotate, verbose=g_numpar%verbose) ! module "Read_input_data"
+      allow_rotate=g_numpar%allow_rotate, verbose=g_numpar%verbose, nonverbose=g_numpar%nonverbose) ! module "Read_input_data"
 
 if (g_Err%Err) goto 2016     ! if something when wrong, cannot proceed
 if (g_Err%Stopsignal) goto 2016     ! if the USER does not want to run the calculations, stop
@@ -244,7 +244,7 @@ call check_all_warnings(g_Err%File_Num, g_laser, g_Scell, g_Err)  ! module "Read
 !DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD
 ! Now we can proceed with time:
 ! Print out the starting time:
-call print_time_step('Simulation time:', g_time, msec=.true.)   ! module "Little_subroutines"
+if (.not.g_numpar%nonverbose) call print_time_step('Simulation time:', g_time, msec=.true.)   ! module "Little_subroutines"
 
 i_test = 0 !  count number of timesteps
 g_dt_save = 0.0d0
@@ -332,7 +332,7 @@ do while (g_time .LT. g_numpar%t_total)
    ! Write current data into output files:
    if (g_dt_save .GE. g_numpar%dt_save - 1d-6) then
       ! Print out the curent time-step
-      call print_time_step('Simulation time:', g_time, msec=.true.)   ! module "Little_subroutines"
+      if (.not.g_numpar%nonverbose) call print_time_step('Simulation time:', g_time, msec=.true.)   ! module "Little_subroutines"
 
       ! Get parameters that use complex Hamiltonian: DOS, CDF, kappa:
       if ((abs(g_numpar%optic_model) > 0) .and. (g_numpar%optic_model < 4) ) then ! Trani or similar model, old-style DOS

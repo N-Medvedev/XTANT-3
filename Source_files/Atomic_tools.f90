@@ -330,64 +330,246 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    integer :: i, Nat, j, Nsiz
    real(8) :: Emax, dE
 
+   Nat = size(Scell(NSC)%MDAtoms) ! total number of atoms
+
+   ! Distribution for internal use:
+   Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
+
+   ! Distribute atoms:
+   Scell(NSC)%fa = 0.0d0   ! to start with
+   ! Get the kinetic energies of atoms:
+   call Atomic_kinetic_energies(Scell, NSC, matter)   ! below
+
+   ! Construct the atomic distribution:
+   do i = 1, Nat
+      if (Scell(NSC)%MDAtoms(i)%Ekin >= Scell(NSC)%Ea_grid(Nsiz)) then  ! above the max grid point
+         j = Nsiz
+      else ! inside the grid
+         call Find_in_array_monoton(Scell(NSC)%Ea_grid, Scell(NSC)%MDAtoms(i)%Ekin, j) ! module "Little_subroutines"
+         if (j > 1) j = j - 1
+      endif
+
+      if (j == 1) then
+         dE = Scell(NSC)%Ea_grid(j+1) - Scell(NSC)%Ea_grid(j)
+      else
+         dE = Scell(NSC)%Ea_grid(j) - Scell(NSC)%Ea_grid(j-1)
+      endif
+
+      Scell(NSC)%fa(j) = Scell(NSC)%fa(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
+
+      !print*, i, Scell(NSC)%MDAtoms(i)%Ekin, Scell(NSC)%Ea_grid(j), Scell(NSC)%Ea_grid(j+1)
+   enddo ! i
+
+   ! Normalize it to the number of atoms:
+   Scell(NSC)%fa = Scell(NSC)%fa/dble(Nat)
+
+
+   ! For printout:
    if (numpar%save_fa) then
-      Nat = size(Scell(NSC)%MDAtoms) ! total number of atoms
-      Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
+      Nsiz = size(Scell(NSC)%Ea_grid_out) ! size of the energy grid
 
       ! Distribute atoms:
-      Scell(NSC)%fa = 0.0d0   ! to start with
+      Scell(NSC)%fa_out = 0.0d0   ! to start with
       ! Get the kinetic energies of atoms:
       call Atomic_kinetic_energies(Scell, NSC, matter)   ! below
 
+      ! Update grid if needed:
+      call update_atomic_distribution_grid(Scell, NSC) ! below
+
       ! Construct the atomic distribution:
       do i = 1, Nat
-         if (Scell(NSC)%MDAtoms(i)%Ekin >= Scell(NSC)%Ea_grid(Nsiz)) then  ! above the max grid point
+         if (Scell(NSC)%MDAtoms(i)%Ekin >= Scell(NSC)%Ea_grid_out(Nsiz)) then  ! above the max grid point
             j = Nsiz
          else ! inside the grid
-            call Find_in_array_monoton(Scell(NSC)%Ea_grid, Scell(NSC)%MDAtoms(i)%Ekin, j) ! module "Little_subroutines"
+            call Find_in_array_monoton(Scell(NSC)%Ea_grid_out, Scell(NSC)%MDAtoms(i)%Ekin, j) ! module "Little_subroutines"
             if (j > 1) j = j - 1
          endif
 
          if (j == 1) then
-            dE = Scell(NSC)%Ea_grid(j+1) - Scell(NSC)%Ea_grid(j)
+            dE = Scell(NSC)%Ea_grid_out(j+1) - Scell(NSC)%Ea_grid_out(j)
          else
-            dE = Scell(NSC)%Ea_grid(j) - Scell(NSC)%Ea_grid(j-1)
+            dE = Scell(NSC)%Ea_grid_out(j) - Scell(NSC)%Ea_grid_out(j-1)
          endif
 
-         Scell(NSC)%fa(j) = Scell(NSC)%fa(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
+         Scell(NSC)%fa_out(j) = Scell(NSC)%fa_out(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
 
-         !print*, i, Scell(NSC)%MDAtoms(i)%Ekin, Scell(NSC)%Ea_grid(j), Scell(NSC)%Ea_grid(j+1)
+         !print*, i, Scell(NSC)%MDAtoms(i)%Ekin, Scell(NSC)%Ea_grid_out(j), Scell(NSC)%Ea_grid_out(j+1)
       enddo ! i
 
       ! Normalize it to the number of atoms:
-      Scell(NSC)%fa = Scell(NSC)%fa/dble(Nat)
-
-      ! Also get the equivalent Maxwell distribution:
-      call set_Maxwell_distribution(numpar, Scell, NSC, matter)
+      Scell(NSC)%fa_out = Scell(NSC)%fa_out/dble(Nat)
 
    endif ! (numpar%save_fa)
+
+   ! Also get the equivalent Maxwell distribution:
+   call set_Maxwell_distribution(numpar, Scell, NSC)  ! below
+
+   !--------------------
+   ! Get atomic entropy:
+   ! 1) Kinetic contribution
+   call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa, Scell(NSC)%Sa)  ! below
+   ! And equivalent (equilibrium) one:
+   ! numerically calculated:
+   call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa_eq, Scell(NSC)%Sa_eq_num)  ! below
+   ! and analytical maxwell:
+   Scell(NSC)%Sa_eq = Maxwell_entropy(Scell(NSC)%TaeV)   ! below
+
+   ! Various definitions of atomic temperatures:
+   if (numpar%print_Ta) then
+      ! 1) kinetic temperature:
+      Scell(NSC)%Ta_var(1) = Scell(NSC)%Ta
+      ! 2) entropic temperature:
+      Scell(NSC)%Ta_var(2) = get_temperature_from_entropy(Scell(NSC)%Sa) ! [K] below
+      ! 3) kinetic temperature from numerical distribution avereaging:
+      Scell(NSC)%Ta_var(3) = get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa) ! [K] below
+   endif
+
+   !write(*,'(a,f,f,f,f,f,f,f)') 'Sa=', Scell(NSC)%Sa, Scell(NSC)%Sa_eq, Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Sa_eq/Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Ta, get_temperature_from_entropy(Scell(NSC)%Sa), get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa)
    !pause 'get_atomic_distribution done'
 end subroutine get_atomic_distribution
 
 
-subroutine set_Maxwell_distribution(numpar, Scell, NSC, matter)
+
+pure function Maxwell_entropy(Ta) result(Sa) ! for equilibrium Maxwell distribution
+   real(8) Sa
+   real(8), intent(in) :: Ta  ! [eV]
+   !------------------
+   !Sa = g_kb_EV * (log(2.0d0 * g_sqrt_Pi * sqrt(Ta)) + g_Eulers_gamma - 0.5d0)   ! [eV/K]
+   Sa = g_kb_EV * (log(g_sqrt_Pi * Ta) + (g_Eulers_gamma + 1.0d0)*0.5d0)   ! [eV/K]
+end function Maxwell_entropy
+
+
+pure function get_temperature_from_entropy(Sa) result(Ta)
+   real(8) Ta  ! [K]
+   real(8), intent(in) :: Sa
+   !--------------------
+   Ta = 1.0d0/g_sqrt_Pi * exp(Sa / g_kb_EV - 0.5d0*(g_Eulers_gamma + 1.0d0))  ! [eV]
+   Ta = Ta * g_kb ! [K]
+end function get_temperature_from_entropy
+
+
+
+pure function get_temperature_from_distribution(E_grid, fa) result(Ta)
+   real(8) Ta  ! [K]
+   real(8), dimension(:), intent(in) :: E_grid, fa
+   !--------------------
+   real(8), dimension(size(fa)) :: dE
+   real(8) :: Ekin
+   integer :: i, j, Nsiz
+
+   Nsiz = size(E_grid)
+   Ekin = 0.0d0   ! to start with
+   do j = 1, Nsiz-1
+      if (j == 1) then
+         dE(j) = E_grid(j+1) - E_grid(j)
+      else
+         dE(j) = E_grid(j) - E_grid(j-1)
+      endif
+      Ekin = Ekin + (E_grid(j+1) + E_grid(j))*0.5d0 * fa(j) * dE(j)
+   enddo
+
+   Ta = 2.0d0/3.0d0 * Ekin * g_kb ! [K]
+end function get_temperature_from_distribution
+
+
+
+
+subroutine atomic_entropy(E_grid, fa, Sa, i_start, i_end)
+   real(8), dimension(:), intent(in) :: E_grid, fa ! atomic distribution function
+   real(8), intent(out) :: Sa ! atomic entropy
+   integer, intent(in), optional :: i_start, i_end  ! starting and ending levels to include
+   ! Se = -kB * int [ ( f * ln(f) ) ]
+   !----------------------------
+   real(8), dimension(size(fa)) :: f_lnf, dE
+   real(8) :: eps
+   integer :: i, Nsiz, i_low, i_high, j
+   !============================
+   eps = 1.0d-12  ! precision
+   Nsiz = size(fa)
+
+   if (present(i_start)) then
+      i_low = i_start
+   else  ! default, start from 1
+      i_low = 1
+   endif
+
+   if (present(i_end)) then
+      i_high = i_end
+   else  ! default, end at the end
+      i_high = Nsiz
+   endif
+
+   ! To start with:
+   Sa = 0.0d0
+   f_lnf = 0.0d0
+
+   ! Set integration step as an array:
+   do j = 1, Nsiz
+      if (j == 1) then
+         dE(j) = E_grid(j+1) - E_grid(j)
+      else
+         dE(j) = E_grid(j) - E_grid(j-1)
+      endif
+   enddo ! j
+
+   ! Entropy:
+   where (fa(i_low:i_high) > eps) f_lnf(i_low:i_high) = fa(i_low:i_high)*log(fa(i_low:i_high))
+   Sa = SUM(f_lnf(i_low:i_high) * dE(i_low:i_high))
+
+   ! Make proper units:
+   Sa = -g_kb_EV*Sa  ! [eV/K]
+end subroutine atomic_entropy
+
+
+
+subroutine update_atomic_distribution_grid(Scell, NSC)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   !------------------
+   real(8) :: Emax, Ea_max, dEa
+   integer :: Nsiz, i
+
+   Emax = maxval(Scell(NSC)%MDAtoms(:)%Ekin)
+
+   Ea_max = Emax*3.0d0
+   Nsiz = size(Scell(NSC)%Ea_grid)
+   dEa = Ea_max/dble(Nsiz)
+   ! Reset the grid:
+   Scell(NSC)%Ea_grid(1) = 0.0d0 ! starting point
+   do i = 2, Nsiz
+      Scell(NSC)%Ea_grid(i) = Scell(NSC)%Ea_grid(i-1) + dEa
+      !print*, i, Scell%Ea_grid(i)
+   enddo ! i
+   !pause 'update_atomic_distribution_grid'
+end subroutine update_atomic_distribution_grid
+
+
+
+
+subroutine set_Maxwell_distribution(numpar, Scell, NSC)
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of supercell
-   type(solid), intent(in) :: matter    ! material parameters
    !----------------------------------
    integer :: j, Nsiz
    real(8) :: arg, Tfact
 
+   Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
+   if (.not.allocated(Scell(NSC)%fa_eq)) allocate(Scell(NSC)%fa_eq(Nsiz), source = 0.0d0)
+   Tfact = (1.0d0 / Scell(NSC)%TaeV)**1.5d0
+   do j = 1, Nsiz
+      arg = Scell(NSC)%Ea_grid(j) / Scell(NSC)%TaeV
+      Scell(NSC)%fa_eq(j) = 2.0d0 * sqrt(Scell(NSC)%Ea_grid(j) / g_Pi) * Tfact * exp(-arg)
+   enddo
+
+   ! For printout:
    if (numpar%save_fa) then
-      Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
-
-      if (.not.allocated(Scell(NSC)%fa_eq)) allocate(Scell(NSC)%fa_eq(Nsiz), source = 0.0d0)
-
+      Nsiz = size(Scell(NSC)%Ea_grid_out) ! size of the energy grid
+      if (.not.allocated(Scell(NSC)%fa_eq_out)) allocate(Scell(NSC)%fa_eq_out(Nsiz), source = 0.0d0)
       Tfact = (1.0d0 / Scell(NSC)%TaeV)**1.5d0
       do j = 1, Nsiz
-         arg = Scell(NSC)%Ea_grid(j) / Scell(NSC)%TaeV
-         Scell(NSC)%fa_eq(j) = 2.0d0 * sqrt(Scell(NSC)%Ea_grid(j) / g_Pi) * Tfact * exp(-arg)
+         arg = Scell(NSC)%Ea_grid_out(j) / Scell(NSC)%TaeV
+         Scell(NSC)%fa_eq_out(j) = 2.0d0 * sqrt(Scell(NSC)%Ea_grid_out(j) / g_Pi) * Tfact * exp(-arg)
       enddo
    endif
 end subroutine set_Maxwell_distribution

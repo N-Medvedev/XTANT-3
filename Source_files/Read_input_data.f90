@@ -144,6 +144,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
 #endif
    numpar%redo_MFP = .false.     ! no need to recalculate mean free paths by default
    numpar%print_MFP = .false.    ! no need to printout mean free paths by default
+   numpar%print_Ta = .false.  ! no need in various atomic temperature definitions
    numpar%N_basis_size = 0    ! DFTB, BOP or 3TB basis set default (0=s, 1=sp3, 2=sp3d5)
    numpar%do_atoms = .true.   ! Atoms are allowed to move
    matter%W_PR = 25.5d0    ! Parinello-Rahman super-vell mass coefficient
@@ -5456,7 +5457,7 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
    logical, intent(inout) :: read_well
    !--------------------
    integer :: count_lines, Reason, N, Nsiz, i, Na
-   real(8) :: dE, Emax, Emin, dE_min, dEa, Ea_max
+   real(8) :: dE, Emax, Emin, dE_min, dEa, Ea_max, dEa_out, Ea_max_out
    character(100) :: ch_temp1, ch_temp2
    logical :: read_well_at
 
@@ -5546,23 +5547,40 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
 
    read_well_at = .false.  ! to start with
    if (numpar%save_fa) then
-      read(ch_temp2,*,IOSTAT=Reason) dEa, Ea_max
+      !read(ch_temp2,*,IOSTAT=Reason) dEa, Ea_max
+      read(ch_temp2,*,IOSTAT=Reason) dEa_out, Ea_max_out
       call read_file(Reason, count_lines, read_well_at)    ! module "Dealing_with_files"
    endif
    if (.not.read_well_at) then   ! use defaults
-      Ea_max = 10.0d0  ! [eV] default value
-      dEa = 0.01d0    ! [eV] default value
+      Ea_max_out = 10.0d0  ! [eV] default value
+      dEa_out = 0.01d0    ! [eV] default value
    endif
 
    ! Assume equidistrant grid:
-   Nsiz = INT(Ea_max/dEa)+1
+   ! For internal use:
+   Ea_max = 1.0d0 ! to srtart with
+   Nsiz = 300
+   dEa = Ea_max/dble(Nsiz)
    allocate(Scell%fa(Nsiz), source = 0.0d0)
+   allocate(Scell%fa_eq(Nsiz), source = 0.0d0)
    allocate(Scell%Ea_grid(Nsiz))
    ! Set the grid:
    Scell%Ea_grid(1) = 0.0d0 ! starting point
    do i = 2, Nsiz
       Scell%Ea_grid(i) = Scell%Ea_grid(i-1) + dEa
       !print*, i, Scell%Ea_grid(i)
+   enddo ! i
+
+   ! For printout:
+   Nsiz = INT(Ea_max_out/dEa_out)+1
+   allocate(Scell%fa_out(Nsiz), source = 0.0d0)
+   allocate(Scell%fa_eq_out(Nsiz), source = 0.0d0)
+   allocate(Scell%Ea_grid_out(Nsiz))
+   ! Set the grid:
+   Scell%Ea_grid_out(1) = 0.0d0 ! starting point
+   do i = 2, Nsiz
+      Scell%Ea_grid_out(i) = Scell%Ea_grid_out(i-1) + dEa_out
+      !print*, i, Scell%Ea_grid_out(i)
    enddo ! i
    !pause 'interprete_distribution_input'
 end subroutine interprete_distribution_input
@@ -6539,6 +6557,11 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
 
    select case (trim(adjustl(string)))
    !----------------------------------
+   case ('print_Ta', 'Print_Ta', 'PRINT_TA', 'PRINT_Ta')
+      ! Printout various definitions of atomic temperature:
+      numpar%print_Ta = .true.
+
+   !----------------------------------
    case ('print_MFP', 'Print_MFP', 'PRINT_MFP')
       ! Printout mean free paths:
       numpar%print_MFP = .true.
@@ -6710,7 +6733,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
    case default
       ! Check if the user needs any additional info (by setting the flags):
       call interprete_additional_data(string, numpar%path_sep, change_size=numpar%change_size, contin=Err%Stopsignal, &
-                  allow_rotate=numpar%allow_rotate, verbose=numpar%verbose) ! module "Read_input_data"
+                  allow_rotate=numpar%allow_rotate, verbose=numpar%verbose, nonverbose=numpar%nonverbose) ! module "Read_input_data"
 
    endselect
 end subroutine interpret_user_data_INPUT
@@ -7025,12 +7048,12 @@ end subroutine multiply_input_files
 
 
 ! Reads additional data from the command line passed along with the XTANT:
-subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose)
+subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose, nonverbose)
    character(1), intent(inout) :: path_sep
    logical, intent(inout) :: change_size
    logical, intent(out) :: contin
    logical, intent(out) :: allow_rotate
-   logical, intent(out) :: verbose
+   logical, intent(out) :: verbose, nonverbose
    !---------------
    character(1000) :: string
    integer :: i_arg, count_args, N_arg
@@ -7038,7 +7061,8 @@ subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose)
 
    ! Default values:
    change_size = .false. ! don't do changing size
-   verbose = .false.   ! don't print a lot of stuff
+   verbose = .false.    ! don't print a lot of stuff
+   nonverbose = .false. ! print as normal
 
    ! Identify the OS by the system-used path separator:
    call Path_separator(path_sep) ! module "Dealing_with_files"
@@ -7054,19 +7078,19 @@ subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose)
       call GET_COMMAND_ARGUMENT(i_arg,string)  ! intrinsic
 
       ! Act on the command passed:
-      call interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose)  ! below
+      call interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose, nonverbose)  ! below
 
    enddo ALLARG
 end subroutine get_add_data
 
 
-subroutine interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose)
+subroutine interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose, nonverbose)
    character(*), intent(in) :: string
    character(1), intent(inout) :: path_sep
    logical, intent(inout), optional :: change_size
    logical, intent(out), optional :: contin
    logical, intent(out), optional :: allow_rotate
-   logical, intent(out), optional :: verbose
+   logical, intent(out), optional :: verbose, nonverbose
    !---------------
    character(1000) :: read_string, printline, ch_temp, string_read
    character(200) :: file_name
@@ -7084,6 +7108,11 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
    case ('verbose', 'VERBOSE', 'Verbose')
       print*, 'Verbose on: XTANT will print markers for testing and debugging'
       if (present(verbose)) verbose = .true.
+      write(*,'(a)') trim(adjustl(m_starline))
+
+   case ('nonverbose', 'NONVERBOSE', 'Nonverbose')
+      print*, 'Nonverbose on: XTANT will print almost nothing'
+      if (present(nonverbose)) nonverbose = .true.
       write(*,'(a)') trim(adjustl(m_starline))
 
    case ('allow_rotation', 'allow_rotate', 'no_ang_removal')
