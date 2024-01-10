@@ -47,7 +47,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 04.01.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 10.01.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -89,6 +89,8 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_super_cell(numpar%FN_supercell, time, Scell(NSC))   ! supercell parameters
       call write_electron_properties(numpar%FN_electron_properties, time, Scell, NSC, Scell(NSC)%Ei, matter, numpar, &
                numpar%FN_Ce, numpar%FN_kappa, numpar%FN_kappa_dyn, numpar%FN_Se, numpar%FN_Te, numpar%FN_mu) ! TB electron parameters
+
+      call write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic parameters
 
       ! Section of atoms according to masks, if any:
       if (allocated(Scell(1)%Displ)) then
@@ -596,12 +598,30 @@ subroutine convolve_output(Scell, numpar)
             close(FN)
          endif
 
+         File_name = trim(adjustl(file_path))//'OUTPUT_atomic_entropy.dat'
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         if (file_exist) then
+            open(UNIT=FN, FILE = trim(adjustl(File_name)))
+            call convolution(FN, Scell(i)%eps%tau) ! atomic entropy
+            close(FN)
+         endif
+
+         if (numpar%print_Ta) then
+            File_name = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures.dat'
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            if (file_exist) then
+               open(UNIT=FN, FILE = trim(adjustl(File_name)))
+               call convolution(FN, Scell(i)%eps%tau) ! atomic entropy
+               close(FN)
+            endif
+         endif
+
          if (numpar%do_partial_thermal) then
             File_name = trim(adjustl(file_path))//'OUTPUT_electron_temperatures.dat'
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             if (file_exist) then
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
-               call convolution(FN, Scell(i)%eps%tau) ! electron entropy
+               call convolution(FN, Scell(i)%eps%tau) ! electron temperature
                close(FN)
             endif
 
@@ -609,7 +629,7 @@ subroutine convolve_output(Scell, numpar)
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             if (file_exist) then
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
-               call convolution(FN, Scell(i)%eps%tau) ! electron entropy
+               call convolution(FN, Scell(i)%eps%tau) ! electron chemical poential
                close(FN)
             endif
          endif
@@ -1134,6 +1154,24 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
 end subroutine write_electron_properties
 
 
+subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic parameters
+   real(8), intent(in) :: time	! [fs]
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(Solid), intent(in) :: matter	! Material parameters
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   !------------------------------
+
+   ! Atomic entropy:
+   write(numpar%FN_Sa, '(es25.16, es25.16, es25.16, es25.16)') time, Scell(NSC)%Sa, Scell(NSC)%Sa_eq, Scell(NSC)%Sa_eq_num
+
+
+   ! Atomic temperatures (various definitions):
+   ! kinetic; entropic; distributional
+   if (numpar%print_Ta) then
+      write(numpar%FN_Ta, '(es25.16, es25.16, es25.16, es25.16)') time, Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(2), Scell(NSC)%Ta_var(3)
+   endif
+end subroutine write_atomic_properties
 
 
 subroutine write_coulping_header(FN, Scell, NSC, matter, numpar)
@@ -1718,6 +1756,8 @@ subroutine close_output_files(Scell, numpar)
       close(numpar%FN_Te)
       close(numpar%FN_mu)
    endif
+   close(numpar%FN_Sa)
+   if (numpar%print_Ta) close(numpar%FN_Ta)
 
    if (allocated(Scell(1)%Displ)) then
       Nsiz = size(Scell(1)%Displ)   ! how many masks
@@ -1742,6 +1782,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100) :: file_atoms_R	! atomic coordinates and velocities
    character(100) :: file_atoms_S	! atomic coordinates and velocities
    character(100) :: file_atoms_cif	! atomic coordinates in cif-format (standard for constructing diffraction patterns)
+   character(100) :: file_atomic_entropy	! atomic entropy
+   character(100) :: file_atomic_temperatures ! atomic temperatures (varioous definitions)
    character(100) :: file_supercell	! supercell vectors
    character(100) :: file_electron_properties	! electron properties
    character(200) :: file_electron_heat_capacity	! band-resolved electron heat capacity
@@ -1844,6 +1886,20 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    else
       call create_file_header(numpar%FN_Se, '#Time Se  Se_eq')
       call create_file_header(numpar%FN_Se, '#[fs]  [eV/K]   [eV/K]')
+   endif
+
+   file_atomic_entropy = trim(adjustl(file_path))//'OUTPUT_atomic_entropy.dat'
+   open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_entropy)))
+   numpar%FN_Sa = FN
+   call create_file_header(numpar%FN_Sa, '#Time Sa  Sa_eq   Sa_eq_num')
+   call create_file_header(numpar%FN_Sa, '#[fs]  [eV/K]   [eV/K]  [eV/K]')
+
+   if (numpar%print_Ta) then
+      file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_tempereatures.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
+      numpar%FN_Ta = FN
+      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr')
+      call create_file_header(numpar%FN_Ta, '#[fs]  [K]   [K]  [K]')
    endif
 
    if (numpar%do_partial_thermal) then
@@ -2033,6 +2089,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    'OUTPUT_electron_entropy.dat', &
    'OUTPUT_electron_temperatures.dat', &
    'OUTPUT_electron_chempotentials.dat', &
+   'OUTPUT_atomic_entropy.dat', &
+   'OUTPUT_atomic_tempereatures.dat', &
    file_sect_displ_short)  ! below
 
    ! clean up:
@@ -2050,7 +2108,7 @@ end subroutine create_file_header
 subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, &
 file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy, file_Te, file_mu, &
-file_sect_displ)
+file_atomic_entropy, file_atomic_tempereatures, file_sect_displ)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -2072,9 +2130,11 @@ file_sect_displ)
    character(*), intent(in) :: file_Ei		! energy levels
    character(*), intent(in) :: file_PCF		! pair correlation function
    character(*), intent(in) :: file_NN      ! nearest neighbors
-   character(*), intent(in) :: file_electron_entropy  ! electron netropy
+   character(*), intent(in) :: file_electron_entropy  ! electron entropy
    character(*), intent(in) :: file_Te ! electron temperatures
    character(*), intent(in) :: file_mu ! electron chem.potentials
+   character(*), intent(in) :: file_atomic_entropy ! atomic entropy
+   character(*), intent(in) :: file_atomic_tempereatures ! atomic temperatures (various definitions)
    character(*), dimension(:), intent(in) :: file_sect_displ
    !----------------
    character(200) :: File_name, File_name2
@@ -2192,6 +2252,11 @@ file_sect_displ)
    File_name  = trim(adjustl(file_path))//'OUTPUT_electron_entropy'//trim(adjustl(sh_cmd))
    call gnu_entropy(File_name, file_electron_entropy, t0, t_last, 'OUTPUT_electron_entropy.'//trim(adjustl(numpar%fig_extention))) ! below
 
+   ! Atomic entropy:
+   File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_entropy'//trim(adjustl(sh_cmd))
+   call gnu_entropy_atomic(File_name, file_atomic_entropy, t0, t_last, 'OUTPUT_atomic_entropy.'//trim(adjustl(numpar%fig_extention))) ! below
+
+
    ! Electron temperatures and chemical potential (for band-resolved calculations):
    if (numpar%do_partial_thermal) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_temperatures'//trim(adjustl(sh_cmd))
@@ -2201,6 +2266,14 @@ file_sect_displ)
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_chempotentials'//trim(adjustl(sh_cmd))
       call gnu_chempots(File_name, file_mu, t0, t_last, &
                'OUTPUT_electron_chempotentials.'//trim(adjustl(numpar%fig_extention))) ! below
+   endif
+
+
+   ! Atomic temperatures (various definitions):
+   if (numpar%print_Ta) then
+      File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures'//trim(adjustl(sh_cmd))
+      call gnu_at_temperatures(File_name, file_atomic_tempereatures, t0, t_last, &
+               'OUTPUT_atomic_temperatures.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
 
    ! Electron-ion coupling parameter:
@@ -2416,6 +2489,11 @@ file_sect_displ)
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
       call gnu_entropy(File_name, trim(adjustl(file_electron_entropy(1:len(trim(adjustl(file_electron_entropy)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electron_entropy_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
+      ! Atomic entropy:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_entropy_CONVOLVED'//trim(adjustl(sh_cmd))
+      call gnu_entropy_atomic(File_name, trim(adjustl(file_atomic_entropy(1:len(trim(adjustl(file_atomic_entropy)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_atomic_entropy_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+
       ! Electron temperatures and chemical potential (for band-resolved calculations):
       if (numpar%do_partial_thermal) then
          File_name  = trim(adjustl(file_path))//'OUTPUT_electron_temperatures_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -2425,6 +2503,14 @@ file_sect_displ)
          File_name  = trim(adjustl(file_path))//'OUTPUT_electron_chempotentials_CONVOLVED'//trim(adjustl(sh_cmd))
          call gnu_chempots(File_name, trim(adjustl(file_mu(1:len(trim(adjustl(file_mu)))-4)))//'_CONVOLVED.dat', &
                t0, t_last, 'OUTPUT_electron_chempotentials_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+      endif
+
+      ! Atomic temperatures (various definitions):
+      if (numpar%print_Ta) then
+         File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_CONVOLVED'//trim(adjustl(sh_cmd))
+         call gnu_at_temperatures(File_name, &
+            trim(adjustl(file_atomic_tempereatures(1:len(trim(adjustl(file_atomic_tempereatures)))-4)))//'_CONVOLVED.dat', &
+            t0, t_last, 'OUTPUT_atomic_temperatures_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       endif
 
       ! Electron-ion coupling parameter:
@@ -3452,6 +3538,37 @@ subroutine gnu_entropy(File_name, file_electron_entropy, t0, t_last, eps_name)
 end subroutine gnu_entropy
 
 
+
+subroutine gnu_entropy_atomic(File_name, file_atomic_entropy, t0, t_last, eps_name)
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_atomic_entropy ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Atomic entropy','Time (fs)', 'Atomic entropy (eV/K)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
+
+   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_atomic_entropy)), '" u 1:3 w l lw LW title "Equilibrium" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_atomic_entropy)), '" u 1:4 w l lw LW title "Equilibrium (num)" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_atomic_entropy)), '" u 1:2 w l lw LW title "Nonequilibrium" '
+   else ! It is linux
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_atomic_entropy)), '\" u 1:3 w l lw \"$LW\" title \"Equilibrium\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_atomic_entropy)), '\" u 1:4 w l lw \"$LW\" title \"Equilibrium (num)\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_atomic_entropy)), '\" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" '
+   endif
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_entropy_atomic
+
+
 subroutine gnu_el_temperatures(File_name, file_Te, t0, t_last, eps_name)
    character(*), intent(in) :: File_name   ! file to create
    character(*), intent(in) :: file_Te ! input file
@@ -3480,6 +3597,37 @@ subroutine gnu_el_temperatures(File_name, file_Te, t0, t_last, eps_name)
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
 end subroutine gnu_el_temperatures
+
+
+
+subroutine gnu_at_temperatures(File_name, file_Ta, t0, t_last, eps_name)
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_Ta ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Atomic tempereature', 'Time (fs)', 'Atomic temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
+
+   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Ta)), '" u 1:2 w l lw LW title "Kinetic" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:3 w l lw LW title "Entropic" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:4 w l lw LW title "Distributional" '
+   else ! It is linux
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:2 w l lw \"$LW\" title \"Kinetic\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:3 w l lw \"$LW\" title \"Entropic\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:4 w l lw \"$LW\" title \"Distributional\" '
+   endif
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_at_temperatures
 
 
 
@@ -5371,6 +5519,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
     if (numpar%save_fa) then
       write(print_to,'(a)') ' Atomic distribution'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+    if (numpar%print_Ta) then
+      write(print_to,'(a)') ' Various definitions of atomic temperatures'
       optional_output = .true.   ! there is at least some optional output
    endif
 

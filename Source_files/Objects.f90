@@ -643,7 +643,7 @@ type Super_cell
    real(8) :: Q		! mean unballanced charge per atom: <Ne_emit/Na>
    ! Other data:
    real(8) :: Ne_CB	! current number of electrons in CB only (above the band gap)
-   real(8) :: Te, Ta, Tconf	! [K] temperature of electrons, kinetic temperature of atoms, configurational temperature of atoms
+   real(8) :: Te, Ta, Tconf, Ta_var(4)	! [K] temperature of electrons, kinetic temperature of atoms, various definition of temperature
    real(8), dimension(:), allocatable :: Ta_sub    ! [K] temperatures of different sublattices
    real(8) :: TeeV, TaeV ! [eV] electrons and atoms temperatures
    real(8) :: Pressure	! [Pa] pressure in the atomic system
@@ -658,7 +658,7 @@ type Super_cell
    ! Atomic distribution function:
    real(8), dimension(:), allocatable :: Ea_grid, Ea_grid_out   ! energy grid for atomic distribution
    real(8), dimension(:), allocatable :: fa, fa_eq, fa_out, fa_eq_out ! atomic distribution and equivalent Maxwell distribution
-   real(8) :: Sa, Sa_eq  ! atomic entropy [K/eV], and equivalent equilibrium entropy
+   real(8) :: Sa, Sa_eq, Sa_eq_num  ! atomic entropy [K/eV], and equivalent equilibrium entropy (analytical & numerically calculated)
    ! Separate for VB and CB, if needed:
    real(8) :: Ne_low_CB, Ne_low_VB, El_low_CB, El_low_VB ! number and energy of electrons in VB and CB
    real(8) :: Te_VB, Te_CB ! [eV] electron temperatures for conduction and valence bands
@@ -871,6 +871,7 @@ type Numerics_param
    integer :: i_dt        ! which timestep from the array "dt_MD_grid" to use now
    character(100) :: MD_step_grid_file   ! filename with MD time step grid
    !logical, dimension(:), allocatable :: Atomic_masks ! user-defined masks for atomic analysis
+   logical :: print_Ta ! flag for various atomic temperature definitions
    !-----------------
    real(8), dimension(:), allocatable :: At_bath_reset_grid   ! grid, when to change the Atomic bath parameters
    real(8), dimension(:), allocatable :: At_bath_grid_Ta         ! Atomic bath temperatures array [K]
@@ -928,7 +929,7 @@ type Numerics_param
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
-   integer :: FN_fa
+   integer :: FN_fa, FN_Sa, FN_Ta
    integer, dimension(:), allocatable :: FN_displacements
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model

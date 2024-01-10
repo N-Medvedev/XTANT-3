@@ -409,10 +409,22 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    ! 1) Kinetic contribution
    call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa, Scell(NSC)%Sa)  ! below
    ! And equivalent (equilibrium) one:
-   call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa_eq, Scell(NSC)%Sa_eq)  ! below
+   ! numerically calculated:
+   call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa_eq, Scell(NSC)%Sa_eq_num)  ! below
+   ! and analytical maxwell:
+   Scell(NSC)%Sa_eq = Maxwell_entropy(Scell(NSC)%TaeV)   ! below
 
-   !print*, 'Sa=', Scell(NSC)%Sa, Scell(NSC)%Se, Scell(NSC)%Sa+Scell(NSC)%Se
-   write(*,'(a,f,f,f,f,f,f,f)') 'Sa=', Scell(NSC)%Sa, Scell(NSC)%Sa_eq, Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Sa_eq/Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Ta, get_temperature_from_entropy(Scell(NSC)%Sa), get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa)
+   ! Various definitions of atomic temperatures:
+   if (numpar%print_Ta) then
+      ! 1) kinetic temperature:
+      Scell(NSC)%Ta_var(1) = Scell(NSC)%Ta
+      ! 2) entropic temperature:
+      Scell(NSC)%Ta_var(2) = get_temperature_from_entropy(Scell(NSC)%Sa) ! [K] below
+      ! 3) kinetic temperature from numerical distribution avereaging:
+      Scell(NSC)%Ta_var(3) = get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa) ! [K] below
+   endif
+
+   !write(*,'(a,f,f,f,f,f,f,f)') 'Sa=', Scell(NSC)%Sa, Scell(NSC)%Sa_eq, Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Sa_eq/Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Ta, get_temperature_from_entropy(Scell(NSC)%Sa), get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa)
    !pause 'get_atomic_distribution done'
 end subroutine get_atomic_distribution
 
@@ -506,7 +518,7 @@ subroutine atomic_entropy(E_grid, fa, Sa, i_start, i_end)
 
    ! Make proper units:
    Sa = -g_kb_EV*Sa  ! [eV/K]
-end subroutine  atomic_entropy
+end subroutine atomic_entropy
 
 
 
