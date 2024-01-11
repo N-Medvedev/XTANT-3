@@ -118,9 +118,6 @@ call reset_dt(g_numpar, g_matter, g_time)   ! module "Dealing_with_output_files"
 call set_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err) ! module "Initial_configuration"
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the initial configuration, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true.)
-! Get atomic distribution:
-call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_tools"
-if (g_numpar%verbose) call print_time_step('Atomic distribution calculated succesfully:', msec=.true.)
 
 
 ! Print the title of the program and used parameters on the screen:
@@ -225,6 +222,10 @@ call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! 
 ! And save the (low-energy part of the) distribution on the grid, if required
 ! (its high-energy part is inside of MC_Propagate subroutine):
 call get_low_energy_distribution(g_Scell(1), g_numpar) ! module "Electron_tools"
+
+! Get atomic distribution:
+call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_tools"
+if (g_numpar%verbose) call print_time_step('Atomic distribution calculated succesfully:', msec=.true.)
 
 
 ! Calculate configurational temperature (implemented only for Pettifor TB):

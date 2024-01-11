@@ -1399,7 +1399,7 @@ end subroutine dHopping_Press_h_M
 ! Repulsive part of the potential energy:
 
 subroutine get_Erep_s_M(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_Molteni"
-   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_Rep_Molteni), dimension(:,:), intent(in)   :: TB_Repuls
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
@@ -1427,6 +1427,8 @@ subroutine get_Erep_s_M(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, 
       enddo ! j1
       !a = a + fx(TB,b)
       a = a + b
+      ! And save for each atom:
+      Scell(NSC)%MDAtoms(i1)%Epot = b*0.5d0  ! to exclude double-counting
 !       if (isnan(b)) print*, 'b', b
 !       if (isnan(a)) print*, 'a', a
    enddo ! i1

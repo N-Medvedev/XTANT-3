@@ -136,7 +136,7 @@ subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a
    !=====================================================
-   real(8) :: sum_a, a_r, V_vdW
+   real(8) :: sum_a, a_r, V_vdW, E_pot, E_pot_one
    integer :: Nx, Ny, Nz, zb(3)
    INTEGER(4) i1, j1, m, atom_2, x_cell, y_cell, z_cell
    logical :: origin_cell
@@ -146,7 +146,7 @@ subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
    call get_mirror_cell_num(Scell, NSC, numpar, Scell(NSC)%MDatoms, Nx, Ny, Nz) ! subroutine above
    
    sum_a = 0.0d0
-   !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell) shared(NSC)
+   !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell, E_pot, E_pot_one) shared(NSC)
    !$omp do reduction( + : sum_a)
    XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
       YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
@@ -154,14 +154,19 @@ subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
             zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
             origin_cell = ALL(zb==0) ! if it is the origin cell
             do i1 = 1, Scell(NSC)%Na ! all atoms
+               E_pot = 0.0d0  ! to restart
                do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
                   if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
                      !call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
                      call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
                      !sum_a = sum_a + vdW_Girifalco(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
-                     sum_a = sum_a + vdW_energy(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
+                     E_pot_one = vdW_energy(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
+                     sum_a = sum_a + E_pot_one
+                     E_pot = E_pot + E_pot_one
                   endif ! (j1 .NE. i1)
                enddo ! j1
+               ! And save for each atom:
+               Scell(NSC)%MDAtoms(i1)%Epot = Scell(NSC)%MDAtoms(i1)%Epot + E_pot*0.5d0 ! exclude double-counting
             enddo ! i1
          enddo ZC
       enddo YC
@@ -1047,18 +1052,19 @@ end subroutine d_vdW_s_D
 
 !van der Waals potential for atoms:
 subroutine get_vdW_s_D(TB_Waals, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_Pettifor"
-   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_vdW_Dumitrica), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a
    !=====================================================
-   real(8) a_r, a_r2, a_r3, C6, sum_a
+   real(8) :: a_r, a_r2, a_r3, C6, sum_a, E_rep, E_rep_one
    INTEGER(4) i1, j1, m, atom_2
    sum_a = 0.0d0
-   !$omp PARALLEL private(i1,j1,a_r,a_r2,a_r3,C6)
+   !$omp PARALLEL private(i1,j1,a_r,a_r2,a_r3,C6, E_rep, E_rep_one)
    !$omp do reduction( + : sum_a)
    do i1 = 1, Scell(NSC)%Na ! all atoms
+      E_rep = 0.0d0
       !m = Scell(NSC)%Near_neighbor_size(i1)
       !do atom_2 = 1, m ! do only for atoms close to that one
       !   j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
@@ -1069,9 +1075,13 @@ subroutine get_vdW_s_D(TB_Waals, Scell, NSC, numpar, a)   ! repulsive energy, mo
             a_r2 = a_r*a_r
             a_r3 = a_r2*a_r
             C6 = TB_Waals(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA)%C6
-            sum_a = sum_a + df_damp_D(TB_Waals(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA), a_r)*C6/(a_r3*a_r3) ! function below
+            E_rep_one = df_damp_D(TB_Waals(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA), a_r)*C6/(a_r3*a_r3) ! function below
+            sum_a = sum_a + E_rep_one
+            E_rep = E_rep + E_rep_one
          endif ! (j1 .NE. i1)
       enddo ! j1
+      ! And save for each atom:
+      Scell(NSC)%MDAtoms(i1)%Epot = Scell(NSC)%MDAtoms(i1)%Epot - E_rep*0.5d0 ! exclude double-counting
    enddo ! i1
    !$omp end do
    !$omp end parallel
