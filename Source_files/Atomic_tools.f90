@@ -344,10 +344,13 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    ! Get the kinetic energies of atoms:
    call Atomic_kinetic_energies(Scell, NSC, matter)   ! below
 
+   ! Update grid if needed:
+   call update_atomic_distribution_grid(Scell, NSC) ! below
+
    ! Get configurational temperature amd potential energy shift via method of moments:
    call temperature_from_moments_pot(Scell(NSC), Scell(NSC)%Ta_var(5), E_shift) ! below
-   Scell(NSC)%Pot_distr_E_shift = E_shift * 2.0d0  ! save the shift of the pair potential energy
-   !print*, 'E_shift', Scell(NSC)%Ta_var(5), E_shift, minval(Scell(NSC)%MDAtoms(:)%Epot)
+   Scell(NSC)%Pot_distr_E_shift = E_shift ! save the shift of the potential energy
+   Scell(NSC)%Ea_pot_grid_out(:) = Scell(NSC)%Ea_grid_out(:) + minval(Scell(NSC)%MDAtoms(:)%Epot)
 
    ! Construct the atomic distribution:
    do i = 1, Nat
@@ -389,11 +392,6 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
       ! Distribute atoms:
       Scell(NSC)%fa_out = 0.0d0   ! to start with
       Scell(NSC)%fa_pot_out = 0.0d0   ! to start with
-      ! Get the kinetic energies of atoms:
-      call Atomic_kinetic_energies(Scell, NSC, matter)   ! below
-
-      ! Update grid if needed:
-      call update_atomic_distribution_grid(Scell, NSC) ! below
 
       ! Construct the atomic distribution:
       do i = 1, Nat
@@ -414,10 +412,10 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
          Scell(NSC)%fa_out(j) = Scell(NSC)%fa_out(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
 
          ! 2) for potential energies:
-         if (Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_grid_out(Nsiz)+E_shift) then  ! above the max grid point
+         if (Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_pot_grid_out(Nsiz)) then  ! above the max grid point
             j = Nsiz
          else ! inside the grid
-            call Find_in_array_monoton(Scell(NSC)%Ea_grid_out+E_shift, Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
+            call Find_in_array_monoton(Scell(NSC)%Ea_pot_grid_out, Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
             if (j > 1) j = j - 1
          endif
          Scell(NSC)%fa_pot_out(j) = Scell(NSC)%fa_pot_out(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
@@ -504,8 +502,8 @@ subroutine temperature_from_moments_pot(Scell, Ta, E0)
    Nat = size(Scell%MDAtoms(:))
    one_Nat = 1.0d0 / dble(Nat)
 
-   ! Set the potential energy for each atom (half of the energies of interacting pairs):
-   E_pot(:) = Scell%MDAtoms(:)%Epot * 0.5d0
+   ! Set the potential energy for each atom:
+   E_pot(:) = Scell%MDAtoms(:)%Epot !*0.5d0
 
    ! First moment of the distribution:
    E1 = SUM( E_pot(:) ) * one_Nat
@@ -677,7 +675,7 @@ subroutine set_Maxwell_distribution_pot(numpar, Scell, NSC)
    integer, intent(in) :: NSC ! number of supercell
    !----------------------------------
    integer :: j, Nsiz
-   real(8) :: arg, Tfact, E_shift, Ta
+   real(8) :: arg, Tfact, E_shift, Ta, dE
 
    E_shift = Scell(NSC)%Pot_distr_E_shift ! shift of the distribution
    Ta = Scell(NSC)%Ta_var(5) / g_kb  ! configurational temperature
@@ -687,10 +685,15 @@ subroutine set_Maxwell_distribution_pot(numpar, Scell, NSC)
    if (Ta > 0.0d0) then
       Tfact = (1.0d0 / Ta)**1.5d0
       do j = 1, Nsiz
-         !arg = ( Scell(NSC)%Ea_grid(j) - E_shift ) / Ta
-         !Scell(NSC)%fa_eq_pot(j) = 2.0d0 * sqrt( (Scell(NSC)%Ea_grid(j)-E_shift) / g_Pi) * Tfact * exp(-arg)
-         arg = ( Scell(NSC)%Ea_grid(j) ) / Ta
-         Scell(NSC)%fa_eq_pot(j) = 2.0d0 * sqrt( (Scell(NSC)%Ea_grid(j) ) / g_Pi) * Tfact * exp(-arg)
+         dE = Scell(NSC)%Ea_grid(j) - E_shift
+         if (dE > 0.0d0) then
+            arg = dE / Ta
+            Scell(NSC)%fa_eq_pot(j) = 2.0d0 * sqrt( dE / g_Pi) * Tfact * exp(-arg)
+         else
+            Scell(NSC)%fa_eq_pot(j) = 0.0d0
+         endif
+         !arg = ( Scell(NSC)%Ea_grid(j) ) / Ta
+         !Scell(NSC)%fa_eq_pot(j) = 2.0d0 * sqrt( (Scell(NSC)%Ea_grid(j) ) / g_Pi) * Tfact * exp(-arg)
       enddo
    else
       Scell(NSC)%fa_eq_pot(:) = 0.0d0
@@ -699,14 +702,19 @@ subroutine set_Maxwell_distribution_pot(numpar, Scell, NSC)
 
    ! For printout:
    if (numpar%save_fa) then
-      Nsiz = size(Scell(NSC)%Ea_grid_out) ! size of the energy grid
+      Nsiz = size(Scell(NSC)%Ea_pot_grid_out) ! size of the energy grid
       if (.not.allocated(Scell(NSC)%fa_eq_pot_out)) allocate(Scell(NSC)%fa_eq_pot_out(Nsiz), source = 0.0d0)
       if (Ta > 0.0d0) then
          do j = 1, Nsiz
-            !arg = ( Scell(NSC)%Ea_grid_out(j) - E_shift) / Ta
-            !Scell(NSC)%fa_eq_pot_out(j) = 2.0d0 * sqrt( (Scell(NSC)%Ea_grid_out(j) - E_shift) / g_Pi) * Tfact * exp(-arg)
-            arg = ( Scell(NSC)%Ea_grid_out(j) ) / Ta
-            Scell(NSC)%fa_eq_pot_out(j) = 2.0d0 * sqrt( (Scell(NSC)%Ea_grid_out(j) ) / g_Pi) * Tfact * exp(-arg)
+            dE = Scell(NSC)%Ea_pot_grid_out(j) - E_shift
+            if (dE > 0.0d0) then
+               arg = dE / Ta
+               Scell(NSC)%fa_eq_pot_out(j) = 2.0d0 * sqrt( dE / g_Pi) * Tfact * exp(-arg)
+            else
+               Scell(NSC)%fa_eq_pot_out(j) = 0.0d0
+            endif
+            !arg = ( Scell(NSC)%Ea_grid_out(j) ) / Ta
+            !Scell(NSC)%fa_eq_pot_out(j) = 2.0d0 * sqrt( (Scell(NSC)%Ea_grid_out(j) ) / g_Pi) * Tfact * exp(-arg)
          enddo
       else
          Scell(NSC)%fa_eq_pot_out(:) = 0.0d0

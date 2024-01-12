@@ -135,7 +135,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
 
       if (numpar%save_fa) then
          call save_atomic_distribution(numpar%FN_fa, numpar, Scell(1), time, Scell(1)%Ea_grid_out, Scell(1)%fa_out, Scell(1)%fa_eq_out)
-         call save_atomic_distribution(numpar%FN_fa_pot, numpar, Scell(1), time, Scell(1)%Ea_grid_out+Scell(1)%Pot_distr_E_shift, &
+         call save_atomic_distribution(numpar%FN_fa_pot, numpar, Scell(1), time, Scell(1)%Ea_pot_grid_out, &
                                           Scell(1)%fa_pot_out, Scell(1)%fa_eq_pot_out)
       endif
 
@@ -2383,7 +2383,7 @@ file_atomic_entropy, file_atomic_tempereatures, file_sect_displ)
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
       call write_gnuplot_script_header_new(FN, 6, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Atomic distribution (a.u.)', 'OUTPUT_atomic_distribution_pot.gif', numpar%path_sep, setkey=0)
       call write_atomic_distribution_gnuplot(FN, Scell, numpar, &
-            'OUTPUT_atomic_distribution_pot.dat', -10.0d0 )   ! below
+            'OUTPUT_atomic_distribution_pot.dat', .true. )   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
    endif
@@ -3902,12 +3902,12 @@ end subroutine write_energy_levels_gnuplot
 
 
 
-subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, E_shift)
+subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot)
    integer, intent(in) :: FN            ! file to write into
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    character(*), intent(in) :: file_fe  ! file with atomic distribution function
-   real(8), optional :: E_shift
+   logical, optional :: its_pot
    !-----------------------
    integer :: i, M, NSC
    character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
@@ -3915,7 +3915,7 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, E_shift
 
    do NSC = 1, size(Scell)
       ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
-      write(ch_temp,'(f)')  Scell(NSC)%Ea_grid_out(size(Scell(NSC)%Ea_grid_out))
+      write(ch_temp,'(f)')  Scell(NSC)%Ea_pot_grid_out(size(Scell(NSC)%Ea_pot_grid_out))
       write(ch_temp2,'(f)') numpar%t_start
       write(ch_temp3,'(f)') numpar%dt_save
 
@@ -3926,10 +3926,11 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, E_shift
             do_fe_eq = .false.
       endselect
       ! minimal energy grid:
-      if (present(E_shift)) then
-         write(ch_temp4,'(f)') E_shift
-      else
-         write(ch_temp4,'(f)') 0.0d0
+      write(ch_temp4,'(f)') 0.0d0
+      if (present(its_pot)) then
+         if (its_pot) then
+            write(ch_temp4,'(f)') Scell(NSC)%Ea_pot_grid_out(1)
+         endif
       endif
 
       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows

@@ -660,6 +660,7 @@ type Super_cell
    ! Atomic distribution function:
    real(8), dimension(:), allocatable :: Ea_grid, Ea_grid_out   ! energy grid for atomic distribution
    real(8), dimension(:), allocatable :: fa, fa_eq, fa_out, fa_eq_out ! atomic distribution and equivalent Maxwell distribution
+   real(8), dimension(:), allocatable :: Ea_pot_grid_out   ! energy grid for atomic distribution
    real(8), dimension(:), allocatable :: fa_pot, fa_eq_pot, fa_pot_out, fa_eq_pot_out ! atomic distribution of potential energies
    real(8) :: Sa, Sa_eq, Sa_eq_num  ! atomic entropy [K/eV], and equivalent equilibrium entropy (analytical & numerically calculated)
    real(8) :: Pot_distr_E_shift  ! [eV] shift of the distribution
