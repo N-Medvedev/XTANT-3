@@ -5559,10 +5559,12 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
    ! Assume equidistrant grid:
    ! For internal use:
    Ea_max = 1.0d0 ! to srtart with
-   Nsiz = 300
+   Nsiz = 200
    dEa = Ea_max/dble(Nsiz)
    allocate(Scell%fa(Nsiz), source = 0.0d0)
    allocate(Scell%fa_eq(Nsiz), source = 0.0d0)
+   allocate(Scell%fa_pot(Nsiz), source = 0.0d0)
+   allocate(Scell%fa_eq_pot(Nsiz), source = 0.0d0)
    allocate(Scell%Ea_grid(Nsiz))
    ! Set the grid:
    Scell%Ea_grid(1) = 0.0d0 ! starting point
@@ -5575,13 +5577,17 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
    Nsiz = INT(Ea_max_out/dEa_out)+1
    allocate(Scell%fa_out(Nsiz), source = 0.0d0)
    allocate(Scell%fa_eq_out(Nsiz), source = 0.0d0)
+   allocate(Scell%fa_pot_out(Nsiz), source = 0.0d0)
+   allocate(Scell%fa_eq_pot_out(Nsiz), source = 0.0d0)
    allocate(Scell%Ea_grid_out(Nsiz))
+   allocate(Scell%Ea_pot_grid_out(Nsiz))
    ! Set the grid:
    Scell%Ea_grid_out(1) = 0.0d0 ! starting point
    do i = 2, Nsiz
       Scell%Ea_grid_out(i) = Scell%Ea_grid_out(i-1) + dEa_out
       !print*, i, Scell%Ea_grid_out(i)
    enddo ! i
+   Scell%Ea_pot_grid_out = Scell%Ea_grid_out - 10.0d0  ! to start with
    !pause 'interprete_distribution_input'
 end subroutine interprete_distribution_input
 

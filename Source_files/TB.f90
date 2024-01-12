@@ -1588,6 +1588,56 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
 end subroutine get_Mulliken_each_atom
 
 
+subroutine band_potential_energy_atom(Scell)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   !-------------------------------
+   real(8), dimension(size(Scell%Ha,1), size(Scell%Ha,2)) :: D
+   real(8), dimension(:), allocatable :: mulliken_Ne
+   integer :: N_at, i_at, i_orb, j, Nsiz, N_orb, k
+
+   N_at = size(Scell%MDAtoms) ! total number of atoms
+   Nsiz = size(Scell%Ha,1) ! total number of orbitals
+   N_orb = Nsiz/N_at ! orbitals per atom
+
+   if (allocated(Scell%Sij)) then
+      !$omp PARALLEL private(j, k)
+      !$omp do
+      do j = 1, Nsiz ! for all energy levels
+         do k = 1, Nsiz ! for all energy levels
+            D(k,j) = Scell%Ha(k,j) * SUM(Scell%Ha(:,j) * Scell%Sij(k,:))   ! the density matrix without occupations
+         enddo
+      enddo
+      !$omp end do
+      !$omp end parallel
+   else ! orthogonal
+      !$omp PARALLEL private(j)
+      !$omp do
+      do j = 1, Nsiz ! for all energy levels
+         D(:,j) = Scell%Ha(:,j) * Scell%Ha(:,j)
+      enddo
+      !$omp end do
+      !$omp end parallel
+   endif
+
+   allocate(mulliken_Ne(N_at), source = 0.0d0)   ! absolute charges
+
+   !$omp PARALLEL private(i_at, i_orb, j)
+   !$omp do
+   do i_at = 1, N_at ! all atoms
+      do i_orb = 1, N_orb  ! all orbitals of each atom
+         j = (i_at-1)*N_orb + i_orb ! current orbital among all
+         ! Sum up potential energy for all orbitals belonging to this atom:
+         mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM( Scell%Ei(:) * Scell%fe(:) * D(j,:) )
+      enddo   ! i_orb
+      ! Add Potential energy of this atom (band contribution) to the precalculated repulsive part:
+      Scell%MDAtoms(i_at)%Epot = Scell%MDAtoms(i_at)%Epot + mulliken_Ne(i_at)
+   enddo ! i_at
+   !$omp end do
+   !$omp end parallel
+
+   deallocate(mulliken_Ne)
+end subroutine band_potential_energy_atom
+
 
 
 
@@ -2976,8 +3026,8 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    !type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
-   real(8) Erepuls, Pot_phi, Na_inv
-   integer NSC
+   real(8) :: Erepuls, Pot_phi, Na_inv, E_vdW, E_coul, E_expwall
+   integer :: NSC
    ! Calculations of the contribution of electrons into potential energy of atoms,
    ! first term in Eq.(2.44) from H.Jeschke PhD Thesis, Page 41
    !call set_total_el_energy(Ei,fe,Eelectr) ! module "Electron_tools"
@@ -2996,8 +3046,12 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
       do NSC = 1, size(Scell) ! for all supercells
          ! Real number of atoms inversed:
          Na_inv = 1.0d0 / dble(Scell(NSC)%Na)
+
+         ! Restart calculations of the potential energy of each atom:
+         Scell(NSC)%MDAtoms(:)%Epot = 0.0d0
          
-         Erepuls = Erep_s(Scell(NSC)%TB_Repuls(:,:), Scell, NSC, numpar) ! below
+         !Erepuls = Erep_s(Scell(NSC)%TB_Repuls(:,:), Scell, NSC, numpar) ! below
+         call Erep_s(Scell(NSC)%TB_Repuls(:,:), Scell, NSC, numpar, Erepuls) ! below
          
          Pot_phi = Scell(NSC)%nrg%El_low + Erepuls ! [eV] potential energy, Eq.(2.44) in H.Jeschke Thesis, Page 41
          
@@ -3006,21 +3060,27 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
          Scell(NSC)%nrg%E_rep = Erepuls ! [eV]
          
          ! van der Waals (vdW) potential energy:
-         Scell(NSC)%nrg%E_vdW = vdW_s(Scell(NSC)%TB_Waals, Scell, NSC, numpar) * Na_inv ! [eV/atom], function below
+         call vdW_s(Scell(NSC)%TB_Waals, Scell, NSC, numpar, E_vdW) ! below
+         Scell(NSC)%nrg%E_vdW = E_vdW * Na_inv ! [eV/atom]
          
          ! Coulomb potential energy:
-         Scell(NSC)%nrg%E_coul = Coulomb_s(Scell(NSC)%TB_Coul, Scell, NSC, numpar) * Na_inv ! [eV/atom], function below
+         call Coulomb_s(Scell(NSC)%TB_Coul, Scell, NSC, numpar, E_coul) ! below
+         Scell(NSC)%nrg%E_coul = E_coul * Na_inv ! [eV/atom]
          
          ! Exponential wall potential energy:
-         Scell(NSC)%nrg%E_expwall = Exponential_wall_s(Scell(NSC)%TB_Expwall, Scell, NSC, matter, numpar) * Na_inv ! [eV/atom], below
+         call Exponential_wall_s(Scell(NSC)%TB_Expwall, Scell, NSC, matter, numpar, E_expwall) ! below
+         Scell(NSC)%nrg%E_expwall = E_expwall * Na_inv ! [eV/atom], below
+
+         ! Save the additionall band energy of each atom:
+         call band_potential_energy_atom(Scell(NSC)) ! above
       enddo
       
    endif DO_TB
 end subroutine get_pot_nrg
 
 
-function Exponential_wall_s(TB_Expwall, Scell, NSC, matter, numpar) result(Pot)
-   real(8) :: Pot	! Exponential wall energy [eV]
+subroutine Exponential_wall_s(TB_Expwall, Scell, NSC, matter, numpar, Pot)
+   real(8), intent(out) :: Pot	! Exponential wall energy [eV]
    class(TB_Exp_wall), allocatable, dimension(:,:), intent(in) :: TB_Expwall  ! exponential wall
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -3038,16 +3098,17 @@ function Exponential_wall_s(TB_Expwall, Scell, NSC, matter, numpar) result(Pot)
       a = 0.0d0 ! no energy for no potential
    endif
    Pot = a ! [eV]
-end function Exponential_wall_s
+end subroutine Exponential_wall_s
 
 
 
-function Coulomb_s(TB_Coul, Scell, NSC, numpar)
+subroutine Coulomb_s(TB_Coul, Scell, NSC, numpar, Coulomb_out)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    class(TB_Coulomb), dimension(:,:), allocatable, intent(inout):: TB_Coul ! Coulomb parameters
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   real(8) :: Coulomb_s ! Coulomb energy [eV]
+   real(8), intent(out) :: Coulomb_out ! Coulomb energy [eV]
+   !--------------
    real(8) a
    if (allocated(TB_Coul)) then ! if we have Coulomb potential defined
       select type(TB_Coul)
@@ -3057,20 +3118,18 @@ function Coulomb_s(TB_Coul, Scell, NSC, numpar)
    else !For this material Coulomb class is undefined
       a = 0.0d0 ! no energy for no potential
    endif
-   Coulomb_s = a ! [eV]
-end function Coulomb_s
+   Coulomb_out = a ! [eV]
+end subroutine Coulomb_s
 
 
-function vdW_s(TB_Waals, Scell, NSC, numpar)
+subroutine vdW_s(TB_Waals, Scell, NSC, numpar, out_vdW_s)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    class(TB_vdW), dimension(:,:), allocatable, intent(inout):: TB_Waals ! van der Waals parameters within TB
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   real(8) :: vdW_s ! van der Waals energy [eV]
+   real(8) :: out_vdW_s ! van der Waals energy [eV]
+   !---------
    real(8) a
-
-   !print*, 'vdW_s', allocated(TB_Waals)
-   !pause
 
    if (allocated(TB_Waals)) then ! if we have vdW potential defined
 !       select type(TB_Waals)
@@ -3082,8 +3141,8 @@ function vdW_s(TB_Waals, Scell, NSC, numpar)
    else !For this material vdW class is undefined
       a = 0.0d0 ! no energy for no potential
    endif
-   vdW_s = a ! [eV]
-end function vdW_s
+   out_vdW_s = a ! [eV]
+end subroutine vdW_s
 
 
 
@@ -3107,13 +3166,12 @@ function vdW_interplane(TB_Waals, Scell, NSC, numpar, matter)
 end function vdW_interplane
 
 
-FUNCTION Erep_s(TB_Repuls, Scell, NSC, numpar)   ! repulsive energy as a function of a distance
-   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+subroutine Erep_s(TB_Repuls, Scell, NSC, numpar, E_rep)   ! repulsive energy as a function of a distance
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   !type(TB_Rep_Pettifor), dimension(:), intent(in) :: TB_Repuls   ! parameters of the repulsive part of TB-H
    class(TB_repulsive), dimension(:,:), intent(in)   :: TB_Repuls
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   real(8) :: Erep_s
+   real(8), intent(out) :: E_rep  ! [eV] repulsive energy
    !=====================================================
    real(8) a_r, a, b
    INTEGER(4) i1, j1, m, atom_2, NumTB
@@ -3122,25 +3180,33 @@ FUNCTION Erep_s(TB_Repuls, Scell, NSC, numpar)   ! repulsive energy as a functio
    select type (TB_Repuls)
    type is (TB_Rep_Pettifor)
       call get_Erep_s(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_Pettifor"
+
    type is (TB_Rep_Molteni)
       call get_Erep_s_M(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_Molteni"
+
    type is (TB_Rep_Fu)
       call get_Erep_s_F(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_Fu"
+
    type is (TB_Rep_NRL)
       call get_Erep_s_NRL(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_NRL"
+
    type is (TB_Rep_DFTB)
       call get_Erep_s_DFTB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_DFTB"
+
    type is (TB_Rep_DFTB_no)
       call get_Erep_s_DFTB_no(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_DFTB"
+
    type is (TB_Rep_3TB)
       call get_Erep_s_3TB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_3TB"
+
    type is (TB_Rep_BOP)
       call get_Erep_s_BOP(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_BOP"
+
    type is (TB_Rep_xTB)
 !       call get_Erep_s_xTB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_xTB"
    end select
-   Erep_s = a
-END FUNCTION Erep_s
+   E_rep = a
+end subroutine Erep_s
 
 
 
@@ -3871,7 +3937,7 @@ subroutine Coulomb_beats_vdW(TEMP_Scell, numpar, Nat_C60, Nat)
    b = 1.0d0
    
    ! van der Waals energy:
-   vdW_nrg = vdW_s(TEMP_Scell(1)%TB_Waals, TEMP_Scell, 1, numpar) ! vdW energy
+   call vdW_s(TEMP_Scell(1)%TB_Waals, TEMP_Scell, 1, numpar, vdW_nrg) ! vdW energy
    !vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
    coun = 0
    do while (abs(a-b)/abs(b) >= 1.0d-4)
@@ -3879,7 +3945,7 @@ subroutine Coulomb_beats_vdW(TEMP_Scell, numpar, Nat_C60, Nat)
       Charge = (a+b)/2.0d0
       TEMP_Scell(1)%Q = Charge !set unballanced charge per atom
       ! Coulomb potential part for modelling Coulomb explosion of a finite system:
-      Coulomb_nrg = Coulomb_s(TEMP_Scell(1)%TB_Coul, TEMP_Scell, 1, numpar) ! get Coulomb energy
+      call Coulomb_s(TEMP_Scell(1)%TB_Coul, TEMP_Scell, 1, numpar, Coulomb_nrg) ! get Coulomb energy
 
       Sum_energy = vdW_nrg + Coulomb_nrg ! total energy vdW + Coulomb
       write(*,'(a,f,f,f)') 'Total energy between C60:', a,b, Sum_energy

@@ -1834,17 +1834,17 @@ end function d2Vs
 !Repulsive part of TB:
 
 subroutine get_Erep_s(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_Pettifor"
-   type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_Rep_Pettifor), dimension(:,:), intent(in)   :: TB_Repuls
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a
    !=====================================================
-   real(8) a_r, b
+   real(8) a_r, b, E_pot
    INTEGER(4) i1, j1, m, atom_2, NumTB
    real(8), DIMENSION(3) :: zb
    a = 0.0d0
-   do i1 = 1, Scell(NSC)%Na
+   do i1 = 1, Scell(NSC)%Na   ! for all atoms
       b = 0.0d0
       m = Scell(NSC)%Near_neighbor_size(i1)
       do atom_2 = 1, m ! do only for atoms close to that one
@@ -1857,7 +1857,12 @@ subroutine get_Erep_s(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, mo
          endif ! (j1 .NE. i1)
       enddo ! j1
       !a = a + fx(TB,b)
-      a = a + fx(TB_Repuls(Scell(NSC)%MDatoms(i1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),b) + TB_Repuls(Scell(NSC)%MDatoms(i1)%KOA,Scell(NSC)%MDatoms(i1)%KOA)%E0_TB
+      ! Potential energy:
+      E_pot = fx(TB_Repuls(Scell(NSC)%MDatoms(i1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),b) + TB_Repuls(Scell(NSC)%MDatoms(i1)%KOA,Scell(NSC)%MDatoms(i1)%KOA)%E0_TB
+      ! Add to the total one:
+      a = a + E_pot
+      ! And save for each atom:
+      Scell(NSC)%MDAtoms(i1)%Epot = E_pot
    enddo ! i1
 end subroutine get_Erep_s
 

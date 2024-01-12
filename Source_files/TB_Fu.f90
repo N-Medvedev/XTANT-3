@@ -1867,13 +1867,13 @@ end function d2Vs
 !Repulsive part of TB:
 
 subroutine get_Erep_s_F(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, module "TB_Pettifor"
-   type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_Rep_Fu), dimension(:,:), intent(in)   :: TB_Repuls
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a
    !=====================================================
-   real(8) a_r, b, part1, part2, frac
+   real(8) a_r, b, part1, part2, frac, E_pot
    INTEGER(4) i1, j1, m, atom_2, NumTB
    real(8), DIMENSION(3) :: zb
    integer, pointer :: KOA1, KOA2
@@ -1900,7 +1900,10 @@ subroutine get_Erep_s_F(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy, 
       ! Sorts of atoms:
       do j1 = 1, size(TB_Repuls,1)
          call get_fraction_of_given_sort(Scell, j1, frac)	! module "Atomic_tools"
-         a = a + (fx(TB_Repuls(j1,j1),b) + TB_Repuls(j1,j1)%E0_TB)*frac
+         E_pot = (fx(TB_Repuls(j1,j1),b) + TB_Repuls(j1,j1)%E0_TB)*frac
+         a = a + E_pot
+         ! And save for each atom:
+         Scell(NSC)%MDAtoms(i1)%Epot = E_pot
       enddo
 !       a = a + fx(TB_Repuls(Scell(NSC)%MDatoms(i1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),b) + TB_Repuls(Scell(NSC)%MDatoms(i1)%KOA,Scell(NSC)%MDatoms(i1)%KOA)%E0_TB
    enddo ! i1

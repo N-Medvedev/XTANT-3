@@ -233,7 +233,7 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a	! [eV]
    !=====================================================
-   real(8) :: sum_a, a_r, tot_pot, Coul_pot
+   real(8) :: sum_a, a_r, tot_pot, Coul_pot, E_rep, E_rep_one
    integer :: Nx, Ny, Nz, zb(3), N_ind
    INTEGER(4) i1, j1, m, atom_2, x_cell, y_cell, z_cell
    logical :: origin_cell
@@ -245,7 +245,7 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
    tot_pot = 0.0d0
    
    sum_a = 0.0d0
-   !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell, Coul_pot)
+   !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell, Coul_pot, E_rep)
 !   !$omp do reduction( + : sum_a, tot_pot)
    !$omp do reduction( + : sum_a)
    XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
@@ -255,14 +255,18 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
             zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
             origin_cell = ALL(zb==0) ! if it is the origin cell
             do i1 = 1, Scell(NSC)%Na ! all atoms
+               E_rep = 0.0d0  ! to restart
                do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
                   if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
                      call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
                      Coul_pot = Coulomb_pot(Scell, NSC, TB_Coul, i1, j1, a_r)    ! function below
                      sum_a = sum_a + Coul_pot
+                     E_rep = Coul_pot
 !                      if (i1 == N_ind) tot_pot = tot_pot + Coul_pot
                   endif ! (j1 .NE. i1)
                enddo ! j1
+               ! And save for each atom:
+               Scell(NSC)%MDAtoms(i1)%Epot = Scell(NSC)%MDAtoms(i1)%Epot + E_rep
             enddo ! i1
          enddo ZC
       enddo YC

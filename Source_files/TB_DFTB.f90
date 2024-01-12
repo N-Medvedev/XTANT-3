@@ -1358,20 +1358,22 @@ end subroutine get_Erep_s_DFTB_no
 
 
 subroutine get_Erep_s_DFTB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy
-   type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_Rep_DFTB), dimension(:,:), intent(in) :: TB_Repuls
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a    ! [eV] total repulsive energy
    !=====================================================
+   real(8) :: E_pot, E_rep_one
    integer :: i1, m, atom_2, j1
    integer, pointer :: KOA1, KOA2
    real(8), pointer :: r
    
    a = 0.0d0
-!$omp parallel private(i1, m, atom_2, j1, KOA1, KOA2, r)
+!$omp parallel private(i1, m, atom_2, j1, KOA1, KOA2, r, E_rep_one, E_pot)
 !$omp do reduction( + : a)
    do i1 = 1, Scell(NSC)%Na
+      E_pot = 0.0d0
       m = Scell(NSC)%Near_neighbor_size(i1)
       do atom_2 = 1, m ! do only for atoms close to that one
          j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
@@ -1379,9 +1381,14 @@ subroutine get_Erep_s_DFTB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energ
             KOA1 => Scell(NSC)%MDatoms(i1)%KOA
             KOA2 => Scell(NSC)%MDatoms(j1)%KOA
             r => Scell(NSC)%Near_neighbor_dist(i1,atom_2,4)  ! at this distance, R
-            a = a + DFTB_repulsive_one(TB_Repuls(KOA1,KOA2), r)    ! below
+            E_rep_one = DFTB_repulsive_one(TB_Repuls(KOA1,KOA2), r)    ! below
+            a = a + E_rep_one
+            E_pot = E_pot + E_rep_one
          endif ! (j1 .NE. i1)
       enddo ! j1
+      ! And save for each atom:
+      Scell(NSC)%MDAtoms(i1)%Epot = E_pot*0.5d0 ! to exclude double-counting
+      !print*, i1, E_pot, Scell(NSC)%MDAtoms(i1)%Epot
    enddo ! i1
 !$omp end do
 !$omp end parallel

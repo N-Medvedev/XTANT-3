@@ -48,15 +48,16 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! 
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    real(8), intent(out) :: a  ! [eV] short-range energy
    !------------------------
-   real(8) :: sum_a, Short_range_pot
+   real(8) :: sum_a, Short_range_pot, E_pot
    integer(4) :: i, atom_2
    real(8), pointer :: a_r, Z1, Z2
    integer, pointer :: j, KOA1, KOA2, m
 
    sum_a = 0.0d0
-   !$omp PARALLEL private(i, m, KOA1, Z1, atom_2, j, KOA2, Z2, a_r, Short_range_pot)
+   !$omp PARALLEL private(i, m, KOA1, Z1, atom_2, j, KOA2, Z2, a_r, Short_range_pot, E_pot)
    !$omp do reduction( + : sum_a)
    do i = 1, Scell(NSC)%Na ! all atoms
+      E_pot = 0.0d0 ! to start
       m => Scell(NSC)%Near_neighbor_size(i)
       KOA1 => Scell(NSC)%MDatoms(i)%KOA
       Z1 => matter%Atoms(KOA1)%Z
@@ -67,10 +68,12 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! 
             Z2 => matter%Atoms(KOA2)%Z
             a_r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4)	! at this distance, R
             Short_range_pot = Shortrange_pot(TB_Expwall(KOA1,KOA2), a_r, Z1, Z2)    ! function below
-            sum_a = sum_a + Short_range_pot
+            sum_a = sum_a + Short_range_pot  ! total
+            E_pot = E_pot + Short_range_pot  ! for one atom
 !             print*, 'get_short_range_rep_s', sum_a, Short_range_pot, a_r, KOA1, KOA2
          endif ! (j .GT. 0)
       enddo ! j
+      Scell(NSC)%MDAtoms(i)%Epot = Scell(NSC)%MDAtoms(i)%Epot + E_pot*0.5d0 ! to exclude double-counting
    enddo ! i
    !$omp end do
    !$omp end parallel
@@ -518,14 +521,15 @@ subroutine get_Exp_wall_s(TB_Expwall, Scell, NSC, numpar, a)   ! Exponential wal
    real(8), intent(out) :: a	! [eV] exponential "wall" energy
    !----------------------
    real(8), pointer :: a_r
-   real(8) :: sum_a, Expwall_pot
+   real(8) :: sum_a, Expwall_pot, E_pot
    INTEGER(4) i, atom_2
    integer, pointer :: j, KOA1, KOA2, m
    
    sum_a = 0.0d0
-   !$omp PARALLEL private(i, m, KOA1, atom_2, j, KOA2, a_r, Expwall_pot)
+   !$omp PARALLEL private(i, m, KOA1, atom_2, j, KOA2, a_r, Expwall_pot, E_pot)
    !$omp do reduction( + : sum_a)
    do i = 1, Scell(NSC)%Na ! all atoms
+      E_pot = 0.0d0
       m => Scell(NSC)%Near_neighbor_size(i)
       KOA1 => Scell(NSC)%MDatoms(i)%KOA
       do atom_2 = 1,m ! do only for atoms close to that one  
@@ -534,9 +538,12 @@ subroutine get_Exp_wall_s(TB_Expwall, Scell, NSC, numpar, a)   ! Exponential wal
             KOA2 => Scell(NSC)%MDatoms(j)%KOA
             a_r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4)	! at this distance, R
             Expwall_pot = Exp_wall_pot(TB_Expwall(KOA1,KOA2), a_r)    ! function below
-            sum_a = sum_a + Expwall_pot
+            sum_a = sum_a + Expwall_pot   ! total
+            E_pot = E_pot + Expwall_pot   ! for one atom
          endif ! (j .GT. 0)
       enddo ! j
+      ! And save for each atom:
+      Scell(NSC)%MDAtoms(i)%Epot = Scell(NSC)%MDAtoms(i)%Epot + E_pot * 0.5d0   ! exclude double-counting
    enddo ! i
    !$omp end do
    !$omp end parallel
