@@ -347,7 +347,7 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    ! Update grid if needed:
    call update_atomic_distribution_grid(Scell, NSC) ! below
 
-   ! Get configurational temperature amd potential energy shift via method of moments:
+   ! Get potential temperature amd potential energy shift via method of moments:
    call temperature_from_moments_pot(Scell(NSC), Scell(NSC)%Ta_var(5), E_shift) ! below
    Scell(NSC)%Pot_distr_E_shift = E_shift ! save the shift of the potential energy
    Scell(NSC)%Ea_pot_grid_out(:) = Scell(NSC)%Ea_grid_out(:) + minval(Scell(NSC)%MDAtoms(:)%Epot)
@@ -492,7 +492,7 @@ end subroutine temperature_from_moments
 
 subroutine temperature_from_moments_pot(Scell, Ta, E0)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
-   real(8), intent(out) :: Ta, E0   ! [K] and [eV] configurational temperature and shift
+   real(8), intent(out) :: Ta, E0   ! [K] and [eV] potential temperature and shift
    !---------------
    real(8), dimension(size(Scell%MDAtoms)) :: E_pot
    real(8) :: E1, E2, one_Nat
@@ -678,7 +678,7 @@ subroutine set_Maxwell_distribution_pot(numpar, Scell, NSC)
    real(8) :: arg, Tfact, E_shift, Ta, dE
 
    E_shift = Scell(NSC)%Pot_distr_E_shift ! shift of the distribution
-   Ta = Scell(NSC)%Ta_var(5) / g_kb  ! configurational temperature
+   Ta = Scell(NSC)%Ta_var(5) / g_kb  ! potential temperature
 
    Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
    if (.not.allocated(Scell(NSC)%fa_eq_pot)) allocate(Scell(NSC)%fa_eq_pot(Nsiz), source = 0.0d0)
