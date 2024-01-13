@@ -567,6 +567,7 @@ type Atom
    integer :: Nx_subcel, Ny_subcel, Nz_subcel
    ! Additional data:
    real(8) :: q   ! charge (Mulliken)
+   real(8), dimension(3) :: accel  ! acceleration for calculation of configurational temperature
 end type Atom
 
 type :: MC_atoms ! to treat holes in each shell of each atom
@@ -645,7 +646,7 @@ type Super_cell
    real(8) :: Q		! mean unballanced charge per atom: <Ne_emit/Na>
    ! Other data:
    real(8) :: Ne_CB	! current number of electrons in CB only (above the band gap)
-   real(8) :: Te, Ta, Tconf, Ta_var(5)	! [K] temperature of electrons, kinetic temperature of atoms, various definition of temperature
+   real(8) :: Te, Ta, Tconf, Ta_var(6)	! [K] temperature of electrons, kinetic temperature of atoms, various definition of temperature
    real(8), dimension(:), allocatable :: Ta_sub    ! [K] temperatures of different sublattices
    real(8) :: TeeV, TaeV ! [eV] electrons and atoms temperatures
    real(8) :: Pressure	! [Pa] pressure in the atomic system

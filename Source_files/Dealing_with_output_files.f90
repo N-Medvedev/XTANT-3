@@ -1171,8 +1171,8 @@ subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic pa
    ! Atomic temperatures (various definitions):
    ! kinetic; entropic; distributional
    if (numpar%print_Ta) then
-      write(numpar%FN_Ta, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, &
-         Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(2), Scell(NSC)%Ta_var(3), Scell(NSC)%Ta_var(4), Scell(NSC)%Ta_var(5)
+      write(numpar%FN_Ta, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, &
+      Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(2), Scell(NSC)%Ta_var(3), Scell(NSC)%Ta_var(4), Scell(NSC)%Ta_var(5), Scell(NSC)%Ta_var(6)
    endif
 end subroutine write_atomic_properties
 
@@ -1491,7 +1491,7 @@ subroutine write_sectional_displacements(FN_displacements, time, Scell, matter) 
       N_at = matter%N_KAO    ! number of kinds of atoms
       do j = 1, N_at
          write(FN_displacements(i), '(es25.16,$)') Scell%Displ(i)%mean_disp_sort(j), &
-            Scell%Displ(i)%mean_disp_r_sort(j,:)
+            Scell%Displ(i)%mean_disp_r_sort(j,1), Scell%Displ(i)%mean_disp_r_sort(j,2), Scell%Displ(i)%mean_disp_r_sort(j,3)
       enddo
       write(FN_displacements(i),'(a)') ! make a new line
    enddo ! i
@@ -1904,8 +1904,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_tempereatures.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta = FN
-      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr moments  pot')
-      call create_file_header(numpar%FN_Ta, '#[fs]  [K]   [K]  [K]   [K]   [K]')
+      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr moments  pot   config')
+      call create_file_header(numpar%FN_Ta, '#[fs]  [K]   [K]  [K]   [K]   [K]   [K]')
    endif
 
    if (numpar%do_partial_thermal) then
@@ -3644,12 +3644,14 @@ subroutine gnu_at_temperatures(File_name, file_Ta, t0, t_last, eps_name)
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:3 w l lw 1 dashtype 4 title "Entropic" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lw LW title "Moments" ,\'
       !write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lw LW title "Potential" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:7 w l lw LW title "Configurational" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:2 w l lw LW title "Kinetic" '
    else ! It is linux
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:4 w l lw 1 dashtype 2 title \"Distributional\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:3 w l lw 1 dashtype 4 title \"Entropic\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lw \"$LW\" title \"Moments\" ,\'
       !write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lw \"$LW\" title \"Potential\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:7 w l lw \"$LW\" title \"Configurational\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:2 w l lw \"$LW\" title \"Kinetic\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)

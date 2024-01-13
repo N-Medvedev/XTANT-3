@@ -191,6 +191,8 @@ call Electron_thermalization(g_Scell, g_numpar, skip_thermalization=.true.) ! mo
 
 ! Get global energy of the system at the beginning:
 call get_glob_energy(g_Scell, g_matter) ! module "Electron_tools"
+! and update the electron distribution:
+call update_fe(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "Electron_tools"
 if (g_numpar%verbose) call print_time_step('Initial energy prepared succesfully:', msec=.true.)
 
 ! Get parameters that use complex Hamiltonian: DOS, CDF, kappa:
@@ -313,6 +315,9 @@ do while (g_time .LT. g_numpar%t_total)
          call make_time_step_supercell(g_Scell, g_matter, g_numpar, 1) ! supercell Verlet step, module "Atomic_tools"
          ! Update corresponding energies of the system:
          call get_new_energies(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
+
+         ! Save numerical acceleration (2d half); (unused!):
+         !call numerical_acceleration(g_Scell(1), g_numpar%halfdt, add=.true.)  ! module "Atomic_tools"
       case (1)  ! Yoshida (4th order)
          ! No divided steps, all of them are performed above
       case (2)  ! Martyna (4th order)
@@ -345,7 +350,7 @@ do while (g_time .LT. g_numpar%t_total)
       ! Get current Mulliken charges, if required:
       call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)   ! module "TB"
 
-      ! Get atomic distribution:
+      ! Get atomic distributions and temperatures:
       call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_tools"
 
       ! Get current pressure in the system:

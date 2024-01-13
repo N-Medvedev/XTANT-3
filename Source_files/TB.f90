@@ -84,6 +84,16 @@ subroutine MD_step(Scell, matter, numpar, time, Err)
    type(Error_handling), intent(inout) :: Err	! error save
    real(8), intent(in) :: time ! [fs] timestep
    !------------------------------------------
+   real(8), dimension(size(Scell(1)%MDAtoms),3) :: V0
+   integer :: i, Nat
+
+
+   ! Save the velosities:
+   Nat = size(Scell(1)%MDAtoms)
+   do i = 1, Nat
+      V0(i,:) = Scell(1)%MDAtoms(i)%V(:)     ! before update
+      Scell(1)%MDatoms(i)%accel(:) = 0.0d0   ! reset to start over
+   enddo
 
    ! Choose which MD propagator to use:
    select case(numpar%MD_algo)
@@ -95,6 +105,11 @@ subroutine MD_step(Scell, matter, numpar, time, Err)
       call make_time_step_supercell(Scell, matter, numpar, 2) ! supercall Verlet step, module "Atomic_tools"
       ! Update Hamiltonian after the atomic and supercell motion:
       call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! below
+
+      ! Save numerical acceleration:
+!       do i = 1, Nat
+!          Scell(1)%MDatoms(i)%accel(:) = (Scell(1)%MDatoms(i)%V(:) - V0(i,:)) / numpar%halfdt ! [A/fs^2]
+!       enddo
    !11111111111111111111111111111111111111111
    case (1)  ! Yoshida (4th order)
       ! First step of Yoshida for atomic coordinates and for supercell vectors:
@@ -130,6 +145,11 @@ subroutine MD_step(Scell, matter, numpar, time, Err)
       ! Update forces/accelerations after the first coordinates step:
       call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! module "TB"
       ! Fourth step of Yoshida for velosities is absent, V4=V3.
+
+      ! Save numerical acceleration:
+!       do i = 1, Nat
+!          Scell(1)%MDatoms(i)%accel(:) = (Scell(1)%MDatoms(i)%V(:) - V0(i,:)) / numpar%dt ! [A/fs^2]
+!       enddo
    !22222222222222222222222222222222222222222
    case (2)  ! Martyna algorithm (4th order):
       ! a) New coordinate:
@@ -147,6 +167,11 @@ subroutine MD_step(Scell, matter, numpar, time, Err)
 
       ! For Supercell, use Verlet:
       call make_time_step_supercell(Scell, matter, numpar, 2) ! supercall Verlet step, module "Atomic_tools"
+
+      ! Save numerical acceleration:
+!       do i = 1, Nat
+!          Scell(1)%MDatoms(i)%accel(:) = (Scell(1)%MDatoms(i)%V(:) - V0(i,:)) / numpar%dt ! [A/fs^2]
+!       enddo
    endselect
 
 end subroutine MD_step
@@ -3074,7 +3099,7 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
          ! Save the additionall band energy of each atom:
          call band_potential_energy_atom(Scell(NSC)) ! above
       enddo
-      
+
    endif DO_TB
 end subroutine get_pot_nrg
 
@@ -3221,7 +3246,7 @@ subroutine update_nrg_after_change(Scell, matter, numpar, time, Err)
    
    ! Update correspondingly the electron distribution for the new given total energy:
    call update_fe(Scell, matter, numpar, time, Err, do_E_tot=.true.) ! module "Electron_tools"
-      
+
    do NSC = 1, size(Scell)
          ! Update correspondingly the electron distribution:
          !call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV)
@@ -3232,6 +3257,7 @@ subroutine update_nrg_after_change(Scell, matter, numpar, time, Err)
          call Rescale_atomic_velocities(Scell(NSC)%nrg%E_high_heating, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
          call get_kinetic_energy_abs(Scell, NSC, matter, Scell(NSC)%nrg) ! module "Atomic_tools"
       endif
+
       call get_new_energies(Scell, matter, numpar, time, Err) ! module "TB"
    enddo
 end subroutine update_nrg_after_change

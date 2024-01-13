@@ -43,12 +43,13 @@ end interface shortest_distance
 public :: define_subcells, Maxwell_int_shifted, Coordinates_rel_to_abs, velocities_abs_to_rel, make_time_step_supercell, &
 get_energy_from_temperature, distance_to_given_cell, make_time_step_atoms, Rescale_atomic_velocities, save_last_timestep, &
 get_interplane_indices, get_near_neighbours, get_number_of_image_cells, pair_correlation_function, get_fraction_of_given_sort, &
-Reciproc_rel_to_abs, total_forces, Potential_super_cell_forces, super_cell_forces, Convert_reciproc_rel_to_abs, get_kinetic_energy_abs, &
+Reciproc_rel_to_abs, total_forces, Potential_super_cell_forces, super_cell_forces, Convert_reciproc_rel_to_abs, &
+get_kinetic_energy_abs, &
 get_mean_square_displacement, Cooling_atoms, Coordinates_abs_to_rel, get_Ekin, make_time_step_supercell_Y4, make_time_step_atoms_M, &
 remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_atoms_Y4, check_periodic_boundaries, &
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
 Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
-update_atomic_masks_displ, get_atomic_distribution
+update_atomic_masks_displ, get_atomic_distribution, numerical_acceleration
 
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
@@ -322,6 +323,31 @@ subroutine Random_RN(T, Mass, Vx, Vy, Vz) ! uniform distribution of atomic velos
 end subroutine Random_RN
 
 
+subroutine numerical_acceleration(Scell, dt, add)
+   type(Super_cell), intent(inout) :: Scell ! super-cell with all the atoms inside
+   real, intent(in) :: dt ! [fs]
+   logical, intent(in), optional :: add
+   !-------------
+   integer :: i, Nat
+   logical :: add_acc
+
+   if (present(add)) then
+      add_acc = add
+   else
+      add_acc = .false.
+   endif
+
+   Nat = size(Scell%MDatoms)
+   do i = 1, Nat
+      if (add_acc) then
+         Scell%MDatoms(i)%accel(:) = Scell%MDatoms(i)%accel(:) + (Scell%MDatoms(i)%V(:) - Scell%MDatoms(i)%V0(:)) / dt ! [A/fs^2]
+      else
+         Scell%MDatoms(i)%accel(:) = (Scell%MDatoms(i)%V(:) - Scell%MDatoms(i)%V0(:)) / dt ! [A/fs^2]
+      endif
+   enddo
+end subroutine numerical_acceleration
+
+
 subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
@@ -349,8 +375,10 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
 
    ! Get potential temperature amd potential energy shift via method of moments:
    call temperature_from_moments_pot(Scell(NSC), Scell(NSC)%Ta_var(5), E_shift) ! below
-   Scell(NSC)%Pot_distr_E_shift = E_shift ! save the shift of the potential energy
-   Scell(NSC)%Ea_pot_grid_out(:) = Scell(NSC)%Ea_grid_out(:) + minval(Scell(NSC)%MDAtoms(:)%Epot)
+   if (numpar%save_fa) then
+      Scell(NSC)%Pot_distr_E_shift = E_shift ! save the shift of the potential energy
+      Scell(NSC)%Ea_pot_grid_out(:) = Scell(NSC)%Ea_grid_out(:) + minval(Scell(NSC)%MDAtoms(:)%Epot)
+   endif
 
    ! Construct the atomic distribution:
    do i = 1, Nat
@@ -367,17 +395,20 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
       else
          dE = Scell(NSC)%Ea_grid(j) - Scell(NSC)%Ea_grid(j-1)
       endif
+      dE = max(dE, 1.0d-6) ! ensure it is finite
 
       Scell(NSC)%fa(j) = Scell(NSC)%fa(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
 
       ! 2) for potential energies:
-      if (Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_grid(Nsiz)+E_shift) then  ! above the max grid point
-         j = Nsiz
-      else ! inside the grid
-         call Find_in_array_monoton(Scell(NSC)%Ea_grid+E_shift, Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
-         if (j > 1) j = j - 1
+      if (numpar%save_fa) then
+         if (Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_grid(Nsiz)+E_shift) then  ! above the max grid point
+            j = Nsiz
+         else ! inside the grid
+            call Find_in_array_monoton(Scell(NSC)%Ea_grid+E_shift, Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
+            if (j > 1) j = j - 1
+         endif
+         Scell(NSC)%fa_pot(j) = Scell(NSC)%fa_pot(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
       endif
-      Scell(NSC)%fa_pot(j) = Scell(NSC)%fa_pot(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
       !print*, i, j, Scell(NSC)%MDAtoms(i)%Epot, Scell(NSC)%Ea_grid(j)+E_shift, Scell(NSC)%Ea_grid(j+1)+E_shift
    enddo ! i
 
@@ -431,7 +462,7 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    call set_Maxwell_distribution(numpar, Scell, NSC)  ! below
 
    ! And for the potential energies too:
-   call set_Maxwell_distribution_pot(numpar, Scell, NSC) ! below
+   if (numpar%save_fa) call set_Maxwell_distribution_pot(numpar, Scell, NSC) ! below
 
    !--------------------
    ! Get atomic entropy:
@@ -453,12 +484,83 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
       Scell(NSC)%Ta_var(3) = get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa) ! [K] below
       ! 4) kinetic temperature from the method of moments:
       call temperature_from_moments(Scell(NSC), Scell(NSC)%Ta_var(4), E_shift) ! below
+      ! 5) "potential" temperature was calculated above - not working without atomic potential DOS!
+      ! 6) configurational temperature:
+      Scell(NSC)%Ta_var(6) = get_temperature_from_equipartition(Scell(NSC), matter) ! [K] below
    endif
+
+   !print*, 'Ta=', Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(6)
 
    !write(*,'(a,f,f,f,f,f,f,f)') 'Sa=', Scell(NSC)%Sa, Scell(NSC)%Sa_eq, Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Sa_eq/Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Ta, get_temperature_from_entropy(Scell(NSC)%Sa), get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa)
    !pause 'get_atomic_distribution done'
 end subroutine get_atomic_distribution
 
+
+function get_temperature_from_equipartition(Scell, matter) result(Ta)
+   real(8) :: Ta  ! [K] configurational temperature
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(solid), intent(in), target :: matter	! materil parameters
+   !------------------------------
+   integer :: Nat, i
+   real(8) :: F(3), acc(3), r(3), Pot, Pot_r(3), Pot_tot
+   real(8), pointer :: Mass
+
+   Nat = size(Scell%MDAtoms)  ! number of atoms
+
+   Pot_tot = 0.0d0   ! to start with
+   Pot_r = 0.0d0
+
+   ! Test of the total force:
+   !print*, 'F=', SUM(matter%Atoms(Scell%MDatoms(:)%KOA)%Ma * Scell%MDAtoms(:)%accel(1)), &
+   !SUM(matter%Atoms(Scell%MDatoms(:)%KOA)%Ma * Scell%MDAtoms(:)%accel(2)), &
+   !SUM(matter%Atoms(Scell%MDatoms(:)%KOA)%Ma * Scell%MDAtoms(:)%accel(3)), &
+   !matter%Atoms(Scell%MDatoms(1)%KOA)%Ma * Scell%MDAtoms(1)%accel(3)
+
+   do i = 1, Nat  ! for all atoms
+      ! Convert acceleration into SI units:
+      acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20 ! [A/fs^2] -> [m/s^2]
+      Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma ! atomic mass [kg]
+
+      ! Get the force:
+      F(:) = Mass * acc(:) ! [N]
+      ! Get the coordinate relative to the center of the supercell:
+      r(:) = position_relative_to_center(Scell, i) ! below
+      r(:) = r(:) * 1.0d-10   ! [A] -> [m]
+
+      ! Construct the potential energy contribution:
+      Pot = SUM(F(:) * r(:)) / g_e ! [eV]
+
+      ! Total potential contribution to get the temperature
+      Pot_tot = Pot_tot + Pot
+      !Pot_r(:) = Pot_r(:) + (F(:) * r(:)) / g_e ! [eV]
+
+!       if (i == 1) then
+!          print*, i, Scell%MDAtoms(i)%V0, Scell%MDAtoms(i)%V, Scell%MDAtoms(i)%V0 + Scell%MDAtoms(i)%accel(:) * 0.5d0, Scell%MDAtoms(i)%V0 - Scell%MDAtoms(i)%accel(:) * 0.5d0
+!          print*, 'a', Scell%MDAtoms(i)%accel(:), Scell%MDAtoms(i)%A(:)
+!       endif
+   enddo
+
+   ! Configurational temperature from the equipartition theorem as potential energy per atom per degree of freedom:
+   Ta = Pot_tot / (3.0d0 * dble(Nat))   ! [eV]
+   Ta = Ta * g_kb    ! [eV] -> {K}
+
+!    print*, 'P' ,Pot_tot, SUM(Pot_r(:)), Pot_r(:)
+end function get_temperature_from_equipartition
+
+
+function position_relative_to_center(Scell, i_at) result(Rrc)
+   real(8), dimension(3) :: Rrc  ! [A] position relative to the center of the supercell
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: i_at   ! atom index
+   !-----------------
+   real(8) :: Sj(3), a_r
+
+   ! relative coords of the center of the supercell:
+   Sj(:) = 0.5d0
+   !Sj(:) = 0.0d0  ! test
+   ! Shortest distance to the center in a cell with periodic boundaries:
+   call shortest_distance_to_point(Scell, i_at, Sj, a_r, x1=Rrc(1), y1=Rrc(2), z1=Rrc(3))   ! below
+end function position_relative_to_center
 
 
 subroutine temperature_from_moments(Scell, Ta, E0)
@@ -528,7 +630,11 @@ pure function Maxwell_entropy(Ta) result(Sa) ! for equilibrium Maxwell distribut
    real(8), intent(in) :: Ta  ! [eV]
    !------------------
    !Sa = g_kb_EV * (log(2.0d0 * g_sqrt_Pi * sqrt(Ta)) + g_Eulers_gamma - 0.5d0)   ! [eV/K]
-   Sa = g_kb_EV * (log(g_sqrt_Pi * Ta) + (g_Eulers_gamma + 1.0d0)*0.5d0)   ! [eV/K]
+   if (Ta > 0.0d0) then ! possible to get entropy
+      Sa = g_kb_EV * (log(g_sqrt_Pi * Ta) + (g_Eulers_gamma + 1.0d0)*0.5d0)   ! [eV/K]
+   else  ! undefined
+      Sa = 0.0d0
+   endif
 end function Maxwell_entropy
 
 
@@ -649,21 +755,32 @@ subroutine set_Maxwell_distribution(numpar, Scell, NSC)
 
    Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
    if (.not.allocated(Scell(NSC)%fa_eq)) allocate(Scell(NSC)%fa_eq(Nsiz), source = 0.0d0)
-   Tfact = (1.0d0 / Scell(NSC)%TaeV)**1.5d0
-   do j = 1, Nsiz
-      arg = Scell(NSC)%Ea_grid(j) / Scell(NSC)%TaeV
-      Scell(NSC)%fa_eq(j) = 2.0d0 * sqrt(Scell(NSC)%Ea_grid(j) / g_Pi) * Tfact * exp(-arg)
-   enddo
+
+   if (Scell(NSC)%TaeV > 0.0d0) then
+      Tfact = (1.0d0 / Scell(NSC)%TaeV)**1.5d0
+      do j = 1, Nsiz
+         arg = Scell(NSC)%Ea_grid(j) / Scell(NSC)%TaeV
+         Scell(NSC)%fa_eq(j) = 2.0d0 * sqrt(Scell(NSC)%Ea_grid(j) / g_Pi) * Tfact * exp(-arg)
+      enddo
+   else  ! zero-temperature distribution
+      Scell(NSC)%fa_eq(:) = 0.0d0
+      Scell(NSC)%fa_eq(1) = 1.0d0
+   endif
 
    ! For printout:
    if (numpar%save_fa) then
       Nsiz = size(Scell(NSC)%Ea_grid_out) ! size of the energy grid
       if (.not.allocated(Scell(NSC)%fa_eq_out)) allocate(Scell(NSC)%fa_eq_out(Nsiz), source = 0.0d0)
-      Tfact = (1.0d0 / Scell(NSC)%TaeV)**1.5d0
-      do j = 1, Nsiz
-         arg = Scell(NSC)%Ea_grid_out(j) / Scell(NSC)%TaeV
-         Scell(NSC)%fa_eq_out(j) = 2.0d0 * sqrt(Scell(NSC)%Ea_grid_out(j) / g_Pi) * Tfact * exp(-arg)
-      enddo
+      if (Scell(NSC)%TaeV > 0.0d0) then
+         Tfact = (1.0d0 / Scell(NSC)%TaeV)**1.5d0
+         do j = 1, Nsiz
+            arg = Scell(NSC)%Ea_grid_out(j) / Scell(NSC)%TaeV
+            Scell(NSC)%fa_eq_out(j) = 2.0d0 * sqrt(Scell(NSC)%Ea_grid_out(j) / g_Pi) * Tfact * exp(-arg)
+         enddo
+      else  ! zero-temperature distribution
+         Scell(NSC)%fa_eq_out(:) = 0.0d0
+         Scell(NSC)%fa_eq_out(1) = 1.0d0
+      endif
    endif
 end subroutine set_Maxwell_distribution
 
@@ -1671,7 +1788,7 @@ subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update
    REAL(8), DIMENSION(3,3) :: GinvGdot ! matrix of GGdot contributing to velocities
    integer :: nat, k
    real(8) Fors_s(3,Scell(NSC)%Na), fctr
-   real(8) dsupce(3,3), tempM(3,3), gg2(3,3), tt(3,3), tempV(3), x0(3)
+   real(8) dsupce(3,3), tempM(3,3), gg2(3,3), tt(3,3), tempV(3), x0(3), temp_acc(3)
 
    nat = Scell(NSC)%Na	! number of atoms in the supercell
    
@@ -1698,6 +1815,14 @@ subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update
       if (ind .EQ. 2) Scell(NSC)%MDatoms(k)%S(:) = Scell(NSC)%MDatoms(k)%S0(:) + numpar%dt*Scell(NSC)%MDatoms(k)%SV0(:) + Fors_s(:,k)*numpar%dtsqare ! new X-coordinates
       ! Verlet velocities second part:
       Scell(NSC)%MDatoms(k)%SV(:) = Scell(NSC)%MDatoms(k)%SV0(:) + Fors_s(:,k)*numpar%halfdt !dt/2.0e0
+
+      ! Save absolute acceleration:
+      if (ind == 1) then
+         call accelerations_rel_to_abs(Scell(NSC), Fors_s(:,k), temp_acc(:))   ! below
+         Scell(NSC)%MDatoms(k)%accel(:) = Scell(NSC)%MDatoms(k)%accel(:) + temp_acc(:)
+      else
+         call accelerations_rel_to_abs(Scell(NSC), Fors_s(:,k), Scell(NSC)%MDatoms(k)%accel(:))   ! below
+      endif
    enddo
    if (ind .EQ. 2) call check_periodic_boundaries(matter, Scell, NSC) ! and set the absolute coordinates out of the new relative ones
    call velocities_rel_to_abs(Scell, NSC) ! set the absolute velocities out of the new relative ones
@@ -1831,6 +1956,9 @@ subroutine get_accelerations_M(Scell, NSC, matter, numpar)     ! update coordina
       
       ! Get new accelerations:
       Scell(NSC)%MDatoms(k)%A(:) = Fors_s(:)
+
+      ! Save absolute acceleration:
+      call accelerations_rel_to_abs(Scell(NSC), Scell(NSC)%MDatoms(k)%A(:), Scell(NSC)%MDatoms(k)%accel(:))   ! below
    enddo
 !    !$omp end do
 !    !$omp end parallel
@@ -1913,6 +2041,11 @@ subroutine make_time_step_atoms_SC_Y4(Scell, NSC, matter, numpar, ind_step, ind_
          Fors_s(:,k) = Fors_s(:,k) - tempV(:)
          Scell(NSC)%MDatoms(k)%SV(:) = Scell(NSC)%MDatoms(k)%SV0(:) + Fors_s(:,k) * numpar%dt * Coef_V
          Scell(NSC)%MDatoms(k)%SV0(:) = Scell(NSC)%MDatoms(k)%SV(:)   ! update old coords for the next step
+
+         ! Save absolute acceleration:
+         if (ind_step == 1) then
+            call accelerations_rel_to_abs(Scell(NSC), Fors_s(:,k), Scell(NSC)%MDatoms(k)%accel(:))   ! below
+         endif
       endif
    enddo
    call check_periodic_boundaries(matter, Scell, NSC) ! and set the absolute coordinates out of the new relative ones
@@ -2557,6 +2690,21 @@ end subroutine get_coords_in_new_supce
 
 
 
+subroutine accelerations_rel_to_abs(Scell, acc_in, acc_out)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   real(8), dimension(3), intent(in) :: acc_in    ! relative accelerations
+   real(8), dimension(3), intent(out) :: acc_out  ! absolute accelerations
+   !--------------------
+   integer :: ik
+
+   acc_out = 0.0d0   ! to start with
+   do ik = 1,3
+      acc_out(:) = acc_out(:) + acc_in(ik) * Scell%supce(ik,:)
+   enddo ! ik
+end subroutine accelerations_rel_to_abs
+
+
+
 subroutine get_kinetic_energy_rel(Scell, NSC, matter, nrg)
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
@@ -2809,6 +2957,80 @@ subroutine deflect_velosity(u0, v0, w0, theta, phi, u, v, w)    ! Eq.(1.131), p.
       w = w/temp
    endif
 end subroutine deflect_velosity
+
+
+
+
+subroutine shortest_distance_to_point(Scell, i1, Sj, a_r, x1, y1, z1, sx1, sy1, sz1, cell_x, cell_y, cell_z)
+   type(Super_cell), intent(in), target :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: i1 ! atom index
+   real(8), dimension(3), intent(in) :: Sj   ! relative cooerds of the point, distance to which we seek
+   real(8), intent(out) ::  a_r	! [A] shortest distance between the two atoms within supercell with periodic boundaries
+   real(8), intent(out), optional :: x1, y1, z1		! [A] projections of the shortest distance
+   real(8), intent(out), optional :: sx1, sy1, sz1 	! relative projections of the shortest distance
+   integer, intent(out), optional :: cell_x, cell_y, cell_z ! cell numbers
+   real(8) x, y, z, zb(3), r, x0, y0, z0, r1
+   integer i, j, k, ik
+   type(Atom), dimension(:), pointer :: atoms	! array of atoms in the supercell
+
+   atoms => Scell%MDAtoms
+   x = 0.0d0
+   y = 0.0d0
+   z = 0.0d0
+
+   ! For the case of periodic boundaries:
+   do ik = 1,3
+      x = x + (atoms(i1)%S(ik) - Sj(ik))*Scell%supce(ik,1)
+      y = y + (atoms(i1)%S(ik) - Sj(ik))*Scell%supce(ik,2)
+      z = z + (atoms(i1)%S(ik) - Sj(ik))*Scell%supce(ik,3)
+   enddo ! ik
+   a_r = DSQRT(x*x + y*y + z*z)
+   if (present(x1)) x1 = x
+   if (present(y1)) y1 = y
+   if (present(z1)) z1 = z
+   if (present(sx1)) sx1 = atoms(i1)%S(1) - Sj(1)
+   if (present(sy1)) sy1 = atoms(i1)%S(2) - Sj(2)
+   if (present(sz1)) sz1 = atoms(i1)%S(3) - Sj(3)
+   if (present(cell_x)) cell_x = 0
+   if (present(cell_y)) cell_y = 0
+   if (present(cell_z)) cell_z = 0
+
+   do i = -1,1 ! if the distance between the atoms is more than a half of supercell, we account for
+      ! interaction with the atom not from this, but from the neigbour ("mirrored") supercell:
+      ! periodic boundary conditions
+      zb(1) = dble(i)
+      do j =-1,1
+         zb(2) = dble(j)
+         do k = -1,1
+            zb(3) = dble(k)
+            x0 = 0.0d0
+            y0 = 0.0d0
+            z0 = 0.0d0
+            do ik = 1,3
+               x0 = x0 + (atoms(i1)%S(ik) - Sj(ik) + zb(ik))*Scell%supce(ik,1)
+               y0 = y0 + (atoms(i1)%S(ik) - Sj(ik) + zb(ik))*Scell%supce(ik,2)
+               z0 = z0 + (atoms(i1)%S(ik) - Sj(ik) + zb(ik))*Scell%supce(ik,3)
+            enddo ! ik
+            r1 = DSQRT(x0*x0 + y0*y0 + z0*z0)
+            if (r1 <= a_r) then
+               x = x0
+               y = y0
+               z = z0
+               a_r = r1
+               if (present(x1)) x1 = x
+               if (present(y1)) y1 = y
+               if (present(z1)) z1 = z
+               if (present(sx1)) sx1 = atoms(i1)%S(1) - Sj(1) + zb(1)
+               if (present(sy1)) sy1 = atoms(i1)%S(2) - Sj(2) + zb(2)
+               if (present(sz1)) sz1 = atoms(i1)%S(3) - Sj(3) + zb(3)
+               if (present(cell_x)) cell_x = i
+               if (present(cell_y)) cell_y = j
+               if (present(cell_z)) cell_z = k
+            endif
+         enddo ! k
+      enddo ! j
+   enddo ! i
+end subroutine shortest_distance_to_point
 
 
 
