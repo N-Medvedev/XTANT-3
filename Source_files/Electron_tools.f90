@@ -431,14 +431,14 @@ end subroutine Electron_thermalization
 
 
 ! Relaxation time approximation:
-subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial)
+subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial, do_fast)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
-   logical, intent(in), optional :: skip_thermalization, skip_partial
+   logical, intent(in), optional :: skip_thermalization, skip_partial, do_fast
    !----------------------
    real(8) :: exp_dttau, extra_dt, extra_tau, eps, Te_CB, Te_VB, Ne, Ne_eq
    integer :: i_fe, i, i_cycle, N_cycle
-   logical :: skip_step, extra_cycle, skip_part
+   logical :: skip_step, extra_cycle, skip_part, do_fast_search
 
    if (present(skip_thermalization)) then
       skip_step = skip_thermalization
@@ -452,17 +452,20 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial)
       skip_part = .false.
    endif
 
+   if (present(do_fast)) then
+      do_fast_search = do_fast
+   else
+      do_fast_search = .true.
+   endif
+
    ! Get the equivalent (kinetic) temperature and chemical potential:
-   call Electron_Fixed_Etot(Scell%Ei, Scell%Ne_low, Scell%nrg%El_low, Scell%mu, Scell%TeeV, .true.) ! below (FAST)
+   call Electron_Fixed_Etot(Scell%Ei, Scell%Ne_low, Scell%nrg%El_low, Scell%mu, Scell%TeeV, do_fast_search) ! below (FAST)
    Scell%Te = Scell%TeeV*g_kb ! save also in [K]
 
    ! Construct Fermi function with the given transient parameters:
    i_fe = size(Scell%fe)   ! number of grid points in distribution function
-   if (.not.allocated(Scell%fe_eq)) allocate(Scell%fe_eq(i_fe))
+   if (.not.allocated(Scell%fe_eq)) allocate(Scell%fe_eq(i_fe), source = 0.0d0)
    call set_Fermi(Scell%Ei, Scell%TeeV, Scell%mu, Scell%fe_eq)   ! below
-
-!    print*, '===================================='
-!    print*, 'Eq=', SUM(Scell%fe_eq), SUM(Scell%fe), Scell%Ne_low
 
    ! Solve rate equation:
    if (.not.skip_step) then ! do the thermalization step:
@@ -483,8 +486,6 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial)
          ! Construct equivalent Fermi distribution:
          call set_Fermi(Scell%Ei, Te_VB, Scell%mu_VB, Scell%fe_eq_VB, i_end=Scell%N_Egap)  ! below
 
-!          print*, 'Ne0.0=', get_N_partial(Scell%fe, 1, Scell%N_Egap), get_N_partial(Scell%fe_eq_VB, 1, Scell%N_Egap), get_N_partial(Scell%fe, 1, i_fe), SUM(Scell%fe), SUM(Scell%fe(1:i_fe))
-
          ! Make the thermalization for this band:
          if (numpar%tau_fe_VB < numpar%dt/30.0d0) then ! it's basically instantaneous
             exp_dttau = 0.0d0
@@ -494,8 +495,6 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial)
          do i = 1, Scell%N_Egap  ! for VB grid points (MO energy levels)
             Scell%fe(i) = Scell%fe_eq_VB(i) + (Scell%fe(i) - Scell%fe_eq_VB(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
          enddo
-         !print*, 'Ne0.0=', get_N_partial(Scell%fe, 1, Scell%N_Egap), get_N_partial(Scell%fe_eq_VB, 1, i_fe), get_N_partial(Scell%fe, 1, i_fe), SUM(Scell%fe), SUM(Scell%fe(1:i_fe))
-!          print*, 'Ne0.5=', get_N_partial(Scell%fe, Scell%N_Egap+1, i_fe), get_N_partial(Scell%fe_eq_VB, Scell%N_Egap+1, i_fe), SUM(Scell%fe)
 
          ! CB:
          ! Get the number of particles and energy in the band:
@@ -536,6 +535,7 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial)
       endif
       do i = 1, i_fe ! for all grid points (MO energy levels)
          Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
+         !print*, i, Scell%fe(i), Scell%fe_eq(i), exp_dttau
       enddo
 
       !--------------------------
@@ -1097,6 +1097,7 @@ subroutine get_total_el_energy(Scell, matter, numpar, t, Err) ! get total electr
          Scell(NSC)%nrg%E_tot = Scell(NSC)%nrg%El_low + Scell(NSC)%nrg%El_high*nat ! energy of all electrons (low + high energies)
          Scell(NSC)%nrg%Total = Scell(NSC)%nrg%At_pot + Scell(NSC)%nrg%At_kin + Scell(NSC)%nrg%E_vdW + &
                Scell(NSC)%nrg%E_coul + Scell(NSC)%nrg%E_expwall + Scell(NSC)%nrg%E_coul_scc/nat ! [eV/atom] initial total energy
+
       end select
    enddo
 end subroutine get_total_el_energy
@@ -1915,6 +1916,7 @@ subroutine Electron_Fixed_Te(wrD, Netot, mu, Te, norm_fe, i_start, i_end) ! in c
       else
          a = mu
       endif
+
       if (ABS(a-b) .LT. 1d-12) exit ! it's too close anyway...
    enddo ! while
 end subroutine Electron_Fixed_Te
@@ -2336,9 +2338,9 @@ subroutine Electron_Fixed_Etot_3(wrD, Netot, Eetot, mu, Te)
 
    !PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP
    ! precalculations before finding mu and Te
-   dT = max(Te/10.0d0, 20.0d0)	! temperature step [K]
+   dT = max(Te/10.0d0, 10.0d0)	! temperature step [K]
    Te = max(Te/2.0d0, dT/g_kb) ! [eV] electron temperature to be calculated
-   call Electron_Fixed_Te(wrD, Netot, muN, Te) ! find mu for given Te nad Ne
+   !call Electron_Fixed_Te(wrD, Netot, muN, Te) ! find mu for given Te nad Ne
    !PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP
 
    !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
@@ -2348,6 +2350,10 @@ subroutine Electron_Fixed_Etot_3(wrD, Netot, Eetot, mu, Te)
    Telast = Te
    Telast2 = Telast + dT/g_kb
    Te = (Telast+Telast2)/2.0d0
+   call Electron_Fixed_Te(wrD, Netot, muN, Te) ! find mu for given Te nad Ne
+   mu = muN ! [eV] save for output
+   !print*, 'muN=', muN, Netot
+
    Ecur = -1d12
    che1 = (Ecur-Eetot)  ! checker for finding the crossing point
    do while ((ABS((Ecur - Eetot)/MAX(ABS(Ecur),ABS(Eetot),1d-9)) .GT. 1d-9) .AND. (ABS((Te - Telast)/MAX(Te,Telast,1d-12)) .GT. 1d-12)) ! main while
@@ -2361,6 +2367,7 @@ subroutine Electron_Fixed_Etot_3(wrD, Netot, Eetot, mu, Te)
       ! Checking, whether this chem.potential and temperature are also solutions for energy: 
       Ecur = 0.0d0
       Ecur = get_E_tot(wrD, muN, Te) ! function from above
+      !print*, 'muN=', muN, Telast, Telast2, Ecur, Eetot
 
       ! if they are, we can stop the calculations:
       if (ABS((Ecur - Eetot)/MAX(ABS(Ecur),ABS(Eetot),1d-9)) .LT. 1d-9) exit
@@ -2388,7 +2395,7 @@ subroutine Electron_Fixed_Etot_3(wrD, Netot, Eetot, mu, Te)
       che1 = che2
    enddo ! main while
 
-   if ((ABS((Ecur - Eetot)/MAX(ABS(Ecur),ABS(Eetot),1d-5)) .GT. 1d-5) .AND. (countr .LT. 10))then
+   if ((ABS((Ecur - Eetot)/MAX(ABS(Ecur),ABS(Eetot),1d-5)) .GT. 1d-5) .AND. (countr .LT. 10)) then
       countr = countr + 1
       Te = Te + 2.0d0*dT/g_kb
       goto 438 ! just try it over again if it didn't work well the first time...
