@@ -211,7 +211,7 @@ call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)
 if (g_numpar%verbose) call print_time_step('Mulliken charges calculated succesfully:', msec=.true.)
 
 ! Get the pressure in the atomic system:
-call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure,  g_Scell(1)%Stress)	! module "TB"
+call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
 if (g_numpar%verbose) call print_time_step('Pressure calculated succesfully:', msec=.true.)
 
 ! Calculate the mean square displacement of all atoms:
@@ -350,11 +350,12 @@ do while (g_time .LT. g_numpar%t_total)
       ! Get current Mulliken charges, if required:
       call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)   ! module "TB"
 
+      ! Get current pressure in the system:
+      call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
+
       ! Get atomic distributions and temperatures:
       call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_tools"
 
-      ! Get current pressure in the system:
-      call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
       ! Calculate the mean square displacement of all atoms:
       call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD, g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
       ! Calculate electron heat capacity, entropy, and orbital-resolved data:

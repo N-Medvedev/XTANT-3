@@ -646,11 +646,14 @@ type Super_cell
    real(8) :: Q		! mean unballanced charge per atom: <Ne_emit/Na>
    ! Other data:
    real(8) :: Ne_CB	! current number of electrons in CB only (above the band gap)
-   real(8) :: Te, Ta, Tconf, Ta_var(6)	! [K] temperature of electrons, kinetic temperature of atoms, various definition of temperature
+   real(8) :: Te, Ta, Tconf   ! [K] temperature of electrons, kinetic temperature of atoms, (configurational Ta, obsolete)
+   real(8) :: Ta_var(6), Ta_r_var(6)   ! [K] various definition of temperature; dimension-resolved temperatures along X,Y,Z
    real(8), dimension(:), allocatable :: Ta_sub    ! [K] temperatures of different sublattices
    real(8) :: TeeV, TaeV ! [eV] electrons and atoms temperatures
    real(8) :: Pressure	! [Pa] pressure in the atomic system
    real(8), dimension(3,3) :: Stress	! [Pa] stress tensor in the atomic system
+   real(8) :: Pot_Pressure  ! [Pa] potential contribution to pressure (without kinteic energy of atoms)
+   real(8), dimension(3,3) :: Pot_Stress	! [Pa] potential contribution to stress tensor (without kinetic energies)
    real(8) :: MSD	! [A^2] mean square displacements average over all atoms
    real(8), dimension(:), allocatable :: MSDP	! [A^2] mean square displacements for atoms of different sorts
    type(Displacement_analysis), dimension(:), allocatable :: Displ ! [A] mean displacements for atoms masked
@@ -935,7 +938,7 @@ type Numerics_param
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
-   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot
+   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part
    integer, dimension(:), allocatable :: FN_displacements
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model

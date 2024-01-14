@@ -84,14 +84,14 @@ subroutine MD_step(Scell, matter, numpar, time, Err)
    type(Error_handling), intent(inout) :: Err	! error save
    real(8), intent(in) :: time ! [fs] timestep
    !------------------------------------------
-   real(8), dimension(size(Scell(1)%MDAtoms),3) :: V0
+   !real(8), dimension(size(Scell(1)%MDAtoms),3) :: V0
    integer :: i, Nat
 
 
    ! Save the velosities:
    Nat = size(Scell(1)%MDAtoms)
    do i = 1, Nat
-      V0(i,:) = Scell(1)%MDAtoms(i)%V(:)     ! before update
+      !V0(i,:) = Scell(1)%MDAtoms(i)%V(:)     ! before update
       Scell(1)%MDatoms(i)%accel(:) = 0.0d0   ! reset to start over
    enddo
 
@@ -3726,7 +3726,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    real(8), dimension(3,3), intent(out), optional :: stress_tensor_OUT	! Stress tensor [Pa]
    !-------------------------------------
    real(8), dimension(3,3) :: forces_saved, forces_saved0, sigma_tensor, sigma_inversed, stress_tensor
-   integer :: NSC
+   integer :: NSC, i, j
    logical :: P_const_save
     real(8), dimension(:,:,:), allocatable :: M_Vij	! matrix of Overlap functions for Hamiltonian for all pairs of atoms, all orbitals
    real(8), dimension(:,:,:), allocatable :: M_dVij	! matrix of derivatives of Overlap functions for Hamiltonian for all pairs of atoms, all orbitals
@@ -3903,12 +3903,20 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    ! Invert sigma tensor:
    call Invers_3x3(sigma_tensor, sigma_inversed, 'Get_pressure')	! module "Algebra_tools"
    
-   ! Calculate the stress tensor (factor 1.040 is to convert from [kg/A/fs^2] to [kg/m/s^2]):
+   ! Calculate the stress tensor (factor 1.0e40 is to convert from [kg/A/fs^2] to [kg/m/s^2]):
    stress_tensor(:,:) = Scell(NSC)%SCforce%total(:,:) * matter%W_PR * sigma_inversed(:,:) * 1.0d40	! [kg/m/s^2]
    
    ! OUTPUT, pressure and stress tensor:
    P = 1.0d0/3.0d0 * ( stress_tensor(1,1) + stress_tensor(2,2) + stress_tensor(3,3) )
    if (present(stress_tensor_OUT)) stress_tensor_OUT = stress_tensor
+   ! Save potential contributions to the pressure (to use leter for configurational temperature):
+   do i = 1,3
+      do j = 1,3
+            Scell(NSC)%Pot_Stress(j,i) = Scell(NSC)%SCforce%att(i,j) + Scell(NSC)%SCforce%rep(j,i) ! [kg/A/fs^2]
+      enddo ! j
+   enddo ! i
+   Scell(NSC)%Pot_Stress = Scell(NSC)%Pot_Stress * matter%W_PR * sigma_inversed(:,:) * 1.0d40   ! [kg/m/s^2]
+   Scell(NSC)%Pot_Pressure = 1.0d0/3.0d0 * (Scell(NSC)%Pot_Stress(1,1) + Scell(NSC)%Pot_Stress(2,2) + Scell(NSC)%Pot_Stress(3,3) )
 
    ! Restore the forces to the values they had before calculations of pressure:
    Scell(NSC)%SCforce%total = forces_saved

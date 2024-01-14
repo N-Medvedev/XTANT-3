@@ -486,65 +486,96 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
       call temperature_from_moments(Scell(NSC), Scell(NSC)%Ta_var(4), E_shift) ! below
       ! 5) "potential" temperature was calculated above - not working without atomic potential DOS!
       ! 6) configurational temperature:
-      Scell(NSC)%Ta_var(6) = get_temperature_from_equipartition(Scell(NSC), matter) ! [K] below
+      Scell(NSC)%Ta_var(6) = get_temperature_from_equipartition(Scell(NSC), matter, numpar) ! [K] below
+      ! And partial temperatures along X, Y, Z:
+      call partial_temperatures(Scell(NSC), matter, numpar)   ! below
    endif
 
-   !print*, 'Ta=', Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(6)
-
-   !write(*,'(a,f,f,f,f,f,f,f)') 'Sa=', Scell(NSC)%Sa, Scell(NSC)%Sa_eq, Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Sa_eq/Maxwell_entropy(Scell(NSC)%TaeV), Scell(NSC)%Ta, get_temperature_from_entropy(Scell(NSC)%Sa), get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa)
-   !pause 'get_atomic_distribution done'
+   !print*, 'Ta=', Scell(NSC)%Ta_var(1), SUM(Scell(NSC)%Ta_r_var(1:3))/3.0d0
+   !print*, 'Tp=', Scell(NSC)%Ta_r_var(:)
 end subroutine get_atomic_distribution
 
 
-function get_temperature_from_equipartition(Scell, matter) result(Ta)
-   real(8) :: Ta  ! [K] configurational temperature
-   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+subroutine partial_temperatures(Scell, matter, numpar)
+   type(Super_cell), intent(inout) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in), target :: matter	! materil parameters
-   !------------------------------
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   !--------------------
    integer :: Nat, i
-   real(8) :: F(3), acc(3), r(3), Pot, Pot_r(3), Pot_tot
+   real(8) :: prefac, Ekin(3)
    real(8), pointer :: Mass
 
    Nat = size(Scell%MDAtoms)  ! number of atoms
 
-   Pot_tot = 0.0d0   ! to start with
-   Pot_r = 0.0d0
-
-   ! Test of the total force:
-   !print*, 'F=', SUM(matter%Atoms(Scell%MDatoms(:)%KOA)%Ma * Scell%MDAtoms(:)%accel(1)), &
-   !SUM(matter%Atoms(Scell%MDatoms(:)%KOA)%Ma * Scell%MDAtoms(:)%accel(2)), &
-   !SUM(matter%Atoms(Scell%MDatoms(:)%KOA)%Ma * Scell%MDAtoms(:)%accel(3)), &
-   !matter%Atoms(Scell%MDatoms(1)%KOA)%Ma * Scell%MDAtoms(1)%accel(3)
-
-   do i = 1, Nat  ! for all atoms
-      ! Convert acceleration into SI units:
-      acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20 ! [A/fs^2] -> [m/s^2]
-      Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma ! atomic mass [kg]
-
-      ! Get the force:
-      F(:) = Mass * acc(:) ! [N]
-      ! Get the coordinate relative to the center of the supercell:
-      r(:) = position_relative_to_center(Scell, i) ! below
-      r(:) = r(:) * 1.0d-10   ! [A] -> [m]
-
-      ! Construct the potential energy contribution:
-      Pot = SUM(F(:) * r(:)) / g_e ! [eV]
-
-      ! Total potential contribution to get the temperature
-      Pot_tot = Pot_tot + Pot
-      !Pot_r(:) = Pot_r(:) + (F(:) * r(:)) / g_e ! [eV]
-
-!       if (i == 1) then
-!          print*, i, Scell%MDAtoms(i)%V0, Scell%MDAtoms(i)%V, Scell%MDAtoms(i)%V0 + Scell%MDAtoms(i)%accel(:) * 0.5d0, Scell%MDAtoms(i)%V0 - Scell%MDAtoms(i)%accel(:) * 0.5d0
-!          print*, 'a', Scell%MDAtoms(i)%accel(:), Scell%MDAtoms(i)%A(:)
-!       endif
+   ! Kinetic temperatures:
+   Ekin(:) = 0.0d0   ! to start with
+   prefac = 1d10/g_e ! to get [eV]
+   do i = 1, Nat
+      Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma
+      Ekin(:) = Ekin(:) + 0.5d0*Mass*Scell%MDatoms(i)%V(:)*Scell%MDatoms(i)%V(:)
    enddo
+   Ekin(:) = Ekin(:) * prefac / dble(Nat)    ! [eV]
+   Scell%Ta_r_var(1:3) = 2.0d0 * Ekin(1:3) * g_kb     ! [K]
 
-   ! Configurational temperature from the equipartition theorem as potential energy per atom per degree of freedom:
-   Ta = Pot_tot / (3.0d0 * dble(Nat))   ! [eV]
-   Ta = Ta * g_kb    ! [eV] -> {K}
+   ! Configurational temperatures:
+   prefac = (Scell%V * 1e-30) / dble(Nat) / g_e * g_kb  ! to get temperature in [K]
+   Scell%Ta_r_var(4) = -Scell%Pot_Stress(1,1) * prefac   ! X
+   Scell%Ta_r_var(5) = -Scell%Pot_Stress(2,2) * prefac   ! Y
+   Scell%Ta_r_var(6) = -Scell%Pot_Stress(3,3) * prefac   ! Z
 
-!    print*, 'P' ,Pot_tot, SUM(Pot_r(:)), Pot_r(:)
+   nullify(Mass)
+end subroutine partial_temperatures
+
+
+function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic) result(Ta) ! works for non-periodic boundaries
+   real(8) :: Ta  ! [K] configurational temperature
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(solid), intent(in), target :: matter	! materil parameters
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   logical, intent(in), optional :: non_periodic   ! if we want to use nonperiodic expression
+   !------------------------------
+   integer :: Nat, i
+   real(8) :: F(3), acc(3), r(3), Pot, Pot_r(3), Pot_tot
+   real(8), pointer :: Mass
+   logical :: do_nonper
+
+   if (present(non_periodic)) then
+      do_nonper = non_periodic
+   else
+      do_nonper = .false.  ! by default, use periodic definition
+   endif
+
+   Nat = size(Scell%MDAtoms)  ! number of atoms
+
+   if ( .not.do_nonper ) then ! periodic boundaries are used
+     ! Get it from the pressure, calculated for the periodic boundaries:
+     Ta = -Scell%Pot_Pressure * (Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+
+   else ! for nonperiodic systems (it is more straightforward):
+      Pot_tot = 0.0d0   ! to start with
+      do i = 1, Nat  ! for all atoms
+         ! Convert acceleration into SI units:
+         acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20 ! [A/fs^2] -> [m/s^2]
+         Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma ! atomic mass [kg]
+
+         ! Get the force:
+         F(:) = Mass * acc(:) ! [N]
+         ! Get the coordinate relative to the center of the supercell:
+         r(:) = position_relative_to_center(Scell, i) ! below
+         r(:) = r(:) * 1.0d-10   ! [A] -> [m]
+
+         ! Construct the potential energy contribution:
+         Pot = SUM(F(:) * r(:)) / g_e ! [eV]
+
+         ! Total potential contribution to get the temperature
+         Pot_tot = Pot_tot + Pot
+      enddo
+      ! Configurational temperature from the equipartition theorem as potential energy per atom per degree of freedom:
+      Ta = -Pot_tot / (3.0d0 * dble(Nat))   ! [eV]
+   endif
+
+   ! Convert [eV] -> {K}:
+   Ta = Ta * g_kb
 end function get_temperature_from_equipartition
 
 
@@ -557,7 +588,6 @@ function position_relative_to_center(Scell, i_at) result(Rrc)
 
    ! relative coords of the center of the supercell:
    Sj(:) = 0.5d0
-   !Sj(:) = 0.0d0  ! test
    ! Shortest distance to the center in a cell with periodic boundaries:
    call shortest_distance_to_point(Scell, i_at, Sj, a_r, x1=Rrc(1), y1=Rrc(2), z1=Rrc(3))   ! below
 end function position_relative_to_center
@@ -1817,15 +1847,22 @@ subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update
       Scell(NSC)%MDatoms(k)%SV(:) = Scell(NSC)%MDatoms(k)%SV0(:) + Fors_s(:,k)*numpar%halfdt !dt/2.0e0
 
       ! Save absolute acceleration:
-      if (ind == 1) then
-         call accelerations_rel_to_abs(Scell(NSC), Fors_s(:,k), temp_acc(:))   ! below
-         Scell(NSC)%MDatoms(k)%accel(:) = Scell(NSC)%MDatoms(k)%accel(:) + temp_acc(:)
-      else
-         call accelerations_rel_to_abs(Scell(NSC), Fors_s(:,k), Scell(NSC)%MDatoms(k)%accel(:))   ! below
-      endif
+      call accelerations_rel_to_abs(Scell(NSC), Fors_s(:,k), temp_acc(:))   ! below (tested, works)
+      Scell(NSC)%MDatoms(k)%accel(:) = Scell(NSC)%MDatoms(k)%accel(:) + temp_acc(:) * 0.5d0
+
+!       if (k == 1) then ! test
+!          print*, 'V0= ', Scell(NSC)%MDatoms(k)%V0(:)
+!          print*, 'V1= ', Scell(NSC)%MDatoms(k)%V(:)
+!          print*, 'V2= ', Scell(NSC)%MDatoms(k)%V0(:) + Scell(NSC)%MDatoms(k)%accel(:)*numpar%dt
+!          print*, 'a = ', Scell(NSC)%MDatoms(k)%accel(:)
+!       endif
+
    enddo
    if (ind .EQ. 2) call check_periodic_boundaries(matter, Scell, NSC) ! and set the absolute coordinates out of the new relative ones
    call velocities_rel_to_abs(Scell, NSC) ! set the absolute velocities out of the new relative ones
+
+!    print*, 'V3= ', Scell(NSC)%MDatoms(1)%V(:)
+!    print*, '--------------------'
    
    nullify(Mass)
 end subroutine make_time_step_atoms_SC

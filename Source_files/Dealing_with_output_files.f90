@@ -47,7 +47,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 12.01.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 14.01.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1167,12 +1167,14 @@ subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic pa
    ! Atomic entropy:
    write(numpar%FN_Sa, '(es25.16, es25.16, es25.16, es25.16)') time, Scell(NSC)%Sa, Scell(NSC)%Sa_eq, Scell(NSC)%Sa_eq_num
 
-
    ! Atomic temperatures (various definitions):
-   ! kinetic; entropic; distributional
    if (numpar%print_Ta) then
+      ! kinetic; entropic; distributional; "potential"; configurational:
       write(numpar%FN_Ta, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, &
       Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(2), Scell(NSC)%Ta_var(3), Scell(NSC)%Ta_var(4), Scell(NSC)%Ta_var(5), Scell(NSC)%Ta_var(6)
+      ! partial temperatures along X,Y,Z:
+      write(numpar%FN_Ta_part, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, &
+      Scell(NSC)%Ta_r_var(1:6)
    endif
 end subroutine write_atomic_properties
 
@@ -1763,7 +1765,10 @@ subroutine close_output_files(Scell, numpar)
       close(numpar%FN_mu)
    endif
    close(numpar%FN_Sa)
-   if (numpar%print_Ta) close(numpar%FN_Ta)
+   if (numpar%print_Ta) then
+      close(numpar%FN_Ta)
+      close(numpar%FN_Ta_part)
+   endif
 
    if (allocated(Scell(1)%Displ)) then
       Nsiz = size(Scell(1)%Displ)   ! how many masks
@@ -1901,11 +1906,17 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    call create_file_header(numpar%FN_Sa, '#[fs]  [eV/K]   [eV/K]  [eV/K]')
 
    if (numpar%print_Ta) then
-      file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_tempereatures.dat'
+      file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta = FN
       call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr moments  pot   config')
       call create_file_header(numpar%FN_Ta, '#[fs]  [K]   [K]  [K]   [K]   [K]   [K]')
+
+      file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
+      numpar%FN_Ta_part = FN
+      call create_file_header(numpar%FN_Ta_part, '#Time kin:X   kin:Y  kin:Z conf:X   conf:Y   conf:Z')
+      call create_file_header(numpar%FN_Ta_part, '#[fs]  [K]   [K]  [K]   [K]   [K]   [K]')
    endif
 
    if (numpar%do_partial_thermal) then
@@ -2100,7 +2111,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    'OUTPUT_electron_temperatures.dat', &
    'OUTPUT_electron_chempotentials.dat', &
    'OUTPUT_atomic_entropy.dat', &
-   'OUTPUT_atomic_tempereatures.dat', &
+   'OUTPUT_atomic_temperatures.dat', &
+   'OUTPUT_atomic_temperatures_partial.dat', &
    file_sect_displ_short)  ! below
 
    ! clean up:
@@ -2118,7 +2130,7 @@ end subroutine create_file_header
 subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, &
 file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy, file_Te, file_mu, &
-file_atomic_entropy, file_atomic_tempereatures, file_sect_displ)
+file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -2144,7 +2156,8 @@ file_atomic_entropy, file_atomic_tempereatures, file_sect_displ)
    character(*), intent(in) :: file_Te ! electron temperatures
    character(*), intent(in) :: file_mu ! electron chem.potentials
    character(*), intent(in) :: file_atomic_entropy ! atomic entropy
-   character(*), intent(in) :: file_atomic_tempereatures ! atomic temperatures (various definitions)
+   character(*), intent(in) :: file_atomic_temperatures ! atomic temperatures (various definitions)
+   character(*), intent(in) :: file_atomic_temperatures_part  ! partial atomic temperatures (X, Y, Z)
    character(*), dimension(:), intent(in) :: file_sect_displ
    !----------------
    character(200) :: File_name, File_name2
@@ -2282,8 +2295,12 @@ file_atomic_entropy, file_atomic_tempereatures, file_sect_displ)
    ! Atomic temperatures (various definitions):
    if (numpar%print_Ta) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures'//trim(adjustl(sh_cmd))
-      call gnu_at_temperatures(File_name, file_atomic_tempereatures, t0, t_last, &
+      call gnu_at_temperatures(File_name, file_atomic_temperatures, t0, t_last, &
                'OUTPUT_atomic_temperatures.'//trim(adjustl(numpar%fig_extention))) ! below
+
+      File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial'//trim(adjustl(sh_cmd))
+      call gnu_at_temperatures_part(File_name, file_atomic_temperatures_part, t0, t_last, &
+               'OUTPUT_atomic_temperatures_partial.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
 
    ! Electron-ion coupling parameter:
@@ -2530,8 +2547,13 @@ file_atomic_entropy, file_atomic_tempereatures, file_sect_displ)
       if (numpar%print_Ta) then
          File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_CONVOLVED'//trim(adjustl(sh_cmd))
          call gnu_at_temperatures(File_name, &
-            trim(adjustl(file_atomic_tempereatures(1:len(trim(adjustl(file_atomic_tempereatures)))-4)))//'_CONVOLVED.dat', &
+            trim(adjustl(file_atomic_temperatures(1:len(trim(adjustl(file_atomic_temperatures)))-4)))//'_CONVOLVED.dat', &
             t0, t_last, 'OUTPUT_atomic_temperatures_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+         File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial_CONVOLVED'//trim(adjustl(sh_cmd))
+         call gnu_at_temperatures_part(File_name, &
+            trim(adjustl(file_atomic_temperatures_part(1:len(trim(adjustl(file_atomic_temperatures_part)))-4)))//'_CONVOLVED.dat', &
+            t0, t_last, 'OUTPUT_atomic_temperatures_partial.'//trim(adjustl(numpar%fig_extention))) ! below
       endif
 
       ! Electron-ion coupling parameter:
@@ -3645,18 +3667,56 @@ subroutine gnu_at_temperatures(File_name, file_Ta, t0, t_last, eps_name)
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lw LW title "Moments" ,\'
       !write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lw LW title "Potential" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:7 w l lw LW title "Configurational" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:2 w l lw LW title "Kinetic" '
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:2 w l lt rgb "black" lw LW title "Kinetic" '
    else ! It is linux
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:4 w l lw 1 dashtype 2 title \"Distributional\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:3 w l lw 1 dashtype 4 title \"Entropic\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lw \"$LW\" title \"Moments\" ,\'
       !write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lw \"$LW\" title \"Potential\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:7 w l lw \"$LW\" title \"Configurational\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:2 w l lw \"$LW\" title \"Kinetic\" '
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:2 w l lt rgb \"black\" lw \"$LW\" title \"Kinetic\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
 end subroutine gnu_at_temperatures
+
+
+
+subroutine gnu_at_temperatures_part(File_name, file_Ta, t0, t_last, eps_name)
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_Ta ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Atomic tempereature', &
+         'Time (fs)', 'Atomic temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 1)   ! module "Gnuplotting"
+
+   if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Ta)), '" u 1:2 w l lw LW dashtype 2 title "Kinetic: X" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:3 w l lw LW dashtype 4 title "Kinetic: Y" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:4 w l lw LW title "Kinetic: Z" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lw LW dashtype 2 title "Configurational: X" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lw LW dashtype 4 title "Configurational: Y" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:7 w l lt rgb "black" lw LW title "Configurational: Z" '
+   else ! It is linux
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:2 w l lw \"$LW\" dashtype 2 title \"Kinetic: X\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:3 w l lw \"$LW\" dashtype 4 title \"Kinetic: Y\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:4 w l lw \"$LW\" title \"Kinetic: Z\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lw \"$LW\" dashtype 2 title \"Configurational: X\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lw \"$LW\" dashtype 4 title \"Configurational: Y\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:7 w l lt rgb \"black\" lw \"$LW\" title \"Configurational: Z\" '
+   endif
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_at_temperatures_part
 
 
 
