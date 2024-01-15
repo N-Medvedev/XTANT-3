@@ -486,7 +486,11 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
       call temperature_from_moments(Scell(NSC), Scell(NSC)%Ta_var(4), E_shift) ! below
       ! 5) "potential" temperature was calculated above - not working without atomic potential DOS!
       ! 6) configurational temperature:
-      Scell(NSC)%Ta_var(6) = get_temperature_from_equipartition(Scell(NSC), matter, numpar) ! [K] below
+      if (ANY(numpar%r_periodic(:))) then
+         Scell(NSC)%Ta_var(6) = get_temperature_from_equipartition(Scell(NSC), matter, numpar) ! [K] below
+      else  ! use nonperiodic definition
+         Scell(NSC)%Ta_var(6) = get_temperature_from_equipartition(Scell(NSC), matter, numpar, non_periodic=.true.) ! [K] below
+      endif
       ! And partial temperatures along X, Y, Z:
       call partial_temperatures(Scell(NSC), matter, numpar)   ! below
    endif
@@ -575,7 +579,7 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
    endif
 
    ! Convert [eV] -> {K}:
-   Ta = Ta * g_kb
+   Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
 end function get_temperature_from_equipartition
 
 
