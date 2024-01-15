@@ -527,6 +527,8 @@ subroutine partial_temperatures(Scell, matter, numpar)
    Scell%Ta_r_var(5) = -Scell%Pot_Stress(2,2) * prefac   ! Y
    Scell%Ta_r_var(6) = -Scell%Pot_Stress(3,3) * prefac   ! Z
 
+   Scell%Ta_r_var(:) = abs(Scell%Ta_r_var(:))   ! ensure it is non-negative
+
    nullify(Mass)
 end subroutine partial_temperatures
 
