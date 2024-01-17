@@ -145,6 +145,8 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%redo_MFP = .false.     ! no need to recalculate mean free paths by default
    numpar%print_MFP = .false.    ! no need to printout mean free paths by default
    numpar%print_Ta = .false.  ! no need in various atomic temperature definitions
+   numpar%ind_starting_V = 2  ! by default, set Maxwellian starting velocities
+   numpar%vel_from_file = .false.   ! velosities are not read from file
    numpar%N_basis_size = 0    ! DFTB, BOP or 3TB basis set default (0=s, 1=sp3, 2=sp3d5)
    numpar%do_atoms = .true.   ! Atoms are allowed to move
    matter%W_PR = 25.5d0    ! Parinello-Rahman super-vell mass coefficient
@@ -6562,6 +6564,12 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
    read_var = 0.0d0     ! unused variable in this case
 
    select case (trim(adjustl(string)))
+   !----------------------------------
+   case ('Set_V1', 'set_V1', 'set_v1')
+      ! Printout various definitions of atomic temperature:
+      numpar%ind_starting_V = 1  ! linear
+
+
    !----------------------------------
    case ('print_Ta', 'Print_Ta', 'PRINT_TA', 'PRINT_Ta')
       ! Printout various definitions of atomic temperature:

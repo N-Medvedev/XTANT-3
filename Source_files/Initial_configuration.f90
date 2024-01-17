@@ -554,6 +554,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
             ! Save the flag for output:
             numpar%save_files_used = 2  ! path coordinate
+            numpar%vel_from_file = .true. ! velociteis read from file
 
             inquire(file=trim(adjustl(File_name_S1)),opened=file_opened)
             if (file_opened) close (FN3)
@@ -579,6 +580,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             Ta = Ta*g_kb	! [eV] -> [K]
 
             if (max(Ta,Scell(i)%Ta)/min(Ta+1d-6,Scell(i)%Ta+1d-6) > 1.5d0) then ! if given temperature is too different from the initial one
+               numpar%vel_from_file = .false. ! velociteis read from file overwritten by set distribution
                ! Set initial velocities according to the given input temperature:
                call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
             endif
@@ -591,6 +593,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
             ! Save the flag for output:
             numpar%save_files_used = 1  ! Save files read
+            numpar%vel_from_file = .true. ! velociteis read from file
 
             open(UNIT=FN2, FILE = trim(adjustl(File_name2)), status = 'old', action='read')
             call get_initial_atomic_coord(FN2, File_name2, Scell, i, 1, matter, numpar, Err) ! below
@@ -607,6 +610,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             Ta = Ta*g_kb	! [eV] -> [K]
 
             if (max(Ta,Scell(i)%Ta)/min(Ta+1d-6,Scell(i)%Ta+1d-6) > 1.5d0) then ! if given temperature is too different from the initial one
+               numpar%vel_from_file = .false. ! velociteis read from file overwritten by set distribution
                ! Set initial velocities according to the given input temperature:
                call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate)  ! below
             endif
@@ -1981,7 +1985,7 @@ subroutine set_initial_velocities(matter, Scell, NSC, atoms, numpar, allow_rotat
       !print*, 'Mass', i, Scell(NSC)%MDatoms(i)%KOA
       Mass = matter%Atoms(Scell(NSC)%MDatoms(i)%KOA)%Ma
       ! Get initial velocity
-      call Get_random_velocity(Scell(NSC)%TaeV, Mass, atoms(i)%V(1), atoms(i)%V(2), atoms(i)%V(3), 2) ! module "Atomic_tools"
+      call Get_random_velocity(Scell(NSC)%TaeV, Mass, atoms(i)%V(1), atoms(i)%V(2), atoms(i)%V(3), numpar%ind_starting_V) ! module "Atomic_tools"
    enddo
 
    ! Set initial velocities for the super-cell vectors:

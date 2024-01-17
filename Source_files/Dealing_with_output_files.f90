@@ -47,7 +47,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 14.01.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 17.01.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -5373,10 +5373,40 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(text3, '(i10)') matter%cell_z
          write(print_to,'(a,a,a,a,a,a)') ' Super-cell size in unit-cells: ', &
             trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+
+         ! Which initial velocity distribution:
+         select case (numpar%ind_starting_V)
+         case default
+            write(print_to,'(a)') ' Maxwellian distribution of initial velocities is used'
+         case (1)
+            write(print_to,'(a)') ' Uniform distribution of initial velocities is used'
+         end select
       case (1)  ! save files are used
          write(print_to,'(a)') ' Super-cell parameters are set in SAVE files'
+         if (numpar%vel_from_file) then
+            write(print_to,'(a)') ' Atomic velocities read from the file'
+         else
+            ! Which initial velocity distribution:
+            select case (numpar%ind_starting_V)
+            case default
+               write(print_to,'(a)') ' Maxwellian distribution of initial velocities is used'
+            case (1)
+               write(print_to,'(a)') ' Uniform distribution of initial velocities is used'
+            end select
+         endif
       case (2)  ! path coordinate
          write(print_to,'(a)') ' Coordinate path calculations are performed, defined by PATH files'
+         if (numpar%vel_from_file) then
+            write(print_to,'(a)') ' Atomic velocities read from the file'
+         else
+            ! Which initial velocity distribution:
+            select case (numpar%ind_starting_V)
+            case default
+               write(print_to,'(a)') ' Maxwellian distribution of initial velocities is used'
+            case (1)
+               write(print_to,'(a)') ' Uniform distribution of initial velocities is used'
+            end select
+         endif
       endselect
 
       write(text1, '(i10)') Scell(1)%Na

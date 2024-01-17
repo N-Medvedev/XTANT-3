@@ -881,6 +881,8 @@ type Numerics_param
    character(100) :: MD_step_grid_file   ! filename with MD time step grid
    !logical, dimension(:), allocatable :: Atomic_masks ! user-defined masks for atomic analysis
    logical :: print_Ta ! flag for various atomic temperature definitions
+   integer :: ind_starting_V  ! index to set starting velocity distribution: 1=linear; 2=Maxwellian
+   logical :: vel_from_file   ! index to mark whether velocities were read from a file or set
    !-----------------
    real(8), dimension(:), allocatable :: At_bath_reset_grid   ! grid, when to change the Atomic bath parameters
    real(8), dimension(:), allocatable :: At_bath_grid_Ta         ! Atomic bath temperatures array [K]
