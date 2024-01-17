@@ -5380,6 +5380,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
             write(print_to,'(a)') ' Maxwellian distribution of initial velocities is used'
          case (1)
             write(print_to,'(a)') ' Uniform distribution of initial velocities is used'
+         case (0)
+            write(print_to,'(a)') ' Delta distribution of initial velocities is used'
          end select
       case (1)  ! save files are used
          write(print_to,'(a)') ' Super-cell parameters are set in SAVE files'
@@ -5392,6 +5394,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
                write(print_to,'(a)') ' Maxwellian distribution of initial velocities is used'
             case (1)
                write(print_to,'(a)') ' Uniform distribution of initial velocities is used'
+            case (0)
+               write(print_to,'(a)') ' Delta distribution of initial velocities is used'
             end select
          endif
       case (2)  ! path coordinate
@@ -5405,6 +5409,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
                write(print_to,'(a)') ' Maxwellian distribution of initial velocities is used'
             case (1)
                write(print_to,'(a)') ' Uniform distribution of initial velocities is used'
+            case (0)
+               write(print_to,'(a)') ' Delta distribution of initial velocities is used'
             end select
          endif
       endselect

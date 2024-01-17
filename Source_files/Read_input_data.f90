@@ -6565,10 +6565,15 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
 
    select case (trim(adjustl(string)))
    !----------------------------------
+   case ('Set_V2', 'set_V2', 'set_v2')
+      ! Choice of initial atomic velocity distribution:
+      numpar%ind_starting_V = 2  ! Maxwell
    case ('Set_V1', 'set_V1', 'set_v1')
-      ! Printout various definitions of atomic temperature:
+      ! Choice of initial atomic velocity distribution:
       numpar%ind_starting_V = 1  ! linear
-
+   case ('Set_V0', 'set_V0', 'set_v0')
+      ! Choice of initial atomic velocity distribution:
+      numpar%ind_starting_V = 0  ! equal
 
    !----------------------------------
    case ('print_Ta', 'Print_Ta', 'PRINT_TA', 'PRINT_Ta')

@@ -259,12 +259,51 @@ subroutine Get_random_velocity(T, Mass, Vx, Vy, Vz, ind)
    real(8), intent(out) :: Vx, Vy, Vz ! velocities [A/fs]
    integer, intent(in) :: ind ! which distribution to use
    select case (ind)
-   case (1) ! linear distribution of random values
-      call Random_RN(T, Mass, Vx, Vy, Vz)
-   case (2) ! Maxwellian distribution
-      call Maxwell_RN(T, Mass, Vx, vy, Vz)
+   case (0) ! all equal
+      call Mean_veloity_RN(T, Mass, Vx, Vy, Vz) ! below
+   case (1) ! uniform distribution of random values
+      call Random_RN(T, Mass, Vx, Vy, Vz) ! below
+   case default ! Maxwellian distribution
+      call Maxwell_RN(T, Mass, Vx, vy, Vz)   ! below
    end select
 end subroutine Get_random_velocity
+
+
+! Set velosity equal to the mean square one:
+subroutine Mean_veloity_RN(T, Mass, Vx, Vy, Vz)
+   real(8), intent(in) :: T ! [eV] Temperature to set the velocities accordingly
+   real(8), intent(in) :: Mass ! [kg] mass of the atom
+   real(8), intent(out) :: Vx, Vy, Vz ! velocities [A/fs]
+   real(8) :: RN(6) ! random numbers
+   real(8) :: V, Pi2, theta, phi, cos_phi
+   integer :: i
+
+   ! Absolute value:
+   V = sqrt(2.0d0*3.0d0*T*g_e/Mass)*1d10/1d15 ! [A/fs] mean square velocity corresponding to the given temperature
+
+   ! Set its direction uniformly:
+   do i = 1,size(RN)
+      call random_number(RN(i))
+   enddo
+
+   Pi2 = g_Pi/2.0d0
+   theta = 2.0d0*g_Pi*RN(4) ! angle
+   phi = -Pi2 + g_Pi*RN(5)  ! second angle
+   cos_phi = cos(phi)
+   if (RN(6) <= 0.33) then
+      Vx = V*cos_phi*cos(theta)
+      Vy = V*cos_phi*sin(theta)
+      Vz = V*sin(phi)
+   elseif(RN(6) <=0.67) then
+      Vz = V*cos_phi*cos(theta)
+      Vx = V*cos_phi*sin(theta)
+      Vy = V*sin(phi)
+   else
+      Vy = V*cos_phi*cos(theta)
+      Vz = V*cos_phi*sin(theta)
+      Vx = V*sin(phi)
+   endif
+end subroutine Mean_veloity_RN
 
 
 ! Sample according to Maxwell distribution:
