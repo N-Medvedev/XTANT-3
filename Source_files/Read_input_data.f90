@@ -145,6 +145,8 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%redo_MFP = .false.     ! no need to recalculate mean free paths by default
    numpar%print_MFP = .false.    ! no need to printout mean free paths by default
    numpar%print_Ta = .false.  ! no need in various atomic temperature definitions
+   numpar%ind_starting_V = 2  ! by default, set Maxwellian starting velocities
+   numpar%vel_from_file = .false.   ! velosities are not read from file
    numpar%N_basis_size = 0    ! DFTB, BOP or 3TB basis set default (0=s, 1=sp3, 2=sp3d5)
    numpar%do_atoms = .true.   ! Atoms are allowed to move
    matter%W_PR = 25.5d0    ! Parinello-Rahman super-vell mass coefficient
@@ -5564,23 +5566,30 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
    allocate(Scell%fa(Nsiz), source = 0.0d0)
    allocate(Scell%fa_eq(Nsiz), source = 0.0d0)
    allocate(Scell%fa_pot(Nsiz), source = 0.0d0)
+   allocate(Scell%fa_tot(Nsiz), source = 0.0d0)
    allocate(Scell%fa_eq_pot(Nsiz), source = 0.0d0)
    allocate(Scell%Ea_grid(Nsiz))
+   allocate(Scell%Ea_pot_grid(Nsiz))
+   allocate(Scell%Ea_tot_grid(Nsiz))
    ! Set the grid:
    Scell%Ea_grid(1) = 0.0d0 ! starting point
    do i = 2, Nsiz
       Scell%Ea_grid(i) = Scell%Ea_grid(i-1) + dEa
       !print*, i, Scell%Ea_grid(i)
    enddo ! i
+   Scell%Ea_pot_grid(:) = Scell%Ea_grid(:) - 10.0d0   ! to start with
+   Scell%Ea_tot_grid(:) = Scell%Ea_grid(:) - 10.0d0   ! to start with
 
    ! For printout:
    Nsiz = INT(Ea_max_out/dEa_out)+1
    allocate(Scell%fa_out(Nsiz), source = 0.0d0)
    allocate(Scell%fa_eq_out(Nsiz), source = 0.0d0)
    allocate(Scell%fa_pot_out(Nsiz), source = 0.0d0)
+   allocate(Scell%fa_tot_out(Nsiz), source = 0.0d0)
    allocate(Scell%fa_eq_pot_out(Nsiz), source = 0.0d0)
    allocate(Scell%Ea_grid_out(Nsiz))
    allocate(Scell%Ea_pot_grid_out(Nsiz))
+   allocate(Scell%Ea_tot_grid_out(Nsiz))
    ! Set the grid:
    Scell%Ea_grid_out(1) = 0.0d0 ! starting point
    do i = 2, Nsiz
@@ -5588,6 +5597,7 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
       !print*, i, Scell%Ea_grid_out(i)
    enddo ! i
    Scell%Ea_pot_grid_out = Scell%Ea_grid_out - 10.0d0  ! to start with
+   Scell%Ea_tot_grid_out = Scell%Ea_grid_out - 10.0d0  ! to start with
    !pause 'interprete_distribution_input'
 end subroutine interprete_distribution_input
 
@@ -6562,6 +6572,17 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
    read_var = 0.0d0     ! unused variable in this case
 
    select case (trim(adjustl(string)))
+   !----------------------------------
+   case ('Set_V2', 'set_V2', 'set_v2')
+      ! Choice of initial atomic velocity distribution:
+      numpar%ind_starting_V = 2  ! Maxwell
+   case ('Set_V1', 'set_V1', 'set_v1')
+      ! Choice of initial atomic velocity distribution:
+      numpar%ind_starting_V = 1  ! linear
+   case ('Set_V0', 'set_V0', 'set_v0')
+      ! Choice of initial atomic velocity distribution:
+      numpar%ind_starting_V = 0  ! equal
+
    !----------------------------------
    case ('print_Ta', 'Print_Ta', 'PRINT_TA', 'PRINT_Ta')
       ! Printout various definitions of atomic temperature:
