@@ -405,6 +405,7 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    ! Distribute atoms:
    Scell(NSC)%fa = 0.0d0   ! to start with
    Scell(NSC)%fa_pot = 0.0d0   ! to start with
+   Scell(NSC)%fa_tot = 0.0d0   ! to start with
 
    ! Get the kinetic energies of atoms:
    call Atomic_kinetic_energies(Scell, NSC, matter)   ! below
@@ -417,6 +418,7 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    if (numpar%save_fa) then
       Scell(NSC)%Pot_distr_E_shift = E_shift ! save the shift of the potential energy
       Scell(NSC)%Ea_pot_grid_out(:) = Scell(NSC)%Ea_grid_out(:) + minval(Scell(NSC)%MDAtoms(:)%Epot)
+      Scell(NSC)%Ea_tot_grid_out(:) = Scell(NSC)%Ea_grid_out(:) + minval(Scell(NSC)%MDAtoms(:)%Epot+Scell(NSC)%MDAtoms(:)%Ekin)
    endif
 
    ! Construct the atomic distribution:
@@ -428,42 +430,71 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
          call Find_in_array_monoton(Scell(NSC)%Ea_grid, Scell(NSC)%MDAtoms(i)%Ekin, j) ! module "Little_subroutines"
          if (j > 1) j = j - 1
       endif
-
       if (j == 1) then
          dE = Scell(NSC)%Ea_grid(j+1) - Scell(NSC)%Ea_grid(j)
       else
          dE = Scell(NSC)%Ea_grid(j) - Scell(NSC)%Ea_grid(j-1)
       endif
       dE = max(dE, 1.0d-6) ! ensure it is finite
-
       Scell(NSC)%fa(j) = Scell(NSC)%fa(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
 
       ! 2) for potential energies:
       if (numpar%save_fa) then
-         if (Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_grid(Nsiz)+E_shift) then  ! above the max grid point
+         if (Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_pot_grid(Nsiz)) then  ! above the max grid point
             j = Nsiz
          else ! inside the grid
-            call Find_in_array_monoton(Scell(NSC)%Ea_grid+E_shift, Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
+            call Find_in_array_monoton(Scell(NSC)%Ea_pot_grid, Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
             if (j > 1) j = j - 1
          endif
+         if (j == 1) then
+            dE = Scell(NSC)%Ea_pot_grid(j+1) - Scell(NSC)%Ea_pot_grid(j)
+         else
+            dE = Scell(NSC)%Ea_pot_grid(j) - Scell(NSC)%Ea_pot_grid(j-1)
+         endif
+         dE = max(dE, 1.0d-6) ! ensure it is finite
          Scell(NSC)%fa_pot(j) = Scell(NSC)%fa_pot(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
       endif
+
+      ! 3) for total energies:
+      if (numpar%save_fa) then
+         if (Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_tot_grid(Nsiz)) then  ! above the max grid point
+            j = Nsiz
+         else ! inside the grid
+            call Find_in_array_monoton(Scell(NSC)%Ea_tot_grid, Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
+            if (j > 1) j = j - 1
+         endif
+         if (j == 1) then
+            dE = Scell(NSC)%Ea_tot_grid(j+1) - Scell(NSC)%Ea_tot_grid(j)
+         else
+            dE = Scell(NSC)%Ea_tot_grid(j) - Scell(NSC)%Ea_tot_grid(j-1)
+         endif
+         dE = max(dE, 1.0d-6) ! ensure it is finite
+         Scell(NSC)%fa_tot(j) = Scell(NSC)%fa_tot(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
+      endif
+
       !print*, i, j, Scell(NSC)%MDAtoms(i)%Epot, Scell(NSC)%Ea_grid(j)+E_shift, Scell(NSC)%Ea_grid(j+1)+E_shift
    enddo ! i
 
    ! Normalize it to the number of atoms:
    Scell(NSC)%fa = Scell(NSC)%fa/dble(Nat)
    Scell(NSC)%fa_pot = Scell(NSC)%fa_pot/dble(Nat)
+   Scell(NSC)%fa_tot = Scell(NSC)%fa_tot/dble(Nat)
+
+!    do i = 1, size(Scell(NSC)%fa_pot)
+!       print*, i, Scell(NSC)%Ea_pot_grid(i), Scell(NSC)%fa_pot(i)
+!    enddo
+
 
    ! For printout:
+   Nsiz = size(Scell(NSC)%Ea_grid_out) ! size of the energy grid
+
+   ! Distribute atoms:
+   Scell(NSC)%fa_out = 0.0d0   ! to start with
+   Scell(NSC)%fa_pot_out = 0.0d0   ! to start with
+   Scell(NSC)%fa_tot_out = 0.0d0   ! to start with
+
+   ! Construct the atomic distribution:
    if (numpar%save_fa) then
-      Nsiz = size(Scell(NSC)%Ea_grid_out) ! size of the energy grid
-
-      ! Distribute atoms:
-      Scell(NSC)%fa_out = 0.0d0   ! to start with
-      Scell(NSC)%fa_pot_out = 0.0d0   ! to start with
-
-      ! Construct the atomic distribution:
       do i = 1, Nat
          ! 1) Kinetic energies:
          if (Scell(NSC)%MDAtoms(i)%Ekin >= Scell(NSC)%Ea_grid_out(Nsiz)) then  ! above the max grid point
@@ -489,12 +520,20 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
             if (j > 1) j = j - 1
          endif
          Scell(NSC)%fa_pot_out(j) = Scell(NSC)%fa_pot_out(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
-      enddo ! i
 
+         ! 3) for total energies:
+         if (Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_tot_grid_out(Nsiz)) then  ! above the max grid point
+            j = Nsiz
+         else ! inside the grid
+            call Find_in_array_monoton(Scell(NSC)%Ea_tot_grid_out, Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
+            if (j > 1) j = j - 1
+         endif
+         Scell(NSC)%fa_tot_out(j) = Scell(NSC)%fa_tot_out(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
+      enddo ! i
       ! Normalize it to the number of atoms:
       Scell(NSC)%fa_out = Scell(NSC)%fa_out/dble(Nat)
       Scell(NSC)%fa_pot_out = Scell(NSC)%fa_pot_out/dble(Nat)
-
+      Scell(NSC)%fa_tot_out = Scell(NSC)%fa_tot_out/dble(Nat)
    endif ! (numpar%save_fa)
 
    ! Also get the equivalent Maxwell distribution:
@@ -505,13 +544,19 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
 
    !--------------------
    ! Get atomic entropy:
-   ! 1) Kinetic contribution
+   ! 1) Kinetic contribution:
    call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa, Scell(NSC)%Sa)  ! below
    ! And equivalent (equilibrium) one:
    ! numerically calculated:
    call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa_eq, Scell(NSC)%Sa_eq_num)  ! below
    ! and analytical maxwell:
    Scell(NSC)%Sa_eq = Maxwell_entropy(Scell(NSC)%TaeV)   ! below
+   ! 2) Configurational (potential energy) contribution:
+   call atomic_entropy(Scell(NSC)%Ea_pot_grid, Scell(NSC)%fa_pot, Scell(NSC)%Sa_conf)  ! below
+   ! 3) Total (kinetic+potential energy) contribution:
+   call atomic_entropy(Scell(NSC)%Ea_tot_grid, Scell(NSC)%fa_tot, Scell(NSC)%Sa_tot)  ! below
+
+   !print*, Scell(NSC)%Sa, Scell(NSC)%Sa_conf, Scell(NSC)%Sa + Scell(NSC)%Sa_conf, Scell(NSC)%Sa_tot
 
    ! Various definitions of atomic temperatures:
    if (numpar%print_Ta) then
@@ -800,19 +845,41 @@ subroutine update_atomic_distribution_grid(Scell, NSC)
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of supercell
    !------------------
-   real(8) :: Emax, Ea_max, dEa
+   real(8) :: Emin, Emax, Ea_max, dEa, E_max_kin
    integer :: Nsiz, i
 
+   ! Kinetic energy distribution:
    Emax = maxval(Scell(NSC)%MDAtoms(:)%Ekin)
-
-   Ea_max = Emax*3.0d0
+   E_max_kin = Emax  ! save for use below
+   Ea_max = max(Emax*1.5d0,0.1d0)   ! not less than 0.1 eV of the total grid interval
    Nsiz = size(Scell(NSC)%Ea_grid)
    dEa = Ea_max/dble(Nsiz)
    ! Reset the grid:
    Scell(NSC)%Ea_grid(1) = 0.0d0 ! starting point
    do i = 2, Nsiz
       Scell(NSC)%Ea_grid(i) = Scell(NSC)%Ea_grid(i-1) + dEa
-      !print*, i, Scell%Ea_grid(i)
+   enddo ! i
+
+   ! Potential energy distribution:
+   Emin = minval(Scell(NSC)%MDAtoms(:)%Epot)
+   Emax = max( maxval(Scell(NSC)%MDAtoms(:)%Epot)+0.5d0, Emin+0.1d0 )   ! not less than 0.1 eV of the total grid interval
+   Nsiz = size(Scell(NSC)%Ea_pot_grid)
+   dEa = (Emax - Emin) / dble(Nsiz)
+   ! Reset the grid:
+   Scell(NSC)%Ea_pot_grid(1) = Emin ! starting point
+   do i = 2, Nsiz
+      Scell(NSC)%Ea_pot_grid(i) = Scell(NSC)%Ea_pot_grid(i-1) + dEa
+   enddo ! i
+
+   ! Total energy distribution:
+   Emin = minval(Scell(NSC)%MDAtoms(:)%Epot)
+   Emax = max( maxval(Scell(NSC)%MDAtoms(:)%Epot) + E_max_kin + 0.1d0, Emin+0.1d0 )   ! not less than 0.1 eV of the total grid interval
+   Nsiz = size(Scell(NSC)%Ea_tot_grid)
+   dEa = (Emax - Emin) / dble(Nsiz)
+   ! Reset the grid:
+   Scell(NSC)%Ea_tot_grid(1) = Emin ! starting point
+   do i = 2, Nsiz
+      Scell(NSC)%Ea_tot_grid(i) = Scell(NSC)%Ea_tot_grid(i-1) + dEa
    enddo ! i
    !pause 'update_atomic_distribution_grid'
 end subroutine update_atomic_distribution_grid

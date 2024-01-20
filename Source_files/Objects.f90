@@ -664,9 +664,12 @@ type Super_cell
    ! Atomic distribution function:
    real(8), dimension(:), allocatable :: Ea_grid, Ea_grid_out   ! energy grid for atomic distribution
    real(8), dimension(:), allocatable :: fa, fa_eq, fa_out, fa_eq_out ! atomic distribution and equivalent Maxwell distribution
-   real(8), dimension(:), allocatable :: Ea_pot_grid_out   ! energy grid for atomic distribution
+   real(8), dimension(:), allocatable :: Ea_pot_grid, Ea_pot_grid_out   ! energy grid for atomic distribution
    real(8), dimension(:), allocatable :: fa_pot, fa_eq_pot, fa_pot_out, fa_eq_pot_out ! atomic distribution of potential energies
+   real(8), dimension(:), allocatable :: Ea_tot_grid, Ea_tot_grid_out   ! total-energy grid for atomic distribution
+   real(8), dimension(:), allocatable :: fa_tot, fa_tot_out    ! atomic distribution of total energies
    real(8) :: Sa, Sa_eq, Sa_eq_num  ! atomic entropy [K/eV], and equivalent equilibrium entropy (analytical & numerically calculated)
+   real(8) :: Sa_conf, Sa_tot   ! configurational and total atomic entropy [K/eV]
    real(8) :: Pot_distr_E_shift  ! [eV] shift of the distribution
    ! Separate for VB and CB, if needed:
    real(8) :: Ne_low_CB, Ne_low_VB, El_low_CB, El_low_VB ! number and energy of electrons in VB and CB
@@ -940,7 +943,7 @@ type Numerics_param
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
-   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part
+   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot
    integer, dimension(:), allocatable :: FN_displacements
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model

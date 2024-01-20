@@ -137,6 +137,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
          call save_atomic_distribution(numpar%FN_fa, numpar, Scell(1), time, Scell(1)%Ea_grid_out, Scell(1)%fa_out, Scell(1)%fa_eq_out)
          call save_atomic_distribution(numpar%FN_fa_pot, numpar, Scell(1), time, Scell(1)%Ea_pot_grid_out, &
                                           Scell(1)%fa_pot_out, Scell(1)%fa_eq_pot_out)
+         call save_atomic_distribution(numpar%FN_fa_tot, numpar, Scell(1), time, Scell(1)%Ea_tot_grid_out, Scell(1)%fa_tot_out)
       endif
 
 
@@ -613,7 +614,7 @@ subroutine convolve_output(Scell, numpar)
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             if (file_exist) then
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
-               call convolution(FN, Scell(i)%eps%tau) ! atomic entropy
+               call convolution(FN, Scell(i)%eps%tau) ! atomic temperature
                close(FN)
             endif
          endif
@@ -882,11 +883,22 @@ subroutine save_atomic_distribution(FN, numpar, Scell, tim, Ea_grid, fa, fa_eq)
    real(8), intent(in) :: tim
    real(8), dimension(:), intent(in) :: Ea_grid
    real(8), dimension(:), intent(in) :: fa
-   real(8), dimension(:), allocatable, intent(in) :: fa_eq
+   real(8), dimension(:), allocatable, intent(in), optional :: fa_eq
    integer i, j, k
+   logical :: there_is_eq
+
+   if (present(fa_eq)) then
+      if (allocated(fa_eq)) then ! there is equivalent-temperature Maxwell distribution
+         there_is_eq = .true.
+      else
+         there_is_eq = .false.
+      endif
+   else
+      there_is_eq = .false.
+   endif
 
    write(FN,'(a,f25.16)') '#', tim
-   if (allocated(fa_eq)) then ! there is equivalent-temperature Maxwell distribution
+   if (there_is_eq) then ! there is equivalent-temperature Maxwell distribution
       do i = 1, size(fa)
          write(FN,'(f25.16,f25.16,f25.16)') Ea_grid(i), fa(i), fa_eq(i)
       enddo
@@ -1165,7 +1177,8 @@ subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic pa
    !------------------------------
 
    ! Atomic entropy:
-   write(numpar%FN_Sa, '(es25.16, es25.16, es25.16, es25.16)') time, Scell(NSC)%Sa, Scell(NSC)%Sa_eq, Scell(NSC)%Sa_eq_num
+   write(numpar%FN_Sa, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, Scell(NSC)%Sa, Scell(NSC)%Sa_eq, &
+      Scell(NSC)%Sa_eq_num, Scell(NSC)%Sa_conf, Scell(NSC)%Sa_tot
 
    ! Atomic temperatures (various definitions):
    if (numpar%print_Ta) then
@@ -1753,6 +1766,7 @@ subroutine close_output_files(Scell, numpar)
    if (numpar%save_fa) then
       close(numpar%FN_fa)
       close(numpar%FN_fa_pot)
+      close(numpar%FN_fa_tot)
    endif
    if (numpar%save_fe)  close(numpar%FN_fe)
    if (numpar%save_fe_grid)  close(numpar%FN_fe_on_grid)
@@ -1902,8 +1916,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    file_atomic_entropy = trim(adjustl(file_path))//'OUTPUT_atomic_entropy.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_entropy)))
    numpar%FN_Sa = FN
-   call create_file_header(numpar%FN_Sa, '#Time Sa  Sa_eq   Sa_eq_num')
-   call create_file_header(numpar%FN_Sa, '#[fs]  [eV/K]   [eV/K]  [eV/K]')
+   call create_file_header(numpar%FN_Sa, '#Time Sa  Sa_eq   Sa_eq_num   Sa_conf  Sa_tot')
+   call create_file_header(numpar%FN_Sa, '#[fs]  [eV/K]   [eV/K]  [eV/K]   [eV/K] [eV/K]')
 
    if (numpar%print_Ta) then
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures.dat'
@@ -2061,13 +2075,18 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    endif
 
    if (numpar%save_fa) then
+      ! kinetic energy distribution:
       file_fa = trim(adjustl(file_path))//'OUTPUT_atomic_distribution.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_fa)))
       numpar%FN_fa = FN
-      ! and potential energy distribution:
+      ! potential energy distribution:
       file_fa = trim(adjustl(file_path))//'OUTPUT_atomic_distribution_pot.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_fa)))
       numpar%FN_fa_pot = FN
+      ! and total energy distribution:
+      file_fa = trim(adjustl(file_path))//'OUTPUT_atomic_distribution_tot.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_fa)))
+      numpar%FN_fa_tot = FN
    endif
 
    if (numpar%save_PCF) then
@@ -2385,6 +2404,8 @@ file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, fi
       call order_of_time((Scell(1)%Ea_grid_out(size(Scell(1)%Ea_grid_out))), time_order, temp, x_tics)	! module "Little_subroutines"
 
       ! Distribution function can only be plotted as animated gif:
+
+      ! 1) Distribution of kinetic energies:
       File_name  = trim(adjustl(file_path))//'OUTPUT_atoms_distribution_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
       call write_gnuplot_script_header_new(FN, 6, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Atomic distribution (a.u.)', 'OUTPUT_atomic_distribution.gif', numpar%path_sep, setkey=0)
@@ -2392,15 +2413,21 @@ file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, fi
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
 
-      ! Distribution of the potential energy:
-      !E_temp = find_order_of_number( abs(Scell(1)%Pot_distr_E_shift) )   ! module "Little_subroutines"
-      !E_temp = sign(10.0d0**E_temp, Scell(1)%Pot_distr_E_shift)
-
+      ! 2) Distribution of potential energies:
       File_name  = trim(adjustl(file_path))//'OUTPUT_atoms_distribution_pot_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
       call write_gnuplot_script_header_new(FN, 6, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Atomic distribution (a.u.)', 'OUTPUT_atomic_distribution_pot.gif', numpar%path_sep, setkey=0)
       call write_atomic_distribution_gnuplot(FN, Scell, numpar, &
-            'OUTPUT_atomic_distribution_pot.dat', .true. )   ! below
+            'OUTPUT_atomic_distribution_pot.dat', its_pot=.true. )   ! below
+      call write_gnuplot_script_ending(FN, File_name, 1)
+      close(FN)
+
+      ! 3) Distribution of total energies:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_atoms_distribution_tot_Gnuplot'//trim(adjustl(sh_cmd))
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Atomic distribution (a.u.)', 'OUTPUT_atomic_distribution_tot.gif', numpar%path_sep, setkey=0)
+      call write_atomic_distribution_gnuplot(FN, Scell, numpar, &
+            'OUTPUT_atomic_distribution_tot.dat', its_pot=.true., no_maxwell=.true.)   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
    endif
@@ -3602,10 +3629,14 @@ subroutine gnu_entropy_atomic(File_name, file_atomic_entropy, t0, t_last, eps_na
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_atomic_entropy)), '" u 1:3 w l lw LW title "Equilibrium" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_atomic_entropy)), '" u 1:4 w l lw LW dashtype 2 title "Equilibrium (num)" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_atomic_entropy)), '" u 1:5 w l lw LW dashtype 4 title "Configurational" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_atomic_entropy)), '" u 1:6 w l lw LW dashtype 5 title "Total" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_atomic_entropy)), '" u 1:2 w l lw LW title "Nonequilibrium" '
    else ! It is linux
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_atomic_entropy)), '\" u 1:3 w l lw \"$LW\" title \"Equilibrium\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_atomic_entropy)), '\" u 1:4 w l lw \"$LW\" dashtype 2 title \"Equilibrium (num)\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_atomic_entropy)), '\" u 1:5 w l lw \"$LW\" dashtype 4 title \"Configurational\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_atomic_entropy)), '\" u 1:6 w l lw \"$LW\" dashtype 5 title \"Total\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_atomic_entropy)), '\" u 1:2 w l lw \"$LW\" title \"Nonequilibrium\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
@@ -3964,16 +3995,22 @@ end subroutine write_energy_levels_gnuplot
 
 
 
-subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot)
+subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot, no_maxwell)
    integer, intent(in) :: FN            ! file to write into
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    character(*), intent(in) :: file_fe  ! file with atomic distribution function
-   logical, optional :: its_pot
+   logical, optional :: its_pot, no_maxwell
    !-----------------------
    integer :: i, M, NSC
    character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
-   logical :: do_fe_eq
+   logical :: do_fe_eq, no_maxw
+
+   if (present(no_maxwell)) then
+      no_maxw = no_maxwell
+   else  ! assume there is maxwellian distribution
+      no_maxw = .false.
+   endif
 
    do NSC = 1, size(Scell)
       ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
@@ -4000,25 +4037,36 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot
          write(FN, '(a)') 'do for [i=2:int(STATS_blocks)] {'
 
          !write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:5] "'//trim(adjustl(file_fe))// &
-         write(FN, '(a)') 'p [:][0:5] "'//trim(adjustl(file_fe))// &
-                  '" index (i-1) u 1:3 w l lw 2 lt rgb "grey" title "Equivalent Maxwell" ,\'
 
-         write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
-                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+         if (no_maxw) then ! just distribution, without equivalent Maxwell:
+            write(FN, '(a)') 'p [:][0:5] "'//trim(adjustl(file_fe))// &
+                  '" index (i) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i*' // trim(adjustl(ch_temp3)) // '+'// &
                   trim(adjustl(ch_temp2))// ')) '
+         else ! with equivalent Maxwell
+            write(FN, '(a)') 'p [:][0:5] "'//trim(adjustl(file_fe))// &
+                  '" index (i) u 1:3 w l lw 2 lt rgb "grey" title "Equivalent Maxwell" ,\'
 
+            write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
+                  '" index (i) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) '
+         endif ! no_maxw
       else  ! Linux
          write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
          write(FN, '(a)') 'do for [i=2:int(STATS_blocks)] {'
 
          !write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:5] \"'//trim(adjustl(file_fe))// &
-         write(FN, '(a)') 'p [:][0:5] \"'//trim(adjustl(file_fe))// &
-                  '\" index (i-1) u 1:3 w l lw 2 lt rgb \"grey\" title \"Equivalent Maxwell\" ,\'
-
-         write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
-                  '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+         if (no_maxw) then ! just distribution, without equivalent Maxwell:
+            write(FN, '(a)') 'p [:][0:5] \"'//trim(adjustl(file_fe))// &
+            '\" index (i) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i*' // trim(adjustl(ch_temp3)) // '+'// &
                   trim(adjustl(ch_temp2))// ')) '
+         else
+            write(FN, '(a)') 'p [:][0:5] \"'//trim(adjustl(file_fe))// &
+                  '\" index (i) u 1:3 w l lw 2 lt rgb \"grey\" title \"Equivalent Maxwell\" ,\'
 
+            write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
+                  '\" index (i) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) '
+         endif ! no_maxw
       endif
       write(FN, '(a)') '}'
    enddo
