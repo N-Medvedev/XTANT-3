@@ -540,7 +540,10 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    call set_Maxwell_distribution(numpar, Scell, NSC)  ! below
 
    ! And for the potential energies too:
-   if (numpar%save_fa) call set_Maxwell_distribution_pot(numpar, Scell, NSC) ! below
+   if (numpar%save_fa) then
+      !call set_Maxwell_distribution_pot(numpar, Scell, NSC) ! below
+      call set_Gibbs_x_powerDOS(numpar, Scell, NSC) ! below
+   endif
 
    !--------------------
    ! Get atomic entropy:
@@ -568,7 +571,7 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
       Scell(NSC)%Ta_var(3) = get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa) ! [K] below
       ! 4) kinetic temperature from the method of moments:
       call temperature_from_moments(Scell(NSC), Scell(NSC)%Ta_var(4), E_shift) ! below
-      ! 5) "potential" temperature was calculated above - not working without atomic potential DOS!
+      ! 5) "potential" temperature was calculated above
       ! 6) configurational temperature:
       if (ANY(numpar%r_periodic(:))) then
          Scell(NSC)%Ta_var(6) = get_temperature_from_equipartition(Scell(NSC), matter, numpar) ! [K] below
@@ -687,7 +690,7 @@ subroutine temperature_from_moments(Scell, Ta, E0)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    real(8), intent(out) :: Ta, E0   ! [K] and [eV] temperature and shift
    !---------------
-   real(8) :: E1, E2, one_Nat
+   real(8) :: E1, E2, one_Nat, T_test
    integer :: Nat
 
    ! Number of atoms:
@@ -708,6 +711,10 @@ subroutine temperature_from_moments(Scell, Ta, E0)
 
    ! Convert [eV] -> [K]:
    Ta = Ta * g_kb ! [K]
+
+   ! For maxwellian distribution, the result is iudentical to:
+   ! T_test = get_T_from_fluctuation(E1, E2) ! below
+   ! print*, 'temperature_from_moments', Ta, T_test* g_kb
 end subroutine temperature_from_moments
 
 
@@ -928,7 +935,238 @@ end subroutine set_Maxwell_distribution
 
 
 
-subroutine set_Maxwell_distribution_pot(numpar, Scell, NSC)
+subroutine set_Gibbs_x_powerDOS(numpar, Scell, NSC) ! below
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   !----------------------------------
+   integer :: j, Nsiz, Nat, Niter
+   real(8) :: A, U0, T, b  ! Generealized distribution parameters
+   real(8) :: arg, Tfact, E_shift, Ta, dE, U1, U2, U3, T_cur, eps, b_cur, U0_cur, T0
+   real(8) :: alpha_T, alpha_U0, alpha_b
+
+   ! Find the parameters iteratively:
+   Nat = size(Scell(NSC)%MDAtoms)   ! number of atoms
+   ! Define mean energy, square, and power-3:
+   U1 = SUM(Scell(NSC)%MDAtoms(:)%Epot) / dble(Nat)
+   U2 = SUM(Scell(NSC)%MDAtoms(:)%Epot**2) / dble(Nat)
+   U3 = SUM(Scell(NSC)%MDAtoms(:)%Epot**3) / dble(Nat)
+
+   ! 1) Estimate the starting T and b:
+   T = Scell(NSC)%Ta / g_kb  ! starting temperature [eV]
+   U0 = minval(Scell(NSC)%MDAtoms(:)%Epot)
+   ! Find corresponding b:
+   b = find_b_for_Gibbs_x_powerDOS(U1, U2, U3, T, U0)   ! below
+   T0 = 1.1d10    ! to start with
+
+   ! Redefine T and U0:
+   Niter = 0   ! to start with
+   ! Iterate until converges:
+   eps = 1.0d-5   ! precision
+   ! convergence factors:
+   alpha_T = 0.5d0
+   alpha_U0 = 0.25d0
+   alpha_b = 0.05d0
+   do while ( abs(T - T0) > eps )
+      T0 = T ! save for the next iteration
+      Niter = Niter + 1 ! number of iterations
+
+      T_cur = get_T_from_fluctuation(U1, U2, b) ! below
+      T = T*(1.0d0 - alpha_T) + T_cur*alpha_T
+
+      ! Find corresponding shift:
+      U0_cur = get_U0_for_Gibbs_x_powerDOS(T_cur, U1, b)  ! below
+      U0 = U0*(1.0d0 - alpha_U0) + U0_cur*alpha_U0
+
+      ! Find corresponding b:
+      b_cur = find_b_for_Gibbs_x_powerDOS(U1, U2, U3, T_cur, U0)   ! below
+      b = b*(1.0d0 - alpha_b) + b_cur*alpha_b
+
+      if (Niter > 10000) then
+         print*, 'set_Gibbs_x_powerDOS did not converge:', Niter
+         exit ! did not converge
+      endif
+      !write(*,'(a,i0,f,f,f,f)') 'TUb', Niter, T*g_kb, U0, b
+   enddo
+   !pause 'set_Gibbs_x_powerDOS'
+
+   ! Define A:
+   A = define_A_for_GIbbs_x_powerDOS(T, b)   ! below
+
+   ! Save potential temperature:
+   Scell(NSC)%Ta_var(5) = T * g_kb  ! potential temperature [K]
+
+   Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
+   if (.not.allocated(Scell(NSC)%fa_eq_pot)) allocate(Scell(NSC)%fa_eq_pot(Nsiz), source = 0.0d0)
+   if (T > 0.0d0) then
+      do j = 1, Nsiz ! for all grid points:
+         Scell(NSC)%fa_eq_pot(j) = Gibbs_x_powerDOS(Scell(NSC)%Ea_pot_grid(j), T, U0, A, b)  ! below
+      enddo
+   else
+      Scell(NSC)%fa_eq_pot(:) = 0.0d0
+      Scell(NSC)%fa_eq_pot(1) = 1.0d0
+   endif
+
+   ! For printout:
+   if (numpar%save_fa) then
+      Nsiz = size(Scell(NSC)%Ea_pot_grid_out) ! size of the energy grid
+      if (.not.allocated(Scell(NSC)%fa_eq_pot_out)) allocate(Scell(NSC)%fa_eq_pot_out(Nsiz), source = 0.0d0)
+      if (T > 0.0d0) then
+         do j = 1, Nsiz
+            Scell(NSC)%fa_eq_pot_out(j) = Gibbs_x_powerDOS(Scell(NSC)%Ea_pot_grid_out(j), T, U0, A, b)  ! below
+         enddo
+      else
+         Scell(NSC)%fa_eq_pot_out(:) = 0.0d0
+         Scell(NSC)%fa_eq_pot_out(1) = 1.0d0
+      endif
+   endif
+end subroutine set_Gibbs_x_powerDOS
+
+
+
+function Gibbs_x_powerDOS(U, T, U0, A, b) result(Distrib)
+   real(8) Distrib
+   real(8), intent(in) :: U, T, U0, A, b
+   !---------------------
+   real(8) :: dU, eps
+   dU = (U-U0)
+   eps = 1.0d-12
+
+   ! Gibbs distribution * power-function DOS:
+   ! Note: reduces to Maxwell for b=1/2 and U0=0
+   if (dU < 0.0d0) then ! no distribution at negative energies
+      Distrib = 0.0d0
+   else  ! there is some distribution
+      if (abs(b) < 0.01d0) then  ! no power:
+         Distrib = A * exp(-dU/T)
+      else  ! full function, with the power-DOS:
+         if (abs(dU) > eps**(1/b) ) then
+            Distrib = A * exp(-dU/T) * (dU**b)
+         else  ! too small, gives zero anyway:
+            Distrib = 0.0d0
+         endif
+      endif ! (abs(b) < 0.01d0)
+   endif ! (dU < 0.0d0)
+end function Gibbs_x_powerDOS
+
+
+function define_A_for_GIbbs_x_powerDOS(T, b) result(A)
+   real(8) A
+   real(8), intent(in) :: T, b
+   real(8) Gb
+   Gb = GAMMA(b+1.0d0) ! intrinsic
+   if ((T > 1.0d-12) .and. (abs(Gb) > 0.0d0)) then
+      A = 1.0d0 / (T**(b+1.0d0) * Gb)
+   else
+      A = 1.0d20
+   endif
+end function define_A_for_GIbbs_x_powerDOS
+
+
+function find_b_for_Gibbs_x_powerDOS(U1, U2, U3, T, U0) result(b)
+   real(8) b   ! Gibbs x powerDOS parameter: power of the energy in DOS
+   !type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   real(8), intent(in) :: U1, U2, U3   ! 1st, 2d, 3d moments of energy distribution
+   real(8), intent(in) :: T, U0  ! temperature [eV], and energy shift [eV]
+   !------------------
+   real(8) :: LHS, b_min, b_max, eps, Fb
+   integer :: i, Nat, Niter, Niter_max
+
+   ! Define left-hand-side of the equation defining b:
+   !LHS = -1.0d0/T**3 * ( 3.0d0*U0*(U2 - U1**2) - (U3 - U1**3) )
+   if (T > 0.0d0) then
+      LHS = 1.0d0/T**3 * (U3 - 3.0d0*U2*U0 + 3.0d0*U1*U0**2 - U0**3)
+   else  ! undefined
+      LHS = 1.0d10
+   endif
+
+   !print*, 'LHS:', LHS, T, U3, U2, U1, U0
+
+   ! Find b by bisection:
+   eps = 1.0d-5    ! precision
+
+   b_min = -5.0d0   ! to start with
+   b_max = 35.0d0  ! to start with
+
+   b = (b_max + b_min)/2.0d0
+   Niter = 0   ! to start with
+   Niter_max = 1000
+   Find_b:do while ( abs(b_max-b_min) > eps )
+      Niter = Niter + 1 ! next iteration
+      if (Niter > Niter_max) then
+         print*, 'find_b_for_Gibbs_x_powerDOS: too many iterations:', Niter
+         exit Find_b
+      endif
+      Fb = get_RHS_for_b(b)   ! below
+      if (Fb > LHS) then
+         b_max = b
+      else
+         b_min = b
+      endif
+      b = (b_max + b_min)/2.0d0
+      !print*, Niter, b, Fb, LHS
+   enddo Find_b
+
+   !pause 'find_b_for_Gibbs_x_powerDOS'
+end function find_b_for_Gibbs_x_powerDOS
+
+
+pure function get_RHS_for_b(b) result(RHS)
+   real(8) RHS
+   real(8), intent(in) :: b
+   !-------------
+   real(8) :: Gb1, Gb2, Gb4
+   Gb1 = GAMMA(b+1.0d0) ! intrinsic
+   !Gb2 = GAMMA(b+2.0d0) ! intrinsic
+   Gb4 = GAMMA(b+4.0d0) ! intrinsic
+   !RHS = Gb4/Gb1 - (Gb2/Gb1)**3
+   RHS = Gb4/Gb1
+end function get_RHS_for_b
+
+
+
+function get_T_from_fluctuation(E1, E2, b) result(T)
+   real(8) T   ! [eV] temperature
+   real(8), intent(in) :: E1, E2 ! [eV] Mean square, and mean, energy of atoms
+   real(8), intent(in), optional :: b  ! power of DOS
+   !-----------------
+   integer :: Nat
+   real(8) :: power_b, Fact, arg
+   real(8) :: Gb1, Gb2, Gb3
+
+   if (present(b)) then ! given power function for DOS: ~E^b
+      power_b = b
+   else  ! default: free-particle DOS: ~sqrt(E)
+      power_b = 0.5d0
+   endif
+
+   ! Define the factor associated with DOS:
+   Gb1 = GAMMA(power_b+1.0d0) ! intrinsic
+   Gb2 = GAMMA(power_b+2.0d0) ! intrinsic
+   Gb3 = GAMMA(power_b+3.0d0) ! intrinsic
+   arg = Gb3/Gb1 - (Gb2/Gb1)**2
+   Fact = 1.0d0 / sqrt( abs(arg) )
+
+   ! Define temeprature:
+   T = sqrt(E2 - E1**2) * Fact
+end function get_T_from_fluctuation
+
+
+pure function get_U0_for_Gibbs_x_powerDOS(T, U1, b) result(U0)
+   real(8) U0  ! [eV]
+   real(8), intent(in) :: T, U1, b  ! temperature [eV], mean energy [eV], power of DOS
+   !--------------
+   real(8) :: Gb1, Gb2
+   Gb1 = GAMMA(b+1.0d0) ! intrinsic
+   Gb2 = GAMMA(b+2.0d0) ! intrinsic
+
+   U0 = U1 - T*Gb2/Gb1
+end function get_U0_for_Gibbs_x_powerDOS
+
+
+
+
+subroutine set_Maxwell_distribution_pot(numpar, Scell, NSC) ! Obsolete
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of supercell

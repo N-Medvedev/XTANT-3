@@ -47,7 +47,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 20.01.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 24.01.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1923,7 +1923,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta = FN
-      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr moments  pot   config')
+      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   config')
       call create_file_header(numpar%FN_Ta, '#[fs]  [K]   [K]  [K]   [K]   [K]   [K]')
 
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
@@ -3695,15 +3695,15 @@ subroutine gnu_at_temperatures(File_name, file_Ta, t0, t_last, eps_name)
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Ta)), '" u 1:4 w l lw 1 dashtype 2 title "Distributional" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:3 w l lw 1 dashtype 4 title "Entropic" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lw LW title "Moments" ,\'
-      !write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lw LW title "Potential" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lw LW title "Fluctuational" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lw LW title "Potential" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:7 w l lw LW title "Configurational" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:2 w l lt rgb "black" lw LW title "Kinetic" '
    else ! It is linux
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:4 w l lw 1 dashtype 2 title \"Distributional\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:3 w l lw 1 dashtype 4 title \"Entropic\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lw \"$LW\" title \"Moments\" ,\'
-      !write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lw \"$LW\" title \"Potential\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lw \"$LW\" title \"Fluctuational\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lw \"$LW\" title \"Potential\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:7 w l lw \"$LW\" title \"Configurational\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:2 w l lt rgb \"black\" lw \"$LW\" title \"Kinetic\" '
    endif
@@ -4003,14 +4003,22 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot
    logical, optional :: its_pot, no_maxwell
    !-----------------------
    integer :: i, M, NSC
-   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
-   logical :: do_fe_eq, no_maxw
+   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4, ch_titel
+   logical :: do_fe_eq, no_maxw, poten
 
    if (present(no_maxwell)) then
       no_maxw = no_maxwell
    else  ! assume there is maxwellian distribution
       no_maxw = .false.
    endif
+
+
+   if (present(its_pot)) then
+      poten = its_pot
+   else
+      poten = .false.
+   endif
+
 
    do NSC = 1, size(Scell)
       ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
@@ -4026,15 +4034,16 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot
       endselect
       ! minimal energy grid:
       write(ch_temp4,'(f)') 0.0d0
-      if (present(its_pot)) then
-         if (its_pot) then
-            write(ch_temp4,'(f)') Scell(NSC)%Ea_pot_grid_out(1)
-         endif
+      if (poten) then
+         write(ch_temp4,'(f)') Scell(NSC)%Ea_pot_grid_out(1)
+         ch_titel = 'Equivalent Gibbs'
+      else
+         ch_titel = 'Equivalent Maxwell'
       endif
 
       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
          write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
-         write(FN, '(a)') 'do for [i=2:int(STATS_blocks)] {'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
 
          !write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:5] "'//trim(adjustl(file_fe))// &
 
@@ -4044,7 +4053,7 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot
                   trim(adjustl(ch_temp2))// ')) '
          else ! with equivalent Maxwell
             write(FN, '(a)') 'p [:][0:5] "'//trim(adjustl(file_fe))// &
-                  '" index (i) u 1:3 w l lw 2 lt rgb "grey" title "Equivalent Maxwell" ,\'
+                  '" index (i) u 1:3 w l lw 2 lt rgb "grey" title "'// trim(adjustl(ch_titel)) //'" ,\'
 
             write(FN, '(a)') ' "'//trim(adjustl(file_fe))// &
                   '" index (i) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i*' // trim(adjustl(ch_temp3)) // '+'// &
@@ -4052,7 +4061,7 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot
          endif ! no_maxw
       else  ! Linux
          write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
-         write(FN, '(a)') 'do for [i=2:int(STATS_blocks)] {'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
 
          !write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:5] \"'//trim(adjustl(file_fe))// &
          if (no_maxw) then ! just distribution, without equivalent Maxwell:
@@ -4061,7 +4070,7 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot
                   trim(adjustl(ch_temp2))// ')) '
          else
             write(FN, '(a)') 'p [:][0:5] \"'//trim(adjustl(file_fe))// &
-                  '\" index (i) u 1:3 w l lw 2 lt rgb \"grey\" title \"Equivalent Maxwell\" ,\'
+                  '\" index (i) u 1:3 w l lw 2 lt rgb \"grey\" title \"'// trim(adjustl(ch_titel)) //'\" ,\'
 
             write(FN, '(a)') ' \"'//trim(adjustl(file_fe))// &
                   '\" index (i) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i*' // trim(adjustl(ch_temp3)) // '+'// &
