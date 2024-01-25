@@ -230,6 +230,8 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    ! [fs] mean scattering times of electrons and holes:
    Scell(1)%eps%tau_e = 1.0d0
    Scell(1)%eps%tau_h = 1.0d0
+   ! Potential DOS power:
+   numpar%power_b = 6.0d0 ! default value assuming U~1/r^5 (for no particular reason, empirically chosen)
 end subroutine initialize_default_values
 
 
@@ -6582,6 +6584,14 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
    case ('Set_V0', 'set_V0', 'set_v0')
       ! Choice of initial atomic velocity distribution:
       numpar%ind_starting_V = 0  ! equal
+
+   case ('Set_power_b', 'SET_POWER_B', 'Set_Power_b', 'Set_Power_B')
+      backspace(FN)
+      read(FN,*,IOSTAT=Reason) temp_ch1, N
+      if (Reason ==0) then ! read well, use the number:
+         numpar%power_b = N
+      endif
+      !print*, numpar%power_b
 
    !----------------------------------
    case ('print_Ta', 'Print_Ta', 'PRINT_TA', 'PRINT_Ta')

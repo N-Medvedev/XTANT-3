@@ -240,7 +240,7 @@ subroutine write_gnuplot_script_header_new(FN, ind, LW, x_tics, labl, xlabl, yla
    real(8), intent(in) :: LW, x_tics
    character(1), intent(in) :: path_sep ! path separator defines which system it is
    character(*), intent(in) :: labl, xlabl, ylabl, Out_file
-   integer, intent(in), optional :: setkey, fontsize
+   integer, intent(in), optional :: setkey, fontsize  ! Setkey: 0=right top; 1=right bottom; 2=left top; 3=left bottom; 4=no
    logical, intent(in), optional :: set_x_log, set_y_log
    !---------------------------------
    integer :: font_size, set_key
@@ -282,7 +282,7 @@ end subroutine write_gnuplot_script_header_new
 subroutine write_gnuplot_script_header_linux_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey, set_x_log, set_y_log, font_size)
    integer, intent(in) :: FN, ind
    real(8), intent(in) :: LW, x_tics
-   integer, intent(in), optional :: setkey, font_size
+   integer, intent(in), optional :: setkey, font_size ! Setkey: 0=right top; 1=right bottom; 2=left top; 3=left bottom; 4=no
    logical, intent(in), optional :: set_x_log, set_y_log
    character(*), intent(in) :: labl, xlabl, ylabl, Out_file
    character(20) :: temp, temp2
@@ -373,7 +373,7 @@ end subroutine write_gnuplot_script_header_linux_new
 subroutine write_gnuplot_script_header_windows_new(FN, ind, LW, x_tics, labl, xlabl, ylabl, Out_file, setkey, set_x_log, set_y_log, font_size)
    integer, intent(in) :: FN, ind
    real(8), intent(in) :: LW, x_tics
-   integer, intent(in), optional :: setkey, font_size
+   integer, intent(in), optional :: setkey, font_size ! Setkey: 0=right top; 1=right bottom; 2=left top; 3=left bottom; 4=no
    logical, intent(in), optional :: set_x_log, set_y_log
    character(*), intent(in) :: labl, xlabl, ylabl, Out_file
    character(20) :: temp, temp2
