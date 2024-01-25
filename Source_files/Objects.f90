@@ -969,6 +969,8 @@ type Numerics_param
    logical :: create_BOP_repulse
    character(200) :: BOP_Folder_name, Filename_communication
    real(8) :: BOP_bond_length   ! [A]
+   ! Potential DOS power parameter (used for testing):
+   real(8) :: power_b
    ! Initial cell data file:
    character(200) :: Cell_filename
    ! General flags:

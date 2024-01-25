@@ -47,7 +47,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 24.01.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 25.01.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1182,7 +1182,7 @@ subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic pa
 
    ! Atomic temperatures (various definitions):
    if (numpar%print_Ta) then
-      ! kinetic; entropic; distributional; "potential"; configurational:
+      ! kinetic; entropic; distributional; fluctuational; "potential"; configurational:
       write(numpar%FN_Ta, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, &
       Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(2), Scell(NSC)%Ta_var(3), Scell(NSC)%Ta_var(4), Scell(NSC)%Ta_var(5), Scell(NSC)%Ta_var(6)
       ! partial temperatures along X,Y,Z:
@@ -3690,21 +3690,21 @@ subroutine gnu_at_temperatures(File_name, file_Ta, t0, t_last, eps_name)
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Atomic tempereature', &
-         'Time (fs)', 'Atomic temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 1)   ! module "Gnuplotting"
+         'Time (fs)', 'Atomic temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Ta)), '" u 1:4 w l lw 1 dashtype 2 title "Distributional" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:3 w l lw 1 dashtype 4 title "Entropic" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lw LW title "Fluctuational" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lw LW title "Potential" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:7 w l lw LW title "Configurational" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lw 1.5 dashtype 5 title "Potential" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:7 w l lt rgb "blue" lw LW title "Configurational" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lt rgb "red" lw LW title "Fluctuational" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:2 w l lt rgb "black" lw LW title "Kinetic" '
    else ! It is linux
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:4 w l lw 1 dashtype 2 title \"Distributional\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:3 w l lw 1 dashtype 4 title \"Entropic\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lw \"$LW\" title \"Fluctuational\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lw \"$LW\" title \"Potential\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:7 w l lw \"$LW\" title \"Configurational\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lw 1.5 dashtype 5 title \"Potential\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:7 w l lt rgb \"blue\" lw \"$LW\" title \"Configurational\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lt rgb \"red\" lw \"$LW\" title \"Fluctuational\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:2 w l lt rgb \"black\" lw \"$LW\" title \"Kinetic\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)

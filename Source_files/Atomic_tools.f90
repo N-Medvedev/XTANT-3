@@ -756,9 +756,9 @@ pure function Maxwell_entropy(Ta) result(Sa) ! for equilibrium Maxwell distribut
    real(8) Sa
    real(8), intent(in) :: Ta  ! [eV]
    !------------------
-   !Sa = g_kb_EV * (log(2.0d0 * g_sqrt_Pi * sqrt(Ta)) + g_Eulers_gamma - 0.5d0)   ! [eV/K]
    if (Ta > 0.0d0) then ! possible to get entropy
-      Sa = g_kb_EV * (log(g_sqrt_Pi * Ta) + (g_Eulers_gamma + 1.0d0)*0.5d0)   ! [eV/K]
+      !Sa = g_kb_EV * (log(g_sqrt_Pi * Ta) + (g_Eulers_gamma + 1.0d0)*0.5d0)   ! [eV/K]
+      Sa = g_kb_EV * ( 2.5d0 - log(2.0d0/(g_sqrt_Pi * Ta**(1.5d0))) )   ! [eV/K]
    else  ! undefined
       Sa = 0.0d0
    endif
@@ -769,7 +769,8 @@ pure function get_temperature_from_entropy(Sa) result(Ta)
    real(8) Ta  ! [K]
    real(8), intent(in) :: Sa
    !--------------------
-   Ta = 1.0d0/g_sqrt_Pi * exp(Sa / g_kb_EV - 0.5d0*(g_Eulers_gamma + 1.0d0))  ! [eV]
+   !Ta = 1.0d0/g_sqrt_Pi * exp(Sa / g_kb_EV - 0.5d0*(g_Eulers_gamma + 1.0d0))  ! [eV]
+   Ta = (4.0d0/g_Pi)**(1.0d0/3.0d0) * exp( Sa / g_kb_EV * 2.0d0/3.0d0 - 5.0d0/3.0d0 )  ! [eV]
    Ta = Ta * g_kb ! [K]
 end function get_temperature_from_entropy
 
@@ -804,10 +805,10 @@ subroutine atomic_entropy(E_grid, fa, Sa, i_start, i_end)
    real(8), dimension(:), intent(in) :: E_grid, fa ! atomic distribution function
    real(8), intent(out) :: Sa ! atomic entropy
    integer, intent(in), optional :: i_start, i_end  ! starting and ending levels to include
-   ! Se = -kB * int [ ( f * ln(f) ) ]
+   ! Boltzmann H-function: Se = -kB * int [ ( f * (ln(f/sqrt(E)) -1) ) ]
    !----------------------------
    real(8), dimension(size(fa)) :: f_lnf, dE
-   real(8) :: eps
+   real(8) :: eps, E0
    integer :: i, Nsiz, i_low, i_high, j
    !============================
    eps = 1.0d-12  ! precision
@@ -838,8 +839,13 @@ subroutine atomic_entropy(E_grid, fa, Sa, i_start, i_end)
       endif
    enddo ! j
 
-   ! Entropy:
-   where (fa(i_low:i_high) > eps) f_lnf(i_low:i_high) = fa(i_low:i_high)*log(fa(i_low:i_high))
+   ! Shift, if any:
+   E0 = min(E_grid(1),0.0d0)
+
+   ! Entropy (via Boltzmann H-theorem definition):
+   !where (fa(i_low:i_high) > eps) f_lnf(i_low:i_high) = fa(i_low:i_high)*log(fa(i_low:i_high))
+   where ( (fa(i_low:i_high) > eps) .and. (E_grid(i_low:i_high) > E0) ) f_lnf(i_low:i_high) = &
+            fa(i_low:i_high)*(log(fa(i_low:i_high)/sqrt(E_grid(i_low:i_high)-E0)) - 1.0d0)
    Sa = SUM(f_lnf(i_low:i_high) * dE(i_low:i_high))
 
    ! Make proper units:
@@ -951,47 +957,13 @@ subroutine set_Gibbs_x_powerDOS(numpar, Scell, NSC) ! below
    U1 = SUM(Scell(NSC)%MDAtoms(:)%Epot) / dble(Nat)
    U2 = SUM(Scell(NSC)%MDAtoms(:)%Epot**2) / dble(Nat)
    U3 = SUM(Scell(NSC)%MDAtoms(:)%Epot**3) / dble(Nat)
+   !print*, 'Us:', U1, U2, U3
 
-   ! 1) Estimate the starting T and b:
-   T = Scell(NSC)%Ta / g_kb  ! starting temperature [eV]
-   U0 = minval(Scell(NSC)%MDAtoms(:)%Epot)
-   ! Find corresponding b:
-   b = find_b_for_Gibbs_x_powerDOS(U1, U2, U3, T, U0)   ! below
-   T0 = 1.1d10    ! to start with
-
-   ! Redefine T and U0:
-   Niter = 0   ! to start with
-   ! Iterate until converges:
-   eps = 1.0d-5   ! precision
-   ! convergence factors:
-   alpha_T = 0.5d0
-   alpha_U0 = 0.25d0
-   alpha_b = 0.05d0
-   do while ( abs(T - T0) > eps )
-      T0 = T ! save for the next iteration
-      Niter = Niter + 1 ! number of iterations
-
-      T_cur = get_T_from_fluctuation(U1, U2, b) ! below
-      T = T*(1.0d0 - alpha_T) + T_cur*alpha_T
-
-      ! Find corresponding shift:
-      U0_cur = get_U0_for_Gibbs_x_powerDOS(T_cur, U1, b)  ! below
-      U0 = U0*(1.0d0 - alpha_U0) + U0_cur*alpha_U0
-
-      ! Find corresponding b:
-      b_cur = find_b_for_Gibbs_x_powerDOS(U1, U2, U3, T_cur, U0)   ! below
-      b = b*(1.0d0 - alpha_b) + b_cur*alpha_b
-
-      if (Niter > 10000) then
-         print*, 'set_Gibbs_x_powerDOS did not converge:', Niter
-         exit ! did not converge
-      endif
-      !write(*,'(a,i0,f,f,f,f)') 'TUb', Niter, T*g_kb, U0, b
-   enddo
-   !pause 'set_Gibbs_x_powerDOS'
-
-   ! Define A:
-   A = define_A_for_GIbbs_x_powerDOS(T, b)   ! below
+   ! Define parametres of the (Gibbs * DOS) distribution:
+   U0 = minval(Scell(NSC)%MDAtoms(:)%Epot)   ! to start with
+   ! Assume fixed DOS of harmonic oscillator just for comparisons and tests:
+   b = numpar%power_b   ! Fixed, or starting, b for distribution: n(U)=A*exp(-(U-U0)/T)*U^b
+   call find_Gibbs_x_powerDOS_parameters(U1, U2, U3, A, T, U0, b, 0)   ! below
 
    ! Save potential temperature:
    Scell(NSC)%Ta_var(5) = T * g_kb  ! potential temperature [K]
@@ -1024,6 +996,72 @@ end subroutine set_Gibbs_x_powerDOS
 
 
 
+subroutine find_Gibbs_x_powerDOS_parameters(U1, U2, U3, A, T, U0, b, inx)
+   ! Initial parameters MUST be defined:
+   ! b (if inx = 0)
+   ! b and U0 (if inx /= 0)
+   real(8), intent(in) :: U1, U2, U3   ! first 3 moments of the distribution
+   real(8), intent(inout) :: A, T, U0, b ! parameters of the distribution: A*exp(-(U-U0)/T)*U^b
+   integer, intent(in) :: inx ! index, which version of this subroutine to use
+   !-----------------
+   real(8) :: T0, eps, alpha_b, alpha_U0, alpha_T, U0_cur, T_cur, b_cur
+   integer :: Niter
+
+
+   select case (inx)
+   case (0) ! assume b is given, don't vary it:
+      ! Define temperature from fluctuations:
+      T = get_T_from_fluctuation(U1, U2, b) ! below
+      ! Define shift parameter from the mean and temperature:
+      U0 = get_U0_for_Gibbs_x_powerDOS(T, U1, b)  ! below
+
+   case default   ! use b as variable:
+      ! 1) Estimate the starting T and b:
+      T = get_T_from_fluctuation(U1, U2, b) ! below
+
+      ! Find corresponding b:
+      b = find_b_for_Gibbs_x_powerDOS(U1, U2, U3, T, U0)   ! below
+      T0 = 1.1d10    ! to start with
+
+      ! Redefine T and U0:
+      Niter = 0   ! to start with
+      ! Iterate until converges:
+      eps = 1.0d-5   ! precision
+      ! convergence factors:
+      alpha_T = 0.15d0
+      alpha_U0 = 0.25d0
+      alpha_b = 0.05d0
+      do while ( abs(T - T0) > eps*alpha_T )
+         T0 = T ! save for the next iteration
+         Niter = Niter + 1 ! number of iterations
+
+         T_cur = get_T_from_fluctuation(U1, U2, b) ! below
+         T = T*(1.0d0 - alpha_T) + T_cur*alpha_T
+
+         ! Find corresponding shift:
+         U0_cur = get_U0_for_Gibbs_x_powerDOS(T, U1, b)  ! below
+         U0 = U0*(1.0d0 - alpha_U0) + U0_cur*alpha_U0
+
+         ! Find corresponding b:
+         b_cur = find_b_for_Gibbs_x_powerDOS(U1, U2, U3, T, U0)   ! below
+         b = b*(1.0d0 - alpha_b) + b_cur*alpha_b
+
+         if (Niter > 10000) then
+            print*, 'set_Gibbs_x_powerDOS did not converge:', Niter
+            exit ! did not converge
+         endif
+         !write(*,'(a,i0,f,f,f,f)') 'TUb', Niter, T*g_kb, U0, b
+      enddo
+   end select
+
+   ! Define A:
+   A = define_A_for_GIbbs_x_powerDOS(T, b)   ! below
+
+!    print*, 'find_Gibbs_x_powerDOS_parameters:', A, T*g_kb, U0, b
+end subroutine find_Gibbs_x_powerDOS_parameters
+
+
+
 function Gibbs_x_powerDOS(U, T, U0, A, b) result(Distrib)
    real(8) Distrib
    real(8), intent(in) :: U, T, U0, A, b
@@ -1037,15 +1075,7 @@ function Gibbs_x_powerDOS(U, T, U0, A, b) result(Distrib)
    if (dU < 0.0d0) then ! no distribution at negative energies
       Distrib = 0.0d0
    else  ! there is some distribution
-      if (abs(b) < 0.01d0) then  ! no power:
-         Distrib = A * exp(-dU/T)
-      else  ! full function, with the power-DOS:
-         if (abs(dU) > eps**(1/b) ) then
-            Distrib = A * exp(-dU/T) * (dU**b)
-         else  ! too small, gives zero anyway:
-            Distrib = 0.0d0
-         endif
-      endif ! (abs(b) < 0.01d0)
+      Distrib = A * exp(-dU/T) * (dU**b)
    endif ! (dU < 0.0d0)
 end function Gibbs_x_powerDOS
 
@@ -1085,7 +1115,7 @@ function find_b_for_Gibbs_x_powerDOS(U1, U2, U3, T, U0) result(b)
    ! Find b by bisection:
    eps = 1.0d-5    ! precision
 
-   b_min = -5.0d0   ! to start with
+   b_min = 0.0d0   ! to start with
    b_max = 35.0d0  ! to start with
 
    b = (b_max + b_min)/2.0d0
