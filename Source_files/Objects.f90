@@ -647,7 +647,8 @@ type Super_cell
    ! Other data:
    real(8) :: Ne_CB	! current number of electrons in CB only (above the band gap)
    real(8) :: Te, Ta, Tconf   ! [K] temperature of electrons, kinetic temperature of atoms, (configurational Ta, obsolete)
-   real(8) :: Ta_var(6), Ta_r_var(6)   ! [K] various definition of temperature; dimension-resolved temperatures along X,Y,Z
+   real(8) :: Ta_var(8)     ! [K] various definition of temperature: kinetic, configurational, etc.
+   real(8) :: Ta_r_var(6)   ! [K] dimension-resolved temperatures along X,Y,Z
    real(8), dimension(:), allocatable :: Ta_sub    ! [K] temperatures of different sublattices
    real(8) :: TeeV, TaeV ! [eV] electrons and atoms temperatures
    real(8) :: Pressure	! [Pa] pressure in the atomic system

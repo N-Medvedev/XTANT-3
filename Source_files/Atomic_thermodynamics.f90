@@ -21,24 +21,280 @@
 ! should never be used for military-related and other than peaceful purposes.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-! References used in the module:
-! [1]  Jepps et al., PRE 62, 4757 (2000)
 ! This module includes subroutines to calculate thermodynamic properties from MD simulation:
+! References used in the module:
+! [1] Jepps et al., PRE 62, 4757 (2000)
+! [2] Thompson et al., The Journal of Chemical Physics 131, 154107 (2009); doi: 10.1063/1.3245303
+! 1111111111111111111111111111111111111111111111111111111111111
+
 MODULE Atomic_thermodynamics
 use Universal_constants
 use Objects
+use Algebra_tools, only : Invers_3x3
+use Atomic_tools, only : Atomic_kinetic_energies, distance_to_given_cell, shortest_distance, distance_to_given_point
+use Little_subroutines, only : Find_in_array_monoton
 
 implicit none
 PRIVATE
 
-public :: partial_temperatures, get_temperature_from_equipartition, temperature_from_moments, get_temperature_from_distribution, &
-get_temperature_from_entropy, atomic_entropy, set_Gibbs_x_powerDOS, set_Maxwell_distribution, temperature_from_moments_pot, &
-Maxwell_entropy
+public :: get_atomic_distribution
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
 
 
  contains
+
+
+!TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
+! Assembling thermodynamical properties via distribution:
+
+subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in) :: matter    ! material parameters
+   real(8), optional :: Emax_in, dE_in  ! [eV] maximal energy and grid step for atomic distribution
+   !----------------------------------
+   integer :: i, Nat, j, Nsiz
+   real(8) :: Emax, dE, E_shift, Ta_1_1, Ta_2_1, Ta_1_2
+
+   Nat = size(Scell(NSC)%MDAtoms) ! total number of atoms
+
+   ! Distribution for internal use:
+   Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
+
+   ! Distribute atoms:
+   Scell(NSC)%fa = 0.0d0   ! to start with
+   Scell(NSC)%fa_pot = 0.0d0   ! to start with
+   Scell(NSC)%fa_tot = 0.0d0   ! to start with
+
+   ! Get the kinetic energies of atoms:
+   call Atomic_kinetic_energies(Scell, NSC, matter)   ! module "Atomic_tools"
+
+   ! Update grid if needed:
+   call update_atomic_distribution_grid(Scell, NSC) ! module "Atomic_thermodynamics"
+
+   ! Get potential temperature amd potential energy shift via method of moments:
+   call temperature_from_moments_pot(Scell(NSC), Scell(NSC)%Ta_var(5), E_shift) ! module "Atomic_thermodynamics"
+   if (numpar%save_fa) then
+      Scell(NSC)%Pot_distr_E_shift = E_shift ! save the shift of the potential energy
+      Scell(NSC)%Ea_pot_grid_out(:) = Scell(NSC)%Ea_grid_out(:) + minval(Scell(NSC)%MDAtoms(:)%Epot)
+      Scell(NSC)%Ea_tot_grid_out(:) = Scell(NSC)%Ea_grid_out(:) + minval(Scell(NSC)%MDAtoms(:)%Epot+Scell(NSC)%MDAtoms(:)%Ekin)
+   endif
+
+   ! Construct the atomic distribution:
+   do i = 1, Nat
+      ! 1) for kinetic energies:
+      if (Scell(NSC)%MDAtoms(i)%Ekin >= Scell(NSC)%Ea_grid(Nsiz)) then  ! above the max grid point
+         j = Nsiz
+      else ! inside the grid
+         call Find_in_array_monoton(Scell(NSC)%Ea_grid, Scell(NSC)%MDAtoms(i)%Ekin, j) ! module "Little_subroutines"
+         if (j > 1) j = j - 1
+      endif
+      if (j == 1) then
+         dE = Scell(NSC)%Ea_grid(j+1) - Scell(NSC)%Ea_grid(j)
+      else
+         dE = Scell(NSC)%Ea_grid(j) - Scell(NSC)%Ea_grid(j-1)
+      endif
+      dE = max(dE, 1.0d-6) ! ensure it is finite
+      Scell(NSC)%fa(j) = Scell(NSC)%fa(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
+
+      ! 2) for potential energies:
+      if (numpar%save_fa) then
+         if (Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_pot_grid(Nsiz)) then  ! above the max grid point
+            j = Nsiz
+         else ! inside the grid
+            call Find_in_array_monoton(Scell(NSC)%Ea_pot_grid, Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
+            if (j > 1) j = j - 1
+         endif
+         if (j == 1) then
+            dE = Scell(NSC)%Ea_pot_grid(j+1) - Scell(NSC)%Ea_pot_grid(j)
+         else
+            dE = Scell(NSC)%Ea_pot_grid(j) - Scell(NSC)%Ea_pot_grid(j-1)
+         endif
+         dE = max(dE, 1.0d-6) ! ensure it is finite
+         Scell(NSC)%fa_pot(j) = Scell(NSC)%fa_pot(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
+      endif
+
+      ! 3) for total energies:
+      if (numpar%save_fa) then
+         if (Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_tot_grid(Nsiz)) then  ! above the max grid point
+            j = Nsiz
+         else ! inside the grid
+            call Find_in_array_monoton(Scell(NSC)%Ea_tot_grid, Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
+            if (j > 1) j = j - 1
+         endif
+         if (j == 1) then
+            dE = Scell(NSC)%Ea_tot_grid(j+1) - Scell(NSC)%Ea_tot_grid(j)
+         else
+            dE = Scell(NSC)%Ea_tot_grid(j) - Scell(NSC)%Ea_tot_grid(j-1)
+         endif
+         dE = max(dE, 1.0d-6) ! ensure it is finite
+         Scell(NSC)%fa_tot(j) = Scell(NSC)%fa_tot(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
+      endif
+
+      !print*, i, j, Scell(NSC)%MDAtoms(i)%Epot, Scell(NSC)%Ea_grid(j)+E_shift, Scell(NSC)%Ea_grid(j+1)+E_shift
+   enddo ! i
+
+   ! Normalize it to the number of atoms:
+   Scell(NSC)%fa = Scell(NSC)%fa/dble(Nat)
+   Scell(NSC)%fa_pot = Scell(NSC)%fa_pot/dble(Nat)
+   Scell(NSC)%fa_tot = Scell(NSC)%fa_tot/dble(Nat)
+
+   ! For printout:
+   Nsiz = size(Scell(NSC)%Ea_grid_out) ! size of the energy grid
+
+   ! Distribute atoms:
+   Scell(NSC)%fa_out = 0.0d0   ! to start with
+   Scell(NSC)%fa_pot_out = 0.0d0   ! to start with
+   Scell(NSC)%fa_tot_out = 0.0d0   ! to start with
+
+   ! Construct the atomic distribution:
+   if (numpar%save_fa) then
+      do i = 1, Nat
+         ! 1) Kinetic energies:
+         if (Scell(NSC)%MDAtoms(i)%Ekin >= Scell(NSC)%Ea_grid_out(Nsiz)) then  ! above the max grid point
+            j = Nsiz
+         else ! inside the grid
+            call Find_in_array_monoton(Scell(NSC)%Ea_grid_out, Scell(NSC)%MDAtoms(i)%Ekin, j) ! module "Little_subroutines"
+            if (j > 1) j = j - 1
+         endif
+
+         if (j == 1) then
+            dE = Scell(NSC)%Ea_grid_out(j+1) - Scell(NSC)%Ea_grid_out(j)
+         else
+            dE = Scell(NSC)%Ea_grid_out(j) - Scell(NSC)%Ea_grid_out(j-1)
+         endif
+
+         Scell(NSC)%fa_out(j) = Scell(NSC)%fa_out(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
+
+         ! 2) for potential energies:
+         if (Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_pot_grid_out(Nsiz)) then  ! above the max grid point
+            j = Nsiz
+         else ! inside the grid
+            call Find_in_array_monoton(Scell(NSC)%Ea_pot_grid_out, Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
+            if (j > 1) j = j - 1
+         endif
+         Scell(NSC)%fa_pot_out(j) = Scell(NSC)%fa_pot_out(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
+
+         ! 3) for total energies:
+         if (Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_tot_grid_out(Nsiz)) then  ! above the max grid point
+            j = Nsiz
+         else ! inside the grid
+            call Find_in_array_monoton(Scell(NSC)%Ea_tot_grid_out, Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
+            if (j > 1) j = j - 1
+         endif
+         Scell(NSC)%fa_tot_out(j) = Scell(NSC)%fa_tot_out(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
+      enddo ! i
+      ! Normalize it to the number of atoms:
+      Scell(NSC)%fa_out = Scell(NSC)%fa_out/dble(Nat)
+      Scell(NSC)%fa_pot_out = Scell(NSC)%fa_pot_out/dble(Nat)
+      Scell(NSC)%fa_tot_out = Scell(NSC)%fa_tot_out/dble(Nat)
+   endif ! (numpar%save_fa)
+
+   ! Also get the equivalent Maxwell distribution:
+   call set_Maxwell_distribution(numpar, Scell, NSC)  ! module "Atomic_thermodynamics"
+
+   ! And for the potential energies too:
+   if (numpar%save_fa) then
+      !call set_Maxwell_distribution_pot(numpar, Scell, NSC) ! module "Atomic_thermodynamics"
+      call set_Gibbs_x_powerDOS(numpar, Scell, NSC) ! module "Atomic_thermodynamics"
+   endif
+
+   !--------------------
+   ! Get atomic entropy:
+   ! 1) Kinetic contribution:
+   call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa, Scell(NSC)%Sa)  ! module "Atomic_thermodynamics"
+   ! And equivalent (equilibrium) one:
+   ! numerically calculated:
+   call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa_eq, Scell(NSC)%Sa_eq_num)  ! module "Atomic_thermodynamics"
+   ! and analytical maxwell:
+   Scell(NSC)%Sa_eq = Maxwell_entropy(Scell(NSC)%TaeV)   ! module "Atomic_thermodynamics"
+   ! 2) Configurational (potential energy) contribution:
+   call atomic_entropy(Scell(NSC)%Ea_pot_grid, Scell(NSC)%fa_pot, Scell(NSC)%Sa_conf)  ! module "Atomic_thermodynamics"
+   ! 3) Total (kinetic+potential energy) contribution:
+   call atomic_entropy(Scell(NSC)%Ea_tot_grid, Scell(NSC)%fa_tot, Scell(NSC)%Sa_tot)  ! module "Atomic_thermodynamics"
+
+   ! Various definitions of atomic temperatures:
+   if (numpar%print_Ta) then
+      ! 1) kinetic temperature:
+      Scell(NSC)%Ta_var(1) = Scell(NSC)%Ta
+      ! 2) entropic temperature:
+      Scell(NSC)%Ta_var(2) = get_temperature_from_entropy(Scell(NSC)%Sa) ! [K] ! module "Atomic_thermodynamics"
+      ! 3) kinetic temperature from numerical distribution avereaging:
+      Scell(NSC)%Ta_var(3) = get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa) ! [K] ! module "Atomic_thermodynamics"
+      ! 4) kinetic temperature from the method of moments:
+      call temperature_from_moments(Scell(NSC), Scell(NSC)%Ta_var(4), E_shift) ! module "Atomic_thermodynamics"
+      ! 5) "potential" temperature was calculated above
+      ! 6) configurational temperature:
+      if (ANY(numpar%r_periodic(:))) then
+         Scell(NSC)%Ta_var(6) = get_temperature_from_equipartition(Scell(NSC), matter, numpar) ! [K] ! module "Atomic_thermodynamics"
+      else  ! use nonperiodic definition
+         Scell(NSC)%Ta_var(6) = get_temperature_from_equipartition(Scell(NSC), matter, numpar, non_periodic=.true.) ! [K] ! module "Atomic_thermodynamics"
+      endif
+
+      !Testing of periodic and nonperiodic calculations:
+      !print*, 'Ta', get_temperature_from_equipartition(Scell(NSC), matter, numpar), &
+      !             get_temperature_from_equipartition(Scell(NSC), matter, numpar, non_periodic=.true.), &
+      !             get_Tconfig_n_l(Scell(NSC), matter, numpar, 1, 0)
+
+      ! 7) Configurational-sine: B=r^n*sin^2(Pi*l*s) : for n,l:
+      Scell(NSC)%Ta_var(7) = get_Tconfig_n_l(Scell(NSC), matter, numpar, 0, 1)   ! module "Atomic_thermodynamics"
+      ! 8) Configurational-sine: B=r^n*sin^2(Pi*l*s) : for n,l:
+      Scell(NSC)%Ta_var(8) = get_Tconfig_n_l(Scell(NSC), matter, numpar, 0, 2)  ! module "Atomic_thermodynamics"
+
+      ! And partial temperatures along X, Y, Z:
+      call partial_temperatures(Scell(NSC), matter, numpar)   ! module "Atomic_thermodynamics"
+   endif
+
+end subroutine get_atomic_distribution
+
+
+
+subroutine update_atomic_distribution_grid(Scell, NSC)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   !------------------
+   real(8) :: Emin, Emax, Ea_max, dEa, E_max_kin
+   integer :: Nsiz, i
+
+   ! Kinetic energy distribution:
+   Emax = maxval(Scell(NSC)%MDAtoms(:)%Ekin)
+   E_max_kin = Emax  ! save for use below
+   Ea_max = max(Emax*1.5d0,0.1d0)   ! not less than 0.1 eV of the total grid interval
+   Nsiz = size(Scell(NSC)%Ea_grid)
+   dEa = Ea_max/dble(Nsiz)
+   ! Reset the grid:
+   Scell(NSC)%Ea_grid(1) = 0.0d0 ! starting point
+   do i = 2, Nsiz
+      Scell(NSC)%Ea_grid(i) = Scell(NSC)%Ea_grid(i-1) + dEa
+   enddo ! i
+
+   ! Potential energy distribution:
+   Emin = minval(Scell(NSC)%MDAtoms(:)%Epot)
+   Emax = max( maxval(Scell(NSC)%MDAtoms(:)%Epot)+0.5d0, Emin+0.1d0 )   ! not less than 0.1 eV of the total grid interval
+   Nsiz = size(Scell(NSC)%Ea_pot_grid)
+   dEa = (Emax - Emin) / dble(Nsiz)
+   ! Reset the grid:
+   Scell(NSC)%Ea_pot_grid(1) = Emin ! starting point
+   do i = 2, Nsiz
+      Scell(NSC)%Ea_pot_grid(i) = Scell(NSC)%Ea_pot_grid(i-1) + dEa
+   enddo ! i
+
+   ! Total energy distribution:
+   Emin = minval(Scell(NSC)%MDAtoms(:)%Epot)
+   Emax = max( maxval(Scell(NSC)%MDAtoms(:)%Epot) + E_max_kin + 0.1d0, Emin+0.1d0 )   ! not less than 0.1 eV of the total grid interval
+   Nsiz = size(Scell(NSC)%Ea_tot_grid)
+   dEa = (Emax - Emin) / dble(Nsiz)
+   ! Reset the grid:
+   Scell(NSC)%Ea_tot_grid(1) = Emin ! starting point
+   do i = 2, Nsiz
+      Scell(NSC)%Ea_tot_grid(i) = Scell(NSC)%Ea_tot_grid(i-1) + dEa
+   enddo ! i
+   !pause 'update_atomic_distribution_grid'
+end subroutine update_atomic_distribution_grid
+
+
 
 
 subroutine partial_temperatures(Scell, matter, numpar)
@@ -74,15 +330,119 @@ subroutine partial_temperatures(Scell, matter, numpar)
 end subroutine partial_temperatures
 
 
-function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic) result(Ta) ! works for non-periodic boundaries
+function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
+   real(8) :: Ta  ! [K] configurational temperature defined for B = r^n * sin(Pi*l*s)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(solid), intent(in), target :: matter	! materil parameters
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   integer, intent(in) :: n, l   ! power and degree
+   logical, intent(in), optional :: nonper
+   !------------------------------
+   integer :: Nat, i, ik
+   real(8) :: F(3), acc(3), r(3), r_n_1(3), r_n(3), Pot, Pot_tot, abs_s, s(3), s_4tr(3)
+   real(8) :: Tr_r, Tr_s, diff_sin, arg, den, dsupce(3,3), a_r
+   real(8) :: r_sin(3), sine_s(3), sin2(3), Pot_num, Pot_den, Rmin(3), Smin(3)
+   real(8), pointer :: Mass
+   logical :: non_periodic
+
+   if (present(nonper)) then
+      non_periodic = nonper
+   else
+      non_periodic = .false.
+   endif
+
+   Nat = size(Scell%MDAtoms)  ! number of atoms
+   Pot_tot = 0.0d0   ! to start with
+   Ta = 0.0d0  ! to start with
+
+   if (non_periodic) then
+      Rmin(1) = minval(Scell%MDatoms(:)%R(1))
+      Rmin(2) = minval(Scell%MDatoms(:)%R(2))
+      Rmin(3) = minval(Scell%MDatoms(:)%R(3))
+      Smin(1) = minval(Scell%MDatoms(:)%S(1))
+      Smin(2) = minval(Scell%MDatoms(:)%S(2))
+      Smin(3) = minval(Scell%MDatoms(:)%S(3))
+   else  ! periodic, start from zero
+      Rmin = 0.0d0
+      Smin = 0.0d0
+   endif
+
+   Pot_num = 0.0d0   ! to start with
+   Pot_den = 0.0d0   ! to start with
+   do i = 1, Nat  ! for all atoms
+      ! Convert acceleration into SI units:
+      acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
+      Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma   ! atomic mass [kg]
+
+      ! Get the force:
+      F(:) = Mass * acc(:) ! [N]
+
+      ! Get the coordinate:
+      !r(:) = Scell%MDatoms(i)%R(:)  ! [A]
+      r(:) = Scell%MDatoms(i)%R(:) - Rmin(:)  ! [A]
+      a_r = (sqrt(SUM(r(:)**2))) ! absolute value
+
+
+      ! Relative absolute value of coordinate:
+      s(:) = Scell%MDAtoms(i)%S(:) - Smin(:)
+
+      ! Get sine:
+      if (l == 0) then
+         sine_s(:) = 1.0d0
+         sin2(:) = 0.0d0
+      else
+         arg = g_Pi * dble(l)
+         sine_s(:) = sin(arg * s(:)) **2
+         sin2(:) = arg*sin(2.0d0*arg*s(:))
+      endif
+
+      ! And r^n*sine^2:
+      r_sin(:) = r(:)**n * sine_s(:)
+
+      ! Construct the potential contribution:
+      Pot = SUM(F(:) * r_sin(:))
+
+      ! Total potential contribution to get the temperature
+      Pot_num = Pot_num + Pot
+
+
+      ! From power in the B function:
+      r_n_1(:) = (dble(n) + r(:)/a_r - (r(:)/a_r)**3 ) * (r(:) ** (n-1)) * sine_s(:)
+
+      ! Get the trace of the relative coordinate vector^n
+      call Invers_3x3(Scell%supce, dsupce, 'get_Tconfig_n_l') ! from module "Algebra_tools"
+
+      ! Construct denominator:
+      den = 0.0d0 ! first part
+      do ik = 1, 3
+         den = den +  r_n_1(ik) + r(ik)**n * sin2(ik) * dsupce(ik,ik)
+      enddo
+
+      ! Denominator:
+      Pot_den = Pot_den + den
+      !write(*,'(a,i3,es,es,es,es)') 'Tc:', i, Pot, Pot_num* 1.0d-10 / g_e* g_kb, den, Pot_den
+   enddo
+   Pot_tot = Pot_num/Pot_den * 1.0d-10 / g_e ! [arb.units] -> [eV]
+   Ta = -Pot_tot  ! [eV]
+
+   ! Convert [eV] -> {K}:
+   Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
+
+   !print*,'======', Ta, '======'
+end function get_Tconfig_n_l
+
+
+
+function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic) result(Ta)  ! Sec.III in [1]
    real(8) :: Ta  ! [K] configurational temperature
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in), target :: matter	! materil parameters
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    logical, intent(in), optional :: non_periodic   ! if we want to use nonperiodic expression
    !------------------------------
-   integer :: Nat, i
-   real(8) :: F(3), acc(3), r(3), Pot, Pot_r(3), Pot_tot
+   integer :: Nat, i, j, zb(3)
+   real(8) :: F(3), acc(3), r(3), Pot, Pot_r(3), Pot_tot, a_r, zbr(3)
+   logical, dimension(:), allocatable :: atoms_group_ind
    real(8), pointer :: Mass
    logical :: do_nonper
 
@@ -94,29 +454,56 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
 
    Nat = size(Scell%MDAtoms)  ! number of atoms
 
-   if ( .not.do_nonper ) then ! periodic boundaries are used
+   if ( .not.do_nonper ) then ! periodic boundaries are used via Pahrinello-Rahman method
      ! Get it from the pressure, calculated for the periodic boundaries:
      Ta = -Scell%Pot_Pressure * (Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
 
-   else ! for nonperiodic systems (it is more straightforward):
+   else ! nonperiodic boundaries (Eq.(22) [2], unfinished, only works for non-periodic!)
       Pot_tot = 0.0d0   ! to start with
-      do i = 1, Nat  ! for all atoms
-         ! Convert acceleration into SI units:
-         acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20 ! [A/fs^2] -> [m/s^2]
-         Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma ! atomic mass [kg]
 
-         ! Get the force:
-         F(:) = Mass * acc(:) ! [N]
-         ! Get the coordinate relative to the center of the supercell:
-         r(:) = position_relative_to_center(Scell, i) ! below
-         r(:) = r(:) * 1.0d-10   ! [A] -> [m]
+      ! Identify the groups of atoms to deal with:
+      !call define_atoms_groups(Scell, atoms_group_ind, 1)  ! below
 
-         ! Construct the potential energy contribution:
-         Pot = SUM(F(:) * r(:)) / g_e ! [eV]
+      ! For all the atoms in the group in the groud cell:
+      !do i = 1, Nat  ! for all atoms relative to atom ! Eq.(22) [2]
+      i = 1
+         !if (atoms_group_ind(i)) then ! atom in the ground cell, get its contribution
+            do j = 1, Nat  ! for all atoms relative to atom #i ! Eq.(22) [2]
+               ! Convert acceleration into SI units:
+               acc(:) = Scell%MDAtoms(j)%accel(:) * 1.0d20 ! [A/fs^2] -> [m/s^2]
+               Mass => matter%Atoms(Scell%MDatoms(j)%KOA)%Ma ! atomic mass [kg]
 
-         ! Total potential contribution to get the temperature
-         Pot_tot = Pot_tot + Pot
-      enddo
+               ! Get the force:
+               F(:) = Mass * acc(:) ! [N]
+
+               !! Get the coordinate relative to the center of the supercell:
+               !r(:) = position_relative_to_center(Scell, i) ! below
+               if (i == j) then  ! atom #1 defining the group [2]:
+                  !cycle
+                  r(:) = Scell%MDatoms(i)%r(:)
+               else  ! atoms in the group define by atom #i:
+                  ! Get the coordinate in the group related to the first atom, Eq.(22) [2]:
+                  ! Find which cell the nearest replica of atom 'j' (relative to atom 'i') is in:
+                  call shortest_distance(Scell, j, i, a_r, x1=r(1), y1=r(2), z1=r(3), cell_x=zb(1), cell_y=zb(2), cell_z=zb(3))    ! module "Atomic_tools"
+                  zbr(:) = dble(zb(:))
+                  call distance_to_given_point(Scell, j, zbr, (/0.0d0,0.0d0,0.0d0/), a_r, r(1), r(2), r(3)) ! module "Atomic_tools"
+
+                  !print*, j, r(:), Scell%MDatoms(i)%r(:)
+                  !print*, i, zb
+                  !print*, '------------------------'
+               endif ! (i == 1)
+               r(:) = r(:) * 1.0d-10   ! [A] -> [m]
+
+               ! Construct the potential energy contribution:
+               Pot = SUM(F(:) * r(:)) / g_e ! [eV]
+
+               ! Total potential contribution to get the temperature
+               Pot_tot = Pot_tot + Pot
+            enddo ! j
+         !endif ! (atoms_group_ind(i))
+      !enddo ! i
+      !Pot_tot = Pot_tot / dble( count(atoms_group_ind(:)) )
+
       ! Configurational temperature from the equipartition theorem as potential energy per atom per degree of freedom:
       Ta = -Pot_tot / (3.0d0 * dble(Nat))   ! [eV]
    endif
@@ -124,6 +511,29 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
    ! Convert [eV] -> {K}:
    Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
 end function get_temperature_from_equipartition
+
+
+
+subroutine define_atoms_groups(Scell, atoms_group_ind, i_ref)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   logical, dimension(:), allocatable, intent(inout) :: atoms_group_ind
+   integer, intent(in) :: i_ref  ! index of the reference atom
+   !--------------------
+   integer :: i, Nat, cl(3)
+   real(8) :: a_r
+
+   Nat = size(Scell%MDAtoms)  ! number of atoms
+   if (.not.allocated(atoms_group_ind)) allocate(atoms_group_ind(Nat), source=.false.)
+
+   do i = 1, Nat  ! check all atoms, if they in k=0 cell
+      call shortest_distance(Scell, i, i_ref, a_r, cell_x=cl(1), cell_y=cl(2), cell_z=cl(3))    ! module "Atomic_tools"
+      if (ALL(cl(:)==0)) then
+         atoms_group_ind(i) = .true.
+      else
+         atoms_group_ind(i) = .false.
+      endif
+   enddo
+end subroutine define_atoms_groups
 
 
 function position_relative_to_center(Scell, i_at) result(Rrc)
@@ -213,8 +623,8 @@ subroutine temperature_from_n_moment(Scell, n, Ta, from_abs)
 end subroutine temperature_from_n_moment
 
 
-
 subroutine temperature_from_moments_pot(Scell, Ta, E0)
+   ! Assumes free-particle DOS (Maxwellian distribution), DOES NOT work with real potential-energy-DOS!
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    real(8), intent(out) :: Ta, E0   ! [K] and [eV] potential temperature and shift
    !---------------
@@ -246,61 +656,11 @@ subroutine temperature_from_moments_pot(Scell, Ta, E0)
 end subroutine temperature_from_moments_pot
 
 
-
-pure function Maxwell_entropy(Ta) result(Sa) ! for equilibrium Maxwell distribution
-   real(8) Sa
-   real(8), intent(in) :: Ta  ! [eV]
-   !------------------
-   if (Ta > 0.0d0) then ! possible to get entropy
-      !Sa = g_kb_EV * (log(g_sqrt_Pi * Ta) + (g_Eulers_gamma + 1.0d0)*0.5d0)   ! [eV/K]
-      Sa = g_kb_EV * ( 2.5d0 - log(2.0d0/(g_sqrt_Pi * Ta**(1.5d0))) )   ! [eV/K]
-   else  ! undefined
-      Sa = 0.0d0
-   endif
-end function Maxwell_entropy
-
-
-pure function get_temperature_from_entropy(Sa) result(Ta)
-   real(8) Ta  ! [K]
-   real(8), intent(in) :: Sa
-   !--------------------
-   !Ta = 1.0d0/g_sqrt_Pi * exp(Sa / g_kb_EV - 0.5d0*(g_Eulers_gamma + 1.0d0))  ! [eV]
-   Ta = (4.0d0/g_Pi)**(1.0d0/3.0d0) * exp( Sa / g_kb_EV * 2.0d0/3.0d0 - 5.0d0/3.0d0 )  ! [eV]
-   Ta = Ta * g_kb ! [K]
-end function get_temperature_from_entropy
-
-
-
-pure function get_temperature_from_distribution(E_grid, fa) result(Ta)
-   real(8) Ta  ! [K]
-   real(8), dimension(:), intent(in) :: E_grid, fa
-   !--------------------
-   real(8), dimension(size(fa)) :: dE
-   real(8) :: Ekin
-   integer :: i, j, Nsiz
-
-   Nsiz = size(E_grid)
-   Ekin = 0.0d0   ! to start with
-   do j = 1, Nsiz-1
-      if (j == 1) then
-         dE(j) = E_grid(j+1) - E_grid(j)
-      else
-         dE(j) = E_grid(j) - E_grid(j-1)
-      endif
-      Ekin = Ekin + (E_grid(j+1) + E_grid(j))*0.5d0 * fa(j) * dE(j)
-   enddo
-
-   Ta = 2.0d0/3.0d0 * Ekin * g_kb ! [K]
-end function get_temperature_from_distribution
-
-
-
-
 subroutine atomic_entropy(E_grid, fa, Sa, i_start, i_end)
+   ! Boltzmann H-function: Se = -kB * int [ ( f * (ln(f/sqrt(E)) -1) ) ]
    real(8), dimension(:), intent(in) :: E_grid, fa ! atomic distribution function
    real(8), intent(out) :: Sa ! atomic entropy
    integer, intent(in), optional :: i_start, i_end  ! starting and ending levels to include
-   ! Boltzmann H-function: Se = -kB * int [ ( f * (ln(f/sqrt(E)) -1) ) ]
    !----------------------------
    real(8), dimension(size(fa)) :: f_lnf, dE
    real(8) :: eps, E0
@@ -348,6 +708,52 @@ subroutine atomic_entropy(E_grid, fa, Sa, i_start, i_end)
 end subroutine atomic_entropy
 
 
+pure function Maxwell_entropy(Ta) result(Sa) ! for equilibrium Maxwell distribution, via H-function definition
+   real(8) Sa
+   real(8), intent(in) :: Ta  ! [eV]
+   !------------------
+   if (Ta > 0.0d0) then ! possible to get entropy
+      !Sa = g_kb_EV * (log(g_sqrt_Pi * Ta) + (g_Eulers_gamma + 1.0d0)*0.5d0)   ! [eV/K]
+      Sa = g_kb_EV * ( 2.5d0 - log(2.0d0/(g_sqrt_Pi * Ta**(1.5d0))) )   ! [eV/K]
+   else  ! undefined
+      Sa = 0.0d0
+   endif
+end function Maxwell_entropy
+
+
+pure function get_temperature_from_entropy(Sa) result(Ta)
+   real(8) Ta  ! [K]
+   real(8), intent(in) :: Sa
+   !--------------------
+   !Ta = 1.0d0/g_sqrt_Pi * exp(Sa / g_kb_EV - 0.5d0*(g_Eulers_gamma + 1.0d0))  ! [eV]
+   Ta = (4.0d0/g_Pi)**(1.0d0/3.0d0) * exp( Sa / g_kb_EV * 2.0d0/3.0d0 - 5.0d0/3.0d0 )  ! [eV]
+   Ta = Ta * g_kb ! [K]
+end function get_temperature_from_entropy
+
+
+pure function get_temperature_from_distribution(E_grid, fa) result(Ta)
+   real(8) Ta  ! [K]
+   real(8), dimension(:), intent(in) :: E_grid, fa
+   !--------------------
+   real(8), dimension(size(fa)) :: dE
+   real(8) :: Ekin
+   integer :: i, j, Nsiz
+
+   Nsiz = size(E_grid)
+   Ekin = 0.0d0   ! to start with
+   do j = 1, Nsiz-1
+      if (j == 1) then
+         dE(j) = E_grid(j+1) - E_grid(j)
+      else
+         dE(j) = E_grid(j) - E_grid(j-1)
+      endif
+      Ekin = Ekin + (E_grid(j+1) + E_grid(j))*0.5d0 * fa(j) * dE(j)
+   enddo
+
+   Ta = 2.0d0/3.0d0 * Ekin * g_kb ! [K]
+end function get_temperature_from_distribution
+
+
 subroutine set_Maxwell_distribution(numpar, Scell, NSC)
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
@@ -388,6 +794,169 @@ subroutine set_Maxwell_distribution(numpar, Scell, NSC)
 end subroutine set_Maxwell_distribution
 
 
+
+function get_T_from_fluctuation(E1, E2, b) result(T)
+   real(8) T   ! [eV] temperature
+   real(8), intent(in) :: E1, E2 ! [eV] Mean square, and mean, energy of atoms
+   real(8), intent(in), optional :: b  ! power of DOS
+   !-----------------
+   integer :: Nat
+   real(8) :: power_b, Fact, arg
+   real(8) :: Gb1, Gb2, Gb3
+
+   if (present(b)) then ! given power function for DOS: ~E^b
+      power_b = b
+   else  ! default: free-particle DOS: ~sqrt(E)
+      power_b = 0.5d0
+   endif
+
+   ! Define the factor associated with DOS:
+   Gb1 = GAMMA(power_b+1.0d0) ! intrinsic
+   Gb2 = GAMMA(power_b+2.0d0) ! intrinsic
+   Gb3 = GAMMA(power_b+3.0d0) ! intrinsic
+   arg = Gb3/Gb1 - (Gb2/Gb1)**2
+   Fact = 1.0d0 / sqrt( abs(arg) )
+
+   ! Define temeprature:
+   T = sqrt(E2 - E1**2) * Fact
+end function get_T_from_fluctuation
+
+
+
+subroutine set_Maxwell_distribution_pot(numpar, Scell, NSC) ! Obsolete
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   !----------------------------------
+   integer :: j, Nsiz
+   real(8) :: arg, Tfact, E_shift, Ta, dE
+
+   E_shift = Scell(NSC)%Pot_distr_E_shift ! shift of the distribution
+   Ta = Scell(NSC)%Ta_var(5) / g_kb  ! potential temperature
+
+   Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
+   if (.not.allocated(Scell(NSC)%fa_eq_pot)) allocate(Scell(NSC)%fa_eq_pot(Nsiz), source = 0.0d0)
+   if (Ta > 0.0d0) then
+      Tfact = (1.0d0 / Ta)**1.5d0
+      do j = 1, Nsiz
+         dE = Scell(NSC)%Ea_grid(j) - E_shift
+         if (dE > 0.0d0) then
+            arg = dE / Ta
+            Scell(NSC)%fa_eq_pot(j) = 2.0d0 * sqrt( dE / g_Pi) * Tfact * exp(-arg)
+         else
+            Scell(NSC)%fa_eq_pot(j) = 0.0d0
+         endif
+         !arg = ( Scell(NSC)%Ea_grid(j) ) / Ta
+         !Scell(NSC)%fa_eq_pot(j) = 2.0d0 * sqrt( (Scell(NSC)%Ea_grid(j) ) / g_Pi) * Tfact * exp(-arg)
+      enddo
+   else
+      Scell(NSC)%fa_eq_pot(:) = 0.0d0
+      Scell(NSC)%fa_eq_pot(1) = 1.0d0
+   endif
+
+   ! For printout:
+   if (numpar%save_fa) then
+      Nsiz = size(Scell(NSC)%Ea_pot_grid_out) ! size of the energy grid
+      if (.not.allocated(Scell(NSC)%fa_eq_pot_out)) allocate(Scell(NSC)%fa_eq_pot_out(Nsiz), source = 0.0d0)
+      if (Ta > 0.0d0) then
+         do j = 1, Nsiz
+            dE = Scell(NSC)%Ea_pot_grid_out(j) - E_shift
+            if (dE > 0.0d0) then
+               arg = dE / Ta
+               Scell(NSC)%fa_eq_pot_out(j) = 2.0d0 * sqrt( dE / g_Pi) * Tfact * exp(-arg)
+            else
+               Scell(NSC)%fa_eq_pot_out(j) = 0.0d0
+            endif
+            !arg = ( Scell(NSC)%Ea_grid_out(j) ) / Ta
+            !Scell(NSC)%fa_eq_pot_out(j) = 2.0d0 * sqrt( (Scell(NSC)%Ea_grid_out(j) ) / g_Pi) * Tfact * exp(-arg)
+         enddo
+      else
+         Scell(NSC)%fa_eq_pot_out(:) = 0.0d0
+         Scell(NSC)%fa_eq_pot_out(1) = 1.0d0
+      endif
+   endif
+end subroutine set_Maxwell_distribution_pot
+
+
+
+
+subroutine shortest_distance_to_point(Scell, i1, Sj, a_r, x1, y1, z1, sx1, sy1, sz1, cell_x, cell_y, cell_z)
+   type(Super_cell), intent(in), target :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: i1 ! atom index
+   real(8), dimension(3), intent(in) :: Sj   ! relative cooerds of the point, distance to which we seek
+   real(8), intent(out) ::  a_r	! [A] shortest distance between the two atoms within supercell with periodic boundaries
+   real(8), intent(out), optional :: x1, y1, z1		! [A] projections of the shortest distance
+   real(8), intent(out), optional :: sx1, sy1, sz1 	! relative projections of the shortest distance
+   integer, intent(out), optional :: cell_x, cell_y, cell_z ! cell numbers
+   real(8) x, y, z, zb(3), r, x0, y0, z0, r1
+   integer i, j, k, ik
+   type(Atom), dimension(:), pointer :: atoms	! array of atoms in the supercell
+
+   atoms => Scell%MDAtoms
+   x = 0.0d0
+   y = 0.0d0
+   z = 0.0d0
+
+   ! For the case of periodic boundaries:
+   do ik = 1,3
+      x = x + (atoms(i1)%S(ik) - Sj(ik))*Scell%supce(ik,1)
+      y = y + (atoms(i1)%S(ik) - Sj(ik))*Scell%supce(ik,2)
+      z = z + (atoms(i1)%S(ik) - Sj(ik))*Scell%supce(ik,3)
+   enddo ! ik
+   a_r = DSQRT(x*x + y*y + z*z)
+   if (present(x1)) x1 = x
+   if (present(y1)) y1 = y
+   if (present(z1)) z1 = z
+   if (present(sx1)) sx1 = atoms(i1)%S(1) - Sj(1)
+   if (present(sy1)) sy1 = atoms(i1)%S(2) - Sj(2)
+   if (present(sz1)) sz1 = atoms(i1)%S(3) - Sj(3)
+   if (present(cell_x)) cell_x = 0
+   if (present(cell_y)) cell_y = 0
+   if (present(cell_z)) cell_z = 0
+
+   do i = -1,1 ! if the distance between the atoms is more than a half of supercell, we account for
+      ! interaction with the atom not from this, but from the neigbour ("mirrored") supercell:
+      ! periodic boundary conditions
+      zb(1) = dble(i)
+      do j =-1,1
+         zb(2) = dble(j)
+         do k = -1,1
+            zb(3) = dble(k)
+            x0 = 0.0d0
+            y0 = 0.0d0
+            z0 = 0.0d0
+            do ik = 1,3
+               x0 = x0 + (atoms(i1)%S(ik) - Sj(ik) + zb(ik))*Scell%supce(ik,1)
+               y0 = y0 + (atoms(i1)%S(ik) - Sj(ik) + zb(ik))*Scell%supce(ik,2)
+               z0 = z0 + (atoms(i1)%S(ik) - Sj(ik) + zb(ik))*Scell%supce(ik,3)
+            enddo ! ik
+            r1 = DSQRT(x0*x0 + y0*y0 + z0*z0)
+            if (r1 <= a_r) then
+               x = x0
+               y = y0
+               z = z0
+               a_r = r1
+               if (present(x1)) x1 = x
+               if (present(y1)) y1 = y
+               if (present(z1)) z1 = z
+               if (present(sx1)) sx1 = atoms(i1)%S(1) - Sj(1) + zb(1)
+               if (present(sy1)) sy1 = atoms(i1)%S(2) - Sj(2) + zb(2)
+               if (present(sz1)) sz1 = atoms(i1)%S(3) - Sj(3) + zb(3)
+               if (present(cell_x)) cell_x = i
+               if (present(cell_y)) cell_y = j
+               if (present(cell_z)) cell_z = k
+            endif
+         enddo ! k
+      enddo ! j
+   enddo ! i
+end subroutine shortest_distance_to_point
+
+
+
+!-------------------------------------------------------------------
+! Test-cases of assumed power-function shape of DOS for distribution of potential energies,
+! does not correspond to realistic DOS, but in certain cases may provide some reasonable estimate.
+! Used mainly for illustrative purposes, no real science can be done with it.
 
 subroutine set_Gibbs_x_powerDOS(numpar, Scell, NSC) ! below
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
@@ -602,34 +1171,6 @@ pure function get_RHS_for_b(b) result(RHS)
 end function get_RHS_for_b
 
 
-
-function get_T_from_fluctuation(E1, E2, b) result(T)
-   real(8) T   ! [eV] temperature
-   real(8), intent(in) :: E1, E2 ! [eV] Mean square, and mean, energy of atoms
-   real(8), intent(in), optional :: b  ! power of DOS
-   !-----------------
-   integer :: Nat
-   real(8) :: power_b, Fact, arg
-   real(8) :: Gb1, Gb2, Gb3
-
-   if (present(b)) then ! given power function for DOS: ~E^b
-      power_b = b
-   else  ! default: free-particle DOS: ~sqrt(E)
-      power_b = 0.5d0
-   endif
-
-   ! Define the factor associated with DOS:
-   Gb1 = GAMMA(power_b+1.0d0) ! intrinsic
-   Gb2 = GAMMA(power_b+2.0d0) ! intrinsic
-   Gb3 = GAMMA(power_b+3.0d0) ! intrinsic
-   arg = Gb3/Gb1 - (Gb2/Gb1)**2
-   Fact = 1.0d0 / sqrt( abs(arg) )
-
-   ! Define temeprature:
-   T = sqrt(E2 - E1**2) * Fact
-end function get_T_from_fluctuation
-
-
 pure function get_U0_for_Gibbs_x_powerDOS(T, U1, b) result(U0)
    real(8) U0  ! [eV]
    real(8), intent(in) :: T, U1, b  ! temperature [eV], mean energy [eV], power of DOS
@@ -642,135 +1183,6 @@ pure function get_U0_for_Gibbs_x_powerDOS(T, U1, b) result(U0)
 end function get_U0_for_Gibbs_x_powerDOS
 
 
-
-
-subroutine set_Maxwell_distribution_pot(numpar, Scell, NSC) ! Obsolete
-   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
-   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
-   integer, intent(in) :: NSC ! number of supercell
-   !----------------------------------
-   integer :: j, Nsiz
-   real(8) :: arg, Tfact, E_shift, Ta, dE
-
-   E_shift = Scell(NSC)%Pot_distr_E_shift ! shift of the distribution
-   Ta = Scell(NSC)%Ta_var(5) / g_kb  ! potential temperature
-
-   Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
-   if (.not.allocated(Scell(NSC)%fa_eq_pot)) allocate(Scell(NSC)%fa_eq_pot(Nsiz), source = 0.0d0)
-   if (Ta > 0.0d0) then
-      Tfact = (1.0d0 / Ta)**1.5d0
-      do j = 1, Nsiz
-         dE = Scell(NSC)%Ea_grid(j) - E_shift
-         if (dE > 0.0d0) then
-            arg = dE / Ta
-            Scell(NSC)%fa_eq_pot(j) = 2.0d0 * sqrt( dE / g_Pi) * Tfact * exp(-arg)
-         else
-            Scell(NSC)%fa_eq_pot(j) = 0.0d0
-         endif
-         !arg = ( Scell(NSC)%Ea_grid(j) ) / Ta
-         !Scell(NSC)%fa_eq_pot(j) = 2.0d0 * sqrt( (Scell(NSC)%Ea_grid(j) ) / g_Pi) * Tfact * exp(-arg)
-      enddo
-   else
-      Scell(NSC)%fa_eq_pot(:) = 0.0d0
-      Scell(NSC)%fa_eq_pot(1) = 1.0d0
-   endif
-
-   ! For printout:
-   if (numpar%save_fa) then
-      Nsiz = size(Scell(NSC)%Ea_pot_grid_out) ! size of the energy grid
-      if (.not.allocated(Scell(NSC)%fa_eq_pot_out)) allocate(Scell(NSC)%fa_eq_pot_out(Nsiz), source = 0.0d0)
-      if (Ta > 0.0d0) then
-         do j = 1, Nsiz
-            dE = Scell(NSC)%Ea_pot_grid_out(j) - E_shift
-            if (dE > 0.0d0) then
-               arg = dE / Ta
-               Scell(NSC)%fa_eq_pot_out(j) = 2.0d0 * sqrt( dE / g_Pi) * Tfact * exp(-arg)
-            else
-               Scell(NSC)%fa_eq_pot_out(j) = 0.0d0
-            endif
-            !arg = ( Scell(NSC)%Ea_grid_out(j) ) / Ta
-            !Scell(NSC)%fa_eq_pot_out(j) = 2.0d0 * sqrt( (Scell(NSC)%Ea_grid_out(j) ) / g_Pi) * Tfact * exp(-arg)
-         enddo
-      else
-         Scell(NSC)%fa_eq_pot_out(:) = 0.0d0
-         Scell(NSC)%fa_eq_pot_out(1) = 1.0d0
-      endif
-   endif
-end subroutine set_Maxwell_distribution_pot
-
-
-
-
-subroutine shortest_distance_to_point(Scell, i1, Sj, a_r, x1, y1, z1, sx1, sy1, sz1, cell_x, cell_y, cell_z)
-   type(Super_cell), intent(in), target :: Scell ! super-cell with all the atoms inside
-   integer, intent(in) :: i1 ! atom index
-   real(8), dimension(3), intent(in) :: Sj   ! relative cooerds of the point, distance to which we seek
-   real(8), intent(out) ::  a_r	! [A] shortest distance between the two atoms within supercell with periodic boundaries
-   real(8), intent(out), optional :: x1, y1, z1		! [A] projections of the shortest distance
-   real(8), intent(out), optional :: sx1, sy1, sz1 	! relative projections of the shortest distance
-   integer, intent(out), optional :: cell_x, cell_y, cell_z ! cell numbers
-   real(8) x, y, z, zb(3), r, x0, y0, z0, r1
-   integer i, j, k, ik
-   type(Atom), dimension(:), pointer :: atoms	! array of atoms in the supercell
-
-   atoms => Scell%MDAtoms
-   x = 0.0d0
-   y = 0.0d0
-   z = 0.0d0
-
-   ! For the case of periodic boundaries:
-   do ik = 1,3
-      x = x + (atoms(i1)%S(ik) - Sj(ik))*Scell%supce(ik,1)
-      y = y + (atoms(i1)%S(ik) - Sj(ik))*Scell%supce(ik,2)
-      z = z + (atoms(i1)%S(ik) - Sj(ik))*Scell%supce(ik,3)
-   enddo ! ik
-   a_r = DSQRT(x*x + y*y + z*z)
-   if (present(x1)) x1 = x
-   if (present(y1)) y1 = y
-   if (present(z1)) z1 = z
-   if (present(sx1)) sx1 = atoms(i1)%S(1) - Sj(1)
-   if (present(sy1)) sy1 = atoms(i1)%S(2) - Sj(2)
-   if (present(sz1)) sz1 = atoms(i1)%S(3) - Sj(3)
-   if (present(cell_x)) cell_x = 0
-   if (present(cell_y)) cell_y = 0
-   if (present(cell_z)) cell_z = 0
-
-   do i = -1,1 ! if the distance between the atoms is more than a half of supercell, we account for
-      ! interaction with the atom not from this, but from the neigbour ("mirrored") supercell:
-      ! periodic boundary conditions
-      zb(1) = dble(i)
-      do j =-1,1
-         zb(2) = dble(j)
-         do k = -1,1
-            zb(3) = dble(k)
-            x0 = 0.0d0
-            y0 = 0.0d0
-            z0 = 0.0d0
-            do ik = 1,3
-               x0 = x0 + (atoms(i1)%S(ik) - Sj(ik) + zb(ik))*Scell%supce(ik,1)
-               y0 = y0 + (atoms(i1)%S(ik) - Sj(ik) + zb(ik))*Scell%supce(ik,2)
-               z0 = z0 + (atoms(i1)%S(ik) - Sj(ik) + zb(ik))*Scell%supce(ik,3)
-            enddo ! ik
-            r1 = DSQRT(x0*x0 + y0*y0 + z0*z0)
-            if (r1 <= a_r) then
-               x = x0
-               y = y0
-               z = z0
-               a_r = r1
-               if (present(x1)) x1 = x
-               if (present(y1)) y1 = y
-               if (present(z1)) z1 = z
-               if (present(sx1)) sx1 = atoms(i1)%S(1) - Sj(1) + zb(1)
-               if (present(sy1)) sy1 = atoms(i1)%S(2) - Sj(2) + zb(2)
-               if (present(sz1)) sz1 = atoms(i1)%S(3) - Sj(3) + zb(3)
-               if (present(cell_x)) cell_x = i
-               if (present(cell_y)) cell_y = j
-               if (present(cell_z)) cell_z = k
-            endif
-         enddo ! k
-      enddo ! j
-   enddo ! i
-end subroutine shortest_distance_to_point
 
 
 END MODULE Atomic_thermodynamics
