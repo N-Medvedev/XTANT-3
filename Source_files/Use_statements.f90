@@ -36,9 +36,10 @@ use Dealing_with_output_files, only : reset_dt, Print_title, prepare_output_file
         XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comforting_message, printout_MFP_file
 use Gnuplotting, only : collect_gnuplots
 use Initial_configuration, only : set_initial_configuration
+use Atomic_thermodynamics, only : get_atomic_distribution, update_Ta_config_running_average
 use Atomic_tools, only : get_mean_square_displacement, save_last_timestep, Cooling_atoms, &
         Coordinates_rel_to_abs, velocities_abs_to_rel, shortest_distance, &
-        make_time_step_atoms, make_time_step_supercell, get_atomic_distribution, numerical_acceleration
+        make_time_step_atoms, make_time_step_supercell, numerical_acceleration
 use Electron_tools, only : Electron_thermalization, get_glob_energy, get_low_energy_distribution, update_fe
 use Transport, only : Electron_transport, Atomic_heat_transport, Change_affected_layer
 use TB, only : get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_parameters, &

@@ -30,9 +30,7 @@ use Universal_constants
 use Objects
 use Algebra_tools, only : Cross_Prod, Invers_3x3, Matrix_Vec_Prod, Transpose_M, d_detH_d_h_a_b, Two_Matr_mult, Det_3x3
 use Little_subroutines, only : Find_in_array_monoton
-use Atomic_thermodynamics, only : partial_temperatures, get_temperature_from_equipartition, Maxwell_entropy, &
-      temperature_from_moments, get_temperature_from_distribution, get_temperature_from_entropy, &
-      atomic_entropy, set_Gibbs_x_powerDOS, set_Maxwell_distribution, temperature_from_moments_pot
+
 implicit none
 PRIVATE
 
@@ -43,16 +41,22 @@ interface shortest_distance
 end interface shortest_distance
 
 
+interface distance_to_given_cell
+   module procedure distance_to_given_cell_0 ! for Scell as an array
+   module procedure distance_to_given_cell_1 ! for a single Scell
+end interface distance_to_given_cell
+
+
 public :: define_subcells, Maxwell_int_shifted, Coordinates_rel_to_abs, velocities_abs_to_rel, make_time_step_supercell, &
 get_energy_from_temperature, distance_to_given_cell, make_time_step_atoms, Rescale_atomic_velocities, save_last_timestep, &
 get_interplane_indices, get_near_neighbours, get_number_of_image_cells, pair_correlation_function, get_fraction_of_given_sort, &
 Reciproc_rel_to_abs, total_forces, Potential_super_cell_forces, super_cell_forces, Convert_reciproc_rel_to_abs, &
-get_kinetic_energy_abs, &
+get_kinetic_energy_abs, Atomic_kinetic_energies, distance_to_given_point, &
 get_mean_square_displacement, Cooling_atoms, Coordinates_abs_to_rel, get_Ekin, make_time_step_supercell_Y4, make_time_step_atoms_M, &
 remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_atoms_Y4, check_periodic_boundaries, &
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
 Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
-update_atomic_masks_displ, get_atomic_distribution, numerical_acceleration
+update_atomic_masks_displ, numerical_acceleration
 
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
@@ -77,8 +81,8 @@ parameter(m_d3 = m_d1)
 
  contains
 
-
-
+!VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
+! Velosities and stuff
 subroutine cell_vectors_defined_by_angles(a, b, c, alpha, beta, gamm, a_vec, b_vec, c_vec, INFO)
    ! Definitioin from: http://gisaxs.com/index.php/Unit_cell
    real(8), intent(in) :: a, b, c   ! absolute values of the supercell vectors
@@ -388,252 +392,6 @@ subroutine numerical_acceleration(Scell, dt, add)
       endif
    enddo
 end subroutine numerical_acceleration
-
-
-!TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
-! Assembling thermodynamical properties via distribution:
-
-subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
-   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
-   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
-   integer, intent(in) :: NSC ! number of supercell
-   type(solid), intent(in) :: matter    ! material parameters
-   real(8), optional :: Emax_in, dE_in  ! [eV] maximal energy and grid step for atomic distribution
-   !----------------------------------
-   integer :: i, Nat, j, Nsiz
-   real(8) :: Emax, dE, E_shift, Ta
-
-   Nat = size(Scell(NSC)%MDAtoms) ! total number of atoms
-
-   ! Distribution for internal use:
-   Nsiz = size(Scell(NSC)%Ea_grid) ! size of the energy grid
-
-   ! Distribute atoms:
-   Scell(NSC)%fa = 0.0d0   ! to start with
-   Scell(NSC)%fa_pot = 0.0d0   ! to start with
-   Scell(NSC)%fa_tot = 0.0d0   ! to start with
-
-   ! Get the kinetic energies of atoms:
-   call Atomic_kinetic_energies(Scell, NSC, matter)   ! below
-
-   ! Update grid if needed:
-   call update_atomic_distribution_grid(Scell, NSC) ! module "Atomic_thermodynamics"
-
-   ! Get potential temperature amd potential energy shift via method of moments:
-   call temperature_from_moments_pot(Scell(NSC), Scell(NSC)%Ta_var(5), E_shift) ! module "Atomic_thermodynamics"
-   if (numpar%save_fa) then
-      Scell(NSC)%Pot_distr_E_shift = E_shift ! save the shift of the potential energy
-      Scell(NSC)%Ea_pot_grid_out(:) = Scell(NSC)%Ea_grid_out(:) + minval(Scell(NSC)%MDAtoms(:)%Epot)
-      Scell(NSC)%Ea_tot_grid_out(:) = Scell(NSC)%Ea_grid_out(:) + minval(Scell(NSC)%MDAtoms(:)%Epot+Scell(NSC)%MDAtoms(:)%Ekin)
-   endif
-
-   ! Construct the atomic distribution:
-   do i = 1, Nat
-      ! 1) for kinetic energies:
-      if (Scell(NSC)%MDAtoms(i)%Ekin >= Scell(NSC)%Ea_grid(Nsiz)) then  ! above the max grid point
-         j = Nsiz
-      else ! inside the grid
-         call Find_in_array_monoton(Scell(NSC)%Ea_grid, Scell(NSC)%MDAtoms(i)%Ekin, j) ! module "Little_subroutines"
-         if (j > 1) j = j - 1
-      endif
-      if (j == 1) then
-         dE = Scell(NSC)%Ea_grid(j+1) - Scell(NSC)%Ea_grid(j)
-      else
-         dE = Scell(NSC)%Ea_grid(j) - Scell(NSC)%Ea_grid(j-1)
-      endif
-      dE = max(dE, 1.0d-6) ! ensure it is finite
-      Scell(NSC)%fa(j) = Scell(NSC)%fa(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
-
-      ! 2) for potential energies:
-      if (numpar%save_fa) then
-         if (Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_pot_grid(Nsiz)) then  ! above the max grid point
-            j = Nsiz
-         else ! inside the grid
-            call Find_in_array_monoton(Scell(NSC)%Ea_pot_grid, Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
-            if (j > 1) j = j - 1
-         endif
-         if (j == 1) then
-            dE = Scell(NSC)%Ea_pot_grid(j+1) - Scell(NSC)%Ea_pot_grid(j)
-         else
-            dE = Scell(NSC)%Ea_pot_grid(j) - Scell(NSC)%Ea_pot_grid(j-1)
-         endif
-         dE = max(dE, 1.0d-6) ! ensure it is finite
-         Scell(NSC)%fa_pot(j) = Scell(NSC)%fa_pot(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
-      endif
-
-      ! 3) for total energies:
-      if (numpar%save_fa) then
-         if (Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_tot_grid(Nsiz)) then  ! above the max grid point
-            j = Nsiz
-         else ! inside the grid
-            call Find_in_array_monoton(Scell(NSC)%Ea_tot_grid, Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
-            if (j > 1) j = j - 1
-         endif
-         if (j == 1) then
-            dE = Scell(NSC)%Ea_tot_grid(j+1) - Scell(NSC)%Ea_tot_grid(j)
-         else
-            dE = Scell(NSC)%Ea_tot_grid(j) - Scell(NSC)%Ea_tot_grid(j-1)
-         endif
-         dE = max(dE, 1.0d-6) ! ensure it is finite
-         Scell(NSC)%fa_tot(j) = Scell(NSC)%fa_tot(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
-      endif
-
-      !print*, i, j, Scell(NSC)%MDAtoms(i)%Epot, Scell(NSC)%Ea_grid(j)+E_shift, Scell(NSC)%Ea_grid(j+1)+E_shift
-   enddo ! i
-
-   ! Normalize it to the number of atoms:
-   Scell(NSC)%fa = Scell(NSC)%fa/dble(Nat)
-   Scell(NSC)%fa_pot = Scell(NSC)%fa_pot/dble(Nat)
-   Scell(NSC)%fa_tot = Scell(NSC)%fa_tot/dble(Nat)
-
-!    do i = 1, size(Scell(NSC)%fa_pot)
-!       print*, i, Scell(NSC)%Ea_pot_grid(i), Scell(NSC)%fa_pot(i)
-!    enddo
-
-
-   ! For printout:
-   Nsiz = size(Scell(NSC)%Ea_grid_out) ! size of the energy grid
-
-   ! Distribute atoms:
-   Scell(NSC)%fa_out = 0.0d0   ! to start with
-   Scell(NSC)%fa_pot_out = 0.0d0   ! to start with
-   Scell(NSC)%fa_tot_out = 0.0d0   ! to start with
-
-   ! Construct the atomic distribution:
-   if (numpar%save_fa) then
-      do i = 1, Nat
-         ! 1) Kinetic energies:
-         if (Scell(NSC)%MDAtoms(i)%Ekin >= Scell(NSC)%Ea_grid_out(Nsiz)) then  ! above the max grid point
-            j = Nsiz
-         else ! inside the grid
-            call Find_in_array_monoton(Scell(NSC)%Ea_grid_out, Scell(NSC)%MDAtoms(i)%Ekin, j) ! module "Little_subroutines"
-            if (j > 1) j = j - 1
-         endif
-
-         if (j == 1) then
-            dE = Scell(NSC)%Ea_grid_out(j+1) - Scell(NSC)%Ea_grid_out(j)
-         else
-            dE = Scell(NSC)%Ea_grid_out(j) - Scell(NSC)%Ea_grid_out(j-1)
-         endif
-
-         Scell(NSC)%fa_out(j) = Scell(NSC)%fa_out(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
-
-         ! 2) for potential energies:
-         if (Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_pot_grid_out(Nsiz)) then  ! above the max grid point
-            j = Nsiz
-         else ! inside the grid
-            call Find_in_array_monoton(Scell(NSC)%Ea_pot_grid_out, Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
-            if (j > 1) j = j - 1
-         endif
-         Scell(NSC)%fa_pot_out(j) = Scell(NSC)%fa_pot_out(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
-
-         ! 3) for total energies:
-         if (Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot >= Scell(NSC)%Ea_tot_grid_out(Nsiz)) then  ! above the max grid point
-            j = Nsiz
-         else ! inside the grid
-            call Find_in_array_monoton(Scell(NSC)%Ea_tot_grid_out, Scell(NSC)%MDAtoms(i)%Ekin+Scell(NSC)%MDAtoms(i)%Epot, j) ! module "Little_subroutines"
-            if (j > 1) j = j - 1
-         endif
-         Scell(NSC)%fa_tot_out(j) = Scell(NSC)%fa_tot_out(j) + 1.0d0/dE  ! add an atom into the ditribution per energy interval
-      enddo ! i
-      ! Normalize it to the number of atoms:
-      Scell(NSC)%fa_out = Scell(NSC)%fa_out/dble(Nat)
-      Scell(NSC)%fa_pot_out = Scell(NSC)%fa_pot_out/dble(Nat)
-      Scell(NSC)%fa_tot_out = Scell(NSC)%fa_tot_out/dble(Nat)
-   endif ! (numpar%save_fa)
-
-   ! Also get the equivalent Maxwell distribution:
-   call set_Maxwell_distribution(numpar, Scell, NSC)  ! module "Atomic_thermodynamics"
-
-   ! And for the potential energies too:
-   if (numpar%save_fa) then
-      !call set_Maxwell_distribution_pot(numpar, Scell, NSC) ! module "Atomic_thermodynamics"
-      call set_Gibbs_x_powerDOS(numpar, Scell, NSC) ! module "Atomic_thermodynamics"
-   endif
-
-   !--------------------
-   ! Get atomic entropy:
-   ! 1) Kinetic contribution:
-   call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa, Scell(NSC)%Sa)  ! module "Atomic_thermodynamics"
-   ! And equivalent (equilibrium) one:
-   ! numerically calculated:
-   call atomic_entropy(Scell(NSC)%Ea_grid, Scell(NSC)%fa_eq, Scell(NSC)%Sa_eq_num)  ! module "Atomic_thermodynamics"
-   ! and analytical maxwell:
-   Scell(NSC)%Sa_eq = Maxwell_entropy(Scell(NSC)%TaeV)   ! module "Atomic_thermodynamics"
-   ! 2) Configurational (potential energy) contribution:
-   call atomic_entropy(Scell(NSC)%Ea_pot_grid, Scell(NSC)%fa_pot, Scell(NSC)%Sa_conf)  ! module "Atomic_thermodynamics"
-   ! 3) Total (kinetic+potential energy) contribution:
-   call atomic_entropy(Scell(NSC)%Ea_tot_grid, Scell(NSC)%fa_tot, Scell(NSC)%Sa_tot)  ! module "Atomic_thermodynamics"
-
-   !print*, Scell(NSC)%Sa, Scell(NSC)%Sa_conf, Scell(NSC)%Sa + Scell(NSC)%Sa_conf, Scell(NSC)%Sa_tot
-
-   ! Various definitions of atomic temperatures:
-   if (numpar%print_Ta) then
-      ! 1) kinetic temperature:
-      Scell(NSC)%Ta_var(1) = Scell(NSC)%Ta
-      ! 2) entropic temperature:
-      Scell(NSC)%Ta_var(2) = get_temperature_from_entropy(Scell(NSC)%Sa) ! [K] ! module "Atomic_thermodynamics"
-      ! 3) kinetic temperature from numerical distribution avereaging:
-      Scell(NSC)%Ta_var(3) = get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa) ! [K] ! module "Atomic_thermodynamics"
-      ! 4) kinetic temperature from the method of moments:
-      call temperature_from_moments(Scell(NSC), Scell(NSC)%Ta_var(4), E_shift) ! module "Atomic_thermodynamics"
-      ! 5) "potential" temperature was calculated above
-      ! 6) configurational temperature:
-      if (ANY(numpar%r_periodic(:))) then
-         Scell(NSC)%Ta_var(6) = get_temperature_from_equipartition(Scell(NSC), matter, numpar) ! [K] ! module "Atomic_thermodynamics"
-      else  ! use nonperiodic definition
-         Scell(NSC)%Ta_var(6) = get_temperature_from_equipartition(Scell(NSC), matter, numpar, non_periodic=.true.) ! [K] ! module "Atomic_thermodynamics"
-      endif
-      ! And partial temperatures along X, Y, Z:
-      call partial_temperatures(Scell(NSC), matter, numpar)   ! module "Atomic_thermodynamics"
-   endif
-
-end subroutine get_atomic_distribution
-
-
-
-subroutine update_atomic_distribution_grid(Scell, NSC)
-   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
-   integer, intent(in) :: NSC ! number of supercell
-   !------------------
-   real(8) :: Emin, Emax, Ea_max, dEa, E_max_kin
-   integer :: Nsiz, i
-
-   ! Kinetic energy distribution:
-   Emax = maxval(Scell(NSC)%MDAtoms(:)%Ekin)
-   E_max_kin = Emax  ! save for use below
-   Ea_max = max(Emax*1.5d0,0.1d0)   ! not less than 0.1 eV of the total grid interval
-   Nsiz = size(Scell(NSC)%Ea_grid)
-   dEa = Ea_max/dble(Nsiz)
-   ! Reset the grid:
-   Scell(NSC)%Ea_grid(1) = 0.0d0 ! starting point
-   do i = 2, Nsiz
-      Scell(NSC)%Ea_grid(i) = Scell(NSC)%Ea_grid(i-1) + dEa
-   enddo ! i
-
-   ! Potential energy distribution:
-   Emin = minval(Scell(NSC)%MDAtoms(:)%Epot)
-   Emax = max( maxval(Scell(NSC)%MDAtoms(:)%Epot)+0.5d0, Emin+0.1d0 )   ! not less than 0.1 eV of the total grid interval
-   Nsiz = size(Scell(NSC)%Ea_pot_grid)
-   dEa = (Emax - Emin) / dble(Nsiz)
-   ! Reset the grid:
-   Scell(NSC)%Ea_pot_grid(1) = Emin ! starting point
-   do i = 2, Nsiz
-      Scell(NSC)%Ea_pot_grid(i) = Scell(NSC)%Ea_pot_grid(i-1) + dEa
-   enddo ! i
-
-   ! Total energy distribution:
-   Emin = minval(Scell(NSC)%MDAtoms(:)%Epot)
-   Emax = max( maxval(Scell(NSC)%MDAtoms(:)%Epot) + E_max_kin + 0.1d0, Emin+0.1d0 )   ! not less than 0.1 eV of the total grid interval
-   Nsiz = size(Scell(NSC)%Ea_tot_grid)
-   dEa = (Emax - Emin) / dble(Nsiz)
-   ! Reset the grid:
-   Scell(NSC)%Ea_tot_grid(1) = Emin ! starting point
-   do i = 2, Nsiz
-      Scell(NSC)%Ea_tot_grid(i) = Scell(NSC)%Ea_tot_grid(i-1) + dEa
-   enddo ! i
-   !pause 'update_atomic_distribution_grid'
-end subroutine update_atomic_distribution_grid
 
 
 !NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN
@@ -2959,7 +2717,7 @@ end subroutine shortest_distance_OLD
 
 
 
-subroutine distance_to_given_cell(Scell, NSC, atoms, zb, i1, j1, R, x, y, z, sx, sy, sz)
+subroutine distance_to_given_cell_0(Scell, NSC, atoms, zb, i1, j1, R, x, y, z, sx, sy, sz)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
@@ -2990,7 +2748,67 @@ subroutine distance_to_given_cell(Scell, NSC, atoms, zb, i1, j1, R, x, y, z, sx,
    if (present(sx)) sx = atoms(i1)%S(1) - atoms(j1)%S(1) + zb(1)
    if (present(sy)) sy = atoms(i1)%S(2) - atoms(j1)%S(2) + zb(2)
    if (present(sz)) sz = atoms(i1)%S(3) - atoms(j1)%S(3) + zb(3)
-end subroutine distance_to_given_cell
+end subroutine distance_to_given_cell_0
+
+
+
+subroutine distance_to_given_cell_1(Scell, zb, i1, j1, R, x, y, z, sx, sy, sz)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   real(8), dimension(3), intent(in) :: zb ! super cell indices
+   integer, intent(in) :: i1, j1 ! indices of atoms distance between which we are looking for
+   real(8), intent(out) :: R ! [A] distance between the given atoms
+   real(8), intent(out), optional :: x, y, z ! [A] projection of that distance
+   real(8), intent(out), optional :: sx, sy, sz ! relative projection of that distance
+   !--------------------
+   real(8) :: x0, y0, z0
+   integer :: ik
+   x0 = 0.0d0
+   y0 = 0.0d0
+   z0 = 0.0d0
+   do ik = 1,3
+      x0 = x0 + (Scell%MDatoms(i1)%S(ik) - Scell%MDatoms(j1)%S(ik) + zb(ik))*Scell%supce(ik,1) ! distance in X
+      y0 = y0 + (Scell%MDatoms(i1)%S(ik) - Scell%MDatoms(j1)%S(ik) + zb(ik))*Scell%supce(ik,2) ! distance in Y
+      z0 = z0 + (Scell%MDatoms(i1)%S(ik) - Scell%MDatoms(j1)%S(ik) + zb(ik))*Scell%supce(ik,3) ! distance in Z
+   enddo ! ik
+   R = DSQRT(x0*x0 + y0*y0 + z0*z0) ! [A] get out distance
+   ! get out projections too:
+   if (present(x)) x=x0
+   if (present(y)) y=y0
+   if (present(z)) z=z0
+   ! save the shortest distance projections:
+   if (present(sx)) sx = Scell%MDatoms(i1)%S(1) - Scell%MDatoms(j1)%S(1) + zb(1)
+   if (present(sy)) sy = Scell%MDatoms(i1)%S(2) - Scell%MDatoms(j1)%S(2) + zb(2)
+   if (present(sz)) sz = Scell%MDatoms(i1)%S(3) - Scell%MDatoms(j1)%S(3) + zb(3)
+end subroutine distance_to_given_cell_1
+
+
+
+subroutine distance_to_given_point(Scell, i1, zb, r0, R, x, y, z)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   real(8), dimension(3), intent(in) :: zb ! super cell indices
+   integer, intent(in) :: i1 ! indices of atoms distance between which we are looking for
+   real(8), dimension(3), intent(in) :: r0  ! point, to which we need the distance from atom #i1
+   real(8), intent(out), optional :: R ! [A] distance between the given atoms
+   real(8), intent(out), optional :: x, y, z ! [A] projection of that distance
+   !--------------------
+   real(8) :: x0, y0, z0
+   integer :: ik
+
+   x0 = 0.0d0
+   y0 = 0.0d0
+   z0 = 0.0d0
+   do ik = 1,3
+      x0 = x0 + (Scell%MDatoms(i1)%S(ik) + zb(ik))*Scell%supce(ik,1) ! distance in X
+      y0 = y0 + (Scell%MDatoms(i1)%S(ik) + zb(ik))*Scell%supce(ik,2) ! distance in Y
+      z0 = z0 + (Scell%MDatoms(i1)%S(ik) + zb(ik))*Scell%supce(ik,3) ! distance in Z
+   enddo ! ik
+   ! get out the absolute distance:
+   if (present(R)) R = DSQRT((x0-r0(1))*(x0-r0(1)) + (y0-r0(2))*(y0-r0(2)) + (z0-r0(3))*(z0-r0(3))) ! [A]
+   ! get out projections too:
+   if (present(x)) x=(x0-r0(1))
+   if (present(y)) y=(y0-r0(2))
+   if (present(z)) z=(z0-r0(3))
+end subroutine distance_to_given_point
 
 
 
