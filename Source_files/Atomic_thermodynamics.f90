@@ -37,7 +37,7 @@ use Little_subroutines, only : Find_in_array_monoton
 implicit none
 PRIVATE
 
-public :: get_atomic_distribution
+public :: get_atomic_distribution, update_Ta_config_running_average
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
 
@@ -234,21 +234,64 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
       endif
 
       !Testing of periodic and nonperiodic calculations:
-      !print*, 'Ta', get_temperature_from_equipartition(Scell(NSC), matter, numpar), &
-      !             get_temperature_from_equipartition(Scell(NSC), matter, numpar, non_periodic=.true.), &
-      !             get_Tconfig_n_l(Scell(NSC), matter, numpar, 1, 0)
+      !print*, 'Ta: ', get_temperature_from_equipartition(Scell(NSC), matter, numpar), &
+                   !get_configurational_temperature(Scell(NSC), matter, numpar), Scell(NSC)%Ta_var(8)
+                   !get_temperature_from_equipartition(Scell(NSC), matter, numpar, non_periodic=.true.), &
+                   !get_Tconfig_n_l(Scell(NSC), matter, numpar, 1, 0)
 
       ! 7) Configurational-sine: B=r^n*sin^2(Pi*l*s) : for n,l:
       Scell(NSC)%Ta_var(7) = get_Tconfig_n_l(Scell(NSC), matter, numpar, 0, 1)   ! module "Atomic_thermodynamics"
-      ! 8) Configurational-sine: B=r^n*sin^2(Pi*l*s) : for n,l:
-      Scell(NSC)%Ta_var(8) = get_Tconfig_n_l(Scell(NSC), matter, numpar, 0, 2)  ! module "Atomic_thermodynamics"
+      ! 8) Configurational-Rugh (Scell(NSC)%Ta_var(8)):
+      ! Was already calculated separately, no need to do that here!
 
       ! And partial temperatures along X, Y, Z:
       call partial_temperatures(Scell(NSC), matter, numpar)   ! module "Atomic_thermodynamics"
    endif
 
+   if (numpar%verbose) print*, 'get_atomic_distribution done succesfully'
 end subroutine get_atomic_distribution
 
+
+subroutine update_Ta_config_running_average(Scell, matter, numpar)
+   type(Super_cell), intent(inout) :: Scell     ! super-cell with all the atoms inside
+   type(solid), intent(in) :: matter            ! materil parameters
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   !---------------------------
+   if (numpar%print_Ta) then
+      ! Get the new configurational temperature:
+      Scell%Ta_var(8) = get_configurational_temperature(Scell, matter, numpar)  ! module "Atomic_thermodynamics"
+      ! Update the running average of the configurational tempreature:
+      call update_running_avereage(Scell%Ta_var(8), Scell%Ta_conf_run_average)  ! below
+   endif
+end subroutine update_Ta_config_running_average
+
+
+
+subroutine update_running_avereage(Ta_conf, Ta_run_average)
+   real(8), intent(inout) :: Ta_conf
+   real(8), dimension(:), intent(inout) :: Ta_run_average
+   !-------------------------
+   integer :: i, Nsiz, Ncur
+   real(8) :: Tmin
+
+   Nsiz = size(Ta_run_average)
+   ! Find minimal value to check if the running-average array is filled or not yet (first Nsiz steps of the simulation):
+   Tmin = minval(Ta_run_average)
+   if (Tmin < 1.0d-12) then ! the array is not filled yet, there are zeroes:
+      Ncur = transfer(minloc(Ta_run_average), Ncur)
+   else  ! the array is full:
+      Ncur = Nsiz
+      ! Update all array:
+      do i = 1, Nsiz-1
+         Ta_run_average(i) = Ta_run_average(i-1)
+      enddo ! i
+   endif
+   ! 1) Save the latest value in the running average array:
+   Ta_run_average(Ncur) = Ta_conf
+
+   ! 2) Update the configurational temperature to the value of running average:
+   Ta_conf = SUM(Ta_run_average(1:Ncur)) / dble(Ncur)
+end subroutine update_running_avereage
 
 
 subroutine update_atomic_distribution_grid(Scell, NSC)
@@ -330,6 +373,59 @@ subroutine partial_temperatures(Scell, matter, numpar)
 end subroutine partial_temperatures
 
 
+function get_configurational_temperature(Scell, matter, numpar) result(Ta)
+   real(8) :: Ta  ! [K] configurational temperature defined for B = r^n * sin(Pi*l*s)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(solid), intent(in), target :: matter ! materil parameters
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   !-------------------
+   integer :: Nat, i
+   real(8) :: F(3), F0(3), F2(3), dF(3), Pot_tot, acc(3), acc0(3), V(3), Pot_den, Pot_num
+   real(8), pointer :: Mass
+
+   Nat = size(Scell%MDAtoms)  ! number of atoms
+
+   ! For all atoms:
+   F2 = 0.0d0  ! to start with
+   dF = 0.0d0  ! to start with
+   Pot_den = 0.0d0   ! to start with
+   Pot_num = 0.0d0   ! to start with
+   do i = 1, Nat
+      Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma   ! atomic mass [kg]
+
+      ! Convert acceleration into SI units:
+      acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
+      ! Get the force:
+      F(:) = Mass * acc(:) ! [N]
+      F2(:) = F(:)**2
+      ! Numerator:
+      Pot_num = Pot_num + SUM(F2(:))
+
+
+      ! Get Div*F via chain rule:
+      acc0(:) = Scell%MDAtoms(i)%accel0(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
+      F0(:) = Mass * acc0(:) ! [N]
+      V(:) = Scell%MDAtoms(i)%V(:)  ! [A/fs]
+      if (ANY(V(:) < 1.0d0-10)) cycle  ! skip undefined contribution
+      ! Numerical div*F:
+      dF(:) = (F(:) - F0(:)) / numpar%dt / V(:) ! [N/A]
+      ! Denominator:
+      Pot_den = Pot_den + SUM(dF(:))
+   enddo ! i
+   ! Configurational temperature:
+   if (abs(Pot_den) > 1.0d-12) then ! Ta defined
+      Pot_tot = Pot_num/Pot_den * 1.0d-10 / g_e ! [N/A] -> [eV]
+   else  ! Ta undefined
+      Pot_tot = 0.0d0
+   endif
+   Ta = Pot_tot  ! [eV]
+
+   ! Convert [eV] -> {K}:
+   Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
+end function get_configurational_temperature
+
+
+
 function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
    real(8) :: Ta  ! [K] configurational temperature defined for B = r^n * sin(Pi*l*s)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
@@ -381,7 +477,7 @@ function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
       !r(:) = Scell%MDatoms(i)%R(:)  ! [A]
       r(:) = Scell%MDatoms(i)%R(:) - Rmin(:)  ! [A]
       a_r = (sqrt(SUM(r(:)**2))) ! absolute value
-
+      if (a_r < 1.0d-6) cycle ! same atom or too close, skip its contribution
 
       ! Relative absolute value of coordinate:
       s(:) = Scell%MDAtoms(i)%S(:) - Smin(:)
@@ -405,9 +501,14 @@ function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
       ! Total potential contribution to get the temperature
       Pot_num = Pot_num + Pot
 
-
       ! From power in the B function:
-      r_n_1(:) = (dble(n) + r(:)/a_r - (r(:)/a_r)**3 ) * (r(:) ** (n-1)) * sine_s(:)
+      do ik = 1, 3
+         if (abs(r(ik)) > 1.0d-6) then
+            r_n_1(ik) = (dble(n) + r(ik)/a_r - (r(ik)/a_r)**3 ) * (r(ik) ** (n-1)) * sine_s(ik)
+         else
+            r_n_1(ik) = 0.0d0
+         endif
+      enddo
 
       ! Get the trace of the relative coordinate vector^n
       call Invers_3x3(Scell%supce, dsupce, 'get_Tconfig_n_l') ! from module "Algebra_tools"
@@ -422,12 +523,15 @@ function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
       Pot_den = Pot_den + den
       !write(*,'(a,i3,es,es,es,es)') 'Tc:', i, Pot, Pot_num* 1.0d-10 / g_e* g_kb, den, Pot_den
    enddo
-   Pot_tot = Pot_num/Pot_den * 1.0d-10 / g_e ! [arb.units] -> [eV]
+   if (abs(Pot_den) > 1.0d-12) then ! Ta defined
+      Pot_tot = Pot_num/Pot_den * 1.0d-10 / g_e ! [arb.units] -> [eV]
+   else  ! Ta undefined
+      Pot_tot = 0.0d0
+   endif
    Ta = -Pot_tot  ! [eV]
 
    ! Convert [eV] -> {K}:
    Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
-
    !print*,'======', Ta, '======'
 end function get_Tconfig_n_l
 

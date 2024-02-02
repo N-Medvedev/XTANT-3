@@ -92,6 +92,7 @@ subroutine MD_step(Scell, matter, numpar, time, Err)
    Nat = size(Scell(1)%MDAtoms)
    do i = 1, Nat
       !V0(i,:) = Scell(1)%MDAtoms(i)%V(:)     ! before update
+      Scell(1)%MDatoms(i)%accel0(:) = Scell(1)%MDatoms(i)%accel(:)   ! save from last step
       Scell(1)%MDatoms(i)%accel(:) = 0.0d0   ! reset to start over
    enddo
 
@@ -1700,7 +1701,7 @@ subroutine get_electronic_thermal_parameters(numpar, Scell, NSC, matter, Err)
    ! Electron heat conductivity, if required (does not work well...).
    ! Exclude it from here; instead, try to use Onsager coefficients in Optical module.
    !call get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err) ! below
-
+   !print*, 'Done get_electronic_thermal_parameters'
 end subroutine get_electronic_thermal_parameters
 
 

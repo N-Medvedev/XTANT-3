@@ -227,6 +227,8 @@ call get_low_energy_distribution(g_Scell(1), g_numpar) ! module "Electron_tools"
 
 ! Get atomic distribution:
 call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_thermodynamics"
+! Update configurational temperature for running average (needed on each timestep):
+call update_Ta_config_running_average(g_Scell(1), g_matter, g_numpar)   ! module "Atomic_thermodynamics"
 if (g_numpar%verbose) call print_time_step('Atomic distribution calculated succesfully:', msec=.true.)
 
 
@@ -335,6 +337,9 @@ do while (g_time .LT. g_numpar%t_total)
    !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
    g_time = g_time + g_numpar%dt        ! [fs] next time-step
    g_dt_save = g_dt_save + g_numpar%dt  ! [fs] for tracing when to save the output data
+   ! Update configurational temperature for running average (needed on each timestep):
+   call update_Ta_config_running_average(g_Scell(1), g_matter, g_numpar)   ! module "Atomic_thermodynamics"
+
    ! Write current data into output files:
    if (g_dt_save .GE. g_numpar%dt_save - 1d-6) then
       ! Print out the curent time-step
@@ -706,6 +711,8 @@ subroutine vary_size(do_forces, Err)
       call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
       ! Get atomic distribution:
+      ! Update configurational temperature for running average (needed on each timestep):
+      call update_Ta_config_running_average(g_Scell(1), g_matter, g_numpar)   ! module "Atomic_thermodynamics"
       call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_thermodynamics"
 
       ! Save initial step in output:

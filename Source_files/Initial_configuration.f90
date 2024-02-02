@@ -921,6 +921,12 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          enddo
          matter%W_PR = temp/matter%W_PR ! Mass of unit cell in the Parrinello-Rahman method [kg]
 
+         ! Initial accelerations initialized at 0:
+         do j = 1, Scell(i)%Na
+            Scell(i)%MDatoms(j)%accel(:) = 0.0d0
+            Scell(i)%MDatoms(j)%accel0(:) = 0.0d0
+         enddo ! j
+
       enddo ALL_SC
    endif MD
 

@@ -108,10 +108,15 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%change_size_step = 300    ! default number of points for vary_size
 
    numpar%lin_scal = 0   ! do not use linear scaling TB (NOT READY)
+
    Scell(1)%Te = 300.0d0 ! initial electron temperature [K]
    Scell(1)%TeeV = Scell(1)%Te/g_kb ! [eV] electron temperature
    Scell(1)%Ta = 300.0d0 ! initial atomic temperature [K]
    Scell(1)%TaeV = Scell(1)%Ta/g_kb ! [eV] atomic temperature
+   Scell(1)%Ta_var(:) = 0.0d0    ! various definitions of temperatures
+   Scell(1)%Ta_r_var(:) = 0.0d0  ! projections of temperatures
+   Scell(1)%Ta_conf_run_average(:) = 0.0d0   ! last values of Ta_config
+
    numpar%t_total = 1000.0d0 ! total duration of simulation [fs]
    call initialize_default_laser(laser, 1) ! initialize 1 pulse by default
    numpar%optic_model = 0 ! no optical calculations by default
