@@ -1924,7 +1924,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta = FN
-      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)  sin^2(2)')
+      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)  config')
       call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K]')
 
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
@@ -3735,7 +3735,7 @@ subroutine gnu_at_temperatures_part(File_name, file_Ta, t0, t_last, eps_name)
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Atomic tempereature', &
-         'Time (fs)', 'Atomic temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 1)   ! module "Gnuplotting"
+         'Time (fs)', 'Atomic temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Ta)), '" u 1:2 w l lw LW dashtype 2 title "Kinetic: X" ,\'

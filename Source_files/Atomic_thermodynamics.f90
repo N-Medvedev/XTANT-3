@@ -1082,7 +1082,7 @@ subroutine set_Gibbs_x_powerDOS(numpar, Scell, NSC) ! below
 
    ! Define parametres of the (Gibbs * DOS) distribution:
    U0 = minval(Scell(NSC)%MDAtoms(:)%Epot)   ! to start with
-   ! Assume fixed DOS of harmonic oscillator just for comparisons and tests:
+   ! Assume fixed DOS of "harmonic oscillator" just for comparisons and tests:
    b = numpar%power_b   ! Fixed, or starting, b for distribution: n(U)=A*exp(-(U-U0)/T)*U^b
    call find_Gibbs_x_powerDOS_parameters(U1, U2, U3, A, T, U0, b, 0)   ! below
 
