@@ -5539,7 +5539,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a,f9.3,a)') ' Output data are saved every: ', numpar%dt_save,' [fs]'
       if (numpar%p_const) then	! P=const
          write(print_to,'(a)') ' Constant pressure simulation (Parrinello-Rahman scheme, NPH) '
-         write(print_to,'(a,f9.1,a)') ' External pressure: ', matter%p_ext,' [Pa]'
+         write(print_to,'(a,f12.3,a)') ' External pressure: ', matter%p_ext/1.0d9,' [GPa]'
       else ! V=const
          write(print_to,'(a)') ' Constant volume simulation (NVE)'
       endif

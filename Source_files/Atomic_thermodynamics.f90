@@ -346,7 +346,7 @@ subroutine partial_temperatures(Scell, matter, numpar)
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    !--------------------
    integer :: Nat, i
-   real(8) :: prefac, Ekin(3)
+   real(8) :: prefac, Ekin(3), P_ext
    real(8), pointer :: Mass
 
    Nat = size(Scell%MDAtoms)  ! number of atoms
@@ -366,8 +366,12 @@ subroutine partial_temperatures(Scell, matter, numpar)
    Scell%Ta_r_var(4) = -Scell%Pot_Stress(1,1) * prefac   ! X
    Scell%Ta_r_var(5) = -Scell%Pot_Stress(2,2) * prefac   ! Y
    Scell%Ta_r_var(6) = -Scell%Pot_Stress(3,3) * prefac   ! Z
+   ! Exclude external pressure:
+   P_ext = matter%p_ext * prefac
+   Scell%Ta_r_var(4:6) = Scell%Ta_r_var(4:6) - P_ext
 
-   Scell%Ta_r_var(:) = abs(Scell%Ta_r_var(:))   ! ensure it is non-negative
+   ! Ensure they are non-negative:
+   Scell%Ta_r_var(:) = abs(Scell%Ta_r_var(:))
 
    nullify(Mass)
 end subroutine partial_temperatures
@@ -418,6 +422,11 @@ function get_configurational_temperature(Scell, matter, numpar) result(Ta)
    else  ! Ta undefined
       Pot_tot = 0.0d0
    endif
+
+   ! Exclude external pressure:
+   Pot_tot = Pot_tot - matter%p_ext*(Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+
+   ! Define tempreature:
    Ta = Pot_tot  ! [eV]
 
    ! Convert [eV] -> {K}:
@@ -528,6 +537,10 @@ function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
    else  ! Ta undefined
       Pot_tot = 0.0d0
    endif
+
+   ! Subtract external pressure:
+   Pot_tot = Pot_tot - matter%p_ext*(Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+
    Ta = -Pot_tot  ! [eV]
 
    ! Convert [eV] -> {K}:
@@ -538,7 +551,7 @@ end function get_Tconfig_n_l
 
 
 function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic) result(Ta)  ! Sec.III in [1]
-   real(8) :: Ta  ! [K] configurational temperature
+   real(8) :: Ta  ! [K] virial temperature
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in), target :: matter	! materil parameters
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
@@ -560,7 +573,9 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
 
    if ( .not.do_nonper ) then ! periodic boundaries are used via Pahrinello-Rahman method
      ! Get it from the pressure, calculated for the periodic boundaries:
-     Ta = -Scell%Pot_Pressure * (Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+     Pot_tot = (Scell%Pot_Pressure + matter%p_ext)
+
+     Ta = -Pot_tot * (Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
 
    else ! nonperiodic boundaries (Eq.(22) [2], unfinished, only works for non-periodic!)
       Pot_tot = 0.0d0   ! to start with
@@ -609,7 +624,7 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
       !Pot_tot = Pot_tot / dble( count(atoms_group_ind(:)) )
 
       ! Configurational temperature from the equipartition theorem as potential energy per atom per degree of freedom:
-      Ta = -Pot_tot / (3.0d0 * dble(Nat))   ! [eV]
+      Ta = -(Pot_tot+matter%p_ext) / (3.0d0 * dble(Nat))   ! [eV]
    endif
 
    ! Convert [eV] -> {K}:
