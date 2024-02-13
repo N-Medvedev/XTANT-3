@@ -54,6 +54,15 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    integer, intent(in) :: NSC ! number of supercell
    type(solid), intent(in) :: matter    ! material parameters
    real(8), optional :: Emax_in, dE_in  ! [eV] maximal energy and grid step for atomic distribution
+   ! Reminder:
+   ! Ta_var(1) kinetic temperature
+   ! Ta_var(2) "entropic" kinetic temperature
+   ! Ta_var(3) kinetic temperature from numerical distribution
+   ! Ta_var(4) fluctuational temperature
+   ! Ta_var(5) "potential" temperature
+   ! Ta_var(6) virial temperature
+   ! Ta_var(7) Configurational-sine: B=r^n*sin^2(Pi*l*s) : for n,l:
+   ! Ta_var(8) Configurational-Rugh
    !----------------------------------
    integer :: i, Nat, j, Nsiz
    real(8) :: Emax, dE, E_shift, Ta_1_1, Ta_2_1, Ta_1_2
@@ -244,8 +253,13 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
       ! 8) Configurational-Rugh (Scell(NSC)%Ta_var(8)):
       ! Was already calculated separately, no need to do that here!
 
-      ! And partial temperatures along X, Y, Z:
+      ! Get partial temperatures along X, Y, Z:
       call partial_temperatures(Scell(NSC), matter, numpar)   ! module "Atomic_thermodynamics"
+
+      ! Get force-velocioty correlator:
+      Scell(NSC)%Fv = force_velocity_correlator(Scell(NSC), matter)  ! below
+
+      !print*, 'Fv:', Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(6), Scell(NSC)%Fv
    endif
 
    if (numpar%verbose) print*, 'get_atomic_distribution done succesfully'
@@ -431,7 +445,46 @@ function get_configurational_temperature(Scell, matter, numpar) result(Ta)
 
    ! Convert [eV] -> {K}:
    Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
+
+   ! Clean up:
+   nullify(Mass)
 end function get_configurational_temperature
+
+
+
+function force_velocity_correlator(Scell, matter) result(Fv)
+   real(8) :: Fv  ! [eV/fs] <F*v>
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(solid), intent(in), target :: matter ! materil parameters
+   !type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   !-------------------
+   integer :: i, Nat
+   real(8) :: Fv_cur
+   real(8) :: F(3), acc(3), V(3)
+   real(8), pointer :: Mass
+
+   Nat = size(Scell%MDAtoms)  ! number of atoms
+
+   Fv_cur = 0.0d0 ! to start with
+   do i = 1, Nat
+      Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma   ! atomic mass [kg]
+      ! Convert acceleration into SI units:
+      acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
+      ! Get the force:
+      F(:) = Mass * acc(:) ! [N]
+      ! Get the velocity:
+      V(:) = Scell%MDAtoms(i)%V(:)  ! [A/fs]
+
+      ! Get the correlator:
+      Fv_cur = Fv_cur + SUM(F(:)*V(:))
+   enddo ! i
+   ! Convert to proper units:
+   Fv = Fv_cur * 1.0d-10 / dble(Nat) / g_e   ! [N * A/fs] -> [eV/fs]
+
+   ! Clean up:
+   nullify(Mass)
+end function force_velocity_correlator
+
 
 
 
@@ -546,6 +599,9 @@ function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
    ! Convert [eV] -> {K}:
    Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
    !print*,'======', Ta, '======'
+
+   ! Clean up:
+   nullify(Mass)
 end function get_Tconfig_n_l
 
 
@@ -629,6 +685,9 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
 
    ! Convert [eV] -> {K}:
    Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
+
+   ! Clean up:
+   nullify(Mass)
 end function get_temperature_from_equipartition
 
 
@@ -1068,6 +1127,9 @@ subroutine shortest_distance_to_point(Scell, i1, Sj, a_r, x1, y1, z1, sx1, sy1, 
          enddo ! k
       enddo ! j
    enddo ! i
+
+   ! Clean up:
+   nullify(atoms)
 end subroutine shortest_distance_to_point
 
 
