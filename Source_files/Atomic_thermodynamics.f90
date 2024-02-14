@@ -281,6 +281,69 @@ end subroutine update_Ta_config_running_average
 
 
 
+function get_configurational_temperature(Scell, matter, numpar) result(Ta)
+   real(8) :: Ta  ! [K] configurational temperature defined for B = r^n * sin(Pi*l*s)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(solid), intent(in), target :: matter ! materil parameters
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   !-------------------
+   integer :: Nat, i
+   real(8) :: F(3), F0(3), F2(3), dF(3), Pot_tot, acc(3), acc0(3), V(3), Pot_den, Pot_num
+   real(8), pointer :: Mass
+
+   Nat = size(Scell%MDAtoms)  ! number of atoms
+
+   ! For all atoms:
+   F2 = 0.0d0  ! to start with
+   dF = 0.0d0  ! to start with
+   Pot_den = 0.0d0   ! to start with
+   Pot_num = 0.0d0   ! to start with
+   do i = 1, Nat
+      Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma   ! atomic mass [kg]
+
+      ! Convert acceleration into SI units:
+      acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
+      ! Get the force:
+      F(:) = Mass * acc(:) ! [N]
+      F2(:) = F(:)**2
+      ! Numerator:
+      Pot_num = Pot_num + SUM(F2(:))
+
+
+      ! Get Div*F via chain rule:
+      acc0(:) = Scell%MDAtoms(i)%accel0(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
+      F0(:) = Mass * acc0(:) ! [N]
+      V(:) = Scell%MDAtoms(i)%V(:)  ! [A/fs]
+      if (ANY(V(:) < 1.0d0-10)) cycle  ! skip undefined contribution
+      ! Numerical div*F:
+      dF(:) = (F(:) - F0(:)) / numpar%dt / V(:) ! [N/A]
+      ! Denominator:
+      Pot_den = Pot_den + SUM(dF(:))
+   enddo ! i
+   ! Configurational temperature:
+   if (abs(Pot_den) > 1.0d-12) then ! Ta defined
+      Pot_tot = Pot_num/Pot_den * 1.0d-10 / g_e ! [N/A] -> [eV]
+   else  ! Ta undefined
+      Pot_tot = 0.0d0
+   endif
+
+   ! Exclude external pressure:
+   Pot_tot = -Pot_tot - matter%p_ext*(Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+
+   ! Define tempreature:
+   Ta = Pot_tot  ! [eV]
+
+   ! Convert [eV] -> [K]:
+   Ta = Ta * g_kb
+
+   !Ta = abs(Ta)    ! ensure it is non-negative, even though pressure may be
+
+   ! Clean up:
+   nullify(Mass)
+end function get_configurational_temperature
+
+
+
 subroutine update_running_avereage(Ta_conf, Ta_run_average)
    real(8), intent(inout) :: Ta_conf
    real(8), dimension(:), intent(inout) :: Ta_run_average
@@ -291,7 +354,7 @@ subroutine update_running_avereage(Ta_conf, Ta_run_average)
    Nsiz = size(Ta_run_average)
    ! Find minimal value to check if the running-average array is filled or not yet (first Nsiz steps of the simulation):
    Tmin = minval(Ta_run_average)
-   if (Tmin < 1.0d-12) then ! the array is not filled yet, there are zeroes:
+   if (abs(Tmin) < 1.0d-12) then ! the array is not filled yet, there are zeroes:
       Ncur = transfer(minloc(Ta_run_average), Ncur)
    else  ! the array is full:
       Ncur = Nsiz
@@ -306,6 +369,7 @@ subroutine update_running_avereage(Ta_conf, Ta_run_average)
    ! 2) Update the configurational temperature to the value of running average:
    Ta_conf = SUM(Ta_run_average(1:Ncur)) / dble(Ncur)
 end subroutine update_running_avereage
+
 
 
 subroutine update_atomic_distribution_grid(Scell, NSC)
@@ -377,78 +441,19 @@ subroutine partial_temperatures(Scell, matter, numpar)
 
    ! Configurational temperatures:
    prefac = (Scell%V * 1e-30) / dble(Nat) / g_e * g_kb  ! to get temperature in [K]
-   Scell%Ta_r_var(4) = -Scell%Pot_Stress(1,1) * prefac   ! X
-   Scell%Ta_r_var(5) = -Scell%Pot_Stress(2,2) * prefac   ! Y
-   Scell%Ta_r_var(6) = -Scell%Pot_Stress(3,3) * prefac   ! Z
+   Scell%Ta_r_var(4) = Scell%Pot_Stress(1,1) * prefac   ! X
+   Scell%Ta_r_var(5) = Scell%Pot_Stress(2,2) * prefac   ! Y
+   Scell%Ta_r_var(6) = Scell%Pot_Stress(3,3) * prefac   ! Z
    ! Exclude external pressure:
    P_ext = matter%p_ext * prefac
    Scell%Ta_r_var(4:6) = Scell%Ta_r_var(4:6) - P_ext
 
-   ! Ensure they are non-negative:
-   Scell%Ta_r_var(:) = abs(Scell%Ta_r_var(:))
 
+   ! Ensure they are non-negative:
+   !Scell%Ta_r_var(:) = abs(Scell%Ta_r_var(:))
    nullify(Mass)
 end subroutine partial_temperatures
 
-
-function get_configurational_temperature(Scell, matter, numpar) result(Ta)
-   real(8) :: Ta  ! [K] configurational temperature defined for B = r^n * sin(Pi*l*s)
-   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
-   type(solid), intent(in), target :: matter ! materil parameters
-   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
-   !-------------------
-   integer :: Nat, i
-   real(8) :: F(3), F0(3), F2(3), dF(3), Pot_tot, acc(3), acc0(3), V(3), Pot_den, Pot_num
-   real(8), pointer :: Mass
-
-   Nat = size(Scell%MDAtoms)  ! number of atoms
-
-   ! For all atoms:
-   F2 = 0.0d0  ! to start with
-   dF = 0.0d0  ! to start with
-   Pot_den = 0.0d0   ! to start with
-   Pot_num = 0.0d0   ! to start with
-   do i = 1, Nat
-      Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma   ! atomic mass [kg]
-
-      ! Convert acceleration into SI units:
-      acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
-      ! Get the force:
-      F(:) = Mass * acc(:) ! [N]
-      F2(:) = F(:)**2
-      ! Numerator:
-      Pot_num = Pot_num + SUM(F2(:))
-
-
-      ! Get Div*F via chain rule:
-      acc0(:) = Scell%MDAtoms(i)%accel0(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
-      F0(:) = Mass * acc0(:) ! [N]
-      V(:) = Scell%MDAtoms(i)%V(:)  ! [A/fs]
-      if (ANY(V(:) < 1.0d0-10)) cycle  ! skip undefined contribution
-      ! Numerical div*F:
-      dF(:) = (F(:) - F0(:)) / numpar%dt / V(:) ! [N/A]
-      ! Denominator:
-      Pot_den = Pot_den + SUM(dF(:))
-   enddo ! i
-   ! Configurational temperature:
-   if (abs(Pot_den) > 1.0d-12) then ! Ta defined
-      Pot_tot = Pot_num/Pot_den * 1.0d-10 / g_e ! [N/A] -> [eV]
-   else  ! Ta undefined
-      Pot_tot = 0.0d0
-   endif
-
-   ! Exclude external pressure:
-   Pot_tot = Pot_tot - matter%p_ext*(Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
-
-   ! Define tempreature:
-   Ta = Pot_tot  ! [eV]
-
-   ! Convert [eV] -> {K}:
-   Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
-
-   ! Clean up:
-   nullify(Mass)
-end function get_configurational_temperature
 
 
 
@@ -597,8 +602,9 @@ function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
    Ta = -Pot_tot  ! [eV]
 
    ! Convert [eV] -> {K}:
-   Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
-   !print*,'======', Ta, '======'
+   Ta = Ta * g_kb
+
+   !Ta = abs(Ta) ! ensure it is non-negative, even though pressure may be
 
    ! Clean up:
    nullify(Mass)
@@ -684,8 +690,9 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
    endif
 
    ! Convert [eV] -> {K}:
-   Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
+   Ta = -Ta * g_kb   ! and account for T = -<r*F>
 
+   !Ta = abs(Ta)   ! ensure it is non-negative, even though pressure may be
    ! Clean up:
    nullify(Mass)
 end function get_temperature_from_equipartition

@@ -154,7 +154,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%vel_from_file = .false.   ! velosities are not read from file
    numpar%N_basis_size = 0    ! DFTB, BOP or 3TB basis set default (0=s, 1=sp3, 2=sp3d5)
    numpar%do_atoms = .true.   ! Atoms are allowed to move
-   matter%W_PR = 25.5d0    ! Parinello-Rahman super-vell mass coefficient
+   matter%W_PR = 25.5d0    ! Parrinello-Rahman super-vell mass coefficient
    numpar%dt = 0.01d0      ! Time step for MD [fs]
    numpar%halfdt = numpar%dt/2.0d0      ! dt/2, often used
    numpar%dtsqare = numpar%dt*numpar%halfdt ! dt*dt/2, often used
