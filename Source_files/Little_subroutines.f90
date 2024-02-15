@@ -541,17 +541,24 @@ subroutine order_of_time(tim, text, gnu_text, x_tics)
    character(*), intent(out) :: text ! fs, ps, ns, mks, ms, s
    character(*), intent(out), optional :: gnu_text ! culomn to set in gnuplot
    real(8), intent(out), optional :: x_tics ! tics for gnuplot
+   !------------------
    integer :: time_ord
-   time_ord = find_order_of_number(tim) ! module "Little_subroutines"
+   real(8) :: fact
+
+   time_ord = find_order_of_number(tim)-1    ! module "Little_subroutines"
+
    if (present(x_tics)) then
-      x_tics = 10.0d0**(time_ord) ! set tics for gnuplot
-      if (tim/dble(x_tics) > 0.5) then
-         x_tics = 10.0d0**(time_ord-1) ! set tics for gnuplot
-      else if (tim/dble(x_tics) > 0.2) then
-         x_tics = 0.5d0*10.0d0**(time_ord-1) ! set tics for gnuplot
-      else
-         x_tics = 10.0d0**(time_ord-2) ! set tics for gnuplot
+      fact = 10.0d0**(time_ord)  ! set tics for gnuplot
+      x_tics = 0.1 * fact
+      if (tim/fact > 5.0) then
+         x_tics = fact           ! set tics for gnuplot
+      elseif (tim/fact > 2.5) then
+         x_tics = 0.5 * fact     ! set tics for gnuplot
+      elseif (tim/fact > 1.5) then
+         x_tics = 0.2 * fact     ! set tics for gnuplot
       endif
+      !print*, tim, time_ord, x_tics, tim/fact
+      !pause 'order_of_time'
    endif
 
    if (time_ord > 1e15) then ! s
