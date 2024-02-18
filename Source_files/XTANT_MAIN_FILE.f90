@@ -119,11 +119,9 @@ call set_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the initial configuration, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true.)
 
-
 ! Print the title of the program and used parameters on the screen:
 call Print_title(6, g_Scell, g_matter, g_laser, g_numpar, -1) ! module "Dealing_with_output_files"
 call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
-
 
 ! Read (or create) electronic mean free paths (both, inelastic and elastic):
 call get_MFPs(g_Scell, 1, g_matter, g_laser, g_numpar, g_Scell(1)%TeeV, g_Err) ! module "MC_cross_sections"
@@ -637,6 +635,11 @@ subroutine vary_size(do_forces, Err)
    d_i = (i_max - i_min)/dble(N_points)   ! step size in units of Supce
 
    !print*, 'vary_size:', i_min, i_max, N_points, d_i
+
+   ! Calculate the mean square displacement of all atoms:
+   call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
+   if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true.)
+
 
    !do i_test = 1,300 !<-
    do i_test = 1, g_numpar%change_size_step+1

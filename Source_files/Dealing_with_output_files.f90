@@ -1508,10 +1508,14 @@ subroutine write_sectional_displacements(FN_displacements, time, Scell, matter) 
       write(FN_displacements(i), '(es25.16,$)') time, Scell%Displ(i)%mean_disp, Scell%Displ(i)%mean_disp_r(:)
       ! Now for kinds of atoms:
       N_at = matter%N_KAO    ! number of kinds of atoms
-      do j = 1, N_at
-         write(FN_displacements(i), '(es25.16,$)') Scell%Displ(i)%mean_disp_sort(j), &
+      if (allocated(Scell%Displ(i)%mean_disp_sort)) then
+         do j = 1, N_at
+            write(FN_displacements(i), '(es25.16,$)') Scell%Displ(i)%mean_disp_sort(j), &
             Scell%Displ(i)%mean_disp_r_sort(j,1), Scell%Displ(i)%mean_disp_r_sort(j,2), Scell%Displ(i)%mean_disp_r_sort(j,3)
-      enddo
+         enddo
+      else
+         print*, 'mean_disp_sort is not allocated, cannot printout sectional_displacements'
+      endif
       write(FN_displacements(i),'(a)') ! make a new line
    enddo ! i
 end subroutine write_sectional_displacements
@@ -5152,7 +5156,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    integer :: i, j
    character(100) :: text, text1, text2, text3
    logical :: optional_output
-   real(8) :: lambda
+   real(8) :: lambda, temp
 
    write(print_to,'(a)') trim(adjustl(m_starline))
    call XTANT_label(print_to, label_ind) ! below
@@ -5542,7 +5546,12 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a,f9.3,a)') ' Output data are saved every: ', numpar%dt_save,' [fs]'
       if (numpar%p_const) then	! P=const
          write(print_to,'(a)') ' Constant pressure simulation (Parrinello-Rahman scheme, NPH) '
-         write(text1, '(f12.3)') matter%W_PR
+         ! Get the supercell mass in units of total atoms mass
+         temp = 0.0d0
+         do j = 1, Scell(1)%Na
+            temp = temp + matter%Atoms(Scell(1)%MDatoms(j)%KOA)%Ma ! total mass of all atoms in supercell
+         enddo
+         write(text1, '(f12.3)') matter%W_PR/temp
          write(print_to,'(a)') ' With the mass coefficient (M_box/W_PR) W_PR: '//trim(adjustl(text1))
          write(print_to,'(a,f12.3,a)') ' External pressure: ', matter%p_ext/1.0d9,' [GPa]'
       else ! V=const

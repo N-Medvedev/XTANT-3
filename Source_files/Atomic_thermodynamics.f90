@@ -814,7 +814,7 @@ subroutine temperature_from_moments_pot(Scell, Ta, E0)
    real(8), intent(out) :: Ta, E0   ! [K] and [eV] potential temperature and shift
    !---------------
    real(8), dimension(size(Scell%MDAtoms)) :: E_pot
-   real(8) :: E1, E2, one_Nat
+   real(8) :: E1, E2, one_Nat, arg
    integer :: Nat
 
    ! Number of atoms:
@@ -831,7 +831,12 @@ subroutine temperature_from_moments_pot(Scell, Ta, E0)
    E2 = SUM( E_pot(:)**2 ) * one_Nat
 
    ! Define temperature assuming Maxwell distribution:
-   Ta = sqrt( m_two_third * (E2 - E1**2) )   ! [eV]
+   arg = (E2 - E1**2)
+   if (arg >= 0.0d0) then
+      Ta = sqrt( m_two_third * arg )   ! [eV]
+   else
+      Ta = -1.0d0 ! undefined
+   endif
 
    ! Define the shift of the generalized maxwell distribution:
    E0 = E1 - 1.5d0*Ta   ! [eV]
