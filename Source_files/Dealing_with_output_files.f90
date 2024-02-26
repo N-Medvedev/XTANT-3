@@ -35,7 +35,7 @@ use Objects
 use Atomic_tools, only : pair_correlation_function
 use Variables, only : g_numpar, g_matter
 use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution, &
-                              convert_hw_to_wavelength, convert_wavelength_to_hw, find_order_of_number
+                              convert_hw_to_wavelength, convert_wavelength_to_hw, find_order_of_number, print_time
 use Dealing_with_files, only : get_file_stat, copy_file, read_file, close_file, Count_lines_in_file
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
@@ -4659,34 +4659,27 @@ end subroutine communicate
 
 
 
-subroutine save_duration(matter, numpar, chtext)
+subroutine save_duration(matter, numpar, chtext, ctim)
    type(Solid), intent(in) :: matter ! parameters of the material
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
    character(*), intent(in) :: chtext ! time duration to print out
+   integer, dimension(8), intent(in), optional :: ctim
+   !---------------------------------
    integer FN, INFO
    logical file_opened, file_exists
    character(200) :: File_name
    character(1) path_sep
-!    path_sep = trim(adjustl(numpar%path_sep))
-!    File_name = trim(adjustl(numpar%output_path))//path_sep
-!    File_name = trim(adjustl(File_name))//'!OUTPUT_'//trim(adjustl(matter%Name))//'_Parameters.txt'
-!    inquire(file=trim(adjustl(File_name)),exist=file_exists)
-   !if (.not.file_exists) return  ! no such file exists, nowhere to print
 
    call open_parameters_file(numpar, matter, FN, INFO)   ! below
-   !print*, 'save_duration', INFO, FN
 
    if (INFO < 0) return
-!    inquire(file=trim(adjustl(File_name)),opened=file_opened, number=FN)
-!    print*, trim(adjustl(File_name)), INFO, FN
-!    if (.not.file_opened) then
-!       FN = 300
-!       !open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'new')
-!       open(UNIT=FN, FILE = trim(adjustl(File_name)), status="old", position="append", action="write")
-!    endif
-   !write(FN,'(a)') '-----------------------------------------------------------'
+
+   if (present(ctim)) then ! print out the absolute time
+      call print_time('Started  at', ctim=ctim, FN_in=FN) ! module "Little_subroutines"
+      call print_time('Finished at', FN_in=FN) ! module "Little_subroutines"
+   endif
+
    write(FN,'(a,a)') 'Duration of execution of program: ', trim(adjustl(chtext))
-   !write(FN,'(a)') '*************************************************************'
    write(FN,'(a)') trim(adjustl(m_starline))
 end subroutine save_duration
 

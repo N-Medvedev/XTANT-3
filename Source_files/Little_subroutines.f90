@@ -1063,23 +1063,33 @@ end subroutine extend_array_size_real
 
 
 
-subroutine print_time_step(text, num, msec)
+subroutine print_time_step(text, num, msec, FN_in)
    CHARACTER(len=*) :: text	! text to print out
    real(8), intent(in), optional :: num	! to print out this number
    logical, intent(in), optional :: msec ! print msec or not?
+   integer, intent(in), optional :: FN_in ! file number to print
+   !-----------------------
    character(len=100) :: var 
-   integer c1(8) ! time stamps
+   integer :: c1(8) ! time stamps
+   integer :: FN
+
+   if (present(FN_in)) then   ! print into this file
+      FN = FN_in
+   else ! print on screen
+      FN = 6
+   endif
+
    call date_and_time(values=c1) ! standard FORTRAN time and date
    if (present(num) .and. present(msec)) then
       write(var,'(f8.2)') num
-      write(*, 1002) trim(adjustl(text))//' '//trim(adjustl(var))//' at ', c1(5), c1(6), c1(7), c1(8), c1(3), c1(2), c1(1)
+      write(FN, 1002) ' '//trim(adjustl(text))//' '//trim(adjustl(var))//' at ', c1(5), c1(6), c1(7), c1(8), c1(3), c1(2), c1(1)
    elseif (present(msec)) then
-      write(*, 1002) trim(adjustl(text))//' at ', c1(5), c1(6), c1(7), c1(8), c1(3), c1(2), c1(1)
+      write(FN, 1002) ' '//trim(adjustl(text))//' at ', c1(5), c1(6), c1(7), c1(8), c1(3), c1(2), c1(1)
    elseif (present(num)) then
       write(var,'(f8.2)') num
-      write(*, 1001) trim(adjustl(text))//' '//trim(adjustl(var))//' at ', c1(5), c1(6), c1(7), c1(3), c1(2), c1(1)
+      write(FN, 1001) ' '//trim(adjustl(text))//' '//trim(adjustl(var))//' at ', c1(5), c1(6), c1(7), c1(3), c1(2), c1(1)
    else
-      write(*, 1001) trim(adjustl(text))//' at ', c1(5), c1(6), c1(7), c1(3), c1(2), c1(1)
+      write(FN, 1001) ' '//trim(adjustl(text))//' at ', c1(5), c1(6), c1(7), c1(3), c1(2), c1(1)
    endif
    ! Formats for printing:
    1001 format (a, i2.2, ':', i2.2, ':', i2.2, ' on ', i2.2, '/', i2.2, '/', i4.4)
@@ -1102,43 +1112,53 @@ subroutine trim_zeros(in_line)
 end subroutine trim_zeros
 
 
-subroutine print_time(text, ind, iter, ctim)
+subroutine print_time(text, ind, iter, ctim, FN_in)
    CHARACTER(len=*) :: text	! text to print out
    integer, intent(in), optional :: ind, iter	! ind = to print out miliseconds or not; iter = integer number to print out
    integer, intent(in), optional ::  ctim(8)	! given time to print it out
-   integer c1(8) ! time stamps
+   integer, intent(in), optional :: FN_in ! file to print into
+   !--------------------------
+   integer :: FN, c1(8) ! time stamps
    character(len=100) :: var 
+
+   if (present(FN_in)) then   ! given file
+      FN = FN_in
+   else  ! screen
+      FN = 6
+   endif
+
    call date_and_time(values=c1) ! standard FORTRAN time and date
+
    if (present(ind)) then
       if (present(ctim)) then
          if (present(iter)) then
             write(var,'(i12)') iter
-            write(*, 1002) trim(adjustl(text))//' '//trim(adjustl(var))//' ', ctim(5), ctim(6), ctim(7), ctim(8), ctim(3), ctim(2), ctim(1)
+            write(FN, 1002) trim(adjustl(text))//' '//trim(adjustl(var))//' ', ctim(5), ctim(6), ctim(7), ctim(8), ctim(3), ctim(2), ctim(1)
          else
-            write(*, 1002) trim(adjustl(text))//' ', ctim(5), ctim(6), ctim(7), ctim(8), ctim(3), ctim(2), ctim(1)
+            write(FN, 1002) trim(adjustl(text))//' ', ctim(5), ctim(6), ctim(7), ctim(8), ctim(3), ctim(2), ctim(1)
          endif
       else
          if (present(iter)) then
             write(var,'(i12)') iter
-            write(*, 1002) trim(adjustl(text))//' '//trim(adjustl(var))//' ', c1(5), c1(6), c1(7), c1(8), c1(3), c1(2), c1(1)
+            write(FN, 1002) trim(adjustl(text))//' '//trim(adjustl(var))//' ', c1(5), c1(6), c1(7), c1(8), c1(3), c1(2), c1(1)
          else
-            write(*, 1002) trim(adjustl(text))//' ', c1(5), c1(6), c1(7), c1(8), c1(3), c1(2), c1(1)
+            write(FN, 1002) trim(adjustl(text))//' ', c1(5), c1(6), c1(7), c1(8), c1(3), c1(2), c1(1)
          endif
       endif
    else
       if (present(ctim)) then
          if (present(iter)) then
             write(var,'(i12)') iter
-            write(*, 1001) trim(adjustl(text))//' '//trim(adjustl(var))//' ', ctim(5), ctim(6), ctim(7), ctim(8), ctim(3), ctim(2), ctim(1)
+            write(FN, 1001) trim(adjustl(text))//' '//trim(adjustl(var))//' ', ctim(5), ctim(6), ctim(7), ctim(8), ctim(3), ctim(2), ctim(1)
          else
-            write(*, 1001) trim(adjustl(text))//' ', ctim(5), ctim(6), ctim(7), ctim(3), ctim(2), ctim(1)
+            write(FN, 1001) trim(adjustl(text))//' ', ctim(5), ctim(6), ctim(7), ctim(3), ctim(2), ctim(1)
          endif
       else
          if (present(iter)) then
             write(var,'(i12)') iter
-            write(*, 1001) trim(adjustl(text))//' '//trim(adjustl(var))//' ', c1(5), c1(6), c1(7), c1(3), c1(2), c1(1)
+            write(FN, 1001) trim(adjustl(text))//' '//trim(adjustl(var))//' ', c1(5), c1(6), c1(7), c1(3), c1(2), c1(1)
          else
-            write(*, 1001) trim(adjustl(text))//' ', c1(5), c1(6), c1(7), c1(3), c1(2), c1(1)
+            write(FN, 1001) trim(adjustl(text))//' ', c1(5), c1(6), c1(7), c1(3), c1(2), c1(1)
          endif
       endif
    endif
