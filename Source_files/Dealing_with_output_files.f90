@@ -1182,10 +1182,13 @@ subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic pa
 
    ! Atomic temperatures (various definitions):
    if (numpar%print_Ta) then
-      ! kinetic; entropic; distributional; fluctuational; "potential"; configurational:
-      write(numpar%FN_Ta, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, &
+
+      ! kinetic; entropic; distributional; fluctuational; "potential"; configurational etc.:
+      write(numpar%FN_Ta, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') &
+      time, &
       Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(2), Scell(NSC)%Ta_var(3), Scell(NSC)%Ta_var(4), &
-      Scell(NSC)%Ta_var(5), Scell(NSC)%Ta_var(6), Scell(NSC)%Ta_var(7), Scell(NSC)%Ta_var(8)
+      Scell(NSC)%Ta_var(5), Scell(NSC)%Ta_var(6), Scell(NSC)%Ta_var(7), Scell(NSC)%Ta_var(8), Scell(NSC)%Fv
+
       ! partial temperatures along X,Y,Z:
       write(numpar%FN_Ta_part, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, &
       Scell(NSC)%Ta_r_var(1:6)
@@ -1505,10 +1508,14 @@ subroutine write_sectional_displacements(FN_displacements, time, Scell, matter) 
       write(FN_displacements(i), '(es25.16,$)') time, Scell%Displ(i)%mean_disp, Scell%Displ(i)%mean_disp_r(:)
       ! Now for kinds of atoms:
       N_at = matter%N_KAO    ! number of kinds of atoms
-      do j = 1, N_at
-         write(FN_displacements(i), '(es25.16,$)') Scell%Displ(i)%mean_disp_sort(j), &
+      if (allocated(Scell%Displ(i)%mean_disp_sort)) then
+         do j = 1, N_at
+            write(FN_displacements(i), '(es25.16,$)') Scell%Displ(i)%mean_disp_sort(j), &
             Scell%Displ(i)%mean_disp_r_sort(j,1), Scell%Displ(i)%mean_disp_r_sort(j,2), Scell%Displ(i)%mean_disp_r_sort(j,3)
-      enddo
+         enddo
+      else
+         print*, 'mean_disp_sort is not allocated, cannot printout sectional_displacements'
+      endif
       write(FN_displacements(i),'(a)') ! make a new line
    enddo ! i
 end subroutine write_sectional_displacements
@@ -1924,7 +1931,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta = FN
-      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)  sin^2(2)')
+      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)  config')
       call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K]')
 
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
@@ -3699,20 +3706,20 @@ subroutine gnu_at_temperatures(File_name, file_Ta, t0, t_last, eps_name)
       !write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:3 w l lw 1 dashtype 4 title "Entropic" ,\'
       !write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lw 1.5 dashtype 5 title "Potential" ,\'
       !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Ta)), '" u 1:8 w l lw 2 dashtype 2 title "Sine^2" ,\'
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Ta)), '" u 1:9 w l lw LW title "Configurational" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:7 w l lt rgb "blue" lw LW title "Virial" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lt rgb "red" lw LW title "Fluctuational" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:2 w l lt rgb "black" lw LW title "Kinetic" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "', trim(adjustl(file_Ta)), '" u 1:7 w l lt rgb "blue" lw LW title "Virial" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:9 w l lt rgb "green" lw 2 dashtype "__" title "Configurational" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:2 w l lt rgb "black" lw LW title "Kinetic" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lt rgb "red" dashtype "_." lw 2 title "Fluctuational" '
    else ! It is linux
       ! Not needed old bits:
       !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:4 w l lw 1 dashtype 2 title \"Distributional\" ,\'
       !write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:3 w l lw 1 dashtype 4 title \"Entropic\" ,\'
       !write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lw 1.5 dashtype 5 title \"Potential\" ,\'
       !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:8 w l lw 2 dashtype 2 title \"Sine^2\" ,\'
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:9 w l lw \"$LW\" title \"Configurational\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:7 w l lt rgb \"blue\" lw \"$LW\" title \"Virial\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lt rgb \"red\" lw \"$LW\" title \"Fluctuational\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:2 w l lt rgb \"black\" lw \"$LW\" title \"Kinetic\" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:7 w l lt rgb \"blue\" lw \"$LW\" title \"Virial\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:9 w l lt rgb \"green\" lw 2 dashtype \"__\" title \"Configurational\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:2 w l lt rgb \"black\" lw \"$LW\" title \"Kinetic\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lt rgb \"red\" dashtype \"_.\" lw 2 title \"Fluctuational\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -3735,21 +3742,21 @@ subroutine gnu_at_temperatures_part(File_name, file_Ta, t0, t_last, eps_name)
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Atomic tempereature', &
-         'Time (fs)', 'Atomic temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 1)   ! module "Gnuplotting"
+         'Time (fs)', 'Atomic temperature (K)', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Ta)), '" u 1:2 w l lw LW dashtype 2 title "Kinetic: X" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:3 w l lw LW dashtype 4 title "Kinetic: Y" ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Ta)), '" u 1:2 w l lw LW dashtype "__" title "Kinetic: X" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:3 w l lw LW dashtype "_." title "Kinetic: Y" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:4 w l lw LW title "Kinetic: Z" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lw LW dashtype 2 title "Virial: X" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lw LW dashtype 4 title "Virial: Y" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lw LW dashtype "__" title "Virial: X" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lt rgb "green" lw LW dashtype "_." title "Virial: Y" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:7 w l lt rgb "black" lw LW title "Virial: Z" '
    else ! It is linux
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:2 w l lw \"$LW\" dashtype 2 title \"Kinetic: X\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:3 w l lw \"$LW\" dashtype 4 title \"Kinetic: Y\" ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:2 w l lw \"$LW\" dashtype \"__\" title \"Kinetic: X\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:3 w l lw \"$LW\" dashtype \"_.\" title \"Kinetic: Y\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:4 w l lw \"$LW\" title \"Kinetic: Z\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lw \"$LW\" dashtype 2 title \"Virial: X\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lw \"$LW\" dashtype 4 title \"Virial: Y\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lw \"$LW\" dashtype \"__\" title \"Virial: X\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lt rgb \"green\" lw \"$LW\" dashtype \"_.\" title \"Virial: Y\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:7 w l lt rgb \"black\" lw \"$LW\" title \"Virial: Z\" '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
@@ -5149,7 +5156,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    integer :: i, j
    character(100) :: text, text1, text2, text3
    logical :: optional_output
-   real(8) :: lambda
+   real(8) :: lambda, temp
 
    write(print_to,'(a)') trim(adjustl(m_starline))
    call XTANT_label(print_to, label_ind) ! below
@@ -5539,7 +5546,14 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a,f9.3,a)') ' Output data are saved every: ', numpar%dt_save,' [fs]'
       if (numpar%p_const) then	! P=const
          write(print_to,'(a)') ' Constant pressure simulation (Parrinello-Rahman scheme, NPH) '
-         write(print_to,'(a,f9.1,a)') ' External pressure: ', matter%p_ext,' [Pa]'
+         ! Get the supercell mass in units of total atoms mass
+         temp = 0.0d0
+         do j = 1, Scell(1)%Na
+            temp = temp + matter%Atoms(Scell(1)%MDatoms(j)%KOA)%Ma ! total mass of all atoms in supercell
+         enddo
+         write(text1, '(f12.3)') matter%W_PR/temp
+         write(print_to,'(a)') ' With the mass coefficient (M_box/W_PR) W_PR: '//trim(adjustl(text1))
+         write(print_to,'(a,f12.3,a)') ' External pressure: ', matter%p_ext/1.0d9,' [GPa]'
       else ! V=const
          write(print_to,'(a)') ' Constant volume simulation (NVE)'
       endif

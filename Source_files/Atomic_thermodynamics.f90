@@ -54,6 +54,15 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    integer, intent(in) :: NSC ! number of supercell
    type(solid), intent(in) :: matter    ! material parameters
    real(8), optional :: Emax_in, dE_in  ! [eV] maximal energy and grid step for atomic distribution
+   ! Reminder:
+   ! Ta_var(1) kinetic temperature
+   ! Ta_var(2) "entropic" kinetic temperature
+   ! Ta_var(3) kinetic temperature from numerical distribution
+   ! Ta_var(4) fluctuational temperature
+   ! Ta_var(5) "potential" temperature
+   ! Ta_var(6) virial temperature
+   ! Ta_var(7) Configurational-sine: B=r^n*sin^2(Pi*l*s) : for n,l:
+   ! Ta_var(8) Configurational-Rugh
    !----------------------------------
    integer :: i, Nat, j, Nsiz
    real(8) :: Emax, dE, E_shift, Ta_1_1, Ta_2_1, Ta_1_2
@@ -244,8 +253,13 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
       ! 8) Configurational-Rugh (Scell(NSC)%Ta_var(8)):
       ! Was already calculated separately, no need to do that here!
 
-      ! And partial temperatures along X, Y, Z:
+      ! Get partial temperatures along X, Y, Z:
       call partial_temperatures(Scell(NSC), matter, numpar)   ! module "Atomic_thermodynamics"
+
+      ! Get force-velocioty correlator:
+      Scell(NSC)%Fv = force_velocity_correlator(Scell(NSC), matter)  ! below
+
+      !print*, 'Fv:', Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(6), Scell(NSC)%Fv
    endif
 
    if (numpar%verbose) print*, 'get_atomic_distribution done succesfully'
@@ -267,6 +281,69 @@ end subroutine update_Ta_config_running_average
 
 
 
+function get_configurational_temperature(Scell, matter, numpar) result(Ta)
+   real(8) :: Ta  ! [K] configurational temperature defined for B = r^n * sin(Pi*l*s)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(solid), intent(in), target :: matter ! materil parameters
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   !-------------------
+   integer :: Nat, i
+   real(8) :: F(3), F0(3), F2(3), dF(3), Pot_tot, acc(3), acc0(3), V(3), Pot_den, Pot_num
+   real(8), pointer :: Mass
+
+   Nat = size(Scell%MDAtoms)  ! number of atoms
+
+   ! For all atoms:
+   F2 = 0.0d0  ! to start with
+   dF = 0.0d0  ! to start with
+   Pot_den = 0.0d0   ! to start with
+   Pot_num = 0.0d0   ! to start with
+   do i = 1, Nat
+      Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma   ! atomic mass [kg]
+
+      ! Convert acceleration into SI units:
+      acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
+      ! Get the force:
+      F(:) = Mass * acc(:) ! [N]
+      F2(:) = F(:)**2
+      ! Numerator:
+      Pot_num = Pot_num + SUM(F2(:))
+
+
+      ! Get Div*F via chain rule:
+      acc0(:) = Scell%MDAtoms(i)%accel0(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
+      F0(:) = Mass * acc0(:) ! [N]
+      V(:) = Scell%MDAtoms(i)%V(:)  ! [A/fs]
+      if (ANY(V(:) < 1.0d0-10)) cycle  ! skip undefined contribution
+      ! Numerical div*F:
+      dF(:) = (F(:) - F0(:)) / numpar%dt / V(:) ! [N/A]
+      ! Denominator:
+      Pot_den = Pot_den + SUM(dF(:))
+   enddo ! i
+   ! Configurational temperature:
+   if (abs(Pot_den) > 1.0d-12) then ! Ta defined
+      Pot_tot = Pot_num/Pot_den * 1.0d-10 / g_e ! [N/A] -> [eV]
+   else  ! Ta undefined
+      Pot_tot = 0.0d0
+   endif
+
+   ! Exclude external pressure:
+   Pot_tot = -Pot_tot - matter%p_ext*(Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+
+   ! Define tempreature:
+   Ta = Pot_tot  ! [eV]
+
+   ! Convert [eV] -> [K]:
+   Ta = Ta * g_kb
+
+   !Ta = abs(Ta)    ! ensure it is non-negative, even though pressure may be
+
+   ! Clean up:
+   nullify(Mass)
+end function get_configurational_temperature
+
+
+
 subroutine update_running_avereage(Ta_conf, Ta_run_average)
    real(8), intent(inout) :: Ta_conf
    real(8), dimension(:), intent(inout) :: Ta_run_average
@@ -277,7 +354,7 @@ subroutine update_running_avereage(Ta_conf, Ta_run_average)
    Nsiz = size(Ta_run_average)
    ! Find minimal value to check if the running-average array is filled or not yet (first Nsiz steps of the simulation):
    Tmin = minval(Ta_run_average)
-   if (Tmin < 1.0d-12) then ! the array is not filled yet, there are zeroes:
+   if (abs(Tmin) < 1.0d-12) then ! the array is not filled yet, there are zeroes:
       Ncur = transfer(minloc(Ta_run_average), Ncur)
    else  ! the array is full:
       Ncur = Nsiz
@@ -292,6 +369,7 @@ subroutine update_running_avereage(Ta_conf, Ta_run_average)
    ! 2) Update the configurational temperature to the value of running average:
    Ta_conf = SUM(Ta_run_average(1:Ncur)) / dble(Ncur)
 end subroutine update_running_avereage
+
 
 
 subroutine update_atomic_distribution_grid(Scell, NSC)
@@ -346,7 +424,7 @@ subroutine partial_temperatures(Scell, matter, numpar)
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    !--------------------
    integer :: Nat, i
-   real(8) :: prefac, Ekin(3)
+   real(8) :: prefac, Ekin(3), P_ext
    real(8), pointer :: Mass
 
    Nat = size(Scell%MDAtoms)  ! number of atoms
@@ -363,66 +441,55 @@ subroutine partial_temperatures(Scell, matter, numpar)
 
    ! Configurational temperatures:
    prefac = (Scell%V * 1e-30) / dble(Nat) / g_e * g_kb  ! to get temperature in [K]
-   Scell%Ta_r_var(4) = -Scell%Pot_Stress(1,1) * prefac   ! X
-   Scell%Ta_r_var(5) = -Scell%Pot_Stress(2,2) * prefac   ! Y
-   Scell%Ta_r_var(6) = -Scell%Pot_Stress(3,3) * prefac   ! Z
+   Scell%Ta_r_var(4) = Scell%Pot_Stress(1,1) * prefac   ! X
+   Scell%Ta_r_var(5) = Scell%Pot_Stress(2,2) * prefac   ! Y
+   Scell%Ta_r_var(6) = Scell%Pot_Stress(3,3) * prefac   ! Z
+   ! Exclude external pressure:
+   P_ext = matter%p_ext * prefac
+   Scell%Ta_r_var(4:6) = Scell%Ta_r_var(4:6) - P_ext
 
-   Scell%Ta_r_var(:) = abs(Scell%Ta_r_var(:))   ! ensure it is non-negative
 
+   ! Ensure they are non-negative:
+   !Scell%Ta_r_var(:) = abs(Scell%Ta_r_var(:))
    nullify(Mass)
 end subroutine partial_temperatures
 
 
-function get_configurational_temperature(Scell, matter, numpar) result(Ta)
-   real(8) :: Ta  ! [K] configurational temperature defined for B = r^n * sin(Pi*l*s)
+
+
+function force_velocity_correlator(Scell, matter) result(Fv)
+   real(8) :: Fv  ! [eV/fs] <F*v>
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in), target :: matter ! materil parameters
-   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   !type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    !-------------------
-   integer :: Nat, i
-   real(8) :: F(3), F0(3), F2(3), dF(3), Pot_tot, acc(3), acc0(3), V(3), Pot_den, Pot_num
+   integer :: i, Nat
+   real(8) :: Fv_cur
+   real(8) :: F(3), acc(3), V(3)
    real(8), pointer :: Mass
 
    Nat = size(Scell%MDAtoms)  ! number of atoms
 
-   ! For all atoms:
-   F2 = 0.0d0  ! to start with
-   dF = 0.0d0  ! to start with
-   Pot_den = 0.0d0   ! to start with
-   Pot_num = 0.0d0   ! to start with
+   Fv_cur = 0.0d0 ! to start with
    do i = 1, Nat
       Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma   ! atomic mass [kg]
-
       ! Convert acceleration into SI units:
       acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
       ! Get the force:
       F(:) = Mass * acc(:) ! [N]
-      F2(:) = F(:)**2
-      ! Numerator:
-      Pot_num = Pot_num + SUM(F2(:))
-
-
-      ! Get Div*F via chain rule:
-      acc0(:) = Scell%MDAtoms(i)%accel0(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
-      F0(:) = Mass * acc0(:) ! [N]
+      ! Get the velocity:
       V(:) = Scell%MDAtoms(i)%V(:)  ! [A/fs]
-      if (ANY(V(:) < 1.0d0-10)) cycle  ! skip undefined contribution
-      ! Numerical div*F:
-      dF(:) = (F(:) - F0(:)) / numpar%dt / V(:) ! [N/A]
-      ! Denominator:
-      Pot_den = Pot_den + SUM(dF(:))
-   enddo ! i
-   ! Configurational temperature:
-   if (abs(Pot_den) > 1.0d-12) then ! Ta defined
-      Pot_tot = Pot_num/Pot_den * 1.0d-10 / g_e ! [N/A] -> [eV]
-   else  ! Ta undefined
-      Pot_tot = 0.0d0
-   endif
-   Ta = Pot_tot  ! [eV]
 
-   ! Convert [eV] -> {K}:
-   Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
-end function get_configurational_temperature
+      ! Get the correlator:
+      Fv_cur = Fv_cur + SUM(F(:)*V(:))
+   enddo ! i
+   ! Convert to proper units:
+   Fv = Fv_cur * 1.0d-10 / dble(Nat) / g_e   ! [N * A/fs] -> [eV/fs]
+
+   ! Clean up:
+   nullify(Mass)
+end function force_velocity_correlator
+
 
 
 
@@ -528,17 +595,25 @@ function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
    else  ! Ta undefined
       Pot_tot = 0.0d0
    endif
+
+   ! Subtract external pressure:
+   Pot_tot = Pot_tot - matter%p_ext*(Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+
    Ta = -Pot_tot  ! [eV]
 
    ! Convert [eV] -> {K}:
-   Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
-   !print*,'======', Ta, '======'
+   Ta = Ta * g_kb
+
+   !Ta = abs(Ta) ! ensure it is non-negative, even though pressure may be
+
+   ! Clean up:
+   nullify(Mass)
 end function get_Tconfig_n_l
 
 
 
 function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic) result(Ta)  ! Sec.III in [1]
-   real(8) :: Ta  ! [K] configurational temperature
+   real(8) :: Ta  ! [K] virial temperature
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in), target :: matter	! materil parameters
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
@@ -560,7 +635,9 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
 
    if ( .not.do_nonper ) then ! periodic boundaries are used via Pahrinello-Rahman method
      ! Get it from the pressure, calculated for the periodic boundaries:
-     Ta = -Scell%Pot_Pressure * (Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+     Pot_tot = (Scell%Pot_Pressure + matter%p_ext)
+
+     Ta = -Pot_tot * (Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
 
    else ! nonperiodic boundaries (Eq.(22) [2], unfinished, only works for non-periodic!)
       Pot_tot = 0.0d0   ! to start with
@@ -609,11 +686,15 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
       !Pot_tot = Pot_tot / dble( count(atoms_group_ind(:)) )
 
       ! Configurational temperature from the equipartition theorem as potential energy per atom per degree of freedom:
-      Ta = -Pot_tot / (3.0d0 * dble(Nat))   ! [eV]
+      Ta = -(Pot_tot+matter%p_ext) / (3.0d0 * dble(Nat))   ! [eV]
    endif
 
    ! Convert [eV] -> {K}:
-   Ta = abs(Ta) * g_kb  ! ensure it is non-negative, even though pressure may be
+   Ta = -Ta * g_kb   ! and account for T = -<r*F>
+
+   !Ta = abs(Ta)   ! ensure it is non-negative, even though pressure may be
+   ! Clean up:
+   nullify(Mass)
 end function get_temperature_from_equipartition
 
 
@@ -733,7 +814,7 @@ subroutine temperature_from_moments_pot(Scell, Ta, E0)
    real(8), intent(out) :: Ta, E0   ! [K] and [eV] potential temperature and shift
    !---------------
    real(8), dimension(size(Scell%MDAtoms)) :: E_pot
-   real(8) :: E1, E2, one_Nat
+   real(8) :: E1, E2, one_Nat, arg
    integer :: Nat
 
    ! Number of atoms:
@@ -750,7 +831,12 @@ subroutine temperature_from_moments_pot(Scell, Ta, E0)
    E2 = SUM( E_pot(:)**2 ) * one_Nat
 
    ! Define temperature assuming Maxwell distribution:
-   Ta = sqrt( m_two_third * (E2 - E1**2) )   ! [eV]
+   arg = (E2 - E1**2)
+   if (arg >= 0.0d0) then
+      Ta = sqrt( m_two_third * arg )   ! [eV]
+   else
+      Ta = -1.0d0 ! undefined
+   endif
 
    ! Define the shift of the generalized maxwell distribution:
    E0 = E1 - 1.5d0*Ta   ! [eV]
@@ -1053,6 +1139,9 @@ subroutine shortest_distance_to_point(Scell, i1, Sj, a_r, x1, y1, z1, sx1, sy1, 
          enddo ! k
       enddo ! j
    enddo ! i
+
+   ! Clean up:
+   nullify(atoms)
 end subroutine shortest_distance_to_point
 
 
@@ -1082,7 +1171,7 @@ subroutine set_Gibbs_x_powerDOS(numpar, Scell, NSC) ! below
 
    ! Define parametres of the (Gibbs * DOS) distribution:
    U0 = minval(Scell(NSC)%MDAtoms(:)%Epot)   ! to start with
-   ! Assume fixed DOS of harmonic oscillator just for comparisons and tests:
+   ! Assume fixed DOS of "harmonic oscillator" just for comparisons and tests:
    b = numpar%power_b   ! Fixed, or starting, b for distribution: n(U)=A*exp(-(U-U0)/T)*U^b
    call find_Gibbs_x_powerDOS_parameters(U1, U2, U3, A, T, U0, b, 0)   ! below
 

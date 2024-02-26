@@ -154,7 +154,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%vel_from_file = .false.   ! velosities are not read from file
    numpar%N_basis_size = 0    ! DFTB, BOP or 3TB basis set default (0=s, 1=sp3, 2=sp3d5)
    numpar%do_atoms = .true.   ! Atoms are allowed to move
-   matter%W_PR = 25.5d0    ! Parinello-Rahman super-vell mass coefficient
+   matter%W_PR = 25.5d0    ! Parrinello-Rahman super-vell mass coefficient
    numpar%dt = 0.01d0      ! Time step for MD [fs]
    numpar%halfdt = numpar%dt/2.0d0      ! dt/2, often used
    numpar%dtsqare = numpar%dt*numpar%halfdt ! dt*dt/2, often used
@@ -163,7 +163,8 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%MD_algo = 0       ! 0=Verlet (2d order); 1=Yoshida (4th order)
    numpar%dt_save = 1.0d0	! save data into files every [fs]
    numpar%p_const = .false.	! V=const
-   matter%p_ext = g_P_atm	! External pressure [Pa] (0 = normal atmospheric pressure)
+   !matter%p_ext = g_P_atm	! External pressure [Pa] (0 = normal atmospheric pressure)
+   matter%p_ext = 0.0d0     ! No external pressure by default [Pa]
    numpar%el_ion_scheme = 0	! scheme (0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO)
    numpar%t_Te_Ee = 1.0d-5	! when to start coupling
    numpar%NA_kind = -1	! -1=Landau; 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
@@ -4626,7 +4627,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 
    ! external pressure [Pa] (0 = normal atmospheric pressure):
    read(FN, '(a)', IOSTAT=Reason) read_line
-   read(read_line,*,IOSTAT=Reason) matter%p_ext  ! External pressure [Pa] (0 = normal atmospheric pressure)
+   read(read_line,*,IOSTAT=Reason) matter%p_ext  ! External pressure [Pa]
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418

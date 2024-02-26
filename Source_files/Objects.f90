@@ -650,6 +650,7 @@ type Super_cell
    real(8) :: Ta_var(8)     ! [K] various definition of temperature: kinetic, configurational, etc.
    real(8) :: Ta_r_var(6)   ! [K] dimension-resolved temperatures along X,Y,Z
    real(8) :: Ta_conf_run_average(10)     ! [K] laset 10 points of Ta_config for running average
+   real(8) :: Fv  ! <F*v> force-velocity correlator
    real(8), dimension(:), allocatable :: Ta_sub    ! [K] temperatures of different sublattices
    real(8) :: TeeV, TaeV ! [eV] electrons and atoms temperatures
    real(8) :: Pressure	! [Pa] pressure in the atomic system
