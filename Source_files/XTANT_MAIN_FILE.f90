@@ -413,7 +413,7 @@ call parse_time(chtest, c0_in=g_ctim) ! module "Little_subroutines"
 write(*,'(a)') trim(adjustl(m_starline))
 write(*,'(a,a)') 'Duration of execution of program: ', trim(adjustl(chtest))
 
-call save_duration(g_matter, g_numpar, trim(adjustl(chtest))) ! module "Dealing_with_output_files"
+call save_duration(g_matter, g_numpar, trim(adjustl(chtest)), ctim=g_ctim) ! module "Dealing_with_output_files"
 
 call print_time('Started  at', ctim=g_ctim) ! module "Little_subroutines"
 call print_time('Finished at') ! module "Little_subroutines"

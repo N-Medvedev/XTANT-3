@@ -6283,6 +6283,7 @@ subroutine get_photon_parameters(read_line, laser, i, count_lines, File_name, Er
       ! Construct the spread (FWHM):
       if (temp2 <= 0.0d0) then
          temp2_rel = 0.0d0
+         laser(i)%hw = temp1  ! assume photon energy is given in [eV]
       elseif (trim(adjustl(ch_temp1(1:1))) == '%') then  ! given in relative units
          laser(i)%hw = temp1  ! assume photon energy is given in [eV]
          temp2_rel = abs(temp2) * 1.0d-2
@@ -6349,7 +6350,7 @@ subroutine get_photon_parameters(read_line, laser, i, count_lines, File_name, Er
 
    !--------------------
    ! After all options, check if it read well:
-   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+2121   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                            add_error_info='Line: '//trim(adjustl(read_line)))  ! below
 
 end subroutine get_photon_parameters
