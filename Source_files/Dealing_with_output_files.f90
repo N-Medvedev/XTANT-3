@@ -4540,7 +4540,11 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
       else
          write(ch2,'(f6.1)') laser(1)%t		! pulse duration
       endif
-      write(ch3,'(f6.2)') laser(1)%F	! dose [eV/atom]
+      if (laser(1)%F < 1.0e4) then
+         write(ch3,'(f7.2)') laser(1)%F   ! dose [eV/atom]
+      else
+         write(ch3,'(es12.2)') laser(1)%F ! dose [eV/atom]
+      endif
 
       if (numpar%path_sep .EQ. '\') then	! if it is Windows
          if (size(laser) .GT. 1) then
