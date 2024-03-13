@@ -94,7 +94,7 @@ cd Source_files
     )
 
 :: Compile modules
-   ifort.exe -c %Compile_options% %List_of_files%
+   ifx.exe -c %Compile_options% %List_of_files%
    
    echo %Starline%
    echo Assembling the files into executable: %Name_of_exe%
@@ -102,7 +102,7 @@ cd Source_files
    echo %Starline%
 
 :: Assemble the code from all created obj-files
-   ifort.exe %Compile_options% *.obj /exe:%Name_of_exe%
+   ifx.exe %Compile_options% *.obj /exe:%Name_of_exe%
 
    echo %Starline%
 ::   echo Completed: %date% %time%

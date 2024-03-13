@@ -61,218 +61,6 @@ public :: create_BOP_repulsive, set_initial_configuration
  contains
 
 
-
-subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_name, path_sep, Name1, Name2, bond_length_in, Elem1, Elem2, Err)
-   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
-   type(Solid), intent(inout) :: matter	! all material parameters
-   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
-   type(TB_Rep_BOP), dimension(:,:), intent(inout) ::  TB_Repuls    ! parameters of the repulsive potential
-   integer, intent(in) :: i, j  ! numbers of pair of elements for which we read the data
-   character(*), intent(in) :: Folder_name    ! directory where to find BOP parameters
-   character(1), intent(in) :: path_sep
-   character(*), intent(in) :: Name1, Name2 ! element names
-   real(8), intent(in) :: bond_length_in   ! [A] bond length for dimer
-   real(8), intent(in) :: Elem1, Elem2  ! atomic numbers of the two elements we need the parameters for
-   type(Error_handling), intent(inout) :: Err	! error save
-   !-------------------
-   character(300) :: File_name, Error_descript, chtemp(2)
-   integer :: FN_BL, k, NSC, n1, icur
-   real(8) :: r_start, r_stop, dr, supcesize, Pot_shift, d_bond, ZBL_length, TB_d, ZBL_d, bond_length
-   real(8), dimension(m_N_BOP_rep_grid) :: Ref_Pot, V_rep
-   integer, dimension(:), allocatable :: int_vec
-
-   ! Region around the bond length where we smoothen the potentials:
-   d_bond = 0.3d0   ! [A]
-   ! Shifted bond length for fitting:
-   bond_length = bond_length_in + d_bond    ! [A]
-
-   ! Create repulsive potential:
-   if (.not.allocated(TB_Repuls(i,j)%R)) then
-      allocate(TB_Repuls(i,j)%R(m_N_BOP_rep_grid))
-      ! Create grid:
-      r_start = max(0.25d0, min(bond_length-0.5d0, 1.0d0) ) ! start of the grid [A]
-      r_stop = bond_length + d_bond ! end of the grid [A]
-      dr = (r_stop - r_start)/dble(m_N_BOP_rep_grid-1)   ! step set to have fixed number of points equal to m_N_BOP_rep_grid
-      ! Save the grid:
-      TB_Repuls(i,j)%R(1) = r_start ! [A]
-      do k = 2, m_N_BOP_rep_grid
-         TB_Repuls(i,j)%R(k) = TB_Repuls(i,j)%R(k-1) + dr   ! [A]
-      enddo
-   endif
-   if (.not.allocated(TB_Repuls(i,j)%V_rep)) allocate(TB_Repuls(i,j)%V_rep(m_N_BOP_rep_grid))
-
-   ! Get the reference potential (ZBL):
-   do k = 1, m_N_BOP_rep_grid
-      Ref_Pot(k) =  ZBL_pot(Elem1, Elem2, TB_Repuls(i,j)%R(k))  ! module "ZBL_potential"
-!       print*, k, TB_Repuls(i,j)%R(k), Ref_Pot(k)
-   enddo
-
-   ! Set the equilibrium distance between the dimer atoms to get the correct bond length:
-   supcesize = 10.0d0 * TB_Repuls(i,j)%R(m_N_BOP_rep_grid)  ! large supercell size to exclude periodicity
-   Scell(1)%supce = RESHAPE( (/ supcesize, 0.0d0, 0.0d0,  &
-                                0.0d0, supcesize, 0.0d0,  &
-                                0.0d0, 0.0d0, supcesize /), (/3,3/) )
-   Scell(1)%supce0 = Scell(1)%supce
-
-   ! Place dimer along X axis at the distance of bond length:
-   allocate(Scell(1)%MDatoms(2))    ! dimer
-   Scell(1)%Na = 2
-   Scell(1)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)/SUM(matter%Atoms(:)%percentage)*Scell(1)%Na
-
-   if (numpar%verbose) then
-      write(*, '(a)', advance='no') 'Number of valence electrons: '
-      allocate(int_vec(size(matter%Atoms(:)%NVB)), source=matter%Atoms(:)%NVB)
-      write(*,*) int_vec
-      write(*,*) ' (total: ', Scell(1)%Ne, ')'
-   endif
-
-   Scell(1)%Ne_low = Scell(1)%Ne ! at the start, all electrons are low-energy
-   Scell(1)%Ne_high = 0.0d0 ! no high-energy electrons at the start
-   Scell(1)%Ne_emit = 0.0d0 ! no emitted electrons at the start
-   ! Allocate arrays for calculation of hamiltonian and related stuff:
-   allocate(Scell(1)%Near_neighbor_list(Scell(1)%Na,Scell(1)%Na))  ! nearest neighbors
-   allocate(Scell(1)%Near_neighbor_dist(Scell(1)%Na,Scell(1)%Na,4))  ! [A] distances
-   allocate(Scell(1)%Near_neighbor_dist_s(Scell(1)%Na,Scell(1)%Na,3)) ! relative dist.
-   allocate(Scell(1)%Near_neighbor_size(Scell(1)%Na)) ! how many nearest neighbours
-   allocate(Scell(1)%Near_neighbors_user(Scell(1)%Na))
-   ASSOCIATE (ARRAY => Scell(i)%TB_Hamil(:,:))
-   select type(ARRAY)
-   type is (TB_H_BOP)   ! it can be various basis sets:
-     select case (numpar%N_basis_size)    ! find which one is used now:
-     case (0)    ! s
-        n1 = 1.0d0*Scell(i)%Na ! number of energy levels is defined by the number of TB parameters included
-     case (1)    ! sp3
-        n1 = 4.0d0*Scell(i)%Na ! number of energy levels is defined by the number of TB parameters included
-     case default    ! sp3d5
-        n1 = 9.0d0*Scell(i)%Na ! number of energy levels is defined by the number of TB parameters included
-     endselect
-   endselect
-   END ASSOCIATE
-   allocate(Scell(1)%Ha(n1,n1))   ! hamiltonian size
-   allocate(Scell(1)%Ha0(n1,n1)) ! hamiltonian0 size
-   allocate(Scell(1)%H_non(n1,n1))	! nondiagonalized Hamiltonian
-   allocate(Scell(1)%H_non0(n1,n1))	! nondiagonalized Hamiltonian
-   allocate(Scell(1)%Ei(n1))  ! energy levels, eigenvalues of the hamiltonian matrix
-   allocate(Scell(1)%Ei0(n1))  ! energy levels0, eigenvalues of the hamiltonian matrix
-   allocate(Scell(1)%Aij(n1,n1))	! coefficients used for forces in TB
-   allocate(Scell(1)%fe(size(Scell(1)%Ei))) ! electron distribution function (Fermi-function)
-   allocate(Scell(1)%fe_eq(size(Scell(1)%Ei))) ! equivalent electron distribution function (Fermi-function)
-   if (numpar%do_kappa) then
-      allocate(Scell(1)%I_ij(size(Scell(1)%Ei))) ! electron-ion collision integral
-      allocate(Scell(1)%Ce_i(size(Scell(1)%Ei))) ! electron-energy resolved heat capacity
-   endif
-   Scell(1)%MDatoms(1)%KOA = i
-   Scell(1)%MDatoms(2)%KOA = j
-   Scell(1)%MDatoms(1)%S(:) = 0.1d0
-   !Scell(1)%MDatoms(2)%S(1) = 0.2d0
-   !Scell(1)%MDatoms(2)%S(1) = Scell(1)%MDatoms(1)%S(1) + TB_Repuls(i,j)%R(m_N_BOP_rep_grid) / supcesize
-   Scell(1)%MDatoms(2)%S(1) = Scell(1)%MDatoms(1)%S(1) + bond_length / supcesize
-   Scell(1)%MDatoms(2)%S(2:3) = 0.1d0
-   call Det_3x3(Scell(1)%supce, Scell(1)%V)
-   call Coordinates_rel_to_abs(Scell, 1, if_old=.true.)    ! from the module "Atomic_tools"
-   call get_DOS_masks(Scell, matter, numpar)  ! module "TB"
-
-   ! Get the energy shift:
-   ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
-   call get_Hamilonian_and_E(Scell, numpar, matter, 1, Err, 0.0d0) ! module "TB"
-   ! Get global energy of the system at the beginning:
-   call get_glob_energy(Scell, matter) ! module "Electron_tools"
-
-   ! Energy shift:
-   !Pot_shift = -Ref_Pot(m_N_BOP_rep_grid) + Scell(1)%nrg%El_low   ! [eV]
-   Pot_shift = -ZBL_pot(Elem1, Elem2, bond_length) + Scell(1)%nrg%El_low   ! [eV]
-   ! Shift potential accordingly, to produce correct minimum at bond length:
-   Ref_Pot = Ref_Pot + Pot_shift
-
-   ! Also define TB potential at the point of bond length + d:
-   Scell(1)%MDatoms(2)%S(1) = Scell(1)%MDatoms(1)%S(1) + (bond_length+d_bond) / supcesize
-   call Det_3x3(Scell(1)%supce, Scell(1)%V)
-   call Coordinates_rel_to_abs(Scell, 1, if_old=.true.)    ! from the module "Atomic_tools"
-   call get_DOS_masks(Scell, matter, numpar)  ! module "TB"
-   call get_Hamilonian_and_E(Scell, numpar, matter, 1, Err, 0.0d0) ! module "TB"
-   call get_glob_energy(Scell, matter) ! module "Electron_tools"
-   TB_d = Scell(1)%nrg%El_low   ! [eV]
-
-   ! Also define ZBL potential at the point of bond length - d:
-   call Find_in_array_monoton(abs(Ref_Pot), abs(TB_d), icur) ! module "Little_subroutines"
-   call linear_interpolation(Ref_Pot, TB_Repuls(i,j)%R, TB_d, ZBL_length, icur) ! module "Little_subroutines"
-
-!    do k = 1, m_N_BOP_rep_grid
-!       print*, k, TB_Repuls(i,j)%R(k), Ref_Pot(k)
-!    enddo
-!     print*, 'ZBL_length', ZBL_length, TB_d, icur, Ref_Pot(icur), TB_Repuls(i,j)%R(icur)
-
-
-   ! Calculate the repulsive term, such that total potential equals the referenced one:
-   do k = 1, m_N_BOP_rep_grid
-      ! Set the distance according to grid point for repulsive potential:
-      Scell(1)%MDatoms(2)%S(1) = Scell(1)%MDatoms(1)%S(1) + TB_Repuls(i,j)%R(k) / supcesize
-      call Coordinates_rel_to_abs(Scell, 1, if_old=.true.)    ! from the module "Atomic_tools"
-      call get_Hamilonian_and_E(Scell, numpar, matter, 1, Err, 0.0d0) ! module "TB"
-      ! Get global energy of the system at the beginning:
-      call get_glob_energy(Scell, matter) ! module "Electron_tools"
-      ! Set the repulsive potential:
-      if ( TB_Repuls(i,j)%R(k) <= ZBL_length ) then
-         V_rep(k) = Ref_Pot(k) - Scell(1)%nrg%El_low    ! [eV]
-         ZBL_d = V_rep(k)
-      else
-         ZBL_d = 1.0d0 / (1.0d0/(Ref_Pot(k)-TB_d) + 1.0d0/(Scell(1)%nrg%El_low-TB_d))
-         V_rep(k) = (TB_d + ZBL_d) - Scell(1)%nrg%El_low   ! [eV]
-      endif
-!       write(*,'(i3,f,f,es,es,es,f,f)') k, TB_Repuls(i,j)%R(k), V_rep(k),  (1.0d0/(Ref_Pot(k)-TB_d) + 1.0d0/(Scell(1)%nrg%El_low-TB_d)), ZBL_d, TB_d - Scell(1)%nrg%El_low, TB_Repuls(i,j)%R(k), ZBL_length
-   enddo
-   TB_Repuls(i,j)%V_rep = V_rep ! save it
-!    print*, 'Pot_shift', Pot_shift, supcesize, sqrt(SUM((Scell(1)%MDatoms(1)%R(:)-Scell(1)%MDatoms(2)%R(:))**2))
-
-   ! Restore the parameters:
-   deallocate(Scell(1)%MDatoms)
-   deallocate(Scell(1)%Near_neighbor_list)  ! nearest neighbors
-   deallocate(Scell(1)%Near_neighbor_dist)  ! [A] distances
-   deallocate(Scell(1)%Near_neighbor_dist_s) ! relative dist.
-   deallocate(Scell(1)%Near_neighbor_size) ! how many nearest neighbours
-   deallocate(Scell(1)%Near_neighbors_user)
-   deallocate(Scell(1)%Ha)
-   deallocate(Scell(1)%Ha0)
-   deallocate(Scell(1)%H_non)
-   deallocate(Scell(1)%H_non0)
-   deallocate(Scell(1)%Ei)
-   deallocate(Scell(1)%Ei0)
-   deallocate(Scell(1)%Aij)
-   deallocate(Scell(1)%fe)
-   deallocate(Scell(1)%fe_eq)
-   deallocate(Scell(1)%G_ei_partial)
-   deallocate(Scell(1)%Ce_part)
-   call deallocate_array(Scell(1)%I_ij)      ! module "Little_subroutines"
-   call deallocate_array(Scell(1)%Norm_WF)   ! module "Little_subroutines"
-   call deallocate_array(Scell(1)%Ce_i)      ! module "Little_subroutines"
-   call deallocate_array(Scell(1)%kappa_e_part)   ! module "Little_subroutines"
-   deallocate(numpar%mask_DOS)
-
-!    pause 'create_BOP_repulsive'
-
-   if (j /= i) then ! and the lower triangle
-      if (.not.allocated( TB_Repuls(j,i)%R)) allocate(TB_Repuls(j,i)%R(m_N_BOP_rep_grid))
-      if (.not.allocated( TB_Repuls(j,i)%V_rep)) allocate(TB_Repuls(j,i)%V_rep(m_N_BOP_rep_grid))
-      TB_Repuls(j,i)%R(:) = TB_Repuls(i,j)%R(:)
-      TB_Repuls(j,i)%V_rep(:) = TB_Repuls(i,j)%V_rep(:)
-   endif
-
-   ! File with repulsive BOP potential to be created:
-   File_name = trim(adjustl(Folder_name))//path_sep// &
-      trim(adjustl(Name1))//'_'//trim(adjustl(Name2))//trim(adjustl(m_repulsive))   ! file with repulsive BOP parameters
-   FN_BL = 113
-   open(UNIT=FN_BL, FILE = trim(adjustl(File_name)))
-   ! Write into the file:
-   do k = 1, m_N_BOP_rep_grid    ! for all grid points
-      write(FN_BL,'(f24.16, es24.16)') TB_Repuls(i,j)%R(k), TB_Repuls(i,j)%V_rep(k)
-   enddo
-   call close_file('close', FN=FN_BL) ! module "Dealing_with_files"
-
-3415 continue
-end subroutine create_BOP_repulsive
-
-
-
 subroutine print_message_about_input_files(Error_descript)
    character(200), intent(in), optional :: Error_descript
    write(*,'(a)') trim(adjustl(m_dashline))
@@ -2204,6 +1992,219 @@ subroutine set_supercell_size_from_unitcells(Scell, SCN, matter, unit_cell, def_
       Scell(SCN)%supce_eq = Scell(SCN)%supce	! [A] equilibrium lengths of super-cell
    endif
 end subroutine set_supercell_size_from_unitcells
+
+
+
+
+subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_name, path_sep, Name1, Name2, &
+                                 bond_length_in, Elem1, Elem2, Err)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   type(Solid), intent(inout) :: matter	! all material parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(TB_Rep_BOP), dimension(:,:), intent(inout) ::  TB_Repuls    ! parameters of the repulsive potential
+   integer, intent(in) :: i, j  ! numbers of pair of elements for which we read the data
+   character(*), intent(in) :: Folder_name    ! directory where to find BOP parameters
+   character(1), intent(in) :: path_sep
+   character(*), intent(in) :: Name1, Name2 ! element names
+   real(8), intent(in) :: bond_length_in   ! [A] bond length for dimer
+   real(8), intent(in) :: Elem1, Elem2  ! atomic numbers of the two elements we need the parameters for
+   type(Error_handling), intent(inout) :: Err	! error save
+   !-------------------
+   character(300) :: File_name, Error_descript, chtemp(2)
+   integer :: FN_BL, k, NSC, n1, icur
+   real(8) :: r_start, r_stop, dr, supcesize, Pot_shift, d_bond, ZBL_length, TB_d, ZBL_d, bond_length
+   real(8), dimension(m_N_BOP_rep_grid) :: Ref_Pot, V_rep
+   integer, dimension(:), allocatable :: int_vec
+
+   ! Region around the bond length where we smoothen the potentials:
+   d_bond = 0.3d0   ! [A]
+   ! Shifted bond length for fitting:
+   bond_length = bond_length_in + d_bond    ! [A]
+
+   ! Create repulsive potential:
+   if (.not.allocated(TB_Repuls(i,j)%R)) then
+      allocate(TB_Repuls(i,j)%R(m_N_BOP_rep_grid))
+      ! Create grid:
+      r_start = max(0.25d0, min(bond_length-0.5d0, 1.0d0) ) ! start of the grid [A]
+      r_stop = bond_length + d_bond ! end of the grid [A]
+      dr = (r_stop - r_start)/dble(m_N_BOP_rep_grid-1)   ! step set to have fixed number of points equal to m_N_BOP_rep_grid
+      ! Save the grid:
+      TB_Repuls(i,j)%R(1) = r_start ! [A]
+      do k = 2, m_N_BOP_rep_grid
+         TB_Repuls(i,j)%R(k) = TB_Repuls(i,j)%R(k-1) + dr   ! [A]
+      enddo
+   endif
+   if (.not.allocated(TB_Repuls(i,j)%V_rep)) allocate(TB_Repuls(i,j)%V_rep(m_N_BOP_rep_grid))
+
+   ! Get the reference potential (ZBL):
+   do k = 1, m_N_BOP_rep_grid
+      Ref_Pot(k) =  ZBL_pot(Elem1, Elem2, TB_Repuls(i,j)%R(k))  ! module "ZBL_potential"
+!       print*, k, TB_Repuls(i,j)%R(k), Ref_Pot(k)
+   enddo
+
+   ! Set the equilibrium distance between the dimer atoms to get the correct bond length:
+   supcesize = 10.0d0 * TB_Repuls(i,j)%R(m_N_BOP_rep_grid)  ! large supercell size to exclude periodicity
+   Scell(1)%supce = RESHAPE( (/ supcesize, 0.0d0, 0.0d0,  &
+                                0.0d0, supcesize, 0.0d0,  &
+                                0.0d0, 0.0d0, supcesize /), (/3,3/) )
+   Scell(1)%supce0 = Scell(1)%supce
+
+   ! Place dimer along X axis at the distance of bond length:
+   allocate(Scell(1)%MDatoms(2))    ! dimer
+   Scell(1)%Na = 2
+   Scell(1)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)/SUM(matter%Atoms(:)%percentage)*Scell(1)%Na
+
+   if (numpar%verbose) then
+      write(*, '(a)', advance='no') 'Number of valence electrons: '
+      allocate(int_vec(size(matter%Atoms(:)%NVB)), source=matter%Atoms(:)%NVB)
+      write(*,*) int_vec
+      write(*,*) ' (total: ', Scell(1)%Ne, ')'
+   endif
+
+   Scell(1)%Ne_low = Scell(1)%Ne ! at the start, all electrons are low-energy
+   Scell(1)%Ne_high = 0.0d0 ! no high-energy electrons at the start
+   Scell(1)%Ne_emit = 0.0d0 ! no emitted electrons at the start
+   ! Allocate arrays for calculation of hamiltonian and related stuff:
+   allocate(Scell(1)%Near_neighbor_list(Scell(1)%Na,Scell(1)%Na))  ! nearest neighbors
+   allocate(Scell(1)%Near_neighbor_dist(Scell(1)%Na,Scell(1)%Na,4))  ! [A] distances
+   allocate(Scell(1)%Near_neighbor_dist_s(Scell(1)%Na,Scell(1)%Na,3)) ! relative dist.
+   allocate(Scell(1)%Near_neighbor_size(Scell(1)%Na)) ! how many nearest neighbours
+   allocate(Scell(1)%Near_neighbors_user(Scell(1)%Na))
+   ASSOCIATE (ARRAY => Scell(i)%TB_Hamil(:,:))
+   select type(ARRAY)
+   type is (TB_H_BOP)   ! it can be various basis sets:
+     select case (numpar%N_basis_size)    ! find which one is used now:
+     case (0)    ! s
+        n1 = 1.0d0*Scell(i)%Na ! number of energy levels is defined by the number of TB parameters included
+     case (1)    ! sp3
+        n1 = 4.0d0*Scell(i)%Na ! number of energy levels is defined by the number of TB parameters included
+     case default    ! sp3d5
+        n1 = 9.0d0*Scell(i)%Na ! number of energy levels is defined by the number of TB parameters included
+     endselect
+   endselect
+   END ASSOCIATE
+   allocate(Scell(1)%Ha(n1,n1))   ! hamiltonian size
+   allocate(Scell(1)%Ha0(n1,n1)) ! hamiltonian0 size
+   allocate(Scell(1)%H_non(n1,n1))	! nondiagonalized Hamiltonian
+   allocate(Scell(1)%H_non0(n1,n1))	! nondiagonalized Hamiltonian
+   allocate(Scell(1)%Ei(n1))  ! energy levels, eigenvalues of the hamiltonian matrix
+   allocate(Scell(1)%Ei0(n1))  ! energy levels0, eigenvalues of the hamiltonian matrix
+   allocate(Scell(1)%Aij(n1,n1))	! coefficients used for forces in TB
+   allocate(Scell(1)%fe(size(Scell(1)%Ei))) ! electron distribution function (Fermi-function)
+   allocate(Scell(1)%fe_eq(size(Scell(1)%Ei))) ! equivalent electron distribution function (Fermi-function)
+   if (numpar%do_kappa) then
+      allocate(Scell(1)%I_ij(size(Scell(1)%Ei))) ! electron-ion collision integral
+      allocate(Scell(1)%Ce_i(size(Scell(1)%Ei))) ! electron-energy resolved heat capacity
+   endif
+   Scell(1)%MDatoms(1)%KOA = i
+   Scell(1)%MDatoms(2)%KOA = j
+   Scell(1)%MDatoms(1)%S(:) = 0.1d0
+   !Scell(1)%MDatoms(2)%S(1) = 0.2d0
+   !Scell(1)%MDatoms(2)%S(1) = Scell(1)%MDatoms(1)%S(1) + TB_Repuls(i,j)%R(m_N_BOP_rep_grid) / supcesize
+   Scell(1)%MDatoms(2)%S(1) = Scell(1)%MDatoms(1)%S(1) + bond_length / supcesize
+   Scell(1)%MDatoms(2)%S(2:3) = 0.1d0
+   call Det_3x3(Scell(1)%supce, Scell(1)%V)
+   call Coordinates_rel_to_abs(Scell, 1, if_old=.true.)    ! from the module "Atomic_tools"
+   call get_DOS_masks(Scell, matter, numpar)  ! module "TB"
+
+   ! Get the energy shift:
+   ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
+   call get_Hamilonian_and_E(Scell, numpar, matter, 1, Err, 0.0d0) ! module "TB"
+   ! Get global energy of the system at the beginning:
+   call get_glob_energy(Scell, matter) ! module "Electron_tools"
+
+   ! Energy shift:
+   !Pot_shift = -Ref_Pot(m_N_BOP_rep_grid) + Scell(1)%nrg%El_low   ! [eV]
+   Pot_shift = -ZBL_pot(Elem1, Elem2, bond_length) + Scell(1)%nrg%El_low   ! [eV]
+   ! Shift potential accordingly, to produce correct minimum at bond length:
+   Ref_Pot = Ref_Pot + Pot_shift
+
+   ! Also define TB potential at the point of bond length + d:
+   Scell(1)%MDatoms(2)%S(1) = Scell(1)%MDatoms(1)%S(1) + (bond_length+d_bond) / supcesize
+   call Det_3x3(Scell(1)%supce, Scell(1)%V)
+   call Coordinates_rel_to_abs(Scell, 1, if_old=.true.)    ! from the module "Atomic_tools"
+   call get_DOS_masks(Scell, matter, numpar)  ! module "TB"
+   call get_Hamilonian_and_E(Scell, numpar, matter, 1, Err, 0.0d0) ! module "TB"
+   call get_glob_energy(Scell, matter) ! module "Electron_tools"
+   TB_d = Scell(1)%nrg%El_low   ! [eV]
+
+   ! Also define ZBL potential at the point of bond length - d:
+   call Find_in_array_monoton(abs(Ref_Pot), abs(TB_d), icur) ! module "Little_subroutines"
+   call linear_interpolation(Ref_Pot, TB_Repuls(i,j)%R, TB_d, ZBL_length, icur) ! module "Little_subroutines"
+
+!    do k = 1, m_N_BOP_rep_grid
+!       print*, k, TB_Repuls(i,j)%R(k), Ref_Pot(k)
+!    enddo
+!     print*, 'ZBL_length', ZBL_length, TB_d, icur, Ref_Pot(icur), TB_Repuls(i,j)%R(icur)
+
+
+   ! Calculate the repulsive term, such that total potential equals the referenced one:
+   do k = 1, m_N_BOP_rep_grid
+      ! Set the distance according to grid point for repulsive potential:
+      Scell(1)%MDatoms(2)%S(1) = Scell(1)%MDatoms(1)%S(1) + TB_Repuls(i,j)%R(k) / supcesize
+      call Coordinates_rel_to_abs(Scell, 1, if_old=.true.)    ! from the module "Atomic_tools"
+      call get_Hamilonian_and_E(Scell, numpar, matter, 1, Err, 0.0d0) ! module "TB"
+      ! Get global energy of the system at the beginning:
+      call get_glob_energy(Scell, matter) ! module "Electron_tools"
+      ! Set the repulsive potential:
+      if ( TB_Repuls(i,j)%R(k) <= ZBL_length ) then
+         V_rep(k) = Ref_Pot(k) - Scell(1)%nrg%El_low    ! [eV]
+         ZBL_d = V_rep(k)
+      else
+         ZBL_d = 1.0d0 / (1.0d0/(Ref_Pot(k)-TB_d) + 1.0d0/(Scell(1)%nrg%El_low-TB_d))
+         V_rep(k) = (TB_d + ZBL_d) - Scell(1)%nrg%El_low   ! [eV]
+      endif
+!       write(*,'(i3,f,f,es,es,es,f,f)') k, TB_Repuls(i,j)%R(k), V_rep(k),  (1.0d0/(Ref_Pot(k)-TB_d) + 1.0d0/(Scell(1)%nrg%El_low-TB_d)), ZBL_d, TB_d - Scell(1)%nrg%El_low, TB_Repuls(i,j)%R(k), ZBL_length
+   enddo
+   TB_Repuls(i,j)%V_rep = V_rep ! save it
+!    print*, 'Pot_shift', Pot_shift, supcesize, sqrt(SUM((Scell(1)%MDatoms(1)%R(:)-Scell(1)%MDatoms(2)%R(:))**2))
+
+   ! Restore the parameters:
+   deallocate(Scell(1)%MDatoms)
+   deallocate(Scell(1)%Near_neighbor_list)  ! nearest neighbors
+   deallocate(Scell(1)%Near_neighbor_dist)  ! [A] distances
+   deallocate(Scell(1)%Near_neighbor_dist_s) ! relative dist.
+   deallocate(Scell(1)%Near_neighbor_size) ! how many nearest neighbours
+   deallocate(Scell(1)%Near_neighbors_user)
+   deallocate(Scell(1)%Ha)
+   deallocate(Scell(1)%Ha0)
+   deallocate(Scell(1)%H_non)
+   deallocate(Scell(1)%H_non0)
+   deallocate(Scell(1)%Ei)
+   deallocate(Scell(1)%Ei0)
+   deallocate(Scell(1)%Aij)
+   deallocate(Scell(1)%fe)
+   deallocate(Scell(1)%fe_eq)
+   deallocate(Scell(1)%G_ei_partial)
+   deallocate(Scell(1)%Ce_part)
+   call deallocate_array(Scell(1)%I_ij)      ! module "Little_subroutines"
+   call deallocate_array(Scell(1)%Norm_WF)   ! module "Little_subroutines"
+   call deallocate_array(Scell(1)%Ce_i)      ! module "Little_subroutines"
+   call deallocate_array(Scell(1)%kappa_e_part)   ! module "Little_subroutines"
+   deallocate(numpar%mask_DOS)
+
+!    pause 'create_BOP_repulsive'
+
+   if (j /= i) then ! and the lower triangle
+      if (.not.allocated( TB_Repuls(j,i)%R)) allocate(TB_Repuls(j,i)%R(m_N_BOP_rep_grid))
+      if (.not.allocated( TB_Repuls(j,i)%V_rep)) allocate(TB_Repuls(j,i)%V_rep(m_N_BOP_rep_grid))
+      TB_Repuls(j,i)%R(:) = TB_Repuls(i,j)%R(:)
+      TB_Repuls(j,i)%V_rep(:) = TB_Repuls(i,j)%V_rep(:)
+   endif
+
+   ! File with repulsive BOP potential to be created:
+   File_name = trim(adjustl(Folder_name))//path_sep// &
+      trim(adjustl(Name1))//'_'//trim(adjustl(Name2))//trim(adjustl(m_repulsive))   ! file with repulsive BOP parameters
+   FN_BL = 113
+   open(UNIT=FN_BL, FILE = trim(adjustl(File_name)))
+   ! Write into the file:
+   do k = 1, m_N_BOP_rep_grid    ! for all grid points
+      write(FN_BL,'(f24.16, es24.16)') TB_Repuls(i,j)%R(k), TB_Repuls(i,j)%V_rep(k)
+   enddo
+   call close_file('close', FN=FN_BL) ! module "Dealing_with_files"
+
+3415 continue
+end subroutine create_BOP_repulsive
 
 
 
