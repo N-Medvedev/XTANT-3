@@ -53,12 +53,12 @@ cd Source_files
    ) ELSE (
       IF /I %arg1%==DEBUGOMP (
          echo %Starline%
-         echo Compiling with DEBUGOMP option, OpenMP but no optimizations are included
+         echo Compiling with DEBUGOMP option, OpenMP with /O1 optimization are included
          echo Started at: %date% %time%
          echo %Starline%
 
          :: List compiler options 
-         SET "Compile_options=/F9999999999 /QxHost /QaxAVX  /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /Qfp-stack-check /fp:precise /Qvec /standard-semantics"
+         SET "Compile_options=/F9999999999 /QxHost /QaxAVX /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /debug:partial /O1 /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /Qfp-stack-check /fp:precise /Qvec /standard-semantics"
 
          :: Set name of the executable:
          SET "Name_of_exe=XTANT_DEBUG_OMP.exe"
@@ -70,8 +70,7 @@ cd Source_files
             echo %Starline%
 
             :: List compiler options
-            SET "Compile_options=/F9999999999 /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /Od /fpe:0 /fp:precise /Qvec /standard-semantics"
-
+            SET "Compile_options=/F9999999999 /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /O1 /fpe:0 /fp:fast /Qvec /Qipo /Qopt-report /standard-semantics"
             :: Set name of the executable:
             SET "Name_of_exe=XTANT_OMP.exe"
 
@@ -83,7 +82,7 @@ cd Source_files
             echo %Starline%
 
             :: List compiler options
-            SET "Compile_options= /Qopenmp /D OMP_inside /Qmkl=parallel /O3 /fpp /Qvec /Qipo /real-size:64 /standard-semantics /F9999999999 "
+            SET "Compile_options=/F9999999999 /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /O3 /Qvec /Qipo /standard-semantics"
 
             :: Set name of the executable:
             SET "Name_of_exe=XTANT.exe"
