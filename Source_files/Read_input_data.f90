@@ -7158,7 +7158,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
       if (present(verbose)) verbose = .true.
       write(*,'(a)') trim(adjustl(m_starline))
 
-   case ('nonverbose', 'NONVERBOSE', 'Nonverbose')
+   case ('nonverbose', 'NONVERBOSE', 'Nonverbose', 'noverbose', 'NOVERBOSE')
       print*, 'Nonverbose on: XTANT will print almost nothing'
       if (present(nonverbose)) nonverbose = .true.
       write(*,'(a)') trim(adjustl(m_starline))

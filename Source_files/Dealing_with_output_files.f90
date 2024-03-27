@@ -2885,7 +2885,7 @@ subroutine gnu_displacements_partial(File_name, file_MSD, t0, t_last, eps_name, 
             write(FN, '(a,es25.16,a,a,a,i3,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_MSD)), '\"u 1:', i_start, &
                                           ' w l lw \"$LW\" title \"'//trim(adjustl(chtemp))//'\" ,\'
          else
-            write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+(i-1)*4, ' w l lw \"$LW\" title title \"'//trim(adjustl(chtemp))//'\" ,\'
+            write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+(i-1)*4, ' w l lw \"$LW\" title \"'//trim(adjustl(chtemp))//'\" ,\'
          endif
          write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+1+(i-1)*4, ' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))//':X' ,'\" ,\'
          write(FN, '(a,i3,a,a,a)') '\"\" u 1:', i_start+2+(i-1)*4, ' w l lw \"$LW\" title \" ', trim(adjustl(chtemp))//':Y' ,'\" ,\'
