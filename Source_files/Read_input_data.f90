@@ -4567,7 +4567,11 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
    if (numpar%NOMP < 1) then ! use default: maximum number of available threads
+#ifdef OMP_inside
       numpar%NOMP = omp_get_max_threads() ! number of processors available by default
+#else ! if you set to use OpenMP in compiling: 'make OMP=no'
+      numpar%NOMP = 1
+#endif
    endif
    
    ! MD algorithm (0=Verlet, 2d order; 1=Yoshida, 4th order)
@@ -7154,7 +7158,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
       if (present(verbose)) verbose = .true.
       write(*,'(a)') trim(adjustl(m_starline))
 
-   case ('nonverbose', 'NONVERBOSE', 'Nonverbose')
+   case ('nonverbose', 'NONVERBOSE', 'Nonverbose', 'noverbose', 'NOVERBOSE')
       print*, 'Nonverbose on: XTANT will print almost nothing'
       if (present(nonverbose)) nonverbose = .true.
       write(*,'(a)') trim(adjustl(m_starline))

@@ -56,12 +56,12 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    real(8), optional :: Emax_in, dE_in  ! [eV] maximal energy and grid step for atomic distribution
    ! Reminder:
    ! Ta_var(1) kinetic temperature
-   ! Ta_var(2) "entropic" kinetic temperature
-   ! Ta_var(3) kinetic temperature from numerical distribution
+   ! Ta_var(2) "entropic" kinetic temperature (not useful)
+   ! Ta_var(3) kinetic temperature from numerical distribution (for cross-checking)
    ! Ta_var(4) fluctuational temperature
-   ! Ta_var(5) "potential" temperature
+   ! Ta_var(5) "potential" temperature (not useful)
    ! Ta_var(6) virial temperature
-   ! Ta_var(7) Configurational-sine: B=r^n*sin^2(Pi*l*s) : for n,l:
+   ! Ta_var(7) Configurational-sine: B=r^n*sin^2(Pi*l*s) : for n,l (not useful)
    ! Ta_var(8) Configurational-Rugh
    !----------------------------------
    integer :: i, Nat, j, Nsiz
@@ -274,8 +274,10 @@ subroutine update_Ta_config_running_average(Scell, matter, numpar)
    if (numpar%print_Ta) then
       ! Get the new configurational temperature:
       Scell%Ta_var(8) = get_configurational_temperature(Scell, matter, numpar)  ! module "Atomic_thermodynamics"
+      !print*, Scell%Ta_var(6), Scell%Ta_var(7), Scell%Ta_var(8)
+
       ! Update the running average of the configurational tempreature:
-      call update_running_avereage(Scell%Ta_var(8), Scell%Ta_conf_run_average)  ! below
+      call update_running_average(Scell%Ta_var(8), Scell%Ta_conf_run_average)  ! below
    endif
 end subroutine update_Ta_config_running_average
 
@@ -344,7 +346,7 @@ end function get_configurational_temperature
 
 
 
-subroutine update_running_avereage(Ta_conf, Ta_run_average)
+subroutine update_running_average(Ta_conf, Ta_run_average)
    real(8), intent(inout) :: Ta_conf
    real(8), dimension(:), intent(inout) :: Ta_run_average
    !-------------------------
@@ -353,14 +355,14 @@ subroutine update_running_avereage(Ta_conf, Ta_run_average)
 
    Nsiz = size(Ta_run_average)
    ! Find minimal value to check if the running-average array is filled or not yet (first Nsiz steps of the simulation):
-   Tmin = minval(Ta_run_average)
+   Tmin = minval( abs(Ta_run_average) )
    if (abs(Tmin) < 1.0d-12) then ! the array is not filled yet, there are zeroes:
-      Ncur = transfer(minloc(Ta_run_average), Ncur)
+      Ncur = transfer(minloc( abs(Ta_run_average)), Ncur)
    else  ! the array is full:
       Ncur = Nsiz
       ! Update all array:
       do i = 1, Nsiz-1
-         Ta_run_average(i) = Ta_run_average(i-1)
+         Ta_run_average(i) = Ta_run_average(i+1)
       enddo ! i
    endif
    ! 1) Save the latest value in the running average array:
@@ -368,7 +370,9 @@ subroutine update_running_avereage(Ta_conf, Ta_run_average)
 
    ! 2) Update the configurational temperature to the value of running average:
    Ta_conf = SUM(Ta_run_average(1:Ncur)) / dble(Ncur)
-end subroutine update_running_avereage
+
+   !print*, "Tconf=", Ta_run_average, Ta_conf, Ncur
+end subroutine update_running_average
 
 
 
@@ -761,7 +765,7 @@ subroutine temperature_from_moments(Scell, Ta, E0)
    ! Convert [eV] -> [K]:
    Ta = Ta * g_kb ! [K]
 
-   ! For maxwellian distribution, the result is iudentical to:
+   ! For maxwellian distribution, the result is identical to:
    ! T_test = get_T_from_fluctuation(E1, E2) ! below
    ! print*, 'temperature_from_moments', Ta, T_test* g_kb
 end subroutine temperature_from_moments
