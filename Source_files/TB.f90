@@ -69,7 +69,8 @@ PRIVATE
 
 public :: get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_parameters, &
          vdW_interplane, Electron_ion_coupling, update_nrg_after_change, get_DOS_masks, k_point_choice, &
-         construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step, get_Mullikens_all, get_coupling_matrix_elements
+         construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step, get_Mullikens_all, get_coupling_matrix_elements, &
+         Get_configurational_temperature_Pettifor
 
  contains
 
@@ -3542,12 +3543,13 @@ end subroutine Construct_Aij_old
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Analysis subroutines:
 
-subroutine Get_configurational_temperature(Scell, numpar, Tconf)
+subroutine Get_configurational_temperature_Pettifor(Scell, numpar, Tconf)
    type(Super_cell), dimension(:), intent(in) :: Scell	! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), intent(out) :: Tconf	! [K] configurational temperature
    !--------------------------------------------
    real(8), dimension(:,:), allocatable :: F, dF	! forces and derivatives
+   real(8) :: F_sum, dF_sum
    integer :: Nat
    Nat = size(Scell(1)%MDAtoms)	! number of atoms
    allocate(F(3,Nat))
@@ -3559,17 +3561,23 @@ subroutine Get_configurational_temperature(Scell, numpar, Tconf)
    call get_derivatives_and_forces_r(Scell, numpar, F, dF)	! see below
 
    ! Configurational temperature:
-   Tconf = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) ) / SUM( (dF(1,:)+dF(2,:)+dF(3,:)) )	! [eV]
-   Tconf = Tconf*g_kb	! [eV] -> [K]
-   
-!     print*, '===================='
-!     print*, Tconf, SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:))), SUM((dF(1,:)+dF(2,:)+dF(3,:)) )
-!     print*, '===================='
-!     pause 'Tconfig'
+   F_sum = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) )
+   dF_sum = SUM( (dF(1,:)+dF(2,:)+dF(3,:)) )
+   if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
+      Tconf = 0.0d0  ! [K]
+   else  ! defined:
+      Tconf = F_sum / dF_sum    ! [eV]
+      Tconf = Tconf*g_kb	! [eV] -> [K]
+   endif
+
+    !print*, '===================='
+    !print*, Tconf, SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:))), SUM((dF(1,:)+dF(2,:)+dF(3,:)) )
+    !print*, '===================='
+    !pause 'Tconfig'
    
    ! Clean up:
    deallocate(F, dF)
-end subroutine Get_configurational_temperature
+end subroutine Get_configurational_temperature_Pettifor
 
 
 subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF)
@@ -3589,6 +3597,8 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF)
    N = size(Scell(1)%MDAtoms)	! number of atoms
    if (.not.allocated(F)) allocate(F(3,N))
    if (.not.allocated(dF)) allocate(dF(3,N))
+   F = 0.0d0   ! restart
+   dF = 0.0d0  ! restart
    
    call Construct_M_cos(Scell(1), M_cos)	! see below
    
@@ -3604,17 +3614,17 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF)
          ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
          call dHij_r(ARRAY, Scell(1)%MDatoms, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, Fatr, dFatr) ! module "TB_Pettifor"
       type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni
-         print*, 'Configurational temperature calculations are not implemented for Molteni: Attractive'
+         !print*, 'Configurational temperature calculations are not implemented for Molteni: Attractive'
       type is (TB_H_Fu)  ! TB parametrization accroding to Fu
-         print*, 'Configurational temperature calculations are not implemented for Fu: Attractive'
+         !print*, 'Configurational temperature calculations are not implemented for Fu: Attractive'
       type is (TB_H_NRL)  ! TB parametrization accroding to NRL
-         print*, 'Configurational temperature calculations are not implemented for NRL: Attractive'
+         !print*, 'Configurational temperature calculations are not implemented for NRL: Attractive'
       type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB
-         print*, 'Configurational temperature calculations are not implemented for DFTB: Attractive'
+         !print*, 'Configurational temperature calculations are not implemented for DFTB: Attractive'
       type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
-         print*, 'Configurational temperature calculations are not implemented for 3TB: Attractive'
+         !print*, 'Configurational temperature calculations are not implemented for 3TB: Attractive'
       type is (TB_H_xTB)  ! TB parametrization accroding to xTB
-         print*, 'Configurational temperature calculations are not implemented for xTB: Attractive'
+         !print*, 'Configurational temperature calculations are not implemented for xTB: Attractive'
       end select
    END ASSOCIATE
 
@@ -3633,19 +3643,19 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF)
          ! Second derivatives of the repulsive energy by r:
          call dE2rep_dr2(ARRAY2, Scell(1)%MDAtoms, Scell, numpar, Frep, dFrep) ! module "TB_Pettifor"
       type is (TB_Rep_Molteni)  ! TB parametrization accroding to Molteni
-         print*, 'Configurational temperature calculations are not implemented for Molteni: Repulsive'
+         !print*, 'Configurational temperature calculations are not implemented for Molteni: Repulsive'
       type is (TB_Rep_Fu)  ! TB parametrization accroding to Fu
-         print*, 'Configurational temperature calculations are not implemented for Fu: Repulsive'
+         !print*, 'Configurational temperature calculations are not implemented for Fu: Repulsive'
       type is (TB_Rep_NRL)  ! TB parametrization accroding to NRL
-         print*, 'Configurational temperature calculations are not implemented for NRL: Repulsive'
+         !print*, 'Configurational temperature calculations are not implemented for NRL: Repulsive'
       type is (TB_Rep_DFTB)  ! TB parametrization accroding to DFTB
-         print*, 'Configurational temperature calculations are not implemented for DFTB: Repulsive'
+         !print*, 'Configurational temperature calculations are not implemented for DFTB: Repulsive'
       type is (TB_Rep_3TB)  ! TB parametrization accroding to 3TB
-         print*, 'Configurational temperature calculations are not implemented for 3TB: Repulsive'
+         !print*, 'Configurational temperature calculations are not implemented for 3TB: Repulsive'
       type is (TB_Rep_BOP)  ! TB parametrization accroding to BOP
-         print*, 'Configurational temperature calculations are not implemented for BOP: Repulsive'
+         !print*, 'Configurational temperature calculations are not implemented for BOP: Repulsive'
       type is (TB_Rep_xTB)  ! TB parametrization accroding to xTB
-         print*, 'Configurational temperature calculations are not implemented for xTB: Repulsive'
+         !print*, 'Configurational temperature calculations are not implemented for xTB: Repulsive'
       end select
    END ASSOCIATE !    
    

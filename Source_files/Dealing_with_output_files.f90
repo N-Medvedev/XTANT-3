@@ -1184,10 +1184,10 @@ subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic pa
    if (numpar%print_Ta) then
 
       ! kinetic; entropic; distributional; fluctuational; "potential"; configurational etc.:
-      write(numpar%FN_Ta, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') &
+      write(numpar%FN_Ta, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') &
       time, &
       Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(2), Scell(NSC)%Ta_var(3), Scell(NSC)%Ta_var(4), &
-      Scell(NSC)%Ta_var(5), Scell(NSC)%Ta_var(6), Scell(NSC)%Ta_var(7), Scell(NSC)%Ta_var(8), Scell(NSC)%Fv
+      Scell(NSC)%Ta_var(5), Scell(NSC)%Ta_var(6), Scell(NSC)%Ta_var(7), Scell(NSC)%Ta_var(8), Scell(NSC)%Fv, Scell(NSC)%Tconf
 
       ! partial temperatures along X,Y,Z:
       write(numpar%FN_Ta_part, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, &
@@ -1937,7 +1937,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta_part = FN
-      call create_file_header(numpar%FN_Ta_part, '#Time kin:X   kin:Y  kin:Z conf:X   conf:Y   conf:Z')
+      call create_file_header(numpar%FN_Ta_part, '#Time kin:X   kin:Y  kin:Z vir:X   vir:Y   vir:Z')
       call create_file_header(numpar%FN_Ta_part, '#[fs]  [K]   [K]  [K]   [K]   [K]   [K]')
    endif
 
