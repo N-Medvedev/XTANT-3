@@ -697,7 +697,7 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
       !Pot_tot = Pot_tot / dble( count(atoms_group_ind(:)) )
 
       ! Configurational temperature from the equipartition theorem as potential energy per atom per degree of freedom:
-      Ta = -(Pot_tot+matter%p_ext) / (3.0d0 * dble(Nat))   ! [eV]
+      Ta = (Pot_tot+matter%p_ext) / (3.0d0 * dble(Nat))   ! [eV]
    endif
 
    ! Convert [eV] -> {K}:

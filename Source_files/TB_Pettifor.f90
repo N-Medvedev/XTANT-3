@@ -2038,7 +2038,6 @@ subroutine dE2rep_dr2(TB_Repuls, atoms, Scell, numpar, F, dF) ! second derivativ
    ! Get all fx(psi(phi)) functions for all atoms (i):
    call construct_dfx_matrix(Scell, TB_Repuls, psi_vec, dfx_vec, d2fx_vec)	! see below
    
-   !!$omp PARALLEL DO private(ian,i1,dpsi,dpsi2,psi,m,j1,x,y,z,a_r,dik,djk,d_phi_r,b2,phi_tr,ddlta, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, b_delta,b2_delta,a,a2,atom_2)
    !$omp PARALLEL DO private(ian,i1,dpsi,dpsi2,m,j1,x,y,z,a_r,dik,djk,dphi_point,d2phi_point,ddlta, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, atom_2)
    do ian = 1, n	! Forces for all atoms
      do i1 = 1, n	! contribution from all other atoms
@@ -2231,7 +2230,7 @@ subroutine dErdr_Pressure_s(TB_Repuls, atoms, Scell, NSC, numpar) ! derivatives 
 end subroutine dErdr_Pressure_s
 
 
-! The derivative of the function by its argument. To be multiplied later by the derivative or the argument by the variable:
+! The derivative of the function by its argument. To be multiplied later by the derivative of the argument by the variable:
 ! d Phi / d r_{ij} * d r_{ij} / d r_{k,beta}
 function dphi(TB_Repuls, a_x, Phi_precalc)	! derevative of the repulsive potential itself
    ! it corresponds to the Eq. 2.37, Page 40 in H.Jeschke PhD thesis.

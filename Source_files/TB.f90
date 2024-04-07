@@ -3543,14 +3543,17 @@ end subroutine Construct_Aij_old
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Analysis subroutines:
 
-subroutine Get_configurational_temperature_Pettifor(Scell, numpar, Tconf)
+subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter, Tconf)
    type(Super_cell), dimension(:), intent(in) :: Scell	! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(solid), intent(in), target :: matter	! materil parameters
    real(8), intent(out) :: Tconf	! [K] configurational temperature
    !--------------------------------------------
    real(8), dimension(:,:), allocatable :: F, dF	! forces and derivatives
-   real(8) :: F_sum, dF_sum
-   integer :: Nat
+   real(8) :: F_sum, dF_sum, acc(3), Ftest(3)
+   integer :: Nat, i
+   real(8), pointer :: Mass
+
    Nat = size(Scell(1)%MDAtoms)	! number of atoms
    allocate(F(3,Nat))
    allocate(dF(3,Nat))
@@ -3570,8 +3573,22 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, Tconf)
       Tconf = Tconf*g_kb	! [eV] -> [K]
    endif
 
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! Testing:
+!    do i = 1, Nat
+!       ! Convert acceleration into SI units:
+!       acc(:) = Scell(1)%MDAtoms(i)%accel(:) * 1.0d20 ! [A/fs^2] -> [m/s^2]
+!       Mass => matter%Atoms(Scell(1)%MDatoms(i)%KOA)%Ma ! atomic mass [kg]
+!
+!       ! Get the force:
+!       Ftest(:) = Mass * acc(:) ! [N]
+!
+!       Ftest(:) = Ftest(:) * 1.0d-10 / g_e ! [eV/A]
+!       write(*,'(i4, es,es,es,es,es,es)') i, Ftest(:), -F(:,i)   ! Tested, correct
+!    enddo
     !print*, '===================='
-    !print*, Tconf, SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:))), SUM((dF(1,:)+dF(2,:)+dF(3,:)) )
+    !print*, Tconf, dble(Nat)/SUM( (dF(1,:)+dF(2,:)+dF(3,:)) / (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) )*g_kb
     !print*, '===================='
     !pause 'Tconfig'
    

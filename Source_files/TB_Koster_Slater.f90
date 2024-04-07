@@ -22,6 +22,10 @@
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
 ! This module contains Koster-Slater integrals for all shells:
+! References used:
+! [1] P. Koskinen, V. Mäkinen, Computational Materials Science 47, 237-253 (2009)
+! [2] A.V. Podolskiy and P. Vogl, Phys. Rev. B. 69, 233101 (2004)
+! =============================================================
 
 MODULE TB_Koster_Slater
 
@@ -205,7 +209,7 @@ pure function ddija_drkb(i, j, k, alpha, beta, rija, rijb, rij)
 end function ddija_drkb
 
 
-! Second derivatives of the direction cosine by a coordinate of a third atom:
+! Second derivatives of the direction cosine by a coordinate of a third  nad fourth atom:
 ! d^2 d_{ij,a} / (d r_{k,b} d r_{l,g})1
 pure function d2dija_drkb_drlg(i, j, k, l, alpha, beta, gamma, rija, rijb, rijg, rij) result(d2d)
    real(8) :: d2d
@@ -233,13 +237,19 @@ pure function d2dija_drkb2(i, j, k, alpha, beta, rija, rijb, rij)
    integer, intent (in) :: i, j, k, alpha, beta
    real(8), intent (in) :: rija, rijb, rij
    real(8) :: dik, djk, dab, rij2, rij3
+   real(8) :: dija, dijb
    ! Delta-symbols:
    dik = Kronecker_delta(i,k) 	! module "Algebra_tools"
    djk = Kronecker_delta(j,k) 	! module "Algebra_tools"
-   dab= Kronecker_delta(alpha, beta)	! module "Algebra_tools"
+   dab = Kronecker_delta(alpha, beta)	! module "Algebra_tools"
+
+   dija = rija / rij
+   dijb = rijb / rij
    rij2 = rij*rij
-   rij3 = rij*rij2
-   d2dija_drkb2 = -(dik - djk)/rij3 * ( 2.0d0*rijb*(dab - rija*rijb/rij2) + rija*(1.0d0 - rijb*rijb/rij2) )
+   !rij3 = rij*rij2
+
+   d2dija_drkb2 = -(dik - djk)/rij2 * ( 2.0d0*(dab - dija*dijb)*dijb + dija*(1.0d0 - dijb*dijb) )
+   !d2dija_drkb2 = -(dik - djk)/rij3 * ( 2.0d0*rijb*(dab - rija*rijb/rij2) + rija*(1.0d0 - rijb*rijb/rij2) )   ! OLD
 end function d2dija_drkb2
 
 
@@ -487,7 +497,7 @@ end function t_pz_d3z2_r2
 
 
 ! 15)
-pure function t_dab_dab(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc) ! only px or py
+pure function t_dab_dab(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta
    real(8) :: l2, m2, l2m2
@@ -499,7 +509,7 @@ end function t_dab_dab
 
 
 ! 16)
-pure function t_dab_dbg(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc) ! only px or py
+pure function t_dab_dbg(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta
    real(8) :: ln, m2
@@ -510,7 +520,7 @@ end function t_dab_dbg
 
 
 ! 17)
-pure function t_dxy_dx2_y2(l, m, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc) ! only px or py
+pure function t_dxy_dx2_y2(l, m, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, m, Vdd_sigma, Vdd_pi, Vdd_delta
    real(8) :: lm, l2m2
@@ -521,7 +531,7 @@ end function t_dxy_dx2_y2
 
 
 ! 18)
-pure function t_dyz_dx2_y2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc) ! only px or py
+pure function t_dyz_dx2_y2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta
    real(8) :: mn, l2m2
@@ -532,7 +542,7 @@ end function t_dyz_dx2_y2
 
 
 ! 19)
-pure function t_dxz_dx2_y2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc) ! only px or py
+pure function t_dxz_dx2_y2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta
    real(8) :: ln, l2m2
@@ -543,7 +553,7 @@ end function t_dxz_dx2_y2
 
 
 ! 20)
-pure function t_dxy_d3z2_r2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc) ! only px or py
+pure function t_dxy_d3z2_r2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta
    real(8) :: lm, l2m2, n2
@@ -555,7 +565,7 @@ end function t_dxy_d3z2_r2
 
 
 ! 21)
-pure function t_dyz_d3z2_r2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc) ! only px or py
+pure function t_dyz_d3z2_r2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta
    real(8) :: mn, l2m2, n2
@@ -567,7 +577,7 @@ end function t_dyz_d3z2_r2
 
 
 ! 22)
-pure function t_dxz_d3z2_r2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc) ! only px or py
+pure function t_dxz_d3z2_r2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta
    real(8) :: ln, l2m2, n2
@@ -579,7 +589,7 @@ end function t_dxz_d3z2_r2
 
 
 ! 23)
-pure function t_dx2_y2_dx2_y2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc) ! only px or py
+pure function t_dx2_y2_dx2_y2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta
    real(8) :: l2m2, l2_m2, l2_m2_2, n2
@@ -592,7 +602,7 @@ end function t_dx2_y2_dx2_y2
 
 
 ! 24)
-pure function t_dx2_y2_d3z2_r2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc) ! only px or py
+pure function t_dx2_y2_d3z2_r2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta
    real(8) :: l2m2, l2_m2, n2
@@ -604,7 +614,7 @@ end function t_dx2_y2_d3z2_r2
 
 
 ! 25)
-pure function t_d3z2_r2_d3z2_r2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc) ! only px or py
+pure function t_d3z2_r2_d3z2_r2(l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: l, m, n, Vdd_sigma, Vdd_pi, Vdd_delta
    real(8) :: l2m2, n2, temp
@@ -955,6 +965,3087 @@ pure function d_t_d3z2_r2_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vd
    Ecc = Ecc + 3.0d0*((dn2*l2m2 + n2*dl2m2)*Vdd_pi + n2*l2m2*dVdd_pi)
    Ecc = Ecc + 0.75d0*(2.0d0*dl2m2*Vdd_delta + l2m2*dVdd_delta)*l2m2
 end function d_t_d3z2_r2_d3z2_r2
+
+
+
+
+!------------------------------------------------------------------------
+! Second derivatives of the Koster-Slater angular functions.
+! This functions do NOT include the derivatives of dr/ds, or dr/dh, or dr/dr_k,
+! meaning, they MUST be already included in the coefficients passed to the functions:
+! dV = dV/dr_ij * dr_ij/dr_k,g
+
+
+! Preporatories:
+! first derivative dV/dr_k,g = dV/dr_ij * dr_ij/dr_k,g:
+pure function d_V(dVss_sigma, rij, rijg, i, j, k) result(dV)
+   real(8) :: dV
+   real(8), intent(in) :: dVss_sigma   ! dV/dr_ij (without dr_ij/dr_k,g)
+   real(8), intent(in) :: rij, rijg
+   integer, intent(in) :: i, j, k   ! atom indices
+   !---------------------
+   real(8) :: da, delt, dik, djk
+
+   ! Delta-symbols:
+   dik = Kronecker_delta(i,k) ! module "Algebra_tools"
+   djk = Kronecker_delta(j,k) ! module "Algebra_tools"
+   delt = dik - djk
+   ! d rij / d r_ij,g:
+   da = delt * rijg / rij
+   ! dV / dr_{k,g} = dV/dr_ij * dt_ij/dr_{k,g}:
+   dV = dVss_sigma*da
+end function d_V
+
+
+! second derivative d^2V/dr^2_k,g = d^2V/dr^2_ij * (dr_ij/dr_k,g)^2 + dV/dr_ij * d^2r_ij/dr^2_k,g
+pure function d2_V(dVss_sigma, d2Vss_sigma, rij, rijg, i, j, k) result(d2V)
+   real(8) :: d2V
+   real(8), intent(in) :: dVss_sigma, d2Vss_sigma, rij, rijg
+   integer, intent(in) :: i, j, k   ! atom indices
+   !---------------------
+   real(8) :: da, dda, delt, dik, djk
+
+   ! Delta-symbols:
+   dik = Kronecker_delta(i,k) ! module "Algebra_tools"
+   djk = Kronecker_delta(j,k) ! module "Algebra_tools"
+   delt = dik - djk
+   ! d rij / d r_ij,g:
+   da = delt * rijg / rij
+   ! d^2r_ij/dr^2_k,g:
+   dda = delt * (1.0d0 - da**2)
+   ! d^2V/dr^2_k,g:
+   d2V = d2Vss_sigma*da**2 + dVss_sigma*dda
+end function d2_V
+
+
+! 1)
+pure function d2_t_s_s(d2Vss_sigma) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: d2Vss_sigma  ! d^2 V / d r^2_k,g
+   Ecc = d2Vss_sigma
+end function d2_t_s_s
+
+
+! 2)
+pure function d2_t_s_px(da, dda, d2da, Vsp_sigma, dVsp_sigma, d2Vss_sigma) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: da, dda, d2da, Vsp_sigma, dVsp_sigma, d2Vss_sigma
+   Ecc = d2da*Vsp_sigma + 2.0d0*da*dVsp_sigma + da*d2Vss_sigma
+end function d2_t_s_px
+
+
+! 3)
+pure function d2_t_pa_pa(da, dda, d2da, Vpp_sigma, dVpp_sigma, d2Vpp_sigma, Vpp_pi, dVpp_pi, d2Vpp_pi) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: da, dda, d2da, Vpp_sigma, dVpp_sigma, d2Vpp_sigma, Vpp_pi, dVpp_pi, d2Vpp_pi
+   real(8) :: da2, dda2
+   da2 = da**2
+   dda2 = dda**2
+   Ecc = 2.0d0*(Vpp_sigma - Vpp_pi)*(dda2 + da*d2da) + &
+         4.0d0*(dVpp_sigma - dVpp_pi)*da*dda + &
+         da2*d2Vpp_sigma + (1.0d0 - da2)*d2Vpp_pi
+end function d2_t_pa_pa
+
+
+! 4)
+pure function d2_t_pa_pb(da, dda, d2da, db, ddb, d2db, Vpp_sigma, dVpp_sigma, d2Vpp_sigma, Vpp_pi, dVpp_pi, d2Vpp_pi) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: da, dda, d2da, db, ddb, d2db, Vpp_sigma, dVpp_sigma, d2Vpp_sigma, Vpp_pi, dVpp_pi, d2Vpp_pi
+   Ecc = (d2da*db + d2db*da + 2.0d0*dda*ddb)*(Vpp_sigma - Vpp_pi) + &
+         2.0d0*(dda*db+da*ddb)*(dVpp_sigma - dVpp_pi) + &
+         da*db*(d2Vpp_sigma - d2Vpp_pi)
+end function d2_t_pa_pb
+
+
+! 5)
+pure function d2_t_s_dab(da, dda, d2da, db, ddb, d2db, Vsd_sigma, dVsd_sigma, d2Vsd_sigma) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: da, dda, d2da, db, ddb, d2db, Vsd_sigma, dVsd_sigma, d2Vsd_sigma
+
+   Ecc = (d2da*db + da*d2db + 2.0d0*dda*ddb)*Vsd_sigma + &
+         2.0d0*(dda*db + da*ddb)*dVsd_sigma + &
+         da*db*d2Vsd_sigma
+   Ecc = Ecc * m_sqrt3
+end function d2_t_s_dab
+
+
+! 6)
+pure function d2_t_s_dx2_y2(da, dda, d2da, db, ddb, d2db, Vsd_sigma, dVsd_sigma, d2Vsd_sigma) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: da, dda, d2da, db, ddb, d2db, Vsd_sigma, dVsd_sigma, d2Vsd_sigma
+   !---------------------
+   Ecc = 2.0d0*(d2da*da + dda**2 - ddb**2 - d2db*db)*Vsd_sigma + &
+         4.0d0*(da*dda - db*ddb)*dVsd_sigma + &
+         (da*da - db*db)*d2Vsd_sigma
+   Ecc = m_sqrt3_half*Ecc
+end function d2_t_s_dx2_y2
+
+
+! 7)
+pure function d2_t_s_dz2_r2(l, dl, d2l, m, dm, d2m, n, dn, d2n, Vsd_sigma, dVsd_sigma, d2Vsd_sigma) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, d2l, m, dm, d2m, n, dn, d2n, Vsd_sigma, dVsd_sigma, d2Vsd_sigma
+   Ecc = ( 2.0d0*(d2n*n + dn**2) - (d2l*l + dl**2 + d2m*m + dm**2) )*Vsd_sigma + &
+         2.0d0*( 2.0d0*(dn*n) - (dl*l + dm*m) )*dVsd_sigma + &
+         ( n*n - 0.5d0*(l*l + m*m) )*d2Vsd_sigma
+end function d2_t_s_dz2_r2
+
+
+! 8)
+pure function d2_t_px_dxy(l, dl, m, dm, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi
+   real(8) :: l2, temp, dll
+   ! NOT READY
+   Ecc = 0.0d0
+!    l2 = l*l
+!    dll = 2.0d0*dl*l
+!    temp = (1.0d0 - 2.0d0*l2)
+!    Ecc = (m_sqrt3*l2*Vpd_sigma + temp*Vpd_pi)*dm
+!    Ecc = Ecc  + (m_sqrt3*(dll*Vpd_sigma + l2*dVpd_sigma) - 2.0d0*dll*Vpd_pi + temp*dVpd_pi)*m
+end function d2_t_px_dxy
+
+
+! 9)
+pure function d2_t_px_dyz(l, dl, m, dm, n, dn, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi
+   real(8) :: mn
+   ! NOT READY
+   Ecc = 0.0d0
+!    mn = m*n
+!    Ecc = (m_sqrt3*dVpd_sigma - 2.0d0*dVpd_pi)*l*mn
+!    Ecc = Ecc + (m_sqrt3*Vpd_sigma - 2.0d0*Vpd_pi)*(dl*mn + l*dm*n + l*m*dn)
+end function d2_t_px_dyz
+
+
+! 10)
+pure function d2_t_px_dx2_y2(l, dl, m, dm, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi
+   real(8) :: l2_m2, dl2_m2, temp
+   ! NOT READY
+   Ecc = 0.0d0
+!    l2_m2 = l*l - m*m
+!    dl2_m2 = 2.0d0*( dl*l - dm*m )
+!    temp = (m_sqrt3_half*Vpd_sigma - Vpd_pi)
+!    Ecc = ( temp*l2_m2 + Vpd_pi )*dl
+!    Ecc = Ecc + ( (m_sqrt3_half*dVpd_sigma - dVpd_pi)*l2_m2 + temp*dl2_m2 + dVpd_pi )*l
+end function d2_t_px_dx2_y2
+
+
+! 11)
+pure function d2_t_py_dx2_y2(l, dl, m, dm, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi
+   real(8) :: l2_m2, dl2_m2, temp
+   ! NOT READY
+   Ecc = 0.0d0
+!    l2_m2 = l*l - m*m
+!    dl2_m2 = 2.0d0*( dl*l - dm*m )
+!    temp = (m_sqrt3_half*Vpd_sigma - Vpd_pi)
+!    Ecc = ( temp*l2_m2 - Vpd_pi )*dm
+!    Ecc = Ecc + ( (m_sqrt3_half*dVpd_sigma - dVpd_pi)*l2_m2 + temp*dl2_m2 - dVpd_pi )*m
+end function d2_t_py_dx2_y2
+
+
+! 12)
+pure function d2_t_pz_dx2_y2(l, dl, m, dm, n, dn, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi
+   real(8) :: l2_m2, dl2_m2
+   ! NOT READY
+   Ecc = 0.0d0
+!    l2_m2 = l*l - m*m
+!    dl2_m2 = 2.0d0*(dl*l - dm*m)
+!    Ecc = (m_sqrt3_half*dVpd_sigma - dVpd_pi)*l2_m2*n
+!    Ecc = Ecc + (m_sqrt3_half*Vpd_sigma - Vpd_pi)*(dl2_m2*n + l2_m2*dn)
+end function d2_t_pz_dx2_y2
+
+
+! 13)
+pure function d2_t_pa_d3z2_r2(da, dda, l, dl, m, dm, n, dn, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi) result (Ecc) ! only px or py
+   real(8) :: Ecc
+   real(8), intent(in) :: da, dda, l, dl, m, dm, n, dn, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi
+   real(8) :: n2, temp, dn2
+   ! NOT READY
+   Ecc = 0.0d0
+!    n2 = n*n
+!    dn2 = 2.0d0*dn*n
+!    temp = (n2 - 0.5d0*(l*l + m*m))
+!    Ecc = ( temp*Vpd_sigma - m_sqrt3*n2*Vpd_pi )*dda
+!    Ecc = Ecc + ( (dn2 - (dl*l + dm*m))*Vpd_sigma + temp*dVpd_sigma - m_sqrt3*(dn2*Vpd_pi + n2*dVpd_pi) )*da
+end function d2_t_pa_d3z2_r2
+
+
+! 14)
+pure function d2_t_pz_d3z2_r2(l, dl, m, dm, n, dn, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi) result (Ecc) ! only pz
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vpd_sigma, dVpd_sigma, Vpd_pi, dVpd_pi
+   real(8) :: l2_m2, dl2_m2, n2, temp
+   ! NOT READY
+   Ecc = 0.0d0
+!    l2_m2 = l*l + m*m
+!    dl2_m2 = 2.0d0*(dl*l + dm*m)
+!    n2 = n*n
+!    temp = (n2 - 0.5d0*l2_m2)
+!    Ecc = ( temp*Vpd_sigma + m_sqrt3*l2_m2*Vpd_pi )*dn
+!    Ecc = Ecc  + ( (2.0d0*dn*n - 0.5d0*dl2_m2)*Vpd_sigma + temp*dVpd_sigma + m_sqrt3*(dl2_m2*Vpd_pi + l2_m2*dVpd_pi) )*n
+end function d2_t_pz_d3z2_r2
+
+
+! 15)
+pure function d2_t_dab_dab(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
+   real(8) :: l2, m2, l2m2, dl2m2
+   ! NOT READY
+   Ecc = 0.0d0
+!    l2 = l*l
+!    m2 = m*m
+!    l2m2 = l2*m2
+!    dl2m2 = 2.0d0*(dl*l*m2 + l2*m*dm)
+!    Ecc = 3.0d0*(dl2m2*Vdd_sigma + l2m2*dVdd_sigma)
+!    Ecc = Ecc + 2.0d0*(l*dl + m*dm - 2.0d0*dl2m2)*Vdd_pi + (l2 + m2 - 4.0d0*l2m2)*dVdd_pi
+!    Ecc = Ecc + (2.0d0*n*dn + dl2m2)*Vdd_delta +  (n*n + l2m2)*dVdd_delta
+end function d2_t_dab_dab
+
+
+! 16)
+pure function d2_t_dab_dbg(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
+   real(8) :: ln, m2, dm2, temp, temp1
+   ! NOT READY
+   Ecc = 0.0d0
+!    ln = l*n
+!    m2 = m*m
+!    dm2 = 2.0d0*m*dm
+!    temp = (1.0d0 - 4.0d0*m2)
+!    temp1 = (m2 - 1.0d0)
+!    Ecc = 3.0d0*(dm2*Vdd_sigma + m2*dVdd_sigma)
+!    Ecc = Ecc + temp*dVdd_pi - 4.0d0*dm2*Vdd_pi
+!    Ecc = Ecc +  temp1*dVdd_delta + dm2*Vdd_delta
+!    Ecc = Ecc*ln
+!    Ecc = Ecc + ( 3.0d0*m2*Vdd_sigma + temp*Vdd_pi + temp1*Vdd_delta )*(dl*n+l*dn)
+end function d2_t_dab_dbg
+
+
+! 17)
+pure function d2_t_dxy_dx2_y2(l, dl, m, dm, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
+   real(8) :: lm, l2m2
+   ! NOT READY
+   Ecc = 0.0d0
+!    lm = l*m
+!    l2m2 = l*l - m*m
+!    Ecc = ( 1.50d0*dVdd_sigma - 2.0d0*dVdd_pi + 0.5d0*dVdd_delta )*lm*l2m2
+!    Ecc = Ecc + ( 1.50d0*Vdd_sigma - 2.0d0*Vdd_pi + 0.5d0*Vdd_delta )*((dl*m+l*dm)*l2m2 + 2.0d0*lm*(dl*l-dm*m))
+end function d2_t_dxy_dx2_y2
+
+
+! 18)
+pure function d2_t_dyz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
+   real(8) :: mn, l2m2, dl2m2, temp, temp1
+   ! NOT READY
+   Ecc = 0.0d0
+!    mn = m*n
+!    l2m2 = l*l - m*m
+!    dl2m2 = 2.0d0*(dl*l - dm*m)
+!    temp = (1.0d0+2.0d0*l2m2)
+!    temp1 = (1.0d0+0.5d0*l2m2)
+!    Ecc = ( 1.50d0*(dl2m2*Vdd_sigma+l2m2*dVdd_sigma) - (2.0d0*dl2m2*Vdd_pi + temp*dVdd_pi) + temp1*dVdd_delta + 0.5d0*dl2m2*Vdd_delta )*mn
+!    Ecc = Ecc + ( 1.50d0*l2m2*Vdd_sigma - temp*Vdd_pi + temp1*Vdd_delta )*(dm*n+m*dn)
+end function d2_t_dyz_dx2_y2
+
+
+! 19)
+pure function d2_t_dxz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
+   real(8) :: ln, l2m2, dl2m2, temp, temp1
+   ! NOT READY
+   Ecc = 0.0d0
+!    ln = l*n
+!    l2m2 = l*l - n*n
+!    dl2m2 = 2.0d0*(dl*l - dm*m)
+!    temp = (1.0d0-2.0d0*l2m2)
+!    temp1 = (1.0d0-0.5d0*l2m2)
+!    Ecc = ( 1.50d0*(dl2m2*Vdd_sigma+l2m2*dVdd_sigma) + (-2.0d0*dl2m2*Vdd_pi + temp*dVdd_pi) - (temp1*dVdd_delta - 0.5d0*dl2m2*Vdd_delta) )*ln
+!    Ecc = Ecc + ( 1.50d0*l2m2*Vdd_sigma + temp*Vdd_pi + temp1*Vdd_delta )*(dl*n+l*dn)
+end function d2_t_dxz_dx2_y2
+
+
+! 20)
+pure function d2_t_dxy_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
+   real(8) :: lm, l2m2, n2, dl2m2, temp, temp1, dn2
+   ! NOT READY
+   Ecc = 0.0d0
+!    lm = l*m
+!    l2m2 = l*l + m*m
+!    dl2m2 = 2.0d0*(dl*l + dm*m)
+!    n2 = n*n
+!    dn2 = 2.0d0*n*dn
+!    temp = (n2 - 0.5d0*l2m2)
+!    temp1 = (1.0d0+n2)
+!    Ecc = ( m_sqrt3*( ((dn2 - 0.5d0*dl2m2)*Vdd_sigma + temp*dVdd_sigma) - 2.0d0*(dn2*Vdd_pi+n2*dVdd_pi) ) + m_sqrt3_half*(dn2*Vdd_delta + temp1*dVdd_delta) )*lm
+!    Ecc = Ecc + ( m_sqrt3*(temp*Vdd_sigma - 2.0d0*n2*Vdd_pi) + m_sqrt3_half*temp1*Vdd_delta )*(dl*m + l*dm)
+end function d2_t_dxy_d3z2_r2
+
+
+! 21)
+pure function d2_t_dyz_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
+   real(8) :: mn, l2m2, n2, temp, temp1, dn2, dl2m2
+   ! NOT READY
+   Ecc = 0.0d0
+!    mn = m*n
+!    l2m2 = l*l + m*m
+!    dl2m2 = 2.0d0*(l*dl + m*dm)
+!    n2 = n*n
+!    dn2 = 2.0d0*n*dn
+!    temp = (n2 - 0.5d0*l2m2)
+!    temp1 = (l2m2 - n2)
+!    Ecc = ( temp*Vdd_sigma + temp1*Vdd_pi - 0.5d0*l2m2*Vdd_delta )*(dm*n+m*dn)
+!    Ecc = Ecc + ( (dn2 - 0.5d0*dl2m2)*Vdd_sigma + temp*dVdd_sigma + (dl2m2 - dn2)*Vdd_pi + temp1*dVdd_pi - 0.5d0*(dl2m2*Vdd_delta + l2m2*dVdd_delta) )*mn
+!    Ecc = Ecc*m_sqrt3
+end function d2_t_dyz_d3z2_r2
+
+
+! 22)
+pure function d2_t_dxz_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
+   real(8) :: ln, l2m2, n2, temp, temp1, dn2, dl2m2
+   ! NOT READY
+   Ecc = 0.0d0
+!    ln = l*n
+!    l2m2 = l*l + m*m
+!    dl2m2 = 2.0d0*(l*dl + m*dm)
+!    n2 = n*n
+!    dn2 = 2.0d0*n*dn
+!    temp = (n2 - 0.5d0*l2m2)
+!    temp1 = (l2m2 - n2)
+!    Ecc = ( temp*Vdd_sigma + temp1*Vdd_pi - 0.5d0*l2m2*Vdd_delta )*(dl*n+l*dn)
+!    Ecc = Ecc + ( (dn2 - 0.5d0*dl2m2)*Vdd_sigma + temp*dVdd_sigma + (dl2m2 - dn2)*Vdd_pi + temp1*dVdd_pi - 0.5d0*(dl2m2*Vdd_delta + l2m2*dVdd_delta) )*ln
+!    Ecc = Ecc*m_sqrt3
+end function d2_t_dxz_d3z2_r2
+
+
+! 23)
+pure function d2_t_dx2_y2_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
+   real(8) :: l2m2, l2_m2, l2_m2_2, n2, dl2m2, dl2_m2_2, l2, m2, ldl, mdm, dn2
+   ! NOT READY
+   Ecc = 0.0d0
+!    l2 = l*l
+!    m2 = m*m
+!    l2m2 = l2 + m2
+!    ldl = l*dl
+!    mdm = m*dm
+!    dl2m2 = 2.0d0*(ldl + mdm)
+!    l2_m2 = l2 - m2
+!    l2_m2_2 = l2_m2*l2_m2
+!    dl2_m2_2 = 4.0d0*l2_m2*(ldl - mdm)
+!    n2 = n*n
+!    dn2 = 2.0d0*n*dn
+!    Ecc = 0.75d0*(dl2_m2_2*Vdd_sigma + l2_m2_2*dVdd_sigma)
+!    Ecc = Ecc + (dl2m2 - dl2_m2_2)*Vdd_pi + (l2m2 - l2_m2_2)*dVdd_pi
+!    Ecc = Ecc + (dn2+0.25d0*dl2_m2_2)*Vdd_delta + (n2+0.25d0*l2_m2_2)*dVdd_delta
+end function d2_t_dx2_y2_dx2_y2
+
+
+! 24)
+pure function d2_t_dx2_y2_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
+   real(8) :: l2m2, l2_m2, n2, dn2, l2, m2, dl2, dm2, dl2m2, dl2_m2, temp, temp1
+   ! NOT READY
+   Ecc = 0.0d0
+!    l2 = l*l
+!    dl2 = 2.0d0*l*dl
+!    m2 = m*m
+!    dm2 = 2.0d0*m*dm
+!    l2m2 = l2 + m2
+!    dl2m2 = dl2 + dm2
+!    l2_m2 = l2 - m2
+!    dl2_m2 = dl2 - dm2
+!    n2 = n*n
+!    dn2 = 2.0d0*n*dn
+!    temp = (n2 - 0.5d0*l2m2)
+!    temp1 = (1.0d0+n2)
+!    Ecc = ( 0.5d0*temp*Vdd_sigma - n2*Vdd_pi + 0.25d0*temp1*Vdd_delta )*dl2_m2
+!    Ecc = Ecc + ( 0.5d0*((dn2 - 0.5d0*dl2m2)*Vdd_sigma+temp*dVdd_sigma) - (dn2*Vdd_pi + n2*dVdd_pi) + 0.25d0*(dn2*Vdd_delta + temp1*dVdd_delta) )*l2_m2
+!    Ecc = Ecc*m_sqrt3
+end function d2_t_dx2_y2_d3z2_r2
+
+
+! 25)
+pure function d2_t_d3z2_r2_d3z2_r2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta) result (Ecc)
+   real(8) :: Ecc
+   real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
+   real(8) :: l2m2, dl2m2, n2, temp, dtemp, dn2
+   ! NOT READY
+   Ecc = 0.0d0
+!    l2m2 = l*l + m*m
+!    dl2m2 = 2.0d0*( dl*l + dm*m )
+!    n2 = n*n
+!    dn2 = 2.0d0*n*dn
+!    temp = n2 - 0.5d0*l2m2
+!    dtemp = dn2 - 0.5d0*dl2m2
+!    Ecc = (2.0d0*dtemp*Vdd_sigma + temp*dVdd_sigma)*temp
+!    Ecc = Ecc + 3.0d0*((dn2*l2m2 + n2*dl2m2)*Vdd_pi + n2*l2m2*dVdd_pi)
+!    Ecc = Ecc + 0.75d0*(2.0d0*dl2m2*Vdd_delta + l2m2*dVdd_delta)*l2m2
+end function d2_t_d3z2_r2_d3z2_r2
+
+
+
+!------------------------------------------------------------------------
+! Arrenge the SK-terms by parts (easier to read):
+pure function KS_single_term(l1, l2, dx, dy, dz, V) result(t_kk)
+   real(8) :: t_kk
+   integer, intent(in) :: l1, l2 ! orbital indices
+   real(8), intent(in) :: dx, dy, dz, V   ! direction cosines, and the radial function
+   !---------------------
+   t_kk = 0.0d0
+end function KS_single_term
+
+
+
+pure function KS_Cmnj_orbital(l1, l2, j, l, n, m) result(Cmnj) ! for up to sp3d5 (no f-orbitals currently)
+   real(8) :: Cmnj   ! orbital coefficient for a single term; Table IV in Ref. [1]
+   integer, intent(in) :: l1, l2, j ! orbital indices; j=sigma, pi, or delta
+   real(8), intent(in) :: l, n, m   ! direction cosines
+   ! Reminder:
+   ! l=1: s
+   ! l=2: p_x
+   ! l=3: p_y
+   ! l=4: p_z
+   ! l=5: d_xy
+   ! l=6: d_yz
+   ! l=7: d_xz
+   ! l=8: d_x^2-y^2
+   ! l=9: d_3z^2-r^2
+   !-----------
+   ! j=0: sigma
+   ! j=1: pi
+   ! j=2: delta
+   !===============
+   real(8) :: alpha, beta
+
+   Cmnj = 0.0d0   ! for all but those defined below
+   if ((j < 0) .or. (j > 2)) return ! those do not exist, something must be wrong
+
+   select case (l1)
+   case (1) ! l=0: s
+
+      if (j /= 0) return ! s-orbitals are non-zero only for j=0, nothing to do here
+      ! If j=0, get the value:
+      select case (l2) ! s s
+      !---------------
+      case (1) ! l=0: s s
+         Cmnj = 1.0d0
+
+      !---------------
+      case (2) ! l=1: s p_x
+         Cmnj = l
+
+      !---------------
+      case (3) ! l=1: s p_y
+         Cmnj = m
+
+      !---------------
+      case (4) ! l=1: s p_z
+         Cmnj = n
+
+      !---------------
+      case (5) ! l=2: s d_xy
+         Cmnj = m_sqrt3 * l*m    ! d1,2 = dx, dy, or dz
+
+      !---------------
+      case (6) ! l=2: s d_yz
+         Cmnj = m_sqrt3 * m*n    ! d1,2 = dx, dy, or dz
+
+      !---------------
+      case (7) ! l=2: s d_xz
+         Cmnj = m_sqrt3 * l*n    ! d1,2 = dx, dy, or dz
+
+      !---------------
+      case (8) ! l=3: s d_x^2-y^2
+         beta = l**2 - m**2
+         Cmnj = m_sqrt3_half * beta
+
+      !---------------
+      case (9) ! l=4: s d_3z^2-r^2
+         alpha = l**2 + m**2
+         Cmnj = n**2 - 0.5d0*alpha
+      endselect ! select case (l2)
+
+   !===============
+   case (2) ! l=1: p_x
+
+      if (j > 1) return ! p-orbitals are non-zero only for j=0 or 1; nothing to do here
+
+      select case (l2) ! p_x s
+      case (1) ! l=0: s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -l
+         endselect
+
+      !---------------
+      case (2) ! l=1: p_x p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = l**2
+         case (1) ! pi
+            Cmnj = 1.0d0 - l**2
+         endselect
+
+      !---------------
+      case (3) ! l=1: p_x p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = l*m
+         case (1) ! pi
+            Cmnj = -l*m
+         endselect
+
+      !---------------
+      case (4) ! l=1: p_x p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = l*n
+         case (1) ! pi
+            Cmnj = -l*n
+         endselect
+
+      !---------------
+      case (5) ! l=2: p_x d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * l**2 * m
+         case (1) ! pi
+            Cmnj = m*(1.0d0 - 2.0d0*l**2)
+         endselect
+
+      !---------------
+      case (6) ! l=2: p_x d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * l * m * n
+         case (1) ! pi
+            Cmnj = -2.0d0*l*m*n
+         endselect
+
+      !---------------
+      case (7) ! l=2: p_x d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * l**2 * n
+         case (1) ! pi
+            Cmnj = n*(1.0d0 - 2.0d0*l**2)
+         endselect
+
+      !---------------
+      case (8) ! l=3: p_x d_x^2-y^2
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * l*beta
+         case (1) ! pi
+            Cmnj = l*(1.0d0 - beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: p_x d_3z^2-r^2
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            Cmnj = l*(n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = -m_sqrt3*l*n**2
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (3) ! l=1: p_y
+
+      if (j > 1) return ! p-orbitals are non-zero only for j=0 or 1; nothing to do here
+
+      select case (l2) ! p_y s
+      case (1) ! l=0: s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m
+         endselect
+
+      !---------------
+      case (2) ! l=1: p_y p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = l*m
+         case (1) ! pi
+            Cmnj = -l*m
+         endselect
+
+      !---------------
+      case (3) ! l=1: p_y p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m**2
+         case (1) ! pi
+            Cmnj = 1.0d0 - m**2
+         endselect
+
+      !---------------
+      case (4) ! l=1: p_y p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m*n
+         case (1) ! pi
+            Cmnj = -m*n
+         endselect
+
+      !---------------
+      case (5) ! l=2: p_y d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * m**2 * l
+         case (1) ! pi
+            Cmnj = l*(1.0d0 - 2.0d0*m**2)
+         endselect
+
+      !---------------
+      case (6) ! l=2: p_y d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * m**2 * n
+         case (1) ! pi
+            Cmnj = n*(1.0d0 - 2.0d0*m**2)
+         endselect
+
+      !---------------
+      case (7) ! l=2: p_y d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * l * m * n
+         case (1) ! pi
+            Cmnj = -2.0d0*l*m*n
+         endselect
+
+      !---------------
+      case (8) ! l=3: p_y d_x^2-y^2
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * m*beta
+         case (1) ! pi
+            Cmnj = -m*(1.0d0 + beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: p_y d_3z^2-r^2
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            Cmnj = m*(n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = -m_sqrt3*m*n**2
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (4) ! l=1: p_z
+
+      if (j > 1) return ! p-orbitals are non-zero only for j=0 or 1; nothing to do here
+
+      select case (l2) ! p_z s
+      case (1) ! l=0: s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -n
+         endselect
+
+      !---------------
+      case (2) ! l=1: p_z p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = l*n
+         case (1) ! pi
+            Cmnj = -l*n
+         endselect
+
+      !---------------
+      case (3) ! l=1: p_z p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m*n
+         case (1) ! pi
+            Cmnj = -m*n
+         endselect
+
+      !---------------
+      case (4) ! l=1: p_z p_z
+          select case (j)
+         case (0) ! sigma
+            Cmnj = n**2
+         case (1) ! pi
+            Cmnj = 1.0d0 - n**2
+         endselect
+
+      !---------------
+      case (5) ! l=2: p_z d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * l * m * n
+         case (1) ! pi
+            Cmnj = 2.0d0*l*m*n
+         endselect
+
+      !---------------
+      case (6) ! l=2: p_z d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * n**2 * m
+         case (1) ! pi
+            Cmnj = m*(1.0d0 - 2.0d0*n**2)
+         endselect
+
+      !---------------
+      case (7) ! l=2: p_z d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * n**2 * l
+         case (1) ! pi
+            Cmnj = l*(1.0d0 - 2.0d0*n**2)
+         endselect
+
+      !---------------
+      case (8) ! l=3: p_z d_x^2-y^2
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * n*beta
+         case (1) ! pi
+            Cmnj = -n*beta
+         endselect
+
+      !---------------
+      case (9) ! l=4: p_z d_3z^2-r^2
+         alpha = l**2 + m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = n*(n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3*n*alpha
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (5) ! l=2: d_xy
+
+      select case (l2)
+      case (1) ! l=0: d_xy s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * l*m   ! d1,2 = dx, dy, or dz
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_xy p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * l**2 * m
+         case (1) ! pi
+            Cmnj = -m*(1.0d0 - 2.0d0*l**2)
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_xy p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * l * m**2
+         case (1) ! pi
+            Cmnj = -l*(1.0d0 - 2.0d0*m**2)
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_xy p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * l * m * n
+         case (1) ! pi
+            Cmnj = 2.0d0*l*m*n
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_xy d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * l**2 * m**2
+         case (1) ! pi
+            alpha = l**2 + m**2
+            Cmnj = alpha - 4.0d0*l**2 * m**2
+         case (2) ! delta
+            Cmnj = n**2 + l**2 * m**2
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_xy d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * l*n * m**2
+         case (1) ! pi
+            Cmnj = l*n*(1.0d0-4.0d0*m**2)
+         case (2) ! delta
+            Cmnj = l*n*(m**2 - 1.0d0)
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_xy d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * m*n * l**2
+         case (1) ! pi
+            Cmnj = m*n*(1.0d0-4.0d0*l**2)
+         case (2) ! delta
+            Cmnj = m*n*(l**2 - 1.0d0)
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_xy d_x^2-y^2
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * l*m * beta
+         case (1) ! pi
+            Cmnj = -2.0d0 * l*m * beta
+         case (2) ! delta
+            Cmnj = 0.5d0 * l*m * beta
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_xy d_3z^2-r^2
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            Cmnj = m_sqrt3 * l*m * (n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = -2.0d0*m_sqrt3 * l*m * n**2
+         case (2) ! delta
+            Cmnj = m_sqrt3_half * l*m * (1.0d0 + n**2)
+         endselect
+      endselect ! select case (l2)
+
+
+   !===============
+   case (6) ! l=2: d_yz
+
+      select case (l2)
+      case (1) ! l=0: d_yz s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * m*n
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_yz p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * l * m * n
+         case (1) ! pi
+            Cmnj = 2.0d0*l*m*n
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_yz p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * m**2 * n
+         case (1) ! pi
+            Cmnj = -n*(1.0d0 - 2.0d0*m**2)
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_yz p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * n**2 * m
+         case (1) ! pi
+            Cmnj = -m*(1.0d0 - 2.0d0*n**2)
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_yz d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * l*n * m**2
+         case (1) ! pi
+            Cmnj = l*n*(1.0d0-4.0d0*m**2)
+         case (2) ! delta
+            Cmnj = l*n*(m**2 - 1.0d0)
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_yz d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * m**2 * n**2
+         case (1) ! pi
+            alpha = n**2 + m**2
+            Cmnj = alpha - 4.0d0*n**2 * m**2
+         case (2) ! delta
+            Cmnj = l**2 + n**2 * m**2
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_yz d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * m*l * n**2
+         case (1) ! pi
+            Cmnj = m*l*(1.0d0-4.0d0*n**2)
+         case (2) ! delta
+            Cmnj = m*l*(n**2 - 1.0d0)
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_yz d_x^2-y^2
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * m*n * beta
+         case (1) ! pi
+            Cmnj = -m*n * (1.0d0 + 2.0d0*beta)
+         case (2) ! delta
+            Cmnj = m*n *(1.0d0 + 0.5d0*beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_yz d_3z^2-r^2
+         alpha = l**2 + m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 *m*n * (n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3 *m*n * (alpha - n**2)
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * m*n * alpha
+         endselect
+      endselect ! select case (l2)
+
+
+   !===============
+   case (7) ! l=2: d_xz
+
+      select case (l2)
+      case (1) ! l=0: d_xz s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * l*n
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_xz p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * l**2 * n
+         case (1) ! pi
+            Cmnj = -n*(1.0d0 - 2.0d0*l**2)
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_xz p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * l * m * n
+         case (1) ! pi
+            Cmnj = 2.0d0*l*m*n
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_xz p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * n**2 * l
+         case (1) ! pi
+            Cmnj = -l*(1.0d0 - 2.0d0*n**2)
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_xz d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * m*n * l**2
+         case (1) ! pi
+            Cmnj = m*n*(1.0d0-4.0d0*l**2)
+         case (2) ! delta
+            Cmnj = m*n*(l**2 - 1.0d0)
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_xz d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * m*l * n**2
+         case (1) ! pi
+            Cmnj = m*l*(1.0d0-4.0d0*n**2)
+         case (2) ! delta
+            Cmnj = m*l*(n**2 - 1.0d0)
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_xz d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * l**2 * n**2
+         case (1) ! pi
+            alpha = n**2 + l**2
+            Cmnj = alpha - 4.0d0*n**2 * l**2
+         case (2) ! delta
+            Cmnj = m**2 + n**2 * l**2
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_xz d_x^2-y^2
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * l*n * beta
+         case (1) ! pi
+            Cmnj = l*n * (1.0d0 - 2.0d0*beta)
+         case (2) ! delta
+            Cmnj = -l*n *(1.0d0 - 0.5d0*beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_xz d_3z^2-r^2
+         alpha = l**2 + m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 *l*n * (n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3 *l*n * (alpha - n**2)
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * l*n * alpha
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (8) ! l=3: d_x^2-y^2
+
+      select case (l2)
+      case (1) ! l=0: d_x^2-y^2 s
+         select case (j)
+         case (0) ! sigma
+            beta = l**2 - m**2
+            Cmnj = m_sqrt3_half * beta
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_x^2-y^2 p_x
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3_half * l*beta
+         case (1) ! pi
+            Cmnj = -l*(1.0d0 - beta)
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_x^2-y^2 p_y
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3_half * m*beta
+         case (1) ! pi
+            Cmnj = m*(1.0d0 + beta)
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_x^2-y^2 p_z
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3_half * n*beta
+         case (1) ! pi
+            Cmnj = n*beta
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_x^2-y^2 d_xy
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * l*m * beta
+         case (1) ! pi
+            Cmnj = -2.0d0 * l*m * beta
+         case (2) ! delta
+            Cmnj = 0.5d0 * l*m * beta
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_x^2-y^2 d_yz
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * m*n * beta
+         case (1) ! pi
+            Cmnj = -m*n * (1.0d0 + 2.0d0*beta)
+         case (2) ! delta
+            Cmnj = m*n *(1.0d0 + 0.5d0*beta)
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_x^2-y^2 d_xz
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * l*n * beta
+         case (1) ! pi
+            Cmnj = l*n * (1.0d0 - 2.0d0*beta)
+         case (2) ! delta
+            Cmnj = -l*n *(1.0d0 - 0.5d0*beta)
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_x^2-y^2 d_x^2-y^2
+         alpha = l**2 + m**2
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 0.75d0*beta**2
+         case (1) ! pi
+            Cmnj = alpha - beta**2
+         case (2) ! delta
+            Cmnj = n**2 + 0.25d0*beta**2
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_x^2-y^2 d_3z^2-r^2
+         alpha = l**2 + m**2
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * beta*(n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = -m_sqrt3*n**2*beta
+         case (2) ! delta
+            Cmnj = 0.25d0*m_sqrt3*(1.0d0 + n**2)*beta
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (9) ! l=4: d_3z^2-r^2
+
+      select case (l2)
+      case (1) ! l=0: d_3z^2-r^2 s
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            Cmnj = n**2 - 0.5d0*alpha
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_3z^2-r^2 p_x
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            Cmnj = -l*(n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3*l*n**2
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_3z^2-r^2 p_y
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            Cmnj = -m*(n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3*m*n**2
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_3z^2-r^2 p_z
+         alpha = l**2 + m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = n*(n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3*n*alpha
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_3z^2-r^2 d_xy
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            Cmnj = m_sqrt3 * l*m * (n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = -2.0d0*m_sqrt3 * l*m * n**2
+         case (2) ! delta
+            Cmnj = m_sqrt3_half * l*m * (1.0d0 + n**2)
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_3z^2-r^2 d_yz
+         alpha = l**2 + m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 *m*n * (n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3 *m*n * (alpha - n**2)
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * m*n * alpha
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_3z^2-r^2 d_xz
+         alpha = l**2 + m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 *l*n * (n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3 *l*n * (alpha - n**2)
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * l*n * alpha
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_3z^2-r^2 d_x^2-y^2
+         alpha = l**2 + m**2
+         beta = l**2 - m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * beta*(n**2 - 0.5d0*alpha)
+         case (1) ! pi
+            Cmnj = -m_sqrt3*n**2*beta
+         case (2) ! delta
+            Cmnj = 0.25d0*m_sqrt3*(1.0d0 + n**2)*beta
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_3z^2-r^2 d_3z^2-r^2
+         alpha = l**2 + m**2
+         select case (j)
+         case (0) ! sigma
+            Cmnj = (n**2 - 0.5d0*alpha)**2
+         case (1) ! pi
+            Cmnj = 3.0d0*m**2 * alpha
+         case (2) ! delta
+            Cmnj = 0.75d0*alpha**2
+         endselect
+      endselect ! select case (l2)
+   endselect ! select case (l1)
+
+end function KS_Cmnj_orbital
+
+
+
+! First derivative of KS-orbital angular part:
+pure function d_KS_Cmnj_orbital(l1, l2, j, l, n, m, dl, dm, dn) result(Cmnj) ! for up to sp3d5 (no f-orbitals currently)
+   real(8) :: Cmnj   ! orbital coefficient for a single term; Table IV in Ref. [1]
+   integer, intent(in) :: l1, l2, j ! orbital indices; j=sigma, pi, or delta
+   real(8), intent(in) :: l, n, m   ! direction cosines
+   real(8), intent(in) :: dl, dm, dn   ! derivatives of the direction cosines
+   ! Reminder:
+   ! l=1: s
+   ! l=2: p_x
+   ! l=3: p_y
+   ! l=4: p_z
+   ! l=5: d_xy
+   ! l=6: d_yz
+   ! l=7: d_xz
+   ! l=8: d_x^2-y^2
+   ! l=9: d_3z^2-r^2
+   !-----------
+   ! j=0: sigma
+   ! j=1: pi
+   ! j=2: delta
+   !===============
+   real(8) :: alpha, beta, d_alpha, d_beta
+
+   Cmnj = 0.0d0   ! for all but those defined below
+   if ((j < 0) .or. (j > 2)) return ! those do not exist, something must be wrong
+
+   select case (l1)
+   case (1) ! l=0: s
+
+      if (j /= 0) return ! s-orbitals are non-zero only for j=0, nothing to do here
+      ! If j=0, get the value:
+      select case (l2) ! s s
+      !---------------
+      case (1) ! l=0: s s
+         Cmnj = 0.0d0
+
+      !---------------
+      case (2) ! l=1: s p_x
+         Cmnj = dl
+
+      !---------------
+      case (3) ! l=1: s p_y
+         Cmnj = dm
+
+      !---------------
+      case (4) ! l=1: s p_z
+         Cmnj = dn
+
+      !---------------
+      case (5) ! l=2: s d_xy
+         Cmnj = m_sqrt3 * (dl*m + l*dm)    ! d1,2 = dx, dy, or dz
+
+      !---------------
+      case (6) ! l=2: s d_yz
+         Cmnj = m_sqrt3 * (dm*n + m*dn)    ! d1,2 = dx, dy, or dz
+
+      !---------------
+      case (7) ! l=2: s d_xz
+         Cmnj = m_sqrt3 * (dl*n + l*dn)    ! d1,2 = dx, dy, or dz
+
+      !---------------
+      case (8) ! l=3: s d_x^2-y^2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         Cmnj = m_sqrt3_half * d_beta
+
+      !---------------
+      case (9) ! l=4: s d_3z^2-r^2)
+         Cmnj = 2.0d0*n*dn - (l*dl + m*dm)
+      endselect ! select case (l2)
+
+   !===============
+   case (2) ! l=1: p_x
+
+      if (j > 1) return ! p-orbitals are non-zero only for j=0 or 1; nothing to do here
+
+      select case (l2) ! p_x s
+      case (1) ! l=0: s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -dl
+         endselect
+
+      !---------------
+      case (2) ! l=1: p_x p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 2.0d0*l*dl
+         case (1) ! pi
+            Cmnj = -2.0d0*l*dl
+         endselect
+
+      !---------------
+      case (3) ! l=1: p_x p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = (dl*m + l*dm)
+         case (1) ! pi
+            Cmnj = -(dl*m + l*dm)
+         endselect
+
+      !---------------
+      case (4) ! l=1: p_x p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = (dl*n + l*dn)
+         case (1) ! pi
+            Cmnj = -(dl*n + l*dn)
+         endselect
+
+      !---------------
+      case (5) ! l=2: p_x d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (2.0d0*l*dl * m + l**2 * dm)
+         case (1) ! pi
+            Cmnj = dm*(1.0d0 - 2.0d0*l**2) + m*(-4.0d0*l*dl)
+         endselect
+
+      !---------------
+      case (6) ! l=2: p_x d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (dl*m*n + l*dm*n + l*m*dn)
+         case (1) ! pi
+            Cmnj = -2.0d0 * (dl*m*n + l*dm*n + l*m*dn)
+         endselect
+
+      !---------------
+      case (7) ! l=2: p_x d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (2.0d0*l*dl*n + l**2*dn)
+         case (1) ! pi
+            Cmnj = dn*(1.0d0 - 2.0d0*l**2) + n*(-4.0d0*l*dl)
+         endselect
+
+      !---------------
+      case (8) ! l=3: p_x d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * (dl*beta + l*d_beta)
+         case (1) ! pi
+            Cmnj = dl*(1.0d0 - beta) + l*(-d_beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: p_x d_3z^2-r^2
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            Cmnj = dl*(n**2 - 0.5d0*alpha) + l*(2.0d0*n*dn - 0.5d0*d_alpha)
+         case (1) ! pi
+            Cmnj = -m_sqrt3*(dl*n**2 + 2.0d0*l*n*dn)
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (3) ! l=1: p_y
+
+      if (j > 1) return ! p-orbitals are non-zero only for j=0 or 1; nothing to do here
+
+
+      select case (l2) ! p_y s
+      case (1) ! l=0: s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -dm
+         endselect
+
+      !---------------
+      case (2) ! l=1: p_y p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = (dl*m + l*dm)
+         case (1) ! pi
+            Cmnj = -(dl*m + l*dm)
+         endselect
+
+      !---------------
+      case (3) ! l=1: p_y p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 2.0d0*m*dm
+         case (1) ! pi
+            Cmnj = -2.0d0*m*dm
+         endselect
+
+      !---------------
+      case (4) ! l=1: p_y p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = (dm*n + m*dn)
+         case (1) ! pi
+            Cmnj = -(dm*n + m*dn)
+         endselect
+
+      !---------------
+      case (5) ! l=2: p_y d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (2.0d0*m*dm * l + m**2 * dl)
+         case (1) ! pi
+            Cmnj = dl*(1.0d0 - 2.0d0*m**2) + l*(-4.0d0*m*dm)
+         endselect
+
+      !---------------
+      case (6) ! l=2: p_y d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (2.0d0*m*dm * n + m**2 * dn)
+         case (1) ! pi
+            Cmnj = dn*(1.0d0 - 2.0d0*m**2) + n*(-4.0d0*m*dm)
+         endselect
+
+      !---------------
+      case (7) ! l=2: p_y d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (dl*m*n + l*dm*n + l*m*dn)
+         case (1) ! pi
+            Cmnj = -2.0d0*(dl*m*n + l*dm*n + l*m*dn)
+         endselect
+
+      !---------------
+      case (8) ! l=3: p_y d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * (dm*beta + m*d_beta)
+         case (1) ! pi
+            Cmnj = -(dm*(1.0d0 + beta) + m*d_beta )
+         endselect
+
+      !---------------
+      case (9) ! l=4: p_y d_3z^2-r^2
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            Cmnj = dm*(n**2 - 0.5d0*alpha) + m*(2.0d0*n*dn - 0.5d0*d_alpha)
+         case (1) ! pi
+            Cmnj = -m_sqrt3*(dm*n**2 + 2.0d0*m*n*dn)
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (4) ! l=1: p_z
+
+      if (j > 1) return ! p-orbitals are non-zero only for j=0 or 1; nothing to do here
+
+      select case (l2) ! p_z s
+      case (1) ! l=0: s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -dn
+         endselect
+
+      !---------------
+      case (2) ! l=1: p_z p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = dl*n + l*dn
+         case (1) ! pi
+            Cmnj = -(dl*n + l*dn)
+         endselect
+
+      !---------------
+      case (3) ! l=1: p_z p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = dm*n + m*dn
+         case (1) ! pi
+            Cmnj = -(dm*n + m*dn)
+         endselect
+
+      !---------------
+      case (4) ! l=1: p_z p_z
+          select case (j)
+         case (0) ! sigma
+            Cmnj = 2.0d0*n*dn
+         case (1) ! pi
+            Cmnj = -2.0d0*n*dn
+         endselect
+
+      !---------------
+      case (5) ! l=2: p_z d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (dl*m*n + l*dm*n + l*m*dn)
+         case (1) ! pi
+            Cmnj = 2.0d0*(dl*m*n + l*dm*n + l*m*dn)
+         endselect
+
+      !---------------
+      case (6) ! l=2: p_z d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (2.0d0*n*dn * m + n**2 * dm)
+         case (1) ! pi
+            Cmnj = dm*(1.0d0 - 2.0d0*n**2) + m*(-4.0d0*n*dn)
+         endselect
+
+      !---------------
+      case (7) ! l=2: p_z d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (2.0d0*n*dn * l + n**2 * dl)
+         case (1) ! pi
+            Cmnj = dl*(1.0d0 - 2.0d0*n**2) + l*(-4.0d0*n*dn)
+         endselect
+
+      !---------------
+      case (8) ! l=3: p_z d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * (dn*beta + n*d_beta)
+         case (1) ! pi
+            Cmnj = -(dn*beta + n*d_beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: p_z d_3z^2-r^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = dn*(n**2 - 0.5d0*alpha) + n*(2.0d0*n*dn - 0.5d0*d_alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3*(dn*alpha + n*d_alpha)
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (5) ! l=2: d_xy
+
+      select case (l2)
+      case (1) ! l=0: d_xy s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 *(dl*m + l*dm)
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_xy p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (2.0d0*l*dl * m + l**2 * dm)
+         case (1) ! pi
+            Cmnj = -( dm*(1.0d0 - 2.0d0*l**2) + m*(-4.0d0*l*dl))
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_xy p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (dl*m**2 + 2.0d0*l*m*dm)
+         case (1) ! pi
+            Cmnj = -( dl*(1.0d0 - 2.0d0*m**2) + l*(-4.0d0*m*dm) )
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_xy p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (dl*m*n + l*dm*n + l*m*dn)
+         case (1) ! pi
+            Cmnj = 2.0d0*(dl*m*n + l*dm*n + l*m*dn)
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_xy d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 6.0d0 * (l*dl*m**2 + l**2*m*dm)
+         case (1) ! pi
+            !alpha = l**2 + m**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            Cmnj = d_alpha - 8.0d0*(l*dl * m*dm)
+         case (2) ! delta
+            Cmnj = 2.0d0*(n*dn + l*dl*m**2 + l**2*m*dm)
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_xy d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * (dl*n*m**2 + l*dn*m**2 + 2.0d0*l*n*m*dm)
+         case (1) ! pi
+            Cmnj = (dl*n+ l*dn)*(1.0d0-4.0d0*m**2) + l*n*(-8.0d0*m*dm)
+         case (2) ! delta
+            Cmnj = (dl*n + l*dn)*(m**2 - 1.0d0) + 2.0d0*l*n*m*dm
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_xy d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * ( (dm*n + m*dn)*l**2 + 2.0d0*m*n*l*dl )
+         case (1) ! pi
+            Cmnj = (dm*n + m*dn)*(1.0d0-4.0d0*l**2) + m*n*(-8.0d0*l*dl)
+         case (2) ! delta
+            Cmnj = (dm*n + m*dn)*(l**2 - 1.0d0) + 2.0d0*m*n*l*dl
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_xy d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ((dl*m + l*dm)*beta + l*m*d_beta)
+         case (1) ! pi
+            Cmnj = -2.0d0 * ((dl*m + l*dm)*beta + l*m*d_beta)
+         case (2) ! delta
+            Cmnj = 0.5d0 * ((dl*m + l*dm)*beta + l*m*d_beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_xy d_3z^2-r^2
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            Cmnj = m_sqrt3 * ( (dl*m + l*dm)*(n**2 - 0.5d0*alpha) + l*m*(2.0d0*n*dn - 0.5d0*d_alpha))
+         case (1) ! pi
+            Cmnj = -2.0d0*m_sqrt3 * ( (dl*m + l*dm)*n**2 + 2.0d0*l*m*n*dn)
+         case (2) ! delta
+            Cmnj = m_sqrt3_half * ( (dl*m + l*dm)*(1.0d0 + n**2) + l*m*(2.0d0*n*dn) )
+         endselect
+      endselect ! select case (l2)
+
+
+   !===============
+   case (6) ! l=2: d_yz
+
+      select case (l2)
+      case (1) ! l=0: d_yz s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (dm*n + m*dn)
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_yz p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * ( dl*m*n + l*dm*n + l*m*dn )
+         case (1) ! pi
+            Cmnj = 2.0d0*( dl*m*n + l*dm*n + l*m*dn )
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_yz p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * ( 2.0d0*m*dm*n + m**2*dn )
+         case (1) ! pi
+            Cmnj = -( dn*(1.0d0 - 2.0d0*m**2) + n*(-4.0d0*m*dm) )
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_yz p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (2.0d0*n*dn*m + n**2*dm)
+         case (1) ! pi
+            Cmnj = -( dm*(1.0d0 - 2.0d0*n**2) + m*(-4.0d0*n*dn) )
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_yz d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * ( (dl*n + l*dn)*m**2 + 2.0d0*l*n*m*dm)
+         case (1) ! pi
+            Cmnj = (dl*n + l*dn)*(1.0d0-4.0d0*m**2) + l*n*(-8.0d0*m*dm)
+         case (2) ! delta
+            Cmnj = (dl*n + l*dn)*(m**2 - 1.0d0) + l*n*(2.0d0*m*dm)
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_yz d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 6.0d0 * (m*dm * n*dn)
+         case (1) ! pi
+            !alpha = n**2 + m**2
+            d_alpha = 2.0d0*(n*dn + m*dm)
+            Cmnj = d_alpha - 8.0d0*(n*dn*m**2 + n**2*m*dm)
+         case (2) ! delta
+            Cmnj = 2.0d0*(l*dl + n*dn*m**2 + n**2*m*dm)
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_yz d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * ( (dm*l + m*dl)*n**2 + 2.0d0*m*l*n*dn )
+         case (1) ! pi
+            Cmnj = (dm*l + m*dl)*(1.0d0-4.0d0*n**2) + m*l*(-8.0d0*n*dn)
+         case (2) ! delta
+            Cmnj = (dm*l + m*dl)*(n**2 - 1.0d0) + m*l*(2.0d0*n*dn)
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_yz d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ( (dm*n + m*dn)*beta + m*n*d_beta )
+         case (1) ! pi
+            Cmnj = -( (dm*n + m*dn)*(1.0d0 + 2.0d0*beta) + m*n*2.0d0*d_beta )
+         case (2) ! delta
+            Cmnj = (dm*n + m*dn)*(1.0d0 + 0.5d0*beta) + m*n*0.5d0*d_beta
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_yz d_3z^2-r^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * ( (dm*n + m*dn)*(n**2 - 0.5d0*alpha) + m*n*(2.0d0*n*dn - 0.5d0*d_alpha) )
+         case (1) ! pi
+            Cmnj = m_sqrt3 * ( (dm*n + m*dn)*(alpha - n**2) + m*n*(d_alpha - 2.0d0*n*dn))
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * ((dm*n + m*dn)*alpha + m*n*d_alpha)
+         endselect
+      endselect ! select case (l2)
+
+
+   !===============
+   case (7) ! l=2: d_xz
+
+      select case (l2)
+      case (1) ! l=0: d_xz s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (dl*n + l*dn)
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_xz p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (2.0d0*l*dl*n + l**2*dn)
+         case (1) ! pi
+            Cmnj = -( dn*(1.0d0 - 2.0d0*l**2) + n*(-4.0d0*l*dl) )
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_xz p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (dl*m*n + l*dm*n + l*m*dn)
+         case (1) ! pi
+            Cmnj = 2.0d0*(dl*m*n + l*dm*n + l*m*dn)
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_xz p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (2.0d0*n*dn*l + n**2*dl)
+         case (1) ! pi
+            Cmnj = -( dl*(1.0d0 - 2.0d0*n**2) + l*(-4.0d0*n*dn) )
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_xz d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * ((dm*n + m*dn)*l**2 + 2.0d0*m*n*l*dl)
+         case (1) ! pi
+            Cmnj = (dm*n + m*dn)*(1.0d0-4.0d0*l**2) + m*n*(-8.0d0*l*dl)
+         case (2) ! delta
+            Cmnj = (dm*n + m*dn)*(l**2 - 1.0d0) + 2.0d0*m*n*l*dl
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_xz d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * ( (dm*l + m*dl)*n**2 + 2.0d0*m*l*n*dn )
+         case (1) ! pi
+            Cmnj = (dm*l + m*dl)*(1.0d0-4.0d0*n**2) + m*l*(-8.0d0*n*dn)
+         case (2) ! delta
+            Cmnj = (dm*l + m*dl)*(n**2 - 1.0d0) + 2.0d0*m*l*n*dn
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_xz d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 6.0d0*(l*dl*n**2 + l**2*n*dn)
+         case (1) ! pi
+            !alpha = n**2 + l**2
+            d_alpha = 2.0d0*(n*dn + l*dl)
+            Cmnj = d_alpha - 8.0d0*(n*dn*l**2 + n**2*l*dl)
+         case (2) ! delta
+            Cmnj = 2.0d0*(m*dm + n*dn*l**2 + n**2*l*dl)
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_xz d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ((dl*n + l*dn)*beta + l*n*d_beta)
+         case (1) ! pi
+            Cmnj = (dl*n + l*dn)*(1.0d0 - 2.0d0*beta) + l*n*(-2.0d0*d_beta)
+         case (2) ! delta
+            Cmnj = -( (dl*n + l*dn)*(1.0d0 - 0.5d0*beta) + l*n*(-0.5d0*d_beta) )
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_xz d_3z^2-r^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * ((dl*n + l*dn)*(n**2 - 0.5d0*alpha) + l*n*(2.0d0*n*dn - 0.5d0*d_alpha))
+         case (1) ! pi
+            Cmnj = m_sqrt3 * ((dl*n + l*dn)*(alpha - n**2) + l*n*(d_alpha - 2.0d0*n*dn))
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * ( (dl*n + l*dn)*alpha + l*n*d_alpha )
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (8) ! l=3: d_x^2-y^2
+
+     select case (l2)
+      case (1) ! l=0: d_x^2-y^2 s
+         select case (j)
+         case (0) ! sigma
+            !beta = d1**2 - d2**2
+            d_beta = 2.0d0*(l*dl - m*dm)
+            Cmnj = m_sqrt3_half * d_beta
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_x^2-y^2 p_x
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3_half * ( dl*beta + l*d_beta )
+         case (1) ! pi
+            Cmnj = -( dl*(1.0d0 - beta) + l*(-d_beta) )
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_x^2-y^2 p_y
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3_half * ( dm*beta + m*d_beta )
+         case (1) ! pi
+            Cmnj = dm*(1.0d0 + beta) + m*d_beta
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_x^2-y^2 p_z
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3_half * (dn*beta + n*d_beta)
+         case (1) ! pi
+            Cmnj = dn*beta + n*d_beta
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_x^2-y^2 d_xy
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ((dl*m + l*dm)*beta + l*m*d_beta)
+         case (1) ! pi
+            Cmnj = -2.0d0 * ((dl*m + l*dm)*beta + l*m*d_beta)
+         case (2) ! delta
+            Cmnj = 0.5d0 * ((dl*m + l*dm)*beta + l*m*d_beta)
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_x^2-y^2 d_yz
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ((dm*n + m*dn)*beta + m*n*d_beta)
+         case (1) ! pi
+            Cmnj = -( (dm*n + m*dn)*(1.0d0 + 2.0d0*beta) + m*n*2.0d0*d_beta )
+         case (2) ! delta
+            Cmnj = (dm*n + m*dn)*(1.0d0 + 0.5d0*beta) + m*n*0.5d0*d_beta
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_x^2-y^2 d_xz
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ((dl*n + l*dn)*beta + l*n*d_beta)
+         case (1) ! pi
+            Cmnj = (dl*n + l*dn)*(1.0d0 - 2.0d0*beta) + l*n*(-2.0d0*d_beta)
+         case (2) ! delta
+            Cmnj = -(dl*n + l*dn)*(1.0d0 - 0.5d0*beta) + l*n*0.5d0*d_beta
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_x^2-y^2 d_x^2-y^2
+         !alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0*beta*d_beta
+         case (1) ! pi
+            Cmnj = d_alpha - 2.0d0*beta*d_beta
+         case (2) ! delta
+            Cmnj = 2.0d0*n*dn + 0.5d0*beta*d_beta
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_x^2-y^2 d_3z^2-r^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * ( d_beta*(n**2 - 0.5d0*alpha) + beta*(2.0d0*n*dn - 0.5d0*d_alpha) )
+         case (1) ! pi
+            Cmnj = -m_sqrt3*( 2.0d0*n*dn*beta + n**2*d_beta )
+         case (2) ! delta
+            Cmnj = 0.25d0*m_sqrt3*( 2.0d0*n*dn*beta + (1.0d0 + n**2)*d_beta )
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (9) ! l=4: d_3z^2-r^2
+
+      select case (l2)
+      case (1) ! l=0: d_3z^2-r^2 s
+         select case (j)
+         case (0) ! sigma
+            !alpha = d1**2 + d2**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            Cmnj = 2.0d0*n*dn - 0.5d0*d_alpha
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_3z^2-r^2 p_x
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            Cmnj = -( dl*(n**2 - 0.5d0*alpha) + l*(2.0d0*n*dn - 0.5d0*d_alpha) )
+         case (1) ! pi
+            Cmnj = m_sqrt3*( dl*n**2 + 2.0d0*l*n*dn )
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_3z^2-r^2 p_y
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            Cmnj = -( dm*(n**2 - 0.5d0*alpha) + m*(2.0d0*n*dn - 0.5d0*d_alpha))
+         case (1) ! pi
+            Cmnj = m_sqrt3*( dm*n**2 + 2.0d0*m*n*dn )
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_3z^2-r^2 p_z
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = dn*(n**2 - 0.5d0*alpha) + n*(2.0d0*n*dn - 0.5d0*d_alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3*(dn*alpha + n*d_alpha)
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_3z^2-r^2 d_xy
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            alpha = 2.0d0*(l*dl + m*dm)
+            Cmnj = m_sqrt3 * ( (dl*m + l*dm)*(n**2 - 0.5d0*alpha) + l*m*(2.0d0*n*dn - 0.5d0*d_alpha) )
+         case (1) ! pi
+            Cmnj = -2.0d0*m_sqrt3 * ( (dl*m + l*dm)*n**2 + 2.0d0*l*m*n*dn )
+         case (2) ! delta
+            Cmnj = m_sqrt3_half * ( (dl*m + l*dm)*(1.0d0 + n**2) + l*m*(2.0d0*n*dn) )
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_3z^2-r^2 d_yz
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * ( (dm*n + m*dn)*(n**2 - 0.5d0*alpha) + m*n*(2.0d0*n*dn - 0.5d0*d_alpha) )
+         case (1) ! pi
+            Cmnj = m_sqrt3 * ( (dm*n + m*dn)*(alpha - n**2) + m*n*(d_alpha - 2.0d0*n*dn) )
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * ((dm*n + m*dn)*alpha + m*n*d_alpha)
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_3z^2-r^2 d_xz
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * ( (dl*n + l*dn)*(n**2 - 0.5d0*alpha) + l*n*(2.0d0*n*dn - 0.5d0*d_alpha) )
+         case (1) ! pi
+            Cmnj = m_sqrt3 * ( (dl*n + l*dn)*(alpha - n**2) + l*n*(d_alpha - 2.0d0*n*dn) )
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * ( (dl*n + l*dn)*alpha + l*n*d_alpha )
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_3z^2-r^2 d_x^2-y^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * ( d_beta*(n**2 - 0.5d0*alpha) + beta*(2.0d0*n*dn - 0.5d0*d_alpha) )
+         case (1) ! pi
+            Cmnj = -m_sqrt3*( 2.0d0*n*dn*beta + n**2*d_beta )
+         case (2) ! delta
+            Cmnj = 0.25d0*m_sqrt3*( 2.0d0*n*dn*beta + (1.0d0 + n**2)*d_beta )
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_3z^2-r^2 d_3z^2-r^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 2.0d0*(n**2 - 0.5d0*alpha)*(2.0d0*n*dn - 0.5d0*d_alpha)
+         case (1) ! pi
+            Cmnj = 3.0d0*( 2.0d0*m*dm*alpha + m**2*d_alpha )
+         case (2) ! delta
+            Cmnj = 1.5d0*alpha*d_alpha
+         endselect
+      endselect ! select case (l2)
+   endselect ! select case (l1)
+
+end function d_KS_Cmnj_orbital
+
+
+
+
+! Second derivative of KS-orbital angular part:
+pure function d2_KS_Cmnj_orbital(l1, l2, j, l, n, m, dl, dm, dn, d2l, d2m, d2n) result(Cmnj) ! for up to sp3d5 (no f-orbitals currently)
+   real(8) :: Cmnj   ! orbital coefficient for a single term; Table IV in Ref. [1]
+   integer, intent(in) :: l1, l2, j ! orbital indices; j=sigma, pi, or delta
+   real(8), intent(in) :: l, n, m   ! direction cosines
+   real(8), intent(in) :: dl, dm, dn   ! derivatives of the direction cosines
+   real(8), intent(in) :: d2l, d2m, d2n   ! second derivatives of the direction cosines
+   ! Reminder:
+   ! l=1: s
+   ! l=2: p_x
+   ! l=3: p_y
+   ! l=4: p_z
+   ! l=5: d_xy
+   ! l=6: d_yz
+   ! l=7: d_xz
+   ! l=8: d_x^2-y^2
+   ! l=9: d_3z^2-r^2
+   !-----------
+   ! j=0: sigma
+   ! j=1: pi
+   ! j=2: delta
+   !===============
+   real(8) :: alpha, beta, d_alpha, d_beta, d2_alpha, d2_beta
+
+   Cmnj = 0.0d0   ! for all but those defined below
+   if ((j < 0) .or. (j > 2)) return ! those do not exist, something must be wrong
+
+   select case (l1)
+   case (1) ! l=0: s
+
+      if (j /= 0) return ! s-orbitals are non-zero only for j=0, nothing to do here
+      ! If j=0, get the value:
+      select case (l2) ! s s
+      !---------------
+      case (1) ! l=0: s s
+         Cmnj = 0.0d0
+
+      !---------------
+      case (2) ! l=1: s p_x
+         Cmnj = d2l
+
+      !---------------
+      case (3) ! l=1: s p_y
+         Cmnj = d2m
+
+      !---------------
+      case (4) ! l=1: s p_z
+         Cmnj = d2n
+
+      !---------------
+      case (5) ! l=2: s d_xy
+         Cmnj = m_sqrt3 * (d2l*m + 2.0d0*dl*dm + l*d2m)
+
+      !---------------
+      case (6) ! l=2: s d_yz
+         Cmnj = m_sqrt3 * (d2m*n + 2.0d0*dm*dn + m*d2n)
+
+      !---------------
+      case (7) ! l=2: s d_xz
+         Cmnj = m_sqrt3 * (d2l*n + 2.0d0*dl*dn + l*d2n)
+
+      !---------------
+      case (8) ! l=3: s d_x^2-y^2
+         !d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(l*d2l + dl**2 - dm**2 - m*d2m)
+         Cmnj = m_sqrt3_half * d2_beta
+
+      !---------------
+      case (9) ! l=4: s d_3z^2-r^2)
+         Cmnj = 2.0d0*(dn**2 + n*d2n) - (dl**2 + l*d2l + dm**2 + m*d2m)
+
+      endselect ! select case (l2)
+
+   !===============
+   case (2) ! l=1: p_x
+
+      if (j > 1) return ! p-orbitals are non-zero only for j=0 or 1; nothing to do here
+
+      select case (l2) ! p_x s
+      case (1) ! l=0: s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -d2l
+         endselect
+
+      !---------------
+      case (2) ! l=1: p_x p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 2.0d0*(dl**2 + l*d2l)
+         case (1) ! pi
+            Cmnj = -2.0d0*(dl**2 + l*d2l)
+         endselect
+
+      !---------------
+      case (3) ! l=1: p_x p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = (d2l*m + 2.0d0*dl*dm + l*d2m)
+         case (1) ! pi
+            Cmnj = -(d2l*m + 2.0d0*dl*dm + l*d2m)
+         endselect
+
+      !---------------
+      case (4) ! l=1: p_x p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = (d2l*n + 2.0d0*dl*dn + l*d2n)
+         case (1) ! pi
+            Cmnj = -(d2l*n + 2.0d0*dl*dn + l*d2n)
+         endselect
+
+      !---------------
+      case (5) ! l=2: p_x d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * ( 2.0d0*(dl*dl*m + l*d2l*m + l*dl*dm) + (l**2*d2m + 2.0d0*l*dl*dm) )
+         case (1) ! pi
+            Cmnj = d2m*(1.0d0 - 2.0d0*l**2) + dm*(-4.0d0*l*dl) + dm*(-4.0d0*l*dl) + m*(-4.0d0*(dl**2+l*d2l))
+         endselect
+
+      !---------------
+      case (6) ! l=2: p_x d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*dl*dm*n + 2.0d0*dl*m*dn + 2.0d0*l*dm*dn)
+         case (1) ! pi
+            Cmnj = -2.0d0 * (d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*dl*dm*n + 2.0d0*dl*m*dn + 2.0d0*l*dm*dn)
+         endselect
+
+      !---------------
+      case (7) ! l=2: p_x d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (2.0d0*(dl**2*n + l*d2l*n + l*dl*dn) + &
+                              2.0d0*l*dl*dn + l**2*d2n)
+         case (1) ! pi
+            Cmnj = d2n*(1.0d0 - 2.0d0*l**2) + 2.0d0*dn*(-4.0d0*l*dl) + &
+                   n*(-4.0d0*(dl**2 + l*d2l))
+         endselect
+
+      !---------------
+      case (8) ! l=3: p_x d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * (d2l*beta + 2.0d0*dl*d_beta + l*d2_beta)
+         case (1) ! pi
+            Cmnj = d2l*(1.0d0 - beta) + 2.0d0*l*(-d_beta) + l*(-d2_beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: p_x d_3z^2-r^2
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+            Cmnj = d2l*(n**2 - 0.5d0*alpha) + 2.0d0*dl*(2.0d0*n*dn - 0.5d0*d_alpha) + &
+                   l*(2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha)
+         case (1) ! pi
+            Cmnj = -m_sqrt3*(d2l*n**2 + 4.0d0*l*n*dn + 2.0d0*l*n*d2n)
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (3) ! l=1: p_y
+
+      if (j > 1) return ! p-orbitals are non-zero only for j=0 or 1; nothing to do here
+
+
+      select case (l2) ! p_y s
+      case (1) ! l=0: s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -d2m
+         endselect
+
+      !---------------
+      case (2) ! l=1: p_y p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = (d2l*m + 2.0d0*dl*dm + l*d2m)
+         case (1) ! pi
+            Cmnj = -(d2l*m + 2.0d0*dl*dm + l*d2m)
+         endselect
+
+      !---------------
+      case (3) ! l=1: p_y p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 2.0d0*(dm**2 + m*d2m)
+         case (1) ! pi
+            Cmnj = -2.0d0*(dm**2 + m*d2m)
+         endselect
+
+      !---------------
+      case (4) ! l=1: p_y p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = (d2m*n + 2.0d0*dm*dn + m*d2n)
+         case (1) ! pi
+            Cmnj = -(d2m*n + 2.0d0*dm*dn + m*d2n)
+         endselect
+
+      !---------------
+      case (5) ! l=2: p_y d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (2.0d0*(dm**2+m*d2m)*l + 4.0d0*m*dm*dl + m**2*d2l)
+         case (1) ! pi
+            Cmnj = d2l*(1.0d0 - 2.0d0*m**2) + 2.0d0*dl*(-4.0d0*m*dm) + l*(-4.0d0*(dm**2 + m*d2m))
+         endselect
+
+      !---------------
+      case (6) ! l=2: p_y d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (2.0d0*(dm**2 + m*d2m)*n + 4.0d0*m*dm*dn + m**2*d2n)
+         case (1) ! pi
+            Cmnj = d2n*(1.0d0 - 2.0d0*m**2) + 2.0d0*dn*(-4.0d0*m*dm) + n*(-4.0d0*(dm**2 + m*d2m))
+         endselect
+
+      !---------------
+      case (7) ! l=2: p_y d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * ( d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*(dl*dm*n + l*dm*dn + dl*m*dn) )
+         case (1) ! pi
+            Cmnj = -2.0d0*( d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*(dl*dm*n + l*dm*dn + dl*m*dn) )
+         endselect
+
+      !---------------
+      case (8) ! l=3: p_y d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(l*d2l + dl**2 - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * (d2m*beta + 2.0d0*dm*d_beta + m*d2_beta)
+         case (1) ! pi
+            Cmnj = -(d2m*(1.0d0 + beta) + 2.0d0*dm*d_beta + m*d2_beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: p_y d_3z^2-r^2
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            d2_alpha = 2.0d0*(l*d2l + dl**2 + m*d2m + dm**2)
+            Cmnj = d2m*(n**2 - 0.5d0*alpha) + 2.0d0*dm*(2.0d0*n*dn - 0.5d0*d_alpha) + m*(2.0d0*(dn**2+n*d2n) - 0.5d0*d2_alpha)
+         case (1) ! pi
+            Cmnj = -m_sqrt3*( d2m*n**2 + 2.0d0*dm*n*dn + 2.0d0*m*(dn**2 + n*d2n) )
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (4) ! l=1: p_z
+
+      if (j > 1) return ! p-orbitals are non-zero only for j=0 or 1; nothing to do here
+
+      select case (l2) ! p_z s
+      case (1) ! l=0: s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -d2n
+         endselect
+
+      !---------------
+      case (2) ! l=1: p_z p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = d2l*n + 2.0d0*dl*dn + l*d2n
+         case (1) ! pi
+            Cmnj = -(d2l*n + 2.0d0*dl*dn + l*d2n)
+         endselect
+
+      !---------------
+      case (3) ! l=1: p_z p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = d2m*n + 2.0d0*dm*dn + m*d2n
+         case (1) ! pi
+            Cmnj = -(d2m*n + 2.0d0*dm*dn + m*d2n)
+         endselect
+
+      !---------------
+      case (4) ! l=1: p_z p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 2.0d0*(dn**2 + n*d2n)
+         case (1) ! pi
+            Cmnj = -2.0d0*(dn**2 + n*d2n)
+         endselect
+
+      !---------------
+      case (5) ! l=2: p_z d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*(dl*dm*n + l*dm*dn + dl*m*dn))
+         case (1) ! pi
+            Cmnj = 2.0d0*(d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*(dl*dm*n + l*dm*dn + dl*m*dn))
+         endselect
+
+      !---------------
+      case (6) ! l=2: p_z d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (2.0d0*((dn**2 + n*d2n)*m + n*dn*dm) + 2.0d0*n*dn*dm + n**2*d2m)
+         case (1) ! pi
+            Cmnj = d2m*(1.0d0 - 2.0d0*n**2) + 2.0d0*dm*(-4.0d0*n*dn) + m*(-4.0d0*(dn**2 + n*d2n))
+         endselect
+
+      !---------------
+      case (7) ! l=2: p_z d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (2.0d0*((dn**2+n*d2n)*l + n*dn*dl) + 2.0d0*n*dn*dl + n**2*d2l)
+         case (1) ! pi
+            Cmnj = d2l*(1.0d0 - 2.0d0*n**2) + 2.0d0*dl*(-4.0d0*n*dn) + l*(-4.0d0*(dn**2 + n*d2n))
+         endselect
+
+      !---------------
+      case (8) ! l=3: p_z d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * (d2n*beta + 2.0d0*dn*d_beta + n*d2_beta)
+         case (1) ! pi
+            Cmnj = -(d2n*beta + 2.0d0*dn*d_beta + n*d2_beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: p_z d_3z^2-r^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = d2n*(n**2 - 0.5d0*alpha) + 2.0d0*dn*(2.0d0*n*dn - 0.5d0*d_alpha) + n*(2.0d0*(dn**2+n*d2n) - 0.5d0*d2_alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3*(d2n*alpha + 2.0d0*dn*d_alpha + n*d2_alpha)
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (5) ! l=2: d_xy
+
+      select case (l2)
+      case (1) ! l=0: d_xy s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 *(d2l*m + 2.0d0*dl*dm + l*d2m)
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_xy p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (2.0d0*((dl**2 + l*d2l)*m + l*dl*dm) + 2.0d0*l*dl*dm + l**2*d2m)
+         case (1) ! pi
+            Cmnj = -( d2m*(1.0d0 - 2.0d0*l**2) + 2.0d0*dm*(-4.0d0*l*dl) + m*(-4.0d0*(dl**2 + l*d2l)))
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_xy p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (d2l*m**2 + 4.0d0*dl*m*dm + 2.0d0*l*(dm**2 + m*d2m))
+         case (1) ! pi
+            Cmnj = -( d2l*(1.0d0 - 2.0d0*m**2) + 2.0d0*dl*(-4.0d0*m*dm) + l*(-4.0d0*(dm**2 + m*d2m)) )
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_xy p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*(dl*dm*n + l*dm*dn + dl*m*dn))
+         case (1) ! pi
+            Cmnj = 2.0d0*(d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*(dl*dm*n + l*dm*dn + dl*m*dn))
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_xy d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 6.0d0 * ( (dl**2 + l*d2l)*m**2 + 4.0d0*l*dl*m*dm + l**2*(dm**2 + m*d2m) )
+         case (1) ! pi
+            !alpha = l**2 + m**2
+            !d_alpha = 2.0d0*(l*dl + m*dm)
+            d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+            Cmnj = d2_alpha - 8.0d0*((dl**2 + l*d2l)*m*dm + l*dl*(dm**2 + m*d2m))
+         case (2) ! delta
+            Cmnj = 2.0d0*( (dn**2 + n*d2n) + (dl**2 + l*d2l)*m**2 + 4.0d0*l*dl*m*dm + l**2*(dm**2 + m*d2m) )
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_xy d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * ( d2l*n*m**2 + 2.0d0*dl*dn*m**2 + 4.0d0*dl*n*m*dm + &
+                             l*d2n*m**2 + 4.0d0*l*dn*m*dm + &
+                             2.0d0*(l*n*dm**2 + l*n*m*d2m) )
+         case (1) ! pi
+            Cmnj = (d2l*n + 2.0d0*dl*dn + l*d2n)*(1.0d0-4.0d0*m**2) + 16.0d0*(dl*n + l*dn)*(-m*dm) + l*n*(-8.0d0*(dm**2 + m*d2m))
+         case (2) ! delta
+            Cmnj = (d2l*n + 2.0d0*dl*dn + l*d2n)*(m**2 - 1.0d0) + (dl*n + l*dn)*(4.0d0*m*dm) + 2.0d0*l*n*(dm**2 + m*d2m)
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_xy d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * ( (d2m*n + 2.0d0*dm*dn + m*d2n)*l**2 + (dm*n + m*dn)*2.0d0*l*dl + &
+                              2.0d0*(dm*n*l*dl + m*dn*l*dl + m*n*dl*dl + m*n*l*d2l) )
+         case (1) ! pi
+            Cmnj = (d2m*n + 2.0d0*dm*dn + m*d2n)*(1.0d0-4.0d0*l**2) + (dm*n + m*dn)*(-16.0d0*l*dl) + m*n*(-8.0d0*(dl**2 + l*d2l))
+         case (2) ! delta
+            Cmnj = (d2m*n + 2.0d0*dm*dn + m*d2n)*(l**2 - 1.0d0) + (dm*n + m*dn)*(4.0d0*l*dl) + 2.0d0*m*n*(dl**2 + l*d2l)
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_xy d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ((d2l*m + 2.0d0*dl*dm + l*d2m)*beta + 2.0d0*(dl*m + l*dm)*d_beta + l*m*d_beta + l*m*d2_beta)
+         case (1) ! pi
+            Cmnj = -2.0d0 * ((d2l*m + 2.0d0*dl*dm + l*d2m)*beta + 2.0d0*(dl*m + l*dm)*d_beta + l*m*d_beta + l*m*d2_beta)
+         case (2) ! delta
+            Cmnj = 0.5d0 * ((d2l*m + 2.0d0*dl*dm + l*d2m)*beta + 2.0d0*(dl*m + l*dm)*d_beta + l*m*d_beta + l*m*d2_beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_xy d_3z^2-r^2
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            d2_alpha = 2.0d0*(l*d2l + dl**2 + m*d2m + dm**2)
+            Cmnj = m_sqrt3 * ( (d2l*m + 2.0d0*dl*dm + l*d2m)*(n**2 - 0.5d0*alpha) + &
+                               (dl*m + l*dm)*(2.0d0*n*dn - 0.5d0*d_alpha) + l*m*(2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha))
+         case (1) ! pi
+            Cmnj = -2.0d0*m_sqrt3 * ( (d2l*m + 2.0d0*dl*dm + l*d2m)*n**2 + (dl*m + l*dm)*2.0d0*n*dn + 2.0d0*l*m*(dn**2 + n*d2n))
+         case (2) ! delta
+            Cmnj = m_sqrt3_half * ( (d2l*m + 2.0d0*dl*dm + l*d2m)*(1.0d0 + n**2) + (dl*m + l*dm)*(4.0d0*n*dn) + l*m*(dn**2 + n*d2n) )
+         endselect
+      endselect ! select case (l2)
+
+
+   !===============
+   case (6) ! l=2: d_yz
+
+      select case (l2)
+      case (1) ! l=0: d_yz s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (d2m*n + 2.0d0*dm*dn + m*d2n)
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_yz p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * ( d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*(dl*dm*n + l*dm*dn + dl*m*dn))
+         case (1) ! pi
+            Cmnj = 2.0d0*( d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*(dl*dm*n + l*dm*dn + dl*m*dn))
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_yz p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * ( 2.0d0*((dm**2 + m*d2m)*n + m*dm*dn) + 2.0d0*m*dm*dn + m**2*d2n )
+         case (1) ! pi
+            Cmnj = -( d2n*(1.0d0 - 2.0d0*m**2) + dn*(-4.0d0*m*dm) + n*(-4.0d0*(dm**2 + m*d2m)) )
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_yz p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (2.0d0*((dn**2 + n*d2n)*m + n*dn*dm) + 2.0d0*n*dn*dm + n**2*d2m)
+         case (1) ! pi
+            Cmnj = -( d2m*(1.0d0 - 2.0d0*n**2) + 2.0d0*dm*(-4.0d0*n*dn) + m*(-4.0d0*(dn**2 + n*d2n)) )
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_yz d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * ( (d2l*n + 2.0d0*dl*dn + l*d2n)*m**2 + 2.0d0*(dl*n + l*dn)*m*dm + 2.0d0*l*n*(dm**2 + m*d2m) )
+         case (1) ! pi
+            Cmnj = (d2l*n + 2.0d0*dl*dn + l*d2n)*(1.0d0-4.0d0*m**2) + (dl*n + l*dn)*(-16.0d0*m*dm) + l*n*(-8.0d0*(dm**2 + m*d2m))
+         case (2) ! delta
+            Cmnj = (d2l*n + 2.0d0*dl*dn + l*d2n)*(m**2 - 1.0d0) + 2.0d0*(dl*n + l*dn)*(2.0d0*m*dm) + l*n*(2.0d0*(dm**2 + m*d2m))
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_yz d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 6.0d0 * (dm**2 + m*d2m * dn**2 + n*d2n)
+         case (1) ! pi
+            !alpha = n**2 + m**2
+            !d_alpha = 2.0d0*(n*dn + m*dm)
+            d2_alpha = 2.0d0*(dn**2 + n*d2n + dm**2 + m*d2m)
+            Cmnj = d2_alpha - 8.0d0*((dn**2 + n*d2n)*m**2 + 4.0d0*n*dn*m*dm + n**2*(dm**2 + m*d2m))
+         case (2) ! delta
+            Cmnj = 2.0d0*((dl**2+l*d2l) + (dn**2+n*d2n)*m**2 + 2.0d0*n*dn*m*dm + n**2*(dm**2+m*d2m))
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_yz d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * ( (d2m*l + 2.0d0*dm*dl + m*d2l)*n**2 + 4.0d0*(dm*l + m*dl)*n*dn + 2.0d0*m*l*(dn**2 + n*d2n) )
+         case (1) ! pi
+            Cmnj = (d2m*l + 2.0d0*dm*dl + m*d2l)*(1.0d0-4.0d0*n**2) + (dm*l + m*dl)*(-16.0d0*n*dn) + m*l*(-8.0d0*(dn**2 + n*d2n))
+         case (2) ! delta
+            Cmnj = (d2m*l + 2.0d0*dm*dl + m*d2l)*(n**2 - 1.0d0) + 4.0d0*(dm*l + m*dl)*(2.0d0*n*dn) + m*l*(2.0d0*(dn**2 + n*d2n))
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_yz d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(l*d2l + dl**2 - m*d2m - dm**2)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ( (d2m*n + 2.0d0*dm*dn + m*d2n)*beta + 2.0d0*(dm*n + m*dn)*d_beta + m*n*d2_beta )
+         case (1) ! pi
+            Cmnj = -( (d2m*n + 2.0d0*dm*dn + m*d2n)*(1.0d0 + 2.0d0*beta) + (dm*n + m*dn)*2.0d0*d_beta + m*n*2.0d0*d2_beta )
+         case (2) ! delta
+            Cmnj = (d2m*n + 2.0d0*dm*dn + m*d2n)*(1.0d0 + 0.5d0*beta) + (dm*n + m*dn)*d_beta + m*n*0.5d0*d2_beta
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_yz d_3z^2-r^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * ( (d2m*n + 2.0d0*dm*dn + m*d2n)*(n**2 - 0.5d0*alpha) + &
+                               2.0d0*(dm*n + m*dn)*(2.0d0*n*dn - 0.5d0*d_alpha) + m*n*(2.0d0*(dn**2+n*d2n) - 0.5d0*d2_alpha) )
+         case (1) ! pi
+            Cmnj = m_sqrt3 * ( (d2m*n + 2.0d0*dm*dn + m*d2n)*(alpha - n**2) + 2.0d0*(dm*n + m*dn)*(d_alpha - 2.0d0*n*dn) + &
+                                m*n*(d2_alpha - 2.0d0*(dn**2 + n*d2n)) )
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * ((d2m*n + 2.0d0*dm*dn + m*d2n)*alpha + 2.0d0*(dm*n + m*dn)*d_alpha + m*n*d2_alpha)
+         endselect
+      endselect ! select case (l2)
+
+
+   !===============
+   case (7) ! l=2: d_xz
+
+      select case (l2)
+      case (1) ! l=0: d_xz s
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * (d2l*n + 2.0d0*dl*dn + l*d2n)
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_xz p_x
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (2.0d0*((dl**2 + l*d2l)*n + l*dl*dn) + 2.0d0*l*dl*dn + l**2*d2n)
+         case (1) ! pi
+            Cmnj = -( d2n*(1.0d0 - 2.0d0*l**2) + dn*(-8.0d0*l*dl) + n*(-4.0d0*(dl**2 + l*d2l)) )
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_xz p_y
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*(dl*dm*n + l*dm*dn + dl*m*dn))
+         case (1) ! pi
+            Cmnj = 2.0d0*(d2l*m*n + l*d2m*n + l*m*d2n + 2.0d0*(dl*dm*n + l*dm*dn + dl*m*dn))
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_xz p_z
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3 * (2.0d0*((dn**2 + n*d2n)*l + n*dn*dl) + 2.0d0*n*dn*dl + n**2*d2l)
+         case (1) ! pi
+            Cmnj = -( d2l*(1.0d0 - 2.0d0*n**2) + dl*(-8.0d0*n*dn) + l*(-4.0d0*(dn**2 + n*d2n)) )
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_xz d_xy
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * ( (d2m*n + 2.0d0*dm*dn + m*d2n)*l**2 + 4.0d0*(dm*n + m*dn)*l*dl + 2.0d0*m*n*(dl**2 + l*d2l) )
+         case (1) ! pi
+            Cmnj = (d2m*n + 2.0d0*dm*dn + m*d2n)*(1.0d0-4.0d0*l**2) + (dm*n + m*dn)*(-16.0d0*l*dl) + m*n*(-8.0d0*(dl**2 + l*d2l))
+         case (2) ! delta
+            Cmnj = (d2m*n + 2.0d0*dm*dn + m*d2n)*(l**2 - 1.0d0) + 4.0d0*(dm*n + m*dn)*l*dl + 2.0d0*m*n*(dl**2 + l*d2l)
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_xz d_yz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 3.0d0 * ( (d2m*l + 2.0d0*dm*dl + m*d2l)*n**2 + 4.0d0*(dm*l + m*dl)*n*dn + 2.0d0*m*l*(dn**2 + n*d2n) )
+         case (1) ! pi
+            Cmnj = (d2m*l + 2.0d0*dm*dl + m*d2l)*(1.0d0-4.0d0*n**2) + (dm*l + m*dl)*(-16.0d0*n*dn) + m*l*(-8.0d0*(dn**2 + n*d2n))
+         case (2) ! delta
+            Cmnj = (d2m*l + 2.0d0*dm*dl + m*d2l)*(n**2 - 1.0d0) + 4.0d0*(dm*l + m*dl)*n*dn + 2.0d0*m*l*(dn**2 + n*d2n)
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_xz d_xz
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 6.0d0*( (dl**2 + l*d2l)*n**2 + 4.0d0*l*dl*n*dn + l**2*(dn**2 + n*d2n) )
+         case (1) ! pi
+            !alpha = n**2 + l**2
+            !d_alpha = 2.0d0*(n*dn + l*dl)
+            d2_alpha = 2.0d0*(dn**2 + n*d2n + dl**2 + l*d2l)
+            Cmnj = d2_alpha - 8.0d0*((dn**2 + n*d2n)*l**2 + 4.0d0*n*dn*l*dl + n**2*(dl**2 + l*d2l))
+         case (2) ! delta
+            Cmnj = 2.0d0*( (dm**2 + m*d2m) + (dn**2 + n*d2n)*l**2 + 4.0d0*n*dn*l*dl + n**2*(dl**2 + l*d2l) )
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_xz d_x^2-y^2
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ( (d2l*n + 2.0d0*dl*dn + l*d2n)*beta + 2.0d0*(dl*n + l*dn)*d_beta + l*n*d2_beta )
+         case (1) ! pi
+            Cmnj = (d2l*n + 2.0d0*dl*dn + l*d2n)*(1.0d0 - 2.0d0*beta) + (dl*n + l*dn)*(-4.0d0*d_beta) + l*n*(-2.0d0*d2_beta)
+         case (2) ! delta
+            Cmnj = -( (d2l*n + 2.0d0*dl*dn + l*d2n)*(1.0d0 - 0.5d0*beta) + (dl*n + l*dn)*(-d_beta) + l*n*(-0.5d0*d2_beta) )
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_xz d_3z^2-r^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * ( (d2l*n + 2.0d0*dl*dn + l*d2n)*(n**2 - 0.5d0*alpha) + 2.0d0*(dl*n + l*dn)*(2.0d0*n*dn - 0.5d0*d_alpha) + &
+                               l*n*(2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha) )
+         case (1) ! pi
+            Cmnj = m_sqrt3 * ( (d2l*n + 2.0d0*dl*dn + l*d2n)*(alpha - n**2) + 2.0d0*(dl*n + l*dn)*(d_alpha - 2.0d0*n*dn) + &
+                                l*n*(d2_alpha - 2.0d0*(dn**2 + n*d2n)) )
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * ( (d2l*n + 2.0d0*dl*dn + l*d2n)*alpha + 2.0d0*(dl*n + l*dn)*d_alpha + l*n*d2_alpha )
+         endselect
+      endselect ! select case (l2)
+
+   !===============
+   case (8) ! l=3: d_x^2-y^2
+
+     select case (l2)
+      case (1) ! l=0: d_x^2-y^2 s
+         select case (j)
+         case (0) ! sigma
+            !beta = d1**2 - d2**2
+            !d_beta = 2.0d0*(l*dl - m*dm)
+            d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+            Cmnj = m_sqrt3_half * d2_beta
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_x^2-y^2 p_x
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3_half * ( d2l*beta + 2.0d0*dl*d_beta + l*d2_beta )
+         case (1) ! pi
+            Cmnj = -( d2l*(1.0d0 - beta) + 2.0d0*dl*(-d_beta) + l*(-d2_beta) )
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_x^2-y^2 p_y
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3_half * ( d2m*beta + 2.0d0*dm*d_beta + m*d2_beta )
+         case (1) ! pi
+            Cmnj = d2m*(1.0d0 + beta) + 2.0d0*dm*d_beta + m*d2_beta
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_x^2-y^2 p_z
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = -m_sqrt3_half * (d2n*beta + 2.0d0*dn*d_beta + n*d2_beta)
+         case (1) ! pi
+            Cmnj = d2n*beta + 2.0d0*dn*d_beta + n*d2_beta
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_x^2-y^2 d_xy
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ( (d2l*m + 2.0d0*dl*dm + l*d2m)*beta + 2.0d0*(dl*m + l*dm)*d_beta + l*m*d2_beta )
+         case (1) ! pi
+            Cmnj = -2.0d0 * ( (d2l*m + 2.0d0*dl*dm + l*d2m)*beta + 2.0d0*(dl*m + l*dm)*d_beta + l*m*d2_beta )
+         case (2) ! delta
+            Cmnj = 0.5d0 * ( (d2l*m + 2.0d0*dl*dm + l*d2m)*beta + 2.0d0*(dl*m + l*dm)*d_beta + l*m*d2_beta )
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_x^2-y^2 d_yz
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ( (d2m*n + 2.0d0*dm*dn + m*d2n)*beta + (dm*n + m*dn)*d_beta + m*n*d2_beta )
+         case (1) ! pi
+            Cmnj = -( (d2m*n + 2.0d0*dm*dn + m*d2n)*(1.0d0 + 2.0d0*beta) + (dm*n + m*dn)*4.0d0*d_beta + m*n*2.0d0*d2_beta )
+         case (2) ! delta
+            Cmnj = (d2m*n + 2.0d0*dm*dn + m*d2n)*(1.0d0 + 0.5d0*beta) + (dm*n + m*dn)*d_beta + m*n*0.5d0*d2_beta
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_x^2-y^2 d_xz
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0 * ( (d2l*n + 2.0d0*dl*dn + l*d2n)*beta + 2.0d0*(dl*n + l*dn)*d_beta + l*n*d2_beta )
+         case (1) ! pi
+            Cmnj = (d2l*n + 2.0d0*dl*dn + l*d2n)*(1.0d0 - 2.0d0*beta) + (dl*n + l*dn)*(-4.0d0*d_beta) + l*n*(-2.0d0*d2_beta)
+         case (2) ! delta
+            Cmnj = -(d2l*n + 2.0d0*dl*dn + l*d2n)*(1.0d0 - 0.5d0*beta) - (dl*n + l*dn)*d_beta + l*n*0.5d0*d2_beta
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_x^2-y^2 d_x^2-y^2
+         !d_alpha = 2.0d0*(l*dl + m*dm)
+         d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 1.5d0*(d_beta**2 + beta*d2_beta)
+         case (1) ! pi
+            Cmnj = d2_alpha - 2.0d0*(d_beta**2 + beta*d2_beta)
+         case (2) ! delta
+            Cmnj = 2.0d0*(dn**2 + n*d2n) + 0.5d0*(d_beta**2 + beta*d2_beta)
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_x^2-y^2 d_3z^2-r^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * ( d2_beta*(n**2 - 0.5d0*alpha) + 2.0d0*d_beta*(2.0d0*n*dn - 0.5d0*d_alpha) + &
+                                    beta*(2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha) )
+         case (1) ! pi
+            Cmnj = -m_sqrt3*( 2.0d0*((dn**2 + n*d2n)*beta + n*dn*d_beta) + 2.0d0*n*dn*d_beta + n**2*d2_beta )
+         case (2) ! delta
+            Cmnj = 0.25d0*m_sqrt3*( 2.0d0*((dn**2 + n*d2n)*beta + n*dn*d_beta) + 2.0d0*n*dn*d_beta + (1.0d0 + n**2)*d2_beta )
+         endselect
+      endselect ! select case (l2)
+   !===============
+   case (9) ! l=4: d_3z^2-r^2
+
+      select case (l2)
+      case (1) ! l=0: d_3z^2-r^2 s
+         select case (j)
+         case (0) ! sigma
+            !alpha = d1**2 + d2**2
+            !d_alpha = 2.0d0*(l*dl + m*dm)
+            d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+            Cmnj = 2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha
+         endselect
+
+      !---------------
+      case (2) ! l=1: d_3z^2-r^2 p_x
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+            Cmnj = -( d2l*(n**2 - 0.5d0*alpha) + 2.0d0*dl*(2.0d0*n*dn - 0.5d0*d_alpha) + l*(2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha) )
+         case (1) ! pi
+            Cmnj = m_sqrt3*( d2l*n**2 + 4.0d0*dl*n*dn + 2.0d0*l*(dn**2 + n*d2n) )
+         endselect
+
+      !---------------
+      case (3) ! l=1: d_3z^2-r^2 p_y
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            d_alpha = 2.0d0*(l*dl + m*dm)
+            d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+            Cmnj = -( d2m*(n**2 - 0.5d0*alpha) + 2.0d0*dm*(2.0d0*n*dn - 0.5d0*d_alpha) + m*(2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha) )
+         case (1) ! pi
+            Cmnj = m_sqrt3*( d2m*n**2 + 4.0d0*dm*n*dn + 2.0d0*m*(dn**2 + n*d2n) )
+         endselect
+
+      !---------------
+      case (4) ! l=1: d_3z^2-r^2 p_z
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = d2n*(n**2 - 0.5d0*alpha) + 2.0d0*dn*(2.0d0*n*dn - 0.5d0*d_alpha) + n*(2.0d0*(dn**2+n*d2n) - 0.5d0*d2_alpha)
+         case (1) ! pi
+            Cmnj = m_sqrt3*( d2n*alpha + 2.0d0*dn*d_alpha + n*d2_alpha )
+         endselect
+
+      !---------------
+      case (5) ! l=2: d_3z^2-r^2 d_xy
+         select case (j)
+         case (0) ! sigma
+            alpha = l**2 + m**2
+            alpha = 2.0d0*(l*dl + m*dm)
+            d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+            Cmnj = m_sqrt3 * ( (d2l*m + 2.0d0*dl*dm + l*d2m)*(n**2 - 0.5d0*alpha) + 2.0d0*(dl*m + l*dm)*(2.0d0*n*dn - 0.5d0*d_alpha) + &
+                                l*m*(2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha) )
+         case (1) ! pi
+            Cmnj = -2.0d0*m_sqrt3 * ( (d2l*m + 2.0d0*dl*dm + l*d2m)*n**2 + 2.0d0*(dl*m + l*dm)*n*dn + 2.0d0*l*m*(dn**2 + n*d2n) )
+         case (2) ! delta
+            Cmnj = m_sqrt3_half * ( (d2l*m + 2.0d0*dl*dm + l*d2m)*(1.0d0 + n**2) + 2.0d0*(dl*m + l*dm)*(2.0d0*n*dn) + &
+                                     l*m*(2.0d0*(dn**2 + n*d2n)) )
+         endselect
+
+      !---------------
+      case (6) ! l=2: d_3z^2-r^2 d_yz
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * ( (d2m*n + 2.0d0*dm*dn + m*d2n)*(n**2 - 0.5d0*alpha) + 2.0d0*(dm*n + m*dn)*(2.0d0*n*dn - 0.5d0*d_alpha) + &
+                                m*n*(2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha) )
+         case (1) ! pi
+            Cmnj = m_sqrt3 * ( (d2m*n + 2.0d0*dm*dn + m*d2n)*(alpha - n**2) + 2.0d0*(dm*n + m*dn)*(d_alpha - 2.0d0*n*dn) + &
+                                m*n*(d2_alpha - 2.0d0*(dn**2 + n*d2n)) )
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * ((d2m*n + 2.0d0*dm*dn + m*d2n)*alpha + 2.0d0*(dm*n + m*dn)*d_alpha + m*n*d2_alpha)
+         endselect
+
+      !---------------
+      case (7) ! l=2: d_3z^2-r^2 d_xz
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3 * ( (d2l*n + 2.0d0*dl*dn + l*d2n)*(n**2 - 0.5d0*alpha) + &
+                               2.0d0*(dl*n + l*dn)*(2.0d0*n*dn - 0.5d0*d_alpha) + l*n*(2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha) )
+         case (1) ! pi
+            Cmnj = m_sqrt3 * ( (d2l*n + 2.0d0*dl*dn + l*d2n)*(alpha - n**2) + 2.0d0*(dl*n + l*dn)*(d_alpha - 2.0d0*n*dn) + &
+                                l*n*(d2_alpha - 2.0d0*(dn**2 + n*d2n)) )
+         case (2) ! delta
+            Cmnj = -m_sqrt3_half * ( (d2l*n + 2.0d0*dl*dn + l*d2n)*alpha + 2.0d0*(dl*n + l*dn)*d_alpha + l*n*d2_alpha )
+         endselect
+
+      !---------------
+      case (8) ! l=3: d_3z^2-r^2 d_x^2-y^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+         beta = l**2 - m**2
+         d_beta = 2.0d0*(l*dl - m*dm)
+         d2_beta = 2.0d0*(dl**2 + l*d2l - dm**2 - m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = m_sqrt3_half * ( d2_beta*(n**2 - 0.5d0*alpha) + 2.0d0*d_beta*(2.0d0*n*dn - 0.5d0*d_alpha) + &
+                                    beta*(2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha) )
+         case (1) ! pi
+            Cmnj = -m_sqrt3*( 2.0d0*((dn**2 + n*d2n)*beta + n*dn*d_beta) + 2.0d0*n*dn*d_beta + n**2*d2_beta )
+         case (2) ! delta
+            Cmnj = 0.25d0*m_sqrt3*( 2.0d0*((dn**2 + n*d2n)*beta + n*dn*d_beta)+ 2.0d0*n*dn*d_beta + (1.0d0 + n**2)*d2_beta )
+         endselect
+
+      !---------------
+      case (9) ! l=4: d_3z^2-r^2 d_3z^2-r^2
+         alpha = l**2 + m**2
+         d_alpha = 2.0d0*(l*dl + m*dm)
+         d2_alpha = 2.0d0*(dl**2 + l*d2l + dm**2 + m*d2m)
+         select case (j)
+         case (0) ! sigma
+            Cmnj = 2.0d0*( (2.0d0*n*dn - 0.5d0*d_alpha)**2 + (n**2 - 0.5d0*alpha)*(2.0d0*(dn**2 + n*d2n) - 0.5d0*d2_alpha) )
+         case (1) ! pi
+            Cmnj = 3.0d0*( 2.0d0*((dm**2 + m*d2m)*alpha + m*dm*d_alpha) + 2.0d0*m*dm*d_alpha + m**2*d2_alpha )
+         case (2) ! delta
+            Cmnj = 1.5d0*(d_alpha**2 + alpha*d2_alpha)
+         endselect
+      endselect ! select case (l2)
+   endselect ! select case (l1)
+
+end function d2_KS_Cmnj_orbital
+
 
 
 
