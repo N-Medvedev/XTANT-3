@@ -47,7 +47,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 01.03.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 14.04.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -4516,7 +4516,7 @@ end subroutine output_parameters_file
 
 
 ! Create the folder where the results will be storred:
-subroutine create_output_folder(Scell,matter,laser,numpar)
+subroutine create_output_folder(Scell, matter, laser, numpar)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
@@ -4533,7 +4533,15 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
       matter_name = trim(adjustl(matter%Name))
    endif
 
-   LAS:if (maxval(laser(:)%F) .GT. 0.0d0) then
+   !------------------------------
+   ! 1) If user defined the output name:
+   UDN:if (LEN(trim(adjustl(numpar%output_extra_name))) > 0) then ! user-defined name
+      write(File_name,'(a,a,a)') 'OUTPUT_', trim(adjustl(matter_name))//'_', trim(adjustl(numpar%output_extra_name))
+
+   !------------------------------
+   else UDN ! 2) If user did not defined the output name, construct the default name:
+
+    LAS:if (maxval(laser(:)%F) .GT. 0.0d0) then
       write(ch1,'(f7.1)') (laser(1)%hw)	! photon energy
       if (laser(1)%KOP .EQ. 1) then
          write(ch2,'(f6.1)') (laser(1)%t*2.35482d0)	! pulse duration
@@ -4565,7 +4573,7 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
                trim(adjustl(ch2)), '_F=', trim(adjustl(ch3))
          endif
       endif 
-   else LAS
+    else LAS
       if (numpar%path_sep .EQ. '\') then	! if it is Windows
          do i = 1,size(Scell)
             write(ch1,'(f8.1)') Scell(i)%Te ! electron temperature [K]
@@ -4591,12 +4599,14 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
          write(File_name,'(a,a,a,a,a,a,a,a)') 'OUTPUT_', trim(adjustl(matter_name)), '_Te=', trim(adjustl(ch1)), '_Ta=', &
             trim(adjustl(ch2)), '_', trim(adjustl(ch3))
       endif
-   endif LAS
+    endif LAS
 
-   ! Do TB and MD part only if we want (supercell is larger than 0):
-   if (matter%cell_x*matter%cell_y*matter%cell_z .LE. 0) then
+    ! Do TB and MD part only if we want (supercell is larger than 0):
+    if (matter%cell_x*matter%cell_y*matter%cell_z .LE. 0) then
       write(File_name,'(a,a)') trim(adjustl(File_name)), '_MC_only'
-   endif 
+    endif
+   endif UDN
+
    File_name2 = File_name
    i = 0
    inquire(DIRECTORY=trim(adjustl(File_name2)),exist=file_exist)    ! check if input file excists
@@ -4606,8 +4616,13 @@ subroutine create_output_folder(Scell,matter,laser,numpar)
       write(File_name2,'(a,a,a)') trim(adjustl(File_name)), '_v', trim(adjustl(ch1))
       inquire(DIRECTORY=trim(adjustl(File_name2)),exist=file_exist)    ! check if input file excists
    enddo
-   command='mkdir '//trim(adjustl(File_name2)) ! to create a folder use this command
-   !CALL system(command)  ! create the folder
+   if (numpar%path_sep .EQ. '\') then	! if it is Windows
+      command='md "'//trim(adjustl(File_name2))//'"' ! to create a folder use this command
+      !CALL system(command)  ! create the folder
+   else
+      command='mkdir '//trim(adjustl(File_name2)) ! to create a folder use this command
+      !CALL system(command)  ! create the folder
+   endif
    iret = system(command)
    numpar%output_path = File_name2
 end subroutine create_output_folder

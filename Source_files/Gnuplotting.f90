@@ -43,7 +43,7 @@ subroutine collect_gnuplots(path_sep, out_path, skip_execution)
    character(*), intent(in) :: path_sep, out_path    ! folder with the cmd-files
    logical, intent(in), optional :: skip_execution  ! if you don't want to execute all gnuplots
    !------------------------
-   character(200) :: File_name, command, Gnuplot_all_file
+   character(200) :: File_name, command, Gnuplot_all_file, File_name_withquotes
    integer :: FN, N_f, i, n_slash
    integer :: open_status, iret, idir, leng
    character(200), dimension(:), allocatable :: All_files
@@ -69,11 +69,12 @@ subroutine collect_gnuplots(path_sep, out_path, skip_execution)
    Gnuplot_all_file = trim(adjustl(Gnuplot_all_file))//trim(adjustl(sh_cmd))
 
    ! Include the path to the directory:
+   File_name_withquotes = '"'//trim(adjustl(output_path))//'"'//trim(adjustl(path_sep))//trim(adjustl(Gnuplot_all_file))
    File_name = trim(adjustl(output_path))//trim(adjustl(path_sep))//trim(adjustl(Gnuplot_all_file))
 
    ! Save the names of all gnuplot scripts into this file:
    if (trim(adjustl(path_sep)) == '\') then  ! if it is Windows
-      command = 'dir '//trim(adjustl(output_path))//'\*'//trim(adjustl(sh_cmd))//' /b >'//trim(adjustl(File_name))
+      command = 'dir "'//trim(adjustl(output_path))//'"\*'//trim(adjustl(sh_cmd))//' /b >'//trim(adjustl(File_name_withquotes))
    else ! linux:
       command = "ls -t "//trim(adjustl(output_path))//" | grep '"//trim(adjustl(sh_cmd))//"' >"//trim(adjustl(File_name))
    endif
@@ -92,10 +93,12 @@ subroutine collect_gnuplots(path_sep, out_path, skip_execution)
 
    ! Allocate array with them:
    allocate(All_files(N_f)) ! array with all relevant file names
+   !print*, 'N_f:', N_f
 
    ! Read file names:
    do i = 1,N_f
       read(FN,*) All_files(i)
+      !print*, i, trim(adjustl(All_files(i)))
    enddo
 
    ! Rewind file to overwrite including the calls:

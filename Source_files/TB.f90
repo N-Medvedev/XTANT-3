@@ -1601,7 +1601,7 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
          do i_at = 1, size(matter%Atoms)
             N_at = COUNT(MASK = (Scell%MDatoms(:)%KOA == i_at))
             if (N_at <= 0) N_at = 1   ! in case there are no atoms of this kind
-            write(*,'(a,f,f)') 'Mulliken average charge: '//trim(adjustl(matter%Atoms(i_at)%Name))//':', &
+            write(*,'(a,f,f)') ' Mulliken average charge: '//trim(adjustl(matter%Atoms(i_at)%Name))//':', &
                      SUM(Scell%MDAtoms(:)%q, MASK = (Scell%MDatoms(:)%KOA == i_at)) / dble(N_at), &
                      matter%Atoms(i_at)%mulliken_q
          enddo
@@ -3550,7 +3550,8 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter, Tconf
    real(8), intent(out) :: Tconf	! [K] configurational temperature
    !--------------------------------------------
    real(8), dimension(:,:), allocatable :: F, dF	! forces and derivatives
-   real(8) :: F_sum, dF_sum, acc(3), Ftest(3)
+   real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr	! forces and derivatives [eV/A], [eV/A^2]
+   real(8) :: F_sum, dF_sum, acc(3), Ftest(3), dF_temp
    integer :: Nat, i
    real(8), pointer :: Mass
 
@@ -3561,17 +3562,31 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter, Tconf
    dF = 0.0d0
    
    ! Forces and their derivatives:
-   call get_derivatives_and_forces_r(Scell, numpar, F, dF)	! see below
+   call get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep, Fatr, dFrep, dFatr)	! see below
 
    ! Configurational temperature:
    F_sum = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) )
-   dF_sum = SUM( (dF(1,:)+dF(2,:)+dF(3,:)) )
+   dF_sum = SUM( (dF(1,:) + dF(2,:) + dF(3,:)) )
    if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
       Tconf = 0.0d0  ! [K]
    else  ! defined:
       Tconf = F_sum / dF_sum    ! [eV]
       Tconf = Tconf*g_kb	! [eV] -> [K]
    endif
+   !write(*,'(a,f,f,f)') '1:', F_sum, dF_sum, Tconf
+
+   ! Test config temp:
+   F_sum = SUM( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) )
+   dF_temp = dF_sum
+   dF_sum = dF_temp + 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV
+   if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
+      Tconf = 0.0d0  ! [K]
+   else  ! defined:
+      Tconf = F_sum / dF_sum    ! [eV]
+      Tconf = Tconf*g_kb	! [eV] -> [K]
+   endif
+   !write(*,'(a,f,f,f,f)') '2:', F_sum, dF_temp, 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV, Tconf
+
 
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -3597,10 +3612,11 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter, Tconf
 end subroutine Get_configurational_temperature_Pettifor
 
 
-subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF)
+subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out, dFrep_out, dFatr_out)
    type(Super_cell), dimension(:), intent(in) :: Scell	! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), dimension(:,:), allocatable, intent(inout):: F, dF	! forces and derivatives [eV/A], [eV/A^2]
+   real(8), dimension(:,:), allocatable, intent(inout), optional :: Frep_out, Fatr_out, dFrep_out, dFatr_out	! forces and derivatives [eV/A], [eV/A^2]
    !-----------------------------------------------------------
    real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr	! forces and derivatives [eV/A], [eV/A^2]
    real(8), dimension(:,:,:), allocatable :: M_Vs  ! matrix of functions Vs
@@ -3693,7 +3709,54 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF)
    ! Combine attractive and repulsive parts of forces and derivatives:
    F = Frep + Fatr	! forces [eV/A]
    dF = dFrep + dFatr	! derivatives of forces [eV/A^2]
-   
+
+
+   ! Testing:
+   !dF = 0.5d0*(dFrep + dFatr)	! derivatives of forces [eV/A^2] (ok ?)
+   !dF = 0.5d0*dFrep + dFatr	! derivatives of forces [eV/A^2] (doesn't work)
+   !dF = dFrep + 2.0d0*dFatr	! derivatives of forces [eV/A^2] (doesn't work)
+   !dF = dFrep + 0.5d0*dFatr	! derivatives of forces [eV/A^2] ()
+
+   ! Testing-2:
+   !F = Frep + 2.0d0*Fatr   ! forces [eV/A] ( works for Tconfig/5)
+   !dF = dFrep + dFatr	! derivatives of forces [eV/A^2]
+
+   ! Testing-3:
+   !F = Frep + Fatr*0.5d0   ! forces [eV/A] ( works for Tconfig/5)
+   !dF = dFrep + dFatr - Fatr*0.5d0/Scell(i)%TeeV 	! derivatives of forces [eV/A^2]
+
+   if (present(Frep_out)) then
+      if (.not.allocated(Frep_out)) allocate(Frep_out(3,N))
+      Frep_out = Frep
+   endif
+   if (present(Fatr_out)) then
+      if (.not.allocated(Fatr_out)) allocate(Fatr_out(3,N))
+      Fatr_out = Fatr
+   endif
+   if (present(dFrep_out)) then
+      if (.not.allocated(dFrep_out)) allocate(dFrep_out(3,N))
+      dFrep_out = dFrep
+   endif
+   if (present(dFatr_out)) then
+      if (.not.allocated(dFatr_out)) allocate(dFatr_out(3,N))
+      dFatr_out = dFatr
+   endif
+
+!    print*,'--------------------------'
+!    i = transfer( maxloc( Frep(1,:)*Frep(1,:) + Frep(2,:)*Frep(2,:) + Frep(3,:)*Frep(3,:)), i )
+!    print*, 'Max #', i
+!    print*, 'Fr ', Frep(:,i)
+!    print*, 'Fa ', Fatr(:,i)
+!    print*, 'dFr', dFrep(:,i)
+!    print*, 'dFa', dFatr(:,i)
+!    i = transfer( minloc( Frep(1,:)*Frep(1,:) + Frep(2,:)*Frep(2,:) + Frep(3,:)*Frep(3,:)), i )
+!    print*, 'Min #', i
+!    print*, 'Fr ', Frep(:,i)
+!    print*, 'Fa ', Fatr(:,i)
+!    print*, 'dFr', dFrep(:,i)
+!    print*, 'dFa', dFatr(:,i)
+!    print*,'--------------------------'
+
    ! Clean up:
    if (allocated(Frep)) deallocate(Frep)
    if (allocated(Fatr)) deallocate(Fatr)
@@ -3726,10 +3789,10 @@ subroutine Construct_M_cos(Scell,  M_cos)
       do atom_2 = 1,m ! do only for atoms close to that one  
          j => Scell%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
          if (j .GT. 0) then
-            r => Scell%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
             x => Scell%Near_neighbor_dist(i,atom_2,1) ! at this distance, X
             y => Scell%Near_neighbor_dist(i,atom_2,2) ! at this distance, Y
             z => Scell%Near_neighbor_dist(i,atom_2,3) ! at this distance, Z
+            r => Scell%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
             
             ! Directional cosines:
             M_cos(i,j,1) = x/r
