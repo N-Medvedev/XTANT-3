@@ -290,16 +290,20 @@ function get_configurational_temperature(Scell, matter, numpar) result(Ta)
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    !-------------------
    integer :: Nat, i
-   real(8) :: F(3), F0(3), F2(3), dF(3), Pot_tot, acc(3), acc0(3), V(3), Pot_den, Pot_num
+   real(8) :: F(3), F0(3), F2(3), dF(3), Pot_tot, acc(3), acc0(3), V(3), Pot_den, Pot_num, V_ave
    real(8), pointer :: Mass
 
    Nat = size(Scell%MDAtoms)  ! number of atoms
 
-   ! For all atoms:
+   ! Average absolute velosity:
+   V_ave = SUM(SQRT(Scell%MDAtoms(:)%V(1)*Scell%MDAtoms(:)%V(1) + &
+                    Scell%MDAtoms(:)%V(2)*Scell%MDAtoms(:)%V(2) + &
+                    Scell%MDAtoms(:)%V(3)*Scell%MDAtoms(:)%V(3) ) )/dble(Nat)
    F2 = 0.0d0  ! to start with
    dF = 0.0d0  ! to start with
    Pot_den = 0.0d0   ! to start with
    Pot_num = 0.0d0   ! to start with
+   ! For all atoms:
    do i = 1, Nat
       Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma   ! atomic mass [kg]
 
@@ -316,7 +320,10 @@ function get_configurational_temperature(Scell, matter, numpar) result(Ta)
       acc0(:) = Scell%MDAtoms(i)%accel0(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
       F0(:) = Mass * acc0(:) ! [N]
       V(:) = Scell%MDAtoms(i)%V(:)  ! [A/fs]
-      if (ANY(V(:) < 1.0d0-10)) cycle  ! skip undefined contribution
+
+      if (ANY(abs(V(:)) < 1.0d-5*V_ave)) then
+         cycle  ! skip undefined contribution
+      endif
       ! Numerical div*F:
       dF(:) = (F(:) - F0(:)) / numpar%dt / V(:) ! [N/A]
       ! Denominator:
@@ -690,7 +697,7 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
       !Pot_tot = Pot_tot / dble( count(atoms_group_ind(:)) )
 
       ! Configurational temperature from the equipartition theorem as potential energy per atom per degree of freedom:
-      Ta = -(Pot_tot+matter%p_ext) / (3.0d0 * dble(Nat))   ! [eV]
+      Ta = (Pot_tot+matter%p_ext) / (3.0d0 * dble(Nat))   ! [eV]
    endif
 
    ! Convert [eV] -> {K}:

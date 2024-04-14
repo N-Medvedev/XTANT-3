@@ -64,9 +64,9 @@ subroutine dHij_r(TB_Hamil, atoms, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, F,
    integer :: N, Nat, k
    Nat = size(Scell(1)%MDatoms)	! number of atoms
    N = size(Scell(1)%Ei)	! number of the energy levels
-   if (.not.allocated(F)) allocate(F(3,N))
+   if (.not.allocated(F)) allocate(F(3,Nat))
    F = 0.0d0
-   if (.not.allocated(dF)) allocate(dF(3,N))
+   if (.not.allocated(dF)) allocate(dF(3,Nat))
    dF = 0.0d0
    
 !$omp PARALLEL private(k, Eelectr_r, Eelectr_2r, dHijx_r_all, dHijy_r_all, dHijz_r_all, d2Hijx_r2_all, d2Hijy_r2_all, d2Hijz_r2_all) 
@@ -417,7 +417,7 @@ subroutine dHamilton_one_r(TB, i, j, k, dHijx, dHijy, dHijz, d2Hijx, d2Hijy, d2H
       ! For pairs of atoms, fill the hamiltonain with Hopping Integrals.
       ! Call the subroutine to calculate these hoppings: 
       call dHopping_r(dtsx, dtsy, dtsz, d2tsx, d2tsy, d2tsz, i, j, k, TB, Scell, NSC, atom_2, M_Vs, M_dVs, M_d2Vs, M_cos)
-      ! Then fill the hamiltonain with correspongin hopping integrals, as in
+      ! Then fill the hamiltonain with corresponding hopping integrals, as in
       ! H.Jeschke PhD thesis, Eq.(2.42), Page 40:
       N = size(TB%V0) ! that's how many orbitals per atom
       do ki = 1,N
@@ -671,9 +671,12 @@ subroutine dHopping_r(dtsx, dtsy, dtsz,  d2tsx, d2tsy, d2tsz,  i, j, k, TB, Scel
       dtsy(3,2) = (xr*dmds(2) + yr*dlds(2))*temp + temp1*drdry ! pxpy
       dtsz(3,2) = (xr*dmds(3) + yr*dlds(3))*temp + temp1*drdrz ! pxpy
       ! Second:
-      d2tsx(3,2) = temp*(d2lds(1)*yr + d2mds(1)*xr + 2.0d0*(dlds(1)*dmds(1))) + (dVs3 - dVs4)*(2.0d0*(dlds(1)*yr + dmds(1)*xr)*drdrx + xr*yr*d2rdr2x) + (d2Vs3 - d2Vs4)*xr*yr*drdrx2
-      d2tsy(3,2) = temp*(d2lds(2)*yr + d2mds(2)*xr + 2.0d0*(dlds(2)*dmds(2))) + (dVs3 - dVs4)*(2.0d0*(dlds(2)*yr + dmds(2)*xr)*drdry + xr*yr*d2rdr2y) + (d2Vs3 - d2Vs4)*xr*yr*drdry2
-      d2tsz(3,2) = temp*(d2lds(3)*yr + d2mds(3)*xr + 2.0d0*(dlds(3)*dmds(3))) + (dVs3 - dVs4)*(2.0d0*(dlds(3)*yr + dmds(3)*xr)*drdrz + xr*yr*d2rdr2z) + (d2Vs3 - d2Vs4)*xr*yr*drdrz2
+      d2tsx(3,2) = temp*(d2lds(1)*yr + d2mds(1)*xr + 2.0d0*(dlds(1)*dmds(1))) + &
+                     (dVs3 - dVs4)*(2.0d0*(dlds(1)*yr + dmds(1)*xr)*drdrx + xr*yr*d2rdr2x) + (d2Vs3 - d2Vs4)*xr*yr*drdrx2
+      d2tsy(3,2) = temp*(d2lds(2)*yr + d2mds(2)*xr + 2.0d0*(dlds(2)*dmds(2))) + &
+                     (dVs3 - dVs4)*(2.0d0*(dlds(2)*yr + dmds(2)*xr)*drdry + xr*yr*d2rdr2y) + (d2Vs3 - d2Vs4)*xr*yr*drdry2
+      d2tsz(3,2) = temp*(d2lds(3)*yr + d2mds(3)*xr + 2.0d0*(dlds(3)*dmds(3))) + &
+                     (dVs3 - dVs4)*(2.0d0*(dlds(3)*yr + dmds(3)*xr)*drdrz + xr*yr*d2rdr2z) + (d2Vs3 - d2Vs4)*xr*yr*drdrz2
 
       ! First:
       dtsx(2,3) = dtsx(3,2)
@@ -690,9 +693,12 @@ subroutine dHopping_r(dtsx, dtsy, dtsz,  d2tsx, d2tsy, d2tsz,  i, j, k, TB, Scel
       dtsy(4,2) = (xr*dnds(2) + zr*dlds(2))*temp + temp1*drdry ! pxpz
       dtsz(4,2) = (xr*dnds(3) + zr*dlds(3))*temp + temp1*drdrz ! pxpz
       ! Second:
-      d2tsx(4,2) = temp*(d2lds(1)*zr + d2nds(1)*xr + 2.0d0*(dlds(1)*dnds(1))) + (dVs3 - dVs4)*(2.0d0*(dlds(1)*zr + dnds(1)*xr)*drdrx + xr*zr*d2rdr2x) + (d2Vs3 - d2Vs4)*xr*zr*drdrx2
-      d2tsy(4,2) = temp*(d2lds(2)*zr + d2nds(2)*xr + 2.0d0*(dlds(2)*dnds(2))) + (dVs3 - dVs4)*(2.0d0*(dlds(2)*zr + dnds(2)*xr)*drdry + xr*zr*d2rdr2y) + (d2Vs3 - d2Vs4)*xr*zr*drdry2
-      d2tsz(4,2) = temp*(d2lds(3)*zr + d2nds(3)*xr + 2.0d0*(dlds(3)*dnds(3))) + (dVs3 - dVs4)*(2.0d0*(dlds(3)*zr + dnds(3)*xr)*drdrz + xr*zr*d2rdr2z) + (d2Vs3 - d2Vs4)*xr*zr*drdrz2
+      d2tsx(4,2) = temp*(d2lds(1)*zr + d2nds(1)*xr + 2.0d0*(dlds(1)*dnds(1))) + &
+                     (dVs3 - dVs4)*(2.0d0*(dlds(1)*zr + dnds(1)*xr)*drdrx + xr*zr*d2rdr2x) + (d2Vs3 - d2Vs4)*xr*zr*drdrx2
+      d2tsy(4,2) = temp*(d2lds(2)*zr + d2nds(2)*xr + 2.0d0*(dlds(2)*dnds(2))) + &
+                     (dVs3 - dVs4)*(2.0d0*(dlds(2)*zr + dnds(2)*xr)*drdry + xr*zr*d2rdr2y) + (d2Vs3 - d2Vs4)*xr*zr*drdry2
+      d2tsz(4,2) = temp*(d2lds(3)*zr + d2nds(3)*xr + 2.0d0*(dlds(3)*dnds(3))) + &
+                     (dVs3 - dVs4)*(2.0d0*(dlds(3)*zr + dnds(3)*xr)*drdrz + xr*zr*d2rdr2z) + (d2Vs3 - d2Vs4)*xr*zr*drdrz2
 
       ! First:
       dtsx(2,4) = dtsx(4,2)
@@ -722,9 +728,12 @@ subroutine dHopping_r(dtsx, dtsy, dtsz,  d2tsx, d2tsy, d2tsz,  i, j, k, TB, Scel
       dtsy(4,3) = (yr*dnds(2) + zr*dmds(2))*temp + temp1*drdry ! pypz
       dtsz(4,3) = (yr*dnds(3) + zr*dmds(3))*temp + temp1*drdrz ! pypz
       ! Second:
-      d2tsx(4,3) = temp*(d2mds(1)*zr + d2nds(1)*yr + 2.0d0*(dmds(1)*dnds(1))) + (dVs3 - dVs4)*(2.0d0*(dmds(1)*zr + dnds(1)*yr)*drdrx + yr*zr*d2rdr2x) + (d2Vs3 - d2Vs4)*yr*zr*drdrx2
-      d2tsy(4,3) = temp*(d2mds(2)*zr + d2nds(2)*yr + 2.0d0*(dmds(2)*dnds(2))) + (dVs3 - dVs4)*(2.0d0*(dmds(2)*zr + dnds(2)*yr)*drdry + yr*zr*d2rdr2y) + (d2Vs3 - d2Vs4)*yr*zr*drdry2
-      d2tsz(4,3) = temp*(d2mds(3)*zr + d2nds(3)*yr + 2.0d0*(dmds(3)*dnds(3))) + (dVs3 - dVs4)*(2.0d0*(dmds(3)*zr + dnds(3)*yr)*drdrz + yr*zr*d2rdr2z) + (d2Vs3 - d2Vs4)*yr*zr*drdrz2
+      d2tsx(4,3) = temp*(d2mds(1)*zr + d2nds(1)*yr + 2.0d0*(dmds(1)*dnds(1))) + &
+                     (dVs3 - dVs4)*(2.0d0*(dmds(1)*zr + dnds(1)*yr)*drdrx + yr*zr*d2rdr2x) + (d2Vs3 - d2Vs4)*yr*zr*drdrx2
+      d2tsy(4,3) = temp*(d2mds(2)*zr + d2nds(2)*yr + 2.0d0*(dmds(2)*dnds(2))) + &
+                     (dVs3 - dVs4)*(2.0d0*(dmds(2)*zr + dnds(2)*yr)*drdry + yr*zr*d2rdr2y) + (d2Vs3 - d2Vs4)*yr*zr*drdry2
+      d2tsz(4,3) = temp*(d2mds(3)*zr + d2nds(3)*yr + 2.0d0*(dmds(3)*dnds(3))) + &
+                     (dVs3 - dVs4)*(2.0d0*(dmds(3)*zr + dnds(3)*yr)*drdrz + yr*zr*d2rdr2z) + (d2Vs3 - d2Vs4)*yr*zr*drdrz2
 
       ! First:
       dtsx(3,4) = dtsx(4,3)
@@ -1732,7 +1741,6 @@ function Vs(TB,i,r) ! functions Vsssigma, /p sigma, /p pi
       r_r1 = r-r1
       r_r12 = r_r1*r_r1 
       Vs = V0(i)*(c0(i) + c1(i)*r_r1 + c2(i)*r_r12 + c3(i)*r_r12*r_r1) ! smooth zeroise in between
-      !Vs = (c0(i) + c1(i)*r_r1 + c2(i)*r_r12 + c3(i)*r_r12*r_r1) ! smooth zeroise in between
    else 
       Vs = V0(i)*((r0/r)**n)*dexp(n*(-(r/rc(i))**nc(i) + (r0/rc(i))**nc(i))) ! close atoms
    endif
@@ -1775,7 +1783,6 @@ function dVs(TB,i,r,Vs_precalc) ! functions Vsssigma, /p sigma, /p pi
    elseif (r .GT. r1) then
       r_r1 = r-r1
       dVs = V0(i)*(c1(i) + c2(i)*r_r1*2.0d0 + c3(i)*r_r1*r_r1*3.0d0) ! smooth zeroise in between
-      !dVs = (c1(i) + c2(i)*r_r1*2.0d0 + c3(i)*r_r1*r_r1*3.0d0) ! smooth zeroise in between
    else
       !dVs = -n*Vs(TB,i,r)*(1.0d0/r + nc(i)/rc(i)*(r/rc(i))**(nc(i)-1.0d0))  ! close to atoms
       if (present(Vs_precalc)) then	! no need to recalculate it, it is provided:
@@ -1812,14 +1819,18 @@ function d2Vs(TB, i, r, Vs_r, dVs_r)	! second derevative of the attractive poten
    c2 => TB%c2
    c3 => TB%c3
    ! Different functional dependencies for different distances:
-   if ((r .GT. rm) .or. (Vs_r <= 0.0d0)) then ! cut-off distance
+   if (r .GT. rm) then ! cut-off distance
       d2Vs = 0.0d0
    elseif (r .GT. r1) then
       r_r1 = r-r1
       d2Vs = V0(i)*(c2(i)*2.0d0 + c3(i)*r_r1*6.0d0) ! smooth zeroise in between
       !d2Vs = (c2(i)*2.0d0 + c3(i)*r_r1*6.0d0) ! smooth zeroise in between
    else
-      d2Vs = (-1.0d0/r + dVs_r/Vs_r)*dVs_r - n/r*Vs_r*nc(i)*nc(i)/rc(i)*(r/rc(i))**(nc(i)-1)
+      if (abs(Vs_r) <= 1.0d-12*abs(dVs_r)) then
+         d2Vs = 0.0d0
+      else
+         d2Vs = (-1.0d0/r + dVs_r/Vs_r)*dVs_r - n/r*Vs_r*nc(i)*nc(i)/rc(i)*(r/rc(i))**(nc(i)-1.0d0)
+      endif
    endif
    nullify(V0, r0, n, r1, rm, nc, rc, c0, c1, c2, c3)
 end function d2Vs
@@ -2038,7 +2049,6 @@ subroutine dE2rep_dr2(TB_Repuls, atoms, Scell, numpar, F, dF) ! second derivativ
    ! Get all fx(psi(phi)) functions for all atoms (i):
    call construct_dfx_matrix(Scell, TB_Repuls, psi_vec, dfx_vec, d2fx_vec)	! see below
    
-   !!$omp PARALLEL DO private(ian,i1,dpsi,dpsi2,psi,m,j1,x,y,z,a_r,dik,djk,d_phi_r,b2,phi_tr,ddlta, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, b_delta,b2_delta,a,a2,atom_2)
    !$omp PARALLEL DO private(ian,i1,dpsi,dpsi2,m,j1,x,y,z,a_r,dik,djk,dphi_point,d2phi_point,ddlta, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, atom_2)
    do ian = 1, n	! Forces for all atoms
      do i1 = 1, n	! contribution from all other atoms
@@ -2231,7 +2241,7 @@ subroutine dErdr_Pressure_s(TB_Repuls, atoms, Scell, NSC, numpar) ! derivatives 
 end subroutine dErdr_Pressure_s
 
 
-! The derivative of the function by its argument. To be multiplied later by the derivative or the argument by the variable:
+! The derivative of the function by its argument. To be multiplied later by the derivative of the argument by the variable:
 ! d Phi / d r_{ij} * d r_{ij} / d r_{k,beta}
 function dphi(TB_Repuls, a_x, Phi_precalc)	! derevative of the repulsive potential itself
    ! it corresponds to the Eq. 2.37, Page 40 in H.Jeschke PhD thesis.
@@ -2296,7 +2306,7 @@ function d2phi(TB_Repuls, a_x, phi_r, dphi)	! second derevative of the repulsive
    d1 => TB_Repuls%d1
    dm => TB_Repuls%dm
    
-   if ((a_x .GT. dm) .or. (phi_r <= 0.0d0)) then
+   if (a_x .GT. dm) then
       d2phi = 0.0d0
    elseif (a_x .GT. d1) then
       x_d1 = a_x-d1
@@ -2304,7 +2314,11 @@ function d2phi(TB_Repuls, a_x, phi_r, dphi)	! second derevative of the repulsive
    elseif (a_x .LE. 0.0d0) then
       d2phi = 0.0d0
    else
-      d2phi = (-1.0d0/a_x + dphi/phi_r)*dphi - m/a_x*phi_r*mc*mc/dc*(a_x/dc)**(mc-1)
+      if (abs(phi_r) <= 1.0d-12*abs(dphi)) then
+         d2phi = 0.0d0
+      else
+         d2phi = (-1.0d0/a_x + dphi/phi_r)*dphi - m/a_x*phi_r*mc*mc/dc*(a_x/dc)**(mc-1)
+      endif
    endif
    nullify(phi0, d0, m, mc, dc, c0, c1, c2, c3, d1, dm)
 end function d2phi

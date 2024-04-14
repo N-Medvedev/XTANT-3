@@ -147,6 +147,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
    numpar%NOMP = 1   ! unparallelized by default
 #endif
+   numpar%output_extra_name = '' ! no additional text in the output folder name
    numpar%redo_MFP = .false.     ! no need to recalculate mean free paths by default
    numpar%print_MFP = .false.    ! no need to printout mean free paths by default
    numpar%print_Ta = .false.  ! no need in various atomic temperature definitions
@@ -6216,12 +6217,29 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
    ! Check if there are additional options provided:
    read_well = .true.   ! to start with
    RDID: do while (read_well)
-      read(FN,*,IOSTAT=Reason) text
+      !read(FN,*,IOSTAT=Reason) text
+      read_line = ''
+      ! First, read it as unformatted:
+      read(FN, *, IOSTAT=Reason) read_line
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) exit RDID  ! end of file, stop reading
+
+      ! If there is anyting in this line, try reading it as formatted:
+      if ( LEN(trim(adjustl(read_line))) > 0 ) then
+         backspace(FN)  ! reread the same line
+         count_lines = count_lines - 1
+         read(FN, '(a)', IOSTAT=Reason) read_line
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) exit RDID  ! end of file, stop reading
+      endif
+
+      read(read_line,*,IOSTAT=Reason) text
+      count_lines = count_lines-1   ! reread the same line
       call read_file(Reason, count_lines, read_well)
       if (.not. read_well) exit RDID  ! end of file, stop reading
 
       ! Check if additional INPUT options are provided:
-      call interpret_user_data_INPUT(FN, trim(adjustl(File_name)), count_lines, text, Scell, numpar, Err) ! below
+      call interpret_user_data_INPUT(FN, trim(adjustl(File_name)), count_lines, read_line, Scell, numpar, Err) ! below
       if (Err%Err) exit RDID  ! end of file, stop reading
 
       ! Check if optional numerical or model data provided by the user (e.g., to overwrite default atomic data):
@@ -6565,11 +6583,11 @@ end subroutine check_coordinates_filename
 
 
 
-subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, numpar, Err)
+subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scell, numpar, Err)
    integer, intent(in) :: FN  ! file to read from
    character(*), intent(in) :: File_name
    integer, intent(inout) :: count_lines  ! line we are reading
-   character(*), intent(in) :: string ! what was read in the previous line
+   character(*), intent(in) :: string_in ! what was read in the previous line
    type(Super_cell), dimension(:), allocatable, intent(inout) :: Scell ! suoer-cell with all the atoms inside
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Error_handling), intent(inout) :: Err	! error save
@@ -6578,13 +6596,33 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string, Scell, 
    integer :: Reason, num_phon, i, N
    real(8) :: i_min, i_max
    logical :: read_well
-   character(200) :: Error_descript, temp_ch
+   character(200) :: Error_descript, temp_ch, string
    character(20) :: temp_ch1, temp_ch2, temp_ch3
+
+
+   !print*, trim(adjustl(string_in))
 
    read_well = .true.   ! to start with
    read_var = 0.0d0     ! unused variable in this case
 
+   ! Read first argument in the line:
+   read(string_in,*,IOSTAT=Reason) string
+
    select case (trim(adjustl(string)))
+   !----------------------------------
+   case ('output_name', 'Output_name', 'Outout_Name', 'OUTPUT_NAME', 'outname')
+      ! User-defined additional text in the output folder name:
+      ! Read second argument in the line:
+      read(string_in,*,IOSTAT=Reason) string, numpar%output_extra_name
+      if (Reason /= 0) then ! did not read well, use default:
+         numpar%output_extra_name = ''
+         write(*,'(a)') 'No valid output directory name provided, using default'
+      else ! read it well
+         ! Make sure the slash is correct:
+         call ensure_correct_path_separator(numpar%output_extra_name, numpar%path_sep, no_slash=.true.)  ! module "Dealing_with_files"
+         !write(*,'(a)') 'Output directory name provided: '//trim(adjustl(numpar%output_extra_name))
+      endif
+
    !----------------------------------
    case ('Set_V2', 'set_V2', 'set_v2')
       ! Choice of initial atomic velocity distribution:

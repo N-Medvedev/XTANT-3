@@ -979,6 +979,7 @@ type Numerics_param
    ! General flags:
    integer :: save_files_used ! to mark for the output printing out, whether SAVE-files are used or unit cell
    logical :: numpar_in_input ! numpar were already read from the single file, no need for separate file reading
+   character(200) :: output_extra_name ! user-defined additional text in the output folder name
 end type Numerics_param
 !==============================================
 

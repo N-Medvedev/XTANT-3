@@ -46,19 +46,19 @@ cd Source_files
       echo %Starline%
 
       :: List compiler options 
-      SET "Compile_options=/F9999999999 /QxHost /QaxAVX  /fpp /Qmkl=parallel /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /Qfp-stack-check /fp:precise /Qvec /standard-semantics"
+      SET "Compile_options=/F9999999999 /QxHost /QaxAVX /fpp /Qmkl=parallel /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /Qvec /standard-semantics"
 
       :: Set name of the executable:
       SET "Name_of_exe=XTANT_DEBUG.exe"
    ) ELSE (
       IF /I %arg1%==DEBUGOMP (
          echo %Starline%
-         echo Compiling with DEBUGOMP option, OpenMP with /O1 optimization are included
+         echo Compiling with DEBUGOMP option, OpenMP with /Qipo optimization are included
          echo Started at: %date% %time%
          echo %Starline%
 
-         :: List compiler options 
-         SET "Compile_options=/F9999999999 /QxHost /QaxAVX /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /debug:partial /O1 /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /Qfp-stack-check /fp:precise /Qvec /standard-semantics"
+         :: List compiler options
+         SET "Compile_options=/F9999999999 /QxHost /QaxAVX /fpp /Qmkl=parallel /Qopenmp /D OMP_inside /real-size:64 /debug:all /O1 /Qipo /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /Qvec /standard-semantics"
 
          :: Set name of the executable:
          SET "Name_of_exe=XTANT_DEBUG_OMP.exe"
@@ -110,7 +110,7 @@ cd Source_files
    
 
 :: Remove files that are no longer needed
-:: del *.obj *.mod
+:: del *.obj *.mod *.obj *.optrpt *.yaml
 :: del *.obj
 
 :: Go back into the parent directory from the source files:

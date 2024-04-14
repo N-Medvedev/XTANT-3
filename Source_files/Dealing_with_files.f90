@@ -30,18 +30,26 @@ implicit none
 PRIVATE
 
 public :: get_file_stat, Count_columns_in_file, Count_lines_in_file, read_file, close_file, Path_separator, copy_file, &
-          get_file_extension, number_of_columns, ensure_correct_path_separator
+          get_file_extension, number_of_columns, ensure_correct_path_separator, replace_character
 
  contains
 
 
-subroutine ensure_correct_path_separator(Path, path_sep_in)
+subroutine ensure_correct_path_separator(Path, path_sep_in, no_slash)
    character(*), intent(inout) :: Path
    character(len=1), intent(in), optional :: path_sep_in
+   logical, intent(in), optional :: no_slash
    !------------------------------
    character(500) :: work_path
-   character(1) :: path_sep, wrong_path_sep
-   integer :: i
+   character(1) :: path_sep, wrong_path_sep, enterChar
+   integer :: i, found, last_found
+   logical :: no_slash_allowed
+
+   if (present(no_slash)) then
+      no_slash_allowed = no_slash
+   else
+      no_slash_allowed = .false.
+   endif
 
    ! Check the operating system:
    if (present(path_sep_in)) then
@@ -50,7 +58,26 @@ subroutine ensure_correct_path_separator(Path, path_sep_in)
       call Path_separator(path_sep)
    endif
 
-   ! Ensure correct separator for the given OS:
+   work_path = Path
+   Path = ''
+   Path = trim(adjustl(work_path))
+
+   ! 1) Check if there is 'ENTER' character in the path_name:
+   enterChar = ACHAR(10) ! Convert ASCII code 10 to character
+   found = INDEX(Path, enterChar)   ! intrinsic function
+   if (found > 0) then ! there is Enter character
+      work_path = Path
+      Path = ''   ! nully it to overwrite clean
+      ! Exclude Enter:
+      if (found > 1) then
+         Path = trim(adjustl(work_path(1:found-1)))//trim(adjustl(work_path(found+1:)))
+      else
+         Path = trim(adjustl(work_path(found+1:)))
+      endif
+   endif
+   !print*, 'Path-1:', trim(adjustl(Path))
+
+   ! 2) Ensure correct separator for the given OS:
    select case (path_sep)
    case ('/')  ! Unix-based OS
       wrong_path_sep = '\'
@@ -67,7 +94,71 @@ subroutine ensure_correct_path_separator(Path, path_sep_in)
       Path = Path(1:i-1)//path_sep//Path(i+1:)
       i = index(Path, wrong_path_sep)   ! intrinsic
    enddo
+   !print*, 'Path-2:', trim(adjustl(Path))
+
+
+   ! 3) Sanitize (ensure no harmful characters):
+   call sanitize_line(Path, no_slash_allowed) ! below
+   !print*, 'Path-3:', trim(adjustl(Path))
 end subroutine ensure_correct_path_separator
+
+
+
+subroutine sanitize_line(string, no_slash)
+   character(*), intent(inout) :: string     ! string to check characters in
+   logical, intent(in), optional :: no_slash
+   !---------------------------
+
+   ! Exclude special characteres that might be harmful to the system:
+   call replace_character(string, '*')   ! below
+   call replace_character(string, '$')   ! below
+   call replace_character(string, '?')   ! below
+   call replace_character(string, '>')   ! below
+   call replace_character(string, '<')   ! below
+   call replace_character(string, '|')   ! below
+   call replace_character(string, '..')   ! below
+   call replace_character(string, '@')   ! below
+   call replace_character(string, '%')   ! below
+   call replace_character(string, '"')   ! below
+   call replace_character(string, ':')   ! below
+   if (present(no_slash)) then
+      if (no_slash) then   ! exclude slash characters too
+         call replace_character(string, '\')   ! below
+         call replace_character(string, '/')   ! below
+      endif
+   endif
+end subroutine sanitize_line
+
+
+
+subroutine replace_character(string, char_to_check, signal_behavior)
+   character(*), intent(inout) :: string     ! string to check characters in
+   character(*), intent(in) :: char_to_check ! character to replace, if found
+   integer, intent(out), optional :: signal_behavior
+   !-----------------------
+   character(500) :: temp_string
+   integer :: found, Len_char_to_check
+
+   temp_string = string
+   string = ''
+   string = trim(adjustl(temp_string)) ! trim leading whitespaces
+
+   Len_char_to_check = LEN(char_to_check)
+
+   found = INDEX(string, char_to_check)   ! intrinsic function
+   if (present(signal_behavior)) signal_behavior = found ! if even one special character exists, save it
+
+   do while (found /= 0)
+      ! Replace the character(s) with the safe option:
+      string = ''
+      string = temp_string(1:found-1)//'_'//temp_string(found+Len_char_to_check:) ! replace not allowed character with underscore
+      found = INDEX(string, char_to_check)   ! intrinsic function
+      ! Save the new line for the next iteration:
+      temp_string = ''
+      temp_string = string
+   enddo
+
+end subroutine replace_character
 
 
 

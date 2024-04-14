@@ -231,7 +231,7 @@ if (g_numpar%verbose) call print_time_step('Atomic distribution calculated succe
 
 
 ! Calculate configurational temperature (implemented only for Pettifor TB):
-! call Get_configurational_temperature(g_Scell, g_numpar, g_Scell(1)%Tconf)	! module "TB"
+call Get_configurational_temperature_Pettifor(g_Scell, g_numpar, g_matter, g_Scell(1)%Tconf)	! module "TB"
 
 ! Save initial step in output:
 call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
@@ -365,7 +365,7 @@ do while (g_time .LT. g_numpar%t_total)
       call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
       ! Calculate configurational temperature:
-!       call Get_configurational_temperature(g_Scell, g_numpar, g_Scell(1)%Tconf)	! module "TB"
+      call Get_configurational_temperature_Pettifor(g_Scell, g_numpar, g_matter, g_Scell(1)%Tconf)	! module "TB"
       ! Save current output data:
       call write_output_files(g_numpar, g_time, g_matter, g_Scell)    ! module "Dealing_with_output_files"
       ! Communicate with the program (program reads your commands from the communication-file):
