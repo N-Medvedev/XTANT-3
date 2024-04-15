@@ -1636,7 +1636,8 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
        case (1) ! CDF
        case default ! BEB  
          Folder_name = trim(adjustl(numpar%input_path))//'Atomic_parameters'
-         File_name_EPDL = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(m_EPDL_file))
+         !File_name_EPDL = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(m_EPDL_file))
+         File_name_EPDL = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(numpar%EPDL_file))
          inquire(file=trim(adjustl(File_name_EPDL)),exist=file_exist)
          if (.not.file_exist) then
             Error_descript = 'File '//trim(adjustl(File_name_EPDL))//' does not exist, the program terminates'
@@ -1986,7 +1987,8 @@ subroutine get_photon_cross_section_EPDL(Ele, matter, numpar, Nat, Sigma, Err, S
 
     Folder_name = trim(adjustl(numpar%input_path))//'Atomic_parameters'
     !File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//'epdl97.all'
-    File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(m_EPDL_file))
+    !File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(m_EPDL_file))
+    File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(numpar%EPDL_file))
     inquire(file=trim(adjustl(File_name)),exist=file_exist)
     if (.not.file_exist) then
        Error_descript = 'File '//trim(adjustl(File_name))//' does not exist, the program terminates'

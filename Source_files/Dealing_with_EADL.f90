@@ -21,7 +21,9 @@
 ! should never be used for military-related and other than peaceful purposes.
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
-! This module contains subroutines for dealing with EADL and EPDL97 databases
+! This module contains subroutines for dealing with EADL and EPDL databases
+! [1] https://www-nds.iaea.org/epics/
+
 MODULE Dealing_with_EADL
 use Universal_Constants   ! let it use universal constants
 use Objects   ! since it uses derived types, it must know about them from module 'Objects'
@@ -30,15 +32,18 @@ use Little_subroutines, only : Find_monotonous_LE
 implicit none
 PRIVATE
 
- character(12) :: m_EADL_file, m_EPDL_file
+ character(12) :: m_EADL_file, m_EPDL_file, m_EEDL_file
  ! Outdated databases:
 !  parameter(m_EADL_file = 'eadl.all')
 !  parameter(m_EPDL_file = 'epdl97.all')
- ! Updated databases:
- parameter(m_EADL_file = 'EADL2017.all')
- parameter(m_EPDL_file = 'EPDL2017.all')
+!  parameter(m_EADL_file = 'EADL2017.all')
+!  parameter(m_EPDL_file = 'EPDL2017.all')
+ ! Up-to-date databases:
+ parameter(m_EADL_file = 'EADL2023.all')
+ parameter(m_EPDL_file = 'EPDL2023.all')
+ parameter(m_EEDL_file = 'EEDL2023.all')  ! Currently unsused
 
-public :: m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax, &
+public :: m_EADL_file, m_EPDL_file, m_EEDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax, &
          READ_EPDL_TYPE_FILE_real, next_designator, Read_EPDL_data, define_PQN
 
  contains
