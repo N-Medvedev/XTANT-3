@@ -47,7 +47,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 14.04.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 15.04.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1750,7 +1750,7 @@ subroutine close_output_files(Scell, numpar)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    !-------------------
-   !logical file_opened
+   logical :: file_opened
    integer :: Nsiz, i
 
    close(numpar%FN_temperatures)
@@ -1792,10 +1792,11 @@ subroutine close_output_files(Scell, numpar)
       close(numpar%FN_Ta_part)
    endif
 
-   if (allocated(Scell(1)%Displ)) then
+   if ( (allocated(Scell(1)%Displ)) .and. (allocated(numpar%FN_displacements)) ) then
       Nsiz = size(Scell(1)%Displ)   ! how many masks
       do i = 1, Nsiz ! for all atomic masks
-         close(numpar%FN_displacements(i))
+         inquire(unit=numpar%FN_displacements(i),opened=file_opened)
+         if (file_opened) close(numpar%FN_displacements(i))
       enddo
    endif
 end subroutine close_output_files
@@ -5524,6 +5525,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a,es25.3,a)') ' Density of the material: ', matter%dens,' [g/cm^3]'
       write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
    endif
+
+   write(print_to,'(a,a)') ' EADL database used: ', trim(adjustl(numpar%EADL_file))
+   write(print_to,'(a,a)') ' EPDL database used: ', trim(adjustl(numpar%EPDL_file))
 
    !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))

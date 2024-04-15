@@ -29,7 +29,7 @@ use Universal_constants
 use Little_subroutines, only : print_time_step, it_is_number, convert_wavelength_to_hw, convert_frequency_to_hw
 use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file, get_file_extension, &
                               ensure_correct_path_separator
-use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
+use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, m_EEDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
 use Dealing_with_DFTB, only : m_DFTB_directory, construct_skf_filename, read_skf_file, same_or_different_atom_types, &
                            idnetify_basis_size, m_DFTB_norep_directory, read_skf_file_no_rep
 use Dealing_with_BOP, only : m_BOP_directory, m_BOP_file, read_BOP_parameters, idnetify_basis_size_BOP, &
@@ -239,6 +239,10 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    Scell(1)%eps%tau_h = 1.0d0
    ! Potential DOS power:
    numpar%power_b = 6.0d0 ! default value assuming U~1/r^5 (for no particular reason, empirically chosen)
+   ! Names of the EPICS files:
+   numpar%EADL_file = m_EADL_file ! default name, module "Dealing_with_EADL"
+   numpar%EPDL_file = m_EPDL_file ! default name, module "Dealing_with_EADL"
+   numpar%EEDL_file = m_EEDL_file ! default name (UNUSED), module "Dealing_with_EADL"
 end subroutine initialize_default_values
 
 
@@ -751,8 +755,10 @@ subroutine get_CDF_data(matter, numpar, Err, File_name)
       endif
 
       ! Read the file in the CDF format:
+      !call read_CDF_file(FN, matter, numpar, Err, trim(adjustl(File_name)), &
+      !                  trim(adjustl(m_Atomic_parameters)), trim(adjustl(m_EADL_file)), INFO) ! module "Dealing_with_CDF"
       call read_CDF_file(FN, matter, numpar, Err, trim(adjustl(File_name)), &
-                        trim(adjustl(m_Atomic_parameters)), trim(adjustl(m_EADL_file)), INFO) ! module "Dealing_with_CDF"
+                        trim(adjustl(m_Atomic_parameters)), trim(adjustl(numpar%EADL_file)), INFO) ! module "Dealing_with_CDF"
 
       ! When done, close the CDF file
       close(FN)
@@ -844,7 +850,8 @@ subroutine get_EADL_data(matter, numpar, Err)
 
    ! Open eadl.all database:
    !File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//'eadl.all'
-   File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(m_EADL_file))
+   !File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(m_EADL_file))
+   File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(numpar%EADL_file))
    inquire(file=trim(adjustl(File_name)),exist=file_exist)
    if (.not.file_exist) then
       Error_descript = 'File '//trim(adjustl(File_name))//' does not exist, the program terminates'
@@ -6621,6 +6628,29 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
          ! Make sure the slash is correct:
          call ensure_correct_path_separator(numpar%output_extra_name, numpar%path_sep, no_slash=.true.)  ! module "Dealing_with_files"
          !write(*,'(a)') 'Output directory name provided: '//trim(adjustl(numpar%output_extra_name))
+      endif
+
+   !----------------------------------
+   case ('EADLname', 'EADL_name', 'EADL_Name', 'EADL_NAME')
+      ! User-defined name of the file with EADL database:
+      read(string_in,*,IOSTAT=Reason) string, temp_ch
+      if (Reason /= 0) then ! did not read well, use default:
+         write(*,'(a)') 'No valid EADL-database filename provided, using default: ', trim(adjustl(numpar%EADL_file))
+      else ! read it well
+         ! Make sure the slash is correct:
+         call ensure_correct_path_separator(temp_ch, numpar%path_sep)  ! module "Dealing_with_files"
+         numpar%EADL_file = trim(adjustl(temp_ch))
+      endif
+
+   case ('EPDLname', 'EPDL_name', 'EPDL_Name', 'EPDL_NAME')
+      ! User-defined name of the file with EADL database:
+      read(string_in,*,IOSTAT=Reason) string, temp_ch
+      if (Reason /= 0) then ! did not read well, use default:
+         write(*,'(a)') 'No valid EPDL-database filename provided, using default: ', trim(adjustl(numpar%EPDL_file))
+      else ! read it well
+         ! Make sure the slash is correct:
+         call ensure_correct_path_separator(temp_ch, numpar%path_sep)  ! module "Dealing_with_files"
+         numpar%EPDL_file = trim(adjustl(temp_ch))
       endif
 
    !----------------------------------

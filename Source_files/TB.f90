@@ -3551,7 +3551,7 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter, Tconf
    !--------------------------------------------
    real(8), dimension(:,:), allocatable :: F, dF	! forces and derivatives
    real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr	! forces and derivatives [eV/A], [eV/A^2]
-   real(8) :: F_sum, dF_sum, acc(3), Ftest(3), dF_temp
+   real(8) :: F_sum, dF_sum, acc(3), Ftest(3), dF_temp, Te
    integer :: Nat, i
    real(8), pointer :: Mass
 
@@ -3567,18 +3567,22 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter, Tconf
    ! Configurational temperature:
    F_sum = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) )
    dF_sum = SUM( (dF(1,:) + dF(2,:) + dF(3,:)) )
-   if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
-      Tconf = 0.0d0  ! [K]
-   else  ! defined:
-      Tconf = F_sum / dF_sum    ! [eV]
-      Tconf = Tconf*g_kb	! [eV] -> [K]
-   endif
+!    ! This definition only works for Ta=Te, the standard approximation; in our case, does not work, see corrected expression below!
+!    if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
+!       Tconf = 0.0d0  ! [K]
+!    else  ! defined:
+!       Tconf = F_sum / dF_sum    ! [eV]
+!       Tconf = Tconf*g_kb	! [eV] -> [K]
+!    endif
    !write(*,'(a,f,f,f)') '1:', F_sum, dF_sum, Tconf
 
-   ! Test config temp:
+   ! Derived definition for Ta /= Te:
    F_sum = SUM( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) )
    dF_temp = dF_sum
-   dF_sum = dF_temp + 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV
+   ! Make sure the case of Te<<Egap in dielectrics makes some sense:
+   Te = max( Scell(1)%TeeV, 0.1d0*Scell(1)%E_gap ) ! exclude Te->0
+   !dF_sum = dF_temp + 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV
+   dF_sum = dF_temp + 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Te
    if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
       Tconf = 0.0d0  ! [K]
    else  ! defined:

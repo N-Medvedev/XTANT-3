@@ -890,6 +890,9 @@ type Numerics_param
    integer :: ind_starting_V  ! index to set starting velocity distribution: 1=linear; 2=Maxwellian
    logical :: vel_from_file   ! index to mark whether velocities were read from a file or set
    !-----------------
+   ! EPICS data: EADL, EPDL, EEDL:
+   character(200) :: EADL_file, EPDL_file, EEDL_file
+   !-----------------
    real(8), dimension(:), allocatable :: At_bath_reset_grid   ! grid, when to change the Atomic bath parameters
    real(8), dimension(:), allocatable :: At_bath_grid_Ta         ! Atomic bath temperatures array [K]
    real(8), dimension(:), allocatable :: At_bath_grid_tau        ! Atomic bath characteristic times array [fs]
