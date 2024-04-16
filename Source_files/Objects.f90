@@ -646,7 +646,7 @@ type Super_cell
    real(8) :: Q		! mean unballanced charge per atom: <Ne_emit/Na>
    ! Other data:
    real(8) :: Ne_CB	! current number of electrons in CB only (above the band gap)
-   real(8) :: Te, Ta, Tconf   ! [K] temperature of electrons, kinetic temperature of atoms, (configurational Ta, obsolete)
+   real(8) :: Te, Ta, Tconf, Tconf2   ! [K] temperature of electrons, kinetic temperature of atoms, (configurational Ta)
    real(8) :: Ta_var(8)     ! [K] various definition of temperature: kinetic, configurational, etc.
    real(8) :: Ta_r_var(6)   ! [K] dimension-resolved temperatures along X,Y,Z
    real(8) :: Ta_conf_run_average(10)     ! [K] laset 10 points of Ta_config for running average

@@ -3543,15 +3543,14 @@ end subroutine Construct_Aij_old
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Analysis subroutines:
 
-subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter, Tconf)
-   type(Super_cell), dimension(:), intent(in) :: Scell	! supercell with all the atoms as one object
+subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter)
+   type(Super_cell), dimension(:), intent(inout) :: Scell	! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(solid), intent(in), target :: matter	! materil parameters
-   real(8), intent(out) :: Tconf	! [K] configurational temperature
    !--------------------------------------------
    real(8), dimension(:,:), allocatable :: F, dF	! forces and derivatives
    real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr	! forces and derivatives [eV/A], [eV/A^2]
-   real(8) :: F_sum, dF_sum, acc(3), Ftest(3), dF_temp, Te
+   real(8) :: Tconf, F_sum, dF_sum, acc(3), Ftest(3), dF_temp, Te, F_sum2, dF_sum2
    integer :: Nat, i
    real(8), pointer :: Mass
 
@@ -3565,7 +3564,8 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter, Tconf
    call get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep, Fatr, dFrep, dFatr)	! see below
 
    ! Configurational temperature:
-   F_sum = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) )
+   ! 1) Parameters to be used for evaluation of the configurational temperatures:
+   !F_sum = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) )
    dF_sum = SUM( (dF(1,:) + dF(2,:) + dF(3,:)) )
 !    ! This definition only works for Ta=Te, the standard approximation; in our case, does not work, see corrected expression below!
 !    if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
@@ -3576,7 +3576,7 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter, Tconf
 !    endif
    !write(*,'(a,f,f,f)') '1:', F_sum, dF_sum, Tconf
 
-   ! Derived definition for Ta /= Te:
+   ! 2) Configurational temperature (B=F) derived definition for Ta /= Te:
    F_sum = SUM( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) )
    dF_temp = dF_sum
    ! Make sure the case of Te<<Egap in dielectrics makes some sense:
@@ -3589,9 +3589,23 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter, Tconf
       Tconf = F_sum / dF_sum    ! [eV]
       Tconf = Tconf*g_kb	! [eV] -> [K]
    endif
+   Scell(1)%Tconf = Tconf
    !write(*,'(a,f,f,f,f)') '2:', F_sum, dF_temp, 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV, Tconf
 
-
+   ! 3) Second moment configurational temperature (B=F^2*F):
+   F_sum2 = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) * &
+               ( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) ) )
+   dF_temp = SUM( (3.0d0*F(1,:)*F(1,:) +       F(2,:)*F(2,:) +       F(3,:)*F(3,:)) * dF(1,:) + &
+                  (F(1,:)*F(1,:)       + 3.0d0*F(2,:)*F(2,:) +       F(3,:)*F(3,:)) * dF(2,:) + &
+                  (F(1,:)*F(1,:)       +       F(2,:)*F(2,:) + 3.0d0*F(3,:)*F(3,:)) * dF(3,:) )
+   dF_sum2 = dF_temp + 0.5d0*SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) * &
+                                       F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Te
+   if (abs(dF_sum2) <= abs(F_sum2) * 1.0d-10) then ! undifined, or infinite
+      Scell(1)%Tconf2 = 0.0d0  ! [K]
+   else  ! defined:
+      Scell(1)%Tconf2 = F_sum2 / dF_sum2    ! [eV]
+      Scell(1)%Tconf2 = Scell(1)%Tconf2*g_kb	! [eV] -> [K]
+   endif
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Testing:
