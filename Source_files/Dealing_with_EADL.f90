@@ -39,9 +39,9 @@ PRIVATE
 !  parameter(m_EADL_file = 'EADL2017.all')
 !  parameter(m_EPDL_file = 'EPDL2017.all')
  ! Up-to-date databases:
- parameter(m_EADL_file = 'EADL2023.all')
- parameter(m_EPDL_file = 'EPDL2023.all')
- parameter(m_EEDL_file = 'EEDL2023.all')  ! Currently unsused
+ parameter(m_EADL_file = 'EADL2023.ALL')
+ parameter(m_EPDL_file = 'EPDL2023.ALL')
+ parameter(m_EEDL_file = 'EEDL2023.ALL')  ! Currently unsused
 
 public :: m_EADL_file, m_EPDL_file, m_EEDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax, &
          READ_EPDL_TYPE_FILE_real, next_designator, Read_EPDL_data, define_PQN
