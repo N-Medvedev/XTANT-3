@@ -3607,6 +3607,7 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter)
       Scell(1)%Tconf2 = Scell(1)%Tconf2*g_kb	! [eV] -> [K]
    endif
 
+
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Testing:
 !    do i = 1, Nat
@@ -3679,13 +3680,6 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out
       end select
    END ASSOCIATE
 
-!     ! Test of calculations:
-!     do i = 1, N
-!        write(*,'(a)') 'Attractive'
-!        write(*,'(a,i3,f,f,f)') 'X', i, Scell(1)%MDAtoms(i)%forces%att(1)/Scell(1)%supce(1,1), Fatr(1,i), dFatr(1,i)
-!        write(*,'(a,i3,f,f,f)') 'Y', i, Scell(1)%MDAtoms(i)%forces%att(2)/Scell(1)%supce(2,2), Fatr(2,i), dFatr(2,i)
-!        write(*,'(a,i3,f,f,f)') 'Z', i, Scell(1)%MDAtoms(i)%forces%att(3)/Scell(1)%supce(3,3), Fatr(3,i), dFatr(3,i)
-!     enddo
 
    ! Repulsive TB Hamiltonian part:
    ASSOCIATE (ARRAY2 => Scell(1)%TB_Repuls(:,:))
@@ -3710,70 +3704,44 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out
       end select
    END ASSOCIATE !    
    
-   ! Test of calculations:
-!      do i = 1, N
-!         write(*,'(a)') 'Repulsive'
-!         write(*,'(a,i3,f,f,f)') 'X', i, Scell(1)%MDAtoms(i)%forces%rep(1)/Scell(1)%supce(1,1), Frep(1,i), dFrep(1,i)
-!         write(*,'(a,i3,f,f,f)') 'Y', i, Scell(1)%MDAtoms(i)%forces%rep(2)/Scell(1)%supce(2,2), Frep(2,i), dFrep(2,i)
-!         write(*,'(a,i3,f,f,f)') 'Z', i, Scell(1)%MDAtoms(i)%forces%rep(3)/Scell(1)%supce(3,3), Frep(3,i), dFrep(3,i)
-!      enddo
-
-!      do i = 1, N
-!         write(7774,'(i3,es,es,es,es,es,es,es,es,es,es,es,es)') i, Frep(:,i), Fatr(:,i),  dFrep(:,i), dFatr(:,i)
-!      enddo
-!      pause 'WRINTING OUT FORCES AND DERIVATIVES'
-!    close(7774)
-   
    ! Combine attractive and repulsive parts of forces and derivatives:
    F = Frep + Fatr	! forces [eV/A]
    dF = dFrep + dFatr	! derivatives of forces [eV/A^2]
 
 
-   ! Testing:
-   !dF = 0.5d0*(dFrep + dFatr)	! derivatives of forces [eV/A^2] (ok ?)
-   !dF = 0.5d0*dFrep + dFatr	! derivatives of forces [eV/A^2] (doesn't work)
-   !dF = dFrep + 2.0d0*dFatr	! derivatives of forces [eV/A^2] (doesn't work)
-   !dF = dFrep + 0.5d0*dFatr	! derivatives of forces [eV/A^2] ()
-
-   ! Testing-2:
-   !F = Frep + 2.0d0*Fatr   ! forces [eV/A] ( works for Tconfig/5)
-   !dF = dFrep + dFatr	! derivatives of forces [eV/A^2]
-
-   ! Testing-3:
-   !F = Frep + Fatr*0.5d0   ! forces [eV/A] ( works for Tconfig/5)
-   !dF = dFrep + dFatr - Fatr*0.5d0/Scell(i)%TeeV 	! derivatives of forces [eV/A^2]
-
-   if (present(Frep_out)) then
+   ! Save partial contributions:
+   if (present(Frep_out)) then   ! if requested
       if (.not.allocated(Frep_out)) allocate(Frep_out(3,N))
-      Frep_out = Frep
+      if (allocated(Frep)) then  ! if they were calculated
+         Frep_out = Frep
+      else
+         Frep_out = 0.0d0
+      endif
    endif
-   if (present(Fatr_out)) then
+   if (present(Fatr_out)) then ! if requested
       if (.not.allocated(Fatr_out)) allocate(Fatr_out(3,N))
-      Fatr_out = Fatr
+      if (allocated(Fatr)) then  ! if they were calculated
+         Fatr_out = Fatr
+      else
+         Fatr_out = 0.0d0
+      endif
    endif
-   if (present(dFrep_out)) then
+   if (present(dFrep_out)) then ! if requested
       if (.not.allocated(dFrep_out)) allocate(dFrep_out(3,N))
-      dFrep_out = dFrep
+      if (allocated(dFrep)) then ! if they were calculated
+         dFrep_out = dFrep
+      else
+         dFrep_out = 0.0d0
+      endif
    endif
-   if (present(dFatr_out)) then
+   if (present(dFatr_out)) then ! if requested
       if (.not.allocated(dFatr_out)) allocate(dFatr_out(3,N))
-      dFatr_out = dFatr
+      if (allocated(dFatr)) then ! if they were calculated
+         dFatr_out = dFatr
+      else
+         dFatr_out = 0.0d0
+      endif
    endif
-
-!    print*,'--------------------------'
-!    i = transfer( maxloc( Frep(1,:)*Frep(1,:) + Frep(2,:)*Frep(2,:) + Frep(3,:)*Frep(3,:)), i )
-!    print*, 'Max #', i
-!    print*, 'Fr ', Frep(:,i)
-!    print*, 'Fa ', Fatr(:,i)
-!    print*, 'dFr', dFrep(:,i)
-!    print*, 'dFa', dFatr(:,i)
-!    i = transfer( minloc( Frep(1,:)*Frep(1,:) + Frep(2,:)*Frep(2,:) + Frep(3,:)*Frep(3,:)), i )
-!    print*, 'Min #', i
-!    print*, 'Fr ', Frep(:,i)
-!    print*, 'Fa ', Fatr(:,i)
-!    print*, 'dFr', dFrep(:,i)
-!    print*, 'dFa', dFatr(:,i)
-!    print*,'--------------------------'
 
    ! Clean up:
    if (allocated(Frep)) deallocate(Frep)
