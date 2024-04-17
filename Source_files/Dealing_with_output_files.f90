@@ -1527,7 +1527,7 @@ end subroutine write_sectional_displacements
 
 
 
-subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err)
+subroutine prepare_output_files(Scell, matter, laser, numpar, TB_Hamil, TB_Repuls, Err)
    type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(in) :: matter ! parameters of the material
    type(Pulse), dimension(:), intent(in) :: laser	! Laser pulse parameters
@@ -1543,7 +1543,7 @@ subroutine prepare_output_files(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err
    logical :: file_opened, file_exist, NP_file_exists, IM_file_exists
 
    ! Create directory where the output files will be saved:
-   call create_output_folder(Scell,matter,laser,numpar)	! module "Dealing_with_output_files"
+   call create_output_folder(Scell, matter, laser, numpar)	! module "Dealing_with_output_files"
 
    ! Save input files, so that repeating the same calculations would be easy:
    if (numpar%which_input >= 1) then
@@ -4612,6 +4612,13 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
     endif
    endif UDN
 
+
+   ! User-defined addition to the output folder name, if any:
+   if (LEN(trim(adjustl(numpar%output_name_add))) > 0) then
+      write(File_name,'(a)') trim(adjustl(File_name))//'_'//trim(adjustl(numpar%output_name_add))
+   endif
+
+
    File_name2 = File_name
    i = 0
    inquire(DIRECTORY=trim(adjustl(File_name2)),exist=file_exist)    ! check if input file excists
@@ -5700,12 +5707,24 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
 
    !ooooooooooooooooooooooooooooooooooooooooooooo
-   write(print_to,'(a)') trim(adjustl(m_starline))
+   write(print_to,'(a)') trim(adjustl(m_starline)) ! Output stuff:
    optional_output = .false.  ! to start with
    write(print_to,'(a)') '  Optional output:'
 
+
+   if (numpar%print_MFP) then ! printout MFP file
+      write(print_to,'(a)') ' Electron and photon mean free paths'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_CDF) then ! printout CDF file
+      write(print_to,'(a)') ' CDF (complex dielectric function) parameters used in MC'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
    if (numpar%save_Ei) then
       write(print_to,'(a)') ' Electron energy levels (molecular orbitals)'
+      optional_output = .true.   ! there is at least some optional output
    endif
 
    if (numpar%save_DOS) then
@@ -5810,6 +5829,10 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
    if (.not.optional_output) then ! there ws no optional output, report it
       write(print_to,'(a)') ' none requested by the user'
+   endif
+
+   if (LEN(trim(adjustl(numpar%output_path))) > 0) then  ! output directory name already defined, print it out:
+      write(print_to,'(a, a)') ' Output saved in the directory: ', trim(adjustl(numpar%output_path))
    endif
 
 9999   write(print_to,'(a)') trim(adjustl(m_starline))

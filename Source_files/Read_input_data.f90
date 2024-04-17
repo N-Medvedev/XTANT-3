@@ -147,7 +147,9 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
    numpar%NOMP = 1   ! unparallelized by default
 #endif
-   numpar%output_extra_name = '' ! no additional text in the output folder name
+   numpar%output_path = ''    ! to start with, no name to output given yet
+   numpar%output_extra_name = '' ! no replacement text in the output folder name
+   numpar%output_name_add = ''   ! no additional text in the output folder name
    numpar%redo_MFP = .false.     ! no need to recalculate mean free paths by default
    numpar%print_MFP = .false.    ! no need to printout mean free paths by default
    numpar%print_Ta = .false.  ! no need in various atomic temperature definitions
@@ -6617,17 +6619,29 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
 
    select case (trim(adjustl(string)))
    !----------------------------------
-   case ('output_name', 'Output_name', 'Outout_Name', 'OUTPUT_NAME', 'outname')
-      ! User-defined additional text in the output folder name:
+   case ('output_name', 'Output_name', 'Outout_Name', 'OUTPUT_NAME', 'outname', 'Outname', 'OUTNAME')
+      ! User-defined additional text in the output folder name INSTEAD of the default name:
       ! Read second argument in the line:
       read(string_in,*,IOSTAT=Reason) string, numpar%output_extra_name
       if (Reason /= 0) then ! did not read well, use default:
          numpar%output_extra_name = ''
          write(*,'(a)') 'No valid output directory name provided, using default'
       else ! read it well
-         ! Make sure the slash is correct:
+         ! Make sure the slash is correct, and no forbidden characters are present:
          call ensure_correct_path_separator(numpar%output_extra_name, numpar%path_sep, no_slash=.true.)  ! module "Dealing_with_files"
          !write(*,'(a)') 'Output directory name provided: '//trim(adjustl(numpar%output_extra_name))
+      endif
+
+   case ('output_add', 'Output_add', 'Outout_Add', 'OUTPUT_ADD', 'outadd', 'Outdate', 'OUTADD')
+      ! User-defined additional text in the output folder AFTER the default name:
+      ! Read second argument in the line:
+      read(string_in,*,IOSTAT=Reason) string, numpar%output_name_add
+      if (Reason /= 0) then ! did not read well, use default:
+         numpar%output_name_add = ''
+         write(*,'(a)') 'No valid add-text for output name provided, default unchanged'
+      else ! read it well
+         ! Make sure the slash is correct, and no forbidden characters are present:
+         call ensure_correct_path_separator(numpar%output_name_add, numpar%path_sep, no_slash=.true.)  ! module "Dealing_with_files"
       endif
 
    !----------------------------------
