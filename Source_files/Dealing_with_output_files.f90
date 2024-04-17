@@ -47,7 +47,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 15.04.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 17.04.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1184,10 +1184,14 @@ subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic pa
    if (numpar%print_Ta) then
 
       ! kinetic; entropic; distributional; fluctuational; "potential"; configurational etc.:
-      write(numpar%FN_Ta, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') &
+      write(numpar%FN_Ta, '(es25.16, &
+            es25.16, es25.16, es25.16, es25.16, &
+            es25.16, es25.16, es25.16, es25.16, &
+            es25.16, es25.16, es25.16)') &
       time, &
       Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(2), Scell(NSC)%Ta_var(3), Scell(NSC)%Ta_var(4), &
-      Scell(NSC)%Ta_var(5), Scell(NSC)%Ta_var(6), Scell(NSC)%Ta_var(7), Scell(NSC)%Ta_var(8), Scell(NSC)%Fv, Scell(NSC)%Tconf
+      Scell(NSC)%Ta_var(5), Scell(NSC)%Ta_var(6), Scell(NSC)%Ta_var(7), Scell(NSC)%Ta_var(8), &
+      Scell(NSC)%Fv, Scell(NSC)%Tconf, Scell(NSC)%Tconf2
 
       ! partial temperatures along X,Y,Z:
       write(numpar%FN_Ta_part, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, &
