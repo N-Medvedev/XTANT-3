@@ -164,7 +164,8 @@ end subroutine replace_character
 
 subroutine get_file_stat(File_name, device_ID, Inode_number, File_mode, Number_of_links, O_uid, O_gid, where_located, &
                          File_size, Last_access_time, Last_modification_time, Last_status_change, blocks_allocated)
-! See description here: https://software.intel.com/en-us/node/526830
+! See description here: https://www.intel.com/content/www/us/en/docs/fortran-compiler/developer-guide-reference/2024-1/stat.html
+! Note that gfortran uses different format: https://gcc.gnu.org/onlinedocs/gfortran/STAT.html
    character(*), intent(in) :: File_name ! which file we are checking?
    integer, intent(out), optional :: device_ID ! Device the file resides on
    integer, intent(out), optional :: Inode_number ! File inode number
@@ -180,7 +181,12 @@ subroutine get_file_stat(File_name, device_ID, Inode_number, File_mode, Number_o
    integer, intent(out), optional :: blocks_allocated ! Blocksize for file system I/O operations
    !(*) Times are in the same format returned by the TIME function (number of seconds since 00:00:00 Greenwich mean time, January 1, 1970).
    !=====================
-   INTEGER :: info_array(12)
+#ifdef Gfort_used
+   INTEGER :: info_array(13)  ! change to size 13 for gfortran!
+#else
+   INTEGER :: info_array(12)  ! change to size 13 for gfortran!
+#endif
+
    
    ! Get the statistics on the file:
    call STAT(trim(adjustl(File_name)), info_array) ! intrinsec fortran subroutine
