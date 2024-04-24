@@ -5691,7 +5691,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a)') ' No atomic thermostat is used'
    endif
 
-   write(print_to,'(a, f7.1, a)') ' Electron energy cut-off, separating high-energy- from low-energy-electrons: ', numpar%E_cut, ' [eV]'
+   write(text1, '(f7.1)') numpar%E_cut
+   write(print_to,'(a, a, a)') ' Electron energy cut-off, separating high-energy- from low-energy-electrons: ', trim(adjustl(text1)), ' [eV]'
    select case (numpar%el_ion_scheme)
    case (3:4)
       write(print_to,'(a)') ' But it maybe dynamically adjusted to the top of CB (nonequilibrium simulation)'
