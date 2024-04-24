@@ -1085,6 +1085,8 @@ subroutine Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, nrg)
    Nat = Scell(NSC)%Na ! number of atoms
    call Atomic_kinetic_energies(Scell, NSC, matter)
    Ekin_tot = SUM(Scell(NSC)%MDatoms(:)%Ekin)   ! total atomic kinetic energy
+
+   ! TO DO: Unclear if supercell velocities need to be rescaled too?
    Ekin_tot = Ekin_tot + Supce_kin_energy(Scell, NSC, matter%W_PR)           ! supercell kinetic energy, function below
 
    if ((ABS(Ekin_tot) > eps) .and. (ABS(dE_nonadiabat) > Ekin_tot * eps)) then ! makes sense to change it
@@ -1104,6 +1106,7 @@ subroutine Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, nrg)
          Scell(NSC)%MDatoms(i)%V(:) = Scell(NSC)%MDatoms(i)%V(:) * alpha
       enddo
 
+      ! TO DO: Unclear if supercell velocities need to be rescaled too?
       ! Rescale supercell velocities:
       Scell(NSC)%Vsupce = Scell(NSC)%Vsupce * alpha
 
