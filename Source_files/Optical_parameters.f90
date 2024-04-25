@@ -46,7 +46,9 @@ use Little_subroutines, only : deallocate_array, Find_in_array_monoton, d_Fermi_
 use MC_cross_sections, only : Mean_free_path, velosity_from_kinetic_energy
 use Nonadiabatic, only : get_Mij2, get_nonadiabatic_Pij
 
-USE OMP_LIB, only : OMP_GET_THREAD_NUM
+#ifdef OMP_inside
+   USE OMP_LIB, only : OMP_GET_THREAD_NUM
+#endif
 
 implicit none
 PRIVATE
@@ -240,8 +242,13 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err
 
       ! k-points:
       call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
+
+#ifdef OMP_inside
       if (numpar%verbose) write(*,'(a,i4,a,i6,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'Thread #', OMP_GET_THREAD_NUM(), &
                                      ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' Kubo-Greenwood'
+#else
+      if (numpar%verbose) write(*,'(a,i7,i3,i3,i3,f9.4,f9.4,f9.4,a)') ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' Kubo-Greenwood'
+#endif
 
       ! Get the effective momentum and kinetic-energy-related operators:
       ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
@@ -1077,8 +1084,14 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
 
       ! k-points:
       call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
+
+#ifdef OMP_inside
       if (numpar%verbose) write(*,'(a,i4,a,i7,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'Thread #', OMP_GET_THREAD_NUM(), &
                                      ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' Graf-Vogl'
+#else
+      if (numpar%verbose) write(*,'(a,i7,i3,i3,i3,f9.4,f9.4,f9.4,a)') ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' Graf-Vogl'
+#endif
+
 
       ! Get the effective momentum and kinetic-energy-related operators:
       ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))

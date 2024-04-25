@@ -31,7 +31,9 @@ use Optical_parameters, only : allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Gre
 use Electron_tools, only : get_DOS_sort
 use Little_subroutines, only : Find_in_array_monoton, linear_interpolation
 
-USE OMP_LIB, only : OMP_GET_THREAD_NUM
+#ifdef OMP_inside
+   USE OMP_LIB, only : OMP_GET_THREAD_NUM
+#endif
 
 implicit none
 PRIVATE
@@ -120,8 +122,13 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       !-------------------------------
       ! k-points:
       call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
+
+#ifdef OMP_inside
       if (numpar%verbose) write(*,'(a,i4,a,i6,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'Thread #', OMP_GET_THREAD_NUM(), &
                                      ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' k-points'
+#else
+      if (numpar%verbose) write(*,'(a,i7,i3,i3,i3,f9.4,f9.4,f9.4,a)') ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' k-points'
+#endif
 
       !-------------------------------
       ! Get the parameters of the complex Hamiltonian:

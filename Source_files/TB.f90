@@ -61,8 +61,9 @@ use Coulomb, only: m_k, m_sqrtPi, Coulomb_Wolf_pot, get_Coulomb_Wolf_s, cut_off_
 use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s, &
                      get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s
 
-USE OMP_LIB, only : OMP_GET_THREAD_NUM
-
+#ifdef OMP_inside
+   USE OMP_LIB, only : OMP_GET_THREAD_NUM
+#endif
 
 implicit none
 PRIVATE
@@ -2606,7 +2607,11 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
    integer :: Nsiz, j
    character(200) :: Error_descript
 
+#ifdef OMP_inside
    print*, OMP_GET_THREAD_NUM(), 'diagonalize_complex8_Hamiltonian start'
+#else
+   print*, 'diagonalize_complex8_Hamiltonian start'
+#endif
 
    Error_descript = ''  ! to start with, no error
    Nsiz = size(CHij,1)
@@ -2618,7 +2623,11 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
 
    ORTH: if (.not.present(CSij)) then ! orthogonal:
 
+#ifdef OMP_inside
       print*, OMP_GET_THREAD_NUM(), 'diagonalize_complex8_Hamiltonian orthogonal'
+#else
+      print*, 'diagonalize_complex8_Hamiltonian orthogonal'
+#endif
 
       ! Direct diagonalization:
       call sym_diagonalize(CHij, Ei, Error_descript) ! modeule "Algebra_tools"
@@ -2627,12 +2636,20 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       ! 1) Orthogonalize the Hamiltonian using Loewdin procidure:
       ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
 
+#ifdef OMP_inside
       print*, OMP_GET_THREAD_NUM(), 'diagonalize_complex8_Hamiltonian nonorthogonal'
+#else
+      print*, 'diagonalize_complex8_Hamiltonian nonorthogonal'
+#endif
 
       CHij_use = CHij
       call Loewdin_Orthogonalization_c8(Nsiz, CSij, CHij_use) ! module "TB_NRL"
 
+#ifdef OMP_inside
       print*, OMP_GET_THREAD_NUM(), 'Loewdin_Orthogonalization_c8 done'
+#else
+      print*, 'Loewdin_Orthogonalization_c8 done'
+#endif
 
       if (present(CHij_orth)) then  ! Save orthogonalized Hamiltonian (for optical coefficients below)
          CHij_orth = CHij_use
@@ -2650,7 +2667,12 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
          CWF_orth = CHij_use
       endif
 
+
+#ifdef OMP_inside
       print*, OMP_GET_THREAD_NUM(), 'sym_diagonalize done'
+#else
+      print*, 'sym_diagonalize done'
+#endif
 
       ! 3) Convert the eigenvectors back into the non-orthogonal basis:
       !call mkl_matrix_mult('N', 'N', CSij, CHij_use, CHij)	! module "Algebra_tools"
@@ -2658,7 +2680,11 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       call mkl_matrix_mult_c8('N', 'N', CSij, CHij_use, CHij_temp)  ! module "Algebra_tools"
       CHij = cmplx( real(CHij_temp), aimag(CHij_temp) )  ! convert to cmplx (important for unix-based compileres)
 
+#ifdef OMP_inside
       print*, OMP_GET_THREAD_NUM(), 'mkl_matrix_mult done'
+#else
+      print*, 'mkl_matrix_mult done'
+#endif
    endif ORTH
 end subroutine diagonalize_complex8_Hamiltonian
 
