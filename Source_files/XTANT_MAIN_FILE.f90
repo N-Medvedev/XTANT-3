@@ -332,6 +332,7 @@ do while (g_time .LT. g_numpar%t_total)
    endif AT_MOVE_2
    if (g_numpar%verbose) call print_time_step('Second step of MD step succesful:', g_time, msec=.true.) ! module "Little_subroutines"
 
+
    !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
    g_time = g_time + g_numpar%dt        ! [fs] next time-step
    g_dt_save = g_dt_save + g_numpar%dt  ! [fs] for tracing when to save the output data
@@ -361,11 +362,16 @@ do while (g_time .LT. g_numpar%t_total)
 
       ! Calculate the mean square displacement of all atoms:
       call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD, g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
+
       ! Calculate electron heat capacity, entropy, and orbital-resolved data:
       call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
       ! Calculate configurational temperature:
       call Get_configurational_temperature_Pettifor(g_Scell, g_numpar, g_matter)	! module "TB"
+
+      ! Get testmode additional data (center-of-mass, rotation, total force, etc.):
+      call Get_testmode_add_data(g_Scell, 1, g_numpar, g_matter)	! module "Atomic_tools"
+
       ! Save current output data:
       call write_output_files(g_numpar, g_time, g_matter, g_Scell)    ! module "Dealing_with_output_files"
       ! Communicate with the program (program reads your commands from the communication-file):

@@ -762,6 +762,10 @@ type Super_cell
    real(8), dimension(:,:), allocatable :: G_ei_partial	! [W/(m^3 K)] partial electron-ion coupling parameter per all orbitals pairwise
    real(8), dimension(:,:), allocatable :: DOS	! DOS
    real(8), dimension(:,:,:), allocatable :: partial_DOS	! partial DOS made of different orbitals
+   ! Testmode additional data (usually not needed):
+   real(8) :: V_CoM(3)     ! center of mass velosity
+   real(8) :: I_tot(3,3)   ! moment of inertia tensor
+   real(8) :: F_tot(3)     ! total force in the supercell
 end type Super_cell
 
 
@@ -949,7 +953,7 @@ type Numerics_param
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
-   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot
+   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot, FN_testmode
    integer, dimension(:), allocatable :: FN_displacements
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
@@ -959,7 +963,7 @@ type Numerics_param
    logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
    ! Different output, what to save:
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate
-   logical :: save_fe_grid, save_fe_orb, save_fa
+   logical :: save_fe_grid, save_fe_orb, save_fa, save_testmode
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
    logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS, do_kappa_dyn

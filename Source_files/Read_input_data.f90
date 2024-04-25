@@ -44,7 +44,9 @@ use Atomic_tools, only : update_atomic_masks_displ
 
 ! Open_MP related modules from external libraries:
 #ifdef OMP_inside
-   USE IFLPORT, only : system
+#ifndef __GFORTRAN__
+      USE IFLPORT, only : system    ! library, allowing to operate with directories in intel fortran
+#endif
    USE OMP_LIB, only : omp_get_max_threads
 #endif
 
@@ -150,6 +152,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%output_path = ''    ! to start with, no name to output given yet
    numpar%output_extra_name = '' ! no replacement text in the output folder name
    numpar%output_name_add = ''   ! no additional text in the output folder name
+   numpar%save_testmode = .false.   ! no testmode by default
    numpar%redo_MFP = .false.     ! no need to recalculate mean free paths by default
    numpar%print_MFP = .false.    ! no need to printout mean free paths by default
    numpar%print_Ta = .false.  ! no need in various atomic temperature definitions
@@ -6610,7 +6613,6 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
 
 
    !print*, trim(adjustl(string_in))
-
    read_well = .true.   ! to start with
    read_var = 0.0d0     ! unused variable in this case
 
@@ -6618,6 +6620,21 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
    read(string_in,*,IOSTAT=Reason) string
 
    select case (trim(adjustl(string)))
+   !----------------------------------
+   case ('TEST_MODE', 'Test_Mode', 'Test_mode', 'test_mode', 'testmode', 'Testmode', 'TESTMODE')
+      ! Prints out all optional data, including some unique data that are usually not needed:
+      write(*,'(a)') ' Test mode is on: lots of printout will be genereated...'
+      numpar%save_testmode = .true.
+      !write(*,'(a)') ' Verbose on: XTANT will print markers for testing and debugging'
+      !numpar%verbose = .true.
+      numpar%print_Ta = .true.   ! Printout various definitions of atomic temperature
+      numpar%print_MFP = .true.  ! Printout mean free paths
+      numpar%save_CDF = .true.   ! printout CDF file with oscillators
+      numpar%save_Ei = .true.
+      numpar%save_fe = .true.
+      numpar%save_fa = .true.
+      numpar%save_PCF = .true.
+
    !----------------------------------
    case ('output_name', 'Output_name', 'Outout_Name', 'OUTPUT_NAME', 'outname', 'Outname', 'OUTNAME')
       ! User-defined additional text in the output folder name INSTEAD of the default name:
@@ -7401,7 +7418,15 @@ subroutine Get_list_of_materials(path_sep)
             ! ignor this folder / file
          else ! don't ignore this name
             ! Check if it is a directory:
+#ifndef __GFORTRAN__
+            ! for intel fortran compiler:
             inquire(DIRECTORY=trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(read_line)), exist=file_exist)
+#else
+            ! for gfortran compiler:
+            inquire(FILE=trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(read_line)), exist=file_exist)
+#endif
+
+
             if (file_exist) then ! if it is a directory, it means it can be a material:
                select case ( trim(adjustl(read_line)) )  ! check if it is material or just forled
                case (m_Atomic_parameters, m_INFO_directory, m_HELP_file, m_DFTB_directory, m_DFTB_norep_directory, &

@@ -181,12 +181,14 @@ subroutine get_file_stat(File_name, device_ID, Inode_number, File_mode, Number_o
    integer, intent(out), optional :: blocks_allocated ! Blocksize for file system I/O operations
    !(*) Times are in the same format returned by the TIME function (number of seconds since 00:00:00 Greenwich mean time, January 1, 1970).
    !=====================
-#ifdef Gfort_used
-   INTEGER :: info_array(13)  ! change to size 13 for gfortran!
+   ! The preprocessor option defining compilation with Gfortran: https://gcc.gnu.org/onlinedocs/gfortran/Preprocessing-Options.html
+#ifdef __GFORTRAN__
+   ! for gfortran compiler:
+   INTEGER :: info_array(13)
 #else
-   INTEGER :: info_array(12)  ! change to size 13 for gfortran!
+   ! for intel fortran compiler:
+   INTEGER :: info_array(12)
 #endif
-
    
    ! Get the statistics on the file:
    call STAT(trim(adjustl(File_name)), info_array) ! intrinsec fortran subroutine

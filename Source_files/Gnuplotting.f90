@@ -23,7 +23,10 @@
 ! 1111111111111111111111111111111111111111111111111111111111111
 module Gnuplotting
 
+#ifndef __GFORTRAN__
 USE IFLPORT, only : system, chdir   ! library, allowing to operate with directories in intel fortran
+#endif
+
 use Dealing_with_files, only: Count_lines_in_file
 
 
