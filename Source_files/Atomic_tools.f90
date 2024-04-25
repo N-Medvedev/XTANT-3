@@ -56,7 +56,7 @@ get_mean_square_displacement, Cooling_atoms, Coordinates_abs_to_rel, get_Ekin, m
 remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_atoms_Y4, check_periodic_boundaries, &
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
 Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
-update_atomic_masks_displ, numerical_acceleration
+update_atomic_masks_displ, numerical_acceleration, Get_testmode_add_data
 
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
@@ -267,7 +267,7 @@ subroutine Get_random_velocity(T, Mass, Vx, Vy, Vz, ind)
    integer, intent(in) :: ind ! which distribution to use
    select case (ind)
    case (0) ! all equal
-      call Mean_veloity_RN(T, Mass, Vx, Vy, Vz) ! below
+      call Mean_velocity_RN(T, Mass, Vx, Vy, Vz) ! below
    case (1) ! uniform distribution of random values
       call Random_RN(T, Mass, Vx, Vy, Vz) ! below
    case default ! Maxwellian distribution
@@ -277,7 +277,7 @@ end subroutine Get_random_velocity
 
 
 ! Set velosity equal to the mean square one:
-subroutine Mean_veloity_RN(T, Mass, Vx, Vy, Vz)
+subroutine Mean_velocity_RN(T, Mass, Vx, Vy, Vz)
    real(8), intent(in) :: T ! [eV] Temperature to set the velocities accordingly
    real(8), intent(in) :: Mass ! [kg] mass of the atom
    real(8), intent(out) :: Vx, Vy, Vz ! velocities [A/fs]
@@ -310,7 +310,7 @@ subroutine Mean_veloity_RN(T, Mass, Vx, Vy, Vz)
       Vz = V*cos_phi*sin(theta)
       Vx = V*sin(phi)
    endif
-end subroutine Mean_veloity_RN
+end subroutine Mean_velocity_RN
 
 
 ! Sample according to Maxwell distribution:
@@ -689,6 +689,126 @@ subroutine remove_angular_momentum(NSC, Scell, matter, atoms, indices, print_out
    deallocate(x0)
    nullify(Mass, Na)
 end subroutine remove_angular_momentum
+
+
+
+subroutine Get_testmode_add_data(Scell, NSC, numpar, matter)
+   integer, intent(in) :: NSC ! number of the super-cell
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   type(solid), intent(in) :: matter	! materil parameters
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters
+   !--------------------------------
+   if (numpar%save_testmode) then   ! testmode additional data (center of mass, rotation, total force, etc.)
+      ! Get center-of-mass velocity:
+      call Center_of_mass_velocity(Scell(NSC)%MDatoms, matter, Scell(NSC)%V_CoM)  ! below
+      ! Get total moment of inertia tensor:
+      call Moment_of_inertia_tensor(Scell(NSC)%MDatoms, matter, Scell(NSC)%I_tot) ! below
+      ! Get total force:
+      call Total_force_in_supercell(Scell(NSC)%MDatoms, matter, Scell(NSC)%F_tot)   ! below
+
+   else  ! no need to define those
+      Scell(NSC)%V_CoM = 0.0d0   ! center of mass velosity
+      Scell(NSC)%I_tot = 0.0d0   ! moment of inertia tensor
+      Scell(NSC)%F_tot = 0.0d0   ! total force in the supercell
+   endif
+end subroutine Get_testmode_add_data
+
+
+
+subroutine Total_force_in_supercell(atoms, matter, F_tot)
+   type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
+   type(solid), intent(in), target :: matter	! materil parameters
+   real(8), dimension(3), intent(out) :: F_tot  ! center of mass veloscities
+   !----------------------
+   integer :: Na, i
+   real(8) :: acc(3), F(3)
+   real(8), pointer :: Mass
+
+   Na = size(atoms) ! number of atoms
+   F_tot = 0.0d0  ! to start with
+
+   do i = 1, Na   ! for all atoms
+      Mass => matter%Atoms(atoms(i)%KOA)%Ma   ! atomic mass [kg]
+
+      ! Convert acceleration into SI units:
+      acc(:) = atoms(i)%accel(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
+
+      ! Get the force:
+      F(:) = Mass * acc(:) ! [N]
+
+      ! Sum forces for all atoms:
+      F_tot = F_tot + F
+   enddo
+
+   nullify(Mass)
+end subroutine Total_force_in_supercell
+
+
+
+subroutine Center_of_mass_velocity(atoms, matter, V_CoM)
+   type(solid), intent(in) :: matter	! materil parameters
+   type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
+   real(8), dimension(3), intent(out) :: V_CoM  ! center of mass veloscities
+   !----------------------
+   integer :: Na
+   real(8) :: Masstot
+
+   Na = size(atoms) ! number of atoms
+   Masstot = SUM(matter%Atoms(atoms(:)%KOA)%Ma) ! net-mass of all atoms
+   ! Center of mass velocities:
+   V_CoM(1) = SUM(matter%Atoms(atoms(:)%KOA)%Ma * atoms(:)%V(1))/Masstot   ! Vx
+   V_CoM(2) = SUM(matter%Atoms(atoms(:)%KOA)%Ma * atoms(:)%V(2))/Masstot   ! Vy
+   V_CoM(3) = SUM(matter%Atoms(atoms(:)%KOA)%Ma * atoms(:)%V(3))/Masstot   ! Vz
+end subroutine Center_of_mass_velocity
+
+
+
+subroutine Moment_of_inertia_tensor(atoms, matter, BigI)
+   type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
+   type(solid), intent(in), target :: matter	! materil parameters
+   real(8), dimension(3,3), intent(out) :: BigI  ! Total oment of inertia tensor
+   !--------------------------
+   integer :: Na
+   real(8) :: Masstot, r1, rxv(3), Xcm, Ycm, Zcm
+   real(8), dimension(:,:), allocatable ::  x0
+   integer :: i
+   real(8), pointer :: Mass
+
+   Na = size(atoms) ! number of atoms
+   allocate(x0(Na,3), source = 0.0d0)
+
+   ! Finding the center of inertia NOT assuming equal masses of particles:
+   Masstot = SUM(matter%Atoms(atoms(:)%KOA)%Ma) ! total mass
+   Xcm = SUM(matter%Atoms(atoms(:)%KOA)%Ma * atoms(:)%R(1))/Masstot
+   Ycm = SUM(matter%Atoms(atoms(:)%KOA)%Ma * atoms(:)%R(2))/Masstot
+   Zcm = SUM(matter%Atoms(atoms(:)%KOA)%Ma * atoms(:)%R(3))/Masstot
+
+   BigI = 0.0d0 ! to start with
+   do i = 1, Na
+      ! Atomic positions in the center-of-mass frame of reference:
+      x0(i,1) = atoms(i)%R(1) - Xcm !/dble(Na)
+      x0(i,2) = atoms(i)%R(2) - Ycm !/dble(Na)
+      x0(i,3) = atoms(i)%R(3) - Zcm !/dble(Na)
+      r1 = DSQRT(x0(i,1)*x0(i,1) + x0(i,2)*x0(i,2) + x0(i,3)*x0(i,3))
+      Mass => matter%Atoms(atoms(i)%KOA)%Ma
+      rxv = 0.0d0
+      call Cross_Prod(x0(i,:), atoms(i)%V(:), rxv) ! MODULE "Algebra_tools"
+      ! calculating total moment of inertia tensor:
+      BigI(1,1) = BigI(1,1) + (r1*r1 - x0(i,1)*x0(i,1))*Mass ! xx
+      BigI(2,2) = BigI(2,2) + (r1*r1 - x0(i,2)*x0(i,2))*Mass ! yy
+      BigI(3,3) = BigI(3,3) + (r1*r1 - x0(i,3)*x0(i,3))*Mass ! zz
+      BigI(1,2) = BigI(1,2) - x0(i,1)*x0(i,2)*Mass           ! xy
+      BigI(1,3) = BigI(1,3) - x0(i,1)*x0(i,3)*Mass           ! xz
+      BigI(2,3) = BigI(2,3) - x0(i,2)*x0(i,3)*Mass           ! yz
+   enddo
+   BigI(2,1) = BigI(1,2)                         ! yx
+   BigI(3,1) = BigI(1,3)                         ! zx
+   BigI(3,2) = BigI(2,3)                         ! zy
+
+   deallocate(x0)
+   nullify(Mass)
+end subroutine Moment_of_inertia_tensor
+
 
 
 subroutine remove_plane_angular_momenta(Scell, NSC, matter, atoms, indices, print_out)
@@ -1685,7 +1805,7 @@ end subroutine make_time_step_supercell_SC_Y4
 
 
 
-subroutine make_time_step_supercell_M(Scell, matter, numpar, ind)
+subroutine make_time_step_supercell_M(Scell, matter, numpar, ind) ! to be replaced with Martyna's algorythm (eventually)
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in) :: matter	! material parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
@@ -1704,7 +1824,7 @@ end subroutine make_time_step_supercell_M
 
 
 
-subroutine make_time_step_supercell(Scell, matter, numpar, ind)
+subroutine make_time_step_supercell(Scell, matter, numpar, ind)   ! Verlet algorythm
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in) :: matter	! material parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
@@ -1735,13 +1855,12 @@ subroutine make_time_step_supercell_SC(Scell, NSC, matter, numpar, supce_forces,
    if (numpar%p_const) then ! P = const, else V=const
       do i = 1,3
          do j = 1,3
-               if (ind .EQ. 2) then 
-                  Scell(NSC)%supce(i,j) = Scell(NSC)%supce0(i,j) + Scell(NSC)%Vsupce0(i,j)*numpar%dt + supce_forces%total(i,j)*numpar%dtsqare !*dt*dt/2.0e0
+               if (ind .EQ. 2) then
+                  Scell(NSC)%supce(i,j) = Scell(NSC)%supce0(i,j) + Scell(NSC)%Vsupce0(i,j)*numpar%dt + supce_forces%total(i,j)*numpar%dtsqare ! old
+                  !Scell(NSC)%supce(i,j) = Scell(NSC)%supce0(i,j) + Scell(NSC)%Vsupce0(i,j)*numpar%dt + supce_forces%total(j,i)*numpar%dtsqare ! test A0
                endif
-               Scell(NSC)%Vsupce(i,j) = Scell(NSC)%Vsupce0(i,j) + supce_forces%total(i,j)*numpar%halfdt !*dt/2.0e0
-!                ! FOR TEST ONLY:
-!                if (ind .EQ. 2) Scell(NSC)%supce(i,j) = Scell(NSC)%supce0(i,j) + Scell(NSC)%Vsupce0(i,j)*numpar%dt + supce_forces%total(j,i)*numpar%dtsqare !*dt*dt/2.0e0
-!                Scell(NSC)%Vsupce(i,j) = Scell(NSC)%Vsupce0(i,j) + supce_forces%total(j,i)*numpar%halfdt !*dt/2.0e0
+               Scell(NSC)%Vsupce(i,j) = Scell(NSC)%Vsupce0(i,j) + supce_forces%total(i,j)*numpar%halfdt ! old
+               !Scell(NSC)%Vsupce(i,j) = Scell(NSC)%Vsupce0(i,j) + supce_forces%total(j,i)*numpar%halfdt ! test A0
          enddo ! j
       enddo ! i
       if (ind .EQ. 2) then ! Update inverse and GG:
@@ -1777,8 +1896,8 @@ subroutine Potential_super_cell_forces(numpar, Scell, NSC, matter)
       Scell(NSC)%SCforce%rep = Scell(NSC)%SCforce%rep*fact !/2.0d0
       do i = 1,3
          do j = 1,3
-!              Scell(NSC)%SCforce%total(i,j) = Scell(NSC)%SCforce%att(i,j) + Scell(NSC)%SCforce%rep(j,i) ! correct
-             Scell(NSC)%SCforce%total(j,i) = Scell(NSC)%SCforce%att(i,j) + Scell(NSC)%SCforce%rep(j,i) ! test correct
+            !Scell(NSC)%SCforce%total(i,j) = Scell(NSC)%SCforce%att(i,j) + Scell(NSC)%SCforce%rep(j,i) ! OLD (energy oscillations)
+            Scell(NSC)%SCforce%total(j,i) = Scell(NSC)%SCforce%att(i,j) + Scell(NSC)%SCforce%rep(j,i) ! NEW (energy conserved)
 !              Scell(NSC)%SCforce%total(i,j) = Scell(NSC)%SCforce%att(i,j) + Scell(NSC)%SCforce%rep(i,j) ! not correct
          enddo ! j
       enddo ! i
@@ -1808,7 +1927,7 @@ subroutine super_cell_forces(numpar, Scell, NSC, matter, supce_forces, Sigma_ten
          do ik = 1,3 
             do ij = 1,3
                ! Parrinello-Rahman version of kinetic term:
-               KPRES_VV(ij,ik) = KPRES_VV(ij,ik) + Scell(NSC)%MDatoms(k)%V(ij)*Scell(NSC)%MDatoms(k)%V(ik)*Mass !*
+               KPRES_VV(ij,ik) = KPRES_VV(ij,ik) + Scell(NSC)%MDatoms(k)%V(ij)*Scell(NSC)%MDatoms(k)%V(ik)*Mass
             enddo ! ij
          enddo ! ik
       enddo ! k
@@ -1834,23 +1953,26 @@ subroutine super_cell_forces(numpar, Scell, NSC, matter, supce_forces, Sigma_ten
       ! Multipliers:
       do i=1,3
          do j = 1,3
-            KPRESint(i,j) = SUM(KPRES_VV(:,i)*Sigma_tens(j,:)) !*
+            KPRESint(i,j) = SUM(KPRES_VV(:,i)*Sigma_tens(j,:)) !
             !KPRESint(i,j) = SUM(KPRES_VV(i,:)*Sigma_tens(:,j)) ! does not work well
          enddo ! j
       enddo ! i
       KPRESint = KPRESint/matter%W_PR
       
+
       ! Final total force as sum of three terms:
+      do i=1,3
+         do j = 1,3
+            !supce_forces%total(i,j) = KPRESint(i,j) - supce_forces%total(i,j) ! OLD (rotating supercell)
+            supce_forces%total(i,j) = KPRESint(j,i) - supce_forces%total(i,j) ! NEW (no rotation induced)
+         enddo ! j
+      enddo ! i
       if (present(Sigma_tens_OUT)) then	! construction of stress tensor and pressure require to exclude external part:
-         do i=1,3
-            do j = 1,3
-               supce_forces%total(i,j) = KPRESint(i,j) - supce_forces%total(i,j) !- (matter%p_ext*dsupce(i,j))*1d-40 ! 
-            enddo ! j
-         enddo ! i
+         ! nothing to add
       else ! Forces calculations require full expression:
          do i=1,3
             do j = 1,3
-               supce_forces%total(i,j) = KPRESint(i,j) - supce_forces%total(i,j) - (matter%p_ext*dsupce(i,j))*1d-40 ! 
+               supce_forces%total(i,j) = supce_forces%total(i,j) - (matter%p_ext*dsupce(i,j))*1d-40 ! add external contribution
             enddo ! j
          enddo ! i
       endif
