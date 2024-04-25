@@ -181,7 +181,7 @@ subroutine get_file_stat(File_name, device_ID, Inode_number, File_mode, Number_o
    integer, intent(out), optional :: blocks_allocated ! Blocksize for file system I/O operations
    !(*) Times are in the same format returned by the TIME function (number of seconds since 00:00:00 Greenwich mean time, January 1, 1970).
    !=====================
-#ifdef Gfort_used
+#ifdef __GFORTRAN__
    INTEGER :: info_array(13)  ! change to size 13 for gfortran!
 #else
    INTEGER :: info_array(12)  ! change to size 13 for gfortran!

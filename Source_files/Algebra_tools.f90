@@ -1288,7 +1288,8 @@ subroutine mkl_matrix_mult_r(TRANSA, TRANSB, A, B, ResultM)
    LDA = max(1,K,M)
    LDB = max(1,K,M)
    LDC = max(1,N)
-#ifdef CUBLAS	! if CUBLAS library for GPU computing is used
+#ifdef CUBLAS	
+! if CUBLAS library for GPU computing is used
 !    print*, 'CUBLAS'
    CALL cublas_dgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)
 #else	! if standard MKL or BLAS library is used

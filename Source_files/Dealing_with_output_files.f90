@@ -28,7 +28,9 @@ MODULE Dealing_with_output_files
 #ifdef OMP_inside
    USE OMP_LIB, only : OMP_GET_MAX_THREADS
 #endif
+#ifndef __GFORTRAN__
 USE IFLPORT, only : system, chdir
+#endif
 
 use Universal_constants
 use Objects
@@ -4621,12 +4623,20 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
 
    File_name2 = File_name
    i = 0
+#ifndef __GFORTRAN__
    inquire(DIRECTORY=trim(adjustl(File_name2)),exist=file_exist)    ! check if input file excists
+#else
+   inquire(FILE=trim(adjustl(File_name2)),exist=file_exist)    ! check if input file excists
+#endif
    do while (file_exist)
       i = i + 1
       write(ch1,'(i6)') i
       write(File_name2,'(a,a,a)') trim(adjustl(File_name)), '_v', trim(adjustl(ch1))
+#ifndef __GFORTRAN__
       inquire(DIRECTORY=trim(adjustl(File_name2)),exist=file_exist)    ! check if input file excists
+#else
+      inquire(FILE=trim(adjustl(File_name2)),exist=file_exist)    ! check if input file excists
+#endif
    enddo
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
       command='md "'//trim(adjustl(File_name2))//'"' ! to create a folder use this command
@@ -4733,7 +4743,11 @@ subroutine open_parameters_file(numpar, matter, FN, INFO)
       INFO = -1   ! no output directory
       return   ! nothing else to do
    else
+#ifndef __GFORTRAN__
       inquire(DIRECTORY=trim(adjustl(numpar%output_path)),exist=file_exists)    ! check if input directory excists
+#else
+      inquire(FILE=trim(adjustl(numpar%output_path)),exist=file_exists)    ! check if input directory excists
+#endif
       if (.not.file_exists) then
          INFO = -1   ! no output directory
          return   ! nothing else to do

@@ -44,7 +44,9 @@ use Atomic_tools, only : update_atomic_masks_displ
 
 ! Open_MP related modules from external libraries:
 #ifdef OMP_inside
+#ifndef __GFORTRAN__
    USE IFLPORT, only : system
+#endif
    USE OMP_LIB, only : omp_get_max_threads
 #endif
 
@@ -7401,7 +7403,11 @@ subroutine Get_list_of_materials(path_sep)
             ! ignor this folder / file
          else ! don't ignore this name
             ! Check if it is a directory:
+#ifndef __GFORTRAN__
             inquire(DIRECTORY=trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(read_line)), exist=file_exist)
+#else
+            inquire(FILE=trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(read_line)), exist=file_exist)
+#endif
             if (file_exist) then ! if it is a directory, it means it can be a material:
                select case ( trim(adjustl(read_line)) )  ! check if it is material or just forled
                case (m_Atomic_parameters, m_INFO_directory, m_HELP_file, m_DFTB_directory, m_DFTB_norep_directory, &

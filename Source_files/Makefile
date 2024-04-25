@@ -15,10 +15,19 @@ LD = ld
 # choose the compilers among gfortran, gfortran6.1.0, ifort2011, ifort2013
 ifeq ($(c),gf)
 	F90 = gfortran
-	F90FLAGS = -ffree-line-length-0 -fdec-format-defaults -D Gfort_used
+	F90FLAGS = -ffree-line-length-0 -fdec-format-defaults -cpp -fdefault-real-8 -fdefault-double-8 -O2
+	LDFLAGS = -lblas -llapack -fopenmp
+	# need to link OpenMP,     ^^^^^^^ even for non OpenMP compilation. Can be fixed..
+  ifeq (${OMP},y)
+	  F90FLAGS += -fopenmp -D OMP_inside
+  endif
 else ifeq ($(c),gf6)
 	F90 = gfortran6.1.0
-	F90FLAGS = -ffree-line-length-0 -fdec-format-defaults -D Gfort_used
+	F90FLAGS = -ffree-line-length-0 -fdec-format-defaults -cpp -fdefault-real-8 -fdefault-double-8 -O2
+	LDFLAGS = -lblas -llapack -fopenmp
+  ifeq (${OMP},y)
+	  F90FLAGS += -fopenmp -D OMP_inside
+  endif
 else ifeq ($(c),if13)
 	F90 = ifort2013
 	
