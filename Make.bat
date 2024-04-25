@@ -1,5 +1,5 @@
 :: This file was written by N.Medvedev
-:: in 2018-2023
+:: in 2018-2024
 :: -----------------------------------------------------
 :: Brief notes on cmd programming :  https://ss64.com/nt/if.html
 :: -----------------------------------------------------
@@ -46,7 +46,7 @@ cd Source_files
       echo %Starline%
 
       :: List compiler options 
-      SET "Compile_options=/F9999999999 /QxHost /QaxAVX /fpp /Qmkl=parallel /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /Qvec /standard-semantics"
+      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /Qmkl=parallel /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics"
 
       :: Set name of the executable:
       SET "Name_of_exe=XTANT_DEBUG.exe"
@@ -58,7 +58,7 @@ cd Source_files
          echo %Starline%
 
          :: List compiler options
-         SET "Compile_options=/F9999999999 /QxHost /QaxAVX /fpp /Qmkl=parallel /Qopenmp /D OMP_inside /real-size:64 /debug:all /O1 /Qipo /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /Qvec /standard-semantics"
+         SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /Qmkl=parallel /Qopenmp /D OMP_inside /real-size:64 /debug:all /O1 /Qipo /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics"
 
          :: Set name of the executable:
          SET "Name_of_exe=XTANT_DEBUG_OMP.exe"
@@ -70,7 +70,7 @@ cd Source_files
             echo %Starline%
 
             :: List compiler options
-            SET "Compile_options=/F9999999999 /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /O1 /fpe:0 /fp:fast /Qvec /Qipo /Qopt-report /standard-semantics"
+            SET "Compile_options=/F9999999999 /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /O1 /fpe:0 /fp:fast /Qipo /Qopt-report /standard-semantics"
             :: Set name of the executable:
             SET "Name_of_exe=XTANT_OMP.exe"
 
@@ -82,7 +82,7 @@ cd Source_files
             echo %Starline%
 
             :: List compiler options
-            SET "Compile_options=/F9999999999 /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /O3 /Qvec /Qipo /standard-semantics"
+            SET "Compile_options=/F9999999999 /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /O3 /Qipo /standard-semantics"
 
             :: Set name of the executable:
             SET "Name_of_exe=XTANT.exe"
