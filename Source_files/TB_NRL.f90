@@ -34,7 +34,9 @@ use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_herm
 use Atomic_tools, only : get_near_neighbours, get_number_of_image_cells, distance_to_given_cell, shortest_distance, Reciproc_rel_to_abs
 use Electron_tools, only : find_band_gap
 
-USE OMP_LIB, only : OMP_GET_THREAD_NUM
+#ifdef OMP_inside
+   USE OMP_LIB, only : OMP_GET_THREAD_NUM
+#endif
 
 implicit none
 PRIVATE
@@ -1139,7 +1141,11 @@ subroutine Loewdin_Orthogonalization_c8(Nsiz, Sij, Hij, Err) ! below
     if (allocated(s_mat)) deallocate(s_mat)
     if (allocated(Ev)) deallocate(Ev)
 
-    print*, OMP_GET_THREAD_NUM(), 'Loewdin_Orthogonalization_c8 done'
+#ifdef OMP_inside
+      print*, OMP_GET_THREAD_NUM(), 'Loewdin_Orthogonalization_c8 done'
+#else
+      print*, 'Loewdin_Orthogonalization_c8 done'
+#endif
 end subroutine Loewdin_Orthogonalization_c8
 
 
