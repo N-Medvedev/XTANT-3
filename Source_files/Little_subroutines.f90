@@ -356,7 +356,7 @@ pure function d2_Fermi_function(rcut, d, r, cut_off) result(d2F)
    else
       exprd = exp( (r - rcut)/d )
       exprd1 = 1.0d0 + exprd
-      d2F = -exprd/(d**2 * exprd1**2) * (2.0d0*exprd/exprd1 - 1.0d0)
+      d2F = exprd/(d**2 * exprd1**2) * (2.0d0*exprd/exprd1 - 1.0d0)
    endif
 end function d2_Fermi_function
 

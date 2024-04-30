@@ -333,18 +333,7 @@ subroutine d_Exponential_wall_forces(Scell, NSC, matter, numpar, F_wall, dF_wall
             d2rdr2y = ddija_dria(y, a_r)  ! module "Coulomb"
             d2rdr2z = ddija_dria(z, a_r)  ! module "Coulomb"
 
-            ASSOCIATE (ARRAY => Scell(NSC)%TB_Expwall) ! this is the sintax we have to use to check the class of defined types
-               select type (ARRAY)
-               type is (TB_Exp_wall_simple)
-                  F_r = d_Exp_wall_pot(ARRAY(KOA1, KOA2), a_r) ! below
-                  dF_r = d2_Exp_wall_pot(ARRAY(KOA1, KOA2), a_r) ! below
-
-               type is (TB_Short_Rep)
-                  F_r = d_Short_range_pot(ARRAY(KOA1,KOA2), a_r, Z1, Z2)  ! below
-                  dF_r = d2_Short_range_pot(ARRAY(KOA1,KOA2), a_r, Z1, Z2)  ! below
-
-               end select
-            END ASSOCIATE
+            call get_exponential_wall_F_dF(Scell(NSC)%TB_Expwall(KOA1, KOA2), a_r, Z1, Z2, F_r, dF_r)   ! below
 
             ! Construct the force and derivative:
             F(1) = F(1) + F_r*drdrx
@@ -354,6 +343,7 @@ subroutine d_Exponential_wall_forces(Scell, NSC, matter, numpar, F_wall, dF_wall
             dF(2) = dF(2) + dF_r*drdry + F_r*d2rdr2y
             dF(3) = dF(3) + dF_r*drdrz + F_r*d2rdr2z
 
+            !if (abs(F_r) > 1.0d-6) write(*,'(a,i0,i0,f,f,f,f,f)') 'a', i1, j1, F_r, drdrx, dF_r, d2rdr2x, F(1)
          endif ! j1 > 0
       enddo ! j1
       ! And save for each atom:
@@ -366,6 +356,28 @@ subroutine d_Exponential_wall_forces(Scell, NSC, matter, numpar, F_wall, dF_wall
    nullify(m, KOA1, KOA2, j1, x, y, z, Z1, Z2)
 end subroutine d_Exponential_wall_forces
 
+
+subroutine get_exponential_wall_F_dF(TB_Expwall, a_r, Z1, Z2, F_r, dF_r) ! wrapper around select_type; ASSOCIATE does not work inside OMP region
+   class(TB_Exp_wall), intent(in) :: TB_Expwall
+   real(8), intent(in) :: a_r, Z1, Z2
+   real(8), intent(out) :: F_r, dF_r   ! force and its derivative
+   !-----------------
+   F_r = 0.0d0 ! to start with
+   dF_r = 0.0d0 ! to start with
+
+   select type (TB_Expwall)
+   type is (TB_Exp_wall_simple)
+      F_r = d_Exp_wall_pot(TB_Expwall, a_r) ! below
+      dF_r = d2_Exp_wall_pot(TB_Expwall, a_r) ! below
+      !if (abs(F_r) > 1.0d-6) print*, 'd_Exp_wall_pot', F_r, dF_r
+
+   type is (TB_Short_Rep)
+      F_r = d_Short_range_pot(TB_Expwall, a_r, Z1, Z2)  ! below
+      dF_r = d2_Short_range_pot(TB_Expwall, a_r, Z1, Z2)  ! below
+      !if (abs(F_r) > 1.0d-6) print*, 'd_Short_range_pot', F_r, dF_r
+
+   end select
+end subroutine get_exponential_wall_F_dF
 
 
 
@@ -874,7 +886,7 @@ pure function d2_Wall_potential(C, r0, r) result(dF) ! second derivative of expo
       dF = 0.0d0	! no contribution to force at "infinite" potential
    else	! proper potential:
       rr0 = 1.0d0/arg
-      dF = C*exp(rr0)*rr0**3
+      dF = C*exp(rr0)*rr0**3 * (rr0 + 2.0d0)
    endif
 end function d2_Wall_potential
 
@@ -899,10 +911,12 @@ function d_Exp_wall_pot(TB_Expwall, a_r) result(dPot)
    if (a_r > d0+dd*10.0d0) then ! anything beyond cut-offs is zero:
       dPot = 0.0d0
    else ! at shorter distances we use proper potential:
-      f_cut_large = f_cut_L_C(a_r, d0, dd)	! module "Coulomb"
-      E_C = Wall_potential(C, r0, a_r)	! function above
+      E_C   = Wall_potential(C, r0, a_r)	! function above
       d_E_C = d_Wall_potential(C, r0, a_r)		! derivative of  exponential wall part of the potential
-      d_f_large = d_f_cut_L_C(a_r, d0, dd)	! module "Coulomb"
+
+      f_cut_large = f_cut_L_C(a_r, d0, dd)	! module "Coulomb"
+      d_f_large   = d_f_cut_L_C(a_r, d0, dd)	! module "Coulomb"
+
       dPot = d_E_C*f_cut_large + E_C*d_f_large
    endif
    nullify(C, r0, d0, dd)
@@ -927,13 +941,13 @@ function d2_Exp_wall_pot(TB_Expwall, a_r) result(dPot)
    if (a_r > d0+dd*10.0d0) then ! anything beyond cut-offs is zero:
       dPot = 0.0d0
    else ! at shorter distances we use proper potential:
-      E_C = Wall_potential(C, r0, a_r)	! function above
-      d_E_C = d_Wall_potential(C, r0, a_r)		! derivative of  exponential wall part of the potential
-      d2_E_C = d2_Wall_potential(C, r0, a_r)		! derivative of  exponential wall part of the potential
+      E_C    = Wall_potential(C, r0, a_r)       ! above
+      d_E_C  = d_Wall_potential(C, r0, a_r)   ! derivative of exponential wall part of the potential
+      d2_E_C = d2_Wall_potential(C, r0, a_r) ! second derivative of exponential wall part of the potential
 
       f_cut_large = f_cut_L_C(a_r, d0, dd)   ! module "Coulomb"
-      d_f_large = d_f_cut_L_C(a_r, d0, dd)   ! module "Coulomb"
-      d2_f_large = d2_f_cut_L_C(a_r, d0, dd) ! module "Coulomb"
+      d_f_large   = d_f_cut_L_C(a_r, d0, dd)   ! module "Coulomb"
+      d2_f_large  = d2_f_cut_L_C(a_r, d0, dd) ! module "Coulomb"
 
       dPot = d2_E_C*f_cut_large + 2.0d0*d_E_C*d_f_large + E_C*d2_f_large
    endif

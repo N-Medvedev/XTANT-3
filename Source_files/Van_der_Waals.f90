@@ -280,7 +280,7 @@ end subroutine cell_cycle_B
 
 
 subroutine d_vdW_forces(Scell, NSC, numpar, F_vdW, dF_vdW)   ! vdW force and second derivative
-   type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), dimension(:,:), allocatable, intent(out) :: F_vdW, dF_vdW	! force and its derivative
@@ -302,6 +302,9 @@ subroutine d_vdW_forces(Scell, NSC, numpar, F_vdW, dF_vdW)   ! vdW force and sec
    ! Check if there is any vdW forces in this parameterization:
    if (.not.allocated(Scell(NSC)%TB_Waals)) return ! nothing to do, if not
 
+   ! Find how many image cells along each direction we need to include:
+   call get_mirror_cell_num(Scell, NSC, numpar, Scell(NSC)%MDatoms, Nx, Ny, Nz) ! subroutine above
+   !print*, 'd_vdW_forces:', Nx, Ny, Nz
 
    !$omp PARALLEL private(i1, j1, a_r, x_cell, y_cell, z_cell, zb, origin_cell, x, y, z, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, KOA1, KOA2, F_r, dF_r, F, dF)
    !$omp do
@@ -397,7 +400,7 @@ end function vdW_energy
 
 
 
-function dvdW(TB_Waals, KOA1, KOA2, a_r) result(dV)
+function dvdW(TB_Waals, KOA1, KOA2, a_r) result(dV)   ! wrapper around select_type; ASSOCIATE does not work inside OMP region
    real(8) :: dV  ! derivative of the LJ potential with cut-offs included
    class(TB_vdW), intent(in), dimension(:,:), allocatable :: TB_Waals   ! parameters of the repulsive part of TB-H
    integer, intent(in) :: KOA1, KOA2   ! kind of atom #1 and #2
@@ -421,7 +424,7 @@ end function dvdW
 
 
 
-function d2vdW(TB_Waals, KOA1, KOA2, a_r) result(dV)
+function d2vdW(TB_Waals, KOA1, KOA2, a_r) result(dV)  ! wrapper around select_type; ASSOCIATE does not work inside OMP region
    real(8) :: dV  ! derivative of the LJ potential with cut-offs included
    class(TB_vdW), intent(in), dimension(:,:), allocatable :: TB_Waals   ! parameters of the repulsive part of TB-H
    integer, intent(in) :: KOA1, KOA2   ! kind of atom #1 and #2

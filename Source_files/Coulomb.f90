@@ -116,7 +116,7 @@ end subroutine get_Coulomb_Wolf_s
 
 
 subroutine d_Coulomb_forces(Scell, NSC, numpar, F_Coul, dF_Coul)   ! vdW force and second derivative
-   type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), dimension(:,:), allocatable, intent(out) :: F_Coul, dF_Coul	! force and its derivative
@@ -134,10 +134,18 @@ subroutine d_Coulomb_forces(Scell, NSC, numpar, F_Coul, dF_Coul)   ! vdW force a
    F_Coul(:,:) = 0.0d0	! just to start with, forces
    dF_Coul(:,:) = 0.0d0	! just to start with, derivatives of forces
 
-
    ! Check if there is any vdW forces in this parameterization:
-   if (.not.allocated(Scell(NSC)%TB_Waals)) return ! nothing to do, if not
+   if (.not.allocated(Scell(NSC)%TB_Coul)) return ! nothing to do, if not
 
+   ! Find how many image cells along each direction we need to include:
+   ASSOCIATE (ARRAY3 => Scell(NSC)%TB_Coul)
+   select type(ARRAY3)
+      type is (TB_Coulomb_cut)
+         call get_mirror_cell_num_C(Scell, NSC, ARRAY3, Scell(NSC)%MDatoms, Nx, Ny, Nz)   ! below
+         !print*, 'd_Coulomb_forces:', Nx, Ny, Nz
+      end select
+   END ASSOCIATE
+   !print*, 'd_Coulomb_forces-2:', Nx, Ny, Nz
 
    !$omp PARALLEL private(i1, j1, a_r, x_cell, y_cell, z_cell, zb, origin_cell, x, y, z, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, KOA1, KOA2, F_r, dF_r, F, dF)
    !$omp do
@@ -169,13 +177,7 @@ subroutine d_Coulomb_forces(Scell, NSC, numpar, F_Coul, dF_Coul)   ! vdW force a
                      d2rdr2z = ddija_dria(z, a_r)  ! below
 
                      ! Get the derivatives of the potential by |r|:
-                     ASSOCIATE (ARRAY2 => Scell(NSC)%TB_Coul)
-                        select type(ARRAY2)
-                        type is (TB_Coulomb_cut)
-                           F_r = dCoulomb(Scell(NSC), ARRAY2(KOA1,KOA2), a_r)      ! below
-                           dF_r = d2_Coulomb(Scell(NSC), ARRAY2(KOA1,KOA2), a_r)   ! below
-                        end select
-                     END ASSOCIATE
+                     call get_Coulomb_F_dF(Scell(NSC), Scell(NSC)%TB_Coul(KOA1,KOA2), a_r, F_r, dF_r) ! below
 
                      ! Construct the force and derivative:
                      F(1) = F(1) + F_r*drdrx
@@ -199,6 +201,22 @@ subroutine d_Coulomb_forces(Scell, NSC, numpar, F_Coul, dF_Coul)   ! vdW force a
 
    nullify(KOA1, KOA2)
 end subroutine d_Coulomb_forces
+
+
+
+subroutine get_Coulomb_F_dF(Scell, TB_Coul, a_r, F_r, dF_r) ! wrapper around select_type; ASSOCIATE does not work inside OMP region
+   type(Super_cell), intent(in) :: Scell  ! supercell with all the atoms as one object
+   class(TB_Coulomb), intent(in) :: TB_Coul
+   real(8), intent(in) :: a_r
+   real(8), intent(out) :: F_r, dF_r   ! force and its derivative
+   !-------------------
+   select type(TB_Coul)
+   type is (TB_Coulomb_cut)
+      F_r = dCoulomb(Scell, TB_Coul, a_r)      ! below
+      dF_r = d2_Coulomb(Scell, TB_Coul, a_r)   ! below
+   end select
+end subroutine get_Coulomb_F_dF
+
 
 
 pure function ddija_dria(r_a, r) result(dd)

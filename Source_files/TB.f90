@@ -3651,7 +3651,7 @@ end subroutine Get_configurational_temperature
 
 
 subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, Fatr_out, dFrep_out, dFatr_out)
-   type(Super_cell), dimension(:), intent(in) :: Scell	! supercell with all the atoms as one object
+   type(Super_cell), dimension(:), intent(inout) :: Scell	! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(solid), intent(in) :: matter	! materil parameters
    real(8), dimension(:,:), allocatable, intent(inout):: F, dF	! forces and derivatives [eV/A], [eV/A^2]
@@ -3730,24 +3730,21 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
    ! Classical potentials contributions:
    ! SCC Coulomb contribution:
    !call Coulomb_force_from_SCC(numpar, matter, Scell, NSC) ! NOT READY
-
-   print*, 'before d_vdW_forces'
+   !print*, 'before d_vdW_forces'
 
    ! van der Waals forces:
    call d_vdW_forces(Scell, 1, numpar, Frep_vdW, dFrep_vdW) ! module "Van_der_Waals"
-
-   print*, 'before d_Coulomb_forces'
+   !print*, 'before d_Coulomb_forces'
 
    ! Coulomb potential part for modelling Coulomb explosion of a finite system:
    call d_Coulomb_forces(Scell, 1, numpar, Frep_Coul, dFrep_Coul) ! module "Coulomb"
-
-   print*, 'before d_Exponential_wall_forces'
+   !print*, 'before d_Exponential_wall_forces'
 
    ! Exponential wall potential part:
    call d_Exponential_wall_forces(Scell, 1, matter, numpar, Frep_wall, dFrep_wall) ! module "Exponential_wall"
 
-   print*, 'get_derivatives_and_forces_r:'
-   print*, maxval(Frep), maxval(Frep_vdW), maxval(Frep_Coul), maxval(Frep_wall)
+   !print*, 'get_derivatives_and_forces_r:'
+   !print*, maxval(Frep), maxval(Frep_vdW), maxval(Frep_Coul), maxval(Frep_wall)
 
    ! Add all the optional forces:
    if (allocated(Frep)) then  ! if they were calculated
