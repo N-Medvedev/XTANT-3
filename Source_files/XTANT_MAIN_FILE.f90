@@ -231,7 +231,7 @@ if (g_numpar%verbose) call print_time_step('Atomic distribution calculated succe
 
 
 ! Calculate configurational temperature (implemented only for Pettifor TB):
-call Get_configurational_temperature_Pettifor(g_Scell, g_numpar, g_matter)	! module "TB"
+call Get_configurational_temperature(g_Scell, g_numpar, g_matter)	! module "TB"
 
 ! Save initial step in output:
 call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
@@ -257,17 +257,25 @@ do while (g_time .LT. g_numpar%t_total)
    call reset_dt(g_numpar, g_matter, g_time)  ! module "Dealing_with_output_files"
 
    AT_MOVE_1:if (g_numpar%do_atoms) then ! atoms are allowed to be moving:
-      !1111111111111111111111111111111111111111111111111111111111
-      ! Update atomic data on previous timestep and move further:
-      call save_last_timestep(g_Scell) ! module "Atomic_tools"
-      ! Make the MD timestep (first part, in the case of Verlet):
-      call MD_step(g_Scell, g_matter, g_numpar, g_time, g_Err)  ! module "TB"
-      if (g_numpar%verbose) call print_time_step('First step of MD step succesful:', g_time, msec=.true.)
-      
-      !2222222222222222222222222222222222222222222222222222222
+
+      ! Test coupling before MD step:
       ! Nonadiabatic electron-ion coupling:
       call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
       if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true.)
+
+
+      !1111111111111111111111111111111111111111111111111111111
+      ! Update atomic data on previous timestep and move further:
+      call save_last_timestep(g_Scell) ! module "Atomic_tools"
+
+      ! Make the MD timestep (first part, in the case of Verlet):
+      call MD_step(g_Scell, g_matter, g_numpar, g_time, g_Err)  ! module "TB"
+      if (g_numpar%verbose) call print_time_step('First step of MD step succesful:', g_time, msec=.true.)
+
+      !2222222222222222222222222222222222222222222222222222222
+      ! Nonadiabatic electron-ion coupling:
+!       call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
+!       if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true.)
 
       ! Quenching of atoms (zero-temperature MD):
       call Cooling_atoms(g_numpar, g_matter, g_Scell, g_time, g_numpar%at_cool_dt, g_numpar%at_cool_start, g_numpar%do_cool) ! module "Atomic_tools"
@@ -332,7 +340,6 @@ do while (g_time .LT. g_numpar%t_total)
    endif AT_MOVE_2
    if (g_numpar%verbose) call print_time_step('Second step of MD step succesful:', g_time, msec=.true.) ! module "Little_subroutines"
 
-
    !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
    g_time = g_time + g_numpar%dt        ! [fs] next time-step
    g_dt_save = g_dt_save + g_numpar%dt  ! [fs] for tracing when to save the output data
@@ -367,7 +374,7 @@ do while (g_time .LT. g_numpar%t_total)
       call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
       ! Calculate configurational temperature:
-      call Get_configurational_temperature_Pettifor(g_Scell, g_numpar, g_matter)	! module "TB"
+      call Get_configurational_temperature(g_Scell, g_numpar, g_matter)	! module "TB"
 
       ! Get testmode additional data (center-of-mass, rotation, total force, etc.):
       call Get_testmode_add_data(g_Scell, 1, g_numpar, g_matter)	! module "Atomic_tools"

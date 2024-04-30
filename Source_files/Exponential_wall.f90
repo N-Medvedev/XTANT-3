@@ -26,15 +26,15 @@
 MODULE Exponential_wall
 use Universal_constants
 use Objects
-use Coulomb, only : f_cut_L_C, d_f_cut_L_C
-use ZBL_potential, only : ZBL_pot, d_ZBL_pot
+use Coulomb, only : f_cut_L_C, d_f_cut_L_C, d2_f_cut_L_C, ddija_dria
+use ZBL_potential, only : ZBL_pot, d_ZBL_pot, d2_ZBL_pot
 use Little_subroutines, only : Find_monotonous_LE, linear_interpolation
-use Algebra_tools, only : cubic_function, d_cubic_function
+use Algebra_tools, only : cubic_function, d_cubic_function, d2_cubic_function
 
 implicit none
 PRIVATE
 
-public :: get_Exp_wall_s, d_Exp_wall_Pressure_s, d_Exp_wall_pot_s
+public :: get_Exp_wall_s, d_Exp_wall_Pressure_s, d_Exp_wall_pot_s, d_Exponential_wall_forces
 public :: get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s
 
  contains
@@ -193,6 +193,180 @@ function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
       dPot = Pot*d_f_large + d_Pot*f_cut_large
    endif
 end function d_Short_range_pot
+
+
+
+function d2_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
+   real(8) :: dPot   ! second derivative of the short-range potential
+   type(TB_Short_Rep), intent(in), target :: TB_Expwall  ! short-range parameters
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
+   real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL)
+   !------------------------
+   real(8) :: f_cut_large, d_f_large, f_exp, d_f_exp, f_invexp, d_f_invexp, f_pow, d_f_pow, Pot, d_Pot, f_ZBL, d_f_ZBL
+   real(8) :: f_tab, d_f_tab, d2_f_large, d2_Pot, d2_f_exp, d2_f_invexp, d2_f_pow, d2_f_ZBL, d2_f_tab
+
+   dPot = 0.0d0   ! to start with
+   if (a_r < TB_Expwall%f_cut%d0 + TB_Expwall%f_cut%dd*10.0d0) then ! only at close range
+      Pot = 0.0d0 ! to start with
+      d_Pot = 0.0d0  ! to start with
+      d2_Pot = 0.0d0  ! to start with
+
+      !------------------
+      ! Cut-off function:
+      f_cut_large = f_cut_L_C(a_r, TB_Expwall%f_cut%d0, TB_Expwall%f_cut%dd)   ! module "Coulomb"
+      ! its derivative:
+      d_f_large = d_f_cut_L_C(a_r, TB_Expwall%f_cut%d0, TB_Expwall%f_cut%dd)   ! module "Coulomb"
+      ! and second derivative:
+      d2_f_large = d2_f_cut_L_C(a_r, TB_Expwall%f_cut%d0, TB_Expwall%f_cut%dd)   ! module "Coulomb"
+
+      !------------------
+      ! Contribution of the exponential function:
+      f_exp = exp_function(a_r, TB_Expwall%f_exp%use_it, TB_Expwall%f_exp%Phi, TB_Expwall%f_exp%r0, TB_Expwall%f_exp%a)  ! below
+      ! its derivative:
+      d_f_exp = d_exp_function(a_r, TB_Expwall%f_exp%use_it, TB_Expwall%f_exp%Phi, TB_Expwall%f_exp%r0, TB_Expwall%f_exp%a)  ! below
+      ! and second derivative:
+      d2_f_exp = d2_exp_function(a_r, TB_Expwall%f_exp%use_it, TB_Expwall%f_exp%Phi, TB_Expwall%f_exp%r0, TB_Expwall%f_exp%a)  ! below
+
+      !------------------
+      ! Contribution of the inverse exponential function:
+      f_invexp = inv_exp_function(a_r, TB_Expwall%f_inv_exp%use_it, TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0)  ! below
+      ! its derivative:
+      d_f_invexp = d_inv_exp_function(a_r, TB_Expwall%f_inv_exp%use_it, TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0)  ! below
+      ! and second derivative:
+      d2_f_invexp = d2_inv_exp_function(a_r, TB_Expwall%f_inv_exp%use_it, TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0)  ! below
+
+      !------------------
+      ! Contribution of the power functions:
+      f_pow = power_function(a_r, TB_Expwall%f_pow)   ! below
+      ! its derivative:
+      d_f_pow = d_power_function(a_r, TB_Expwall%f_pow)   ! below
+      ! and second derivative:
+      d2_f_pow = d2_power_function(a_r, TB_Expwall%f_pow)   ! below
+
+      !------------------
+      ! Contribution of the ZBL potential:
+      if (TB_Expwall%f_ZBL%use_it) then
+         f_ZBL = ZBL_pot(Z1, Z2, a_r)   ! module "ZBL_potential"
+         ! its derivative:
+         d_f_ZBL = d_ZBL_pot(Z1, Z2, a_r)   ! module "ZBL_potential"
+         ! and second derivative:
+         d2_f_ZBL = d2_ZBL_pot(Z1, Z2, a_r)   ! module "ZBL_potential"
+      else
+         f_ZBL = 0.0d0
+         d_f_ZBL = 0.0d0
+         d2_f_ZBL = 0.0d0
+      endif
+
+      !------------------
+      ! Contribution of tabulated potential:
+      f_tab = tabulated_potential(a_r, TB_Expwall%f_tab) ! below
+      ! its derivative:
+      d_f_tab = d_tabulated_potential(a_r, TB_Expwall%f_tab) ! below
+      ! and second derivative:
+      d2_f_tab = d2_tabulated_potential(a_r, TB_Expwall%f_tab) ! below
+
+      !------------------
+      ! Combine all:
+      Pot   = f_invexp + f_exp + f_pow + f_ZBL + f_tab
+      d_Pot = d_f_invexp + d_f_exp + d_f_pow + d_f_ZBL + d_f_tab
+      d2_Pot = d2_f_invexp + d2_f_exp + d2_f_pow + d2_f_ZBL + d2_f_tab
+
+      !------------------
+      ! Construct the second derivative:
+      dPot = Pot*d2_f_large + 2.0d0*d_Pot*d_f_large + d2_Pot*f_cut_large
+   endif
+end function d2_Short_range_pot
+
+
+
+
+subroutine d_Exponential_wall_forces(Scell, NSC, matter, numpar, F_wall, dF_wall) ! get derivatives of the exponential wall forces
+   type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC	! number of super-cell
+   type(solid), intent(in), target :: matter   ! materil parameters
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   real(8), dimension(:,:), allocatable, intent(out) :: F_wall, dF_wall ! force and its derivative
+   !----------------------------------
+   integer :: i1, atom_2
+   real(8) :: drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, F_r, dF_r, F(3), dF(3), a_r
+   integer, pointer :: m, KOA1, KOA2, j1
+   real(8), pointer :: x, y, z, Z1, Z2
+
+
+   ! Make sure the forces are allocated:
+   if (.not.allocated(F_wall)) allocate(F_wall(3,Scell(NSC)%Na))
+   if (.not.allocated(dF_wall)) allocate(dF_wall(3,Scell(NSC)%Na))
+   F_wall(:,:) = 0.0d0	! just to start with, forces
+   dF_wall(:,:) = 0.0d0	! just to start with, derivatives of forces
+
+
+   ! Check if there is any vdW forces in this parameterization:
+   if (.not.allocated(Scell(NSC)%TB_Expwall)) return ! nothing to do
+
+
+   !$omp PARALLEL private(i1, m, KOA1, Z1, atom_2, j1, KOA2, Z2, x,y,z, a_r, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, F_r, dF_r, F, dF)
+   !$omp DO
+   do i1 = 1, Scell(NSC)%Na	! contribution from all atoms
+      m => Scell(NSC)%Near_neighbor_size(i1)
+      KOA1 => Scell(NSC)%MDatoms(i1)%KOA
+      Z1 => matter%Atoms(KOA1)%Z ! atomic number
+      F = 0.0d0   ! to restart
+      dF = 0.0d0  ! to restart
+      do atom_2 = 1,m		! do only for atoms close to that one
+         j1 => Scell(NSC)%Near_neighbor_list(i1, atom_2)	! this is the list of such close atoms
+         if (j1 > 0) then
+            KOA2 => Scell(NSC)%MDatoms(j1)%KOA
+            Z2 => matter%Atoms(KOA2)%Z ! atomic number
+
+            x => Scell(NSC)%Near_neighbor_dist(i1,atom_2,1) ! at this distance, X, Y, Z
+            y => Scell(NSC)%Near_neighbor_dist(i1,atom_2,2) ! at this distance, Y
+            z => Scell(NSC)%Near_neighbor_dist(i1,atom_2,3) ! at this distance, Z
+            a_r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4) ! at this distance, R
+
+            ! Derivatives d r_{i,j} / d r_{i,alpha}:
+            drdrx = x/a_r
+            drdry = y/a_r
+            drdrz = z/a_r
+
+            ! Second derivatives d2 r_{ij} / d r2_{i,alpha}:
+            d2rdr2x = ddija_dria(x, a_r)  ! module "Coulomb"
+            d2rdr2y = ddija_dria(y, a_r)  ! module "Coulomb"
+            d2rdr2z = ddija_dria(z, a_r)  ! module "Coulomb"
+
+            ASSOCIATE (ARRAY => Scell(NSC)%TB_Expwall) ! this is the sintax we have to use to check the class of defined types
+               select type (ARRAY)
+               type is (TB_Exp_wall_simple)
+                  F_r = d_Exp_wall_pot(ARRAY(KOA1, KOA2), a_r) ! below
+                  dF_r = d2_Exp_wall_pot(ARRAY(KOA1, KOA2), a_r) ! below
+
+               type is (TB_Short_Rep)
+                  F_r = d_Short_range_pot(ARRAY(KOA1,KOA2), a_r, Z1, Z2)  ! below
+                  dF_r = d2_Short_range_pot(ARRAY(KOA1,KOA2), a_r, Z1, Z2)  ! below
+
+               end select
+            END ASSOCIATE
+
+            ! Construct the force and derivative:
+            F(1) = F(1) + F_r*drdrx
+            F(2) = F(2) + F_r*drdry
+            F(3) = F(3) + F_r*drdrz
+            dF(1) = dF(1) + dF_r*drdrx + F_r*d2rdr2x
+            dF(2) = dF(2) + dF_r*drdry + F_r*d2rdr2y
+            dF(3) = dF(3) + dF_r*drdrz + F_r*d2rdr2z
+
+         endif ! j1 > 0
+      enddo ! j1
+      ! And save for each atom:
+      F_wall(:,i1) = F_wall(:,i1) + F
+      dF_wall(:,i1) = dF_wall(:,i1) + dF
+   enddo ! i1
+   !$omp end do
+   !$omp end parallel
+
+   nullify(m, KOA1, KOA2, j1, x, y, z, Z1, Z2)
+end subroutine d_Exponential_wall_forces
+
+
 
 
 ! Derivatives of the Short-range energy by s:
@@ -420,6 +594,47 @@ function d_tabulated_potential(r, f_tab) result(Pot)
 end function d_tabulated_potential
 
 
+function d2_tabulated_potential(r, f_tab) result(Pot)
+   real(8) Pot ! [eV/A^2] second derivative of the repulsive potential
+   real(8), intent(in) :: r   ! [A] distance
+   type(Rep_tab), intent(in) :: f_tab
+   !---------------------------
+   integer :: i_closest, Nsiz
+   real(8) :: E
+
+   if (f_tab%use_it) then  ! and only then
+      Nsiz = size(f_tab%R)
+
+      ! Find the value of radius in the array:
+      if (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
+         E = 0.0d0
+      else  ! (r > f_tab%R(Nsiz))
+         call Find_monotonous_LE(f_tab%R, r, i_closest) ! module "Little_subroutines"
+         if (i_closest == 1) then
+            E = (f_tab%E(i_closest+1) - f_tab%E(i_closest)) / (f_tab%R(i_closest+1) - f_tab%R(i_closest))
+         else
+            if (i_closest == Nsiz) i_closest = Nsiz - 1
+            if (f_tab%use_spline) then  ! use cubic spline instead of the finite difference
+               ! For spline, only the interval N-1 is defined, so use it for too large distances:
+               E = d2_cubic_function(r-f_tab%R(i_closest), f_tab%c(i_closest), f_tab%d(i_closest))  ! module "Algebra_tools"
+
+            else ! use finite diference
+               i_closest = i_closest + 1  ! set upper point for interpolation between i-1 and i
+               ! Numerical second derivative:
+               E = (f_tab%E(i_closest) - 2.0d0*f_tab%E(i_closest-1)+f_tab%E(i_closest-2)) / &
+                   (f_tab%R(i_closest) - f_tab%R(i_closest-1))*(f_tab%R(i_closest-1) - f_tab%R(i_closest-2))
+
+            endif ! (f_tab%use_spline)
+         endif ! (i_closest == 1)
+      endif ! (f_tab%use_spline)
+   else  ! no potenital => no force
+      E = 0.0d0
+   endif ! (f_tab%use_it)
+
+   Pot = E ! [eV/A^2] second derivative of the potential
+end function d2_tabulated_potential
+
+
 pure function power_function(r, f_pow) result(Pot)
    real(8) Pot ! [eV] Repulsive potential
    real(8), intent(in) :: r   ! [A] distance
@@ -435,7 +650,7 @@ pure function power_function(r, f_pow) result(Pot)
 end function power_function
 
 pure function d_power_function(r, f_pow) result(Pot)
-   real(8) Pot ! [eV] Repulsive potential
+   real(8) Pot ! [eV/A] Repulsive potential
    real(8), intent(in) :: r   ! [A] distance
    type(Rep_pow), dimension(:), allocatable, intent(in) :: f_pow
    integer :: i, Nsiz
@@ -447,6 +662,21 @@ pure function d_power_function(r, f_pow) result(Pot)
       enddo
    endif
 end function d_power_function
+
+pure function d2_power_function(r, f_pow) result(Pot)
+   real(8) Pot ! [eV/A^2] Repulsive potential
+   real(8), intent(in) :: r   ! [A] distance
+   type(Rep_pow), dimension(:), allocatable, intent(in) :: f_pow
+   integer :: i, Nsiz
+   Pot = 0.0d0
+   if (allocated(f_pow)) then ! and only then
+      Nsiz = size(f_pow)
+      do i = 1, Nsiz
+         Pot = Pot + f_pow(i)%Phi * (r/f_pow(i)%r0)**f_pow(i)%m * f_pow(i)%m*(f_pow(i)%m-1.0d0) / r**2
+      enddo
+   endif
+end function d2_power_function
+
 
 
 pure function inv_exp_function(r, use_it, C, r0)  result(Pot)
@@ -463,7 +693,7 @@ pure function inv_exp_function(r, use_it, C, r0)  result(Pot)
 end function inv_exp_function
 
 pure function d_inv_exp_function(r, use_it, C, r0)  result(Pot)
-   real(8) Pot ! [eV] Derivative of the repulsive potential
+   real(8) Pot ! [eV/A] Derivative of the repulsive potential
    logical, intent(in) :: use_it ! flag to use this function or not
    real(8), intent(in) :: r   ! [A] distance
    real(8), intent(in) :: C    ! [eV] energy of the "wall"
@@ -474,6 +704,20 @@ pure function d_inv_exp_function(r, use_it, C, r0)  result(Pot)
       Pot = d_Wall_potential(C, r0, r)  ! below
    endif
 end function d_inv_exp_function
+
+pure function d2_inv_exp_function(r, use_it, C, r0)  result(Pot)
+   real(8) Pot ! [eV/A^2] Derivative of the repulsive potential
+   logical, intent(in) :: use_it ! flag to use this function or not
+   real(8), intent(in) :: r   ! [A] distance
+   real(8), intent(in) :: C    ! [eV] energy of the "wall"
+   real(8), intent(in) :: r0     ! [A] "wall" position
+   real(8) :: eps
+   Pot = 0.0d0
+   if (use_it) then  ! and only then
+      Pot = d2_Wall_potential(C, r0, r)  ! below
+   endif
+end function d2_inv_exp_function
+
 
 
 pure function exp_function(r, use_it, Phi, r0, a)  result(Pot)
@@ -494,7 +738,7 @@ pure function exp_function(r, use_it, Phi, r0, a)  result(Pot)
 end function exp_function
 
 pure function d_exp_function(r, use_it, Phi, r0, a)  result(Pot)
-   real(8) Pot ! [eV] Derivative of the repulsive potential
+   real(8) Pot ! [eV/A] Derivative of the repulsive potential
    logical, intent(in) :: use_it ! flag to use this function or not
    real(8), intent(in) :: r   ! [A] distance
    real(8), intent(in) :: Phi    ! [eV] energy of the "wall"
@@ -509,6 +753,24 @@ pure function d_exp_function(r, use_it, Phi, r0, a)  result(Pot)
       endif
    endif
 end function d_exp_function
+
+
+pure function d2_exp_function(r, use_it, Phi, r0, a)  result(Pot)
+   real(8) Pot ! [eV/A^2] Second derivative of the repulsive potential
+   logical, intent(in) :: use_it ! flag to use this function or not
+   real(8), intent(in) :: r   ! [A] distance
+   real(8), intent(in) :: Phi    ! [eV] energy of the "wall"
+   real(8), intent(in) :: r0     ! [A] "wall" position
+   real(8), intent(in) :: a  ! [A] width
+   real(8) :: eps
+   Pot = 0.0d0
+   if (use_it) then  ! and only then
+      eps = 1.0d-5
+      if (abs(a) > eps) then
+         Pot = Phi * exp(-(r - r0)/a) / a**2
+      endif
+   endif
+end function d2_exp_function
 
 
 !------------------------------------------------------
@@ -603,6 +865,20 @@ pure function d_Wall_potential(C, r0, r)  ! derivative of exponential wall poten
 end function d_Wall_potential
 
 
+pure function d2_Wall_potential(C, r0, r) result(dF) ! second derivative of exponential wall potential
+   real(8) :: dF
+   real(8), intent(in) :: C, r0, r
+   real(8) :: rr0, arg
+   arg = r - r0
+   if (abs(arg) <= log(TINY(r))) then	! atoms are too close
+      dF = 0.0d0	! no contribution to force at "infinite" potential
+   else	! proper potential:
+      rr0 = 1.0d0/arg
+      dF = C*exp(rr0)*rr0**3
+   endif
+end function d2_Wall_potential
+
+
 
 
 function d_Exp_wall_pot(TB_Expwall, a_r) result(dPot)
@@ -631,6 +907,38 @@ function d_Exp_wall_pot(TB_Expwall, a_r) result(dPot)
    endif
    nullify(C, r0, d0, dd)
 end function d_Exp_wall_pot
+
+
+function d2_Exp_wall_pot(TB_Expwall, a_r) result(dPot)
+   real(8) :: dPot		! derivative of the exponential wall potential
+   type(TB_Exp_wall_simple), intent(in), target :: TB_Expwall	! Exponential wall parameters
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
+   !---------------------
+   real(8) :: E_C, f_cut_large, d_f_large, d2_f_large, d_E_C, d2_E_C
+   real(8), pointer :: C	! [eV]
+   real(8), pointer :: r0	! [A]
+   real(8), pointer :: d0	! [A]
+   real(8), pointer :: dd	! [A]
+   C => TB_Expwall%C 	! [eV]
+   r0 => TB_Expwall%r0	! [A]
+   d0 => TB_Expwall%d0	! [A]
+   dd => TB_Expwall%dd	! [A]
+
+   if (a_r > d0+dd*10.0d0) then ! anything beyond cut-offs is zero:
+      dPot = 0.0d0
+   else ! at shorter distances we use proper potential:
+      E_C = Wall_potential(C, r0, a_r)	! function above
+      d_E_C = d_Wall_potential(C, r0, a_r)		! derivative of  exponential wall part of the potential
+      d2_E_C = d2_Wall_potential(C, r0, a_r)		! derivative of  exponential wall part of the potential
+
+      f_cut_large = f_cut_L_C(a_r, d0, dd)   ! module "Coulomb"
+      d_f_large = d_f_cut_L_C(a_r, d0, dd)   ! module "Coulomb"
+      d2_f_large = d2_f_cut_L_C(a_r, d0, dd) ! module "Coulomb"
+
+      dPot = d2_E_C*f_cut_large + 2.0d0*d_E_C*d_f_large + E_C*d2_f_large
+   endif
+   nullify(C, r0, d0, dd)
+end function d2_Exp_wall_pot
 
 
 ! Derivatives of the exponential "wall" energy by s:

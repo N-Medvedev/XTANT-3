@@ -1231,9 +1231,9 @@ subroutine Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, nrg)
       Scell(NSC)%Vsupce = Scell(NSC)%Vsupce * alpha
 
       ! Rescaling the relative velocities:
-      call velocities_abs_to_rel(Scell, NSC) ! !New relative velocities
-      ! And energies:
-      call Atomic_kinetic_energies(Scell, NSC, matter)
+      call velocities_abs_to_rel(Scell, NSC) ! New relative velocities
+      ! And updating energies:
+      call Atomic_kinetic_energies(Scell, NSC, matter)   ! below
 
       ! And supercell energy:
       Ekin = Supce_kin_energy(Scell, NSC, matter%W_PR)    ! function below
@@ -2043,6 +2043,7 @@ subroutine get_Ekin(Scell, matter)
    enddo
 end subroutine get_Ekin
 
+
 subroutine get_kinetic_energy_abs(Scell, NSC, matter, nrg)
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
@@ -2087,7 +2088,7 @@ subroutine get_kinetic_energy_abs(Scell, NSC, matter, nrg)
       Scell(NSC)%Ta_sub(1) = Scell(NSC)%Ta  ! [K]
    endif
    
-   Ekin = Supce_kin_energy(Scell, NSC, matter%W_PR)    ! function below
+   Ekin = Supce_kin_energy(Scell, NSC, matter%W_PR)    ! [eV] function below
 
    Epot = (matter%p_ext*Scell(NSC)%V)*1d-30/g_e	! potential part of the energy of the supercell [eV]
    nrg%E_supce = (Ekin + Epot)/dble(N) 	! total energy of the supercell [eV/atom]

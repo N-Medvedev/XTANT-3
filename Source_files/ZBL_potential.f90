@@ -44,7 +44,7 @@ real(8), parameter :: m_exp3 = -0.4028d0
 real(8), parameter :: m_exp4 = -0.2016d0
 real(8), parameter :: m_k = 1.0d0/(4.0d0 * g_Pi * g_e0)
 
-public :: ZBL_pot, d_ZBL_pot, get_total_ZBL
+public :: ZBL_pot, d_ZBL_pot, get_total_ZBL, d2_ZBL_pot
 
 
  contains
@@ -109,6 +109,23 @@ pure function d_ZBL_pot(Z1, Z2, r) result(d_V_ZBL)
 end function d_ZBL_pot
 
 
+pure function d2_ZBL_pot(Z1, Z2, r) result(d2_V_ZBL)
+   real(8) d2_V_ZBL  ! derivative of ZBL potential [eV/A^2]
+   real(8), intent(in) :: Z1, Z2    ! atomic nuclear charges (atomic numbers)
+   real(8), intent(in) :: r ! interatomic distance [A]
+   real(8) phi, d_phi, V_ZBL_part, d2_phi, d_V_ZBL
+
+   V_ZBL_part = m_k * Z1 * Z2 * g_e/(1.0d-10*r) ! part without phi [eV]
+   phi      = ZBL_phi(Z1, Z2, r) ! see below
+   d_phi    = d_ZBL_phi(Z1, Z2, r) ! see below
+   d_V_ZBL  = V_ZBL_part * (d_phi - phi/r)  ! [eV/A] derivative of ZBL potential
+   d2_phi   = d2_ZBL_phi(Z1, Z2, r) ! see below
+
+   d2_V_ZBL  = d_V_ZBL*(d_phi - phi/r) + V_ZBL_part*(d2_phi - d_phi/r + phi/r**2)     ! [eV/A^2] second derivative of ZBL potential
+end function d2_ZBL_pot
+
+
+
 pure function d_ZBL_phi(Z1, Z2, r) result(d_phi)
    real(8) d_phi ! [1/A]
    real(8), intent(in) :: Z1, Z2    ! atomic nuclear charges (atomic numbers)
@@ -121,6 +138,20 @@ pure function d_ZBL_phi(Z1, Z2, r) result(d_phi)
             m_phi3 * m_exp3 * exp(m_exp3 * x) + &
             m_phi4 * m_exp4 * exp(m_exp4 * x)) / a
 end function d_ZBL_phi
+
+
+pure function d2_ZBL_phi(Z1, Z2, r) result(d_phi)
+   real(8) d_phi ! [1/A]
+   real(8), intent(in) :: Z1, Z2    ! atomic nuclear charges (atomic numbers)
+   real(8), intent(in) :: r ! interatomic distance [A]
+   real(8) :: a, x
+   a = ZBL_a(Z1, Z2)    ! see below
+   x = r / a    ! normalized distance
+   d_phi = (m_phi1 * m_exp1**2 * exp(m_exp1 * x) + &
+            m_phi2 * m_exp2**2 * exp(m_exp2 * x) + &
+            m_phi3 * m_exp3**2 * exp(m_exp3 * x) + &
+            m_phi4 * m_exp4**2 * exp(m_exp4 * x)) / a**2
+end function d2_ZBL_phi
 
 
 pure function ZBL_phi(Z1, Z2, r) result(phi)

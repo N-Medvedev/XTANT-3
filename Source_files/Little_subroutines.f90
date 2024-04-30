@@ -70,7 +70,8 @@ public :: Find_in_array, Find_in_array_monoton, extend_array_size, deallocate_ar
 linear_interpolation, Find_in_monotonous_1D_array, Gaussian, print_time_step, fast_pow, count_3d, print_progress, &
 interpolate_data_on_grid, number_of_types_of_orbitals, name_of_orbitals, order_of_time, set_starting_time, convolution, &
 sample_gaussian, Fermi_function, d_Fermi_function, print_time, parse_yes_no, parse_time, it_is_number, find_order_of_number, &
-exclude_doubles, convert_hw_to_wavelength, convert_wavelength_to_hw, convert_frequency_to_hw
+exclude_doubles, convert_hw_to_wavelength, convert_wavelength_to_hw, convert_frequency_to_hw, &
+d2_Fermi_function
 
 
 
@@ -334,6 +335,30 @@ pure function d_Fermi_function(rcut, d, r, cut_off) result(F)
       F = -exprd/(d*exprd1*exprd1)
    endif
 end function d_Fermi_function
+
+
+pure function d2_Fermi_function(rcut, d, r, cut_off) result(d2F)
+   real(8) d2F
+   real(8), intent(in) :: rcut, d, r   ! [A]
+   logical, intent(in), optional :: cut_off  ! include cut-off, or not
+   !-----------
+   real(8) :: exprd, exprd1
+   logical :: cutit
+
+   if (present(cut_off)) then
+      cutit = cut_off
+   else ! include cutoff by default
+      cutit = .true.
+   endif
+
+   if (cutit .and. (r >= rcut + 10.0d0*d)) then
+      d2F = 0.0d0
+   else
+      exprd = exp( (r - rcut)/d )
+      exprd1 = 1.0d0 + exprd
+      d2F = -exprd/(d**2 * exprd1**2) * (2.0d0*exprd/exprd1 - 1.0d0)
+   endif
+end function d2_Fermi_function
 
  
 

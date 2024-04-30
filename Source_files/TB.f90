@@ -55,11 +55,11 @@ use TB_3TB, only : get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, Attract_TB
                      Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors, get_dHij_drij_3TB
 use TB_BOP, only : Construct_Vij_BOP, construct_TB_H_BOP, get_Erep_s_BOP
 use TB_xTB, only : Construct_Vij_xTB, construct_TB_H_xTB, get_Erep_s_xTB, identify_xTB_orbitals_per_atom
-use Van_der_Waals, only : Construct_B, get_vdW_s, get_vdW_s_D, get_vdW_interlayer
+use Van_der_Waals, only : Construct_B, get_vdW_s, get_vdW_s_D, get_vdW_interlayer, d_vdW_forces
 use Coulomb, only: m_k, m_sqrtPi, Coulomb_Wolf_pot, get_Coulomb_Wolf_s, cut_off_distance, Construct_B_C, get_Coulomb_s, &
-                     Coulomb_Wolf_self_term, d_Coulomb_Wolf_pot
+                     Coulomb_Wolf_self_term, d_Coulomb_Wolf_pot, d_Coulomb_forces
 use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s, &
-                     get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s
+                     get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s, d_Exponential_wall_forces
 
 #ifdef OMP_inside
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
@@ -71,7 +71,7 @@ PRIVATE
 public :: get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_parameters, &
          vdW_interplane, Electron_ion_coupling, update_nrg_after_change, get_DOS_masks, k_point_choice, &
          construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step, get_Mullikens_all, get_coupling_matrix_elements, &
-         Get_configurational_temperature_Pettifor
+         Get_configurational_temperature
 
  contains
 
@@ -748,10 +748,7 @@ subroutine Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)
    alpha = 3.0d0/(4.0d0*r_cut) ! Wolf's parameter chosen according to optimal value from [4]
 
    ! Get the charges for all different elements in the material:
-   !q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge [M 0]
    q(:) = matter%Atoms(:)%mulliken_q
-
-!    q(:) = -q(:)
 
    !$omp PARALLEL private(ian, m, KOA1, dpsi, atom_2, j1, KOA2, x, y, z, x1, a_r, b)
    !$omp DO
@@ -777,11 +774,7 @@ subroutine Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)
          dpsi(:) = dpsi(:) + b*x1(:)/a_r
       enddo ! atom_2
 
-      ! Add exponential wall force to already calculated other forces:
-      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + dpsi(:)  ! [F 0] ?
-      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + 10.0d0*dpsi(:)  ! [F 3] test
-      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) - dpsi(:)  ! [F 1] wrong
-      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + 0.0d0   ! [F 2]
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + dpsi(:)  ! [F 0]
 
    enddo ! ian
    !$omp end do
@@ -2863,7 +2856,6 @@ end subroutine vdW_forces
 
 
 
-
 ! Derivatives of the vdW energy by s:
 subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, Ny, Nz) 
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
@@ -2906,7 +2898,6 @@ subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, 
                      zb = (/x_cell, y_cell, z_cell/) ! vector of image of the super-cell
                      origin_cell = ALL(zb==0) ! if it is the origin cell
 
-                     !cos_if:if ((dik-djk) /= 0) then ! without it, it gives ERROR
                      cell_if:if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
                         ! contribution from this image of the cell:
                         coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
@@ -3387,8 +3378,8 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
 
             ! Update the last time-step data accordingly:
             call save_last_timestep(Scell) ! module "Atomic_tools"
+
             ! Calculate electron-ion coupling parameter:
-            
             call get_G_ei(Scell, NSC, numpar, dE_nonadiabat) ! module "Nonadiabatic"
             
          endif
@@ -3569,7 +3560,8 @@ end subroutine Construct_Aij_old
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Analysis subroutines:
 
-subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter)
+
+subroutine Get_configurational_temperature(Scell, numpar, matter)
    type(Super_cell), dimension(:), intent(inout) :: Scell	! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(solid), intent(in), target :: matter	! materil parameters
@@ -3587,12 +3579,13 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter)
    dF = 0.0d0
    
    ! Forces and their derivatives:
-   call get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep, Fatr, dFrep, dFatr)	! see below
+   call get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep, Fatr, dFrep, dFatr)	! see below
 
    ! Configurational temperature:
    ! 1) Parameters to be used for evaluation of the configurational temperatures:
    !F_sum = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) )
    dF_sum = SUM( (dF(1,:) + dF(2,:) + dF(3,:)) )
+
 !    ! This definition only works for Ta=Te, the standard approximation; in our case, does not work, see corrected expression below!
 !    if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
 !       Tconf = 0.0d0  ! [K]
@@ -3618,7 +3611,7 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter)
    Scell(1)%Tconf = Tconf
    !write(*,'(a,f,f,f,f)') '2:', F_sum, dF_temp, 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV, Tconf
 
-   ! 3) Second moment configurational temperature (B=F^2*F):
+   ! 3) Hyperconfigurational (second moment configurational) temperature (B=F^2*F):
    F_sum2 = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) * &
                ( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) ) )
    dF_temp = SUM( (3.0d0*F(1,:)*F(1,:) +       F(2,:)*F(2,:) +       F(3,:)*F(3,:)) * dF(1,:) + &
@@ -3654,23 +3647,25 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter)
    
    ! Clean up:
    deallocate(F, dF)
-end subroutine Get_configurational_temperature_Pettifor
+end subroutine Get_configurational_temperature
 
 
-subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out, dFrep_out, dFatr_out)
+subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, Fatr_out, dFrep_out, dFatr_out)
    type(Super_cell), dimension(:), intent(in) :: Scell	! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(solid), intent(in) :: matter	! materil parameters
    real(8), dimension(:,:), allocatable, intent(inout):: F, dF	! forces and derivatives [eV/A], [eV/A^2]
    real(8), dimension(:,:), allocatable, intent(inout), optional :: Frep_out, Fatr_out, dFrep_out, dFatr_out	! forces and derivatives [eV/A], [eV/A^2]
    !-----------------------------------------------------------
-   real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr	! forces and derivatives [eV/A], [eV/A^2]
+   real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr  ! forces and derivatives [eV/A], [eV/A^2]
    real(8), dimension(:,:,:), allocatable :: M_Vs  ! matrix of functions Vs
    real(8), dimension(:,:,:), allocatable :: M_dVs ! matrix of functions dVs
    real(8), dimension(:,:,:), allocatable :: M_d2Vs ! matrix of functions d2Vs
    real(8), dimension(:,:,:), allocatable :: M_cos	! matrix of directional cosines
+   real(8), dimension(:,:), allocatable :: Frep_vdW, dFrep_vdW      ! vdW forces and derivatives [eV/A], [eV/A^2]
+   real(8), dimension(:,:), allocatable :: Frep_Coul, dFrep_Coul    ! Coulomb forces and derivatives [eV/A], [eV/A^2]
+   real(8), dimension(:,:), allocatable :: Frep_wall, dFrep_wall          ! Short-range repulsive forces and derivatives [eV/A], [eV/A^2]
    integer :: i, N
-   
-!    open(UNIT = 7774, FILE = 'OUTPUT_Forces_for_Tconfig.dat') !<-
    
    N = size(Scell(1)%MDAtoms)	! number of atoms
    if (.not.allocated(F)) allocate(F(3,N))
@@ -3685,12 +3680,12 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out
       ! Construct forces and their derivatives:
       select type(ARRAY)
       type is (TB_H_Pettifor) ! TB parametrization according to Pettifor
-      
          ! Construct array of functions Vs and dVs for all pairs of atoms to use for forces:
          call Construct_M_Vs(Scell, 1, ARRAY, M_Vs, M_dVs, M_d2Vs) ! module "TB_Pettifor"
 
          ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
          call dHij_r(ARRAY, Scell(1)%MDatoms, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, Fatr, dFatr) ! module "TB_Pettifor"
+
       type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni
          !print*, 'Configurational temperature calculations are not implemented for Molteni: Attractive'
       type is (TB_H_Fu)  ! TB parametrization accroding to Fu
@@ -3728,11 +3723,45 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out
       type is (TB_Rep_xTB)  ! TB parametrization accroding to xTB
          !print*, 'Configurational temperature calculations are not implemented for xTB: Repulsive'
       end select
-   END ASSOCIATE !    
+   END ASSOCIATE !
+
+
+   !cccccccccccccccccccccccccccccccccccccccccccccc
+   ! Classical potentials contributions:
+   ! SCC Coulomb contribution:
+   !call Coulomb_force_from_SCC(numpar, matter, Scell, NSC) ! NOT READY
+
+   print*, 'before d_vdW_forces'
+
+   ! van der Waals forces:
+   call d_vdW_forces(Scell, 1, numpar, Frep_vdW, dFrep_vdW) ! module "Van_der_Waals"
+
+   print*, 'before d_Coulomb_forces'
+
+   ! Coulomb potential part for modelling Coulomb explosion of a finite system:
+   call d_Coulomb_forces(Scell, 1, numpar, Frep_Coul, dFrep_Coul) ! module "Coulomb"
+
+   print*, 'before d_Exponential_wall_forces'
+
+   ! Exponential wall potential part:
+   call d_Exponential_wall_forces(Scell, 1, matter, numpar, Frep_wall, dFrep_wall) ! module "Exponential_wall"
+
+   print*, 'get_derivatives_and_forces_r:'
+   print*, maxval(Frep), maxval(Frep_vdW), maxval(Frep_Coul), maxval(Frep_wall)
+
+   ! Add all the optional forces:
+   if (allocated(Frep)) then  ! if they were calculated
+      Frep = Frep + Frep_vdW + Frep_Coul + Frep_wall
+   endif
+   if (allocated(dFrep)) then ! if they were calculated
+      dFrep = dFrep + dFrep_vdW + dFrep_Coul + dFrep_wall
+   endif
+   !cccccccccccccccccccccccccccccccccccccccccccccc
+
    
    ! Combine attractive and repulsive parts of forces and derivatives:
-   F = Frep + Fatr	! forces [eV/A]
-   dF = dFrep + dFatr	! derivatives of forces [eV/A^2]
+   F = Frep + Fatr      ! forces [eV/A]
+   dF = dFrep + dFatr   ! derivatives of forces [eV/A^2]
 
 
    ! Save partial contributions:
@@ -3778,6 +3807,10 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out
    if (allocated(M_dVs)) deallocate(M_dVs)
    if (allocated(M_d2Vs)) deallocate(M_d2Vs)
    if (allocated(M_cos)) deallocate(M_cos)
+   if (allocated(Frep_vdW)) deallocate(Frep_vdW)
+   if (allocated(dFrep_vdW)) deallocate(dFrep_vdW)
+   if (allocated(Frep_Coul)) deallocate(Frep_Coul)
+   if (allocated(dFrep_Coul)) deallocate(dFrep_Coul)
 end subroutine get_derivatives_and_forces_r
 
 

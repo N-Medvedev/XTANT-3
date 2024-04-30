@@ -244,7 +244,7 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
 
       !Testing of periodic and nonperiodic calculations:
       !print*, 'Ta: ', get_temperature_from_equipartition(Scell(NSC), matter, numpar), &
-                   !get_configurational_temperature(Scell(NSC), matter, numpar), Scell(NSC)%Ta_var(8)
+                   !Get_configurational_temperature_numeric(Scell(NSC), matter, numpar), Scell(NSC)%Ta_var(8)
                    !get_temperature_from_equipartition(Scell(NSC), matter, numpar, non_periodic=.true.), &
                    !get_Tconfig_n_l(Scell(NSC), matter, numpar, 1, 0)
 
@@ -273,7 +273,7 @@ subroutine update_Ta_config_running_average(Scell, matter, numpar)
    !---------------------------
    if (numpar%print_Ta) then
       ! Get the new configurational temperature:
-      Scell%Ta_var(8) = get_configurational_temperature(Scell, matter, numpar)  ! module "Atomic_thermodynamics"
+      Scell%Ta_var(8) = Get_configurational_temperature_numeric(Scell, matter, numpar)  ! module "Atomic_thermodynamics"
       !print*, Scell%Ta_var(6), Scell%Ta_var(7), Scell%Ta_var(8)
 
       ! Update the running average of the configurational tempreature:
@@ -283,7 +283,7 @@ end subroutine update_Ta_config_running_average
 
 
 
-function get_configurational_temperature(Scell, matter, numpar) result(Ta)
+function Get_configurational_temperature_numeric(Scell, matter, numpar) result(Ta) ! Unsuable, too large fluctuations
    real(8) :: Ta  ! [K] configurational temperature defined for B = r^n * sin(Pi*l*s)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in), target :: matter ! materil parameters
@@ -349,7 +349,7 @@ function get_configurational_temperature(Scell, matter, numpar) result(Ta)
 
    ! Clean up:
    nullify(Mass)
-end function get_configurational_temperature
+end function Get_configurational_temperature_numeric
 
 
 
