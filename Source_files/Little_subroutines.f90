@@ -71,7 +71,7 @@ linear_interpolation, Find_in_monotonous_1D_array, Gaussian, print_time_step, fa
 interpolate_data_on_grid, number_of_types_of_orbitals, name_of_orbitals, order_of_time, set_starting_time, convolution, &
 sample_gaussian, Fermi_function, d_Fermi_function, print_time, parse_yes_no, parse_time, it_is_number, find_order_of_number, &
 exclude_doubles, convert_hw_to_wavelength, convert_wavelength_to_hw, convert_frequency_to_hw, &
-d2_Fermi_function
+d2_Fermi_function, basis_set_size, number_of_radial_functions
 
 
 
@@ -286,7 +286,46 @@ function name_of_orbitals(norb, i_orb) result(orb_name)
    endselect
 end function name_of_orbitals
  
- 
+
+
+function basis_set_size(ind) result(n_basis)
+   integer :: n_basis
+   integer, intent(in) :: ind ! index for the size of the basis set used: s=0; sp3=1; sp3d5=2; sp3s*=3; sp3d5s*=4;
+   !------------
+   select case (ind)   ! identify basis set
+   case (:0) ! s
+      n_basis = 1
+   case (1) ! sp3
+      n_basis = 4
+   case (2) ! sp3d5
+      n_basis = 9
+   case (3) ! sp3s*
+      n_basis = 5
+   case (4) ! sp3d5s*
+      n_basis = 10
+   endselect
+end function basis_set_size
+
+
+function number_of_radial_functions(ind) result(n_basis)
+   integer :: n_basis
+   integer, intent(in) :: ind ! index for the size of the basis set used: s=0; sp3=1; sp3d5=2; sp3s*=3; sp3d5s*=4;
+   !------------
+   select case (ind)   ! identify number of radial functions needed for the given LCAO basis set
+   case (:0) ! s
+      n_basis = 1
+   case (1) ! sp3
+      n_basis = 4
+   case (2) ! sp3d5
+      n_basis = 10
+   case (3) ! sp3s*
+      n_basis = 7
+   case (4) ! sp3d5s*
+      n_basis = 18   ! to correct later if sp3d5s* is implemented
+   endselect
+end function number_of_radial_functions
+
+
 
 ! Set the right starting time, depending on whether we use the pulse or not:
 subroutine set_starting_time(laser, tim, t_start, t_NA, t_Te_Ee)

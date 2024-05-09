@@ -470,7 +470,7 @@ subroutine Construct_Vij_xTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
 
    nat => Scell(NSC)%Na	! number of atoms in the supercell
    ! number of hopping integrals for this basis set in xTB:
-   N_bs = identify_xTB_basis_size(numpar%N_basis_size)  ! below
+   N_bs = identify_xTB_basis_size(numpar%basis_size_ind)  ! below
 
    if (.not.allocated(M_Vij)) allocate(M_Vij(nat,nat,N_bs))	! each pair of atoms, all  V functions
    if (.not.allocated(M_dVij)) allocate(M_dVij(nat,nat,N_bs))	! each pair of atoms, all  dV functions
@@ -500,7 +500,7 @@ subroutine Construct_Vij_xTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
 !          call xTB_overlap(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 1, M_SVij(j,i,1), M_dVij(j,i,1)) ! (s s sigma)
 
 !          M_Vij(j,i,1) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 1)   ! (s s sigma)
-         select case (numpar%N_basis_size)
+         select case (numpar%basis_size_ind)
          case (1)    ! sp3
 !             M_Vij(j,i,2) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 2)   ! (s p sigma)
 !             M_SVij(j,i,2) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 2) ! (s p sigma)
@@ -520,7 +520,7 @@ subroutine Construct_Vij_xTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
          ! All derivatives of the radial functions and the radial functions for Overlap matrix:
 !          M_dVij(j,i,1) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 1)   ! (s s sigma)
 !          M_dSVij(j,i,1) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 1) ! (s s sigma)
-         select case (numpar%N_basis_size)
+         select case (numpar%basis_size_ind)
          case (1)    ! sp3
 !             M_dVij(j,i,2) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 2)   ! (s p sigma)
 !             M_dSVij(j,i,2) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 2) ! (s p sigma)

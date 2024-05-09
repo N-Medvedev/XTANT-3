@@ -46,7 +46,7 @@ public :: KS_s, KS_ss_hetero, KS_sp3_hetero, KS_sp3d5_hetero, drij_dska, ddija_d
          d_KS_s, d_KS_sp3_hetero, d_KS_sp3d5_hetero, dda_dhgd, drij_dhab, drij_drka, &
          ddija_drkb, d2dija_drkb2, m_sqrt3, t_s_dab, t_s_dx2_y2, t_s_dz2_r2, t_s_s, t_pa_pa, &
          t_dab_dab, t_dx2_y2_dx2_y2, t_d3z2_r2_d3z2_r2, KS_sp3_hetero_TEST, KS_sp3d5_hetero_TEST, &
-         KS_sp3d5, d_KS_sp3d5, d_KS_sp3d5_TEST
+         KS_sp3d5, d_KS_sp3d5, d_KS_sp3d5_TEST, KS_Cmnj_orbital, d_KS_Cmnj_orbital, d2_KS_Cmnj_orbital
 
 
  contains
@@ -1409,11 +1409,25 @@ end function d2_t_d3z2_r2_d3z2_r2
 
 !------------------------------------------------------------------------
 ! Arrenge the SK-terms by parts (easier to read):
-pure function KS_single_term(l1, l2, dx, dy, dz, V) result(t_kk)
+pure function KS_single_term(l1, l2, l, n, m, dl, dm, dn, d2l, d2m, d2n, V, dV, d2V) result(t_kk)
    real(8) :: t_kk
    integer, intent(in) :: l1, l2 ! orbital indices
-   real(8), intent(in) :: dx, dy, dz, V   ! direction cosines, and the radial function
+   real(8), intent(in) :: l, m, n   ! direction cosines
+   real(8), intent(in) :: V   ! the radial function
+   real(8), intent(in), optional :: dV, d2V   ! the first and second derivatives of the radial function
+   real(8), intent(in), optional :: dl, dm, dn   ! derivatives of the direction cosines
+   real(8), intent(in), optional :: d2l, d2m, d2n   ! second derivatives of the direction cosines
    !---------------------
+   real(8) :: Y, dY, d2Y   ! angular function to be constructed
+
+   ! Get the angular function:
+   Y = KS_Cmnj_orbital(l1, l2, 0, l, n, m)   ! below
+
+   ! Get the derivative of the angular function, if required:
+   if (present(dV)) then
+      dY = d_KS_Cmnj_orbital(l1, l2, 0, l, n, m, dl, dm, dn)   ! below
+   endif
+
    t_kk = 0.0d0
 end function KS_single_term
 
@@ -1448,7 +1462,7 @@ pure function KS_Cmnj_orbital(l1, l2, j, l, n, m) result(Cmnj) ! for up to sp3d5
 
       if (j /= 0) return ! s-orbitals are non-zero only for j=0, nothing to do here
       ! If j=0, get the value:
-      select case (l2) ! s s
+      select case (l2) ! s
       !---------------
       case (1) ! l=0: s s
          Cmnj = 1.0d0

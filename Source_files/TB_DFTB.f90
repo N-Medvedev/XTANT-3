@@ -66,7 +66,7 @@ subroutine Construct_Vij_DFTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_d
    
    nat => Scell(NSC)%Na	! number of atoms in the supercell
    ! number of hopping integrals for this basis set in DFTB:
-   N_bs = identify_DFTB_basis_size(numpar%N_basis_size)  ! below
+   N_bs = identify_DFTB_basis_size(numpar%basis_size_ind)  ! below
    
    if (.not.allocated(M_Vij)) allocate(M_Vij(nat,nat,N_bs))	! each pair of atoms, all  V functions
    if (.not.allocated(M_dVij)) allocate(M_dVij(nat,nat,N_bs))	! each pair of atoms, all  dV functions
@@ -97,7 +97,7 @@ subroutine Construct_Vij_DFTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_d
          ! All radial functions for Hamiltonian:
          M_Vij(j,i,1) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 1)   ! (s s sigma)
          M_SVij(j,i,1) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 1) ! (s s sigma)
-         select case (numpar%N_basis_size)
+         select case (numpar%basis_size_ind)
          case (1)    ! sp3
             M_Vij(j,i,2) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 2)   ! (s p sigma)
             M_SVij(j,i,2) = DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 2) ! (s p sigma)
@@ -117,7 +117,7 @@ subroutine Construct_Vij_DFTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_d
          ! All derivatives of the radial functions and the radial functions for Overlap matrix:
          M_dVij(j,i,1) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 1)   ! (s s sigma)
          M_dSVij(j,i,1) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 1) ! (s s sigma)
-         select case (numpar%N_basis_size)
+         select case (numpar%basis_size_ind)
          case (1)    ! sp3
             M_dVij(j,i,2) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Vr, 2)   ! (s p sigma)
             M_dSVij(j,i,2) = d_DFTB_radial_function(r, TB(KOA1,KOA2)%Rr, TB(KOA1,KOA2)%Sr, 2) ! (s p sigma)
@@ -264,7 +264,7 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
    
    Error_descript = ''
    epsylon = 1d-12	! acceptable tolerance : how small an overlap integral can be, before we set it to zero
-   n_orb =  identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! size of the basis set per atom, below
+   n_orb =  identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)  ! size of the basis set per atom, below
    nat = Scell(NSC)%Na  ! number of atoms in the supercell
    Nsiz = size(Scell(NSC)%Ha,1) ! size of the total basis set
 
@@ -303,10 +303,10 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
                KOA2 => Scell(NSC)%MDatoms(i)%KOA
                ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
                ! Contruct a block-hamiltonian:
-               call Hamilton_one_DFTB(numpar%N_basis_size, j, i, TB_Hamil(KOA1,KOA2), Hij1, M_Vij, M_lmn)   ! below
+               call Hamilton_one_DFTB(numpar%basis_size_ind, j, i, TB_Hamil(KOA1,KOA2), Hij1, M_Vij, M_lmn)   ! below
             
                ! Construct overlap matrix for this pair of atoms:
-               call Get_overlap_S_matrix_DFTB(numpar%N_basis_size, j, i, Sij1, M_SVij, M_lmn)  ! below
+               call Get_overlap_S_matrix_DFTB(numpar%basis_size_ind, j, i, Sij1, M_SVij, M_lmn)  ! below
 
                do j1 = 1,n_orb ! all orbitals
                   l = (j-1)*n_orb+j1
@@ -498,6 +498,11 @@ subroutine Hamilton_one_DFTB(basis_ind, i, j, TB, Hij, M_Vij, M_lmn)
       endif
    else	! For pairs of atoms, fill the hamiltonain with Hopping Integrals:
       call Hopping_DFTB(basis_ind, M_Vij(i,j,:), M_Vij(j,i,:), M_lmn(:,i,j), Hij)	! subroutine below
+      !print*, '(i,j):', i, j
+      !print*, M_Vij(i,j,:)
+      !print*, '(j,i):', i, j
+      !print*, M_Vij(j,i,:)
+      !pause 'Hamilton_one_DFTB'
    endif
    
 end subroutine Hamilton_one_DFTB
@@ -619,7 +624,7 @@ subroutine get_forces_DFTB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_
    
    nat = size(Scell(NSC)%MDatoms)	! number of atoms
    Nsiz = size(Scell(NSC)%Ha,1)	! total number of orbitals
-   n_orb =  identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! size of the basis set per atom, below
+   n_orb =  identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)  ! size of the basis set per atom, below
 
    if (.not.allocated(dH1)) allocate(dH1(3,n_orb,n_orb))
    if (.not.allocated(dS1)) allocate(dS1(3,n_orb,n_orb))
@@ -644,7 +649,7 @@ subroutine get_forces_DFTB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_
          j4 = (j-1)*n_orb	! orbitals
          IJ:if (j >= i) then ! it's a new pair of atoms, calculate everything
             ! Get the matrix of dH/drij and dS/drij:
-            call d_Hamilton_one_DFTB(numpar%N_basis_size, k, Scell, NSC, i, j, atom_2, dH1, M_Vij, M_dVij, M_lmn, dS1, M_SVij, M_dSVij) ! this calls the block-hamiltonian
+            call d_Hamilton_one_DFTB(numpar%basis_size_ind, k, Scell, NSC, i, j, atom_2, dH1, M_Vij, M_dVij, M_lmn, dS1, M_SVij, M_dSVij) ! this calls the block-hamiltonian
 
             do j1 = 1,n_orb	! all orbitals
                j4j1 = j4+j1
@@ -973,8 +978,8 @@ subroutine dHamil_tot_Press_DFTB(Scell, NSC, numpar, M_Vij, M_dVij, M_SVij, M_dS
    integer :: i, j, j1, i1, atom_2, m, nat, i2, j2
    integer :: i4, j4, norb, n_overlap
    ! Depending on the basis set:
-   n_overlap = identify_DFTB_basis_size(numpar%N_basis_size)   ! below
-   norb = identify_DFTB_orbitals_per_atom(numpar%N_basis_size)    ! below
+   n_overlap = identify_DFTB_basis_size(numpar%basis_size_ind)   ! below
+   norb = identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)    ! below
    nat = size(Scell(NSC)%MDatoms)	! number of atoms
    dHij = 0.0d0 ! to start with
    dSij = 0.0d0 ! to start with
@@ -1160,7 +1165,7 @@ subroutine Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz,
    nol = 0.0d0
 !    temp = g_me*g_e/g_h*1d-10
    nat = size(Scell(NSC)%MDatoms) ! number of atoms
-   norb =  identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! size of the basis set per atom, below
+   norb =  identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)  ! size of the basis set per atom, below
    Nsiz = size(Scell(NSC)%Ha,1)
 
    ! Allocate complex parameters:
@@ -1594,10 +1599,13 @@ pure function d_DFTB_polinomial(C, rcut, r) result (F)
       do i = 1,8
          dblei = dble(i)
          rcutr = rcut - r
-         F = F + (dblei+1.0d0)*C(i)*rcutr**dblei
+         F = F - (dblei+1.0d0)*C(i)*rcutr**dblei
       enddo
    endif
 end function d_DFTB_polinomial
+
+
+
 
 
 function d_DFTB_spline(a, c, R, rcut, r_dist) result (F)

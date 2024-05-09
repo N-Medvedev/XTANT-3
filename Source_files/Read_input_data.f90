@@ -26,7 +26,7 @@
 MODULE Read_input_data
 use Objects
 use Universal_constants
-use Little_subroutines, only : print_time_step, it_is_number, convert_wavelength_to_hw, convert_frequency_to_hw
+use Little_subroutines, only : print_time_step, it_is_number, convert_wavelength_to_hw, convert_frequency_to_hw, basis_set_size
 use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file, get_file_extension, &
                               ensure_correct_path_separator
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, m_EEDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
@@ -158,7 +158,8 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%print_Ta = .false.  ! no need in various atomic temperature definitions
    numpar%ind_starting_V = 2  ! by default, set Maxwellian starting velocities
    numpar%vel_from_file = .false.   ! velosities are not read from file
-   numpar%N_basis_size = 0    ! DFTB, BOP or 3TB basis set default (0=s, 1=sp3, 2=sp3d5)
+   numpar%basis_size_ind = 0    ! TB basis set default (0=s, 1=sp3, 2=sp3d5, 3=sp3s*, 4=sp3d5s*)
+   numpar%N_basis_size = 0      ! TB basis set size
    numpar%do_atoms = .true.   ! Atoms are allowed to move
    matter%W_PR = 25.5d0    ! Parrinello-Rahman super-vell mass coefficient
    numpar%dt = 0.01d0      ! Time step for MD [fs]
@@ -1222,6 +1223,8 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
+               ! Save index of the basis set:
+               numpar%basis_size_ind = max(1,numpar%basis_size_ind)  ! at least sp3
 
             type is (TB_H_Molteni)
                Error_descript = ''
@@ -1232,8 +1235,10 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
+               ! Save index of the basis set:
+               numpar%basis_size_ind = max(3,numpar%basis_size_ind)  ! at least sp3s*
 
-             type is (TB_H_Fu)
+            type is (TB_H_Fu)
                Error_descript = ''
                !call read_Pettifor_TB_Hamiltonian(FN, numpar%El_num_ij(i,j), TB_Hamil, Error_descript, INFO)
                call read_Fu_TB_Hamiltonian(FN, i,j, TB_Hamil, Error_descript, INFO)
@@ -1243,6 +1248,9 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
+               ! Save index of the basis set:
+               numpar%basis_size_ind = max(1,numpar%basis_size_ind)  ! at least sp3
+
             type is (TB_H_NRL)
                Error_descript = ''
                call read_Mehl_TB_Hamiltonian(FN, i,j, TB_Hamil, Error_descript, INFO)   ! below
@@ -1252,6 +1260,9 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
+               ! Save index of the basis set:
+               numpar%basis_size_ind = max(2,numpar%basis_size_ind)  ! at least sp3d5
+
             type is (TB_H_DFTB) !in this case, read both Hamiltonian and Repulsive parts together:
                Error_descript = ''
                select type (TB_Repuls)  ! to confirm that repulsive part is consistent with the Hamiltonian
@@ -1287,7 +1298,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
-             type is (TB_H_xTB) !in this case, read both Hamiltonian and Repulsive parts together:
+            type is (TB_H_xTB) !in this case, read both Hamiltonian and Repulsive parts together:
                Error_descript = ''
                select type (TB_Repuls)  ! to confirm that repulsive part is consistent with the Hamiltonian
                type is (TB_Rep_xTB)
@@ -1307,6 +1318,11 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             print*, trim(adjustl(Error_descript))
             goto 3421
          endif
+
+         ! Derine basis size from the index:
+         numpar%N_basis_size = basis_set_size(numpar%basis_size_ind) ! module "Little_subroutines"
+         !print*, numpar%basis_size_ind, numpar%N_basis_size
+         !pause 'numpar%basis_size_ind'
 
 
          !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
@@ -4022,7 +4038,7 @@ subroutine read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Err
    ! Check which basis set is used: 0=s, 1=sp3, 2=sp3d5:
    if ((i == matter%N_KAO) .and. (j == matter%N_KAO)) then  ! only when all parameters for all elements are read from files:
       call idnetify_basis_size(TB_Hamil, N_basis_siz)  ! module "Dealing_with_DFTB"'
-      numpar%N_basis_size = max(numpar%N_basis_size,N_basis_siz)
+      numpar%basis_size_ind = max(numpar%basis_size_ind,N_basis_siz)
    endif
    
 3426 continue 
@@ -4140,7 +4156,7 @@ subroutine read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matt
    ! Check which basis set is used: 0=s, 1=sp3, 2=sp3d5:
    if ((i == matter%N_KAO) .and. (j == matter%N_KAO)) then  ! only when all parameters for all elements are read from files:
       call idnetify_basis_size(TB_Hamil, N_basis_siz)  ! module "Dealing_with_DFTB"'
-      numpar%N_basis_size = max(numpar%N_basis_size,N_basis_siz)
+      numpar%basis_size_ind = max(numpar%basis_size_ind,N_basis_siz)
    endif
 
 3426 continue
@@ -4229,7 +4245,7 @@ subroutine read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript
    endif
 
    ! Save the basis size as the maximal among all elements:
-   numpar%N_basis_size = max(numpar%N_basis_size,N_basis_siz)
+   numpar%basis_size_ind = max(numpar%basis_size_ind,N_basis_siz)
 
 
 
@@ -4369,7 +4385,7 @@ subroutine read_BOP_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Erro
    ! Check which basis set is used: 0=s, 1=sp3, 2=sp3d5:
    if (i == j) then
       call idnetify_basis_size_BOP(TB_Hamil(i,j), N_basis_siz)  ! module "Dealing_with_BOP"'
-      numpar%N_basis_size = max(numpar%N_basis_size, N_basis_siz)
+      numpar%basis_size_ind = max(numpar%basis_size_ind, N_basis_siz)
    endif
 
    ! Now, deal with the repulsive part of BOP:
@@ -4450,7 +4466,7 @@ subroutine read_xTB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Error_d
    if ((i == matter%N_KAO) .and. (j == matter%N_KAO)) then  ! only when all parameters for all elements are read from files:
       call identify_basis_size_xTB(TB_Hamil, N_basis_siz)  ! module "Dealing_with_DFTB"'
       ! Save the index of the basis set:
-      numpar%N_basis_size = max(numpar%N_basis_size,N_basis_siz)
+      numpar%basis_size_ind = max(numpar%basis_size_ind,N_basis_siz)
 
       ! Identify the parameters of the AO:
       call identify_AOs_xTB(TB_Hamil)   ! module "Dealing_with_xTB"

@@ -100,7 +100,7 @@ subroutine Hamil_tot_BOP(numpar, Scell, NSC, M_Vij, M_SVij, M_E0ij, M_lmn, Err)
    
    Error_descript = ''
    epsylon = 1d-12	! acceptable tolerance : how small an overlap integral can be, before we set it to zero
-   n_orb =  identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! size of the basis set per atom, below
+   n_orb =  identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)  ! size of the basis set per atom, below
    nat = Scell(NSC)%Na  ! number of atoms in the supercell
    Nsiz = size(Scell(NSC)%Ha,1) ! size of the total basis set
 
@@ -129,10 +129,10 @@ if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
             KOA2 => Scell(NSC)%MDatoms(i)%KOA
             ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
             ! Contruct a block-hamiltonian:
-            call Hamilton_one_BOP(numpar%N_basis_size, Scell, NSC, M_Vij(j,i,:), M_E0ij, M_lmn, j, i, Hij1)   ! below
+            call Hamilton_one_BOP(numpar%basis_size_ind, Scell, NSC, M_Vij(j,i,:), M_E0ij, M_lmn, j, i, Hij1)   ! below
             
             ! Construct overlap matrix for this pair of atoms:
-            call Get_overlap_S_matrix_BOP(numpar%N_basis_size, M_SVij(j,i,:), M_lmn(:,j,i), j, i, Sij1)  ! below
+            call Get_overlap_S_matrix_BOP(numpar%basis_size_ind, M_SVij(j,i,:), M_lmn(:,j,i), j, i, Sij1)  ! below
 
             do j1 = 1,n_orb ! all orbitals
                l = (j-1)*n_orb+j1
@@ -474,8 +474,8 @@ subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij
    ! Total number of atoms in the supercell:
    nat => Scell(NSC)%Na
    ! number of hopping integrals for this basis set in BOP:
-   N_bs = identify_BOP_params_size(numpar%N_basis_size)  ! below
-   N_onsite = identify_BOP_onsite_size(numpar%N_basis_size)  ! below
+   N_bs = identify_BOP_params_size(numpar%basis_size_ind)  ! below
+   N_onsite = identify_BOP_onsite_size(numpar%basis_size_ind)  ! below
    
    ! Allocate the arrays for the overlap parameters:
    if (.not.allocated(M_Vij)) allocate(M_Vij(nat,nat,N_bs), source = 0.0d0)     ! each pair of atoms, all  V functions
@@ -500,13 +500,13 @@ subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij
          Vr_ind = 1 ! s
          M_E0ij(j,i,Vr_ind) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
                                       TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
-         if (numpar%N_basis_size > 0) then  ! sp3
+         if (numpar%basis_size_ind > 0) then  ! sp3
             do Vr_ind = 2,3 ! p
                M_E0ij(j,i,Vr_ind) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
                                       TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
             enddo
          endif   
-         if (numpar%N_basis_size > 1) then  ! sp3d5
+         if (numpar%basis_size_ind > 1) then  ! sp3d5
             do Vr_ind = 4,6 ! d
                M_E0ij(j,i,Vr_ind) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
                                       TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
@@ -519,7 +519,7 @@ subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij
                                       TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
          M_SVij(j,i,1) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s s sigma)
                                       TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
-         select case (numpar%N_basis_size)
+         select case (numpar%basis_size_ind)
          case (1)    ! sp3
             Vr_ind = 2
             M_Vij(j,i,2) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s p sigma)
@@ -555,13 +555,13 @@ subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij
          Vr_ind = 1 ! s
          M_dE0ij(j,i,Vr_ind) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
                                       TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
-         if (numpar%N_basis_size > 0) then  ! sp3
+         if (numpar%basis_size_ind > 0) then  ! sp3
             do Vr_ind = 2,3 ! p
                M_dE0ij(j,i,Vr_ind) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
                                       TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
             enddo
          endif   
-         if (numpar%N_basis_size > 1) then  ! sp3d5
+         if (numpar%basis_size_ind > 1) then  ! sp3d5
             do Vr_ind = 4,6 ! d
                M_dE0ij(j,i,Vr_ind) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
                                       TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
@@ -574,7 +574,7 @@ subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij
                                       TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
          M_dSVij(j,i,1) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s s sigma)
                                       TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
-         select case (numpar%N_basis_size)
+         select case (numpar%basis_size_ind)
          case (1)    ! sp3
             Vr_ind = 2
             M_dVij(j,i,2) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s p sigma)
