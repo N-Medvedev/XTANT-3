@@ -1,0 +1,10 @@
+General:exclude
+
+Cut-off
+1.41d0	0.05d0		! d0 [A]; dd [A]
+
+ZBL
+
+!Pow
+1
+-2.0d0	1.5d0	0.0			! Energy [eV]; Characteristic radius [A]; power

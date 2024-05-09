@@ -244,7 +244,7 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
 
       !Testing of periodic and nonperiodic calculations:
       !print*, 'Ta: ', get_temperature_from_equipartition(Scell(NSC), matter, numpar), &
-                   !get_configurational_temperature(Scell(NSC), matter, numpar), Scell(NSC)%Ta_var(8)
+                   !Get_configurational_temperature_numeric(Scell(NSC), matter, numpar), Scell(NSC)%Ta_var(8)
                    !get_temperature_from_equipartition(Scell(NSC), matter, numpar, non_periodic=.true.), &
                    !get_Tconfig_n_l(Scell(NSC), matter, numpar, 1, 0)
 
@@ -273,7 +273,7 @@ subroutine update_Ta_config_running_average(Scell, matter, numpar)
    !---------------------------
    if (numpar%print_Ta) then
       ! Get the new configurational temperature:
-      Scell%Ta_var(8) = get_configurational_temperature(Scell, matter, numpar)  ! module "Atomic_thermodynamics"
+      Scell%Ta_var(8) = Get_configurational_temperature_numeric(Scell, matter, numpar)  ! module "Atomic_thermodynamics"
       !print*, Scell%Ta_var(6), Scell%Ta_var(7), Scell%Ta_var(8)
 
       ! Update the running average of the configurational tempreature:
@@ -283,7 +283,7 @@ end subroutine update_Ta_config_running_average
 
 
 
-function get_configurational_temperature(Scell, matter, numpar) result(Ta)
+function Get_configurational_temperature_numeric(Scell, matter, numpar) result(Ta) ! Unsuable, too large fluctuations
    real(8) :: Ta  ! [K] configurational temperature defined for B = r^n * sin(Pi*l*s)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in), target :: matter ! materil parameters
@@ -349,7 +349,7 @@ function get_configurational_temperature(Scell, matter, numpar) result(Ta)
 
    ! Clean up:
    nullify(Mass)
-end function get_configurational_temperature
+end function Get_configurational_temperature_numeric
 
 
 
@@ -631,7 +631,7 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
    logical, intent(in), optional :: non_periodic   ! if we want to use nonperiodic expression
    !------------------------------
    integer :: Nat, i, j, zb(3)
-   real(8) :: F(3), acc(3), r(3), Pot, Pot_r(3), Pot_tot, a_r, zbr(3)
+   real(8) :: F(3), acc(3), r(3), Pot, Pot_r(3), Pot_tot, a_r, zbr(3), zero_vec(3)
    logical, dimension(:), allocatable :: atoms_group_ind
    real(8), pointer :: Mass
    logical :: do_nonper
@@ -678,7 +678,9 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
                   ! Find which cell the nearest replica of atom 'j' (relative to atom 'i') is in:
                   call shortest_distance(Scell, j, i, a_r, x1=r(1), y1=r(2), z1=r(3), cell_x=zb(1), cell_y=zb(2), cell_z=zb(3))    ! module "Atomic_tools"
                   zbr(:) = dble(zb(:))
-                  call distance_to_given_point(Scell, j, zbr, (/0.0d0,0.0d0,0.0d0/), a_r, r(1), r(2), r(3)) ! module "Atomic_tools"
+                  !call distance_to_given_point(Scell, j, zbr, (/0.0d0,0.0d0,0.0d0/), a_r, r(1), r(2), r(3)) ! module "Atomic_tools"
+                  zero_vec = (/0.0d0,0.0d0,0.0d0/)
+                  call distance_to_given_point(Scell, j, zbr, zero_vec, a_r, r(1), r(2), r(3)) ! module "Atomic_tools"
 
                   !print*, j, r(:), Scell%MDatoms(i)%r(:)
                   !print*, i, zb

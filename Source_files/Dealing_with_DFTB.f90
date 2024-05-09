@@ -299,7 +299,7 @@ end subroutine read_DFTB_spline
 
 
 
-pure  subroutine idnetify_basis_size(TB_Hamil, Nsiz)
+pure subroutine idnetify_basis_size(TB_Hamil, Nsiz)
    integer, intent(out) :: Nsiz  ! index: 0=s, 1=sp3, 2=sp3d5
    type(TB_H_DFTB), dimension(:,:), intent(inout) ::  TB_Hamil ! parameters of the Hamiltonian of TB
    integer :: Nd, Np, Ns

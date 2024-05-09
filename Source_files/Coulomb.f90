@@ -37,7 +37,7 @@
 MODULE Coulomb
 use Universal_constants
 use Objects
-use Little_subroutines, only : count_3d
+use Little_subroutines, only : count_3d, d2_Fermi_function
 use Atomic_tools, only : get_number_of_image_cells, distance_to_given_cell
 
 implicit none
@@ -50,7 +50,7 @@ parameter(m_2Pi2 = g_2Pi*g_2Pi)     ! 2*Pi^2
 parameter(m_sqrtPi = sqrt(g_Pi))    ! sqrt(Pi)
 
 public :: get_Coulomb_Wolf_s, f_cut_L_C, d_f_cut_L_C, m_sqrtPi, Coulomb_Wolf_pot, Coulomb_Wolf_self_term, cut_off_distance, &
-m_k, Construct_B_C, get_Coulomb_s, d_Coulomb_Wolf_pot
+m_k, Construct_B_C, get_Coulomb_s, d_Coulomb_Wolf_pot, d_Coulomb_forces, d2_f_cut_L_C, ddija_dria
 
 
 
@@ -111,6 +111,119 @@ subroutine get_Coulomb_Wolf_s(Scell, NSC, matter, E_coulomb, gam_ij)   ! Coulomb
 
    nullify(KOA1, KOA2, r)
 end subroutine get_Coulomb_Wolf_s
+
+
+
+
+subroutine d_Coulomb_forces(Scell, NSC, numpar, F_Coul, dF_Coul)   ! vdW force and second derivative
+   type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC ! number of supercell
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   real(8), dimension(:,:), allocatable, intent(out) :: F_Coul, dF_Coul	! force and its derivative
+   !=====================================================
+   real(8) :: a_r, F(3), dF(3), F_r, dF_r, x, y, z, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z
+   integer :: Nx, Ny, Nz, zb(3)
+   INTEGER(4) :: n, i1, j1, m, atom_2, x_cell, y_cell, z_cell
+   logical :: origin_cell
+   integer, pointer :: KOA1, KOA2
+
+   n = Scell(NSC)%Na   ! Number of atoms
+   ! Make sure the forces are allocated:
+   if (.not.allocated(F_Coul)) allocate(F_Coul(3,n))
+   if (.not.allocated(dF_Coul)) allocate(dF_Coul(3,n))
+   F_Coul(:,:) = 0.0d0	! just to start with, forces
+   dF_Coul(:,:) = 0.0d0	! just to start with, derivatives of forces
+
+   ! Check if there is any vdW forces in this parameterization:
+   if (.not.allocated(Scell(NSC)%TB_Coul)) return ! nothing to do, if not
+
+   ! Find how many image cells along each direction we need to include:
+   ASSOCIATE (ARRAY3 => Scell(NSC)%TB_Coul)
+   select type(ARRAY3)
+      type is (TB_Coulomb_cut)
+         call get_mirror_cell_num_C(Scell, NSC, ARRAY3, Scell(NSC)%MDatoms, Nx, Ny, Nz)   ! below
+         !print*, 'd_Coulomb_forces:', Nx, Ny, Nz
+      end select
+   END ASSOCIATE
+   !print*, 'd_Coulomb_forces-2:', Nx, Ny, Nz
+
+   !$omp PARALLEL private(i1, j1, a_r, x_cell, y_cell, z_cell, zb, origin_cell, x, y, z, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, KOA1, KOA2, F_r, dF_r, F, dF)
+   !$omp do
+   XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
+      YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+         ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+            zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+            origin_cell = ALL(zb==0) ! if it is the origin cell
+            do i1 = 1, Scell(NSC)%Na ! all atoms
+               KOA1 => Scell(NSC)%MDatoms(i1)%KOA   ! atom #1
+               F = 0.0d0   ! to restart
+               dF = 0.0d0  ! to restart
+               do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
+                  if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+
+                     KOA2 => Scell(NSC)%MDatoms(j1)%KOA   ! atom #2
+
+                     !call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
+                     call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r, x, y, z) ! module "Atomic_tools"
+
+                     ! Derivatives d r_{i,j} / d r_{i,alpha}:
+                     drdrx = x/a_r
+                     drdry = y/a_r
+                     drdrz = z/a_r
+
+                     ! Second derivatives d2 r_{ij} / d r2_{i,alpha}:
+                     d2rdr2x = ddija_dria(x, a_r)  ! below
+                     d2rdr2y = ddija_dria(y, a_r)  ! below
+                     d2rdr2z = ddija_dria(z, a_r)  ! below
+
+                     ! Get the derivatives of the potential by |r|:
+                     call get_Coulomb_F_dF(Scell(NSC), Scell(NSC)%TB_Coul(KOA1,KOA2), a_r, F_r, dF_r) ! below
+
+                     ! Construct the force and derivative:
+                     F(1) = F(1) + F_r*drdrx
+                     F(2) = F(2) + F_r*drdry
+                     F(3) = F(3) + F_r*drdrz
+                     dF(1) = dF(1) + dF_r*drdrx + F_r*d2rdr2x
+                     dF(2) = dF(2) + dF_r*drdry + F_r*d2rdr2y
+                     dF(3) = dF(3) + dF_r*drdrz + F_r*d2rdr2z
+
+                  endif ! (j1 .NE. i1)
+               enddo ! j1
+               ! And save for each atom:
+               F_Coul(:,i1) = F_Coul(:,i1) + F
+               dF_Coul(:,i1) = dF_Coul(:,i1) + dF
+            enddo ! i1
+         enddo ZC
+      enddo YC
+   enddo XC
+   !$omp end do
+   !$omp end parallel
+
+   nullify(KOA1, KOA2)
+end subroutine d_Coulomb_forces
+
+
+
+subroutine get_Coulomb_F_dF(Scell, TB_Coul, a_r, F_r, dF_r) ! wrapper around select_type; ASSOCIATE does not work inside OMP region
+   type(Super_cell), intent(in) :: Scell  ! supercell with all the atoms as one object
+   class(TB_Coulomb), intent(in) :: TB_Coul
+   real(8), intent(in) :: a_r
+   real(8), intent(out) :: F_r, dF_r   ! force and its derivative
+   !-------------------
+   select type(TB_Coul)
+   type is (TB_Coulomb_cut)
+      F_r = dCoulomb(Scell, TB_Coul, a_r)      ! below
+      dF_r = d2_Coulomb(Scell, TB_Coul, a_r)   ! below
+   end select
+end subroutine get_Coulomb_F_dF
+
+
+
+pure function ddija_dria(r_a, r) result(dd)
+   real(8) dd  ! second derivative of the distance
+   real(8), intent(in) :: r_a, r
+   dd = 1.0d0/r * (1.0d0 - (r_a/r)**2)
+end function ddija_dria
 
 
 
@@ -329,6 +442,13 @@ pure function d_Coulomb_potential(k, Q1, Q2, r) ! derivative of Coulomb potentia
 end function d_Coulomb_potential
 
 
+pure function d2_Coulomb_potential(k, Q1, Q2, r) result(dF) ! second derivative of Coulomb potential
+   real(8) :: dF
+   real(8), intent(in) :: k, Q1, Q2, r
+   dF = 2.0d0*k*Q1*Q2/(r**3)
+end function d2_Coulomb_potential
+
+
 pure function f_cut_L_C(a_r, r_L, d_L) ! cut-off function at large distances
    real(8) :: f_cut_L_C
    real(8), intent(in) :: a_r, r_L, d_L
@@ -349,6 +469,14 @@ pure function d_f_cut_L_C(a_r, r_L, d_L) ! derivative of cut-off function at lar
       d_f_cut_L_C = -exp_r/(d_L*exp_r2*exp_r2)
    endif
 end function d_f_cut_L_C
+
+
+pure function d2_f_cut_L_C(a_r, r_L, d_L) result(d2f) ! derivative of cut-off function at large distances
+   real(8) :: d2f
+   real(8), intent(in) :: a_r, r_L, d_L
+   !---------------------
+   d2f = d2_Fermi_function(r_L, d_L, a_r)   ! module "Little_sobroutine"
+end function d2_f_cut_L_C
 
 
 
@@ -383,6 +511,45 @@ function dCoulomb(Scell, TB_Coul, a_r)
 !    pause 'test'
    nullify(k, dd, dm, Q)
 end function dCoulomb
+
+
+
+function d2_Coulomb(Scell, TB_Coul, a_r) result(d2F)
+   real(8) :: d2F ! derivative of the trunkated Coulomb
+   type(Super_cell), intent(in), target :: Scell  ! supercell as one object
+   type(TB_Coulomb_cut), intent(in), target :: TB_Coul   ! parameters of the repulsive part of TB-H
+   real(8), intent(in) :: a_r ! [A] distance between the atoms
+   !====================================
+   real(8), pointer :: k	!
+   real(8), pointer :: dm 	! [A] radius where to switch to polinomial
+   real(8), pointer :: dd 	! [A] cut-off radius at large r
+   real(8), pointer :: Q	! mean charge
+   !====================================
+   real(8) :: E_C, f_cut_large, d_f_large, d2_f_large, d_E_C, d2_E_C
+
+   Q => Scell%Q
+   k => TB_Coul%k
+   dd => TB_Coul%dd
+   dm => TB_Coul%dm
+
+   if (a_r > dm+dd*10.0d0) then ! anything beyond cut-offs is zero:
+      d2F = 0.0d0
+   else ! at shorter distances we use proper potential:
+      ! Coulomb potential derivatives:
+      E_C = Coulomb_potential(k, Q, Q, a_r) ! function above
+      d_E_C = d_Coulomb_potential(k, Q, Q, a_r) ! derivative of  Coulomb part of the potential
+      d2_E_C = d2_Coulomb_potential(k, Q, Q, a_r)  ! above
+
+      ! Cut-off functions:
+      f_cut_large = f_cut_L_C(a_r, dm, dd) ! function above
+      d_f_large = d_f_cut_L_C(a_r, dm, dd) ! derivative of cut-off function, function above
+      d2_f_large = d2_f_cut_L_C(a_r, dm, dd) ! above
+
+      ! Combine into the second derivative:
+      d2F = d2_E_C*f_cut_large + 2.0d0*d_E_C*d_f_large + E_C*d2_f_large
+   endif
+   nullify(k, dd, dm, Q)
+end function d2_Coulomb
 
 
 

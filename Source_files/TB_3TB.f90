@@ -73,7 +73,7 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
 
    nat => Scell(NSC)%Na	! number of atoms in the supercell
    ! number of hopping integrals for this basis set in 3TB:
-   N_bs = identify_DFTB_basis_size(numpar%N_basis_size)  ! module "TB_DFTB"
+   N_bs = identify_DFTB_basis_size(numpar%basis_size_ind)  ! module "TB_DFTB"
 
    if (.not.allocated(M_Vij)) allocate(M_Vij(nat,nat,N_bs))	    ! each pair of atoms, all  V functions
    if (.not.allocated(M_dVij)) allocate(M_dVij(nat,nat,N_bs))	! each pair of atoms, all  dV functions
@@ -135,7 +135,7 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
          ! All radial functions for Hamiltonian (functions below):
          M_Vij(j,i,1) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, Laguer, 1, 5)   ! (s s sigma)
          M_SVij(j,i,1) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, Laguer, 1, 6)  ! (s s sigma)
-         select case (numpar%N_basis_size)
+         select case (numpar%basis_size_ind)
          case (1)    ! sp3
             M_Vij(j,i,2) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, Laguer, 2, 5)   ! (s p sigma)
             M_SVij(j,i,2) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, Laguer, 2, 6) ! (s p sigma)
@@ -153,7 +153,7 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
          ! All derivatives of the radial functions and the overlap matrix:
          M_dVij(j,i,1) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, d_Laguer, 1, 5)   ! (s s sigma)
          M_dSVij(j,i,1) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, d_Laguer, 1, 6) ! (s s sigma)
-         select case (numpar%N_basis_size)
+         select case (numpar%basis_size_ind)
          case (1)    ! sp3
             M_dVij(j,i,2) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, d_Laguer, 2, 5)   ! (s p sigma)
             M_dSVij(j,i,2) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, d_Laguer, 2, 6) ! (s p sigma)
@@ -246,7 +246,7 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    Error_descript = ''
    epsylon = 1d-12	! acceptable tolerance : how small an overlap integral can be, before we set it to zero
    ! size of the basis set per atom, below:
-   n_orb = identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! module "TB_DFTB"
+   n_orb = identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)  ! module "TB_DFTB"
    nat = Scell(NSC)%Na  ! number of atoms in the supercell
    Nsiz = size(Scell(NSC)%Ha,1) ! size of the total basis set
 
@@ -287,11 +287,11 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
             IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
                ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
                ! Contruct a block-hamiltonian:
-               call Hamilton_one_3TB(numpar%N_basis_size, Scell(NSC), j, i, TB_Hamil, Hij1, &
+               call Hamilton_one_3TB(numpar%basis_size_ind, Scell(NSC), j, i, TB_Hamil, Hij1, &
                                     M_Vij, M_Lag_exp, M_lmn, Mjs)   ! below
 
                ! Construct overlap matrix for this pair of atoms:
-               call Get_overlap_S_matrix_3TB(numpar%N_basis_size, j, i, Sij1, M_SVij, M_lmn)  ! below
+               call Get_overlap_S_matrix_3TB(numpar%basis_size_ind, j, i, Sij1, M_SVij, M_lmn)  ! below
 
                do j1 = 1,n_orb ! all orbitals of atom #1
                   l = (j-1)*n_orb+j1   ! atom #1 (j)
@@ -1100,7 +1100,7 @@ subroutine get_forces_3TB(k, numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij,
 
    nat = size(Scell(NSC)%MDatoms)	! number of atoms
    Nsiz = size(Scell(NSC)%Ha,1)	! total number of orbitals
-   n_orb =  identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! size of the basis set per atom, below
+   n_orb =  identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)  ! size of the basis set per atom, below
 
    if (.not.allocated(dH1)) allocate(dH1(3,n_orb,n_orb))
    if (.not.allocated(dS1)) allocate(dS1(3,n_orb,n_orb))
@@ -1125,7 +1125,7 @@ subroutine get_forces_3TB(k, numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij,
          j4 = (j-1)*n_orb	! orbitals
          IJ:if (j >= i) then ! it's a new pair of atoms, calculate everything
             ! Get the matrix of dH/drij and dS/drij:
-            call d_Hamilton_one_3TB(numpar%N_basis_size, k, Scell(NSC), TB, i, j, atom_2, dH1, M_Vij, M_dVij, &
+            call d_Hamilton_one_3TB(numpar%basis_size_ind, k, Scell(NSC), TB, i, j, atom_2, dH1, M_Vij, M_dVij, &
                   M_lmn, M_Lag_exp, M_d_Lag_exp, dS1, M_SVij, M_dSVij, Mjs) ! this calls the block-hamiltonian
 
             do j1 = 1,n_orb	! all orbitals
@@ -2472,8 +2472,8 @@ subroutine dHamil_tot_Press_3TB(Scell, NSC, TB, numpar, M_Vij, M_dVij, M_SVij, M
    integer :: i, j, j1, i1, atom_2, m, nat, i2, j2
    integer :: i4, j4, norb, n_overlap
    ! Depending on the basis set:
-   n_overlap = identify_DFTB_basis_size(numpar%N_basis_size)   ! module "TB_DFTB"
-   norb = identify_DFTB_orbitals_per_atom(numpar%N_basis_size)    ! module "TB_DFTB"
+   n_overlap = identify_DFTB_basis_size(numpar%basis_size_ind)   ! module "TB_DFTB"
+   norb = identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)    ! module "TB_DFTB"
    nat = size(Scell(NSC)%MDatoms)	! number of atoms
    dHij = 0.0d0 ! to start with
    dSij = 0.0d0 ! to start with
@@ -2492,7 +2492,7 @@ subroutine dHamil_tot_Press_3TB(Scell, NSC, TB, numpar, M_Vij, M_dVij, M_SVij, M
          endif
          if (j .GT. 0) then
             j4 = (j-1)*norb
-            call dHamilton_one_Press_3TB(i, atom_2, numpar%N_basis_size, Scell, NSC, TB, norb, n_overlap, &
+            call dHamilton_one_Press_3TB(i, atom_2, numpar%basis_size_ind, Scell, NSC, TB, norb, n_overlap, &
                                           M_Vij, M_dVij, M_SVij, M_dSVij, &
                                           M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dHij1, dSij1)  ! below
             ! Eqs. (2.41), (2.42), Page 40 in H.Jeschke PhD thesis

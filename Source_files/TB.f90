@@ -27,8 +27,8 @@ MODULE TB
 use Universal_constants
 use Objects
 use Algebra_tools, only : Det_3x3, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points, sym_diagonalize, Reciproc, &
-                        mkl_matrix_mult, Invers_3x3, mkl_matrix_mult_c8, c8_diagonalize
-use Little_subroutines, only : number_of_types_of_orbitals, count_3d, deallocate_array
+                        mkl_matrix_mult, Invers_3x3, mkl_matrix_mult_c8, c8_diagonalize, Kronecker_delta
+use Little_subroutines, only : number_of_types_of_orbitals, count_3d, deallocate_array, basis_set_size, number_of_radial_functions
 use Atomic_tools, only : get_near_neighbours, total_forces, Potential_super_cell_forces, super_cell_forces, &
                         Convert_reciproc_rel_to_abs, Rescale_atomic_velocities, get_kinetic_energy_abs, &
                         get_Ekin, save_last_timestep, Potential_super_cell_forces, &
@@ -38,6 +38,7 @@ use Electron_tools, only : set_initial_fe, update_fe, get_new_global_energy, fin
                      get_electronic_heat_capacity, electronic_entropy, Diff_Fermi_E, get_low_e_energy, get_total_el_energy, &
                      get_orbital_resolved_data
 use Nonadiabatic, only : Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, Electron_ion_collision_int, get_G_ei
+use TB_Koster_Slater, only: drij_drka, ddija_drkb, d2dija_drkb2, KS_Cmnj_orbital, d_KS_Cmnj_orbital, d2_KS_Cmnj_orbital
 use TB_Fu, only : dHij_s_F, Attract_TB_Forces_Press_F, dErdr_s_F, dErdr_Pressure_s_F, construct_TB_H_Fu, &
                      Complex_Hamil_tot_F, Attract_TB_Forces_Press_F, get_Erep_s_F, dErdr_Pressure_s_F
 use TB_Pettifor, only : dHij_s, Attract_TB_Forces_Press, dErdr_s, dErdr_Pressure_s, construct_TB_H_Pettifor, &
@@ -55,11 +56,11 @@ use TB_3TB, only : get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, Attract_TB
                      Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors, get_dHij_drij_3TB
 use TB_BOP, only : Construct_Vij_BOP, construct_TB_H_BOP, get_Erep_s_BOP
 use TB_xTB, only : Construct_Vij_xTB, construct_TB_H_xTB, get_Erep_s_xTB, identify_xTB_orbitals_per_atom
-use Van_der_Waals, only : Construct_B, get_vdW_s, get_vdW_s_D, get_vdW_interlayer
+use Van_der_Waals, only : Construct_B, get_vdW_s, get_vdW_s_D, get_vdW_interlayer, d_vdW_forces
 use Coulomb, only: m_k, m_sqrtPi, Coulomb_Wolf_pot, get_Coulomb_Wolf_s, cut_off_distance, Construct_B_C, get_Coulomb_s, &
-                     Coulomb_Wolf_self_term, d_Coulomb_Wolf_pot
+                     Coulomb_Wolf_self_term, d_Coulomb_Wolf_pot, d_Coulomb_forces
 use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s, &
-                     get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s
+                     get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s, d_Exponential_wall_forces
 
 #ifdef OMP_inside
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
@@ -71,7 +72,7 @@ PRIVATE
 public :: get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_parameters, &
          vdW_interplane, Electron_ion_coupling, update_nrg_after_change, get_DOS_masks, k_point_choice, &
          construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step, get_Mullikens_all, get_coupling_matrix_elements, &
-         Get_configurational_temperature_Pettifor
+         Get_configurational_temperature
 
  contains
 
@@ -460,7 +461,7 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
       type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
          ! Get the overlaps between orbitals and ficticios s orbital (for 3-body parts):
-         call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+         call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
          ! Get the overlaps and reusable functions:
          call Construct_Vij_3TB(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
          ! Construct the Hamiltonian, diagonalize it, get the energy:
@@ -748,10 +749,7 @@ subroutine Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)
    alpha = 3.0d0/(4.0d0*r_cut) ! Wolf's parameter chosen according to optimal value from [4]
 
    ! Get the charges for all different elements in the material:
-   !q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charge [M 0]
    q(:) = matter%Atoms(:)%mulliken_q
-
-!    q(:) = -q(:)
 
    !$omp PARALLEL private(ian, m, KOA1, dpsi, atom_2, j1, KOA2, x, y, z, x1, a_r, b)
    !$omp DO
@@ -777,11 +775,7 @@ subroutine Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)
          dpsi(:) = dpsi(:) + b*x1(:)/a_r
       enddo ! atom_2
 
-      ! Add exponential wall force to already calculated other forces:
-      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + dpsi(:)  ! [F 0] ?
-      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + 10.0d0*dpsi(:)  ! [F 3] test
-      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) - dpsi(:)  ! [F 1] wrong
-      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + 0.0d0   ! [F 2]
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + dpsi(:)  ! [F 0]
 
    enddo ! ian
    !$omp end do
@@ -871,7 +865,7 @@ subroutine create_second_order_scc_term_H(Scell, matter, numpar, Sij, HperS, H_s
    integer :: j, atom_2, i, j1, l, i1, k, n_orb
 
    nat => Scell%Na	! number of atoms in the supercell
-   n_orb = identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! module "TB_DFTB"
+   n_orb = identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)  ! module "TB_DFTB"
 
 !$omp parallel private(j, m, atom_2, i, j1, l, i1, k)
 !$omp do
@@ -945,7 +939,7 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
    HperS = 0.0d0  ! to start with
 
    nat => Scell%Na	! number of atoms in the supercell
-   n_orb = identify_DFTB_orbitals_per_atom(numpar%N_basis_size)  ! module "TB_DFTB"
+   n_orb = identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)  ! module "TB_DFTB"
 
 !$omp parallel private(j, m, atom_2, i, KOA1, KOA2, KOA3, m2, j1, l, i1, k, n, atom_3, H_ij_1, H_ij_2)
 !$omp do
@@ -1270,7 +1264,7 @@ subroutine get_DOS_masks(Scell, matter, numpar, only_coupling, do_cartesian)
 
    BS:if (do_cart) then ! Cartesian basis set (UNUSED FOR NOW):
       ! Find number of different orbital types:
-      norb = identify_xTB_orbitals_per_atom(numpar%N_basis_size) ! module "TB_xTB"
+      norb = identify_xTB_orbitals_per_atom(numpar%basis_size_ind) ! module "TB_xTB"
       n_types = number_of_types_of_orbitals(norb, cartesian=.true.)  ! module "Little_subroutines"
 
       ! Define parameters of coupling arrays:
@@ -1284,7 +1278,7 @@ subroutine get_DOS_masks(Scell, matter, numpar, only_coupling, do_cartesian)
 
          do i = 1, nat
             KOA => Scell(NSC)%MDatoms(i)%KOA
-            select case (numpar%N_basis_size)   ! identify basis set
+            select case (numpar%basis_size_ind)   ! identify basis set
             case (0) ! s
                numpar%mask_DOS(KOA, 1, i) = .true.   ! s
             case (1) ! ss*
@@ -2863,7 +2857,6 @@ end subroutine vdW_forces
 
 
 
-
 ! Derivatives of the vdW energy by s:
 subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, Ny, Nz) 
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
@@ -2906,7 +2899,6 @@ subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, 
                      zb = (/x_cell, y_cell, z_cell/) ! vector of image of the super-cell
                      origin_cell = ALL(zb==0) ! if it is the origin cell
 
-                     !cos_if:if ((dik-djk) /= 0) then ! without it, it gives ERROR
                      cell_if:if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
                         ! contribution from this image of the cell:
                         coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
@@ -3387,8 +3379,8 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
 
             ! Update the last time-step data accordingly:
             call save_last_timestep(Scell) ! module "Atomic_tools"
+
             ! Calculate electron-ion coupling parameter:
-            
             call get_G_ei(Scell, NSC, numpar, dE_nonadiabat) ! module "Nonadiabatic"
             
          endif
@@ -3569,7 +3561,8 @@ end subroutine Construct_Aij_old
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Analysis subroutines:
 
-subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter)
+
+subroutine Get_configurational_temperature(Scell, numpar, matter)
    type(Super_cell), dimension(:), intent(inout) :: Scell	! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(solid), intent(in), target :: matter	! materil parameters
@@ -3587,12 +3580,13 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter)
    dF = 0.0d0
    
    ! Forces and their derivatives:
-   call get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep, Fatr, dFrep, dFatr)	! see below
+   call get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep, Fatr, dFrep, dFatr)	! see below
 
    ! Configurational temperature:
    ! 1) Parameters to be used for evaluation of the configurational temperatures:
    !F_sum = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) )
    dF_sum = SUM( (dF(1,:) + dF(2,:) + dF(3,:)) )
+
 !    ! This definition only works for Ta=Te, the standard approximation; in our case, does not work, see corrected expression below!
 !    if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
 !       Tconf = 0.0d0  ! [K]
@@ -3618,7 +3612,7 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter)
    Scell(1)%Tconf = Tconf
    !write(*,'(a,f,f,f,f)') '2:', F_sum, dF_temp, 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV, Tconf
 
-   ! 3) Second moment configurational temperature (B=F^2*F):
+   ! 3) Hyperconfigurational (second moment configurational) temperature (B=F^2*F):
    F_sum2 = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) * &
                ( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) ) )
    dF_temp = SUM( (3.0d0*F(1,:)*F(1,:) +       F(2,:)*F(2,:) +       F(3,:)*F(3,:)) * dF(1,:) + &
@@ -3654,23 +3648,25 @@ subroutine Get_configurational_temperature_Pettifor(Scell, numpar, matter)
    
    ! Clean up:
    deallocate(F, dF)
-end subroutine Get_configurational_temperature_Pettifor
+end subroutine Get_configurational_temperature
 
 
-subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out, dFrep_out, dFatr_out)
-   type(Super_cell), dimension(:), intent(in) :: Scell	! supercell with all the atoms as one object
+subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, Fatr_out, dFrep_out, dFatr_out)
+   type(Super_cell), dimension(:), intent(inout) :: Scell	! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(solid), intent(in) :: matter	! materil parameters
    real(8), dimension(:,:), allocatable, intent(inout):: F, dF	! forces and derivatives [eV/A], [eV/A^2]
    real(8), dimension(:,:), allocatable, intent(inout), optional :: Frep_out, Fatr_out, dFrep_out, dFatr_out	! forces and derivatives [eV/A], [eV/A^2]
    !-----------------------------------------------------------
-   real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr	! forces and derivatives [eV/A], [eV/A^2]
+   real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr  ! forces and derivatives [eV/A], [eV/A^2]
    real(8), dimension(:,:,:), allocatable :: M_Vs  ! matrix of functions Vs
    real(8), dimension(:,:,:), allocatable :: M_dVs ! matrix of functions dVs
    real(8), dimension(:,:,:), allocatable :: M_d2Vs ! matrix of functions d2Vs
    real(8), dimension(:,:,:), allocatable :: M_cos	! matrix of directional cosines
+   real(8), dimension(:,:), allocatable :: Frep_vdW, dFrep_vdW      ! vdW forces and derivatives [eV/A], [eV/A^2]
+   real(8), dimension(:,:), allocatable :: Frep_Coul, dFrep_Coul    ! Coulomb forces and derivatives [eV/A], [eV/A^2]
+   real(8), dimension(:,:), allocatable :: Frep_wall, dFrep_wall          ! Short-range repulsive forces and derivatives [eV/A], [eV/A^2]
    integer :: i, N
-   
-!    open(UNIT = 7774, FILE = 'OUTPUT_Forces_for_Tconfig.dat') !<-
    
    N = size(Scell(1)%MDAtoms)	! number of atoms
    if (.not.allocated(F)) allocate(F(3,N))
@@ -3685,12 +3681,12 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out
       ! Construct forces and their derivatives:
       select type(ARRAY)
       type is (TB_H_Pettifor) ! TB parametrization according to Pettifor
-      
          ! Construct array of functions Vs and dVs for all pairs of atoms to use for forces:
          call Construct_M_Vs(Scell, 1, ARRAY, M_Vs, M_dVs, M_d2Vs) ! module "TB_Pettifor"
 
          ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
          call dHij_r(ARRAY, Scell(1)%MDatoms, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, Fatr, dFatr) ! module "TB_Pettifor"
+
       type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni
          !print*, 'Configurational temperature calculations are not implemented for Molteni: Attractive'
       type is (TB_H_Fu)  ! TB parametrization accroding to Fu
@@ -3705,6 +3701,10 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out
          !print*, 'Configurational temperature calculations are not implemented for xTB: Attractive'
       end select
    END ASSOCIATE
+
+   ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
+   call get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, dFatr) ! below
+
 
 
    ! Repulsive TB Hamiltonian part:
@@ -3728,11 +3728,47 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out
       type is (TB_Rep_xTB)  ! TB parametrization accroding to xTB
          !print*, 'Configurational temperature calculations are not implemented for xTB: Repulsive'
       end select
-   END ASSOCIATE !    
+   END ASSOCIATE !
+
+
+   !cccccccccccccccccccccccccccccccccccccccccccccc
+   ! Classical potentials contributions:
+   ! SCC Coulomb contribution:
+   !call Coulomb_force_from_SCC(numpar, matter, Scell, NSC) ! NOT READY
+   !print*, 'before d_vdW_forces'
+
+   ! van der Waals forces:
+   call d_vdW_forces(Scell, 1, numpar, Frep_vdW, dFrep_vdW) ! module "Van_der_Waals"
+   !print*, 'before d_Coulomb_forces'
+
+   ! Coulomb potential part for modelling Coulomb explosion of a finite system:
+   call d_Coulomb_forces(Scell, 1, numpar, Frep_Coul, dFrep_Coul) ! module "Coulomb"
+   !print*, 'before d_Exponential_wall_forces'
+
+   ! Exponential wall potential part:
+   call d_Exponential_wall_forces(Scell, 1, matter, numpar, Frep_wall, dFrep_wall) ! module "Exponential_wall"
+
+   !print*, 'get_derivatives_and_forces_r:'
+   !print*, maxval(Frep), maxval(Frep_vdW), maxval(Frep_Coul), maxval(Frep_wall)
+
+   ! Add all the optional forces:
+   if (allocated(Frep)) then  ! if they were calculated
+      Frep = Frep + Frep_vdW + Frep_Coul + Frep_wall
+   endif
+   if (allocated(dFrep)) then ! if they were calculated
+      dFrep = dFrep + dFrep_vdW + dFrep_Coul + dFrep_wall
+   endif
+   !cccccccccccccccccccccccccccccccccccccccccccccc
+
    
    ! Combine attractive and repulsive parts of forces and derivatives:
-   F = Frep + Fatr	! forces [eV/A]
-   dF = dFrep + dFatr	! derivatives of forces [eV/A^2]
+   if (allocated(Frep) .and. allocated(Fatr)) then
+      F = Frep + Fatr      ! forces [eV/A]
+      dF = dFrep + dFatr   ! derivatives of forces [eV/A^2]
+   else  ! undefined forces, skip calculation
+      F = 0.0d0
+      dF = 0.0d0
+   endif
 
 
    ! Save partial contributions:
@@ -3778,6 +3814,10 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, F, dF, Frep_out, Fatr_out
    if (allocated(M_dVs)) deallocate(M_dVs)
    if (allocated(M_d2Vs)) deallocate(M_d2Vs)
    if (allocated(M_cos)) deallocate(M_cos)
+   if (allocated(Frep_vdW)) deallocate(Frep_vdW)
+   if (allocated(dFrep_vdW)) deallocate(dFrep_vdW)
+   if (allocated(Frep_Coul)) deallocate(Frep_Coul)
+   if (allocated(dFrep_Coul)) deallocate(dFrep_Coul)
 end subroutine get_derivatives_and_forces_r
 
 
@@ -3818,9 +3858,638 @@ subroutine Construct_M_cos(Scell,  M_cos)
 end subroutine Construct_M_cos
 
 
+subroutine get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, dFatr)
+   type(Super_cell), dimension(:), target, intent(inout) :: Scell   ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar               ! all numerical parameters
+   real(8), dimension(:,:,:), intent(in) :: M_Vs   ! matrix of functions Vs
+   real(8), dimension(:,:,:), intent(in) :: M_dVs  ! matrix of functions dVs
+   real(8), dimension(:,:,:), intent(in) :: M_d2Vs ! matrix of functions d2Vs
+   real(8), dimension(:,:), allocatable, intent(out) :: Fatr, dFatr ! forces and derivatives [eV/A], [eV/A^2]
+   !----------------------------------
+   integer :: k, NSC, Nat, N
+   integer, pointer :: KOA1, KOA2
+
+   NSC = 1  ! supercell number
+
+   ! Allocate the forces arrays:
+   Nat = size(Scell(1)%MDatoms)	! number of atoms
+   N = size(Scell(1)%Ei)	! number of the energy levels
+   if (.not.allocated(Fatr)) allocate(Fatr(3,Nat))
+   Fatr = 0.0d0   ! to start with
+   if (.not.allocated(dFatr)) allocate(dFatr(3,Nat))
+   dFatr = 0.0d0  ! to start with
+
+   !$omp PARALLEL private(k)
+   !$omp do
+   ATOMS:do k = 1, Nat  ! forces and derivatives for all atoms
+      !call get_forces_r(k, numpar, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Aij_x_Ei)	! see below
+   enddo ATOMS
+   !$omp end do
+   !$omp end parallel
+
+
+   nullify(KOA1, KOA2)
+end subroutine get_TB_attractive_forces_r
+
+
+subroutine get_forces_r(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij)
+   integer, intent(in) :: k	! forces for this atom
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Super_cell), dimension(:), intent(inout), target :: Scell	! supercell with all the atoms as one object
+   integer, intent(in) :: NSC	! number of the supercell
+   real(8), dimension(:,:), intent(in) :: Aij   ! precalculated factor (populations x VF)
+   real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij, M_d2Vij	! radial functions, 1st and 2d derivatives
+   real(8), dimension(:,:,:), intent(in), optional :: M_SVij, M_dSVij, M_d2SVij	! Overlap functions, 1st and 2d derivatives
+   !real(8), dimension(:,:), intent(in), optional :: Aij_x_Ei
+   !------------------------
+   integer :: nat, n_orb, Nsiz, i, j, i_orb, j_orb, m, atom_2, j_cur, i_cur, j4j1, i4i1
+   real(8), dimension(:,:,:), allocatable :: dH, dS, d2H, d2S
+   real(8), dimension(:,:,:), allocatable :: dH1, dS1, d2H1, d2S1
+   logical :: non_orth
+
+   ! number of atoms:
+   nat = size(Scell(NSC)%MDatoms)
+   ! Number of arbitals per atom:
+   ! n_orb = basis_set_size(numpar%basis_size_ind)  ! module "Little_sobroutine"
+   n_orb = numpar%N_basis_size
+   ! total number of orbitals:
+   Nsiz = size(Scell(NSC)%Ha,1)
+
+   ! Allocate the arrays for constructing the forces:
+   allocate(dH(3,Nsiz,Nsiz), source = 0.0d0)
+   allocate(dH1(3,n_orb,n_orb), source = 0.0d0)
+   allocate(d2H(3,Nsiz,Nsiz), source = 0.0d0)
+   allocate(d2H1(3,n_orb,n_orb), source = 0.0d0)
+   ! and overlap matrices, if needed:
+   if (present(M_SVij) .and. present(M_dSVij) .and. present(M_d2SVij)) then
+      non_orth = .true.
+      allocate(dS(3,Nsiz,Nsiz), source = 0.0d0)
+      allocate(dS1(3,n_orb,n_orb), source = 0.0d0)
+      allocate(d2S(3,Nsiz,Nsiz), source = 0.0d0)
+      allocate(d2S1(3,n_orb,n_orb), source = 0.0d0)
+   else
+      non_orth = .false.
+   endif
+
+   ! 1) Construct the derivatives of the Hamiltonian (and Overlap matrix if needed) in 2 steps:
+   ! a) Construct upper triangle - calculate each element:
+   ATOM1:do i = 1,nat	! all pairs of atoms contribute to the force (to some degree)
+      i_orb = (i-1)*n_orb	! orbitals
+      m = Scell(NSC)%Near_neighbor_size(i)
+      ATOM2:do atom_2 = 0,m ! do only for atoms close to that one
+         if (atom_2 == 0) then	! the same atom
+            j = i
+         else	! two different atoms
+            j = Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+         endif
+         j_orb = (j-1)*n_orb	! orbitals
+         IJ:if (j >= i) then ! it's a new pair of atoms, calculate everything
+            ! Get the matrix of dH/drij, d^2H/drij^2 (and dS/drij, d^2S/drij^2) for each block:
+            if (non_orth) then ! nonorthogonal
+               call d_Hamilton_one_r(k, Scell, NSC, numpar, i, j, atom_2, M_Vij, M_dVij, M_d2Vij, dH1, d2H1, &
+                                     M_SVij, M_dSVij, M_d2SVij, dS1, d2S1) ! below
+            else  ! orthogonal
+               call d_Hamilton_one_r(k, Scell, NSC, numpar, i, j, atom_2, M_Vij, M_dVij, M_d2Vij, dH1, d2H1) ! below
+            endif
+
+            do j_cur = 1,n_orb	! all orbitals
+               j4j1 = j_orb+j_cur
+               do i_cur = 1,n_orb	! all orbitals
+                  i4i1 = i_orb+i_cur
+                  dH(:,i4i1,j4j1) = dH1(:,i_cur,j_cur)	! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
+                  d2H(:,i4i1,j4j1) = d2H1(:,i_cur,j_cur)	! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
+                  if (non_orth) then ! nonorthogonal
+                     dS(:,i4i1,j4j1) = dS1(:,i_cur,j_cur)	! 1st derivative of Overlap Matrix
+                     d2S(:,i4i1,j4j1) = d2S1(:,i_cur,j_cur)	! 2d derivative of Overlap Matrix
+                  endif
+               enddo ! i_cur
+            enddo ! j_cur
+         endif IJ
+      enddo ATOM2
+   enddo ATOM1
+   ! Clean up the temporary arrays:
+   deallocate(dH1, dS1)
+
+   ! b) Construct lower triangle - use symmetry:
+   do i = 1,nat   ! all pairs of atoms contribute to the force (to some degree)
+      i_orb = (i-1)*n_orb
+      m = Scell(NSC)%Near_neighbor_size(i)
+      do atom_2 = 1,m   ! do only for atoms close to that one
+         j = Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+         j_orb = (j-1)*n_orb
+         if (j < i) then ! this pair of atoms was already calculated, use the symmetry
+            do j_cur = 1,n_orb	! all orbitals
+               j4j1 = j_orb+j_cur
+               do i_cur = 1,n_orb	! all orbitals
+                  i4i1 = i_orb+i_cur
+                  dH(:,i4i1,j4j1) = dH(:,j4j1,i4i1)
+                  d2H(:,i4i1,j4j1) = d2H(:,j4j1,i4i1)
+                  if (non_orth) then ! nonorthogonal
+                     dS(:,i4i1,j4j1) = dS(:,j4j1,i4i1)
+                     d2S(:,i4i1,j4j1) = d2S(:,j4j1,i4i1)
+                  endif
+               enddo ! i_cur
+            enddo ! j_cur
+         endif ! (j < i)
+      enddo ! i
+   enddo ! atom_2
+
+   ! 2) Calculate the forces form the derivatives and the eigervectors:
+   !call Attract_TB_forces_DFTB(Aij, Aij_x_Ei, dH, dS, Scell, NSC, Scell(NSC)%MDatoms(k)%forces%att(:), n_orb)
+
+
+   ! clean up:
+   deallocate(dH, d2H, dH1, d2H1)
+   if (allocated(dS)) deallocate(dS)
+   if (allocated(d2S)) deallocate(d2S)
+   if (allocated(dS1)) deallocate(dS1)
+   if (allocated(d2S1)) deallocate(d2S1)
+end subroutine get_forces_r
 
 
 
+subroutine d_Hamilton_one_r(k, Scell, NSC, numpar, i, j, atom_2, M_Vij, M_dVij, M_d2Vij, dH, d2H,  M_SVij, M_dSVij, M_d2SVij, dS, d2S)
+   integer, intent(in) :: k	! forces for this atom
+   type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC	! number of the supercell
+   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   integer, intent(in) :: i, j, atom_2 ! atoms indices
+   real(8), dimension(:,:,:), intent(in), target :: M_Vij, M_dVij, M_d2Vij ! matrix of radial functions, 1st and 2d derivatives
+   real(8), dimension(:,:,:), intent(out) :: dH, d2H
+   real(8), dimension(:,:,:), intent(in), optional, target :: M_SVij, M_dSVij, M_d2SVij ! matrix of overlap functions, 1st and 2d derivatives
+   real(8), dimension(:,:,:), intent(out), optional :: dS, d2S
+   !---------------------------
+   logical :: nonorth
+   integer :: n_overlap
+   real(8), pointer :: x, y, z, r
+   real(8) :: dik, djk, xr, yr, zr, Y_ang(3), dY_ang(3), d2Y_ang(3)
+   real(8) :: drdrx, drdry, drdrz
+   real(8) :: drdrx2, drdry2, drdrz2
+   real(8) :: d2rdr2x, d2rdr2y, d2rdr2z
+   real(8) :: dlds(3), dmds(3), dnds(3)
+   real(8) :: d2lds(3), d2mds(3), d2nds(3)
+   real(8) :: V_sigma, V_pi, V_delta
+   real(8) :: dV_sigma(3), dV_pi(3), dV_delta(3)
+   real(8) :: d2V_sigma(3), d2V_pi(3), d2V_delta(3)
+   real(8) :: V_sigma_tr, V_pi_tr, V_delta_tr
+   real(8) :: dV_sigma_tr(3), dV_pi_tr(3), dV_delta_tr(3)
+   real(8) :: d2V_sigma_tr(3), d2V_pi_tr(3), d2V_delt_tra(3)
+   real(8), dimension(:), allocatable :: vec_M_Vij12, vec_M_Vij21, vec_M_dVij12, vec_M_dVij21, vec_M_d2Vij12, vec_M_d2Vij21
+   real(8), dimension(:), allocatable :: vec_M_SVij12, vec_M_SVij21, vec_M_dSVij12, vec_M_dSVij21, vec_M_d2SVij12, vec_M_d2SVij21
+   !-----------------------------
+
+   if (present(dS) .and. present(d2S)) then ! nonorthagonal
+      nonorth = .true.
+   else  ! orthogonal
+      nonorth = .false.
+   endif
+
+   ! How many radial functions coefficients in the basis set:
+   n_overlap = number_of_radial_functions(numpar%basis_size_ind)  ! module "Little_sobroutine"
+
+   ! Radial functions coefficients for the given pair of atoms to be placed in one array:
+   allocate(vec_M_Vij12(n_overlap), source = 0.0d0)
+   allocate(vec_M_Vij21(n_overlap), source = 0.0d0)
+   allocate(vec_M_dVij12(n_overlap), source = 0.0d0)
+   allocate(vec_M_dVij21(n_overlap), source = 0.0d0)
+   allocate(vec_M_d2Vij12(n_overlap), source = 0.0d0)
+   allocate(vec_M_d2Vij21(n_overlap), source = 0.0d0)
+
+   if (nonorth) then
+      allocate(vec_M_SVij12(n_overlap), source = 0.0d0)
+      allocate(vec_M_SVij21(n_overlap), source = 0.0d0)
+      allocate(vec_M_dSVij12(n_overlap), source = 0.0d0)
+      allocate(vec_M_dSVij21(n_overlap), source = 0.0d0)
+      allocate(vec_M_d2SVij12(n_overlap), source = 0.0d0)
+      allocate(vec_M_d2SVij21(n_overlap), source = 0.0d0)
+   endif
+
+
+   if (i == j) then  ! Onsite contributions:
+      dH = 0.0d0
+      d2H = 0.0d0
+      ! nonorthogonal:
+      if (nonorth) then
+         dS = 0.0d0
+         d2S = 0.0d0
+      endif
+   else  ! For pairs of atoms, fill the hamiltonain with Hopping Integrals:
+      ! to start with:
+      dH = 0.0d0
+      d2H = 0.0d0
+      ! nonorthogonal:
+      if (nonorth) then
+         dS = 0.0d0
+         d2S = 0.0d0
+      endif
+
+      dik = Kronecker_delta(i,k) ! module "Algebra_tools"
+      djk = Kronecker_delta(j,k) ! module "Algebra_tools"
+      if (ABS(dik - djk) > 1.0d-12) then ! only then it is non-zero
+         ! distance and projections between atoms i and j (indexed atom_2):
+         x => Scell(NSC)%Near_neighbor_dist(i,atom_2,1) ! at this distance, X
+         y => Scell(NSC)%Near_neighbor_dist(i,atom_2,2) ! at this distance, Y
+         z => Scell(NSC)%Near_neighbor_dist(i,atom_2,3) ! at this distance, Z
+         r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
+
+         ! Directional cosines:
+         xr = x/r ! l
+         yr = y/r ! m
+         zr = z/r ! n
+
+         ! Derivative d r_{ij} / d r_{k,alpha}
+         drdrx = drij_drka(i, j, k, x, r) ! module "TB_Koster_Slater"
+         drdry = drij_drka(i, j, k, y, r) ! module "TB_Koster_Slater"
+         drdrz = drij_drka(i, j, k, z, r) ! module "TB_Koster_Slater"
+
+         ! Squares of derivatives:
+         drdrx2 = drdrx*drdrx
+         drdry2 = drdry*drdry
+         drdrz2 = drdrz*drdrz
+
+         ! Second derivatives d2 r_{ij} / d r2_{k,alpha} = d d_{alpha} / d r_{k,alpha}:
+         d2rdr2x = ddija_drkb(i, j, k, 1, 1, x, x, r) ! module "TB_Koster_Slater"
+         d2rdr2y = ddija_drkb(i, j, k, 2, 2, y, y, r) ! module "TB_Koster_Slater"
+         d2rdr2z = ddija_drkb(i, j, k, 3, 3, z, z, r) ! module "TB_Koster_Slater"
+
+         ! Derivatives of cosine directions:
+         dlds(1) = ddija_drkb(i, j, k, 1, 1, x, x, r) ! module "TB_Koster_Slater"
+         dlds(2) = ddija_drkb(i, j, k, 1, 2, x, y, r) ! module "TB_Koster_Slater"
+         dlds(3) = ddija_drkb(i, j, k, 1, 3, x, z, r) ! module "TB_Koster_Slater"
+         dmds(1) = ddija_drkb(i, j, k, 2, 1, y, x, r) ! module "TB_Koster_Slater"
+         dmds(2) = ddija_drkb(i, j, k, 2, 2, y, y, r) ! module "TB_Koster_Slater"
+         dmds(3) = ddija_drkb(i, j, k, 2, 3, y, z, r) ! module "TB_Koster_Slater"
+         dnds(1) = ddija_drkb(i, j, k, 3, 1, z, x, r) ! module "TB_Koster_Slater"
+         dnds(2) = ddija_drkb(i, j, k, 3, 2, z, y, r) ! module "TB_Koster_Slater"
+         dnds(3) = ddija_drkb(i, j, k, 3, 3, z, z, r) ! module "TB_Koster_Slater"
+
+         ! Second derivatives of cosine directions:
+         d2lds(1) = d2dija_drkb2(i, j, k, 1, 1, x, x, r) ! module "TB_Koster_Slater"
+         d2lds(2) = d2dija_drkb2(i, j, k, 1, 2, x, y, r) ! module "TB_Koster_Slater"
+         d2lds(3) = d2dija_drkb2(i, j, k, 1, 3, x, z, r) ! module "TB_Koster_Slater"
+         d2mds(1) = d2dija_drkb2(i, j, k, 2, 1, y, x, r) ! module "TB_Koster_Slater"
+         d2mds(2) = d2dija_drkb2(i, j, k, 2, 2, y, y, r) ! module "TB_Koster_Slater"
+         d2mds(3) = d2dija_drkb2(i, j, k, 2, 3, y, z, r) ! module "TB_Koster_Slater"
+         d2nds(1) = d2dija_drkb2(i, j, k, 3, 1, z, x, r) ! module "TB_Koster_Slater"
+         d2nds(2) = d2dija_drkb2(i, j, k, 3, 2, z, y, r) ! module "TB_Koster_Slater"
+         d2nds(3) = d2dija_drkb2(i, j, k, 3, 3, z, z, r) ! module "TB_Koster_Slater"
+
+         ! Radial function coefficients:
+         vec_M_Vij21 = M_Vij(i,j,:)    ! correct
+         vec_M_Vij12 = M_Vij(j,i,:)
+         vec_M_dVij12 = M_dVij(i,j,:)
+         vec_M_dVij21 = M_dVij(j,i,:)
+         vec_M_d2Vij12 = M_d2Vij(i,j,:)
+         vec_M_d2Vij21 = M_d2Vij(j,i,:)
+
+         !---------------------------
+         ! Construct the derivatives :
+         ! (1,1) dt / dr = s-s :
+         ! First:
+         dH(1,1,1) = vec_M_dVij12(1)*drdrx ! ss, x
+         dH(2,1,1) = vec_M_dVij12(1)*drdry ! ss, y
+         dH(3,1,1) = vec_M_dVij12(1)*drdrz ! ss, z
+         ! Second:
+         d2H(1,1,1) = vec_M_d2Vij12(1)*drdrx2 + vec_M_dVij12(1)*d2rdr2x
+         d2H(2,1,1) = vec_M_d2Vij12(1)*drdry2 + vec_M_dVij12(1)*d2rdr2y
+         d2H(3,1,1) = vec_M_d2Vij12(1)*drdrz2 + vec_M_dVij12(1)*d2rdr2z
+
+         !---------------------------
+         ! Add more orbital, if the LCAO basis set includes them:
+         if (numpar%basis_size_ind > 0) then ! at least sp3
+            ! add sp overlaps:
+            !    Reminder:
+            !    V(1) = (s s sigma)
+            !    V(2) = (s p sigma)
+            !    V(3) = (p p sigma)
+            !    V(4) = (p p pi)
+
+            ! radial part (universal for all angular parts):
+            V_sigma = vec_M_Vij12(1)   ! V_sigma
+            V_pi    = vec_M_Vij12(2)   ! V_pi
+
+            dV_sigma(1) = vec_M_dVij12(1)*drdrx    ! d V_sigma / dx
+            dV_pi(1)    = vec_M_dVij12(2)*drdrx    ! d V_pi    / dx
+            dV_sigma(2) = vec_M_dVij12(1)*drdry    ! d V_sigma / dy
+            dV_pi(2)    = vec_M_dVij12(2)*drdry    ! d V_pi    / dy
+            dV_sigma(3) = vec_M_dVij12(1)*drdrz    ! d V_sigma / dz
+            dV_pi(3)    = vec_M_dVij12(2)*drdrz    ! d V_pi    / dz
+
+            d2V_sigma(1)   = vec_M_dVij12(1)*drdrx2 + vec_M_d2Vij12(1)*d2rdr2x    ! d2 V_sigma / dx2
+            d2V_pi(1)      = vec_M_dVij12(2)*drdrx2 + vec_M_d2Vij12(2)*d2rdr2x    ! d2 V_pi    / dx2
+            d2V_sigma(2)   = vec_M_dVij12(1)*drdry2 + vec_M_d2Vij12(1)*d2rdr2y    ! d2 V_sigma / dy2
+            d2V_pi(2)      = vec_M_dVij12(2)*drdry2 + vec_M_d2Vij12(2)*d2rdr2y    ! d2 V_pi    / dy2
+            d2V_sigma(3)   = vec_M_dVij12(1)*drdrz2 + vec_M_d2Vij12(1)*d2rdr2z    ! d2 V_sigma / dz2
+            d2V_pi(3)      = vec_M_dVij12(2)*drdrz2 + vec_M_d2Vij12(2)*d2rdr2z    ! d2 V_pi    / dz2
+
+            ! And their 'transposed' values:
+            V_sigma_tr = vec_M_Vij21(1)   ! V_sigma
+            V_pi_tr    = vec_M_Vij21(2)   ! V_pi
+
+            dV_sigma_tr(1) = vec_M_dVij21(1)*drdrx    ! d V_sigma / dx
+            dV_pi_tr(1)    = vec_M_dVij21(2)*drdrx    ! d V_pi    / dx
+            dV_sigma_tr(2) = vec_M_dVij21(1)*drdry    ! d V_sigma / dy
+            dV_pi_tr(2)    = vec_M_dVij21(2)*drdry    ! d V_pi    / dy
+            dV_sigma_tr(3) = vec_M_dVij21(1)*drdrz    ! d V_sigma / dz
+            dV_pi_tr(3)    = vec_M_dVij21(2)*drdrz    ! d V_pi    / dz
+
+            d2V_sigma_tr(1) = vec_M_dVij21(1)*drdrx2 + vec_M_d2Vij21(1)*d2rdr2x    ! d2 V_sigma / dx2
+            d2V_pi_tr(1)    = vec_M_dVij21(2)*drdrx2 + vec_M_d2Vij21(2)*d2rdr2x    ! d2 V_pi    / dx2
+            d2V_sigma_tr(2) = vec_M_dVij21(1)*drdry2 + vec_M_d2Vij21(1)*d2rdr2y    ! d2 V_sigma / dy2
+            d2V_pi_tr(2)    = vec_M_dVij21(2)*drdry2 + vec_M_d2Vij21(2)*d2rdr2y    ! d2 V_pi    / dy2
+            d2V_sigma_tr(3) = vec_M_dVij21(1)*drdrz2 + vec_M_d2Vij21(1)*d2rdr2z    ! d2 V_sigma / dz2
+            d2V_pi_tr(3)    = vec_M_dVij21(2)*drdrz2 + vec_M_d2Vij21(2)*d2rdr2z    ! d2 V_pi    / dz2
+
+
+            !----------
+            ! (2,1) s-px :
+            ! derivatives along dt / dx = - s-px, x :
+            ! angular part:
+            Y_ang(1) = KS_Cmnj_orbital(1, 2, 0, xr, yr, zr)   ! s-px, sigma
+            Y_ang(2) = KS_Cmnj_orbital(1, 2, 1, xr, yr, zr)   ! s-px, pi
+
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(1), dmds(1), dnds(1))   ! s-px, sigma / dx
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(1), dmds(1), dnds(1))   ! s-px, pi / dx
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(1), dmds(1), dnds(1), d2lds(1), d2mds(1), d2nds(1))   ! s-px, sigma / dx2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(1), dmds(1), dnds(1), d2lds(1), d2mds(1), d2nds(1))   ! s-px, pi / dx2
+
+            ! Combine terms into full derivatives:
+            dH(1,2,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(1), dV_pi(1), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(1,2,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(1), dV_pi(1), 0.0d0, d2V_sigma(1), d2V_pi(1), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+            ! derivatives along dt / dy = - s-px, y :
+            ! angular part:
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(2), dmds(2), dnds(2))   ! s-px, sigma / dy
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(2), dmds(2), dnds(2))   ! s-px, pi / dy
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(2), dmds(2), dnds(2), d2lds(2), d2mds(2), d2nds(2))   ! s-px, sigma / dy2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(2), dmds(2), dnds(2), d2lds(2), d2mds(2), d2nds(2))   ! s-px, pi / dy2
+
+            ! Combine terms into full derivatives:
+            dH(2,2,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(2), dV_pi(2), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(2,2,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(2), dV_pi(2), 0.0d0, d2V_sigma(2), d2V_pi(2), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+            ! derivatives along dt / dz = - s-px, z :
+            ! angular part:
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(3), dmds(3), dnds(3))   ! s-px, sigma / dz
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(3), dmds(3), dnds(3))   ! s-px, pi / dz
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(3), dmds(3), dnds(3), d2lds(3), d2mds(3), d2nds(3))   ! s-px, sigma / dz2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(3), dmds(3), dnds(3), d2lds(3), d2mds(3), d2nds(3))   ! s-px, pi / dz2
+
+            ! Combine terms into full derivatives:
+            dH(3,2,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(3), dV_pi(3), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(3,2,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(3), dV_pi(3), 0.0d0, d2V_sigma(3), d2V_pi(3), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+            !----------
+            ! (3,1) s-py :
+            ! derivatives along dt / dx = - s-py, x :
+            ! angular part:
+            Y_ang(1) = KS_Cmnj_orbital(1, 3, 0, xr, yr, zr)   ! s-py, sigma
+            Y_ang(2) = KS_Cmnj_orbital(1, 3, 1, xr, yr, zr)   ! s-py, pi
+
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 3, 0, xr, yr, zr, dlds(1), dmds(1), dnds(1))   ! s-py, sigma / dx
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 3, 1, xr, yr, zr, dlds(1), dmds(1), dnds(1))   ! s-py, pi / dx
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 3, 0, xr, yr, zr, dlds(1), dmds(1), dnds(1), d2lds(1), d2mds(1), d2nds(1))   ! s-py, sigma / dx2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 3, 1, xr, yr, zr, dlds(1), dmds(1), dnds(1), d2lds(1), d2mds(1), d2nds(1))   ! s-py, pi / dx2
+
+            ! Combine terms into full derivatives:
+            dH(1,3,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(1), dV_pi(1), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(1,3,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(1), dV_pi(1), 0.0d0, d2V_sigma(1), d2V_pi(1), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+            ! derivatives along dt / dy = - s-py, y :
+            ! angular part:
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 3, 0, xr, yr, zr, dlds(2), dmds(2), dnds(2))   ! s-py, sigma / dy
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 3, 1, xr, yr, zr, dlds(2), dmds(2), dnds(2))   ! s-py, pi / dy
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 3, 0, xr, yr, zr, dlds(2), dmds(2), dnds(2), d2lds(2), d2mds(2), d2nds(2))   ! s-py, sigma / dy2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 3, 1, xr, yr, zr, dlds(2), dmds(2), dnds(2), d2lds(2), d2mds(2), d2nds(2))   ! s-py, pi / dy2
+
+            ! Combine terms into full derivatives:
+            dH(2,3,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(2), dV_pi(2), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(2,3,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(2), dV_pi(2), 0.0d0, d2V_sigma(2), d2V_pi(2), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+            ! derivatives along dt / dz = - s-py, z :
+            ! angular part:
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 3, 0, xr, yr, zr, dlds(3), dmds(3), dnds(3))   ! s-py, sigma / dz
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 3, 1, xr, yr, zr, dlds(3), dmds(3), dnds(3))   ! s-py, pi / dz
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 3, 0, xr, yr, zr, dlds(3), dmds(3), dnds(3), d2lds(3), d2mds(3), d2nds(3))   ! s-py, sigma / dz2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 3, 1, xr, yr, zr, dlds(3), dmds(3), dnds(3), d2lds(3), d2mds(3), d2nds(3))   ! s-py, pi / dz2
+
+            ! Combine terms into full derivatives:
+            dH(3,3,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(3), dV_pi(3), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(3,3,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(3), dV_pi(3), 0.0d0, d2V_sigma(3), d2V_pi(3), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+
+            !----------
+            ! (4,1) s-pz :
+            ! derivatives along dt / dx = - s-pz, x :
+            ! angular part:
+            Y_ang(1) = KS_Cmnj_orbital(1, 4, 0, xr, yr, zr)   ! s-pz, sigma
+            Y_ang(2) = KS_Cmnj_orbital(1, 4, 1, xr, yr, zr)   ! s-pz, pi
+
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 4, 0, xr, yr, zr, dlds(1), dmds(1), dnds(1))   ! s-pz, sigma / dx
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 4, 1, xr, yr, zr, dlds(1), dmds(1), dnds(1))   ! s-pz, pi / dx
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 4, 0, xr, yr, zr, dlds(1), dmds(1), dnds(1), d2lds(1), d2mds(1), d2nds(1))   ! s-pz, sigma / dx2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 4, 1, xr, yr, zr, dlds(1), dmds(1), dnds(1), d2lds(1), d2mds(1), d2nds(1))   ! s-pz, pi / dx2
+
+            ! Combine terms into full derivatives:
+            dH(1,4,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(1), dV_pi(1), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(1,4,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(1), dV_pi(1), 0.0d0, d2V_sigma(1), d2V_pi(1), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+            ! derivatives along dt / dy = - s-pz, y :
+            ! angular part:
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 4, 0, xr, yr, zr, dlds(2), dmds(2), dnds(2))   ! s-pz, sigma / dy
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 4, 1, xr, yr, zr, dlds(2), dmds(2), dnds(2))   ! s-pz, pi / dy
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 4, 0, xr, yr, zr, dlds(2), dmds(2), dnds(2), d2lds(2), d2mds(2), d2nds(2))   ! s-pz, sigma / dy2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 4, 1, xr, yr, zr, dlds(2), dmds(2), dnds(2), d2lds(2), d2mds(2), d2nds(2))   ! s-pz, pi / dy2
+
+            ! Combine terms into full derivatives:
+            dH(2,4,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(2), dV_pi(2), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(2,4,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(2), dV_pi(2), 0.0d0, d2V_sigma(2), d2V_pi(2), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+            ! derivatives along dt / dz = - s-pz, z :
+            ! angular part:
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 4, 0, xr, yr, zr, dlds(3), dmds(3), dnds(3))   ! s-pz, sigma / dz
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 4, 1, xr, yr, zr, dlds(3), dmds(3), dnds(3))   ! s-pz, pi / dz
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 4, 0, xr, yr, zr, dlds(3), dmds(3), dnds(3), d2lds(3), d2mds(3), d2nds(3))   ! s-pz, sigma / dz2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 4, 1, xr, yr, zr, dlds(3), dmds(3), dnds(3), d2lds(3), d2mds(3), d2nds(3))   ! s-pz, pi / dz2
+
+            ! Combine terms into full derivatives:
+            dH(3,4,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(3), dV_pi(3), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(3,4,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(3), dV_pi(3), 0.0d0, d2V_sigma(3), d2V_pi(3), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+
+            !----------
+            ! (1,2) px-s :
+            ! derivatives along dt / dx = px-s, x :
+            ! angular part:
+            Y_ang(1) = KS_Cmnj_orbital(1, 2, 0, xr, yr, zr)   ! s-px, sigma
+            Y_ang(2) = KS_Cmnj_orbital(1, 2, 1, xr, yr, zr)   ! s-px, pi
+
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(1), dmds(1), dnds(1))   ! s-px, sigma / dx
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(1), dmds(1), dnds(1))   ! s-px, pi / dx
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(1), dmds(1), dnds(1), d2lds(1), d2mds(1), d2nds(1))   ! s-px, sigma / dx2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(1), dmds(1), dnds(1), d2lds(1), d2mds(1), d2nds(1))   ! s-px, pi / dx2
+
+            ! Combine terms into full derivatives:
+            dH(1,2,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(1), dV_pi(1), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(1,2,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(1), dV_pi(1), 0.0d0, d2V_sigma(1), d2V_pi(1), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+            ! derivatives along dt / dy = px-s, y :
+            ! angular part:
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(2), dmds(2), dnds(2))   ! s-px, sigma / dy
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(2), dmds(2), dnds(2))   ! s-px, pi / dy
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(2), dmds(2), dnds(2), d2lds(2), d2mds(2), d2nds(2))   ! s-px, sigma / dy2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(2), dmds(2), dnds(2), d2lds(2), d2mds(2), d2nds(2))   ! s-px, pi / dy2
+
+            ! Combine terms into full derivatives:
+            dH(2,2,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(2), dV_pi(2), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(2,2,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(2), dV_pi(2), 0.0d0, d2V_sigma(2), d2V_pi(2), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+            ! derivatives along dt / dz = px-s, z :
+            ! angular part:
+            dY_ang(1) = d_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(3), dmds(3), dnds(3))   ! s-px, sigma / dz
+            dY_ang(2) = d_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(3), dmds(3), dnds(3))   ! s-px, pi / dz
+
+            d2Y_ang(1) = d2_KS_Cmnj_orbital(1, 2, 0, xr, yr, zr, dlds(3), dmds(3), dnds(3), d2lds(3), d2mds(3), d2nds(3))   ! s-px, sigma / dz2
+            d2Y_ang(2) = d2_KS_Cmnj_orbital(1, 2, 1, xr, yr, zr, dlds(3), dmds(3), dnds(3), d2lds(3), d2mds(3), d2nds(3))   ! s-px, pi / dz2
+
+            ! Combine terms into full derivatives:
+            dH(3,2,1) = combine_terms_dt(V_sigma, V_pi, 0.0d0, dV_sigma(3), dV_pi(3), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0)  ! below
+
+            d2H(3,2,1) = combine_terms_d2t(V_sigma, V_pi, 0.0d0, dV_sigma(3), dV_pi(3), 0.0d0, d2V_sigma(3), d2V_pi(3), 0.0d0, &
+                                           Y_ang(1), Y_ang(2), 0.0d0, dY_ang(1), dY_ang(2), 0.0d0, d2Y_ang(1), d2Y_ang(2), 0.0d0)  ! below
+
+
+
+         endif ! (numpar%basis_size_ind > 0) then ! at least sp3
+
+
+         !---------------------------
+         if (numpar%basis_size_ind == 3) then ! sp3s*
+            ! add ss* and ps* overlaps:
+            !    Reminder:
+            !    V(1) = (s s sigma)
+            !    V(2) = (s p sigma)
+            !    V(3) = (p p sigma)
+            !    V(4) = (p p pi)
+            !    V(5) = (s* s sigma)
+            !    V(6) = (s* p sigma)
+            !    V(7) = (s* s* sigma)
+            ! to do
+         endif ! (numpar%basis_size_ind == 3) then ! sp3s*
+
+
+         !---------------------------
+         if (numpar%basis_size_ind == 2) then ! sp3d5
+            ! add sd and pd overlaps:
+            !    Reminder:
+            !    V(1) = (s s sigma)
+            !    V(2) = (s p sigma)
+            !    V(3) = (s d sigma)
+            !    V(4) = (p p sigma)
+            !    V(5) = (p p pi)
+            !    V(6) = (p d sigma)
+            !    V(7) = (p d pi)
+            !    V(8) = (d d sigma)
+            !    V(9) = (d d pi)
+            !    V(10) = (d d delta)
+
+            ! to do
+         endif ! (numpar%basis_size_ind == 2) then ! sp3d5
+
+
+         !---------------------------
+         if (numpar%basis_size_ind == 4) then ! sp3d5s*
+            ! add ss*, ps* and ds* overlaps:
+            ! to do
+         endif ! (numpar%basis_size_ind == 4) then ! sp3d5s*
+
+      endif ! (ABS(dik - djk) > 1.0d-12)
+   endif ! (i == j)
+
+   nullify(x, y, z, r)
+end subroutine d_Hamilton_one_r
+
+
+pure function combine_terms_dt(V_sigma, V_pi, V_delta, dV_sigma, dV_pi, dV_delta, Y_sigma, Y_pi, Y_delta, dY_sigma, dY_pi, dY_delta) result(dt_r)
+   real(8) :: dt_r   ! first derivative of Koster-Slater term
+   ! Radial parts:
+   real(8), intent(in) :: V_sigma, V_pi, V_delta
+   real(8), intent(in) :: dV_sigma, dV_pi, dV_delta
+   ! Angular parts:
+   real(8), intent(in) :: Y_sigma, Y_pi, Y_delta
+   real(8), intent(in) :: dY_sigma, dY_pi, dY_delta
+   !---------------------
+   dt_r = V_sigma*dY_sigma + V_pi*dY_pi + V_delta*dY_delta + & ! V*dY
+          dV_sigma*Y_sigma + dV_pi*Y_pi + dV_delta*Y_delta     ! dV*Y
+end function combine_terms_dt
+
+
+pure function combine_terms_d2t(V_sigma, V_pi, V_delta, dV_sigma, dV_pi, dV_delta, d2V_sigma, d2V_pi, d2V_delta, &
+                                Y_sigma, Y_pi, Y_delta, dY_sigma, dY_pi, dY_delta, d2Y_sigma, d2Y_pi, d2Y_delta) result(dt_r)
+   real(8) :: dt_r   ! second derivative of Koster-Slater term
+   ! Radial parts:
+   real(8), intent(in) :: V_sigma, V_pi, V_delta
+   real(8), intent(in) :: dV_sigma, dV_pi, dV_delta
+   real(8), intent(in) :: d2V_sigma, d2V_pi, d2V_delta
+   ! Angular parts:
+   real(8), intent(in) :: Y_sigma, Y_pi, Y_delta
+   real(8), intent(in) :: dY_sigma, dY_pi, dY_delta
+   real(8), intent(in) :: d2Y_sigma, d2Y_pi, d2Y_delta
+   !---------------------
+   dt_r = V_sigma*d2Y_sigma + V_pi*d2Y_pi + V_delta*d2Y_delta + &          ! V*d2Y
+          2.0d0*(dV_sigma*dY_sigma + dV_pi*dY_pi + dV_delta*dY_delta) + &  ! 2*dV*dY
+          d2V_sigma*Y_sigma + d2V_pi*Y_pi + d2V_delta*Y_delta              ! d2V*Y
+end function combine_terms_d2t
+
+
+
+
+!-------------------------------------------------------------------
 subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -3885,7 +4554,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below
          if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_M_x1 succesful'
-         call get_Mjs_factors(numpar%N_basis_size, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+         call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
          if (numpar%verbose) print*, 'Get_pressure 3TB : get_Mjs_factors succesful'
          call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
          if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_Vij_3TB succesful'

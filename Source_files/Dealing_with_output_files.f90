@@ -5398,7 +5398,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          select type(ARRAY)
          type is (TB_H_DFTB) ! TB parametrization
             write(print_to,'(a,a)') ' With skf-parametrization: (', trim(adjustl(ARRAY%param_name))//')'
-            select case (numpar%N_basis_size)
+            select case (numpar%basis_size_ind)
             case (0)
                text = 's'
             case (1)    ! sp3
@@ -5408,7 +5408,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
             endselect
             write(print_to,'(a,a)') ' With the basis set: ', trim(adjustl(text))
           type is (TB_H_3TB) ! TB parametrization
-            select case (numpar%N_basis_size)
+            select case (numpar%basis_size_ind)
             case (0)
                text = 's'
             case (1)    ! sp3
@@ -5423,7 +5423,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
                write(print_to,'(a,a)') ' Only 2-body terms included (no 3-body terms)'
             endif
           type is (TB_H_BOP) ! TB parametrization
-            select case (numpar%N_basis_size)
+            select case (numpar%basis_size_ind)
             case (0)
                text = 's'
             case (1)    ! sp3
@@ -5433,7 +5433,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
             endselect
             write(print_to,'(a,a)') ' With the basis set: ', trim(adjustl(text))
           type is (TB_H_xTB) ! TB parametrization
-            select case (numpar%N_basis_size)
+            select case (numpar%basis_size_ind)
             case (0)    ! s
                text = 'Cartesian s'
             case (1)    ! s s*

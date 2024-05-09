@@ -573,7 +573,7 @@ subroutine dHopping_r(dtsx, dtsy, dtsz,  d2tsx, d2tsy, d2tsz,  i, j, k, TB, Scel
       dnds(2) = ddija_drkb(i, j, k, 3, 2, z, y, r)	! module "TB_Koster_Slater"
       dnds(3) = ddija_drkb(i, j, k, 3, 3, z, z, r)	! module "TB_Koster_Slater"
       
-      !Second derivatives of cosine directions:
+      ! Second derivatives of cosine directions:
       d2lds(1) = d2dija_drkb2(i, j, k, 1, 1, x, x, r)	! module "TB_Koster_Slater"
       d2lds(2) = d2dija_drkb2(i, j, k, 1, 2, x, y, r)	! module "TB_Koster_Slater"
       d2lds(3) = d2dija_drkb2(i, j, k, 1, 3, x, z, r)	! module "TB_Koster_Slater"

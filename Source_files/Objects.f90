@@ -919,7 +919,8 @@ type Numerics_param
    integer :: scc_gam_ind ! index for the model for gamma in scc term
    real(8) :: scc_mix     ! mixin factor for scc calculations
    integer :: NA_kind     ! number of different kinds of atoms
-   integer :: N_basis_size   ! index for the size of the basis set used in DFTB case: s=0; sp3=1; sp3d5=2
+   integer :: basis_size_ind  ! index for the size of the basis set used: s=0; sp3=1; sp3d5=2; sp3s*=3; sp3d5s*=4;
+   integer :: N_basis_size    ! basis set size (orbitals per atom)
    logical :: Transport		 ! true=included / false=excluded ; for atoms
    logical :: Transport_e		 ! true=included / false=excluded ; for electrons
    real(8) :: E_cut	    ! [eV] cut-off energy, separating low-energy-electrons from high-energy-electrons

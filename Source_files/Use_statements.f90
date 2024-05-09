@@ -44,7 +44,7 @@ use Electron_tools, only : Electron_thermalization, get_glob_energy, get_low_ene
 use Transport, only : Electron_transport, Atomic_heat_transport, Change_affected_layer
 use TB, only : get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_parameters, &
         vdW_interplane, Electron_ion_coupling, update_nrg_after_change,  get_Hamilonian_and_E, MD_step, get_Mullikens_all, &
-        Get_configurational_temperature_Pettifor
+        Get_configurational_temperature
 use Optical_parameters, only : get_optical_parameters
 use MC_cross_sections, only : get_mfps, get_photon_attenuation
 use Monte_carlo, only : MC_Propagate, process_laser_parameters
