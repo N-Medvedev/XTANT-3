@@ -49,7 +49,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 25.04.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 18.05.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1644,7 +1644,7 @@ subroutine prepare_output_files(Scell, matter, laser, numpar, TB_Hamil, TB_Repul
 
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
 
-      call copy_file(trim(adjustl(chtest)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
+      call copy_file(trim(adjustl(chtest)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_files"
 
       if (.not.file_exist .and. NP_file_exists) call copy_file(trim(adjustl(chtest1)),trim(adjustl(numpar%output_path)),1) ! module "Dealing_with_output_files"
       ! And file with MD grid, if user provided:
