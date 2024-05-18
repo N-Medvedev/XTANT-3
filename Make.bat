@@ -82,7 +82,7 @@ cd Source_files
             echo %Starline%
 
             :: List compiler options
-            SET "Compile_options=/F9999999999 /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /O3 /Qipo /standard-semantics"
+            SET "Compile_options=/F9999999999 /fpp /Qopenmp /D OMP_inside /Qmkl=parallel /real-size:64 /O3 /Qipo /standard-semantics /assume:nofpe_summary"
 
             :: Set name of the executable:
             SET "Name_of_exe=XTANT.exe"

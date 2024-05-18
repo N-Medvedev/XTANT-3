@@ -611,7 +611,8 @@ subroutine Electron_energy_transfer_inelastic(matter, TeeV, Ele, Nat, Nshl, mfps
     real(8), intent(out) :: dE_out   ! the transferred energy [eV]
     real(8) :: L_tot    ! [A] total mean free path
     integer i, j, n, coun
-    real(8) Emin, Emax, E_cur, E, dE, dL, Ltot1, Ltot0, ddEdx, a, b, temp1, temp2, RN, L_need, L_cur, Sigma_cur, Tfact
+    real(8) :: Emin, Emax, E_cur, E, dE, dL, Ltot1, Ltot0, ddEdx, a, b, temp1, temp2, RN, L_need, L_cur, Sigma_cur, Tfact
+    real(8) :: E_low, E_high
 
     if (Ele .LT. matter%Atoms(Nat)%Ip(Nshl)) then
        print*, 'Attention! In subroutine Electron_energy_transfer_inelastic:'
@@ -632,15 +633,23 @@ subroutine Electron_energy_transfer_inelastic(matter, TeeV, Ele, Nat, Nshl, mfps
     select case (matter%Atoms(Nat)%TOCS(Nshl)) ! which inelastic cross section to use (BEB vs CDF):
     case (1) ! CDF cross section
        Emax = (Ele + Emin)/2.0d0 ! [eV] maximum energy transfer, accounting for equality of electrons
-       n = 10*(MAX(INT(Emin),10))    ! number of integration steps
-       dE = (Emax - Emin)/(real(n)) ! differential of transferred momentum [kg*m/s]
+       !n = 10*(MAX(INT(Emin),10))    ! number of integration steps ! OLD
+       !dE = (Emax - Emin)/(real(n)) ! differential of transferred momentum [kg*m/s]
+       n = 100
+       ! Define the interval of integration where the peak are (requires fined grid):
+       E_low = max( minval(matter%Atoms(Nat)%CDF(Nshl)%E0 - 5.0d0*matter%Atoms(Nat)%CDF(Nshl)%G) , Emin )
+       E_high = min( maxval(matter%Atoms(Nat)%CDF(Nshl)%E0 + 5.0d0*matter%Atoms(Nat)%CDF(Nshl)%G) , Emax )
+
        i = 1       ! to start integration
        E = Emin    ! to start integration
        Ltot1 = 0.0d0
        Ltot0 = 0.0d0
        call Diff_cross_section(Ele, E, matter, Nat, Nshl, Ltot0)
        do while (L_cur .GT. L_need)
-          dE = (1.0d0/(E+1.0d0) + E)/real(n)
+          !dE = (1.0d0/(E+1.0d0) + E)/real(n)
+          !dE = define_dE(-1, n, E, E0_min=E_low, E0_max=E_high)  ! below
+          dE = define_dE(0, n, E, E0_min=E_low, E0_max=E_high)  ! below
+
           ! Temperature factor:
           Tfact = temperature_factor(dE, TeeV)    ! below
 
@@ -699,8 +708,9 @@ subroutine TotIMFP(Ele, matter, TeeV, Nat, Nshl, Sigma, dEdx)
     real(8), intent(out) :: Sigma       ! calculated inverse mean free path (cross-section) [1/A],
     real(8), intent(out), optional :: dEdx   ! the energy losses [eV/A]
     !=====================================
-    integer i, j, n, num
-    real(8) Emin, Emax, E, dE, dL, Ltot1, Ltot0, ddEdx, a, b, temp1, temp2, Tfact
+    integer :: i, j, n, num
+    real(8) :: Emin, Emax, E, dE, dL, Ltot1, Ltot0, ddEdx, a, b, temp1, temp2, Tfact
+    real(8) :: E_low, E_high
 
     Emin = matter%Atoms(Nat)%Ip(Nshl) ! [eV] ionization potential of the shell is minimum possible transferred energy
 
@@ -714,8 +724,13 @@ subroutine TotIMFP(Ele, matter, TeeV, Nat, Nshl, Sigma, dEdx)
          ddEdx = 0.0d0
          Sigma = 1d30 ! [A]
        else ! (Ee < Emin) ! scattering possible
-         n = 10*(MAX(INT(Emin),10))    ! number of integration steps
-         dE = (Emax - Emin)/(real(n)) ! differential of transferred energy [eV]
+         !n = 10*(MAX(INT(Emin),10))    ! number of integration steps   ! OLD
+         !dE = (Emax - Emin)/(real(n)) ! differential of transferred energy [eV]
+         n = 100
+         ! Define the interval of integration where the peak are (requires fined grid):
+         E_low = max( minval(matter%Atoms(Nat)%CDF(Nshl)%E0 - 5.0d0*matter%Atoms(Nat)%CDF(Nshl)%G) , Emin )
+         E_high = min( maxval(matter%Atoms(Nat)%CDF(Nshl)%E0 + 5.0d0*matter%Atoms(Nat)%CDF(Nshl)%G) , Emax )
+
          i = 1       ! to start integration
          E = Emin    ! to start integration
          Ltot1 = 0.0d0
@@ -724,7 +739,10 @@ subroutine TotIMFP(Ele, matter, TeeV, Nat, Nshl, Sigma, dEdx)
          call Diff_cross_section(Ele, E, matter, Nat, Nshl, Ltot0)  ! below
          ddEdx = 0.0d0
          do while (E .LE. Emax) ! integration
-            dE = (1.0d0/(E+1.0d0) + E)/real(n)
+            !dE = (1.0d0/(E+1.0d0) + E)/real(n)
+            !dE = define_dE(-1, n, E, E0_min=E_low, E0_max=E_high)  ! below
+            dE = define_dE(0, n, E, E0_min=E_low, E0_max=E_high)  ! below
+
             ! If it's Simpson integration:
             a =  E + dE/2.0d0
             ! Temperature factor (for the mean point):
@@ -763,6 +781,44 @@ subroutine TotIMFP(Ele, matter, TeeV, Nat, Nshl, Sigma, dEdx)
 
     end select
 end subroutine TotIMFP
+
+
+
+pure function define_dE(CS_method, n, E, E0_min, E0_max, dE_min) result(dE)
+   real(8) dE
+   integer, intent(in) :: CS_method, n ! integration grid index; number of grid points
+   real(8), intent(in) :: E
+   real(8), intent(in), optional :: E0_min, E0_max, dE_min ! both must be present for NEW grid; dE_min for minimal step optional
+   !-----------------------
+   real(8) :: dE_min_use
+
+   if (present(dE_min)) then
+      dE_min_use = dE_min
+   else ! use default value (typically the case for inelastic scsattering)
+      dE_min_use = 0.001d0   ! [eV] step smaller than this is not allowed
+   endif
+
+   select case (CS_method)
+   case (-1)   ! Old default
+      dE = (1.0d0/(E+1.0d0) + E)/dble(n)
+
+   case default ! new integration grid
+      if ( (present(E0_min)) .and. (present(E0_max)) ) then
+         if ( (E > E0_min) .and. (E < E0_max) ) then   ! fine grid in the interval
+            dE = (E0_max - E0_min)/dble(n)
+         elseif (E > E0_max) then ! high-energy - too far from the peak, no need for fine resolution
+            dE = E/dble(n)
+         else ! low energy - too far from the peak, no need for fine resolution (usually unused, but anyway...)
+            dE = (E-E0_min)/dble(n) ! step not smaller than this
+         endif
+
+      else ! use old grid
+         dE = (1.0d0/(E+1.0d0) + E)/dble(n)  ! start with old, if there are no parameters for the new
+      endif
+   end select
+
+   dE = max(dE, dE_min_use)  ! step not smaller than this
+end function define_dE
 
 
 !subroutine Diff_cross_section(Ele, hw, Target_atoms, Nat, Nshl, Diff_IMFP, Mass, Matter, Mat_DOS, NumPar)
