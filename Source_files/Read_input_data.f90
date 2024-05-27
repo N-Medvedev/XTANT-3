@@ -176,6 +176,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%t_Te_Ee = 1.0d-5	! when to start coupling
    numpar%NA_kind = -1	! -1=Landau; 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
    numpar%Nonadiabat = .true.  ! included
+   numpar%ind_at_distr = 0 ! 0=Maxwellian; 1=transient nonequilibrium
    numpar%tau_fe = 1.0d0   ! Characteristic electron relaxation time [fs]
    numpar%tau_fe_CB = -1.0d0  ! No separate thermalization of CB and VB by default
    numpar%tau_fe_VB = -1.0d0  ! No separate thermalization of CB and VB by default
@@ -4688,9 +4689,13 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    if (numpar%tau_fe_CB < 0.0d0) numpar%tau_fe_CB = 0.0d0   ! eliminate nigative values (even within precision)
    if (numpar%tau_fe_VB < 0.0d0) numpar%tau_fe_VB = 0.0d0   ! eliminate nigative values (even within precision)
 
-   ! -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule (DO NOT USE!):
+   ! Col#1: -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule (DO NOT USE!)
+   ! Col#2: 0=MAxwellian atomic distribution; 1=transient nonequilibrium
    read(FN, '(a)', IOSTAT=Reason) read_line
-   read(read_line,*,IOSTAT=Reason) numpar%NA_kind
+   read(read_line,*,IOSTAT=Reason) numpar%NA_kind, numpar%ind_at_distr
+   if (Reason /= 0) then ! try to read just single variable (old format):
+      read(read_line,*,IOSTAT=Reason) numpar%NA_kind
+   endif
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
