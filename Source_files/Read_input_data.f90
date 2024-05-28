@@ -6202,7 +6202,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
          laser(i)%F = read_var(1)   ! ABSORBED DOSE IN [eV/atom]
       endif
 
-      ! Check if there are additional pulse specifications:
+      ! Check if there are additional pulse specifications (if incoming fluence, it is in [J/cm^2]):
       call check_pulse_specifications(trim(adjustl(text)), laser(i), read_var(1))   ! below
       ! Printout warning if absorbed dose is too high:
       if (laser(i)%F >= 10.0) then

@@ -2521,19 +2521,19 @@ file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, fi
       if (allocated(Scell(1)%Displ)) then
          Nsiz = size(Scell(1)%Displ)   ! how many masks
          do i = 1, Nsiz    ! for all masks
-            File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(j)%mask_name))// &
+            File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(i)%mask_name))// &
                   '_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
             call gnu_displacements(File_name, trim(adjustl(file_sect_displ(i)(1:len(trim(adjustl(file_sect_displ(i))))-4) )), &
                   t0, t_last, 'OUTPUT_mean_displacement_'// &
-                  trim(adjustl(Scell(1)%Displ(j)%mask_name))//'_CONVOLVED.' &
+                  trim(adjustl(Scell(1)%Displ(i)%mask_name))//'_CONVOLVED.' &
                   //trim(adjustl(numpar%fig_extention)), Scell(1)%Displ(i)%MSD_power) ! below
             ! Partial by elements, if there is more than one:
-            File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(j)%mask_name))// &
+            File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(i)%mask_name))// &
                   '_partial_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
             if (matter%N_KAO > 1) then
                call gnu_displacements_partial(File_name, trim(adjustl(file_sect_displ(i)(1:len(trim(adjustl(file_sect_displ(i))))-4) )), &
                   t0, t_last, 'OUTPUT_mean_displacement_'// &
-                  trim(adjustl(Scell(1)%Displ(j)%mask_name))//'_partial_CONVOLVED.' &
+                  trim(adjustl(Scell(1)%Displ(i)%mask_name))//'_partial_CONVOLVED.' &
                   //trim(adjustl(numpar%fig_extention)), Scell(1)%Displ(i)%MSD_power, matter) ! below
             endif
          enddo ! i
@@ -5706,7 +5706,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       case default
          write(print_to,'(a)') ' Dynamical nonadiabatic coupling'
       end select
-      write(print_to,'(a, f7.1, a)') ' switched on at: ', numpar%t_NA, ' [fs]'
+      write(print_to,'(a, f10.1, a)') ' switched on at: ', numpar%t_NA, ' [fs]'
       write(print_to,'(a, f7.1, a)') ' with the acceptance window: ', numpar%acc_window, ' [eV]'
       write(print_to,'(a, f8.5, a)') ' degeneracy tolerance: ', numpar%degeneracy_eV, ' [eV]'
       write(text,'(f8.5)') numpar%M2_scaling
