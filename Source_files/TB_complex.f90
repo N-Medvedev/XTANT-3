@@ -31,7 +31,7 @@ use Optical_parameters, only : allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Gre
 use Electron_tools, only : get_DOS_sort
 use Little_subroutines, only : Find_in_array_monoton, linear_interpolation
 
-#ifdef OMP_inside
+#ifdef _OPENMP
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
 #endif
 
@@ -124,7 +124,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       ! k-points:
       call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
 
-#ifdef OMP_inside
+#ifdef _OPENMP
       if (numpar%verbose) write(*,'(a,i4,a,i6,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'Thread #', OMP_GET_THREAD_NUM(), &
                                      ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' k-points'
 #else

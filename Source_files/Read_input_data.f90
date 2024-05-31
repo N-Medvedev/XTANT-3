@@ -43,7 +43,7 @@ use Dealing_with_CDF, only : read_CDF_file
 use Atomic_tools, only : update_atomic_masks_displ
 
 ! Open_MP related modules from external libraries:
-#ifdef OMP_inside
+#ifdef _OPENMP
 #ifndef __GFORTRAN__
       USE IFLPORT, only : system    ! library, allowing to operate with directories in intel fortran
 #endif
@@ -144,7 +144,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%At_base = 'EADL' ! where to take atomic data from (EADL, CDF, etc...)
    matter%dens = -1.0d0 ! [g/cm^3] density of the material (negative = use MD supercell to evaluate it)
    numpar%NMC = 30000	! number of iterations in the MC module
-#ifdef OMP_inside
+#ifdef _OPENMP
    numpar%NOMP = omp_get_max_threads()    ! number of processors available by default
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
    numpar%NOMP = 1   ! unparallelized by default
@@ -4597,7 +4597,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
    if (numpar%NOMP < 1) then ! use default: maximum number of available threads
-#ifdef OMP_inside
+#ifdef _OPENMP
       numpar%NOMP = omp_get_max_threads() ! number of processors available by default
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
       numpar%NOMP = 1
@@ -7402,7 +7402,7 @@ subroutine Get_list_of_materials(path_sep)
    else ! linux:
       command = "ls -t "//trim(adjustl(m_INPUT_directory))//" > "//trim(adjustl(File_scratch))
    endif
-#ifdef OMP_inside
+#ifdef _OPENMP
    iret = system(trim(adjustl(command)))   ! execute the command to save file names in the temp file
 #else
    call system(trim(adjustl(command))) ! execute the command to save file names in the temp file

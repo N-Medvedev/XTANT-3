@@ -25,7 +25,7 @@
 
 MODULE Dealing_with_output_files
 ! Open_MP related modules from external libraries:
-#ifdef OMP_inside
+#ifdef _OPENMP
    USE OMP_LIB, only : OMP_GET_MAX_THREADS
 #endif
 #ifndef __GFORTRAN__
@@ -4483,7 +4483,7 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
    endif
 
    numpar%FN_parameters = FN ! save this file number with parameters
-#ifdef OMP_inside
+#ifdef _OPENMP
    call Print_title(FN, Scell, matter, laser, numpar, 1) ! below
 #else
    call Print_title(FN, Scell, matter, laser, numpar, 4) ! below
@@ -5056,7 +5056,7 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
          write(temp1,'(f12.3)') time
          write(temp2,'(i10)') INT(given_num)
          
-#ifdef OMP_inside
+#ifdef _OPENMP
          noth = OMP_GET_MAX_THREADS()   ! to chech if the function worked
          call set_OMP_number( numpar%NOMP, .true., 6, 'Reset number of threads in OpenMP to '//trim(adjustl(temp2)) )    ! below
          if ( noth /= OMP_GET_MAX_THREADS() ) then
@@ -5143,7 +5143,7 @@ subroutine set_OMP_number(NOMP, prnt, FN, lin)
    !------------------------------------
    character(10) :: temp2
    
-#ifdef OMP_inside
+#ifdef _OPENMP
    call OMP_SET_DYNAMIC(0) ! standard openmp subroutine
    if (NOMP <= 0) then ! use all available processors / threads:
       NOMP = OMP_GET_MAX_THREADS() ! number of threads for openmp defined in INPUT_PARAMETERS.txt
@@ -5602,7 +5602,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a)') ' Elastic high-energy-electron scattering is excluded in MC'
    endif
 
-#ifdef OMP_inside
+#ifdef _OPENMP
    write(print_to,'(a,i6)') ' Number of threads for OPENMP: ', numpar%NOMP
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
    write(print_to,'(a)') ' The code is compiled without OPENMP'

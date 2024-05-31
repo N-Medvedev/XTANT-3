@@ -53,7 +53,7 @@ implicit none
 
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! Print XTANT label on the screen
-#ifdef OMP_inside
+#ifdef _OPENMP
    call XTANT_label(6, 1)   ! module "Dealing_with_output_files"
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
    call XTANT_label(6, 4)   ! module "Dealing_with_output_files"
@@ -97,7 +97,7 @@ if (g_Err%Stopsignal) goto 2016     ! if the USER does not want to run the calcu
 if (g_numpar%verbose) call print_time_step('Input files read succesfully:', msec=.true.)
 
 ! if you set to use OpenMP in compiling: "make"
-#ifdef OMP_inside
+#ifdef _OPENMP
    call OMP_SET_DYNAMIC(0) ! standard openmp subroutine
    call OMP_SET_NUM_THREADS(g_numpar%NOMP) ! number of threads for openmp defined in INPUT_PARAMETERS.txt
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'

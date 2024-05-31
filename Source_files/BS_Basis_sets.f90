@@ -34,7 +34,7 @@ use BS_Spherical_Gaussians, only: find_TM_size
 use Algebra_tools, only : double_factorial
 
 ! For OpenMP external library
-#ifdef OMP_inside
+#ifdef _OPENMP
    USE OMP_LIB, only : omp_get_wtime
 #endif
 
@@ -828,7 +828,7 @@ subroutine print_elapsed_time(start, text)
    character(200) :: string
    real(8) :: finish
 
-#ifdef OMP_inside
+#ifdef _OPENMP
    finish = omp_get_wtime ( ) ! OMP provided subroutine
    if (present(text)) then
       string = trim(adjustl(text))
