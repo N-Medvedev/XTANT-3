@@ -31,7 +31,7 @@ use Optical_parameters, only : allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Gre
 use Electron_tools, only : get_DOS_sort
 use Little_subroutines, only : Find_in_array_monoton, linear_interpolation
 
-#ifdef OMP_inside
+#ifdef _OPENMP
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
 #endif
 
@@ -77,7 +77,6 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
                      (numpar%optic_model == 4) .or. (numpar%optic_model == 5))
    if (.not.anything_to_do) return  ! nothing to do, exit
 
-
    !-----------------------------------------------
    ! Define the total number of k-points:
    call create_DOS_arrays(numpar, Scell(NSC), matter, DOS, DOS_partial)  ! below
@@ -110,7 +109,9 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    if (.not.allocated(kappa_ee_temp)) allocate(kappa_ee_temp(Nsiz_Te), source = 0.0d0)
    if (.not.allocated(kappa_mu_grid_temp)) allocate(kappa_mu_grid_temp(Nsiz_Te), source = 0.0d0)   ! mu [eV]
    if (.not.allocated(kappa_Ce_grid_temp)) allocate(kappa_Ce_grid_temp(Nsiz_Te), source = 0.0d0)   ! Ce
-   if (.not.allocated(DOS_temp)) allocate(DOS_temp(2,Nsiz_DOS_3), source = DOS)   ! DOS
+   if (allocated(DOS)) then
+      if (.not.allocated(DOS_temp)) allocate(DOS_temp(2,Nsiz_DOS_3), source = DOS)   ! DOS
+   endif
    if (.not.allocated(DOS_partial_temp)) allocate(DOS_partial_temp(Nsiz_DOS_1,Nsiz_DOS_2,Nsiz_DOS_3), source = 0.0d0)   ! DOS_partial
    !$omp do schedule(dynamic) reduction( + : Eps_hw, kappa, kappa_ee, kappa_mu_grid, kappa_Ce_grid, DOS, DOS_partial)
    do Ngp = 1, Nsiz
@@ -123,7 +124,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       ! k-points:
       call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
 
-#ifdef OMP_inside
+#ifdef _OPENMP
       if (numpar%verbose) write(*,'(a,i4,a,i6,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'Thread #', OMP_GET_THREAD_NUM(), &
                                      ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' k-points'
 #else
@@ -132,31 +133,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
 
       !-------------------------------
       ! Get the parameters of the complex Hamiltonian:
-      ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
-         select type(ARRAY)
-         type is (TB_H_Pettifor)    ! orthogonal
-            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
-         type is (TB_H_Molteni)     ! orthogonal
-            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
-         type is (TB_H_Fu)          ! orthogonal
-            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
-         type is (TB_H_NRL)   ! nonorthogonal
-            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
-         type is (TB_H_DFTB)  ! nonorthogonal
-            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
-         type is (TB_H_3TB)   ! nonorthogonal
-            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
-         type is (TB_H_xTB)   ! nonorthogonal
-            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
-         end select
-      END ASSOCIATE
+      call associate_wrapper(numpar, Scell, NSC, CHij, Ei, kx, ky, kz, cPRRx, cPRRy, cPRRz)  ! below
 
       !-------------------------------
       ! Get DOS:
@@ -296,6 +273,46 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    if (allocated(DOS)) deallocate(DOS)
    if (allocated(DOS_partial)) deallocate(DOS_partial)
 end subroutine use_complex_Hamiltonian
+
+
+
+subroutine associate_wrapper(numpar, Scell, NSC, CHij, Ei, kx, ky, kz, cPRRx, cPRRy, cPRRz)
+   ! Associate statement cannot be used inside OMP-parallelized region, since it uses the same ARRAY
+   ! so, it needs to be put inside a subroutine-wrapper.
+   type (Numerics_param), intent(in) :: numpar  ! numerical parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell   ! supercell with all the atoms as one object
+   integer, intent(in) :: NSC    ! number of supercell
+   complex, dimension(:,:), allocatable, intent(inout) :: CHij	! eigenvectors of the hamiltonian
+   real(8), dimension(:), allocatable, intent(inout) :: Ei	! energy levels [eV]
+   real(8), intent(in) :: kx, ky, kz
+   complex, dimension(:,:), allocatable, intent(inout) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+   !---------------------
+   ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
+      select type(ARRAY)
+      type is (TB_H_Pettifor)    ! orthogonal
+         call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+      type is (TB_H_Molteni)     ! orthogonal
+         call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+      type is (TB_H_Fu)          ! orthogonal
+         call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+      type is (TB_H_NRL)   ! nonorthogonal
+         call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+      type is (TB_H_DFTB)  ! nonorthogonal
+         call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+      type is (TB_H_3TB)   ! nonorthogonal
+         call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+      type is (TB_H_xTB)   ! nonorthogonal
+         call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+      end select
+   END ASSOCIATE
+end subroutine associate_wrapper
 
 
 

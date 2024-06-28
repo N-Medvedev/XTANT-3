@@ -26,7 +26,7 @@ MODULE Algebra_tools
 use Universal_constants
 
 ! For OpenMP external library
-#ifdef OMP_inside
+#ifdef _OPENMP
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
 #endif
 
@@ -1110,7 +1110,7 @@ subroutine c8_diagonalize(M, Ev, Error_descript, print_Ei, check_M) ! double pre
    M = M_work ! save processed matrix back into the output matrix
    !!$OMP END WORKSHARE
 
-#ifdef OMP_inside
+#ifdef _OPENMP
    !print*, OMP_GET_THREAD_NUM(), 'Before check_M'
 #endif
 
@@ -1121,7 +1121,7 @@ subroutine c8_diagonalize(M, Ev, Error_descript, print_Ei, check_M) ! double pre
       endif
    endif
 
-#ifdef OMP_inside
+#ifdef _OPENMP
    !print*, OMP_GET_THREAD_NUM(), 'After check_M'
 #endif
 

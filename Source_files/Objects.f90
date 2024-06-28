@@ -914,11 +914,12 @@ type Numerics_param
    real(8) :: t_NA	      ! time when we switch on nonadiabatic terms [fs]
    real(8) :: dt_cooling  ! time-step how often to cool down the atoms [fs]
    logical :: p_const	  ! P=const, otherwise V=const for Parinello-Rahman MD simulations
-   logical :: Nonadiabat  ! true=included / false=excluded
+   logical :: Nonadiabat  ! true=included / false=excluded nonadiabatic coupling
+   integer :: NA_kind     ! non-adiabatic model kind
+   integer :: ind_at_distr ! model for atomic distribution in the nonadiabatic coupling
    logical :: scc         ! include self-consistent charge corrections in TB?
    integer :: scc_gam_ind ! index for the model for gamma in scc term
    real(8) :: scc_mix     ! mixin factor for scc calculations
-   integer :: NA_kind     ! number of different kinds of atoms
    integer :: basis_size_ind  ! index for the size of the basis set used: s=0; sp3=1; sp3d5=2; sp3s*=3; sp3d5s*=4;
    integer :: N_basis_size    ! basis set size (orbitals per atom)
    logical :: Transport		 ! true=included / false=excluded ; for atoms

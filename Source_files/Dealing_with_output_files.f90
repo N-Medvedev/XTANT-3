@@ -25,7 +25,7 @@
 
 MODULE Dealing_with_output_files
 ! Open_MP related modules from external libraries:
-#ifdef OMP_inside
+#ifdef _OPENMP
    USE OMP_LIB, only : OMP_GET_MAX_THREADS
 #endif
 #ifndef __GFORTRAN__
@@ -49,7 +49,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 18.05.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 28.06.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2521,19 +2521,19 @@ file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, fi
       if (allocated(Scell(1)%Displ)) then
          Nsiz = size(Scell(1)%Displ)   ! how many masks
          do i = 1, Nsiz    ! for all masks
-            File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(j)%mask_name))// &
+            File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(i)%mask_name))// &
                   '_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
             call gnu_displacements(File_name, trim(adjustl(file_sect_displ(i)(1:len(trim(adjustl(file_sect_displ(i))))-4) )), &
                   t0, t_last, 'OUTPUT_mean_displacement_'// &
-                  trim(adjustl(Scell(1)%Displ(j)%mask_name))//'_CONVOLVED.' &
+                  trim(adjustl(Scell(1)%Displ(i)%mask_name))//'_CONVOLVED.' &
                   //trim(adjustl(numpar%fig_extention)), Scell(1)%Displ(i)%MSD_power) ! below
             ! Partial by elements, if there is more than one:
-            File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(j)%mask_name))// &
+            File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(i)%mask_name))// &
                   '_partial_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
             if (matter%N_KAO > 1) then
                call gnu_displacements_partial(File_name, trim(adjustl(file_sect_displ(i)(1:len(trim(adjustl(file_sect_displ(i))))-4) )), &
                   t0, t_last, 'OUTPUT_mean_displacement_'// &
-                  trim(adjustl(Scell(1)%Displ(j)%mask_name))//'_partial_CONVOLVED.' &
+                  trim(adjustl(Scell(1)%Displ(i)%mask_name))//'_partial_CONVOLVED.' &
                   //trim(adjustl(numpar%fig_extention)), Scell(1)%Displ(i)%MSD_power, matter) ! below
             endif
          enddo ! i
@@ -4483,7 +4483,7 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
    endif
 
    numpar%FN_parameters = FN ! save this file number with parameters
-#ifdef OMP_inside
+#ifdef _OPENMP
    call Print_title(FN, Scell, matter, laser, numpar, 1) ! below
 #else
    call Print_title(FN, Scell, matter, laser, numpar, 4) ! below
@@ -5056,7 +5056,7 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
          write(temp1,'(f12.3)') time
          write(temp2,'(i10)') INT(given_num)
          
-#ifdef OMP_inside
+#ifdef _OPENMP
          noth = OMP_GET_MAX_THREADS()   ! to chech if the function worked
          call set_OMP_number( numpar%NOMP, .true., 6, 'Reset number of threads in OpenMP to '//trim(adjustl(temp2)) )    ! below
          if ( noth /= OMP_GET_MAX_THREADS() ) then
@@ -5143,7 +5143,7 @@ subroutine set_OMP_number(NOMP, prnt, FN, lin)
    !------------------------------------
    character(10) :: temp2
    
-#ifdef OMP_inside
+#ifdef _OPENMP
    call OMP_SET_DYNAMIC(0) ! standard openmp subroutine
    if (NOMP <= 0) then ! use all available processors / threads:
       NOMP = OMP_GET_MAX_THREADS() ! number of threads for openmp defined in INPUT_PARAMETERS.txt
@@ -5602,7 +5602,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a)') ' Elastic high-energy-electron scattering is excluded in MC'
    endif
 
-#ifdef OMP_inside
+#ifdef _OPENMP
    write(print_to,'(a,i6)') ' Number of threads for OPENMP: ', numpar%NOMP
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
    write(print_to,'(a)') ' The code is compiled without OPENMP'
@@ -5706,12 +5706,18 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       case default
          write(print_to,'(a)') ' Dynamical nonadiabatic coupling'
       end select
-      write(print_to,'(a, f7.1, a)') ' switched on at: ', numpar%t_NA, ' [fs]'
+      write(print_to,'(a, f10.1, a)') ' switched on at: ', numpar%t_NA, ' [fs]'
       write(print_to,'(a, f7.1, a)') ' with the acceptance window: ', numpar%acc_window, ' [eV]'
       write(print_to,'(a, f8.5, a)') ' degeneracy tolerance: ', numpar%degeneracy_eV, ' [eV]'
       write(text,'(f8.5)') numpar%M2_scaling
       if (numpar%M2_scaling == 4.0d0) text = trim(adjustl(text))//' (default)'
       write(print_to,'(a,a)') ' and scaling factor of: ', trim(adjustl(text))
+      select case (numpar%ind_at_distr)
+      case (1)
+         write(print_to,'(a)') ' using transient nonequilibrium atomic distribution'
+      case default
+         write(print_to,'(a)') ' using equilvalent Maxwellian atomic distribution'
+      endselect
    endif
 
    if (numpar%do_cool) then
@@ -5994,6 +6000,7 @@ subroutine XTANT_label_starred(print_to)
    write(print_to,'(a)') '       ***      **    **  **   ** ** **    **    '
    write(print_to,'(a)') '      ** **     **   ********  **  ****    **    '
    write(print_to,'(a)') '     **   **    **  **      ** **   ***    **  3 '
+   write(print_to,'(a)') '     (No OpenMP version, single-thread compiled) '
    write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine XTANT_label_starred
 

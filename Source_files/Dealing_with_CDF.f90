@@ -133,6 +133,7 @@ subroutine read_CDF_file(FN, matter, numpar, Err, File_name, file_atomic_paramet
       if (.not. allocated(matter%Atoms(i)%Ip)) allocate(matter%Atoms(i)%Ip(matter%Atoms(i)%sh), source=-1.0d0) ! ionization potentials
       if (.not. allocated(matter%Atoms(i)%Ek)) allocate(matter%Atoms(i)%Ek(matter%Atoms(i)%sh), source=0.0d0) ! Ekin of shells
       if (.not. allocated(matter%Atoms(i)%TOCS)) allocate(matter%Atoms(i)%TOCS(matter%Atoms(i)%sh), source=0) ! type of cross-section
+      if (.not. allocated(matter%Atoms(i)%TOCSph)) allocate(matter%Atoms(i)%TOCSph(matter%Atoms(i)%sh), source=0) ! type of photon cross-section
       if (.not. allocated(matter%Atoms(i)%El_MFP)) allocate(matter%Atoms(i)%El_MFP(matter%Atoms(i)%sh)) ! electron MFPs
       if (.not. allocated(matter%Atoms(i)%Ph_MFP)) allocate(matter%Atoms(i)%Ph_MFP(matter%Atoms(i)%sh)) ! photon MFPs
       matter%Atoms(i)%Ek = 0.0d0 ! starting value
@@ -164,6 +165,7 @@ subroutine read_CDF_file(FN, matter, numpar, Err, File_name, file_atomic_paramet
 
          DOCDF:if (matter%Atoms(i)%N_CDF(j) .GT. 0) then ! do this shell with provided CDF coefficients
             matter%Atoms(i)%TOCS(j) = 1 ! CDF cross-section
+            matter%Atoms(i)%TOCSph(j) = 1 ! CDF cross-section
             allocate(matter%Atoms(i)%CDF(j)%A(matter%Atoms(i)%N_CDF(j)))
             allocate(matter%Atoms(i)%CDF(j)%E0(matter%Atoms(i)%N_CDF(j)))
             allocate(matter%Atoms(i)%CDF(j)%G(matter%Atoms(i)%N_CDF(j)))
@@ -181,7 +183,8 @@ subroutine read_CDF_file(FN, matter, numpar, Err, File_name, file_atomic_paramet
             enddo
 
          else DOCDF
-            matter%Atoms(i)%TOCS(j) = 0 ! BEB cross-section
+            matter%Atoms(i)%TOCS(j) = 0   ! BEB cross-section
+            matter%Atoms(i)%TOCSph(j) = 0 ! EPDL cross-section
          endif DOCDF
       enddo
    enddo AT_NUM

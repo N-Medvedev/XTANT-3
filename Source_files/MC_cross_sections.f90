@@ -250,7 +250,6 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
          !redo = .false. ! may be there is no need to recalculate MFPs
          redo = numpar%redo_MFP  ! user defined, if there is a need to recalculate MFPs
 
-
          ! Check if CDF coefficients are set:
          if (.not. allocated(matter%Atoms(i)%CDF)) then
             allocate(matter%Atoms(i)%CDF(Nshl))
@@ -277,10 +276,10 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
          case (1) ! CDF
             !print*, 'get_MFPs-1:', matter%Atoms(i)%TOCS(j), trim(adjustl(numpar%At_base))
             select case (trim(adjustl(numpar%At_base)))
-            case ('CDF', 'cdf', 'Cdf') ! cdf from file
+            case ('CDF') ! cdf from file
                write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                   trim(adjustl(matter%Atoms(i)%Name))//'_CDF_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV.txt'
-            case ('CDF_SP', 'cdf_sp', 'CDF_sp') ! single-pole cdf
+            case ('CDF_sp', 'CDF:EPICS') ! single-pole cdf
                write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                   trim(adjustl(matter%Atoms(i)%Name))//'_CDFsp_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV.txt'
             end select
@@ -465,8 +464,12 @@ subroutine set_single_pole_CDF(Scell, NSC, matter, numpar, i, j)  ! only for VB/
 
    ! Check if the flag for CS needs to be changed:
    select case (trim(adjustl(numpar%At_base)))
-   case('CDF', 'cdf', 'CDF_sp', 'cdf_sp')
-      matter%Atoms(i)%TOCS(j) = 1   ! mark it as CDF cross-section
+   case('CDF', 'CDF_sp')
+      matter%Atoms(i)%TOCS(j) = 1      ! mark it as CDF cross-section
+      matter%Atoms(i)%TOCSph(j) = 1    ! mark it as CDF cross-section
+   case('CDF:EADL', 'CDF:EPICS')
+      matter%Atoms(i)%TOCS(j) = 1      ! mark it as CDF cross-section
+      matter%Atoms(i)%TOCSph(j) = 0    ! mark it as EPICS cross-section
    case default   ! EADL, BEB
       ! do not change the flag
    end select
@@ -535,10 +538,10 @@ subroutine IMFP_vs_Te_files(matter, laser, numpar, Te, N_Te)
    write(ch_Te,'(i6)') INT(Te*g_kb)
 
    select case (trim(adjustl(numpar%At_base)))
-   case ('CDF', 'cdf', 'Cdf') ! cdf from file
+   case ('CDF') ! cdf from file
       write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
       trim(adjustl(matter%Atoms(1)%Name))//'_CDF_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV_'//trim(adjustl(ch_Te))//'K.txt'
-   case ('CDF_SP', 'cdf_sp', 'CDF_sp') ! single-pole cdf
+   case ('CDF_sp', 'CDF:EPICS') ! single-pole cdf
       write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
       trim(adjustl(matter%Atoms(1)%Name))//'_CDFsp_Electron_IMFP_Ip='//trim(adjustl(chtemp))//'eV_'//trim(adjustl(ch_Te))//'K.txt'
    end select
@@ -1687,8 +1690,8 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
       endif
       !------------------------------------------------------------------------------------
       ! Use new subroutines to deal with EPDL (faster versions):
-      if (size(matter%Atoms(i)%TOCS) > 0) then  ! if this element have more than VB
-       select case (matter%Atoms(i)%TOCS(1)) ! which inelastic cross section to use (BEB vs CDF)
+      if (size(matter%Atoms(i)%TOCSph) > 0) then  ! if this element have more than VB
+       select case (matter%Atoms(i)%TOCSph(1)) ! which inelastic cross section to use (BEB vs CDF)
        case (1) ! CDF
        case default ! BEB  
          Folder_name = trim(adjustl(numpar%input_path))//'Atomic_parameters'
@@ -1728,7 +1731,7 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
          Phot_abs_CS_shl(:,1,:) = Phot_abs_CS_shl(:,1,:)*1.0d6	! Convert [MeV] -> [eV]
          Phot_abs_CS_shl(:,2,:) = Phot_abs_CS_shl(:,2,:)*1.0d-8	! Convert [b] -> [A^2]
        end select
-      endif ! (size(matter%Atoms(i)%TOCS) > 0)
+      endif ! (size(matter%Atoms(i)%TOCSph) > 0)
       !------------------------------------------------------------------------------------
    
       Nshl = size(matter%Atoms(i)%Ip)
@@ -1753,7 +1756,7 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
             endif
          endif
          
-         select case (matter%Atoms(i)%TOCS(j)) ! which inelastic cross section to use (BEB vs CDF):
+         select case (matter%Atoms(i)%TOCSph(j)) ! which inelastic cross section to use (BEB vs CDF):
          case (1) ! CDF
             write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(matter%Atoms(i)%Name))//'_CDF_Photon_IMFP_Ip='//trim(adjustl(chtemp))//'eV.txt'
          case default ! BEB
@@ -1786,7 +1789,7 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
 9900   if (redo) then ! recalculate the MFPs:
             write(0,'(a,f8.1)') ' Obtaining photon IMFP for '//trim(adjustl(matter%Atoms(i)%Name))//', Ip=', matter%Atoms(i)%Ip(j)
             
-            select case (matter%Atoms(i)%TOCS(j)) ! which inelastic cross section to use (BEB vs CDF):
+            select case (matter%Atoms(i)%TOCSph(j)) ! which inelastic cross section to use (BEB vs CDF):
             case (1) ! CDF
                ! Printout the calculated attenuations:
                do k = 1, N_grid ! for all grid-points
@@ -1977,7 +1980,7 @@ subroutine Tot_Phot_IMFP(Ele, matter, numpar, Nat, Nshl, Sigma, Err, dEdx)
     real(8) temp1, ImE, Sigma1
     character(200) :: Folder_name, File_name
 
-    select case (matter%Atoms(Nat)%TOCS(Nshl)) ! which inelastic cross section to use (EPDL97 vs CDF):
+    select case (matter%Atoms(Nat)%TOCSph(Nshl)) ! which inelastic cross section to use (EPDL97 vs CDF):
     case (1) ! CDF cross section
        if (Ele .LT. matter%Atoms(Nat)%Ip(Nshl)) then ! no ionization possible, IMFP = infinity
           Sigma = 1d30      ! [A] IMFP

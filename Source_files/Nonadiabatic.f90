@@ -26,7 +26,7 @@
 MODULE Nonadiabatic
 use Universal_constants
 use Objects
-use Atomic_tools, only : Maxwell_int_shifted
+use Atomic_tools, only : Maxwell_int_shifted, integrated_atomic_distribution
 
 
 implicit none
@@ -263,12 +263,15 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
 
                ! analytical integration of maxwell function:
                if (i > j) then
-                  distr_at_fin = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
+                  !distr_at_fin = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
+                  distr_at_fin = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
                   distr_at_in = 1.0d0	! all atoms can absorb this energy
                else
                   distr_at_fin = 1.0d0	! all atoms can absorb this energy
-                  distr_at_in = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
+                  !distr_at_in = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
+                  distr_at_in = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
                endif
+               !print*, i, j, integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 0), integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 1)
 
                ! Explicit scheme (reqiures small timestep):
                dfdt = Mij2*( distre_temp(j)*distr_at_fin*(2.0d0-distre_temp(i)) - distre_temp(i)*distr_at_in*(2.0d0-distre_temp(j)) )

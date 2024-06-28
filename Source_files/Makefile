@@ -19,14 +19,14 @@ ifeq ($(c),gf)
 	LDFLAGS = -lblas -llapack -fopenmp
 	# need to link OpenMP,     ^^^^^^^ even for non OpenMP compilation. Can be fixed..
 	ifeq (${OMP},y)
-		F90FLAGS += -fopenmp -D OMP_inside
+		F90FLAGS += -fopenmp
 	endif
 else ifeq ($(c),gf6)
 	F90 = gfortran6.1.0
 	F90FLAGS = -ffree-line-length-0 -fdec-format-defaults -cpp -fdefault-real-8 -fdefault-double-8 -O2
 	LDFLAGS = -lblas -llapack -fopenmp
 	ifeq (${OMP},y)
-		F90FLAGS += -fopenmp -D OMP_inside
+		F90FLAGS += -fopenmp
 	endif
 else ifeq ($(c),if13)
 	F90 = ifort2013
@@ -34,7 +34,7 @@ else ifeq ($(c),if13)
 	ifneq (${OMP},) # OMP=no means no omp
 		F90FLAGS = -mkl
 	else  # there is omp by default
-		F90FLAGS = -qopenmp -D OMP_inside
+		F90FLAGS = -qopenmp
 		F90FLAGS += -mkl=parallel
 	endif
 	
@@ -53,7 +53,7 @@ else
 	ifneq (${OMP},) # OMP=no means no omp
 		F90FLAGS = -mkl
 	else  # there is omp by default
-		F90FLAGS = -qopenmp -D OMP_inside
+		F90FLAGS = -qopenmp
 		F90FLAGS += -mkl=parallel
 	endif
 	

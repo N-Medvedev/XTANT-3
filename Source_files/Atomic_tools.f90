@@ -56,7 +56,7 @@ get_mean_square_displacement, Cooling_atoms, Coordinates_abs_to_rel, get_Ekin, m
 remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_atoms_Y4, check_periodic_boundaries, &
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
 Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
-update_atomic_masks_displ, numerical_acceleration, Get_testmode_add_data
+update_atomic_masks_displ, numerical_acceleration, Get_testmode_add_data, integrated_atomic_distribution
 
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
@@ -1354,9 +1354,9 @@ end function Maxwell_int
 
 function Maxwell_int_shifted(Ta, hw) result(G)
    real(8), intent(in) :: Ta	! temperature [eV]
-   real(8), intent(inout) :: hw	! [eV] shift og the Maxwell function
-   real(8) :: G ! normalized to 1
-   real(8) :: eps   ! tolerance around zero
+   real(8), intent(in) :: hw	! [eV] shift of the Maxwell function
+   real(8) :: G      ! normalized to 1
+   real(8) :: eps    ! tolerance around zero
    real(8) :: arg
    eps = 1.0d-10
    if (abs(hw) < eps) then
@@ -1371,6 +1371,26 @@ function Maxwell_int_shifted(Ta, hw) result(G)
    endif
 end function Maxwell_int_shifted
 
+
+function integrated_atomic_distribution(MDAtoms, Ta, hw, ind) result(G)
+   real(8) :: G      ! normalized to 1
+   type(Atom), dimension(:) :: MDAtoms    ! all atoms in MD
+   real(8), intent(in) :: Ta     ! temperature [eV]
+   real(8), intent(in) :: hw     ! [eV] shift of the Maxwell function
+   integer, intent(in) :: ind    ! index of the model to be used
+   !---------------------
+   integer :: Nat, Nat_high
+
+   select case (ind)
+   case default ! Maxwellian
+      G = Maxwell_int_shifted(Ta, hw)  ! above
+   case (1) ! transient nonequilibrium
+      ! integral mumber of atoms ewith energies above the given threshold:
+      Nat = size(MDAtoms)
+      Nat_high = count(MDAtoms(:)%Ekin >= hw)
+      G = dble(Nat_high)/dble(Nat)  ! normalized
+   end select
+end function integrated_atomic_distribution
 
 
 

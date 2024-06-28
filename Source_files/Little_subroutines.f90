@@ -739,7 +739,38 @@ end function get_seconds_from_timestamp
 
 
 
-subroutine print_progress(string,ndone,ntotal)
+subroutine print_progress(string, ndone, ntotal, FN)
+    character(*), intent(in) :: string  ! text to print
+    integer, intent(in) :: ndone, ntotal    ! iteration number, and total
+    integer, intent(in), optional :: FN   ! file to print to
+    !---------------------
+    real(8) :: pers_done
+    integer :: i, z
+    character(200) :: temp
+
+    pers_done = dble(ndone)/dble(ntotal) * 100.0d0
+    write(temp, '(f10.2)') pers_done
+
+    if (present(FN)) then
+        if ((FN /= 6) .and. (FN /= 0)) backspace(FN)   ! overwrite the line in a file
+
+        if (pers_done >= 100.0d0) then
+            write(FN, '(a)') 'Calculations done '//trim(adjustl(temp))//'%                                           '//char(13)
+        else
+            write(FN,'(a,a,$)') trim(adjustl(string))//' ', trim(adjustl(temp))//'%   '//char(13)
+        endif
+    else
+        if (pers_done >= 100.0d0) then
+            write(*, '(a)') 'Calculations done '//trim(adjustl(temp))
+        else
+            write(*,'(a,a,$)') trim(adjustl(string))//' ', trim(adjustl(temp))//'%   '//char(13)
+        endif
+    endif
+end subroutine print_progress
+
+
+
+subroutine print_progress_OLD(string,ndone,ntotal)
     implicit none
     character*(*) string
     character(255) prog,oldprog
@@ -761,7 +792,7 @@ subroutine print_progress(string,ndone,ntotal)
         write(0,'(a,a,$)') prog(1:77),char(13)
         return
     endif
-end subroutine print_progress
+end subroutine print_progress_OLD
 
 
 pure subroutine Gaussian(mu, sigma, x, Gaus, normalized_max) ! at the time x according to Gaussian shape

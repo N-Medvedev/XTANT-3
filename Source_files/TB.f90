@@ -62,7 +62,7 @@ use Coulomb, only: m_k, m_sqrtPi, Coulomb_Wolf_pot, get_Coulomb_Wolf_s, cut_off_
 use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s, &
                      get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s, d_Exponential_wall_forces
 
-#ifdef OMP_inside
+#ifdef _OPENMP
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
 #endif
 
@@ -2601,7 +2601,7 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
    integer :: Nsiz, j
    character(200) :: Error_descript
 
-#ifdef OMP_inside
+#ifdef _OPENMP
    print*, OMP_GET_THREAD_NUM(), 'diagonalize_complex8_Hamiltonian start'
 #else
    print*, 'diagonalize_complex8_Hamiltonian start'
@@ -2617,7 +2617,7 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
 
    ORTH: if (.not.present(CSij)) then ! orthogonal:
 
-#ifdef OMP_inside
+#ifdef _OPENMP
       print*, OMP_GET_THREAD_NUM(), 'diagonalize_complex8_Hamiltonian orthogonal'
 #else
       print*, 'diagonalize_complex8_Hamiltonian orthogonal'
@@ -2630,7 +2630,7 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       ! 1) Orthogonalize the Hamiltonian using Loewdin procidure:
       ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
 
-#ifdef OMP_inside
+#ifdef _OPENMP
       print*, OMP_GET_THREAD_NUM(), 'diagonalize_complex8_Hamiltonian nonorthogonal'
 #else
       print*, 'diagonalize_complex8_Hamiltonian nonorthogonal'
@@ -2639,7 +2639,7 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       CHij_use = CHij
       call Loewdin_Orthogonalization_c8(Nsiz, CSij, CHij_use) ! module "TB_NRL"
 
-#ifdef OMP_inside
+#ifdef _OPENMP
       print*, OMP_GET_THREAD_NUM(), 'Loewdin_Orthogonalization_c8 done'
 #else
       print*, 'Loewdin_Orthogonalization_c8 done'
@@ -2662,7 +2662,7 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       endif
 
 
-#ifdef OMP_inside
+#ifdef _OPENMP
       print*, OMP_GET_THREAD_NUM(), 'sym_diagonalize done'
 #else
       print*, 'sym_diagonalize done'
@@ -2674,7 +2674,7 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       call mkl_matrix_mult_c8('N', 'N', CSij, CHij_use, CHij_temp)  ! module "Algebra_tools"
       CHij = cmplx( real(CHij_temp), aimag(CHij_temp) )  ! convert to cmplx (important for unix-based compileres)
 
-#ifdef OMP_inside
+#ifdef _OPENMP
       print*, OMP_GET_THREAD_NUM(), 'mkl_matrix_mult done'
 #else
       print*, 'mkl_matrix_mult done'
@@ -3569,7 +3569,7 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
    !--------------------------------------------
    real(8), dimension(:,:), allocatable :: F, dF	! forces and derivatives
    real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr	! forces and derivatives [eV/A], [eV/A^2]
-   real(8) :: Tconf, F_sum, dF_sum, acc(3), Ftest(3), dF_temp, Te, F_sum2, dF_sum2
+   real(8) :: Tconf, F_sum, dF_sum, acc(3), Ftest(3), dF_temp, Te, F_sum2, dF_sum2, T_NPH
    integer :: Nat, i
    real(8), pointer :: Mass
 
@@ -3627,6 +3627,10 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
       Scell(1)%Tconf2 = Scell(1)%Tconf2*g_kb	! [eV] -> [K]
    endif
 
+   ! External pressure contribution:
+!    T_NPH = matter%p_ext*(Scell(1)%V * 1e-30) / dble(Nat) / g_e * g_kb  ! [K]
+!    Scell(1)%Tconf = Scell(1)%Tconf - T_NPH
+!    Scell(1)%Tconf2 = Scell(1)%Tconf2 - T_NPH
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Testing:
