@@ -3569,7 +3569,7 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
    !--------------------------------------------
    real(8), dimension(:,:), allocatable :: F, dF	! forces and derivatives
    real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr	! forces and derivatives [eV/A], [eV/A^2]
-   real(8) :: Tconf, F_sum, dF_sum, acc(3), Ftest(3), dF_temp, Te, F_sum2, dF_sum2
+   real(8) :: Tconf, F_sum, dF_sum, acc(3), Ftest(3), dF_temp, Te, F_sum2, dF_sum2, T_NPH
    integer :: Nat, i
    real(8), pointer :: Mass
 
@@ -3627,6 +3627,10 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
       Scell(1)%Tconf2 = Scell(1)%Tconf2*g_kb	! [eV] -> [K]
    endif
 
+   ! External pressure contribution:
+!    T_NPH = matter%p_ext*(Scell(1)%V * 1e-30) / dble(Nat) / g_e * g_kb  ! [K]
+!    Scell(1)%Tconf = Scell(1)%Tconf - T_NPH
+!    Scell(1)%Tconf2 = Scell(1)%Tconf2 - T_NPH
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Testing:

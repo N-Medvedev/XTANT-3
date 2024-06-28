@@ -448,13 +448,23 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       ! Read atomic data:
       call read_atomic_parameters(matter, numpar, Err) ! below
       if (Err%Err) goto 3416  ! exit if something went wrong
+
       if (numpar%user_defined_E_gap > -1.0d-14) then   ! user provided bandgap value, use it:
-         Scell(i)%E_gap = numpar%user_defined_E_gap ! [eV]
-         ! And redefine the Ip for the valence band:
-         matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) = Scell(i)%E_gap  ![eV]
-      else ! assume atomic energy level:
+
+         print*, trim(adjustl(numpar%At_base))
+
+         select case (trim(adjustl(numpar%At_base)))
+         case('BEB', 'CDF:EPICS')   ! don't replace the atomci energy level
+            ! use the atomic value for BEB cross section
+         case default ! replace with the user-defined value
+            Scell(i)%E_gap = numpar%user_defined_E_gap ! [eV]
+            ! And redefine the Ip for the valence band:
+            matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) = Scell(i)%E_gap  ![eV]
+         endselect
+      else
          Scell(i)%E_gap = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))  ! [eV] band gap at the beginning
       endif
+
       Scell(i)%N_Egap = -1 ! just to start with something
       ! Read TB parameters:
       if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
@@ -699,7 +709,7 @@ subroutine read_atomic_parameters(matter, numpar, Err)
    logical :: file_exist
    
    select case (trim(adjustl(numpar%At_base)))
-   case('CDF', 'cdf', 'CDF_sp') ! read data from corresponding *.cdf file
+   case('CDF', 'cdf') ! read data from corresponding *.cdf file
 
       ! Check if file with CDF oscillator parameters exists:
       call check_CDF_file_exists(numpar, matter, File_name, file_exist) ! below
@@ -4575,6 +4585,9 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
 
+   ! Make the name of the database used standard for easier interpretation later in the code:
+   call standardize_At_base(numpar%At_base)  ! below
+
    ! [g/cm^3] density of the material (used in MC in case of EADL parameters):
    read(FN, '(a)', IOSTAT=Reason) read_line
    read(read_line,*,IOSTAT=Reason) matter%dens
@@ -4989,6 +5002,32 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 3418 continue
    if (.not.old_file .and. file_opened) close(FN)
 end subroutine read_numerical_parameters
+
+
+subroutine standardize_At_base(At_base)
+   character(*), intent(inout) :: At_base
+   !--------------------------
+   select case (trim(adjustl(At_base)))
+   case('CDF', 'cdf', 'Cdf', 'CDf')
+      At_base = 'CDF'
+
+   case( 'CDF_sp', 'CDFsp', 'CDF_SP', 'CDFSP', 'CDF_Sp', 'cdf_sp', 'cdf_SP', 'cdfsp')
+      At_base = 'CDF_sp'
+
+   case('CDF:EADL', 'cdf:eadl', 'Cdf:eadl', 'CDf:eadl', 'CDF:EPDL', 'cdf:epdl', 'CDF:EPICS', 'cdf:epics')
+      At_base = 'CDF:EPICS'
+
+   case('EADL', 'eadl', 'EPDL', 'edpl', 'EPICS', 'epics', 'EPICS2023', 'epics2023', 'BEB', 'beb')
+      At_base = 'BEB'
+
+   case ('XATOM') ! get data from XATOM code
+      ! to be integrated with XATOM later...
+
+   case default ! read data from EPICS database
+      print*, 'Could not interprete the atomic database requested: '//trim(adjustl(At_base))//', using default: BEB'
+      At_base = 'BEB'
+   end select
+end subroutine standardize_At_base
 
 
 

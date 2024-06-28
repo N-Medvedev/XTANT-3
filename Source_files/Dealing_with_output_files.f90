@@ -49,7 +49,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 27.05.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 28.06.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -6000,6 +6000,7 @@ subroutine XTANT_label_starred(print_to)
    write(print_to,'(a)') '       ***      **    **  **   ** ** **    **    '
    write(print_to,'(a)') '      ** **     **   ********  **  ****    **    '
    write(print_to,'(a)') '     **   **    **  **      ** **   ***    **  3 '
+   write(print_to,'(a)') '     (No OpenMP version, single-thread compiled) '
    write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine XTANT_label_starred
 
