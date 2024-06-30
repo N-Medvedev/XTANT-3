@@ -1,6 +1,6 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT-3
-! available at: https://doi.org/10.48550/arXiv.2307.03953
+! available at: https://zenodo.org/doi/10.5281/zenodo.8392569
 ! or at: https://github.com/N-Medvedev/XTANT-3
 !
 ! Developed by Nikita Medvedev
@@ -49,7 +49,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 28.06.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 30.06.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
