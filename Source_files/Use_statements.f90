@@ -1,6 +1,6 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT-3
-! available at: https://doi.org/10.48550/arXiv.2307.03953
+! available at: https://zenodo.org/doi/10.5281/zenodo.8392569
 ! or at: https://github.com/N-Medvedev/XTANT-3
 !
 ! Developed by Nikita Medvedev
@@ -50,3 +50,9 @@ use MC_cross_sections, only : get_mfps, get_photon_attenuation
 use Monte_carlo, only : MC_Propagate, process_laser_parameters
 use ZBL_potential, only : get_total_ZBL
 use TB_complex, only : use_complex_Hamiltonian
+
+use MPI_subroutines, only : initialize_MPI, initialize_random_seed, MPI_error_wrapper, MPI_barrier_wrapper
+
+#ifdef MPI_USED
+use mpi
+#endif

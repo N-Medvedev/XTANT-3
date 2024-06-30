@@ -1,6 +1,6 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT-3
-! available at: https://doi.org/10.48550/arXiv.2307.03953
+! available at: https://zenodo.org/doi/10.5281/zenodo.8392569
 ! or at: https://github.com/N-Medvedev/XTANT-3
 !
 ! Developed by Nikita Medvedev
@@ -858,7 +858,23 @@ type User_overwrite_data
 endtype User_overwrite_data
 
 
+! MPI parameters
+type :: Used_MPI_parameters
+    ! Processes characteristics:
+    integer :: process_rank     ! index of the process
+    integer :: size_of_cluster  ! total number of processes
+    integer :: ierror           ! error handler
+    integer :: INFO             ! info to use in subroutines calls
+    !----------------
+    character(10) :: rank_ch    ! rank process as character (for printout)
+    real(8) :: Wt0, Wt1   ! wall time defined by MPI
+end type Used_MPI_parameters
+
+
+
 type Numerics_param
+   ! MPI parameters:
+   type(Used_MPI_parameters) :: MPI_param
    ! Subcell parameters for linear scaling TB (not ready):
    integer :: lin_scal    ! use linear scaling TB (1), or not (0)
    integer, dimension(3) :: N_subcels   ! number of subcells along each axis: X, Y, Z

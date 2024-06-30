@@ -1,6 +1,6 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT-3
-! available at: https://doi.org/10.48550/arXiv.2307.03953
+! available at: https://zenodo.org/doi/10.5281/zenodo.8392569
 ! or at: https://github.com/N-Medvedev/XTANT-3
 !
 ! Developed by Nikita Medvedev

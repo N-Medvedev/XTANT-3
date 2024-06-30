@@ -1,6 +1,6 @@
 ! 000000000000000000000000000000000000000000000000000000000000
 ! This file is part of XTANT-3
-! available at: https://doi.org/10.48550/arXiv.2307.03953
+! available at: https://zenodo.org/doi/10.5281/zenodo.8392569
 ! or at: https://github.com/N-Medvedev/XTANT-3
 !
 ! Developed by Nikita Medvedev
@@ -49,7 +49,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 28.06.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 30.06.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -5910,7 +5910,7 @@ subroutine XTANT_label(print_to, ind)
    integer, intent(in) :: ind    ! which label to print
    select case (ind)
    case default   ! regular
-      call XTANT_label_3(print_to)  ! below
+      call XTANT_label_3(print_to, ind)  ! below
    case (-2)   ! old regular
       call XTANT_label_old(print_to)  ! below
    case (-1)       ! none
@@ -5928,8 +5928,10 @@ end subroutine XTANT_label
 
 
 
-subroutine XTANT_label_3(print_to)
+subroutine XTANT_label_3(print_to, ind)
    integer, intent(in) :: print_to ! the screen, or file
+   integer, intent(in) :: ind    ! which label to print
+   !---------------------
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '*   __    __  _______     __       __    _   _______        *'
    write(print_to,'(a)') '*   \ \  / / |__   __|   /  \     |  \  | | |__   __|       *'
@@ -5940,6 +5942,13 @@ subroutine XTANT_label_3(print_to)
    write(print_to,'(a)') '*                                                  ___) )   *'
    write(print_to,'(a)') '*                                                 /____/    *'
    write(print_to,'(a)') '*                                                           *'
+   write(print_to,'(a)') trim(adjustl(m_starline))
+   select case (ind)
+   case (1) ! OpenMP
+   write(print_to,'(a)') '*      (Version compiled with OpenMP parallelization)       *'
+   case default   ! MPI
+   write(print_to,'(a)') '*       (Version compiled with MPI parallelization)         *'
+   end select
    write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine XTANT_label_3
 
