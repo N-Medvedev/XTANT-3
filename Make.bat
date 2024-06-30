@@ -35,13 +35,27 @@ cd Source_files
    echo %Starline%
    echo Started compilation: %date% %time%
 
-   :: Set the compiler name:
+   :: Set the default compiler name:
    SET "Compiler=ifx"
 
 :: List of all program files to be compiled
    SET "List_of_files=Universal_constants.f90 Objects.f90 Variables.f90 MPI_subroutines.f90 BS_Cartesian_Gaussians.f90 BS_Spherical_Gaussians.f90 Periodic_table.f90 Algebra_tools.f90 BS_Basis_sets.f90 TB_Koster_Slater.f90 Dealing_with_files.f90 Gnuplotting.f90 Little_subroutines.f90 Dealing_with_EADL.f90 Dealing_with_DFTB.f90 Dealing_with_3TB.f90 Dealing_with_BOP.f90 Dealing_with_xTB.f90 Atomic_tools.f90 Atomic_thermodynamics.f90 MC_cross_sections.f90 Electron_tools.f90 Nonadiabatic.f90 Dealing_with_POSCAR.f90 Dealing_with_mol2.f90 Dealing_with_CDF.f90 Read_input_data.f90 Van_der_Waals.f90 Coulomb.f90 ZBL_potential.f90 Exponential_wall.f90  Dealing_with_output_files.f90 Monte_Carlo.f90 TB_Fu.f90 TB_Pettifor.f90 TB_Molteni.f90 TB_NRL.f90 TB_DFTB.f90 TB_3TB.f90 TB_BOP.f90 TB_xTB.f90 TB.f90 Dealing_with_eXYZ.f90 Initial_configuration.f90 Optical_parameters.f90 TB_complex.f90 Transport.f90 XTANT_MAIN_FILE.f90"
 
-:: List compiler options and the name of the executable:
+   :: List compiler options and the name of the executable:
+   IF /I %arg1%==clean (
+      echo %Starline%
+      echo Cleaning up
+      echo Started at: %date% %time%
+      echo %Starline%
+
+	  del *.mod
+      del *.obj
+      del *.optrpt
+      del *.yaml
+      del *.pdb
+   )
+
+
    IF /I %arg1%==DEBUG (
       echo %Starline%
       echo Compiling with DEBUG option, no OpenMP or optimizations are included
@@ -98,7 +112,7 @@ cd Source_files
 
    IF /I %arg1%==MPI (
       echo %Starline%
-      echo Compiling for release, OpenMP and optimizations are included
+      echo Compiling with MPI parallelization
       echo Started at: %date% %time%
       echo %Starline%
 
@@ -117,50 +131,50 @@ cd Source_files
 ::   ifx.exe -c %Compile_options% %List_of_files%
 
    :: compile modules one by one:
-   FOR %%A IN (%List_of_files%) DO (
-      :: Construct the command line for compilation of the current module:
-      SET "Output=%Compiler% -c %Compile_options% %%A 2>&1"
-      echo * Compilation : !Output!
-      IF ERRORLEVEL 1 (
-        echo Error compiling %%A! See Captured Output above. Exiting...
-        EXIT /B 1
+   IF /I not %arg1%==clean (
+      FOR %%A IN (%List_of_files%) DO (
+         :: Construct the command line for compilation of the current module:
+         SET "Output=%Compiler% -c %Compile_options% %%A 2>&1"
+         echo * Compilation : !Output!
+         IF ERRORLEVEL 1 (
+            echo Error compiling %%A! See Captured Output above. Exiting...
+            EXIT /B 1
+         )
+         :: Execute the compilation of the module:
+         CALL !Output!
       )
-      :: Execute the compilation of the module:
-      CALL !Output!
-   )
-   echo %Starline%
+      echo %Starline%
 
-   
-   echo %Starline%
-   echo Assembling the files into executable: %Name_of_exe%
-   echo Started at: %date% %time%
-   echo %Starline%
+      echo %Starline%
+      echo Assembling the files into executable: %Name_of_exe%
+      echo Started at: %date% %time%
+      echo %Starline%
 
 :: Assemble the code from all created obj-files
 ::   ifx.exe %Compile_options% *.obj /exe:%Name_of_exe%
 :: Construct the command line for creation fo executable:
-   SET "Output=%Compiler% %Compile_options% *.obj /exe:%Name_of_exe% 2>&1"
-   IF ERRORLEVEL 1 (
-     echo Error compiling %%A! See Captured Output above. Exiting...
-     EXIT /B 1
-   )
-   echo * Executable : !Output!
-   :: Combine modules into the executable:
-   CALL !Output!
+      SET "Output=%Compiler% %Compile_options% *.obj /exe:%Name_of_exe% 2>&1"
+      IF ERRORLEVEL 1 (
+         echo Error compiling %%A! See Captured Output above. Exiting...
+         EXIT /B 1
+      )
+      echo * Executable : !Output!
+      :: Combine modules into the executable:
+      CALL !Output!
 
-   echo %Starline%
+      echo %Starline%
 ::   echo Completed: %date% %time%
-   echo The program %Name_of_exe% was created at %date% %time%
-   echo %Starline%
-   echo INSTRUCTIONS:
-   IF /I %arg1%==MPI (
-      echo Run the program as: mpiexec -np [n] ./%Name_of_exe%
-   ) ELSE (
-      echo Run the program as: %Name_of_exe%
+      echo The program %Name_of_exe% was created at %date% %time%
+      echo %Starline%
+      echo INSTRUCTIONS:
+      IF /I %arg1%==MPI (
+         echo Run the program as: mpiexec -np [n] ./%Name_of_exe%
+         echo where [n] = number of processors to be used
+      ) ELSE (
+         echo Run the program as: %Name_of_exe%
+      )
+      echo %Starline%
    )
-   echo %Starline%
-   
-
 :: Remove files that are no longer needed
 :: del *.obj *.mod *.obj *.optrpt *.yaml
 :: del *.obj
@@ -169,7 +183,9 @@ cd Source_files
 cd ..\
 
 :: Copy exe file from the source directory into the parent directory:
-xcopy source_files\%Name_of_exe% %Name_of_exe%* /Y /Q
+IF /I not %arg1%==clean (
+   xcopy source_files\%Name_of_exe% %Name_of_exe%* /Y /Q
 
-:: Delete the exe file from the soure directory:
-del source_files\%Name_of_exe%
+   :: Delete the exe file from the soure directory:
+   del source_files\%Name_of_exe%
+)

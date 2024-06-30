@@ -63,6 +63,13 @@ implicit none
 #endif
 #endif
 
+
+!MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+! MPI initialization:
+call initialize_MPI(g_numpar%MPI_param, g_Err)   ! module "MPI_subroutines"
+!MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+
+
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! Set some starting default values:
 g_numpar%which_input = 0 ! starting with the default input files
