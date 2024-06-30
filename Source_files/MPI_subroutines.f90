@@ -93,6 +93,24 @@ end subroutine initialize_MPI
 
 
 
+subroutine initialize_random_seed(MPI_param)
+   type(Used_MPI_parameters), intent(in) :: MPI_param
+   !-----------------
+   integer :: RN_seed
+#ifdef MPI_USED
+   ! Initialize different random seed for each process:
+   CALL SYSTEM_CLOCK(count=RN_seed)
+   RN_seed = RN_seed/100000 + MPI_param%process_Rank*100000
+   call random_seed(put = (/RN_seed/) ) ! standard FORTRAN seeding of random numbers
+#else
+   ! Without MPI, use the default random seed:
+   call random_seed() ! standard FORTRAN seeding of random numbers
+#endif
+end subroutine initialize_random_seed
+
+
+
+
 subroutine MPI_barrier_wrapper(MPI_param)
    type(Used_MPI_parameters), intent(inout) :: MPI_param
    !------------------------
@@ -308,26 +326,6 @@ subroutine non_MPI_fileclose(FN, delete_file, Error_message, err_msg, MPI_param)
       endif
    endif
 end subroutine non_MPI_fileclose
-
-
-
-
-
-
-subroutine initialize_random_seed(MPI_param)
-   type(Used_MPI_parameters), intent(in) :: MPI_param
-   !-----------------
-   integer :: RN_seed
-   ! Initialize different random seed for each process:
-#ifdef MPI_USED
-   CALL SYSTEM_CLOCK(count=RN_seed)
-   RN_seed = RN_seed/100000 + MPI_param%process_Rank*100000
-   call random_seed(put = (/RN_seed/) ) ! standard FORTRAN seeding of random numbers
-#else
-   ! Without MPI, use the default random seed:
-   call random_seed() ! standard FORTRAN seeding of random numbers
-#endif
-end subroutine initialize_random_seed
 
 
 

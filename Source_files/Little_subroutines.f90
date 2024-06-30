@@ -1158,15 +1158,22 @@ end subroutine extend_array_size_real
 
 
 
-subroutine print_time_step(text, num, msec, FN_in)
+subroutine print_time_step(text, num, msec, FN_in, MPI_param)
    CHARACTER(len=*) :: text	! text to print out
    real(8), intent(in), optional :: num	! to print out this number
    logical, intent(in), optional :: msec ! print msec or not?
    integer, intent(in), optional :: FN_in ! file number to print
+   type(Used_MPI_parameters), intent(in), optional :: MPI_param
    !-----------------------
    character(len=100) :: var 
    integer :: c1(8) ! time stamps
    integer :: FN
+
+   if (present(MPI_param)) then ! check which process it is
+      if (MPI_param%process_rank /= 0) then   ! only MPI master process does it
+         return   ! so, all non-master processes have nothing to do here
+      endif
+   endif
 
    if (present(FN_in)) then   ! print into this file
       FN = FN_in

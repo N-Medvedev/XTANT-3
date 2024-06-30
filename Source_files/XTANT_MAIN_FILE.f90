@@ -52,30 +52,33 @@ implicit none
 
 
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+! MPI initialization (only if MPI is present, checked automatically via preprocessing):
+call initialize_MPI(g_numpar%MPI_param, g_Err)   ! module "MPI_subroutines"
+!MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+
+!MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! Print XTANT label on the screen
+
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
 #ifdef _OPENMP
    call XTANT_label(6, 1)   ! module "Dealing_with_output_files"
 #else
 #ifdef MPI_USED
    call XTANT_label(6, 10)   ! module "Dealing_with_output_files"
 #else ! no parallelzarion of any kind
-  call XTANT_label(6, 4)   ! module "Dealing_with_output_files"
+   call XTANT_label(6, 4)   ! module "Dealing_with_output_files"
 #endif
 #endif
-
-
-!MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
-! MPI initialization:
-call initialize_MPI(g_numpar%MPI_param, g_Err)   ! module "MPI_subroutines"
-!MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
-
+endif
 
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! Set some starting default values:
 g_numpar%which_input = 0 ! starting with the default input files
 g_numpar%allow_rotate = .false. ! do not allow rotation of the target, remove angular momentum from initial conditions
 1984 call Save_error_details(g_Err, 0, '', empty=.true.) ! module "Objects"
-open(UNIT = g_Err%File_Num, FILE = trim(adjustl(m_Error_log_file)))
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   open(UNIT = g_Err%File_Num, FILE = trim(adjustl(m_Error_log_file)))
+endif
 
 ! Check if the user needs any additional info (by setting the flags):
 call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_Err%Stopsignal, &
@@ -83,29 +86,38 @@ call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_
 
 if (g_Err%Err) goto 2016     ! if something when wrong, cannot proceed
 if (g_Err%Stopsignal) goto 2016     ! if the USER does not want to run the calculations, stop
-
 ! Otherwise, run the calculations:
-call random_seed() ! standard FORTRAN seeding of random numbers
+
+! One needs to make sure each process is using a different random seed:
+call initialize_random_seed(g_numpar%MPI_param)   ! module "MPI_subroutines"
+!call random_seed() ! standard FORTRAN seeding of random numbers
+
 call date_and_time(values=g_c1) ! standard FORTRAN time and date
 g_ctim=g_c1 ! save the timestamp
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 
-call print_time('Attempting to start XTANT at', ind=0) ! prints out the current time, module "Little_subroutines"
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   call print_time('Attempting to start XTANT at', ind=0) ! prints out the current time, module "Little_subroutines"
+endif
 
 ! Set all the initial data, read and create files:
 ! Read input files:
 if (g_numpar%which_input > 0) then ! it's not the first run
-   print*, '# It is run for input files number:', g_numpar%which_input
+   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      print*, '# It is run for input files number:', g_numpar%which_input
+   endif
    call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err, g_numpar%which_input) ! module "Read_input_data"
 else ! it is the first run:
-   print*, '# It is the first run'
+   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      print*, '# It is the first run'
+   endif
    call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err) ! module "Read_input_data"
 endif
 if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
 if (g_Err%Stopsignal) goto 2016     ! if the USER does not want to run the calculations, stop
 
 ! Printout additional info, if requested:
-if (g_numpar%verbose) call print_time_step('Input files read succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Input files read succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! if you set to use OpenMP in compiling: "make"
 #ifdef _OPENMP
@@ -113,7 +125,6 @@ if (g_numpar%verbose) call print_time_step('Input files read succesfully:', msec
    call OMP_SET_NUM_THREADS(g_numpar%NOMP) ! number of threads for openmp defined in INPUT_PARAMETERS.txt
 #else ! if you set to use OpenMP in compiling: 'make OMP=no'
 !   print*, 'No openmp to deal with...'
-!   pause 'NO OPENMP'
 #endif
 
 ! Starting time, to give enough time for system to thermalize before the pulse:
@@ -128,7 +139,7 @@ call reset_dt(g_numpar, g_matter, g_time)   ! module "Dealing_with_output_files"
 ! Prepare initial conditions (read supercell and atomic positions from the files):
 call set_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err) ! module "Initial_configuration"
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the initial configuration, cannot continue, go to the end...
-if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Print the title of the program and used parameters on the screen:
 call Print_title(6, g_Scell, g_matter, g_laser, g_numpar, -1) ! module "Dealing_with_output_files"
@@ -137,12 +148,12 @@ call print_time('Start at', ind=0) ! prints out the current time, module "Little
 ! Read (or create) electronic mean free paths (both, inelastic and elastic):
 call get_MFPs(g_Scell, 1, g_matter, g_laser, g_numpar, g_Scell(1)%TeeV, g_Err) ! module "MC_cross_sections"
 if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
-if (g_numpar%verbose) call print_time_step('Electron mean free paths set succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Electron mean free paths set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Read (or create) photonic mean free paths:
 call get_photon_attenuation(g_matter, g_laser, g_numpar, g_Err) ! module "MC_cross_sections"
 if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
-if (g_numpar%verbose) call print_time_step('Photon attenuation lengths set succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Photon attenuation lengths set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 if (.not.g_numpar%do_path_coordinate) then  ! only for real calculations, not for coordinate path
    call save_last_timestep(g_Scell) ! save atomic before making next time-step, module "Atomic_tools"
@@ -150,12 +161,12 @@ endif
 
 ! Process the laser pulse parameters:
 call process_laser_parameters(g_Scell(1), g_matter, g_laser, g_numpar) ! module "MC_cross_sections"
-if (g_numpar%verbose) call print_time_step('Laser pulse parameters converted succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Laser pulse parameters converted succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Create the folder where output files will be storred, and prepare the files:
 call prepare_output_files(g_Scell, g_matter, g_laser, g_numpar, g_Scell(1)%TB_Hamil(1,1), g_Scell(1)%TB_Repuls(1,1), g_Err) ! module "Dealing_with_output_files"
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the output files, cannot continue, go to the end...
-if (g_numpar%verbose) call print_time_step('Output directory prepared succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Output directory prepared succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Create CDF-file with fitted oscillators (Ritchi-Howie), if required:
 call printout_CDF_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_output_files"
@@ -193,7 +204,7 @@ endif
 
 ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
 call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 1, g_Err, g_time) ! module "TB"
-if (g_numpar%verbose) call print_time_step('Initial Hamiltonian prepared succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Initial Hamiltonian prepared succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
 call Electron_thermalization(g_Scell, g_numpar, skip_thermalization=.true.) ! module "Electron_tools"
@@ -202,30 +213,30 @@ call Electron_thermalization(g_Scell, g_numpar, skip_thermalization=.true.) ! mo
 call get_glob_energy(g_Scell, g_matter) ! module "Electron_tools"
 ! and update the electron distribution:
 call update_fe(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "Electron_tools"
-if (g_numpar%verbose) call print_time_step('Initial energy prepared succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Initial energy prepared succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Get parameters that use complex Hamiltonian: DOS, CDF, kappa:
 if ((abs(g_numpar%optic_model) > 0) .and. (g_numpar%optic_model < 4) ) then ! Trani or similar model, old-style DOS
    call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
-   if (g_numpar%verbose) call print_time_step('Optical parameters prepared succesfully:', msec=.true.)
+   if (g_numpar%verbose) call print_time_step('Optical parameters prepared succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 endif
 !call get_DOS(g_numpar, g_matter, g_Scell, g_Err)   ! module "TB"
 !if (g_numpar%verbose) call print_time_step('DOS calculated succesfully:', msec=.true.)
 call use_complex_Hamiltonian(g_numpar, g_matter, g_Scell, 1, g_Err)  ! module "TB_complex"
-if (g_numpar%verbose) call print_time_step('Complex-Hamiltonian-dependent parameters (DOS, CDF, k) done:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Complex-Hamiltonian-dependent parameters (DOS, CDF, k) done:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 
 ! Get current Mulliken charges (average and individual), if required:
 call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)
-if (g_numpar%verbose) call print_time_step('Mulliken charges calculated succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Mulliken charges calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Get the pressure in the atomic system:
 call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
-if (g_numpar%verbose) call print_time_step('Pressure calculated succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Pressure calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Calculate the mean square displacement of all atoms:
 call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
-if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Calculate electron heat capacity, entropy, and orbital-resolved data:
 call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
@@ -238,7 +249,7 @@ call get_low_energy_distribution(g_Scell(1), g_numpar) ! module "Electron_tools"
 call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_thermodynamics"
 ! Update configurational temperature for running average (needed on each timestep):
 call update_Ta_config_running_average(g_Scell(1), g_matter, g_numpar)   ! module "Atomic_thermodynamics"
-if (g_numpar%verbose) call print_time_step('Atomic distribution calculated succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Atomic distribution calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 
 ! Calculate configurational temperature (implemented only for Pettifor TB):
@@ -246,7 +257,7 @@ call Get_configurational_temperature(g_Scell, g_numpar, g_matter)	! module "TB"
 
 ! Save initial step in output:
 call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
-if (g_numpar%verbose) call print_time_step('Initial output files set succesfully:', msec=.true.)
+if (g_numpar%verbose) call print_time_step('Initial output files set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 !WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
 ! Signal possible warning for parameters defined:
@@ -258,7 +269,7 @@ call check_all_warnings(g_Err%File_Num, g_laser, g_Scell, g_Err)  ! module "Read
 !DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD
 ! Now we can proceed with time:
 ! Print out the starting time:
-if (.not.g_numpar%nonverbose) call print_time_step('Simulation time:', g_time, msec=.true.)   ! module "Little_subroutines"
+if (.not.g_numpar%nonverbose) call print_time_step('Simulation time:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)   ! module "Little_subroutines"
 
 i_test = 0 !  count number of timesteps
 g_dt_save = 0.0d0
@@ -272,7 +283,7 @@ do while (g_time .LT. g_numpar%t_total)
       ! Test coupling before MD step:
       ! Nonadiabatic electron-ion coupling:
       call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
-      if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true.)
+      if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
 
 
       !1111111111111111111111111111111111111111111111111111111
@@ -281,7 +292,7 @@ do while (g_time .LT. g_numpar%t_total)
 
       ! Make the MD timestep (first part, in the case of Verlet):
       call MD_step(g_Scell, g_matter, g_numpar, g_time, g_Err)  ! module "TB"
-      if (g_numpar%verbose) call print_time_step('First step of MD step succesful:', g_time, msec=.true.)
+      if (g_numpar%verbose) call print_time_step('First step of MD step succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
 
       !2222222222222222222222222222222222222222222222222222222
       ! Nonadiabatic electron-ion coupling:
@@ -295,21 +306,21 @@ do while (g_time .LT. g_numpar%t_total)
       if (g_numpar%Transport_e) then ! for electrons
          ! Include Berendsen thermostat in the electronic system:
          call Electron_transport(1, g_time, g_Scell, g_numpar, g_matter, g_numpar%dt, g_matter%tau_bath_e, g_Err) ! module "Transport"
-         if (g_numpar%verbose) call print_time_step('Electron Berendsen thermostat succesful:', g_time, msec=.true.)
+         if (g_numpar%verbose) call print_time_step('Electron Berendsen thermostat succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
       endif
       if (g_numpar%Transport) then ! for atoms
          ! Include Berendsen thermostat in the atomic system:
          call Atomic_heat_transport(1, g_Scell, g_matter, g_numpar%dt, g_matter%tau_bath) ! module "Transport"
          ! Include change of the affected layer for calculation of optical constants:
          call Change_affected_layer(1, g_Scell(1)%eps%dd, g_Scell, g_numpar%dt, g_matter%tau_bath)  ! module "Transport"
-         if (g_numpar%verbose) call print_time_step('Atomic Berendsen thermostat succesful:', g_time, msec=.true.)
+         if (g_numpar%verbose) call print_time_step('Atomic Berendsen thermostat succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
 
       endif
    endif AT_MOVE_1
 
    ! Monte-Carlo for photons, high-energy electrons, and core holes:
    call MC_Propagate(g_MC, g_numpar, g_matter, g_Scell, g_laser, g_time, g_Err) ! module "Monte_Carlo"
-   if (g_numpar%verbose) call print_time_step('Monte Carlo model executed succesfully:', g_time, msec=.true.) ! module "Little_subroutines"
+   if (g_numpar%verbose) call print_time_step('Monte Carlo model executed succesfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
    ! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
    call Electron_thermalization(g_Scell, g_numpar) ! module "Electron_tools"
@@ -349,7 +360,7 @@ do while (g_time .LT. g_numpar%t_total)
          call get_new_energies(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
       endselect
    endif AT_MOVE_2
-   if (g_numpar%verbose) call print_time_step('Second step of MD step succesful:', g_time, msec=.true.) ! module "Little_subroutines"
+   if (g_numpar%verbose) call print_time_step('Second step of MD step succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
    !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
    g_time = g_time + g_numpar%dt        ! [fs] next time-step
@@ -360,7 +371,7 @@ do while (g_time .LT. g_numpar%t_total)
    ! Write current data into output files:
    if (g_dt_save .GE. g_numpar%dt_save - 1d-6) then
       ! Print out the curent time-step
-      if (.not.g_numpar%nonverbose) call print_time_step('Simulation time:', g_time, msec=.true.)   ! module "Little_subroutines"
+      if (.not.g_numpar%nonverbose) call print_time_step('Simulation time:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)   ! module "Little_subroutines"
 
       ! Get parameters that use complex Hamiltonian: DOS, CDF, kappa:
       if ((abs(g_numpar%optic_model) > 0) .and. (g_numpar%optic_model < 4) ) then ! Trani or similar model, old-style DOS
@@ -396,7 +407,7 @@ do while (g_time .LT. g_numpar%t_total)
       call communicate(g_numpar%FN_communication, g_time, g_numpar, g_matter) ! module "Dealing_with_output_files"
       g_dt_save = 0.0d0
 
-      if (g_numpar%verbose) call print_time_step('Output files written succesfully:', g_time, msec=.true.)   ! module "Little_subroutines"
+      if (g_numpar%verbose) call print_time_step('Output files written succesfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)   ! module "Little_subroutines"
    endif
    !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
 enddo
@@ -406,49 +417,59 @@ enddo
 call close_file('delete', FN=g_numpar%FN_communication, File_name=g_numpar%Filename_communication) ! module "Dealing_with_files"
 2012 continue
 
-INQUIRE(UNIT = g_Err%File_Num, opened=file_opened, name=chtest)
-if (file_opened) then
-   flush(g_Err%File_Num)
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   INQUIRE(UNIT = g_Err%File_Num, opened=file_opened, name=chtest)
+   if (file_opened) then
+      flush(g_Err%File_Num)
+   endif
 endif
-! Closing the opened files:
-if (g_Err%Err .or. g_Err%Warn) then ! error or warning was printed in the file
-   call close_file('close', FN=g_Err%File_Num) ! module "Dealing_with_files"
-else ! if there was no error or warning, no need to keep the file, delete it
-   call close_file('delete', FN=g_Err%File_Num) ! module "Dealing_with_files"
-endif
-call close_save_files()           ! module "Dealing_with_files"
-call close_output_files(g_Scell, g_numpar) ! module "Dealing_with_files"
 
-if (g_numpar%verbose) call print_time_step('Opened files closed succesfully', msec=.true.)
+! Closing the opened files:
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   if (g_Err%Err .or. g_Err%Warn) then ! error or warning was printed in the file
+      call close_file('close', FN=g_Err%File_Num) ! module "Dealing_with_files"
+   else ! if there was no error or warning, no need to keep the file, delete it
+      call close_file('delete', FN=g_Err%File_Num) ! module "Dealing_with_files"
+   endif
+   call close_save_files()           ! module "Dealing_with_files"
+   call close_output_files(g_Scell, g_numpar) ! module "Dealing_with_files"
+endif
+
+if (g_numpar%verbose) call print_time_step('Opened files closed succesfully', msec=.true., MPI_param=g_numpar%MPI_param)
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 ! Convolve output files with finite duration of the probe pulse:
-!if (g_numpar%do_drude) then
-if ( (g_Scell(1)%eps%tau > 0.0d0) .and. (.not.g_Err%Err) ) then
-   call convolve_output(g_Scell, g_numpar)  ! module "Dealing_with_output_files"
-   print*, 'Convolution with the probe pulse is performed'
-else
-   print*, 'No convolution with the probe pulse was required'
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   if ( (g_Scell(1)%eps%tau > 0.0d0) .and. (.not.g_Err%Err) ) then
+      call convolve_output(g_Scell, g_numpar)  ! module "Dealing_with_output_files"
+      print*, 'Convolution with the probe pulse is performed'
+   else
+      print*, 'No convolution with the probe pulse was required'
+   endif
 endif
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Printing out the duration of the program, starting and ending time and date:
-call parse_time(chtest, c0_in=g_ctim) ! module "Little_subroutines"
-write(*,'(a)') trim(adjustl(m_starline))
-write(*,'(a,a)') 'Duration of execution of program: ', trim(adjustl(chtest))
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   call parse_time(chtest, c0_in=g_ctim) ! module "Little_subroutines"
+   write(*,'(a)') trim(adjustl(m_starline))
+   write(*,'(a,a)') 'Duration of execution of program: ', trim(adjustl(chtest))
 
-call save_duration(g_matter, g_numpar, trim(adjustl(chtest)), ctim=g_ctim) ! module "Dealing_with_output_files"
+   call save_duration(g_matter, g_numpar, trim(adjustl(chtest)), ctim=g_ctim) ! module "Dealing_with_output_files"
 
-call print_time('Started  at', ctim=g_ctim) ! module "Little_subroutines"
-call print_time('Finished at') ! module "Little_subroutines"
-write(*,'(a)') trim(adjustl(m_starline))
+   call print_time('Started  at', ctim=g_ctim) ! module "Little_subroutines"
+   call print_time('Finished at') ! module "Little_subroutines"
+   write(*,'(a)') trim(adjustl(m_starline))
+endif
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 if (.not.g_Err%Err) then
-   write(*,'(a)')  'Executing gnuplot scripts to create plots...'
-   call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
-   !call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)) ) ! module "Gnuplotting"
-   if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully', msec=.true.)
+   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      write(*,'(a)')  'Executing gnuplot scripts to create plots...'
+      call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
+      !call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)) ) ! module "Gnuplotting"
+      if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully', msec=.true., MPI_param=g_numpar%MPI_param)
+   endif
 endif
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -457,55 +478,110 @@ endif
  chtest = trim(adjustl(m_INPUT_directory))//g_numpar%path_sep//trim(adjustl(m_INPUT_MATERIAL))
  write(chtest2,'(i3)') g_numpar%which_input
  write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
- inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
+ if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
+ endif
+
+!--------------------------------------------------------------
+! Master thread shares this info with all the other MPI-processes:
+#ifdef MPI_USED
+    call mpi_bcast(file_exists, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, g_numpar%MPI_param%ierror)  ! module "mpi"
+    call MPI_error_wrapper(g_numpar%MPI_param%process_rank, g_numpar%MPI_param%ierror, 'Next input {file_exists}') ! module "MPI_subroutines"
+#endif
+    call MPI_barrier_wrapper(g_numpar%MPI_param)  ! module "MPI_subroutines"
+!--------------------------------------------------------------
+
  if (.not.file_exists) then ! check if the short-name file is present
    chtest = trim(adjustl(m_INPUT_directory))//g_numpar%path_sep//trim(adjustl(m_INPUT_ALL))
    write(chtest2,'(i3)') g_numpar%which_input
    write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
-   inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
+   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
+   endif
+!--------------------------------------------------------------
+! Master thread shares this info with all the other MPI-processes:
+#ifdef MPI_USED
+    call mpi_bcast(file_exists, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, g_numpar%MPI_param%ierror)  ! module "mpi"
+    call MPI_error_wrapper(g_numpar%MPI_param%process_rank, g_numpar%MPI_param%ierror, 'Next input {file_exists#2}') ! module "MPI_subroutines"
+#endif
+    call MPI_barrier_wrapper(g_numpar%MPI_param)  ! module "MPI_subroutines"
+!--------------------------------------------------------------
  endif
 
  if (file_exists) then ! one file exists
 
-    write(*,'(a)') trim(adjustl(m_starline))
-    write(*,'(a,a)')  'Another set of input parameter files exists: '
-    print*, trim(adjustl(chtest))
+    if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      write(*,'(a)') trim(adjustl(m_starline))
+      write(*,'(a,a)')  'Another set of input parameter files exists: '
+      print*, trim(adjustl(chtest))
+    endif
 
     if (.not.g_numpar%numpar_in_input) then ! a separate file with NumPar is required
       chtest = trim(adjustl(m_INPUT_directory))//g_numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))
       write(chtest,'(a,a,a,a)') trim(adjustl(chtest)), '_', trim(adjustl(chtest2)), '.txt'
-      inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
-      if (file_exists) then ! second input file exists
-         print*, 'and ', trim(adjustl(chtest))
-      else ! Maybe reuse the original file, if identical parameters are required:
-         print*, 'File ', trim(adjustl(chtest)), ' not found'
-         chtest = trim(adjustl(m_INPUT_directory))//g_numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+      if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
          inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
-         print*, 'File ', trim(adjustl(chtest)), ' will be reused'
+      endif
+!--------------------------------------------------------------
+! Master thread shares this info with all the other MPI-processes:
+#ifdef MPI_USED
+      call mpi_bcast(file_exists, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, g_numpar%MPI_param%ierror)  ! module "mpi"
+      call MPI_error_wrapper(g_numpar%MPI_param%process_rank, g_numpar%MPI_param%ierror, 'Next input {file_exists#3}') ! module "MPI_subroutines"
+#endif
+      call MPI_barrier_wrapper(g_numpar%MPI_param)  ! module "MPI_subroutines"
+!--------------------------------------------------------------
+
+      if (file_exists) then ! second input file exists
+         if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            print*, 'and ', trim(adjustl(chtest))
+         endif
+      else ! Maybe reuse the original file, if identical parameters are required:
+         if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            print*, 'File ', trim(adjustl(chtest)), ' not found'
+            chtest = trim(adjustl(m_INPUT_directory))//g_numpar%path_sep//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
+            inquire(file=trim(adjustl(chtest)),exist=file_exists)    ! check if input file excists
+            print*, 'File ', trim(adjustl(chtest)), ' will be reused'
+         endif
+         !--------------------------------------------------------------
+! Master thread shares this info with all the other MPI-processes:
+#ifdef MPI_USED
+         call mpi_bcast(file_exists, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, g_numpar%MPI_param%ierror)  ! module "mpi"
+         call MPI_error_wrapper(g_numpar%MPI_param%process_rank, g_numpar%MPI_param%ierror, 'Next input {file_exists#4}') ! module "MPI_subroutines"
+#endif
+         call MPI_barrier_wrapper(g_numpar%MPI_param)  ! module "MPI_subroutines"
+!--------------------------------------------------------------
       endif
     endif ! (.not.g_numpar%numpar_in_input)
 
     if (.not.g_numpar%numpar_in_input .and. .not.file_exists) then ! second input file required but does not exist:
-       write(*,'(a)') trim(adjustl(m_starline))
-       write(*,'(a,a,a)')  'File ', trim(adjustl(chtest)), ' could not be found.'
-       write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
+       if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+         write(*,'(a)') trim(adjustl(m_starline))
+         write(*,'(a,a,a)')  'File ', trim(adjustl(chtest)), ' could not be found.'
+         write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
+       endif
     else ! file either not required, or it exists, we can continue
-       write(*,'(a)')    'Running XTANT again for these new parameters...'
+       if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+         write(*,'(a)')    'Running XTANT again for these new parameters...'
+         write(*,'(a)') trim(adjustl(m_starline))
+       endif
        call deallocate_all() ! module "Variables"
-       write(*,'(a)') trim(adjustl(m_starline))
        goto 1984 ! go to the beginning and run the program again for the new input files
     endif
  else
-    write(*,'(a)') trim(adjustl(m_starline))
-    write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
+    if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      write(*,'(a)') trim(adjustl(m_starline))
+      write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
+    endif
  endif
- write(*,'(a)') trim(adjustl(m_starline))
-
+ if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   write(*,'(a)') trim(adjustl(m_starline))
+ endif
 
 2016 continue
 ! Just add some comforing message if something whent wrong :-(
-if (g_Err%Err) call print_a_comforting_message(6, g_numpar%path_sep)  ! module "Dealing_with_output_files"
-
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   if (g_Err%Err) call print_a_comforting_message(6, g_numpar%path_sep)  ! module "Dealing_with_output_files"
+endif
 
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
@@ -514,7 +590,7 @@ if (g_Err%Err) call print_a_comforting_message(6, g_numpar%path_sep)  ! module "
 
 !TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
 ! Use this for obtaining coordinate path between two phases:
-subroutine coordinate_path( )
+subroutine coordinate_path( ) ! THIS SUBROUTINE USES GLOBAL VARIABLES
 !    integer, intent(in) :: ind ! 0=NVE, 1=NPH
    integer :: i, i_step, i_at, Nat, N_steps, SCN
    type(Atom), dimension(:), allocatable :: MDAtoms ! if more then one supercell
@@ -523,10 +599,10 @@ subroutine coordinate_path( )
    real(8), dimension(3,3) :: Vsupce, Vsupce0    ! Derivatives of Super-cell vectors (velosities)
    real(8) :: sc_fact
    
-   write(6, '(a)') 'Starting subroutine coordinate_path ...'
-   
-   open(UNIT = 100, FILE = 'OUTPUT_coordinate_path.dat') !<-
-   
+   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      write(6, '(a)') 'Starting subroutine coordinate_path ...'
+      open(UNIT = 100, FILE = 'OUTPUT_coordinate_path.dat') !<-
+   endif
    Nat = size(g_Scell(1)%MDatoms)   ! number of atoms in the supercell
    allocate(MDAtoms(Nat))
    allocate(MDAtoms0(Nat))
@@ -599,20 +675,24 @@ subroutine coordinate_path( )
 
 !        write(100,'(es25.16,es25.16,es25.16,es25.16)') g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low
        
-       call write_energies(6, g_time, g_Scell(1)%nrg)   ! module "Dealing_with_output_files"
-       call write_energies(100, g_time, g_Scell(1)%nrg)   ! module "Dealing_with_output_files"
+       if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+         call write_energies(6, g_time, g_Scell(1)%nrg)   ! module "Dealing_with_output_files"
+         call write_energies(100, g_time, g_Scell(1)%nrg)   ! module "Dealing_with_output_files"
+       endif
        call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
        ! Save initial step in output:
        call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
        
-       call print_time_step('Coordinate path point:', g_time, msec=.true.)   ! module "Little_subroutines"
+       call print_time_step('Coordinate path point:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)   ! module "Little_subroutines"
        
    enddo
    
-   close(100)
-   write(6, '(a)') 'Subroutine coordinate_path completed, file OUTPUT_coordinate_path.dat is created'
-   write(6, '(a)') 'XTANT is terminating now...'
+   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      close(100)
+      write(6, '(a)') 'Subroutine coordinate_path completed, file OUTPUT_coordinate_path.dat is created'
+      write(6, '(a)') 'XTANT is terminating now...'
+   endif
    !g_Err%Err = .true.   ! not to continue with the real calculations
    g_Err%Stopsignal = .true.  ! not to continue with the real calculations
 end subroutine coordinate_path
@@ -621,7 +701,7 @@ end subroutine coordinate_path
 
 !TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
 ! Use this for testing and finding potential energy minimum as a function of supercell size:
-subroutine vary_size(do_forces, Err)
+subroutine vary_size(do_forces, Err)   !  THIS SUBROUTINE USES GLOBAL VARIABLES
    integer, optional, intent(in) :: do_forces
    logical, intent(out), optional :: Err
    real(8) :: r_sh, x, y, z, E_vdW_interplane, g_time_save, z_sh, z_sh0, temp, E_ZBL
@@ -629,13 +709,15 @@ subroutine vary_size(do_forces, Err)
    integer i, j, at1, at2, N_points
    character(13) :: char1
    logical yesno
-   open(UNIT = 100, FILE = 'OUTPUT_Energy.dat')
-   if (present(do_forces)) then
-      write(100,'(a)') '#Distance   E_total  E_rep El_low   F_rep F_att'
-   else
-      write(100,'(a)') '#Distance   E_total  E_rep El_low   E_vdW E_ZBL Z_size'
-   endif
 
+   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      open(UNIT = 100, FILE = 'OUTPUT_Energy.dat')
+      if (present(do_forces)) then
+         write(100,'(a)') '#Distance   E_total  E_rep El_low   F_rep F_att'
+      else
+         write(100,'(a)') '#Distance   E_total  E_rep El_low   E_vdW E_ZBL Z_size'
+      endif
+   endif
    g_time_save = g_time
    z_sh0 = 0.0d0
    
@@ -662,7 +744,7 @@ subroutine vary_size(do_forces, Err)
 
    ! Calculate the mean square displacement of all atoms:
    call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
-   if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true.)
+   if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 
    !do i_test = 1,300 !<-
@@ -720,7 +802,7 @@ subroutine vary_size(do_forces, Err)
 
       ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
       call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 1, g_Err, g_time) ! module "TB"
-      if (g_numpar%verbose) call print_time_step('Hamiltonian constructed and diagonalized', msec=.true.)
+      if (g_numpar%verbose) call print_time_step('Hamiltonian constructed and diagonalized', msec=.true., MPI_param=g_numpar%MPI_param)
 
       ! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
       call Electron_thermalization(g_Scell, g_numpar, skip_thermalization=.true.) ! module "Electron_tools"
@@ -752,25 +834,27 @@ subroutine vary_size(do_forces, Err)
       call get_total_ZBL(g_Scell, 1, g_matter, E_ZBL) ! module "ZBL_potential"
       E_ZBL = E_ZBL/dble(g_Scell(1)%Na)   ! [eV] => [eV/atom]
 
-      if (present(do_forces)) then
-         write(*,'(a,X1i0,a,X1i0,f14.6,f14.6,f14.6)') 'Supercell size:', i_test-1, &
-         ' '//trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
-         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)) , rescale_factor, g_time, &
-         g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
-         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') &
+      if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+         if (present(do_forces)) then
+            write(*,'(a,X1i0,a,X1i0,f14.6,f14.6,f14.6)') 'Supercell size:', i_test-1, &
+            ' '//trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
+            trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)) , rescale_factor, g_time, &
+            g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
+            write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') &
                g_time, g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, &
                g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, g_Scell(1)%MDatoms(do_forces)%forces%rep(:), &
                g_Scell(1)%MDatoms(do_forces)%forces%att(:)
-      else
-         write(*,'(a,X1i0,a,X1i0,X1i0,f14.6,f14.6,f14.6)') 'Supercell size:', i_test-1, &
-         ' '//trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
-         trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)), &
-         at1, at2, rescale_factor, g_time, &
-         g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
-         write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, &
+         else
+            write(*,'(a,X1i0,a,X1i0,X1i0,f14.6,f14.6,f14.6)') 'Supercell size:', i_test-1, &
+            ' '//trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at1)%KOA)%Name))//'-'// &
+            trim(adjustl(g_matter%Atoms(g_Scell(1)%MDAtoms(at2)%KOA)%Name)), &
+            at1, at2, rescale_factor, g_time, &
+            g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW
+            write(100,'(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') g_time, &
                g_Scell(1)%nrg%Total+g_Scell(1)%nrg%E_supce+g_Scell(1)%nrg%El_high+g_Scell(1)%nrg%Eh_tot+g_Scell(1)%nrg%E_vdW, &
                g_Scell(1)%nrg%E_rep, g_Scell(1)%nrg%El_low, E_vdW_interplane, E_ZBL, g_Scell(1)%supce(3,3)
-      endif
+         endif
+      endif ! (g_numpar%MPI_param%process_rank == 0)
    enddo
    g_time = g_time_save
    g_Scell(1)%supce = g_Scell(1)%supce0
@@ -780,7 +864,9 @@ subroutine vary_size(do_forces, Err)
 !    write(*,'(a)') '*************************************************************'
 !    print*, ' Would you like to proceed with XTANT calculation? (y/n)',char(13)
 !    read(*,*) char1
-   write(*,'(a)') '*************************************************************'
+   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      write(*,'(a)') '*************************************************************'
+   endif
    char1 = 'n' ! by default, stop calculations here
    call parse_yes_no(trim(adjustl(char1)), yesno) ! Little_subroutines
    Err = .not.yesno

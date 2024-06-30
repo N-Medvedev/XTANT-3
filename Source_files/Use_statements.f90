@@ -51,7 +51,7 @@ use Monte_carlo, only : MC_Propagate, process_laser_parameters
 use ZBL_potential, only : get_total_ZBL
 use TB_complex, only : use_complex_Hamiltonian
 
-use MPI_subroutines, only : initialize_MPI
+use MPI_subroutines, only : initialize_MPI, initialize_random_seed, MPI_error_wrapper, MPI_barrier_wrapper
 
 #ifdef MPI_USED
 use mpi

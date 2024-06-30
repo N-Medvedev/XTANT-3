@@ -175,9 +175,6 @@ cd Source_files
       )
       echo %Starline%
    )
-:: Remove files that are no longer needed
-:: del *.obj *.mod *.obj *.optrpt *.yaml
-:: del *.obj
 
 :: Go back into the parent directory from the source files:
 cd ..\
