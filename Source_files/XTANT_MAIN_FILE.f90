@@ -46,7 +46,7 @@
 PROGRAM XTANT
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! Initiate modules with all the 'use' statements collected in a separate file:
-include 'Use_statements.f90'  ! include part of the code from an external file
+#include 'Use_statements.f90'  ! include part of the code from an external file
 
 implicit none
 
@@ -55,8 +55,12 @@ implicit none
 ! Print XTANT label on the screen
 #ifdef _OPENMP
    call XTANT_label(6, 1)   ! module "Dealing_with_output_files"
-#else ! if you set to use OpenMP in compiling: 'make OMP=no'
-   call XTANT_label(6, 4)   ! module "Dealing_with_output_files"
+#else
+#ifdef MPI_USED
+   call XTANT_label(6, 10)   ! module "Dealing_with_output_files"
+#else ! no parallelzarion of any kind
+  call XTANT_label(6, 4)   ! module "Dealing_with_output_files"
+#endif
 #endif
 
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM

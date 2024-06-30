@@ -50,3 +50,7 @@ use MC_cross_sections, only : get_mfps, get_photon_attenuation
 use Monte_carlo, only : MC_Propagate, process_laser_parameters
 use ZBL_potential, only : get_total_ZBL
 use TB_complex, only : use_complex_Hamiltonian
+
+#ifdef MPI_USED
+use mpi
+#endif
