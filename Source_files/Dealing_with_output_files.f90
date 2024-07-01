@@ -4914,7 +4914,9 @@ subroutine reset_dt(numpar, matter, tim_cur)
          numpar%dt = numpar%dt_MD_grid(numpar%i_dt)              ! to this value
          numpar%i_dt = numpar%i_dt + 1 ! next step to read from
          call reset_support_times(numpar)   ! below
-         print*, 'Time-step of MD simulation is changed to', numpar%dt
+         if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            print*, 'Time-step of MD simulation is changed to', numpar%dt
+         endif
       endif
    elseif (numpar%i_dt == 0) then   ! its before the simulation start, reset the starting time
       numpar%i_dt = numpar%i_dt + 1 ! next step to read from
@@ -4933,11 +4935,15 @@ subroutine reset_dt(numpar, matter, tim_cur)
          matter%tau_bath = numpar%At_bath_grid_tau(numpar%i_At_bath_dt) ! new characteristic time [fs]
          if (matter%tau_bath > 1.0d14) then  ! there is no bath, too slow to couple
             numpar%Transport = .false. ! excluded
-            print*, 'Atomic thermostat is off'
+            if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               print*, 'Atomic thermostat is off'
+            endif
          else
             numpar%Transport = .true.	 ! included
-            print*, 'Atomic thermostat parameters are changed to', &
+            if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               print*, 'Atomic thermostat parameters are changed to', &
                   matter%T_bath*g_kb, matter%tau_bath
+            endif
          endif
 
          numpar%i_At_bath_dt = numpar%i_At_bath_dt + 1 ! next step to read from
@@ -4954,11 +4960,15 @@ subroutine reset_dt(numpar, matter, tim_cur)
          matter%tau_bath_e = numpar%El_bath_grid_tau(numpar%i_El_bath_dt) ! new characteristic time [fs]
          if (matter%tau_bath_e > 1.0d14) then  ! there is no bath, too slow to couple
             numpar%Transport_e = .false. ! excluded
-            print*, 'Electronic thermostat is off'
+            if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               print*, 'Electronic thermostat is off'
+            endif
          else
             numpar%Transport_e = .true.	 ! included
-            print*, 'Electronic thermostat parameters are changed to', &
+            if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               print*, 'Electronic thermostat parameters are changed to', &
                   matter%T_bath_e*g_kb, matter%tau_bath_e
+            endif
          endif
 
          numpar%i_El_bath_dt = numpar%i_El_bath_dt + 1 ! next step to read from
@@ -5233,6 +5243,13 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    character(100) :: text, text1, text2, text3
    logical :: optional_output
    real(8) :: lambda, temp
+
+   !--------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------
 
    write(print_to,'(a)') trim(adjustl(m_starline))
    call XTANT_label(print_to, label_ind) ! below

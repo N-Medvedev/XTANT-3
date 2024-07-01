@@ -41,6 +41,12 @@ use Periodic_table, only : Decompose_compound
 use Algebra_tools, only : make_cubic_splines, cubic_function
 use Dealing_with_CDF, only : read_CDF_file
 use Atomic_tools, only : update_atomic_masks_displ
+use MPI_subroutines, only : MPI_barrier_wrapper, MPI_error_wrapper
+
+! MPI module from external libraries:
+#ifdef MPI_USED
+use mpi
+#endif
 
 ! Open_MP related modules from external libraries:
 #ifdef _OPENMP
@@ -84,9 +90,9 @@ parameter (m_Communication = 'Communication.txt')  ! file for comunication with 
 character(25), parameter :: m_short_pot = 'TB_short.txt'  ! filename for short-range potential
 character(25), parameter :: m_wall_pot = 'TB_wall.txt'  ! obsolete filename for short-range potential
 
-public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U
-public :: m_INFO_directory, m_INFO_file, m_HELP_file, m_QUOTES_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL
-public :: Read_Input_Files, get_add_data, m_Communication, m_dashline, printout_warning, check_all_warnings
+public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U, &
+          m_INFO_directory, m_INFO_file, m_HELP_file, m_QUOTES_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL, &
+          Read_Input_Files, get_add_data, m_Communication, m_dashline, printout_warning, check_all_warnings
 
  contains
 
@@ -318,15 +324,11 @@ end subroutine extend_laser
 
 
 
-!subroutine Read_Input_Files(matter, numpar, laser, TB_Repuls, TB_Hamil, Err)
 subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    type(Solid), intent(out) :: matter	! all material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Pulse), dimension(:), allocatable, intent(out) :: laser	! Laser pulse parameters
    type(Super_cell), dimension(:), allocatable, intent(inout) :: Scell ! suoer-cell with all the atoms inside
-   ! For polymorphic variables:
-!    class(TB_repulsive), dimension(:), allocatable, intent(out) :: TB_Repuls  ! parameters of the repulsive part of TB
-!    class(TB_Hamiltonian), dimension(:), allocatable, intent(out) ::  TB_Hamil ! parameters of the Hamiltonian of TB
    type(Error_handling), intent(inout) :: Err	! error save
    integer, intent(in), optional :: Numb ! number of input files to use
    !-----------------------------
@@ -336,7 +338,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    logical :: file_exist, file_opened, read_well, new_format_exists
    character(100) Error_descript, Folder_name, File_name, File_name_NEW
    character(3) chnum
-   
+
    !--------------------------------------------------------------------------
    ! In case the user didn't define something, the default values will be used
    ! Set the default values:
@@ -345,7 +347,14 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    !--------------------------------------------------------------------------
    ! Now, read the input file:
    call Path_separator(numpar%path_sep) ! module "Dealing_with_files"
-   !Folder_name = 'INPUT_DATA'//numpar%path_sep
+
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+
+   ! Name of the input file:
    Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep
    numpar%input_path = Folder_name ! save the address with input files
 
@@ -357,7 +366,9 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       write(chnum,'(i3)') Numb
       write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
    endif
-   inquire(file=trim(adjustl(File_name)),exist=new_format_exists)
+   if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      inquire(file=trim(adjustl(File_name)),exist=new_format_exists)
+   endif
    
    !-------------------------------
    ! Read input parameters in various formats:
@@ -377,7 +388,9 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          write(chnum,'(i3)') Numb
          write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
       endif
-      inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      endif
 
       ! Check the short name of the file, if needed:
       TWO_OR_ONE_FILE:if (.not.file_exist) then ! try the short name:
@@ -388,7 +401,9 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
             write(chnum,'(i3)') Numb
             write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
          endif
-         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         endif
       endif TWO_OR_ONE_FILE
 
 
@@ -402,7 +417,9 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
          endif
       else
          write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
-         call Save_error_details(Err, 1, Error_descript)
+         if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            call Save_error_details(Err, 1, Error_descript)
+         endif
          print*, trim(adjustl(Error_descript))
          goto 3416
       endif INPUT_MATERIAL
@@ -416,11 +433,16 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
             write(chnum,'(i3)') Numb
             write(File_name,'(a,a,a,a)') trim(adjustl(File_name)), '_', trim(adjustl(chnum)), '.txt'
          endif
-         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         endif
+
          ! Maybe reuse the default one, if identical parameters are to be used:
          if (.not.file_exist) then
             File_name = trim(adjustl(Folder_name))//trim(adjustl(m_NUMERICAL_PARAMETERS))//'.txt'
-            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            endif
          endif
 
          NUMERICAL_PARAMETERS:if (file_exist) then
@@ -428,7 +450,9 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
             if (Err%Err) goto 3416
          else
             write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
-            call Save_error_details(Err, 1, Error_descript)
+            if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               call Save_error_details(Err, 1, Error_descript)
+            endif
             print*, trim(adjustl(Error_descript))
             goto 3416
          endif NUMERICAL_PARAMETERS
@@ -450,9 +474,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       if (Err%Err) goto 3416  ! exit if something went wrong
 
       if (numpar%user_defined_E_gap > -1.0d-14) then   ! user provided bandgap value, use it:
-
-         print*, trim(adjustl(numpar%At_base))
-
+         !print*, trim(adjustl(numpar%At_base))
          select case (trim(adjustl(numpar%At_base)))
          case('BEB', 'CDF:EPICS')   ! don't replace the atomci energy level
             ! use the atomic value for BEB cross section
@@ -481,7 +503,6 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    ! Atomic density [1/cm^3] (may be overwritten in the module "Initial_configuration", if negative):
    matter%At_dens = matter%dens/(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3)
 
-
    ! Check k-space grid file:
    call read_k_grid(matter, numpar, Err)	! below
 
@@ -489,18 +510,25 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    if (numpar%scc) then
       ! Get file with Hubbard parameter:
       File_name = trim(adjustl(Folder_name))//trim(adjustl(m_Atomic_parameters))//numpar%path_sep//trim(adjustl(m_Hubbard_U))
-      inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      endif
+
       if (file_exist) then
          call read_SCC_Hubbard(File_name, matter, numpar%scc)  ! below
       else  ! if there is no Hubbard parameters file, cannot use SCC:
-         print*, 'File '//trim(adjustl(File_name))//' not found, SCC cannot be used'
+         if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            print*, 'File '//trim(adjustl(File_name))//' not found, SCC cannot be used'
+         endif
          numpar%scc = .false.
       endif
 
       ! Consistency check:
       if (size(matter%Atoms) < 2) then ! no need for self-consistent charge calculations
          numpar%scc = .false.
-         print*, 'SCC: Self-consistent change calculations for elemental solids are excluded'
+         if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            print*, 'SCC: Self-consistent change calculations for elemental solids are excluded'
+         endif
       else
          if (numpar%scc_mix < 0.1d0) numpar%scc_mix = 0.1d0
          if (numpar%scc_mix > 1.0d0) numpar%scc_mix = 1.0d0
@@ -859,15 +887,12 @@ subroutine get_EADL_data(matter, numpar, Err)
    do i = 1, matter%N_KAO ! for all sorts of atoms
       matter%Atoms(i)%Z = at_numbers(i)
       matter%Atoms(i)%Name = at_short_names(i)
-      !matter%Atoms(i)%Ma = at_masses(i)*g_Mp ! [kg]
       matter%Atoms(i)%Ma = at_masses(i)*g_amu ! [kg]
       matter%Atoms(i)%percentage = at_percentage(i)
       matter%Atoms(i)%NVB = at_NVE(i)
    enddo
 
    ! Open eadl.all database:
-   !File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//'eadl.all'
-   !File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(m_EADL_file))
    File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(numpar%EADL_file))
    inquire(file=trim(adjustl(File_name)),exist=file_exist)
    if (.not.file_exist) then
@@ -895,14 +920,10 @@ subroutine get_EADL_data(matter, numpar, Err)
          goto 3419
       endif
 
-!       print*, 'READ_EADL_TYPE_FILE_int is done', i
-
       ! Get values for all parameters:
       call READ_EADL_TYPE_FILE_real(FN1, File_name, Z, 913, matter%Atoms(i)%Ip, INFO=INFO, error_message=Error_descript) ! read binding energies, module "Dealing_with_EADL"
       ! Make sure we start reading it again from the start:
       rewind(FN1)
-
-!       print*, 'READ_EADL_TYPE_FILE_real is done', i
 
 
       ! Then correct it to exclude VB:
@@ -920,11 +941,6 @@ subroutine get_EADL_data(matter, numpar, Err)
          print*, trim(adjustl(Error_descript))
          goto 3419
       endif
-
-!       print*, i, matter%Atoms(i)%Shl_dsgnr_atomic, matter%Atoms(i)%Shl_dsgnr
-!       pause 'Shl_dsgnr_atomic'
-
-!       print*, 'READ_EADL_TYPE_FILE_real is done: Auger', i
 
       ! Get values for all parameters:
       call READ_EADL_TYPE_FILE_real(FN1, File_name, Z, 913, matter%Atoms(i)%Ip, INFO=INFO, error_message=Error_descript) ! read binding energies, module "Dealing_with_EADL"

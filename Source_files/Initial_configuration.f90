@@ -628,6 +628,8 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             end select
          END ASSOCIATE
 
+         print*, '[MPI process #', numpar%MPI_param%process_rank, '] Initial test:', n1, Scell(i)%Na
+
          if (.not.allocated(Scell(i)%Ha)) allocate(Scell(i)%Ha(n1,n1))   ! hamiltonian size
          if (.not.allocated(Scell(i)%Ha0)) allocate(Scell(i)%Ha0(n1,n1)) ! hamiltonian0 size
          if (.not.allocated(Scell(i)%H_non)) allocate(Scell(i)%H_non(n1,n1))	! nondiagonalized Hamiltonian
