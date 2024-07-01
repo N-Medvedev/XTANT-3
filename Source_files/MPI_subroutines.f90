@@ -580,6 +580,10 @@ subroutine MPI_share_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals
    MPI_param => numpar%MPI_param ! shorthand notation
    error_part = 'ERROR in MPI_share_TB_parameters' ! part of the error message
    TB_param_name = ''   ! to start with
+   TB_repulse_name = ''   ! to start with
+   TB_Waals_name = ''   ! to start with
+   TB_Coul_name = ''   ! to start with
+   TB_Expwall_name = ''   ! to start with
 
 
 
@@ -599,7 +603,6 @@ subroutine MPI_share_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals
       endif
    endif
    call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {array_is_allocated}', array_is_allocated) ! below
-   call broadcast_array(MPI_param, trim(adjustl(error_part))//' {N_arr_siz}', N_arr_siz) ! below
    call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_param_name}', TB_param_name) ! below
 
    if (array_is_allocated) then  ! broadcast the TB parameterization
@@ -744,6 +747,7 @@ subroutine MPI_share_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals
       endif
    endif
    call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {array_is_allocated#2}', array_is_allocated) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_repulse_name}', TB_repulse_name) ! below
 
    if (array_is_allocated) then
       select case (trim(adjustl(TB_repulse_name)))
@@ -852,6 +856,8 @@ subroutine MPI_share_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals
       endif
    endif
    call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {array_is_allocated#3}', array_is_allocated) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Waals_name}', TB_Waals_name) ! below
+
 
    if (array_is_allocated) then
       select case (trim(adjustl(TB_Waals_name)))
@@ -911,6 +917,7 @@ subroutine MPI_share_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals
       endif
    endif
    call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {array_is_allocated#4}', array_is_allocated) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Coul_name}', TB_Coul_name) ! below
 
    if (array_is_allocated) then
       select case (trim(adjustl(TB_Coul_name)))
@@ -950,6 +957,7 @@ subroutine MPI_share_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals
       endif
    endif
    call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {array_is_allocated#5}', array_is_allocated) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Expwall_name}', TB_Expwall_name) ! below
 
    if (array_is_allocated) then
       select case (trim(adjustl(TB_Expwall_name)))
