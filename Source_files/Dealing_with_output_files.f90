@@ -5620,9 +5620,13 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    endif
 
 #ifdef _OPENMP
-   write(print_to,'(a,i6)') ' Number of threads for OPENMP: ', numpar%NOMP
-#else ! if you set to use OpenMP in compiling: 'make OMP=no'
-   write(print_to,'(a)') ' The code is compiled without OPENMP'
+   write(print_to,'(a,i6)') ' Number of threads in OPENMP: ', numpar%NOMP
+#else
+#ifdef MPI_USED
+      write(print_to,'(a,i6)') ' Number of processes in MPI: ', numpar%MPI_param%size_of_cluster
+#else
+      write(print_to,'(a)') ' The code is compiled without pparallelization'
+#endif
 #endif
 
    AT_MOVE:if (numpar%do_atoms) then ! atoms are moving:

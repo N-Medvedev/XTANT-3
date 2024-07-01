@@ -988,9 +988,8 @@ subroutine MPI_share_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals
       call MPI_share_Short_Rep_TB(MPI_param, TB_Expwall)   ! below
    end select
 
-   print*, '[MPI process #', MPI_param%process_rank, '] test 0:', allocated(TB_Hamil), trim(adjustl(TB_param_name))
-   pause 'MPI_share_TB_parameters'
-
+   !print*, '[MPI process #', MPI_param%process_rank, '] test 0:', allocated(TB_Hamil), trim(adjustl(TB_param_name)), trim(adjustl(TB_repulse_name))
+   !pause 'MPI_share_TB_parameters'
 #endif
 end subroutine MPI_share_TB_parameters
 
