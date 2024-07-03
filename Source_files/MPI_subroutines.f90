@@ -69,9 +69,28 @@ interface broadcast_allocatable_array
 end interface broadcast_allocatable_array
 
 
+interface do_MPI_Allreduce ! it uses MPI_SUM
+   module procedure do_MPI_Allreduce_real_variable
+   module procedure do_MPI_Allreduce_real_1d_array
+   module procedure do_MPI_Allreduce_real_2d_array
+   module procedure do_MPI_Allreduce_real_3d_array
+end interface do_MPI_Allreduce
+
+
+
+interface do_MPI_Reduce ! it uses MPI_SUM
+   module procedure do_MPI_Reduce_real_variable
+   module procedure do_MPI_Reduce_real_1d_array
+   module procedure do_MPI_Reduce_real_2d_array
+   module procedure do_MPI_Reduce_real_3d_array
+end interface do_MPI_Reduce
+
+
+
 public :: get_MPI_lapsed_time, initialize_MPI, initialize_random_seed, MPI_barrier_wrapper, MPI_fileopen_wrapper, &
             MPI_fileclose_wrapper, MPI_error_wrapper, MPI_share_Read_Input_Files, MPI_share_matter, MPI_share_numpar, &
-            MPI_share_TB_parameters
+            MPI_share_initial_configuration, MPI_share_electron_MFPs, MPI_share_photon_attenuation, MPI_share_add_data, &
+            do_MPI_Reduce, do_MPI_Allreduce
 
 
 
@@ -81,480 +100,457 @@ public :: get_MPI_lapsed_time, initialize_MPI, initialize_random_seed, MPI_barri
 contains
 
 
-subroutine initialize_MPI(MPI_param, Err_data)
-   type(Used_MPI_parameters), intent(inout) :: MPI_param
-   type(Error_handling), intent(inout) :: Err_data  ! save data about error if any
-   !-----------------------
-   character(100) :: Error_message
-
-#ifdef MPI_USED
-   ! Initialize MPI:
-   call MPI_INIT(MPI_param%ierror)
-   if (MPI_param%ierror /= 0) then
-      write(Error_message, *) 'Error initializing MPI!'
-      call MPI_Save_error_details(Err_data, -1, Error_message, MPI_param)   ! above
-      write(6, '(a)') trim(adjustl(Error_message))
-      return
-   endif
-
-   ! Determine the size of the group associated with a communicator (cluster size, number of processes):
-   call MPI_COMM_SIZE(MPI_COMM_WORLD, MPI_param%size_of_cluster, MPI_param%ierror)
-   if (MPI_param%ierror /= 0) then
-      write(Error_message, *) 'Error getting MPI cluster size (number of processes)!'
-      call MPI_Save_error_details(Err_data, -1, Error_message, MPI_param)   ! above
-      write(6, '(a)') trim(adjustl(Error_message))
-      return
-   endif
-
-   ! Determine the rank of the calling process in the communicator:
-   call MPI_COMM_RANK(MPI_COMM_WORLD, MPI_param%process_rank, MPI_param%ierror)
-   if (MPI_param%ierror /= 0) then
-      write(Error_message, *) 'Error getting MPI process rank!'
-      call MPI_Save_error_details(Err_data, -1, Error_message, MPI_param)   ! bove
-      write(6, '(a)') trim(adjustl(Error_message))
-      return
-   endif
-
-   if (MPI_param%process_rank == 0) then ! only do that for the master process
-      ! initialize MPI time counter:
-      call get_MPI_lapsed_time(MPI_param%Wt0) ! below
-   endif
-#else
-   ! No MPI, so only one process is there:
-   MPI_param%process_rank = 0    ! index of the master process
-   MPI_param%size_of_cluster = 1 ! total number of processes: 1 if no MPI is used
-   MPI_param%ierror =0           ! error handler (no errors)
-#endif
-   write(MPI_param%rank_ch,'(i0)') MPI_param%process_rank
-end subroutine initialize_MPI
 
 
+subroutine MPI_share_photon_attenuation(matter, numpar, Err)
+   type(Solid), intent(inout) :: matter	! all material parameters
+   type(Numerics_param), intent(inout), target :: numpar 	! all numerical parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !-----------------------------------------
+   type(Used_MPI_parameters), pointer :: MPI_param
+   character(100) :: error_part
+   integer :: Nshl, N_grid, Nsiz, i, j
 
-subroutine initialize_random_seed(MPI_param)
-   type(Used_MPI_parameters), intent(in) :: MPI_param
-   !-----------------
-   integer :: RN_seed
-#ifdef MPI_USED
-   ! Initialize different random seed for each process:
-   CALL SYSTEM_CLOCK(count=RN_seed)
-   RN_seed = RN_seed/100000 + MPI_param%process_Rank*100000
-   call random_seed(put = (/RN_seed/) ) ! standard FORTRAN seeding of random numbers
-#else
-   ! Without MPI, use the default random seed:
-   call random_seed() ! standard FORTRAN seeding of random numbers
-#endif
-end subroutine initialize_random_seed
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+   !-----------------------------------------
+   ! Synchronize all processes:
+   call MPI_barrier_wrapper(numpar%MPI_param)   ! below
+   !-----------------------------------------
 
+   ! First of, allocate the TB parameterization array:
+   MPI_param => numpar%MPI_param ! shorthand notation
+   error_part = 'ERROR in MPI_share_photon_attenuation' ! part of the error message
 
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {Err%Err}', Err%Err) ! below
 
-
-subroutine MPI_barrier_wrapper(MPI_param)
-   type(Used_MPI_parameters), intent(inout) :: MPI_param
-   !------------------------
-
-#ifdef MPI_USED
-   call MPI_BARRIER( MPI_COMM_WORLD, MPI_param%ierror) ! module "MPI"
-#endif
-end subroutine MPI_barrier_wrapper
-
-
-
-subroutine MPI_error_wrapper(process_rank, ierror, error_message)
-   integer, intent(inout) :: process_rank, ierror
-   character(*), intent(in) :: error_message   ! message to print about error
-   !--------------------------
-   if (ierror /= 0) then
-        write(*,'(a,i0,a,i0)') '[MPI process #', process_rank, '] '//trim(adjustl(error_message)), ierror
-        ! Cannot continue if the calculations are wrong:
-#ifdef MPI_USED
-        call MPI_Abort(MPI_COMM_WORLD, -1, ierror)   ! module "MPI"
-#endif
-    endif
-end subroutine MPI_error_wrapper
-
-
-
-
-subroutine MPI_fileopen_wrapper(MPI_param, File_name, FN, Error_message, readonly, err_msg, MPI_master)
-   type(Used_MPI_parameters), intent(inout) :: MPI_param
-   character(*), intent(in) :: File_name
-   integer, intent(inout) :: FN
-   type(Error_handling), intent(inout) :: Error_message  ! save data about error if any
-   logical, intent(in), optional :: readonly, MPI_master
-   character(*), intent(in), optional :: err_msg   ! optional message to print together with error
-   !------------------------
-   logical :: if_read_only, MPI_master_only
-   integer :: access_mode, ierr
-   character(200) :: Error_descript
-   !------------------------
-
-   ! To chekc if the file is in read_only mode
-   if (present(readonly)) then
-      if_read_only = readonly
-   else  ! by default, it is not
-      if_read_only = .false.
-   endif
-
-   ! Initialize possible error message
-   if (present(err_msg)) then
-      Error_descript = trim(adjustl(err_msg))
+   ! Allocate arrays for non-master processes:
+   if (MPI_param%process_rank == 0) then   ! MPI master processes
+      N_grid = size(matter%Atoms(1)%Ph_MFP(1)%E)
    else
-      Error_descript = ''  ! nothing yet
+      N_grid = 0   ! to start with
    endif
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {N_grid}', N_grid) ! below
 
-   ! To check if all MPI threads need access to the file, or only the master thread:
-   if (present(MPI_master)) then
-      MPI_master_only = MPI_master
+   if (MPI_param%process_rank /= 0) then   ! MPI non-master processes
+      ! Total mean free paths:
+      if (.not.allocated(matter%Ph_MFP_tot%L)) allocate(matter%Ph_MFP_tot%L(N_grid))
+      if (.not.allocated(matter%Ph_MFP_tot%E)) allocate(matter%Ph_MFP_tot%E(N_grid))
+
+      do i = 1, size(matter%Atoms) ! for all atoms
+         Nshl = size(matter%Atoms(i)%Ip)
+         do j = 1, Nshl ! for all shells of this atom
+            if (.not.allocated(matter%Atoms(i)%Ph_MFP(j)%E)) allocate(matter%Atoms(i)%Ph_MFP(j)%E(N_grid))
+            if (.not.allocated(matter%Atoms(i)%Ph_MFP(j)%L)) allocate(matter%Atoms(i)%Ph_MFP(j)%L(N_grid))
+         enddo
+      enddo
+   endif ! (MPI_param%process_rank /= 0)
+   !-----------------------------------------
+   ! Synchronize all processes:
+   call MPI_barrier_wrapper(numpar%MPI_param)   ! below
+   !-----------------------------------------
+
+   ! Once allocated, they are ready to accept the broadcasting variables:
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Ph_MFP_tot%E}', matter%Ph_MFP_tot%E) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Ph_MFP_tot%L}', matter%Ph_MFP_tot%L) ! below
+
+   do i = 1, size(matter%Atoms) ! for all atoms
+      Nshl = size(matter%Atoms(i)%Ip)
+      do j = 1, Nshl ! for all shells of this atom
+         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%Ph_MFP(j)%E}', matter%Atoms(i)%Ph_MFP(j)%E) ! below
+         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%Ph_MFP(j)%L}', matter%Atoms(i)%Ph_MFP(j)%L) ! below
+
+         !print*, '[MPI process #', MPI_param%process_rank, '] Ph:', i, matter%Atoms(i)%Ph_MFP(j)%L(:)
+      enddo
+   enddo
+
+   nullify(MPI_param)
+#endif
+end subroutine MPI_share_photon_attenuation
+
+
+
+
+subroutine MPI_share_electron_MFPs(matter, numpar, Err)
+   type(Solid), intent(inout) :: matter	! all material parameters
+   type(Numerics_param), intent(inout), target :: numpar 	! all numerical parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !-----------------------------------------
+   type(Used_MPI_parameters), pointer :: MPI_param
+   character(100) :: error_part
+   integer :: N_Te_points, N_grid, Nsiz, i, j, k
+
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+   !-----------------------------------------
+   ! Synchronize all processes:
+   call MPI_barrier_wrapper(numpar%MPI_param)   ! below
+   !-----------------------------------------
+
+   ! First of, allocate the TB parameterization array:
+   MPI_param => numpar%MPI_param ! shorthand notation
+   error_part = 'ERROR in MPI_share_electron_MFPs' ! part of the error message
+   !print*, '[MPI process #', MPI_param%process_rank, '] MPI_share_electron_MFPs test 1'
+
+
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {Err%Err}', Err%Err) ! below
+
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {matter%hw_plasma}', matter%hw_plasma) ! below
+
+   ! Allocate all MFP arrays in non-maaster processes:
+   if (MPI_param%process_rank == 0) then   ! MPI non-master processes
+      N_Te_points = size(matter%Atoms(1)%El_MFP_vs_T)
    else
-      MPI_master_only = .false.
+      N_Te_points = 0   ! to start with
+   endif
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {N_Te_points}', N_Te_points) ! below
+
+   if (MPI_param%process_rank == 0) then   ! MPI non-master processes
+      N_grid = size(matter%El_MFP_tot%L)
+   else
+      N_grid = 0   ! to start with
+   endif
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {N_grid}', N_grid) ! below
+   !-----------------------------------------
+   ! Synchronize all processes:
+   call MPI_barrier_wrapper(numpar%MPI_param)   ! below
+   !-----------------------------------------
+
+   if (MPI_param%process_rank /= 0) then   ! MPI non-master processes
+      ! Total mean free paths:
+      if (.not.allocated(matter%El_MFP_tot%L)) allocate(matter%El_MFP_tot%L(N_grid))
+      if (.not.allocated(matter%El_MFP_tot%E)) allocate(matter%El_MFP_tot%E(N_grid))
+      if (.not.allocated(matter%El_EMFP_tot%L)) allocate(matter%El_EMFP_tot%L(N_grid))
+      if (.not.allocated(matter%El_EMFP_tot%E)) allocate(matter%El_EMFP_tot%E(N_grid))
    endif
 
-
-   ! Opening file for (possibly) parallel i/o in it:
-#ifdef MPI_USED
-   ! https://rookiehpc.org/mpi/docs/mpi_file_open/index.html
-   if (MPI_master_only) then ! only master thread opens the file:
-      if (MPI_param%process_rank == 0) then  ! master thread has rank = 0 by default!
-         call non_MPI_fileopen(trim(adjustl(File_name)), FN, Error_message, Error_descript, if_read_only, MPI_param) ! below
-      endif
-   else  ! open file for all MPI processes
-      if (if_read_only) then
-         access_mode = MPI_MODE_RDONLY ! With read-only access
+   ! For atom and shell:
+   do i = 1, size(matter%Atoms)
+      if (MPI_param%process_rank == 0) then   ! MPI non-master processes
+         Nsiz = size(matter%Atoms(i)%El_MFP)
       else
-         access_mode = MPI_MODE_CREATE ! Create the file if it does not exist
-         !access_mode = access_mode + MPI_MODE_EXCL ! The file must not exist, to avoid mistakenly erasing a file
-         access_mode = access_mode + MPI_MODE_RDWR ! With read-write access
+         Nsiz = 0   ! to start with
+      endif
+      call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {Nsiz}', Nsiz) ! below
+
+      if (MPI_param%process_rank /= 0) then   ! MPI non-master processes
+         if (.not.allocated(matter%Atoms(i)%El_MFP)) allocate(matter%Atoms(i)%El_MFP(Nsiz))
+         if (.not.allocated(matter%Atoms(i)%El_EMFP%E)) allocate(matter%Atoms(i)%El_EMFP%E(N_grid))
+         if (.not.allocated(matter%Atoms(i)%El_EMFP%L)) allocate(matter%Atoms(i)%El_EMFP%L(N_grid))
+
+         do k = 1, Nsiz
+            if (.not.allocated(matter%Atoms(i)%El_MFP(k)%E)) allocate(matter%Atoms(i)%El_MFP(k)%E(N_grid))
+            if (.not.allocated(matter%Atoms(i)%El_MFP(k)%L)) allocate(matter%Atoms(i)%El_MFP(k)%L(N_grid))
+         enddo ! k = 1, Nsiz
+
+         ! Temperature dependence (for the valence/conduction band only):
+         if (.not. allocated(matter%Atoms(i)%El_MFP_vs_T)) then
+            allocate(matter%Atoms(i)%El_MFP_vs_T(N_Te_points))
+            do j = 1, N_Te_points
+               allocate(matter%Atoms(i)%El_MFP_vs_T(j)%L(N_grid))
+               allocate(matter%Atoms(i)%El_MFP_vs_T(j)%E(N_grid))
+            enddo ! j = 1, N_Te_points
+         endif
       endif
 
-      call MPI_FILE_OPEN(MPI_COMM_WORLD, trim(adjustl(File_name)), access_mode, MPI_INFO_NULL, FN, MPI_param%ierror) ! module "MPI"
+   enddo ! i = 1, size(matter%Atoms)
+   !-----------------------------------------
+   ! Synchronize all processes:
+   call MPI_barrier_wrapper(numpar%MPI_param)   ! below
+   !-----------------------------------------
 
-      if (MPI_param%ierror /= MPI_SUCCESS) then
-         write(Error_descript, '(A,I0,A)') '[MPI process #', MPI_param%process_rank, '] Failure in opening file: '//trim(adjustl(File_name))
-         call MPI_Save_error_details(Error_message, 1, Error_descript, MPI_param) ! above
-         print*, trim(adjustl(Error_descript)) ! print it also on the sreen
-         call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-      endif
-   endif
-#else
-   call non_MPI_fileopen(trim(adjustl(File_name)), FN, Error_message, Error_descript, if_read_only, MPI_param) ! below
+   ! Once allocated, they are ready to accept the broadcasting variables:
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%El_MFP_tot%E}', matter%El_MFP_tot%E) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%El_MFP_tot%L}', matter%El_MFP_tot%L) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%El_EMFP_tot%E}', matter%El_EMFP_tot%E) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%El_EMFP_tot%L}', matter%El_EMFP_tot%L) ! below
+   do i = 1, size(matter%Atoms)
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_EMFP%E}', matter%Atoms(i)%El_EMFP%E) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_EMFP%L}', matter%Atoms(i)%El_EMFP%L) ! below
+      do k = 1, Nsiz
+         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_MFP(k)%E}', matter%Atoms(i)%El_MFP(k)%E) ! below
+         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_MFP(k)%L}', matter%Atoms(i)%El_MFP(k)%L) ! below
+      enddo ! k = 1, Nsiz
+      do j = 1, N_Te_points
+         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_MFP_vs_T(j)%E}', matter%Atoms(i)%El_MFP_vs_T(j)%E) ! below
+         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_MFP_vs_T(j)%L}', matter%Atoms(i)%El_MFP_vs_T(j)%L) ! below
+      enddo ! j = 1, N_Te_points
+   enddo ! i = 1, size(matter%Atoms)
+
+   !-----------------------------------------
+   ! Synchronize all processes:
+   call MPI_barrier_wrapper(numpar%MPI_param)   ! below
+   !-----------------------------------------
+   nullify(MPI_param)
 #endif
-end subroutine MPI_fileopen_wrapper
+end subroutine MPI_share_electron_MFPs
 
 
 
-subroutine non_MPI_fileopen(File_name, FN, Error_message, err_msg, read_only, MPI_param)
-   character(*), intent(in) :: File_name
-   integer, intent(inout) :: FN
-   type(Error_handling), intent(inout) :: Error_message  ! save data about error if any
-   character(*), intent(in), optional :: err_msg   ! optional message to print together with error
-   logical, intent(in) :: read_only
-   type(Used_MPI_parameters), intent(inout) :: MPI_param
-   !------------------------
-   character(200) :: Error_descript
-   integer :: ierr
-   !------------------
 
-   ! Initialize possible error message
-   if (present(err_msg)) then
-      Error_descript = trim(adjustl(err_msg))
-   else
-      Error_descript = ''  ! nothing yet
+subroutine MPI_share_initial_configuration(Scell, matter, numpar, laser, MC, Err)   ! module "MPI_subroutines"
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   type(Solid), intent(inout) :: matter	! all material parameters
+   type(Numerics_param), intent(inout), target :: numpar 	! all numerical parameters
+   type(Pulse), dimension(:), allocatable, intent(inout) :: laser	! Laser pulse parameters
+   type(MC_data), dimension(:), allocatable, intent(inout) :: MC ! all MC parameters
+   type(Error_handling), intent(inout) :: Err	! error save
+   !-----------------------------------------
+   type(Used_MPI_parameters), pointer :: MPI_param
+   character(100) :: error_part
+   integer :: Nsiz, N_arr_siz(3), i, j, n1
+   logical :: array_is_allocated, array_is_allocated2
+
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+   ! First of, allocate the TB parameterization array:
+   MPI_param => numpar%MPI_param ! shorthand notation
+   error_part = 'ERROR in MPI_share_initial_configuration' ! part of the error message
+
+   !-----------------------------------------
+   ! If BOP creating potential is used:
+   ! If file with BOP repulsive potential does not exist, create it:
+   if (numpar%create_BOP_repulse) then
+      do i = 1, size(Scell(1)%TB_Repuls,1)
+         do j = 1, size(Scell(1)%TB_Repuls,2)
+            ASSOCIATE (TB_Repuls => Scell(1)%TB_Repuls)
+               select type(TB_Repuls)
+               type is (TB_Rep_BOP)
+                  ASSOCIATE (TB_Hamil => Scell(1)%TB_Hamil)
+                     select type(TB_Hamil)
+                     type is (TB_H_BOP)   ! it can be various basis sets:
+                        call MPI_share_BOP_TB_Params(MPI_param, TB_Hamil, TB_Repuls)   ! below
+                     endselect
+                  END ASSOCIATE
+               endselect
+            END ASSOCIATE
+         enddo ! j
+      enddo ! i
    endif
 
-   if (read_only) then  ! readonly option for existing file
-      open(newunit=FN, FILE = trim(adjustl(File_name)), status = 'old', readonly, IOSTAT = ierr)
-   else
-      open(newunit=FN, FILE = trim(adjustl(File_name)), IOSTAT = ierr)
+   !-----------------------------------------
+   ! Share updated numpar parameters:
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{numpar%do_path_coordinate}', numpar%do_path_coordinate) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{numpar%save_files_used}', numpar%save_files_used) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{numpar%vel_from_file}', numpar%vel_from_file) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{numpar%fe_filename}', numpar%fe_filename) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{numpar%fe_input_exists}', numpar%fe_input_exists) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{numpar%mask_DOS}', numpar%mask_DOS) ! below
+
+   ! Updated matter parameters:
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{matter%W_PR}', matter%W_PR) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{matter%dens}', matter%dens) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{matter%At_dens}', matter%At_dens) ! below
+
+   ! Update laser parameters:
+   do j = 1,size(laser) ! for each pulse:
+      call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{laser(j)%Fabs}', laser(j)%Fabs) ! below
+      call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{laser(j)%Nph}', laser(j)%Nph) ! below
+   enddo
+
+   ! Supercell parameters:
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%V}', Scell(1)%V) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%supce}', Scell(1)%supce) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%supce0}', Scell(1)%supce0) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Vsupce}', Scell(1)%Vsupce) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Vsupce0}', Scell(1)%Vsupce0) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%supce_eq}', Scell(1)%supce_eq) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%k_supce}', Scell(1)%k_supce) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%supce_t}', Scell(1)%supce_t) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%GG}', Scell(1)%GG) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%SCforce%total}', Scell(1)%SCforce%total) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%SCforce%att}', Scell(1)%SCforce%att) ! below
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%SCforce%rep}', Scell(1)%SCforce%rep) ! below
+
+   ! Atomic and electronic supercell parameters:
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Na}', Scell(1)%Na) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Ne}', Scell(1)%Ne) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Ne_low}', Scell(1)%Ne_low) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Ne_high}', Scell(1)%Ne_high) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Ne_emit}', Scell(1)%Ne_emit) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Ta}', Scell(1)%Ta) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%TaeV}', Scell(1)%TaeV) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Te}', Scell(1)%Te) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%TeeV}', Scell(1)%TeeV) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Nph}', Scell(1)%Nph) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Nh}', Scell(1)%Nh) ! below
+
+
+   if (MPI_param%process_rank /= 0) then   ! MPI non-master processes
+      if (.not.allocated(Scell(1)%MDAtoms)) allocate(Scell(1)%MDAtoms(Scell(1)%Na))
    endif
 
-   if (ierr /= 0) then ! error opening the file
-      write(Error_descript, '(A)') 'Failure in opening file: '//trim(adjustl(File_name))
-      call MPI_Save_error_details(Error_message, 1, Error_descript, MPI_param) ! above
-      print*, trim(adjustl(Error_descript)) ! print it also on the sreen
-   endif
-end subroutine non_MPI_fileopen
+   do i = 1, Scell(1)%Na   ! for all atoms
+      call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%KOA}', Scell(1)%MDAtoms(i)%KOA) ! below
+      call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%Ekin}', Scell(1)%MDAtoms(i)%Ekin) ! below
+      call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%Epot}', Scell(1)%MDAtoms(i)%Epot) ! below
+      call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%q}', Scell(1)%MDAtoms(i)%q) ! below
+      call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%Nx_subcel}', Scell(1)%MDAtoms(i)%Nx_subcel) ! below
+      call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%Ny_subcel}', Scell(1)%MDAtoms(i)%Ny_subcel) ! below
+      call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%Nz_subcel}', Scell(1)%MDAtoms(i)%Nz_subcel) ! below
+
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%R}', Scell(1)%MDAtoms(i)%R) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%S}', Scell(1)%MDAtoms(i)%S) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%V}', Scell(1)%MDAtoms(i)%V) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%SV}', Scell(1)%MDAtoms(i)%SV) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%A}', Scell(1)%MDAtoms(i)%A) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%R0}', Scell(1)%MDAtoms(i)%R0) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%S0}', Scell(1)%MDAtoms(i)%S0) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%V0}', Scell(1)%MDAtoms(i)%V0) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%SV0}', Scell(1)%MDAtoms(i)%SV0) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%A0}', Scell(1)%MDAtoms(i)%A0) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%R_eq}', Scell(1)%MDAtoms(i)%R_eq) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%S_eq}', Scell(1)%MDAtoms(i)%S_eq) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%A_tild}', Scell(1)%MDAtoms(i)%A_tild) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%v_F}', Scell(1)%MDAtoms(i)%v_F) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%v_J}', Scell(1)%MDAtoms(i)%v_J) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%A_tild0}', Scell(1)%MDAtoms(i)%A_tild0) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%v_F0}', Scell(1)%MDAtoms(i)%v_F0) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%v_J0}', Scell(1)%MDAtoms(i)%v_J0) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%accel}', Scell(1)%MDAtoms(i)%accel) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%accel0}', Scell(1)%MDAtoms(i)%accel0) ! below
+
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%forces%rep}', Scell(1)%MDAtoms(i)%forces%rep) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%forces%att}', Scell(1)%MDAtoms(i)%forces%att) ! below
+      call broadcast_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%MDAtoms(i)%forces%total}', Scell(1)%MDAtoms(i)%forces%total) ! below
+
+      !print*, '[MPI process #', MPI_param%process_rank, ']', i, Scell(1)%MDAtoms(i)%R, Scell(1)%MDAtoms(i)%A_tild
+   enddo
 
 
+   ! Nearest neighbors lists:
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Near_neighbor_list}', Scell(1)%Near_neighbor_list) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Near_neighbor_dist}', Scell(1)%Near_neighbor_dist) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Near_neighbor_dist_s}', Scell(1)%Near_neighbor_dist_s) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Near_neighbor_size}', Scell(1)%Near_neighbor_size) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Near_neighbors_user}', Scell(1)%Near_neighbors_user) ! below
 
-subroutine MPI_fileclose_wrapper(MPI_param, FN, Error_message, delete_file, err_msg, MPI_master)
-   type(Used_MPI_parameters), intent(inout) :: MPI_param
-   integer, intent(inout) :: FN
-   type(Error_handling), intent(inout) :: Error_message  ! save data about error if any
-   logical, intent(in), optional :: delete_file, MPI_master
-   character(*), intent(in), optional :: err_msg   ! optional message to print together with error
-   !-----------------
-   logical :: file_to_be_deleted, MPI_master_only
-   character(200) :: Error_descript
-
-   ! Check if the file is to be deleted or not:
-   if (present(delete_file)) then
-      file_to_be_deleted = delete_file
-   else  ! by default, don't delete it
-      file_to_be_deleted = .false.
-   endif
-
-   ! Initialize possible error message
-   if (present(err_msg)) then
-      Error_descript = trim(adjustl(err_msg))
-   else
-      Error_descript = ''  ! nothing yet
-   endif
-
-   ! To check if all MPI threads need access to the file, or only the master thread:
-   if (present(MPI_master)) then
-      MPI_master_only = MPI_master
-   else
-      MPI_master_only = .false.
-   endif
-
-   ! Closing the opened file:
-#ifdef MPI_USED
-   ! https://www.open-mpi.org/doc/v3.0/man3/MPI_File_close.3.php
-   if (MPI_master_only) then ! only master thread opens the file:
-      if (MPI_param%process_rank == 0) then  ! master thread has rank = 0 by default!
-         call non_MPI_fileclose(FN, file_to_be_deleted, Error_message, MPI_param=MPI_param)   ! below
-      endif
-   else  ! open file for all MPI processes
-      call MPI_FILE_CLOSE(FN, MPI_param%ierror)    ! module "MPI"
-      if (MPI_param%ierror /= MPI_SUCCESS) then
-         write(Error_descript, '(A,I0,A)') '[MPI process #', MPI_param%process_rank, '] Failure in closing file'
-         call MPI_Save_error_details(Error_message, 1, Error_descript, MPI_param) ! module "Objects"
-         print*, trim(adjustl(Error_descript)) ! print it also on the sreen
-         call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-      endif
-   endif
-#else
-   call non_MPI_fileclose(FN, file_to_be_deleted, Error_message, MPI_param=MPI_param)   ! below
-#endif
-end subroutine MPI_fileclose_wrapper
+   ! Hamiltonian arrays to allocate:
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Ha}', Scell(1)%Ha) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Sij}', Scell(1)%Sij) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Hij}', Scell(1)%Hij) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Hij_sol}', Scell(1)%Hij_sol) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Ha0}', Scell(1)%Ha0) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%H_non}', Scell(1)%H_non) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%H_non0}', Scell(1)%H_non0) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Ei}', Scell(1)%Ei) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Ei0}', Scell(1)%Ei0) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Mij}', Scell(1)%Mij) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Aij}', Scell(1)%Aij) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Ei_scc_part}', Scell(1)%Ei_scc_part) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%eigen_S}', Scell(1)%eigen_S) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%fe}', Scell(1)%fe) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%fe_eq}', Scell(1)%fe_eq) ! below
 
 
-subroutine non_MPI_fileclose(FN, delete_file, Error_message, err_msg, MPI_param)
-   integer, intent(in) :: FN
-   logical, intent(in) :: delete_file
-   type(Error_handling), intent(inout) :: Error_message  ! save data about error if any
-   character(*), intent(in), optional :: err_msg   ! optional message to print together with error
-   type(Used_MPI_parameters), intent(inout) :: MPI_param
-   !---------------------
-   logical :: file_opened
-   integer :: ierr
-   character(200) :: Error_descript
-   !---------------------
-
-      ! Initialize possible error message
-   if (present(err_msg)) then
-      Error_descript = trim(adjustl(err_msg))
-   else
-      Error_descript = ''  ! nothing yet
-   endif
-
-   inquire(unit=FN,opened=file_opened)    ! check if this file is opened
-   if (file_opened) then
-      if (delete_file) then
-         close(FN, status='delete', IOSTAT = ierr)
+   ! Share MC data:
+   if (MPI_param%process_rank == 0) then   ! only MPI master process does it
+      if (allocated(Scell(1)%MChole)) then
+         array_is_allocated = .true.
+         Nsiz = size(Scell(1)%MChole)
       else
-         close(FN, IOSTAT = ierr)
-      endif
-
-      if (ierr /= 0) then ! error opening the file
-         write(Error_descript, '(A)') trim(adjustl(Error_descript))//'Failure in closing file'
-         call MPI_Save_error_details(Error_message, 1, Error_descript, MPI_param) ! module "Objects"
-         print*, trim(adjustl(Error_descript)) ! print it also on the sreen
+         array_is_allocated = .false.
+         Nsiz = 0
       endif
    endif
-end subroutine non_MPI_fileclose
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {array_is_allocated}', array_is_allocated) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {Nsiz}', Nsiz) ! below
 
+   if (array_is_allocated) then  ! broadcast the TB parameterization
+      if (MPI_param%process_rank /= 0) then   ! MPI non-master processes
+         allocate(Scell(1)%MChole(Nsiz))
 
+         do i = 1, Nsiz ! for each kind of atoms:
+            allocate(Scell(1)%MChole(i)%Noh(matter%Atoms(i)%sh))
+            Scell(1)%MChole(i)%Noh(:) = 0.0d0 ! no holes in any shell
+         enddo
+         if (numpar%NMC > 0) then
+            allocate(MC(numpar%NMC))	! all MC arrays for photons, electrons and holes
 
+            do i = 1, size(MC)
+               MC(i)%noe = 0.0d0
+               MC(i)%noe_emit = 0.0d0
+               MC(i)%noh_tot = 0.0d0
+               allocate(MC(i)%electrons(Scell(1)%Ne))
+               MC(i)%electrons(:)%E = 0.0d0
+               MC(i)%electrons(:)%ti = 1d25
+               MC(i)%electrons(:)%colls = 0
+               allocate(MC(i)%holes(Scell(1)%Ne))
+               MC(i)%holes(:)%E = 0.0d0
+               MC(i)%holes(:)%ti = 1d26
+            enddo
+         endif !(size(MC) > 0)
+      endif
+   endif
 
-subroutine get_MPI_lapsed_time(last_time, current_time, lasped_time, printout_text)
-    real(8), intent(inout) :: last_time       ! previous time point
-    real(8), intent(out), optional :: current_time    ! currect time point
-    real(8), intent(out), optional :: lasped_time       ! lapsed time to be calculated
-    character(*), intent(in), optional :: printout_text ! text to printout together with the lapsed time
-    !-------------------
-    real(8) :: a_lasped_time, a_current_time
-    character(100) :: time_duration_string
+   !print*, '[MPI process #', MPI_param%process_rank, '] Ha:', numpar%NMC, allocated(MC), size(MC)
 
-#ifdef MPI_USED
-    ! Define the current time point:
-    if ( present(current_time) .or. (present(lasped_time)) .or. (present(printout_text)) ) then
-        ! Get the current time:
-        a_current_time = MPI_Wtime()    ! module "MPI"
-        if (present(current_time)) current_time = a_current_time    ! printout, if requested
+   !-----------------------------------------
+   ! Synchronize all processes:
+   call MPI_barrier_wrapper(numpar%MPI_param)   ! below
+   !-----------------------------------------
+   nullify(MPI_param)
 
-        ! Get the lapsed time:
-        a_lasped_time = a_current_time - last_time
-        if (present(lasped_time)) lasped_time = a_lasped_time   ! printout, if requested
-
-        ! If user requests, printout the message about the time lapsed:
-        if (present(printout_text)) then
-            call pars_MPI_lasped_time(a_lasped_time, time_duration_string)   ! below
-            print*, trim(adjustl(printout_text))//' '//trim(adjustl(time_duration_string))
-        endif
-    else    ! initialization: only one variable provided, save time point into it:
-        last_time = MPI_Wtime()    ! module "MPI"
-    endif
+   !pause 'MPI_share_initial_configuration'
 #endif
-end subroutine get_MPI_lapsed_time
+end subroutine MPI_share_initial_configuration
 
 
 
-subroutine pars_MPI_lasped_time(sec, time_string)
-   real(8), intent(inout) :: sec ! time interval in [sec]
-   character(*), intent(out) :: time_string ! split it into mins, hours, days...
-   !-----------------------
-   character(100) :: temp
-   real(8) :: days, hours, mins, msec
-   days = 0.0d0     ! to start with
-   hours = 0.0d0    ! to start with
-   mins = 0.0d0     ! to start with
-   msec = 0.0d0     ! to start with
-
-   if (sec < 1.0d0) then    ! msec
-      msec = sec * 1.0d3
-   else if (sec .GE. 60.0d0) then   ! there are minutes
-      mins = FLOOR(sec/60.0d0)  ! minutes
-      sec = sec - mins*60.0d0   ! update seconds
-      if (mins .GT. 60.0d0) then    ! there are hours
-         hours = FLOOR(mins/60.0d0) ! hours
-         mins = mins - hours*60.0d0 ! update minutes
-         if (hours .GT. 24.0d0) then    ! there are days
-            days = FLOOR(hours/24.0d0)  ! days
-            hours = hours - days*24.0d0 ! hourse
-         endif
-      endif
-   endif
-   time_string = '' ! to start with
-   temp = ''        ! to start with
-
-   ! Write #days in the string
-   if (days .GT. 1.0d0) then
-      write(temp, '(i9)') int(days)
-      write(time_string, '(a,a)') trim(adjustl(temp)), ' days'
-   else if (days .GT. 0.0d0) then
-      write(temp, '(i9)') int(days)
-      write(time_string, '(a,a)') trim(adjustl(temp)), ' day'
-   endif
-
-   ! Write #hours in the string
-   if (hours .GT. 1.0d0) then
-      write(temp, '(i9)') int(hours)
-      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' hours'
-   else if (hours .GT. 0.0d0) then
-      write(temp, '(i9)') int(hours)
-      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' hour'
-   endif
-
-   ! Write #minutes in the string
-   if (mins .GT. 1.0d0) then
-      write(temp, '(i9)') int(mins)
-      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' mins'
-   else if (mins .GT. 0.0d0) then
-      write(temp, '(i9)') int(mins)
-      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' min'
-   endif
-
-   ! Write msec in the string
-   if (msec > 1.0d-10) then
-      write(temp, '(f15.6)') msec
-      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' msec'
-   else
-      write(temp, '(f15.6)') sec
-      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' sec'
-   endif
-end subroutine pars_MPI_lasped_time
 
 
+subroutine MPI_share_Read_Input_Files(matter, numpar, laser, Scell, Err)
+   type(Solid), intent(inout) :: matter	! all material parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Pulse), dimension(:), allocatable, intent(inout) :: laser	! Laser pulse parameters
+   type(Super_cell), dimension(:), allocatable, intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   type(Error_handling), intent(inout) :: Err	! error save
+   !-------------------------------------
 
-subroutine MPI_Save_error_details(Err_name, Err_num, Err_data, MPI_param)
-   class(Error_handling) :: Err_name    ! object containing all details
-   integer, intent(in) :: Err_num       ! number of error asigned
-   character(*), intent(in) :: Err_data   ! description of the error
-   type(Used_MPI_parameters), intent(inout) :: MPI_param
-   !---------------------
-   integer :: FN, Nsiz   ! number of file where to write error log
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
 
-   if (MPI_param%process_Rank == 0) then ! it is a master thread, it has access to the file
-      call Save_error_details(Err_name, Err_num, Err_data)  ! module "Objects"
-      return   ! that is it, wrote into the file, nothing else to do
-   else  ! it is not a master thread, send info to the master to write into a file
-#ifdef MPI_USED
-      FN = Err_name%File_Num   ! this number is provided in the Err_name object
-      Err_name%Err = .true.    ! error occured, mark it as "true"
-      Err_name%Err_Num = Err_num   ! number of error we asign to it
-      Err_name%Err_descript = Err_data ! descriptino of an error
+   !--------------------------------------------------------------------------
+   ! Before going any further, check if master process detected any error:
+   call broadcast_variable(numpar%MPI_param, 'MPI_share_Read_Input_Files{Err%Err}', Err%Err) ! below
+   if (Err%Err) return   ! if there was an error in the input files, cannot continue, go to the end...
 
-      if (MPI_param%process_Rank /= 0) then  ! non-master process
-         call MPI_SEND(FN, 1, MPI_INTEGER, 0, MPI_param%process_Rank, MPI_COMM_WORLD, MPI_param%ierror)
-         if (MPI_param%ierror /= 0) then
-            write(*, *) 'Error issuing send request {Save_error_details:FN} from process: ', MPI_param%process_Rank, MPI_param%ierror
-            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-         endif
-         call MPI_SEND(Err_name%Err, 1, MPI_LOGICAL, 0, MPI_param%process_Rank, MPI_COMM_WORLD, MPI_param%ierror)
-         if (MPI_param%ierror /= 0) then
-            write(*, *) 'Error issuing send request {Save_error_details:Err} from process: ', MPI_param%process_Rank, MPI_param%ierror
-            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-         endif
-         call MPI_SEND(Err_name%Err_Num, 1, MPI_INTEGER, 0, MPI_param%process_Rank, MPI_COMM_WORLD, MPI_param%ierror)
-         if (MPI_param%ierror /= 0) then
-            write(*, *) 'Error issuing send request {Save_error_details:Err_Num}  from process: ', MPI_param%process_Rank, MPI_param%ierror
-            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-         endif
-         Nsiz = LEN(Err_name%Err_descript)
-         call MPI_SEND(Nsiz, 1, MPI_INTEGER, 0, MPI_param%process_Rank, MPI_COMM_WORLD, MPI_param%ierror)
-         if (MPI_param%ierror /= 0) then
-            write(*, *) 'Error issuing send request {Save_error_details:Nsiz}  from process: ', MPI_param%process_Rank, MPI_param%ierror
-            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-         endif
-      else  ! master process
-         call MPI_RECV(FN, 1, MPI_INTEGER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, MPI_param%ierror)
-         if (MPI_param%ierror /= 0) then
-            write(*, *) 'Error in receiving request {Save_error_details:FN} by process: ', MPI_param%process_Rank, MPI_param%ierror
-            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-         endif
-         call MPI_RECV(Err_name%Err, 1, MPI_LOGICAL, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, MPI_param%ierror)
-         if (MPI_param%ierror /= 0) then
-            write(*, *) 'Error in receiving request {Save_error_details:Err} by process: ', MPI_param%process_Rank, MPI_param%ierror
-            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-         endif
-         call MPI_RECV(Err_name%Err_Num, 1, MPI_INTEGER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, MPI_param%ierror)
-         if (MPI_param%ierror /= 0) then
-            write(*, *) 'Error in receiving request {Save_error_details:Err_Num} by process: ', MPI_param%process_Rank, MPI_param%ierror
-            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-         endif
-         call MPI_RECV(Nsiz, 1, MPI_INTEGER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, MPI_param%ierror)
-         if (MPI_param%ierror /= 0) then
-            write(*, *) 'Error in receiving request {Save_error_details:Nsiz} by process: ', MPI_param%process_Rank, MPI_param%ierror
-            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-         endif
-      endif
+   call broadcast_variable(numpar%MPI_param, 'MPI_share_Read_Input_Files{Err%Stopsignal}', Err%Stopsignal) ! below
+   if (Err%Stopsignal) return     ! if the USER does not want to run the calculations, stop
 
-      !------------------------------------------------------
-      ! Synchronize MPI processes: make sure master process got the length of the message, to recieve all the text
-      call MPI_barrier_wrapper(MPI_param)  ! module "MPI_subroutines"
-      !------------------------------------------------------
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+   !print*, '[MPI process #', numpar%MPI_param%process_rank, '] Read_Input:0'
 
-      if (MPI_param%process_Rank /= 0) then  ! non-master process
-         call MPI_SEND(Err_name%Err_descript, Nsiz, MPI_CHARACTER, 0, MPI_param%process_Rank, MPI_COMM_WORLD, MPI_param%ierror)
-         if (MPI_param%ierror /= 0) then
-            write(*, *) 'Error issuing send request {Save_error_details:Err_descript} from process: ', MPI_param%process_Rank, MPI_param%ierror
-            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-         endif
-      else
-         call MPI_RECV(Err_name%Err_descript, Nsiz, MPI_CHARACTER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, MPI_param%ierror)
-         if (MPI_param%ierror /= 0) then
-            write(*, *) 'Error in receiving request {Save_error_details:Err_descript} by process: ', MPI_param%process_Rank, MPI_param%ierror
-            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
-         endif
-      endif
+   !--------------------------------------------------------------------------
+   ! Master process shares entire matter:
+   call MPI_share_matter(numpar, matter) ! below
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+   !print*, '[MPI process #', numpar%MPI_param%process_rank, '] Read_Input:1'
 
-      write(FN, '(a,i2,1x,a)') 'Error #', Err_name%Err_Num, trim(adjustl(Err_name%Err_descript))   ! write it all into the file
-#else ! use the nonMPI version of the error saving
-      call Save_error_details(Err_name, Err_num, Err_data)  ! module "Objects"
+   !--------------------------------------------------------------------------
+   ! Master process shares entire numpar:
+   call MPI_share_numpar(numpar) ! below
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+   !print*, '[MPI process #', numpar%MPI_param%process_rank, '] Read_Input:2'
+
+   !--------------------------------------------------------------------------
+   ! Master process shares entire Scell:
+   call MPI_share_Scell(numpar, Scell) ! below
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+   !print*, '[MPI process #', numpar%MPI_param%process_rank, '] Read_Input:3'
+
+   !--------------------------------------------------------------------------
+   ! Master process shares entire laser:
+   call MPI_share_laser(numpar, laser) ! below
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+   !print*, '[MPI process #', numpar%MPI_param%process_rank, '] Read_Input:4'
+
+   !--------------------------------------------------------------------------
+   ! Master process shares TB parameters:
+   ! For now, assume a single supercell (as it is throughout most of he code...):
+   call MPI_share_TB_parameters(matter, numpar, Scell(1)%TB_Repuls, Scell(1)%TB_Hamil, &
+                                Scell(1)%TB_Waals, Scell(1)%TB_Coul, Scell(1)%TB_Expwall) ! above
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+  !print*, '[MPI process #', numpar%MPI_param%process_rank, '] Read_Input:5'
+
 #endif
-   endif
-end subroutine MPI_Save_error_details
+end subroutine MPI_share_Read_Input_Files
 
 
 
@@ -567,7 +563,7 @@ subroutine MPI_share_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals
    class(TB_vdW),  dimension(:,:), allocatable, intent(inout) :: TB_Waals         ! parameters of the van der Waals for TB
    class(TB_Coulomb),  dimension(:,:), allocatable, intent(inout) :: TB_Coul	! parameters of the Coulomb together with TB
    class(TB_Exp_wall),  dimension(:,:), allocatable, intent(inout) :: TB_Expwall	! parameters of the exponential wall with TB
-      !--------------------------
+   !--------------------------
    type(Used_MPI_parameters), pointer :: MPI_param
    integer :: Nsiz, N_arr_siz(3), i, j
    character(100) :: error_part, TB_param_name, TB_repulse_name, TB_Waals_name, TB_Coul_name, TB_Expwall_name
@@ -990,6 +986,7 @@ subroutine MPI_share_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals
 
    !print*, '[MPI process #', MPI_param%process_rank, '] test 0:', allocated(TB_Hamil), trim(adjustl(TB_param_name)), trim(adjustl(TB_repulse_name))
    !pause 'MPI_share_TB_parameters'
+   nullify(MPI_param)
 #endif
 end subroutine MPI_share_TB_parameters
 
@@ -1489,9 +1486,9 @@ subroutine MPI_share_DFTB_TB_Params(MPI_param, TB_Repuls, TB_Hamil)
          call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Hamil(i,j)%Ud}', TB_Hamil(i,j)%Ud) ! below
          call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Hamil(i,j)%Up}', TB_Hamil(i,j)%Up) ! below
          call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Hamil(i,j)%Us}', TB_Hamil(i,j)%Us) ! below
-         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {TB_Hamil(i,j)%Rr}', TB_Hamil(i,j)%Rr) ! below
-         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {TB_Hamil(i,j)%Vr}', TB_Hamil(i,j)%Vr) ! below
-         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {TB_Hamil(i,j)%Sr}', TB_Hamil(i,j)%Sr) ! below
+         call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {TB_Hamil(i,j)%Rr}', TB_Hamil(i,j)%Rr) ! below
+         call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {TB_Hamil(i,j)%Vr}', TB_Hamil(i,j)%Vr) ! below
+         call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {TB_Hamil(i,j)%Sr}', TB_Hamil(i,j)%Sr) ! below
 
          call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Repuls(i,j)%param_name}', TB_Repuls(i,j)%param_name) ! below
          call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Repuls(i,j)%ToP}', TB_Repuls(i,j)%ToP) ! below
@@ -1634,46 +1631,6 @@ subroutine MPI_share_Pettifor_TB_Hamiltonian(MPI_param, TB_Hamil)
    enddo ! i
 #endif
 end subroutine MPI_share_Pettifor_TB_Hamiltonian
-
-
-
-
-subroutine MPI_share_Read_Input_Files(matter, numpar, laser, Scell, Err)
-   type(Solid), intent(inout) :: matter	! all material parameters
-   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
-   type(Pulse), dimension(:), allocatable, intent(inout) :: laser	! Laser pulse parameters
-   type(Super_cell), dimension(:), allocatable, intent(inout) :: Scell ! suoer-cell with all the atoms inside
-   type(Error_handling), intent(inout) :: Err	! error save
-   !-------------------------------------
-
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
-
-   !--------------------------------------------------------------------------
-   ! Before going any further, check if master process detected any error:
-   call broadcast_variable(numpar%MPI_param, 'MPI_share_Read_Input_Files{Err%Err}', Err%Err) ! below
-   if (Err%Err) return   ! if there was an error in the input files, cannot continue, go to the end...
-
-   call broadcast_variable(numpar%MPI_param, 'MPI_share_Read_Input_Files{Err%Stopsignal}', Err%Stopsignal) ! below
-   if (Err%Stopsignal) return     ! if the USER does not want to run the calculations, stop
-
-   !--------------------------------------------------------------------------
-   ! Master process shares entire matter:
-   call MPI_share_matter(numpar, matter) ! below
-
-   !--------------------------------------------------------------------------
-   ! Master process shares entire numpar:
-   call MPI_share_numpar(numpar) ! below
-
-   !--------------------------------------------------------------------------
-   ! Master process shares entire Scell:
-   call MPI_share_Scell(numpar, Scell) ! below
-
-   !--------------------------------------------------------------------------
-   ! Master process shares entire laser:
-   call MPI_share_laser(numpar, laser) ! below
-
-#endif
-end subroutine MPI_share_Read_Input_Files
 
 
 
@@ -2574,6 +2531,514 @@ end subroutine MPI_share_matter
 
 
 
+!===============================================
+! Basic MPI subroutines wrappers:
+
+
+subroutine initialize_MPI(MPI_param, Err_data)
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   type(Error_handling), intent(inout) :: Err_data  ! save data about error if any
+   !-----------------------
+   character(100) :: Error_message
+
+#ifdef MPI_USED
+   ! Initialize MPI:
+   call MPI_INIT(MPI_param%ierror)
+   if (MPI_param%ierror /= 0) then
+      write(Error_message, *) 'Error initializing MPI!'
+      call MPI_Save_error_details(Err_data, -1, Error_message, MPI_param)   ! above
+      write(6, '(a)') trim(adjustl(Error_message))
+      return
+   endif
+
+   ! Determine the size of the group associated with a communicator (cluster size, number of processes):
+   call MPI_COMM_SIZE(MPI_COMM_WORLD, MPI_param%size_of_cluster, MPI_param%ierror)
+   if (MPI_param%ierror /= 0) then
+      write(Error_message, *) 'Error getting MPI cluster size (number of processes)!'
+      call MPI_Save_error_details(Err_data, -1, Error_message, MPI_param)   ! above
+      write(6, '(a)') trim(adjustl(Error_message))
+      return
+   endif
+
+   ! Determine the rank of the calling process in the communicator:
+   call MPI_COMM_RANK(MPI_COMM_WORLD, MPI_param%process_rank, MPI_param%ierror)
+   if (MPI_param%ierror /= 0) then
+      write(Error_message, *) 'Error getting MPI process rank!'
+      call MPI_Save_error_details(Err_data, -1, Error_message, MPI_param)   ! bove
+      write(6, '(a)') trim(adjustl(Error_message))
+      return
+   endif
+
+   if (MPI_param%process_rank == 0) then ! only do that for the master process
+      ! initialize MPI time counter:
+      call get_MPI_lapsed_time(MPI_param%Wt0) ! below
+   endif
+#else
+   ! No MPI, so only one process is there:
+   MPI_param%process_rank = 0    ! index of the master process
+   MPI_param%size_of_cluster = 1 ! total number of processes: 1 if no MPI is used
+   MPI_param%ierror =0           ! error handler (no errors)
+#endif
+   write(MPI_param%rank_ch,'(i0)') MPI_param%process_rank
+end subroutine initialize_MPI
+
+
+
+subroutine initialize_random_seed(MPI_param)
+   type(Used_MPI_parameters), intent(in) :: MPI_param
+   !-----------------
+   integer :: RN_seed
+#ifdef MPI_USED
+   ! Initialize different random seed for each process:
+   CALL SYSTEM_CLOCK(count=RN_seed)
+   RN_seed = RN_seed/100000 + MPI_param%process_Rank*100000
+   call random_seed(put = (/RN_seed/) ) ! standard FORTRAN seeding of random numbers
+#else
+   ! Without MPI, use the default random seed:
+   call random_seed() ! standard FORTRAN seeding of random numbers
+#endif
+end subroutine initialize_random_seed
+
+
+
+subroutine MPI_share_add_data(numpar, Err)
+   type(Numerics_param), intent(inout), target :: numpar 	! all numerical parameters
+   type(Error_handling), intent(inout) :: Err      ! save data about error if any
+   !--------------------
+   character(100) :: error_part
+   type(Used_MPI_parameters), pointer :: MPI_param
+
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+
+   MPI_param => numpar%MPI_param ! shorthand notation
+   error_part = 'ERROR in MPI_share_add_data' ! part of the error message
+
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {numpar%path_sep}', numpar%path_sep) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {numpar%change_size}', numpar%change_size) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {numpar%allow_rotate}', numpar%allow_rotate) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {numpar%verbose}', numpar%verbose) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {numpar%nonverbose}', numpar%nonverbose) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {Err%Err}', Err%Err) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {Err%Stopsignal}', Err%Stopsignal) ! below
+
+   nullify(MPI_param)
+#endif
+end subroutine MPI_share_add_data
+
+
+
+
+subroutine MPI_barrier_wrapper(MPI_param)
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   !------------------------
+
+#ifdef MPI_USED
+   call MPI_BARRIER( MPI_COMM_WORLD, MPI_param%ierror) ! module "MPI"
+#endif
+end subroutine MPI_barrier_wrapper
+
+
+
+subroutine MPI_error_wrapper(process_rank, ierror, error_message)
+   integer, intent(inout) :: process_rank, ierror
+   character(*), intent(in) :: error_message   ! message to print about error
+   !--------------------------
+   if (ierror /= 0) then
+        write(*,'(a,i0,a,i0)') '[MPI process #', process_rank, '] '//trim(adjustl(error_message)), ierror
+        ! Cannot continue if the calculations are wrong:
+#ifdef MPI_USED
+        call MPI_Abort(MPI_COMM_WORLD, -1, ierror)   ! module "MPI"
+#endif
+    endif
+end subroutine MPI_error_wrapper
+
+
+
+
+subroutine MPI_fileopen_wrapper(MPI_param, File_name, FN, Error_message, readonly, err_msg, MPI_master)
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: File_name
+   integer, intent(inout) :: FN
+   type(Error_handling), intent(inout) :: Error_message  ! save data about error if any
+   logical, intent(in), optional :: readonly, MPI_master
+   character(*), intent(in), optional :: err_msg   ! optional message to print together with error
+   !------------------------
+   logical :: if_read_only, MPI_master_only
+   integer :: access_mode, ierr
+   character(200) :: Error_descript
+   !------------------------
+
+   ! To chekc if the file is in read_only mode
+   if (present(readonly)) then
+      if_read_only = readonly
+   else  ! by default, it is not
+      if_read_only = .false.
+   endif
+
+   ! Initialize possible error message
+   if (present(err_msg)) then
+      Error_descript = trim(adjustl(err_msg))
+   else
+      Error_descript = ''  ! nothing yet
+   endif
+
+   ! To check if all MPI threads need access to the file, or only the master thread:
+   if (present(MPI_master)) then
+      MPI_master_only = MPI_master
+   else
+      MPI_master_only = .false.
+   endif
+
+
+   ! Opening file for (possibly) parallel i/o in it:
+#ifdef MPI_USED
+   ! https://rookiehpc.org/mpi/docs/mpi_file_open/index.html
+   if (MPI_master_only) then ! only master thread opens the file:
+      if (MPI_param%process_rank == 0) then  ! master thread has rank = 0 by default!
+         call non_MPI_fileopen(trim(adjustl(File_name)), FN, Error_message, Error_descript, if_read_only, MPI_param) ! below
+      endif
+   else  ! open file for all MPI processes
+      if (if_read_only) then
+         access_mode = MPI_MODE_RDONLY ! With read-only access
+      else
+         access_mode = MPI_MODE_CREATE ! Create the file if it does not exist
+         !access_mode = access_mode + MPI_MODE_EXCL ! The file must not exist, to avoid mistakenly erasing a file
+         access_mode = access_mode + MPI_MODE_RDWR ! With read-write access
+      endif
+
+      call MPI_FILE_OPEN(MPI_COMM_WORLD, trim(adjustl(File_name)), access_mode, MPI_INFO_NULL, FN, MPI_param%ierror) ! module "MPI"
+
+      if (MPI_param%ierror /= MPI_SUCCESS) then
+         write(Error_descript, '(A,I0,A)') '[MPI process #', MPI_param%process_rank, '] Failure in opening file: '//trim(adjustl(File_name))
+         call MPI_Save_error_details(Error_message, 1, Error_descript, MPI_param) ! above
+         print*, trim(adjustl(Error_descript)) ! print it also on the sreen
+         call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+      endif
+   endif
+#else
+   call non_MPI_fileopen(trim(adjustl(File_name)), FN, Error_message, Error_descript, if_read_only, MPI_param) ! below
+#endif
+end subroutine MPI_fileopen_wrapper
+
+
+
+subroutine non_MPI_fileopen(File_name, FN, Error_message, err_msg, read_only, MPI_param)
+   character(*), intent(in) :: File_name
+   integer, intent(inout) :: FN
+   type(Error_handling), intent(inout) :: Error_message  ! save data about error if any
+   character(*), intent(in), optional :: err_msg   ! optional message to print together with error
+   logical, intent(in) :: read_only
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   !------------------------
+   character(200) :: Error_descript
+   integer :: ierr
+   !------------------
+
+   ! Initialize possible error message
+   if (present(err_msg)) then
+      Error_descript = trim(adjustl(err_msg))
+   else
+      Error_descript = ''  ! nothing yet
+   endif
+
+   if (read_only) then  ! readonly option for existing file
+      open(newunit=FN, FILE = trim(adjustl(File_name)), status = 'old', readonly, IOSTAT = ierr)
+   else
+      open(newunit=FN, FILE = trim(adjustl(File_name)), IOSTAT = ierr)
+   endif
+
+   if (ierr /= 0) then ! error opening the file
+      write(Error_descript, '(A)') 'Failure in opening file: '//trim(adjustl(File_name))
+      call MPI_Save_error_details(Error_message, 1, Error_descript, MPI_param) ! above
+      print*, trim(adjustl(Error_descript)) ! print it also on the sreen
+   endif
+end subroutine non_MPI_fileopen
+
+
+
+subroutine MPI_fileclose_wrapper(MPI_param, FN, Error_message, delete_file, err_msg, MPI_master)
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   integer, intent(inout) :: FN
+   type(Error_handling), intent(inout) :: Error_message  ! save data about error if any
+   logical, intent(in), optional :: delete_file, MPI_master
+   character(*), intent(in), optional :: err_msg   ! optional message to print together with error
+   !-----------------
+   logical :: file_to_be_deleted, MPI_master_only
+   character(200) :: Error_descript
+
+   ! Check if the file is to be deleted or not:
+   if (present(delete_file)) then
+      file_to_be_deleted = delete_file
+   else  ! by default, don't delete it
+      file_to_be_deleted = .false.
+   endif
+
+   ! Initialize possible error message
+   if (present(err_msg)) then
+      Error_descript = trim(adjustl(err_msg))
+   else
+      Error_descript = ''  ! nothing yet
+   endif
+
+   ! To check if all MPI threads need access to the file, or only the master thread:
+   if (present(MPI_master)) then
+      MPI_master_only = MPI_master
+   else
+      MPI_master_only = .false.
+   endif
+
+   ! Closing the opened file:
+#ifdef MPI_USED
+   ! https://www.open-mpi.org/doc/v3.0/man3/MPI_File_close.3.php
+   if (MPI_master_only) then ! only master thread opens the file:
+      if (MPI_param%process_rank == 0) then  ! master thread has rank = 0 by default!
+         call non_MPI_fileclose(FN, file_to_be_deleted, Error_message, MPI_param=MPI_param)   ! below
+      endif
+   else  ! open file for all MPI processes
+      call MPI_FILE_CLOSE(FN, MPI_param%ierror)    ! module "MPI"
+      if (MPI_param%ierror /= MPI_SUCCESS) then
+         write(Error_descript, '(A,I0,A)') '[MPI process #', MPI_param%process_rank, '] Failure in closing file'
+         call MPI_Save_error_details(Error_message, 1, Error_descript, MPI_param) ! module "Objects"
+         print*, trim(adjustl(Error_descript)) ! print it also on the sreen
+         call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+      endif
+   endif
+#else
+   call non_MPI_fileclose(FN, file_to_be_deleted, Error_message, MPI_param=MPI_param)   ! below
+#endif
+end subroutine MPI_fileclose_wrapper
+
+
+subroutine non_MPI_fileclose(FN, delete_file, Error_message, err_msg, MPI_param)
+   integer, intent(in) :: FN
+   logical, intent(in) :: delete_file
+   type(Error_handling), intent(inout) :: Error_message  ! save data about error if any
+   character(*), intent(in), optional :: err_msg   ! optional message to print together with error
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   !---------------------
+   logical :: file_opened
+   integer :: ierr
+   character(200) :: Error_descript
+   !---------------------
+
+      ! Initialize possible error message
+   if (present(err_msg)) then
+      Error_descript = trim(adjustl(err_msg))
+   else
+      Error_descript = ''  ! nothing yet
+   endif
+
+   inquire(unit=FN,opened=file_opened)    ! check if this file is opened
+   if (file_opened) then
+      if (delete_file) then
+         close(FN, status='delete', IOSTAT = ierr)
+      else
+         close(FN, IOSTAT = ierr)
+      endif
+
+      if (ierr /= 0) then ! error opening the file
+         write(Error_descript, '(A)') trim(adjustl(Error_descript))//'Failure in closing file'
+         call MPI_Save_error_details(Error_message, 1, Error_descript, MPI_param) ! module "Objects"
+         print*, trim(adjustl(Error_descript)) ! print it also on the sreen
+      endif
+   endif
+end subroutine non_MPI_fileclose
+
+
+
+
+subroutine get_MPI_lapsed_time(last_time, current_time, lasped_time, printout_text)
+    real(8), intent(inout) :: last_time       ! previous time point
+    real(8), intent(out), optional :: current_time    ! currect time point
+    real(8), intent(out), optional :: lasped_time       ! lapsed time to be calculated
+    character(*), intent(in), optional :: printout_text ! text to printout together with the lapsed time
+    !-------------------
+    real(8) :: a_lasped_time, a_current_time
+    character(100) :: time_duration_string
+
+#ifdef MPI_USED
+    ! Define the current time point:
+    if ( present(current_time) .or. (present(lasped_time)) .or. (present(printout_text)) ) then
+        ! Get the current time:
+        a_current_time = MPI_Wtime()    ! module "MPI"
+        if (present(current_time)) current_time = a_current_time    ! printout, if requested
+
+        ! Get the lapsed time:
+        a_lasped_time = a_current_time - last_time
+        if (present(lasped_time)) lasped_time = a_lasped_time   ! printout, if requested
+
+        ! If user requests, printout the message about the time lapsed:
+        if (present(printout_text)) then
+            call pars_MPI_lasped_time(a_lasped_time, time_duration_string)   ! below
+            print*, trim(adjustl(printout_text))//' '//trim(adjustl(time_duration_string))
+        endif
+    else    ! initialization: only one variable provided, save time point into it:
+        last_time = MPI_Wtime()    ! module "MPI"
+    endif
+#endif
+end subroutine get_MPI_lapsed_time
+
+
+
+subroutine pars_MPI_lasped_time(sec, time_string)
+   real(8), intent(inout) :: sec ! time interval in [sec]
+   character(*), intent(out) :: time_string ! split it into mins, hours, days...
+   !-----------------------
+   character(100) :: temp
+   real(8) :: days, hours, mins, msec
+   days = 0.0d0     ! to start with
+   hours = 0.0d0    ! to start with
+   mins = 0.0d0     ! to start with
+   msec = 0.0d0     ! to start with
+
+   if (sec < 1.0d0) then    ! msec
+      msec = sec * 1.0d3
+   else if (sec .GE. 60.0d0) then   ! there are minutes
+      mins = FLOOR(sec/60.0d0)  ! minutes
+      sec = sec - mins*60.0d0   ! update seconds
+      if (mins .GT. 60.0d0) then    ! there are hours
+         hours = FLOOR(mins/60.0d0) ! hours
+         mins = mins - hours*60.0d0 ! update minutes
+         if (hours .GT. 24.0d0) then    ! there are days
+            days = FLOOR(hours/24.0d0)  ! days
+            hours = hours - days*24.0d0 ! hourse
+         endif
+      endif
+   endif
+   time_string = '' ! to start with
+   temp = ''        ! to start with
+
+   ! Write #days in the string
+   if (days .GT. 1.0d0) then
+      write(temp, '(i9)') int(days)
+      write(time_string, '(a,a)') trim(adjustl(temp)), ' days'
+   else if (days .GT. 0.0d0) then
+      write(temp, '(i9)') int(days)
+      write(time_string, '(a,a)') trim(adjustl(temp)), ' day'
+   endif
+
+   ! Write #hours in the string
+   if (hours .GT. 1.0d0) then
+      write(temp, '(i9)') int(hours)
+      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' hours'
+   else if (hours .GT. 0.0d0) then
+      write(temp, '(i9)') int(hours)
+      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' hour'
+   endif
+
+   ! Write #minutes in the string
+   if (mins .GT. 1.0d0) then
+      write(temp, '(i9)') int(mins)
+      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' mins'
+   else if (mins .GT. 0.0d0) then
+      write(temp, '(i9)') int(mins)
+      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' min'
+   endif
+
+   ! Write msec in the string
+   if (msec > 1.0d-10) then
+      write(temp, '(f15.6)') msec
+      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' msec'
+   else
+      write(temp, '(f15.6)') sec
+      write(time_string, '(a,a,a)') trim(adjustl(time_string)), ' '//trim(adjustl(temp)), ' sec'
+   endif
+end subroutine pars_MPI_lasped_time
+
+
+
+subroutine MPI_Save_error_details(Err_name, Err_num, Err_data, MPI_param)
+   class(Error_handling) :: Err_name    ! object containing all details
+   integer, intent(in) :: Err_num       ! number of error asigned
+   character(*), intent(in) :: Err_data   ! description of the error
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   !---------------------
+   integer :: FN, Nsiz   ! number of file where to write error log
+
+   if (MPI_param%process_Rank == 0) then ! it is a master thread, it has access to the file
+      call Save_error_details(Err_name, Err_num, Err_data)  ! module "Objects"
+      return   ! that is it, wrote into the file, nothing else to do
+   else  ! it is not a master thread, send info to the master to write into a file
+#ifdef MPI_USED
+      FN = Err_name%File_Num   ! this number is provided in the Err_name object
+      Err_name%Err = .true.    ! error occured, mark it as "true"
+      Err_name%Err_Num = Err_num   ! number of error we asign to it
+      Err_name%Err_descript = Err_data ! descriptino of an error
+
+      if (MPI_param%process_Rank /= 0) then  ! non-master process
+         call MPI_SEND(FN, 1, MPI_INTEGER, 0, MPI_param%process_Rank, MPI_COMM_WORLD, MPI_param%ierror)
+         if (MPI_param%ierror /= 0) then
+            write(*, *) 'Error issuing send request {Save_error_details:FN} from process: ', MPI_param%process_Rank, MPI_param%ierror
+            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+         endif
+         call MPI_SEND(Err_name%Err, 1, MPI_LOGICAL, 0, MPI_param%process_Rank, MPI_COMM_WORLD, MPI_param%ierror)
+         if (MPI_param%ierror /= 0) then
+            write(*, *) 'Error issuing send request {Save_error_details:Err} from process: ', MPI_param%process_Rank, MPI_param%ierror
+            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+         endif
+         call MPI_SEND(Err_name%Err_Num, 1, MPI_INTEGER, 0, MPI_param%process_Rank, MPI_COMM_WORLD, MPI_param%ierror)
+         if (MPI_param%ierror /= 0) then
+            write(*, *) 'Error issuing send request {Save_error_details:Err_Num}  from process: ', MPI_param%process_Rank, MPI_param%ierror
+            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+         endif
+         Nsiz = LEN(Err_name%Err_descript)
+         call MPI_SEND(Nsiz, 1, MPI_INTEGER, 0, MPI_param%process_Rank, MPI_COMM_WORLD, MPI_param%ierror)
+         if (MPI_param%ierror /= 0) then
+            write(*, *) 'Error issuing send request {Save_error_details:Nsiz}  from process: ', MPI_param%process_Rank, MPI_param%ierror
+            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+         endif
+      else  ! master process
+         call MPI_RECV(FN, 1, MPI_INTEGER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, MPI_param%ierror)
+         if (MPI_param%ierror /= 0) then
+            write(*, *) 'Error in receiving request {Save_error_details:FN} by process: ', MPI_param%process_Rank, MPI_param%ierror
+            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+         endif
+         call MPI_RECV(Err_name%Err, 1, MPI_LOGICAL, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, MPI_param%ierror)
+         if (MPI_param%ierror /= 0) then
+            write(*, *) 'Error in receiving request {Save_error_details:Err} by process: ', MPI_param%process_Rank, MPI_param%ierror
+            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+         endif
+         call MPI_RECV(Err_name%Err_Num, 1, MPI_INTEGER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, MPI_param%ierror)
+         if (MPI_param%ierror /= 0) then
+            write(*, *) 'Error in receiving request {Save_error_details:Err_Num} by process: ', MPI_param%process_Rank, MPI_param%ierror
+            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+         endif
+         call MPI_RECV(Nsiz, 1, MPI_INTEGER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, MPI_param%ierror)
+         if (MPI_param%ierror /= 0) then
+            write(*, *) 'Error in receiving request {Save_error_details:Nsiz} by process: ', MPI_param%process_Rank, MPI_param%ierror
+            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+         endif
+      endif
+
+      !------------------------------------------------------
+      ! Synchronize MPI processes: make sure master process got the length of the message, to recieve all the text
+      call MPI_barrier_wrapper(MPI_param)  ! module "MPI_subroutines"
+      !------------------------------------------------------
+
+      if (MPI_param%process_Rank /= 0) then  ! non-master process
+         call MPI_SEND(Err_name%Err_descript, Nsiz, MPI_CHARACTER, 0, MPI_param%process_Rank, MPI_COMM_WORLD, MPI_param%ierror)
+         if (MPI_param%ierror /= 0) then
+            write(*, *) 'Error issuing send request {Save_error_details:Err_descript} from process: ', MPI_param%process_Rank, MPI_param%ierror
+            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+         endif
+      else
+         call MPI_RECV(Err_name%Err_descript, Nsiz, MPI_CHARACTER, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, MPI_param%ierror)
+         if (MPI_param%ierror /= 0) then
+            write(*, *) 'Error in receiving request {Save_error_details:Err_descript} by process: ', MPI_param%process_Rank, MPI_param%ierror
+            call MPI_Abort(MPI_COMM_WORLD, -1, MPI_param%ierror)   ! module "MPI"
+         endif
+      endif
+
+      write(FN, '(a,i2,1x,a)') 'Error #', Err_name%Err_Num, trim(adjustl(Err_name%Err_descript))   ! write it all into the file
+#else ! use the nonMPI version of the error saving
+      call Save_error_details(Err_name, Err_num, Err_data)  ! module "Objects"
+#endif
+   endif
+end subroutine MPI_Save_error_details
+
+
+
+
 
 !===============================================
 ! Broadcast wrappers:
@@ -3234,6 +3699,172 @@ subroutine broadcast_allocatable_real_4d_array(MPI_param, error_message, array)
    endif
 #endif
 end subroutine broadcast_allocatable_real_4d_array
+
+
+
+subroutine do_MPI_Allreduce_real_variable(MPI_param, error_message, var)
+   real(8), intent(inout) :: var
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: error_message
+   !--------------------------
+   character(300) :: error_report
+
+   ! https://rookiehpc.org/mpi/docs/mpi_allreduce/index.html
+   CALL MPI_Allreduce(MPI_IN_PLACE, var, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
+
+   error_report = trim(adjustl(error_message))//' {Allreduce_real_variable}'
+   call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+end subroutine do_MPI_Allreduce_real_variable
+
+
+
+subroutine do_MPI_Allreduce_real_1d_array(MPI_param, error_message, array)
+   real(8), dimension(:), intent(inout) :: array
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: error_message
+   !--------------------------
+   integer :: Nsiz
+   character(300) :: error_report
+
+   Nsiz = size(array)
+
+   CALL MPI_Allreduce(MPI_IN_PLACE, array, Nsiz, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
+
+   error_report = trim(adjustl(error_message))//' {Allreduce_real_1d_array}'
+   call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+end subroutine do_MPI_Allreduce_real_1d_array
+
+
+
+subroutine do_MPI_Allreduce_real_2d_array(MPI_param, error_message, array)
+   real(8), dimension(:,:), intent(inout) :: array
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: error_message
+   !--------------------------
+   integer :: Nsiz(2)
+   character(300) :: error_report
+
+   Nsiz(1) = size(array,1)
+   Nsiz(2) = size(array,2)
+
+   CALL MPI_Allreduce(MPI_IN_PLACE, array, Nsiz(1)*Nsiz(2), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
+
+   error_report = trim(adjustl(error_message))//' {Allreduce_real_2d_array}'
+   call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+end subroutine do_MPI_Allreduce_real_2d_array
+
+
+
+subroutine do_MPI_Allreduce_real_3d_array(MPI_param, error_message, array)
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: error_message
+   real(8), dimension(:,:,:), intent(inout) :: array
+   !--------------------------
+   integer :: Nsiz(3)
+   character(300) :: error_report
+
+   Nsiz(1) = size(array,1)
+   Nsiz(2) = size(array,2)
+   Nsiz(3) = size(array,3)
+
+   CALL MPI_Allreduce(MPI_IN_PLACE, array, Nsiz(1)*Nsiz(2)*Nsiz(3), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
+
+   error_report = trim(adjustl(error_message))//' {Allreduce_real_3d_array}'
+   call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+end subroutine do_MPI_Allreduce_real_3d_array
+
+
+
+
+
+
+subroutine do_MPI_Reduce_real_variable(MPI_param, error_message, var)
+   real(8), intent(inout) :: var
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: error_message
+   !--------------------------
+   character(300) :: error_report
+
+   if (MPI_param%process_rank == 0) then   ! MPI master process gets the value from itself, hence MPI_IN_PLACE
+      call MPI_Reduce(MPI_IN_PLACE, var, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, MPI_param%ierror)   ! module "mpi"
+   else
+      call MPI_Reduce(var, var, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, MPI_param%ierror)   ! module "mpi"
+   endif
+
+   error_report = trim(adjustl(error_message))//' {Reduce_real_variable}'
+   call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+end subroutine do_MPI_Reduce_real_variable
+
+
+
+subroutine do_MPI_Reduce_real_1d_array(MPI_param, error_message, array)
+   real(8), dimension(:), intent(inout) :: array
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: error_message
+   !--------------------------
+   integer :: Nsiz
+   character(300) :: error_report
+
+   Nsiz = size(array)
+
+   if (MPI_param%process_rank == 0) then   ! MPI master process gets the value from itself, hence MPI_IN_PLACE
+      call MPI_Reduce(MPI_IN_PLACE, array, Nsiz, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, MPI_param%ierror)   ! module "mpi"
+   else
+      call MPI_Reduce(array, array, Nsiz, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, MPI_param%ierror)   ! module "mpi"
+   endif
+
+   error_report = trim(adjustl(error_message))//' {Reduce_real_1d_array}'
+   call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+end subroutine do_MPI_Reduce_real_1d_array
+
+
+
+subroutine do_MPI_Reduce_real_2d_array(MPI_param, error_message, array)
+   real(8), dimension(:,:), intent(inout) :: array
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: error_message
+   !--------------------------
+   integer :: Nsiz(2)
+   character(300) :: error_report
+
+   Nsiz(1) = size(array,1)
+   Nsiz(2) = size(array,2)
+
+   if (MPI_param%process_rank == 0) then   ! MPI master process gets the value from itself, hence MPI_IN_PLACE
+      call MPI_Reduce(MPI_IN_PLACE, array, Nsiz(1)*Nsiz(2), MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, MPI_param%ierror)   ! module "mpi"
+   else
+      call MPI_Reduce(array, array, Nsiz(1)*Nsiz(2), MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, MPI_param%ierror)   ! module "mpi"
+   endif
+
+   error_report = trim(adjustl(error_message))//' {Reduce_real_2d_array}'
+   call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+end subroutine do_MPI_Reduce_real_2d_array
+
+
+
+subroutine do_MPI_Reduce_real_3d_array(MPI_param, error_message, array)
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: error_message
+   real(8), dimension(:,:,:), intent(inout) :: array
+   !--------------------------
+   integer :: Nsiz(3)
+   character(300) :: error_report
+
+   Nsiz(1) = size(array,1)
+   Nsiz(2) = size(array,2)
+   Nsiz(3) = size(array,3)
+
+   if (MPI_param%process_rank == 0) then   ! MPI master process gets the value from itself, hence MPI_IN_PLACE
+      call MPI_Reduce(MPI_IN_PLACE, array, Nsiz(1)*Nsiz(2)*Nsiz(3), MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, MPI_param%ierror)   ! module "mpi"
+   else
+      call MPI_Reduce(array, array, Nsiz(1)*Nsiz(2)*Nsiz(3), MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, MPI_param%ierror)   ! module "mpi"
+   endif
+
+   error_report = trim(adjustl(error_message))//' {Reduce_real_3d_array}'
+   call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+end subroutine do_MPI_Reduce_real_3d_array
+
+
 
 
 

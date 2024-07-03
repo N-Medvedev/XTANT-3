@@ -70,6 +70,15 @@ subroutine write_output_files(numpar, time, matter, Scell)
    real(8), dimension(3,3) :: Stress
    integer NSC
 
+
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
+
    do NSC = 1, size(Scell)
       ! All subroutines for saving output data into files are within this file below:
       call update_save_files(time, Scell(NSC)%MDatoms, matter, numpar, Scell(NSC))
@@ -166,6 +175,14 @@ subroutine printout_CDF_file(numpar, matter, Scell)
    integer :: NSC, FN
    parameter (NSC = 1)  ! one supercell
 
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
+
    if (numpar%save_CDF) then ! printout CDF file
       file_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_Ritchie_CDF_'// &
                   trim(adjustl(matter%Name))//'.cdf'
@@ -192,8 +209,16 @@ subroutine printout_MFP_file(numpar, matter, Scell)
    integer :: NSC, FN, Nsiz, i, Nshl, j, k, N_grid, j_start, count_col
    parameter (NSC = 1)  ! one supercell
 
-   if (numpar%print_MFP) then ! printout MFP file
 
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
+
+   if (numpar%print_MFP) then ! printout MFP file
       !-----------------------
       ! Inelastic electron MFP:
       text_var = 'OUTPUT_'
@@ -1562,6 +1587,15 @@ subroutine prepare_output_files(Scell, matter, laser, numpar, TB_Hamil, TB_Repul
    integer INFO
    integer :: MOD_TIM ! time when the communication.txt file was last modified
    logical :: file_opened, file_exist, NP_file_exists, IM_file_exists
+
+
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
 
    ! Create directory where the output files will be saved:
    call create_output_folder(Scell, matter, laser, numpar)	! module "Dealing_with_output_files"

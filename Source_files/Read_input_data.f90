@@ -41,7 +41,7 @@ use Periodic_table, only : Decompose_compound
 use Algebra_tools, only : make_cubic_splines, cubic_function
 use Dealing_with_CDF, only : read_CDF_file
 use Atomic_tools, only : update_atomic_masks_displ
-use MPI_subroutines, only : MPI_barrier_wrapper, MPI_error_wrapper
+use MPI_subroutines, only : MPI_error_wrapper
 
 ! MPI module from external libraries:
 #ifdef MPI_USED

@@ -92,6 +92,15 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
    logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2, XYZ_file_exists, POSCAR_file_exists, mol2_file_exists
    real(8) RN, temp, Mass, V2, Ta
 
+
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
+
    Nsc = 1 !in the present version of the code, there is always only one super-cell
 
    ! If file with BOP repulsive potential does not exist, create it:
@@ -195,9 +204,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          ! 1) Path-coordinates  (in internal XTANT SAVE-files format)
          ! 2) SAVE-files  (internal XTANT SAVE-files format)
          ! 3) Cell-file  (extended XYZ format)
-         ! 4) POSCAR-file (vasp format)
+         ! 4) POSCAR-file (vasp/lammps format)
          ! 5) mol2-file  (SYBYL molecules format; severely restricted here to the bare minimum!)
-         ! 6) unit-cell coordinates  (old internal XTANT format)
+         ! 6) unit-cell coordinates  (internal XTANT format)
 
          SAVED_SUPCELL:if (numpar%do_path_coordinate) then ! read phase 1 and 2 supercells:
             
@@ -628,7 +637,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             end select
          END ASSOCIATE
 
-         print*, '[MPI process #', numpar%MPI_param%process_rank, '] Initial test:', n1, Scell(i)%Na
+         !print*, '[MPI process #', numpar%MPI_param%process_rank, '] Initial test:', n1, Scell(i)%Na
 
          if (.not.allocated(Scell(i)%Ha)) allocate(Scell(i)%Ha(n1,n1))   ! hamiltonian size
          if (.not.allocated(Scell(i)%Ha0)) allocate(Scell(i)%Ha0(n1,n1)) ! hamiltonian0 size

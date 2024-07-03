@@ -62,6 +62,10 @@ use Coulomb, only: m_k, m_sqrtPi, Coulomb_Wolf_pot, get_Coulomb_Wolf_s, cut_off_
 use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s, &
                      get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s, d_Exponential_wall_forces
 
+#ifdef MPI_USED
+use MPI_subroutines, only : MPI_barrier_wrapper, do_MPI_Allreduce
+#endif
+
 #ifdef _OPENMP
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
 #endif
@@ -217,7 +221,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
          
          ! Get and save in matrices often-used elements for forces calculations:
          ! Here, get the matrix of directional cosines and associated expressions:
-         call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below 
+         call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          
          ! Electronic TB Hamiltonian part:
          ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:)) ! this is the sintax we have to use to check the class of defined types
@@ -2684,16 +2688,18 @@ end subroutine diagonalize_complex8_Hamiltonian
 
 
 
-subroutine Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn)
+subroutine Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn)
    type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
+   type(Numerics_param), intent(inout) :: numpar  ! all numerical parameters
    real(8), dimension(:,:,:), allocatable, intent(out) :: M_x1	! matrix of coefficients x1
    real(8), dimension(:,:,:), allocatable, intent(out) :: M_xrr	! matrix of coefficients xrr, yrr, zrr
    real(8), dimension(:,:,:), allocatable, intent(out) :: M_lmn	! matrix of direction cosines l, m, n
    !---------------------------
    real(8), pointer :: x, y, z, r
    real(8) :: r2
-   integer i, nat, m, j, atom_2
+   integer i, nat, m, j, atom_2, N_incr, Nstart, Nend
+   character(100) :: error_part
    
    nat = Scell(NSC)%Na ! number of atoms
    if (.not.allocated(M_x1)) allocate(M_x1(3,nat,nat))
@@ -2704,25 +2710,58 @@ subroutine Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn)
    M_xrr = 0.0d0
    M_lmn = 0.0d0
    !$OMP END WORKSHARE
-   
-!$omp PARALLEL
-!$omp do schedule(dynamic) private(i, m, atom_2, j, x, y, z, r)
-   do i = 1,nat	! all atoms
+
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+   ! Each MPI process will do a part of the loop:
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
       m = Scell(NSC)%Near_neighbor_size(i)
-      do atom_2 = 1,m ! do only for atoms close to that one  
+      do atom_2 = 1,m ! do only for atoms close to that one
          j = Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
-!          if (j > nat) then
-!             print*, 'ATOM j', i, j, atom_2
-!             print*, 'HUGE!', Scell(NSC)%Near_neighbor_list(i,:)
-!             pause 'CHECK-PAUSE'
-!          endif
-         
+
          if (j .GT. 0) then
             x => Scell(NSC)%Near_neighbor_dist(i,atom_2,1) ! at this distance, X
             y => Scell(NSC)%Near_neighbor_dist(i,atom_2,2) ! at this distance, Y
             z => Scell(NSC)%Near_neighbor_dist(i,atom_2,3) ! at this distance, Z
             r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
-!             r2 = r*r
+
+            M_x1(1,i,j) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
+            M_x1(2,i,j) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
+            M_x1(3,i,j) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
+
+            M_lmn(1,i,j) = x/r	! l
+            M_lmn(2,i,j) = y/r	! m
+            M_lmn(3,i,j) = z/r	! n
+
+            M_xrr(1,i,j) = M_lmn(1,i,j)/r	!xrr
+            M_xrr(2,i,j) = M_lmn(2,i,j)/r	!yrr
+            M_xrr(3,i,j) = M_lmn(3,i,j)/r	!zrr
+         endif
+      enddo
+   enddo
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Construct_M_x1'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_x1', M_x1) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_lmn', M_lmn) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_xrr', M_xrr) ! module "MPI_subroutines"
+   !print*, '[MPI process #', numpar%MPI_param%process_rank, '] M_x1 #1:', M_x1(:,1,3), M_x1(:,2,4), M_x1(:,5,6)
+
+#else ! OpenMO parallelization
+!$omp PARALLEL
+!$omp do schedule(dynamic) private(i, m, atom_2, j, x, y, z, r)
+   do i = 1, nat   ! all atoms
+      m = Scell(NSC)%Near_neighbor_size(i)
+      do atom_2 = 1,m ! do only for atoms close to that one  
+         j = Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+
+         if (j .GT. 0) then
+            x => Scell(NSC)%Near_neighbor_dist(i,atom_2,1) ! at this distance, X
+            y => Scell(NSC)%Near_neighbor_dist(i,atom_2,2) ! at this distance, Y
+            z => Scell(NSC)%Near_neighbor_dist(i,atom_2,3) ! at this distance, Z
+            r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
 
             M_x1(1,i,j) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
             M_x1(2,i,j) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
@@ -2734,22 +2773,20 @@ subroutine Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn)
             M_lmn(1,i,j) = x/r	! l
             M_lmn(2,i,j) = y/r	! m
             M_lmn(3,i,j) = z/r	! n
-!             write(*, '(a,i2,i2,f,f,f)' ) 'cos: ', i, j, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j)
-            
+
             M_xrr(1,i,j) = M_lmn(1,i,j)/r	!xrr
             M_xrr(2,i,j) = M_lmn(2,i,j)/r	!yrr
             M_xrr(3,i,j) = M_lmn(3,i,j)/r	!zrr
             
-!             M_xrr(1,i,j) = x/r2 !xrr
-!             M_xrr(2,i,j) = y/r2 !yrr
-!             M_xrr(3,i,j) = z/r2 !zrr
          endif
       enddo
    enddo
 !$omp end do
 !$omp END PARALLEL
-
+#endif
    nullify(x, y, z, r)
+
+!   print*, '[MPI process #', numpar%MPI_param%process_rank, '] M_x1 #2:', M_x1(:,1,3), M_x1(:,2,4), M_x1(:,5,6)
 end subroutine Construct_M_x1
 
 
@@ -4544,19 +4581,19 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          call Attract_TB_Forces_Press_F(ARRAY, Scell(NSC)%MDatoms, Scell, NSC, numpar, Scell(NSC)%Aij)	! module "TB_Fu"
       type is (TB_H_NRL) ! TB parametrization according to NRL
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
-         call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below 
+         call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          call Construct_Vij_NRL(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_NRL"
          call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
          call Attract_TB_Forces_Press_NRL(ARRAY, Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_NRL"
       type is (TB_H_DFTB) ! TB parametrization according to DFTB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
-         call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below 
+         call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          call Construct_Vij_DFTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_DFTB"
          call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
          call Attract_TB_Forces_Press_DFTB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_DFTB"
       type is (TB_H_3TB) ! TB parametrization according to 3TB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
-         call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below
+         call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_M_x1 succesful'
          call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
          if (numpar%verbose) print*, 'Get_pressure 3TB : get_Mjs_factors succesful'
@@ -4568,7 +4605,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          if (numpar%verbose) print*, 'Get_pressure 3TB : Attract_TB_Forces_Press_3TB succesful'
       type is (TB_H_xTB) ! TB parametrization according to xTB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
-         call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below
+         call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
 !          call Construct_Vij_xTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_xTB"
          call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
 !          call Attract_TB_Forces_Press_xTB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_xTB"

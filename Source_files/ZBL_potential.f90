@@ -28,6 +28,9 @@ MODULE ZBL_potential
 use Universal_constants
 use Objects
 use Atomic_tools, only : shortest_distance
+#ifdef MPI_USED
+use MPI_subroutines, only : do_MPI_Reduce
+#endif
 
 implicit none
 PRIVATE
@@ -51,18 +54,52 @@ public :: ZBL_pot, d_ZBL_pot, get_total_ZBL, d2_ZBL_pot
 
 
 
-subroutine get_total_ZBL(Scell, NSC, matter, a)   ! vdW energy
+subroutine get_total_ZBL(Scell, NSC, matter, numpar, a)   ! vdW energy
 ! This subroutine is only used for comparison of the interlayer vdW energy with other works
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(solid), intent(in) :: matter   ! material parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a  ! total ZBL repulsive energy [eV]
    !=====================================================
    real(8) :: sum_a, a_r, Z1, Z2
    INTEGER(4) i1, j1, m, atom_2
+   integer :: Nstart, Nend, N_incr
    integer, pointer :: KOA1, KOA2
+
    sum_a = 0.0d0
 
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = Scell(NSC)%Na
+
+   ! Do the cycle (parallel) calculations:
+   !do i1 = 1, Scell(NSC)%Na, N_incr ! all atoms
+   do i1 = Nstart, Nend, N_incr  ! each process does its own part
+      m = Scell(NSC)%Near_neighbor_size(i1)
+      KOA1 => Scell(NSC)%MDatoms(i1)%KOA   ! kind of atom #1
+      Z1 = matter%Atoms(KOA1)%Z  ! Z of element #1
+      do atom_2 = 1, m ! do only for atoms close to that one
+         j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
+         KOA2 => Scell(NSC)%MDatoms(j1)%KOA   ! kind of atom #2
+         Z2 = matter%Atoms(KOA2)%Z  ! Z of element #2
+         if ( j1 /= i1 ) then ! count only interplane energy:
+            call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
+            sum_a = sum_a + ZBL_pot(Z1, Z2, a_r)    ! function below
+         endif ! (j1 .NE. i1)
+      enddo ! j1
+   enddo ! i1
+
+   !-----------
+   ! Collect information from all processes into the master process:
+   ! https://rookiehpc.org/mpi/docs/mpi_reduce/index.html
+   call do_MPI_Reduce(numpar%MPI_param, 'Error in get_total_ZBL:', sum_a) ! module "MPI_subroutines"
+
+   a = sum_a * 0.5d0
+
+#else ! OpenMP is used instead
    !$omp PARALLEL private(i1,j1,m,KOA1,Z1,atom_2,KOA2,Z2,a_r)
    !$omp do reduction( + : sum_a)
    do i1 = 1, Scell(NSC)%Na ! all atoms
@@ -82,6 +119,7 @@ subroutine get_total_ZBL(Scell, NSC, matter, a)   ! vdW energy
    !$omp end do
    !$omp end parallel
    a = sum_a * 0.5d0
+#endif
    nullify(KOA1, KOA2)
 end subroutine get_total_ZBL
 
