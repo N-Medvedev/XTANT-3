@@ -31,6 +31,10 @@ use Objects
 use Algebra_tools, only : Cross_Prod, Invers_3x3, Matrix_Vec_Prod, Transpose_M, d_detH_d_h_a_b, Two_Matr_mult, Det_3x3
 use Little_subroutines, only : Find_in_array_monoton
 
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce
+#endif
+
 implicit none
 PRIVATE
 
@@ -1462,12 +1466,16 @@ subroutine make_time_step_atoms(Scell, matter, numpar, ind)
    integer :: NSC ! number of super-cell
 
    do NSC = 1, size(Scell)
+
       ! Make MD step:
       call make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind) ! see below
+
       ! Update absolute coordinates:
       call Coordinates_rel_to_abs(Scell, NSC)
+
       ! Update absolute velocities:
       call velocities_abs_to_rel(Scell, NSC) ! !New relative velocities
+
    enddo
 end subroutine make_time_step_atoms
 
@@ -1491,11 +1499,16 @@ subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update
    call get_GGdot(Scell(NSC)%supce, Scell(NSC)%Vsupce, GinvGdot) ! see above
    
    Fors_s = 0.0d0
-   do k = 1,nat ! All atoms - calculating new coordinates:
-      call Transpose_M(Scell(NSC)%supce,dsupce) ! transpose super-cell matrix, from "Algebra_tools" module
-      call Two_Matr_mult(dsupce,Scell(NSC)%supce,tempM)  ! g from Eq.(2.15), H.Jeschke PHD thesis, p.36, module "Algebra_tools"
-!       call Two_Matr_mult(Scell(NSC)%supce,dsupce,tempM)  ! g from Eq.(2.15), H.Jeschke PHD thesis, p.36, module "Algebra_tools" 
-      call Invers_3x3(tempM, gg2, 'make_time_step_atoms_SC') ! to get g^(-1), module "Algebra_tools"
+
+   call Transpose_M(Scell(NSC)%supce, dsupce) ! transpose super-cell matrix, from "Algebra_tools" module
+
+   call Two_Matr_mult(dsupce,Scell(NSC)%supce,tempM)  ! g from Eq.(2.15), H.Jeschke PHD thesis, p.36, module "Algebra_tools"
+
+   call Invers_3x3(tempM, gg2, 'make_time_step_atoms_SC') ! to get g^(-1), module "Algebra_tools"
+
+
+   do k = 1, nat ! All atoms - calculating new coordinates:
+
       tempV(:) = Scell(NSC)%MDatoms(k)%forces%total(:)
       call Matrix_Vec_Prod(gg2,tempV,x0) ! module "Algebra_tools"
 
@@ -3026,13 +3039,18 @@ end subroutine Find_nearest_neighbours
 
 
 
-subroutine pair_correlation_function(atoms, matter, Scell, NSC)
+subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
    type(solid), intent(inout) :: matter	! materil parameters
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
-   real(8) r, dr, a_r
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   !---------------------
+   real(8) r, dr, a_r, Norm
    integer n, i, m, k, j
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    n = size(atoms)
    if (.not. allocated(matter%PCF)) then
       m = INT(Scell(NSC)%supce(1,1)*20)
@@ -3047,6 +3065,34 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC)
       m = size(matter%PCF,2)
    endif
    matter%PCF(2,:) = 0.0d0
+
+
+#ifdef MPI_USED
+   dr = matter%PCF(1,2) - matter%PCF(1,1)
+   Norm = 1.0d0/(4.0d0*g_Pi*dr)*Scell(NSC)%V/dble(Scell(NSC)%Na*Scell(NSC)%Na) ! normalizing per volume
+
+   N_incr = MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + MPI_param%process_rank   ! starting point for each process
+   Nend = n
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, n	! trace all atoms
+      do j = 1, n	! trace all neighbours for PCF
+         if (i .NE. j) then
+            call shortest_distance(Scell, NSC, atoms, i, j, a_r)
+            if (a_r .GE. matter%PCF(1,m)) then
+               k = m
+            else
+               call Find_in_array_monoton(matter%PCF, a_r, 1, k)	! module "Little_subroutines"
+            endif
+            matter%PCF(2,k) = matter%PCF(2,k) + Norm/(matter%PCF(1,k)*matter%PCF(1,k))
+         endif
+      enddo ! j
+   enddo ! i
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in pair_correlation_function'
+   call do_MPI_Allreduce(MPI_param, trim(adjustl(error_part))//'matter%PCF', matter%PCF) ! module "MPI_subroutines"
+
+#else
    !$omp PARALLEL private(i,j,a_r,k)
    !$omp do schedule(dynamic)
    do i = 1, n	! trace all atoms
@@ -3071,6 +3117,7 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC)
    !$omp end parallel
    dr = matter%PCF(1,2) - matter%PCF(1,1)
    matter%PCF(2,:) = matter%PCF(2,:)/(4.0d0*g_Pi*dr)*Scell(NSC)%V/dble(Scell(NSC)%Na*Scell(NSC)%Na) ! normalizing per volume
+#endif
 end subroutine pair_correlation_function
 
 

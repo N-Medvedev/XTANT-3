@@ -46,7 +46,7 @@ subroutine Electron_transport(trans_mod, time, Scell, numpar, matter, dt, tau, E
    integer, intent(in) :: trans_mod ! model for the transport to use
    real(8), intent(in) :: time ! current timestep [fs]
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Solid), intent(inout) :: matter ! material parameters
    real(8), intent(in) :: dt, tau ! [fs]: time-step, characteristic time of relaxation
    type(Error_handling), intent(inout) :: Err ! error save

@@ -49,7 +49,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 30.06.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 04.07.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -69,6 +69,19 @@ subroutine write_output_files(numpar, time, matter, Scell)
    real(8) :: Pressure
    real(8), dimension(3,3) :: Stress
    integer NSC
+
+
+   ! Prepare output:
+   if (numpar%save_PCF) call pair_correlation_function(Scell(1)%MDatoms, matter, Scell, 1, numpar%MPI_param) ! module "Atomic_tools"
+
+
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
 
    do NSC = 1, size(Scell)
       ! All subroutines for saving output data into files are within this file below:
@@ -166,6 +179,14 @@ subroutine printout_CDF_file(numpar, matter, Scell)
    integer :: NSC, FN
    parameter (NSC = 1)  ! one supercell
 
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
+
    if (numpar%save_CDF) then ! printout CDF file
       file_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_Ritchie_CDF_'// &
                   trim(adjustl(matter%Name))//'.cdf'
@@ -192,8 +213,16 @@ subroutine printout_MFP_file(numpar, matter, Scell)
    integer :: NSC, FN, Nsiz, i, Nshl, j, k, N_grid, j_start, count_col
    parameter (NSC = 1)  ! one supercell
 
-   if (numpar%print_MFP) then ! printout MFP file
 
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
+
+   if (numpar%print_MFP) then ! printout MFP file
       !-----------------------
       ! Inelastic electron MFP:
       text_var = 'OUTPUT_'
@@ -803,7 +832,7 @@ subroutine write_PCF(FN, atoms, matter, Scell, NSC)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
    integer i
-   call pair_correlation_function(atoms, matter, Scell, NSC) ! module "Atomic_tools"
+
    do i = 1,size(matter%PCF,2)
       write(FN, '(f25.16,es25.16)') matter%PCF(1,i), matter%PCF(2,i)
    enddo
@@ -1467,6 +1496,7 @@ subroutine write_energies(FN, time, nrg)
    nrg%Total + nrg%E_supce + nrg%El_high + nrg%Eh_tot, & ! Total energy (incl. holes)
    nrg%E_vdW, &   ! van der Waals
    nrg%E_expwall  ! Short-range repulsive
+   print*, nrg%Total, nrg%E_supce, nrg%El_high
 end subroutine write_energies
 
 
@@ -1562,6 +1592,15 @@ subroutine prepare_output_files(Scell, matter, laser, numpar, TB_Hamil, TB_Repul
    integer INFO
    integer :: MOD_TIM ! time when the communication.txt file was last modified
    logical :: file_opened, file_exist, NP_file_exists, IM_file_exists
+
+
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
 
    ! Create directory where the output files will be saved:
    call create_output_folder(Scell, matter, laser, numpar)	! module "Dealing_with_output_files"
@@ -4914,7 +4953,9 @@ subroutine reset_dt(numpar, matter, tim_cur)
          numpar%dt = numpar%dt_MD_grid(numpar%i_dt)              ! to this value
          numpar%i_dt = numpar%i_dt + 1 ! next step to read from
          call reset_support_times(numpar)   ! below
-         print*, 'Time-step of MD simulation is changed to', numpar%dt
+         if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            print*, 'Time-step of MD simulation is changed to', numpar%dt
+         endif
       endif
    elseif (numpar%i_dt == 0) then   ! its before the simulation start, reset the starting time
       numpar%i_dt = numpar%i_dt + 1 ! next step to read from
@@ -4933,11 +4974,15 @@ subroutine reset_dt(numpar, matter, tim_cur)
          matter%tau_bath = numpar%At_bath_grid_tau(numpar%i_At_bath_dt) ! new characteristic time [fs]
          if (matter%tau_bath > 1.0d14) then  ! there is no bath, too slow to couple
             numpar%Transport = .false. ! excluded
-            print*, 'Atomic thermostat is off'
+            if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               print*, 'Atomic thermostat is off'
+            endif
          else
             numpar%Transport = .true.	 ! included
-            print*, 'Atomic thermostat parameters are changed to', &
+            if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               print*, 'Atomic thermostat parameters are changed to', &
                   matter%T_bath*g_kb, matter%tau_bath
+            endif
          endif
 
          numpar%i_At_bath_dt = numpar%i_At_bath_dt + 1 ! next step to read from
@@ -4954,11 +4999,15 @@ subroutine reset_dt(numpar, matter, tim_cur)
          matter%tau_bath_e = numpar%El_bath_grid_tau(numpar%i_El_bath_dt) ! new characteristic time [fs]
          if (matter%tau_bath_e > 1.0d14) then  ! there is no bath, too slow to couple
             numpar%Transport_e = .false. ! excluded
-            print*, 'Electronic thermostat is off'
+            if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               print*, 'Electronic thermostat is off'
+            endif
          else
             numpar%Transport_e = .true.	 ! included
-            print*, 'Electronic thermostat parameters are changed to', &
+            if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               print*, 'Electronic thermostat parameters are changed to', &
                   matter%T_bath_e*g_kb, matter%tau_bath_e
+            endif
          endif
 
          numpar%i_El_bath_dt = numpar%i_El_bath_dt + 1 ! next step to read from
@@ -5233,6 +5282,13 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    character(100) :: text, text1, text2, text3
    logical :: optional_output
    real(8) :: lambda, temp
+
+   !--------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------
 
    write(print_to,'(a)') trim(adjustl(m_starline))
    call XTANT_label(print_to, label_ind) ! below
@@ -5603,9 +5659,13 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    endif
 
 #ifdef _OPENMP
-   write(print_to,'(a,i6)') ' Number of threads for OPENMP: ', numpar%NOMP
-#else ! if you set to use OpenMP in compiling: 'make OMP=no'
-   write(print_to,'(a)') ' The code is compiled without OPENMP'
+   write(print_to,'(a,i6)') ' Number of threads in OPENMP: ', numpar%NOMP
+#else
+#ifdef MPI_USED
+      write(print_to,'(a,i6)') ' Number of processes in MPI: ', numpar%MPI_param%size_of_cluster
+#else
+      write(print_to,'(a)') ' The code is compiled without pparallelization'
+#endif
 #endif
 
    AT_MOVE:if (numpar%do_atoms) then ! atoms are moving:

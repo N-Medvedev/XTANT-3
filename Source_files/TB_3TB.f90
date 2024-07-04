@@ -82,12 +82,10 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
    if (.not.allocated(M_Lag_exp)) allocate(M_Lag_exp(nat,nat,6))  ! each pair of atoms, 6 polynomials
    if (.not.allocated(M_d_Lag_exp)) allocate(M_d_Lag_exp(nat,nat,6))  ! each pair of atoms, 6 polynomials
 
-   !$OMP WORKSHARE
    M_Vij = 0.0d0
    M_dVij = 0.0d0
    M_SVij = 0.0d0
    M_dSVij = 0.0d0
-   !$OMP END WORKSHARE
 
 
    ! 2-body interaction terms:
@@ -196,11 +194,9 @@ subroutine construct_TB_H_3TB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_Lag_exp
    character(200) :: Error_descript
    Error_descript = ''
 
-!$OMP WORKSHARE
    Scell(NSC)%Ha0 = Scell(NSC)%Ha	! save Hamiltonial from previous time-step
    Scell(NSC)%Ei0 = Scell(NSC)%Ei	! save energy levels for the next timestep
    Scell(NSC)%H_non0 = Scell(NSC)%H_non	! save non-diagonalized Hamiltonian from last time-step
-!$OMP END WORKSHARE
 
     ! Construct TB Hamiltonian (with DFTB parameters),  orthogonalize it,  and then solve generalized eigenvalue problem:
    if (present(scc) .and. present(H_scc_0) .and. present(H_scc_1)) then
@@ -336,20 +332,16 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
 !$omp end do
 !$omp end parallel
       ! Check if Hamiltonian is symmetric (for testing purpuses):
-!     call check_symmetry(Hij) ! module "Algebra_tools"
+!     call check_symmetry(Hij, numpar%MPI_param) ! module "Algebra_tools"
 
       ! 2)    ! Save the non-orthogonalized Hamiltonian:
-!$OMP WORKSHARE
       Scell(NSC)%H_non = Hij  ! nondiagonalized Hamiltonian
       Scell(NSC)%Sij = Sij    ! save Overlap matrix
-!$OMP END WORKSHARE
 
    else WNTSCC ! scc cycle, construct only use second order scc correction:
-!$OMP WORKSHARE
       Hij = H_scc_0 + H_scc_1 ! zero and second order scc contributions into Hamiltonian
       Scell(NSC)%H_non = Hij  ! save new nondiagonalized Hamiltonian
       Sij = Scell(NSC)%Sij
-!$OMP END WORKSHARE
    endif WNTSCC
 
 
@@ -358,9 +350,7 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
    call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, Scell(NSC)%eigen_S) ! module "TB_NRL"
 
-   !$OMP WORKSHARE
    Scell(NSC)%Hij = Hij ! save orthogonalized but non-diagonalized Hamiltonian
-   !$OMP END WORKSHARE
 
    forall (i = 1:size(Hij,1),  j = 1:size(Hij,2), (ABS(Hij(i,j)) < 1.0d-10))
       Hij(i,j) = 0.0d0
@@ -2422,12 +2412,10 @@ subroutine Attract_TB_Forces_Press_3TB(Scell, NSC, TB, numpar, Aij, M_Vij, M_dVi
       allocate(dS_press(9,n))
       allocate(dHij(9,n,size(Aij,2)))
       allocate(dSij(9,n,size(Aij,2)))
-      !$OMP WORKSHARE
       dHij = 0.0d0
       dSij = 0.0d0
       dwr_press = 0.0d0
       dS_press = 0.0d0
-      !$OMP END WORKSHARE
 
       call dHamil_tot_Press_3TB(Scell, NSC, TB, numpar, M_Vij, M_dVij, M_SVij, M_dSVij, &
                                  M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dHij, dSij)   ! below

@@ -805,10 +805,10 @@ type At_data
    integer, dimension(:), allocatable :: TOCSph ! type of photon absorption cross-section used for each shell
    type(Ritchi), dimension(:), allocatable :: CDF  ! coefficients of CDF
    real(8), dimension(:), allocatable :: Nh_shell  ! current number of deep-shell holes in each shell
-   type(MFP), dimension(:), allocatable :: El_MFP  ! electron inelastic mean free paths for each shell (inversed [1/A])
-   type(MFP), dimension(:), allocatable :: Ph_MFP  ! photon mean free paths for each shell (inversed [1/A])
-   type(MFP), dimension(:), allocatable :: El_MFP_vs_T ! electron MFP for (inversed [1/A]) for different Te
-   type(MFP) :: El_EMFP ! electron elastic mean free paths (inversed [1/A])
+   type(MFP), dimension(:), allocatable :: El_MFP  ! electron inelastic mean free paths for each shell (inverted [1/A])
+   type(MFP), dimension(:), allocatable :: Ph_MFP  ! photon mean free paths for each shell (inverted [1/A])
+   type(MFP), dimension(:), allocatable :: El_MFP_vs_T ! electron MFP for (inverted [1/A]) for different Te
+   type(MFP) :: El_EMFP ! electron elastic mean free paths (inverted [1/A])
 end type At_data
 
 type Solid
@@ -816,9 +816,9 @@ type Solid
    character(100) Chem	! material composition (chemical formulae)
    integer :: N_KAO	! number of different kinds of atoms in this compound
    type(At_data), dimension(:), allocatable :: Atoms	! all kinds of atoms of the compound
-   type(MFP) :: El_MFP_tot  ! Total electron inelastic mean free paths (inversed [1/A])
-   type(MFP) :: El_EMFP_tot ! Total electron elastic mean free paths (inversed [1/A])
-   type(MFP) :: Ph_MFP_tot  ! Total photon mean free paths for each shell (inversed [1/A])
+   type(MFP) :: El_MFP_tot  ! Total electron inelastic mean free paths (inverted [1/A])
+   type(MFP) :: El_EMFP_tot ! Total electron elastic mean free paths (inverted [1/A])
+   type(MFP) :: Ph_MFP_tot  ! Total photon mean free paths for each shell (inverted [1/A])
    real(8), dimension(:,:), allocatable :: PCF	! pair correlation function (if required)
    integer :: cell_x, cell_y, cell_z	! number of unit-cells in x, y and z directions
    real(8) :: W_PR	! [kg] Parinello_Rahman super-cell mass

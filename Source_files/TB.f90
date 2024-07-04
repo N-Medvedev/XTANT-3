@@ -62,6 +62,10 @@ use Coulomb, only: m_k, m_sqrtPi, Coulomb_Wolf_pot, get_Coulomb_Wolf_s, cut_off_
 use Exponential_wall, only : get_Exp_wall_s, d_Exp_wall_pot_s, d_Exp_wall_Pressure_s, &
                      get_short_range_rep_s, d_Short_range_pot_s, d_Short_range_Pressure_s, d_Exponential_wall_forces
 
+#ifdef MPI_USED
+use MPI_subroutines, only : MPI_barrier_wrapper, do_MPI_Allreduce
+#endif
+
 #ifdef _OPENMP
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
 #endif
@@ -103,10 +107,13 @@ subroutine MD_step(Scell, matter, numpar, time, Err)
    select case(numpar%MD_algo)
    !00000000000000000000000000000000000000000
    case default  ! velocity Verlet (2d order):
+
       ! Atomic Verlet step:
       call make_time_step_atoms(Scell, matter, numpar, 2)    ! module "Atomic_tools"
+
       ! Supercell Verlet step:
       call make_time_step_supercell(Scell, matter, numpar, 2) ! supercall Verlet step, module "Atomic_tools"
+
       ! Update Hamiltonian after the atomic and supercell motion:
       call get_Hamilonian_and_E(Scell, numpar, matter, 2, Err, time) ! below
 
@@ -156,6 +163,7 @@ subroutine MD_step(Scell, matter, numpar, time, Err)
 !       enddo
    !22222222222222222222222222222222222222222
    case (2)  ! Martyna algorithm (4th order):
+
       ! a) New coordinate:
       call make_time_step_atoms_M(Scell, matter, numpar, 1)    ! module "Atomic_tools"
       ! b) New potential:
@@ -217,7 +225,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
          
          ! Get and save in matrices often-used elements for forces calculations:
          ! Here, get the matrix of directional cosines and associated expressions:
-         call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below 
+         call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          
          ! Electronic TB Hamiltonian part:
          ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:)) ! this is the sintax we have to use to check the class of defined types
@@ -474,7 +482,10 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 !         call Construct_Vij_xTB(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_xTB"
 !         call construct_TB_H_xTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_xTB"
    end select
-   if (numpar%verbose) print*, 'Hamiltonian constructed and diagonalized succesfully'
+
+   if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      if (numpar%verbose) print*, 'Hamiltonian constructed and diagonalized succesfully'
+   endif
 
    ! Get the DOS weights for each energy level, if required:
    if (allocated(Scell(NSC)%Sij)) then ! nonorthogonal Hamiltonian
@@ -523,11 +534,15 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
       q00 = 1.0d10    ! to start with
       E_coul = 1.0d10 ! to start with
       Scell(NSC)%nrg%E_coul_scc = 0.0d0   ! to start with
-      if (numpar%verbose) write(*,'(a,f10.5,f10.5)') ' Initial Mulliken charges calculated ', q(:)
+      if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+         if (numpar%verbose) write(*,'(a,f10.5,f10.5)') ' Initial Mulliken charges calculated ', q(:)
+      endif
 
       ! Get the gamma parameters for each pair of atoms:
       call get_all_gam_ij(Scell(NSC), matter, numpar, gam_ij) ! below
-      if (numpar%verbose) print*, 'SCC gamma parameter obtained succesfully'
+      if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+         if (numpar%verbose) print*, 'SCC gamma parameter obtained succesfully'
+      endif
 
       ! SCC iterations:
       eps = 1.0d-6   ! precision
@@ -536,12 +551,14 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
          i = i + 1   ! count iterations
          if (i > Niter) then
-            print*, ' Problem in SCC: number of iterations exceeds the limit: ', Niter
-            print*, ' Charges 2-before-last iteration:', q00(:)
-            print*, ' Charges before last iteration  :', q0(:)
-            print*, ' Charges on the last iteration  :', q(:)
+            if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               print*, ' Problem in SCC: number of iterations exceeds the limit: ', Niter
+               print*, ' Charges 2-before-last iteration:', q00(:)
+               print*, ' Charges before last iteration  :', q0(:)
+               print*, ' Charges on the last iteration  :', q(:)
 !             print*, ' Coulomb energy before last iteration:', E_coul
 !             print*, ' Coulomb energy at the last iteration:', Scell(NSC)%nrg%E_coul_scc
+            endif
             exit SCC_ITER  ! too many iterations
          endif
 
@@ -556,23 +573,31 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
             type is (TB_H_Pettifor) ! TB parametrization according to Pettifor
                !call construct_TB_H_Pettifor(numpar, matter, TB_Hamil, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Pettifor"
                numpar%scc = .false.
-               print*, 'SCC calculations are not supportd with this TB parameterization'
-               print*, 'Continue at zero-order non-SCC calculations'
+               if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+                  print*, 'SCC calculations are not supportd with this TB parameterization'
+                  print*, 'Continue at zero-order non-SCC calculations'
+               endif
             type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni
                !call construct_TB_H_Molteni(numpar, matter, TB_Hamil, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Molteni"
                numpar%scc = .false.
-               print*, 'SCC calculations are not supportd with this TB parameterization'
-               print*, 'Continue at zero-order non-SCC calculations'
+               if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+                  print*, 'SCC calculations are not supportd with this TB parameterization'
+                  print*, 'Continue at zero-order non-SCC calculations'
+               endif
             type is (TB_H_Fu)  ! TB parametrization accroding to Fu
                !call construct_TB_H_Fu(numpar, matter, TB_Hamil, Scell, NSC, Scell(NSC)%Ha, Err) ! module "TB_Fu"
                numpar%scc = .false.
-               print*, 'SCC calculations are not supportd with this TB parameterization'
-               print*, 'Continue at zero-order non-SCC calculations'
+               if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+                  print*, 'SCC calculations are not supportd with this TB parameterization'
+                  print*, 'Continue at zero-order non-SCC calculations'
+               endif
             type is (TB_H_NRL)  ! TB parametrization accroding to NRL
                !call construct_TB_H_NRL(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_NRL"
                numpar%scc = .false.
-               print*, 'SCC calculations are not supportd with this TB parameterization'
-               print*, 'Continue at zero-order non-SCC calculations'
+               if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+                  print*, 'SCC calculations are not supportd with this TB parameterization'
+                  print*, 'Continue at zero-order non-SCC calculations'
+               endif
             type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB
                ! Construct the Hamiltonian, diagonalize it, get the energy:
                call construct_TB_H_DFTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err, &
@@ -584,14 +609,18 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
             type is (TB_H_BOP)  ! TB parametrization accroding to BOP (incomplete)
                !call construct_TB_H_BOP(numpar, TB_Hamil, matter, M_Vij, M_SVij, M_E0ij, M_lmn, Scell, NSC, Err)    ! module "TB_BOP"
                numpar%scc = .false.
-               print*, 'SCC calculations are not supportd with this TB parameterization'
-               print*, 'Continue at zero-order non-SCC calculations'
+               if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+                  print*, 'SCC calculations are not supportd with this TB parameterization'
+                  print*, 'Continue at zero-order non-SCC calculations'
+               endif
             type is (TB_H_xTB)  ! TB parametrization accroding to xTB (NOT READY)
 !              call Construct_Vij_xTB(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_xTB"
 !              call construct_TB_H_xTB(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Scell, NSC, Err) ! module "TB_xTB"
                numpar%scc = .false.
-               print*, 'SCC calculations are not supportd with this TB parameterization'
-               print*, 'Continue at zero-order non-SCC calculations'
+               if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+                  print*, 'SCC calculations are not supportd with this TB parameterization'
+                  print*, 'Continue at zero-order non-SCC calculations'
+               endif
          end select
 
          ! Get the DOS weights for each energy level, if required:
@@ -620,14 +649,18 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
          if ( ( abs(q(1) - q0(1)) > abs(q0(1) - q00(1)) ) .or. &
               ( abs(q(1) - q00(1)) < abs(q(1) - q0(1)) ) ) then
             iteralpha = max(0.01d0, iteralpha * 0.75d0)
-            if (numpar%verbose) print*, 'SCC convergence may not be reached, reducing mixing:', iteralpha
+            if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               if (numpar%verbose) print*, 'SCC convergence may not be reached, reducing mixing:', iteralpha
+            endif
          endif
       enddo SCC_ITER
 
-      if (numpar%verbose) then
-         print*, 'SCC cycles completed with iteration #', i
-         print*, ' Charges before last iteration:', q0(:)
-         print*, ' Charges on the last iteration:', q(:)
+      if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+         if (numpar%verbose) then
+            print*, 'SCC cycles completed with iteration #', i
+            print*, ' Charges before last iteration:', q0(:)
+            print*, ' Charges on the last iteration:', q(:)
+         endif
       endif
 
       ! Save Mulliken charges for the next time-step:
@@ -1707,7 +1740,7 @@ subroutine get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err)
    type(Super_cell), dimension(:), intent(inout) :: Scell ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(solid), intent(in) :: matter	! materil parameters
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Error_handling), intent(inout) :: Err	! error save
    !-------------------------
    real(8), dimension(3,3) :: kappa_e, kappa_ei, L_EE, L_ET, L_TT, kappa_ee
@@ -1843,7 +1876,7 @@ end subroutine get_electron_heat_conductivity
 
 
 subroutine get_electron_band_velosities(numpar, Scell, NSC, v_e, Err)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(inout) :: Scell ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:,:), intent(inout) :: v_e
@@ -1918,7 +1951,7 @@ end subroutine get_electron_band_velosities
 
 
 subroutine get_complex_Hamiltonian_new(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(inout), allocatable :: Ei	! [eV] current energy levels at the selected k point
@@ -1958,7 +1991,7 @@ end subroutine get_complex_Hamiltonian_new
 
 
 subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, kz, Err, flag_old)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(inout), allocatable :: Ei	! [eV] current energy levels at the selected k point
@@ -2001,7 +2034,7 @@ end subroutine get_complex_Hamiltonian
 
 subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ksx, ksy, ksz, &
             Err, cPRRx, cPRRy, cPRRz, Sij, CSij_out, cTnn)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function 
+   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:,:), intent(in) :: H_non	! Non-diagonalized real hamiltonian, must be provided
@@ -2684,45 +2717,80 @@ end subroutine diagonalize_complex8_Hamiltonian
 
 
 
-subroutine Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn)
+subroutine Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn)
    type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
+   type(Numerics_param), intent(inout) :: numpar  ! all numerical parameters
    real(8), dimension(:,:,:), allocatable, intent(out) :: M_x1	! matrix of coefficients x1
    real(8), dimension(:,:,:), allocatable, intent(out) :: M_xrr	! matrix of coefficients xrr, yrr, zrr
    real(8), dimension(:,:,:), allocatable, intent(out) :: M_lmn	! matrix of direction cosines l, m, n
    !---------------------------
    real(8), pointer :: x, y, z, r
    real(8) :: r2
-   integer i, nat, m, j, atom_2
+   integer i, nat, m, j, atom_2, N_incr, Nstart, Nend
+   character(100) :: error_part
    
    nat = Scell(NSC)%Na ! number of atoms
    if (.not.allocated(M_x1)) allocate(M_x1(3,nat,nat))
    if (.not.allocated(M_xrr)) allocate(M_xrr(3,nat,nat))
    if (.not.allocated(M_lmn)) allocate(M_lmn(3,nat,nat))
-   !$OMP WORKSHARE
+
    M_x1 = 0.0d0
    M_xrr = 0.0d0
    M_lmn = 0.0d0
-   !$OMP END WORKSHARE
-   
-!$omp PARALLEL
-!$omp do schedule(dynamic) private(i, m, atom_2, j, x, y, z, r)
-   do i = 1,nat	! all atoms
+
+
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+   ! Each MPI process will do a part of the loop:
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
       m = Scell(NSC)%Near_neighbor_size(i)
-      do atom_2 = 1,m ! do only for atoms close to that one  
+      do atom_2 = 1,m ! do only for atoms close to that one
          j = Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
-!          if (j > nat) then
-!             print*, 'ATOM j', i, j, atom_2
-!             print*, 'HUGE!', Scell(NSC)%Near_neighbor_list(i,:)
-!             pause 'CHECK-PAUSE'
-!          endif
-         
+
          if (j .GT. 0) then
             x => Scell(NSC)%Near_neighbor_dist(i,atom_2,1) ! at this distance, X
             y => Scell(NSC)%Near_neighbor_dist(i,atom_2,2) ! at this distance, Y
             z => Scell(NSC)%Near_neighbor_dist(i,atom_2,3) ! at this distance, Z
             r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
-!             r2 = r*r
+
+            M_x1(1,i,j) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
+            M_x1(2,i,j) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
+            M_x1(3,i,j) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
+
+            M_lmn(1,i,j) = x/r	! l
+            M_lmn(2,i,j) = y/r	! m
+            M_lmn(3,i,j) = z/r	! n
+
+            M_xrr(1,i,j) = M_lmn(1,i,j)/r	!xrr
+            M_xrr(2,i,j) = M_lmn(2,i,j)/r	!yrr
+            M_xrr(3,i,j) = M_lmn(3,i,j)/r	!zrr
+         endif
+      enddo
+   enddo
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Construct_M_x1'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_x1', M_x1) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_lmn', M_lmn) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_xrr', M_xrr) ! module "MPI_subroutines"
+   !print*, '[MPI process #', numpar%MPI_param%process_rank, '] M_x1 #1:', M_x1(:,1,3), M_x1(:,2,4), M_x1(:,5,6)
+
+#else ! OpenMO parallelization
+!$omp PARALLEL
+!$omp do schedule(dynamic) private(i, m, atom_2, j, x, y, z, r)
+   do i = 1, nat   ! all atoms
+      m = Scell(NSC)%Near_neighbor_size(i)
+      do atom_2 = 1,m ! do only for atoms close to that one  
+         j = Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+
+         if (j .GT. 0) then
+            x => Scell(NSC)%Near_neighbor_dist(i,atom_2,1) ! at this distance, X
+            y => Scell(NSC)%Near_neighbor_dist(i,atom_2,2) ! at this distance, Y
+            z => Scell(NSC)%Near_neighbor_dist(i,atom_2,3) ! at this distance, Z
+            r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
 
             M_x1(1,i,j) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
             M_x1(2,i,j) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
@@ -2734,22 +2802,20 @@ subroutine Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn)
             M_lmn(1,i,j) = x/r	! l
             M_lmn(2,i,j) = y/r	! m
             M_lmn(3,i,j) = z/r	! n
-!             write(*, '(a,i2,i2,f,f,f)' ) 'cos: ', i, j, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j)
-            
+
             M_xrr(1,i,j) = M_lmn(1,i,j)/r	!xrr
             M_xrr(2,i,j) = M_lmn(2,i,j)/r	!yrr
             M_xrr(3,i,j) = M_lmn(3,i,j)/r	!zrr
             
-!             M_xrr(1,i,j) = x/r2 !xrr
-!             M_xrr(2,i,j) = y/r2 !yrr
-!             M_xrr(3,i,j) = z/r2 !zrr
          endif
       enddo
    enddo
 !$omp end do
 !$omp END PARALLEL
-
+#endif
    nullify(x, y, z, r)
+
+!   print*, '[MPI process #', numpar%MPI_param%process_rank, '] M_x1 #2:', M_x1(:,1,3), M_x1(:,2,4), M_x1(:,5,6)
 end subroutine Construct_M_x1
 
 
@@ -3068,7 +3134,7 @@ end subroutine change_r_cut_TB_Hamiltonian
 subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Solid), intent(in) :: matter ! material parameters
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    !type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
    real(8) :: Erepuls, Pot_phi, Na_inv, E_vdW, E_coul, E_expwall
@@ -3151,7 +3217,7 @@ subroutine Coulomb_s(TB_Coul, Scell, NSC, numpar, Coulomb_out)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    class(TB_Coulomb), dimension(:,:), allocatable, intent(inout):: TB_Coul ! Coulomb parameters
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), intent(out) :: Coulomb_out ! Coulomb energy [eV]
    !--------------
    real(8) a
@@ -3258,7 +3324,7 @@ end subroutine Erep_s
 subroutine update_nrg_after_change(Scell, matter, numpar, time, Err)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Solid), intent(inout) :: matter ! material parameters
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), intent(in) :: time ! current timestep [fs]
    type(Error_handling), intent(inout) :: Err ! error save
    !=========================================
@@ -3287,7 +3353,7 @@ end subroutine update_nrg_after_change
 subroutine get_new_energies(Scell, matter, numpar, t, Err)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Solid), intent(inout) :: matter ! material parameters
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), intent(in) :: t ! current timestep [fs]
    type(Error_handling), intent(inout) :: Err ! error save
    !=========================================
@@ -3315,7 +3381,7 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
 ! and dynamical electronic heat conductivity (if required)
    real(8), intent(in) :: t ! [fs] current time
    type(solid), intent(inout) :: matter ! materil parameters
-   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including lists of earest neighbors
    type(Super_cell), dimension(:), intent(inout) :: Scell ! supercell with all the atoms as one object
    type(Error_handling), intent(inout) :: Err ! error save
    !=========================================
@@ -3564,7 +3630,7 @@ end subroutine Construct_Aij_old
 
 subroutine Get_configurational_temperature(Scell, numpar, matter)
    type(Super_cell), dimension(:), intent(inout) :: Scell	! supercell with all the atoms as one object
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(solid), intent(in), target :: matter	! materil parameters
    !--------------------------------------------
    real(8), dimension(:,:), allocatable :: F, dF	! forces and derivatives
@@ -3657,7 +3723,7 @@ end subroutine Get_configurational_temperature
 
 subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, Fatr_out, dFrep_out, dFatr_out)
    type(Super_cell), dimension(:), intent(inout) :: Scell	! supercell with all the atoms as one object
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(solid), intent(in) :: matter	! materil parameters
    real(8), dimension(:,:), allocatable, intent(inout):: F, dF	! forces and derivatives [eV/A], [eV/A^2]
    real(8), dimension(:,:), allocatable, intent(inout), optional :: Frep_out, Fatr_out, dFrep_out, dFatr_out	! forces and derivatives [eV/A], [eV/A^2]
@@ -4544,19 +4610,19 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          call Attract_TB_Forces_Press_F(ARRAY, Scell(NSC)%MDatoms, Scell, NSC, numpar, Scell(NSC)%Aij)	! module "TB_Fu"
       type is (TB_H_NRL) ! TB parametrization according to NRL
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
-         call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below 
+         call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          call Construct_Vij_NRL(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_NRL"
          call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
          call Attract_TB_Forces_Press_NRL(ARRAY, Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_NRL"
       type is (TB_H_DFTB) ! TB parametrization according to DFTB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
-         call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below 
+         call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          call Construct_Vij_DFTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_DFTB"
          call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
          call Attract_TB_Forces_Press_DFTB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_DFTB"
       type is (TB_H_3TB) ! TB parametrization according to 3TB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
-         call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below
+         call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_M_x1 succesful'
          call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
          if (numpar%verbose) print*, 'Get_pressure 3TB : get_Mjs_factors succesful'
@@ -4568,7 +4634,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          if (numpar%verbose) print*, 'Get_pressure 3TB : Attract_TB_Forces_Press_3TB succesful'
       type is (TB_H_xTB) ! TB parametrization according to xTB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
-         call Construct_M_x1(Scell, NSC, M_x1, M_xrr, M_lmn) ! see below
+         call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
 !          call Construct_Vij_xTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_xTB"
          call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
 !          call Attract_TB_Forces_Press_xTB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_xTB"
@@ -4707,7 +4773,7 @@ end subroutine Get_pressure
 
 subroutine C60_vdW_vs_Coulomb(Scell, numpar, matter, layers)
    type(Super_cell), dimension(:), intent(in) :: Scell ! supercell with all the atoms as one object
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(solid), intent(in) :: matter	! material parameters
    integer, intent(in), optional :: layers ! number of C60 layers in the crystal 
    type(Super_cell), dimension(:), allocatable :: TEMP_Scell ! temporary supercell with all the atoms as one object
@@ -4737,7 +4803,7 @@ end subroutine C60_vdW_vs_Coulomb
 
 subroutine Coulomb_beats_vdW(TEMP_Scell, numpar, Nat_C60, Nat) 
    type(Super_cell), dimension(:), intent(inout) :: TEMP_Scell ! temporary supercell with all the atoms as one object
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    integer, intent(in), optional :: Nat_C60, Nat
    integer i, j, coun
    real(8) :: Charge ! unballanced charge
@@ -4917,7 +4983,7 @@ end subroutine C60_super_cell
 
 ! This subroutine is superceeded by the module "TB_complex"
 subroutine get_DOS(numpar, matter, Scell, Err) ! Obsolete subroutine
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Solid), intent(in) :: matter     ! material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Error_handling), intent(inout) :: Err	! error save
@@ -4987,7 +5053,7 @@ end subroutine get_DOS
 
 ! This subroutine is superceeded by the module "TB_complex"
 subroutine get_DOS_sort_complex(numpar, Scell, NSC, DOS, smearing, Err, partial_DOS, masks_DOS) ! Obsolete subroutine
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:,:), intent(inout) :: DOS	! [eV] grid; [a.u.] DOS

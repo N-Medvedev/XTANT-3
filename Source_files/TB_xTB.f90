@@ -477,12 +477,12 @@ subroutine Construct_Vij_xTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
    if (.not.allocated(M_SVij)) allocate(M_SVij(nat,nat,N_bs))	! each pair of atoms, all S functions
    if (.not.allocated(M_dSVij)) allocate(M_dSVij(nat,nat,N_bs))	! each pair of atoms, all dS functions
 
-   !$OMP WORKSHARE
+
    M_Vij = 0.0d0
    M_dVij = 0.0d0
    M_SVij = 0.0d0
    M_dSVij = 0.0d0
-   !$OMP END WORKSHARE
+
 
    ! Construct matrix of all the radial functions for each pair of atoms:
 !$omp PARALLEL

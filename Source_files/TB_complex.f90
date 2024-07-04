@@ -279,7 +279,7 @@ end subroutine use_complex_Hamiltonian
 subroutine associate_wrapper(numpar, Scell, NSC, CHij, Ei, kx, ky, kz, cPRRx, cPRRy, cPRRz)
    ! Associate statement cannot be used inside OMP-parallelized region, since it uses the same ARRAY
    ! so, it needs to be put inside a subroutine-wrapper.
-   type (Numerics_param), intent(in) :: numpar  ! numerical parameters
+   type (Numerics_param), intent(inout) :: numpar  ! numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell   ! supercell with all the atoms as one object
    integer, intent(in) :: NSC    ! number of supercell
    complex, dimension(:,:), allocatable, intent(inout) :: CHij	! eigenvectors of the hamiltonian

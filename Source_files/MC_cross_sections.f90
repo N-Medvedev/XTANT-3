@@ -214,6 +214,13 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
    real(8) :: Ele, L, dEdx, Omega, ksum, fsum, Te_temp
    integer OMP_GET_THREAD_NUM, OMP_GET_NUM_THREADS
    
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
    ! Set grid for MFPs:
    call get_grid_4CS(N_grid, maxval(laser(:)%hw), matter%Atoms(1)%El_MFP(1)%E, matter) ! below
 
@@ -403,14 +410,14 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
    Nshl = size(matter%Atoms(1)%Ip)
    select case (matter%Atoms(1)%TOCS(Nshl)) ! Valence band and CDF only
    case (1) ! CDF
-      !!$omp PARALLEL private(i, Te_temp)
-      !!$omp do schedule(dynamic)
+      !$omp PARALLEL private(i, Te_temp)
+      !$omp do schedule(dynamic)
       do i = 1, N_Te_points   ! for all electronic temperature points
          Te_temp = dble((i-1)*1000)*g_kb_EV ! electronic temperature [eV]
          call IMFP_vs_Te_files(matter, laser, numpar, Te_temp, i) ! below
       enddo ! i = 1, N_Te_points
-      !!$omp end do
-      !!$omp end parallel
+      !$omp end do
+      !$omp end parallel
    endselect
 
    !iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
@@ -1662,6 +1669,15 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
    real(8), dimension(:,:,:), allocatable :: Phot_abs_CS_shl
    real(8), dimension(:), allocatable :: Phot_abs_CS_VB
    
+
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
+
    Nat = size(matter%Atoms) ! number of atoms
    indVB = size(matter%Atoms(1)%Ip) ! the last shell of the first element is VB
 
@@ -1901,7 +1917,7 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
 !                     print*, Ele, matter%Atoms(i)%Ph_MFP(j)%L(k)
 !                     call print_progress('Progress:',k,N_grid)    ! module "Little_subroutines"
                   enddo
-!                   pause 'Ele, matter%Atoms(i)%Ph_MFP(j)%L(k) TEST 1'
+!                   pause 'Ele, matter%Atoms(i)%Ph_MFP(j)%L(k) test 1'
                   print*, 'Photon IMFPs are saved into file:', trim(adjustl(File_name))
                endif ! if (i == 1) then ! there is VB explicitly
             

@@ -83,12 +83,15 @@ endif
 ! Check if the user needs any additional info (by setting the flags):
 call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_Err%Stopsignal, &
       allow_rotate=g_numpar%allow_rotate, verbose=g_numpar%verbose, nonverbose=g_numpar%nonverbose) ! module "Read_input_data"
-
+!--------------------------------------------------------------
+! Master thread shares read info with all the other MPI-processes:
+call MPI_share_add_data(g_numpar, g_Err)  ! module "MPI_subroutines"
+!--------------------------------------------------------------
 if (g_Err%Err) goto 2016     ! if something when wrong, cannot proceed
 if (g_Err%Stopsignal) goto 2016     ! if the USER does not want to run the calculations, stop
 ! Otherwise, run the calculations:
 
-! One needs to make sure each process is using a different random seed:
+! Make sure each MPI process is using a different random seed:
 call initialize_random_seed(g_numpar%MPI_param)   ! module "MPI_subroutines"
 !call random_seed() ! standard FORTRAN seeding of random numbers
 
@@ -102,17 +105,20 @@ endif
 
 ! Set all the initial data, read and create files:
 ! Read input files:
-if (g_numpar%which_input > 0) then ! it's not the first run
-   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   if (g_numpar%which_input > 0) then ! it's not the first run
       print*, '# It is run for input files number:', g_numpar%which_input
-   endif
-   call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err, g_numpar%which_input) ! module "Read_input_data"
-else ! it is the first run:
-   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err, g_numpar%which_input) ! module "Read_input_data"
+   else ! it is the first run
       print*, '# It is the first run'
+      call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err) ! module "Read_input_data"
    endif
-   call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err) ! module "Read_input_data"
-endif
+endif ! (g_numpar%MPI_param%process_rank == 0)
+
+!--------------------------------------------------------------
+! Master thread shares read info with all the other MPI-processes:
+call MPI_share_Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err)  ! module "MPI_subroutines"
+!--------------------------------------------------------------
 if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
 if (g_Err%Stopsignal) goto 2016     ! if the USER does not want to run the calculations, stop
 
@@ -129,29 +135,41 @@ if (g_numpar%verbose) call print_time_step('Input files read succesfully:', msec
 
 ! Starting time, to give enough time for system to thermalize before the pulse:
 call set_starting_time(g_laser, g_time, g_numpar%t_start, g_numpar%t_NA, g_numpar%t_Te_Ee) ! module "Little_subroutines"
+
 ! And check if user wants to reset it:
 call reset_dt(g_numpar, g_matter, g_time)   ! module "Dealing_with_output_files"
-
-! Print the title of the program and used parameters on the screen:
-!call Print_title(6,g_Scell,g_matter,g_laser,g_numpar) ! module "Dealing_with_output_files"
-! call print_time('Attempting to start at', ind=0) ! prints out the current time, module "Little_subroutines"
 
 ! Prepare initial conditions (read supercell and atomic positions from the files):
 call set_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err) ! module "Initial_configuration"
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the initial configuration, cannot continue, go to the end...
+!--------------------------------------------------------------
+! Master thread shares read info with all the other MPI-processes:
+call MPI_share_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err)   ! module "MPI_subroutines"
+!--------------------------------------------------------------
 if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+
 
 ! Print the title of the program and used parameters on the screen:
 call Print_title(6, g_Scell, g_matter, g_laser, g_numpar, -1) ! module "Dealing_with_output_files"
-call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
+endif
 
 ! Read (or create) electronic mean free paths (both, inelastic and elastic):
 call get_MFPs(g_Scell, 1, g_matter, g_laser, g_numpar, g_Scell(1)%TeeV, g_Err) ! module "MC_cross_sections"
+!--------------------------------------------------------------
+! Master thread shares read info with all the other MPI-processes:
+call MPI_share_electron_MFPs(g_matter, g_numpar, g_Err)   ! module "MPI_subroutines"
+!--------------------------------------------------------------
 if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Electron mean free paths set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Read (or create) photonic mean free paths:
 call get_photon_attenuation(g_matter, g_laser, g_numpar, g_Err) ! module "MC_cross_sections"
+!--------------------------------------------------------------
+! Master thread shares read info with all the other MPI-processes:
+call MPI_share_photon_attenuation(g_matter, g_numpar, g_Err)   ! module "MPI_subroutines"
+!--------------------------------------------------------------
 if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Photon attenuation lengths set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
@@ -160,7 +178,7 @@ if (.not.g_numpar%do_path_coordinate) then  ! only for real calculations, not fo
 endif
 
 ! Process the laser pulse parameters:
-call process_laser_parameters(g_Scell(1), g_matter, g_laser, g_numpar) ! module "MC_cross_sections"
+call process_laser_parameters(g_Scell(1), g_matter, g_laser, g_numpar) ! module "Monte_Carlo"
 if (g_numpar%verbose) call print_time_step('Laser pulse parameters converted succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Create the folder where output files will be storred, and prepare the files:
@@ -175,7 +193,9 @@ call printout_CDF_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_out
 call printout_MFP_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_output_files"
 
 ! Collect all gnuplot files into one script to execute all together later:
-call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)), skip_execution=.true.) ! module "Gnuplotting"
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)), skip_execution=.true.) ! module "Gnuplotting"
+endif
 
 
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
@@ -190,9 +210,16 @@ if (g_numpar%change_size) then
    call vary_size(Err=g_Err%Stopsignal) ! see below, used for testing
    if (g_Err%Stopsignal .or. g_Err%Err) goto 2012      ! if the USER does not want to run the calculations
 endif
+
+
+
+print*, '[MPI process #', g_numpar%MPI_param%process_rank, '] test pause'
+!pause 'MPI implementation is done up to here'
+
+
+
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! If user set to calculate the coordinate path between two phases of material:
-
 if (g_numpar%do_path_coordinate) then
    call coordinate_path( )  ! below
    if (g_Err%Err .or. g_Err%Stopsignal) goto 2012      ! if the USER does not want to run the calculations
@@ -831,7 +858,7 @@ subroutine vary_size(do_forces, Err)   !  THIS SUBROUTINE USES GLOBAL VARIABLES
       E_vdW_interplane = vdW_interplane(g_Scell(1)%TB_Waals, g_Scell, 1, g_numpar, g_matter)/dble(g_Scell(1)%Na) !module "TB"
 
       ! Get ZBL potential is requested:
-      call get_total_ZBL(g_Scell, 1, g_matter, E_ZBL) ! module "ZBL_potential"
+      call get_total_ZBL(g_Scell, 1, g_matter, g_numpar, E_ZBL) ! module "ZBL_potential"
       E_ZBL = E_ZBL/dble(g_Scell(1)%Na)   ! [eV] => [eV/atom]
 
       if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it

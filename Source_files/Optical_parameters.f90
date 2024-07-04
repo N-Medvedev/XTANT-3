@@ -1548,7 +1548,7 @@ end subroutine allocate_Eps_hw
 
 subroutine get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz, Err, Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy) ! Ref. [2]
 !subroutine get_Fnn_complex(numpar, matter, atoms, TB, CHij, Ei, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz, kx ,ky, kz, Err)
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), allocatable, intent(out) :: Ei	! energy levels [eV]
@@ -2185,21 +2185,17 @@ subroutine get_Fnn(Scell, NSC, Ha, Ei, Fnnx, Fnny, Fnnz, Fnnxy, Fnnxz, Fnnyx, Fn
    !$omp end parallel
    
    ! Do whole arrays at once:
-    !$OMP WORKSHARE
    Fnnx = Fnn_temp_x*Fnn_temp_x
    Fnny = Fnn_temp_y*Fnn_temp_y
    Fnnz = Fnn_temp_z*Fnn_temp_z
-   !$OMP END WORKSHARE
    
    if (present(Fnnxy)) then ! do off-diagonal elements
-      !$OMP WORKSHARE
       Fnnxy = Fnn_temp_x*Fnn_temp_y
       Fnnxz = Fnn_temp_x*Fnn_temp_z
       Fnnyx = Fnnxy
       Fnnyz = Fnn_temp_y*Fnn_temp_z
       Fnnzx = Fnnxz
       Fnnzy = Fnnyz
-      !$OMP END WORKSHARE
    endif
    
 !    do i = 1, m
