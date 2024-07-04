@@ -142,8 +142,6 @@ call reset_dt(g_numpar, g_matter, g_time)   ! module "Dealing_with_output_files"
 ! Prepare initial conditions (read supercell and atomic positions from the files):
 call set_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err) ! module "Initial_configuration"
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the initial configuration, cannot continue, go to the end...
-
-
 !--------------------------------------------------------------
 ! Master thread shares read info with all the other MPI-processes:
 call MPI_share_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err)   ! module "MPI_subroutines"
