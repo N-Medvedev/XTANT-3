@@ -114,13 +114,13 @@ if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does 
       call Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err) ! module "Read_input_data"
    endif
 endif ! (g_numpar%MPI_param%process_rank == 0)
+
 !--------------------------------------------------------------
 ! Master thread shares read info with all the other MPI-processes:
 call MPI_share_Read_Input_Files(g_matter, g_numpar, g_laser, g_Scell, g_Err)  ! module "MPI_subroutines"
 !--------------------------------------------------------------
 if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
 if (g_Err%Stopsignal) goto 2016     ! if the USER does not want to run the calculations, stop
-
 
 ! Printout additional info, if requested:
 if (g_numpar%verbose) call print_time_step('Input files read succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
@@ -142,11 +142,14 @@ call reset_dt(g_numpar, g_matter, g_time)   ! module "Dealing_with_output_files"
 ! Prepare initial conditions (read supercell and atomic positions from the files):
 call set_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err) ! module "Initial_configuration"
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the initial configuration, cannot continue, go to the end...
+
+
 !--------------------------------------------------------------
 ! Master thread shares read info with all the other MPI-processes:
 call MPI_share_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err)   ! module "MPI_subroutines"
 !--------------------------------------------------------------
 if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+
 
 ! Print the title of the program and used parameters on the screen:
 call Print_title(6, g_Scell, g_matter, g_laser, g_numpar, -1) ! module "Dealing_with_output_files"
@@ -213,7 +216,7 @@ endif
 
 
 print*, '[MPI process #', g_numpar%MPI_param%process_rank, '] test pause'
-pause 'MPI implementation is done up to here'
+!pause 'MPI implementation is done up to here'
 
 
 

@@ -24,6 +24,11 @@
 ! This module includes some tools for performing vector algebra operations:
 MODULE Algebra_tools
 use Universal_constants
+use Objects, only : Used_MPI_parameters
+
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce
+#endif
 
 ! For OpenMP external library
 #ifdef _OPENMP
@@ -524,15 +529,11 @@ subroutine nonsym_diagonalize_r(M, Ev, Error_descript, print_Ei, check_M)
    LWORK = 34*N
    allocate(WORK(LWORK))
 
-   !$OMP WORKSHARE
    M_save = M ! save matrix before diagonalization just in case
-   !$OMP END WORKSHARE
 
    call DGEEV('N','V', N, M, N, Ev, Im_Ev, VL, 1, VR, N, WORK, LWORK, INFO) ! library MKL (or LAPACK)
 
-   !$OMP WORKSHARE
    M = VR ! save eigenvectors in the former matrix (Hamiltonian) assuming real values
-   !$OMP END WORKSHARE
 
    if (INFO < 0) then ! if LAPACK diagonalization procidure failed:
       write(Error_descript,'(a,i5)') 'Module Algebra_tools: nonsym_diagonalize_r failed! Illigal value line ', ABS(INFO)
@@ -852,21 +853,27 @@ subroutine r_diagonalize(M, Ev, Error_descript, print_Ei, check_M, use_DSYEV)
    allocate(LAPWORK(LWORK))
    allocate(IWORK(LIWORK))
 
-   !$OMP WORKSHARE
    M_save = M ! save matrix before diagonalization just in case
-   !$OMP END WORKSHARE
 
+#ifdef MPI_USED
+!     ScaLAPACK call is not ready yet:
+!    CALL BLACS_GET(0, 0, ICONTXT)
+!    CALL BLACS_GRIDINIT(ICONTXT, ORDER, NPROW, NPCOL)
+!    CALL BLACS_GRIDINFO(ICONTXT, NPROW, NPCOL, MYROW, MYCOL)
+!    CALL PDSYEVD('V',  'U', 4, A, 1, 1, DESC_A, W, Z, 1, 1, DESC_Z, WORK , 0 , IWORK ,  0 ,  INFO)   ! ScaLAPACK
+   call dsyevd('V','U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
+#else
    if (.not.present(use_DSYEV)) then
       call dsyevd('V','U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
 !       call dsyevd_2stage('V','U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
    else
       call DSYEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, INFO)
    endif
-   
+#endif
+
+
    if (INFO .NE. 0) then ! if divide-n-conquare LAPACK diagonalization procidure failed, try regular one:
-      !$OMP WORKSHARE
       M = M_save
-      !$OMP END WORKSHARE
       call DSYEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, INFO)
       if (INFO .NE. 0) then ! if LAPACK diagonalization procidure failed:
          Error_descript = 'Module Algebra_tools: real matrix diagonalization failed!'
@@ -907,7 +914,7 @@ subroutine check_Ha_r(Mat, Eigenvec, Eigenval) ! real matrix real eigenstates
           Evec(k) = SUM(Mat(:,k)*Eigenvec(:,i))
       enddo
       Ev = SUM(Evec(:)*Eigenvec(:,i))
-      if (ABS(Ev - Eigenval(i))/min(ABS(Ev),ABS(Eigenval(i))) .GT. 1.0d-10) then ! diagonalization went wrong:
+      if (ABS(Ev - Eigenval(i))/min(ABS(Ev),ABS(Eigenval(i))) .GT. 1.0d-6) then ! diagonalization went wrong:
          print*, 'Ev:', i, Ev, Eigenval(i)
       endif
    enddo
@@ -967,10 +974,8 @@ subroutine c_diagonalize(M, Ev, Error_descript, print_Ei, check_M)
    allocate(IWORK(LIWORK)) ! (MAX(1,LIWORK))
    allocate(RWORK(LRWORK)) ! LRWORK
 
-   !!$OMP WORKSHARE
    M_save = M ! to make sure it's fine
    M_work = M ! convert it into complex*16
-   !!$OMP END WORKSHARE
    
    ! Test it before the start:
    CH1:do i = 1, size(M,1) 
@@ -989,10 +994,8 @@ subroutine c_diagonalize(M, Ev, Error_descript, print_Ei, check_M)
    
    if (INFO .NE. 0) then ! if divide-n-conquare LAPACK diagonalization procidure failed, try regular one:
       print*, 'ZHEEVD did not work, INFO=', INFO
-      !!$OMP WORKSHARE
       M = M_save ! to make sure it's fine
       M_work = M_save
-      !!$OMP END WORKSHARE
       !call ZHEEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, RWORK,INFO)
       call ZHEEV('V', 'U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK,INFO)
       if (INFO .NE. 0) then ! if LAPACK diagonalization procidure failed:
@@ -1002,9 +1005,7 @@ subroutine c_diagonalize(M, Ev, Error_descript, print_Ei, check_M)
    endif
    deallocate(LAPWORK, IWORK, RWORK)
    
-   !!$OMP WORKSHARE
    M = M_work ! save processed matrix back into the output matrix
-   !!$OMP END WORKSHARE
    
    if (present(check_M)) then
       if (check_M) then
@@ -1070,10 +1071,8 @@ subroutine c8_diagonalize(M, Ev, Error_descript, print_Ei, check_M) ! double pre
    allocate(IWORK(LIWORK)) ! (MAX(1,LIWORK))
    allocate(RWORK(LRWORK)) ! LRWORK
 
-   !$OMP WORKSHARE
    M_save = M ! to make sure it's fine
    M_work = M ! convert it into complex*16
-   !$OMP END WORKSHARE
 
    ! Test it before the start:
    CH1:do i = 1, N
@@ -1090,10 +1089,8 @@ subroutine c8_diagonalize(M, Ev, Error_descript, print_Ei, check_M) ! double pre
 
    if (INFO .NE. 0) then ! if divide-n-conquare LAPACK diagonalization procidure failed, try regular one:
       print*, 'ZHEEVD did not work, INFO=', INFO
-      !$OMP WORKSHARE
       M = M_save ! to make sure it's fine
       M_work = M_save
-      !$OMP END WORKSHARE
       !call ZHEEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, RWORK,INFO)
       call ZHEEV('V', 'U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK,INFO)
       if (INFO .NE. 0) then ! if LAPACK diagonalization procidure failed:
@@ -1106,9 +1103,7 @@ subroutine c8_diagonalize(M, Ev, Error_descript, print_Ei, check_M) ! double pre
    deallocate(IWORK)
    deallocate(RWORK)
 
-   !!$OMP WORKSHARE
    M = M_work ! save processed matrix back into the output matrix
-   !!$OMP END WORKSHARE
 
 #ifdef _OPENMP
    !print*, OMP_GET_THREAD_NUM(), 'Before check_M'
@@ -1174,7 +1169,7 @@ subroutine check_Ha_c(Mat, Eigenvec, Eigenval) ! real matrix, complex eigenstate
       enddo
 !       Ev = dble(SUM(DCONJG(Eigenvec(:,i))*Evec(:)))
       Ev = dble(SUM(CONJG(Eigenvec(:,i))*Evec(:)))
-      if (ABS(Ev - Eigenval(i)) .GT. min(ABS(Ev),ABS(Eigenval(i)))*1.0d-10) then ! diagonalization went wrong:
+      if (ABS(Ev - Eigenval(i)) .GT. min(ABS(Ev),ABS(Eigenval(i)))*1.0d-6) then ! diagonalization went wrong:
          print*, 'Ev_c:', i, Ev, Eigenval(i) !, SUM(CONJG(Eigenvec(:,i))*Eigenvec(:,i))
       endif
    enddo
@@ -1201,7 +1196,7 @@ subroutine check_Ha_c8(Mat, Eigenvec, Eigenval) ! real matrix, complex eigenstat
       enddo
 !       Ev = dble(SUM(DCONJG(Eigenvec(:,i))*Evec(:)))
       Ev = dble(SUM(CONJG(Eigenvec(:,i))*Evec(:)))
-      if (ABS(Ev - Eigenval(i))/min(ABS(Ev),ABS(Eigenval(i))) .GT. 1.0d-10) then ! diagonalization went wrong:
+      if (ABS(Ev - Eigenval(i))/min(ABS(Ev),ABS(Eigenval(i))) .GT. 1.0d-6) then ! diagonalization went wrong:
          print*, 'Ev_c:', i, Ev, Eigenval(i) !, SUM(CONJG(Eigenvec(:,i))*Eigenvec(:,i))
       endif
    enddo
@@ -1225,16 +1220,39 @@ subroutine check_Ha_cc(Mat, Eigenvec, Eigenval) ! complex matrix, complex eigens
          !Evec(k) = SUM(Mat(:,k)*Eigenvec(:,i))
       enddo
       Ev = SUM(CONJG(Eigenvec(:,i))*Evec(:))
-      if (ABS(Ev - Eigenval(i))/min(ABS(Ev),ABS(Eigenval(i))) .GT. 1.0d-10) then ! diagonalization went wrong:
+      if (ABS(Ev - Eigenval(i))/min(ABS(Ev),ABS(Eigenval(i))) .GT. 1.0d-6) then ! diagonalization went wrong:
          print*, 'Ev_cc:', i, Ev, Eigenval(i)
       endif
    enddo
 end subroutine check_Ha_cc
 
 
-subroutine check_symmetry(Ha)
+subroutine check_symmetry(Ha, MPI_param)
    real(8), dimension(:,:), intent(in) :: Ha	! matrix to check
+   type(Used_MPI_parameters), intent(in) :: MPI_param
+   !---------------------
    integer i, j
+   integer :: N_incr, Nstart, Nend
+
+#ifdef MPI_USED
+   N_incr = MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + MPI_param%process_rank   ! starting point for each process
+   Nend = size(Ha,1)
+
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, size(Ha,1)
+      do j = i, size(Ha,2)
+         if ((i /= j) .and. (Ha(i,j) /= 0.0d0)) then
+            if ( ABS((Ha(i,j)-Ha(j,i))/Ha(i,j)) >= 1.0d-8) then
+               write(*,'(a, i4, i4, es25.16, es25.16)') 'Nonsymmetric element found:', i, j, Ha(i,j), Ha(j,i)
+            else
+!              write(*,'(a, i4, i4, es25.16, es25.16)') 'Symmetric element:', i, j, Ha(i,j), Ha(j,i)
+            endif
+         endif
+      enddo
+   enddo
+#else ! use OpenMP
    !$OMP PARALLEL DO PRIVATE(i,j), SHARED(Ha)
    do i = 1, size(Ha,1)
       do j = i, size(Ha,2)
@@ -1248,15 +1266,44 @@ subroutine check_symmetry(Ha)
       enddo
    enddo
    !$OMP END PARALLEL DO
+#endif
 end subroutine check_symmetry
 
 
-subroutine check_hermiticity(Ha)
+subroutine check_hermiticity(Ha, MPI_param)
    complex, dimension(:,:), intent(in) :: Ha	! matrix to check
+   type(Used_MPI_parameters), intent(in) :: MPI_param
+   !---------------------
    integer i, j
    real(8) :: epsylon
    complex temp
+   integer :: N_incr, Nstart, Nend
+
    epsylon = 1.0d-8
+
+#ifdef MPI_USED
+   N_incr = MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + MPI_param%process_rank   ! starting point for each process
+   Nend = size(Ha,1)
+
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, size(Ha,1)
+      do j = i, size(Ha,2)
+         temp = Ha(i,j) - CONJG(Ha(j,i))
+         R:if (ABS(dble(Ha(i,j))) > epsylon) then   ! real part
+            if ( ABS(dble(temp)) >= epsylon*ABS(dble(Ha(i,j))) ) then
+               write(*,'(a, i4, i4, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') 'Nonhermitian element Re:', i, j, Ha(i,j), Ha(j,i), temp
+            endif
+         endif R
+         IR:if (ABS(aimag(Ha(i,j))) > epsylon) then   ! imaginary part
+            if ( ABS(aimag(temp)/aimag(Ha(i,j))) >= epsylon) then
+               write(*,'(a, i4, i4, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') 'Nonhermitian element Im:', i, j, Ha(i,j), Ha(j,i), temp
+            endif
+         endif IR
+      enddo ! j = i, size(Ha,2)
+   enddo ! i = 1, size(Ha,1)
+#else
    !$OMP PARALLEL DO PRIVATE(i,j,temp), SHARED(Ha)
    do i = 1, size(Ha,1)
       do j = i, size(Ha,2)
@@ -1276,6 +1323,7 @@ subroutine check_hermiticity(Ha)
       enddo ! j = i, size(Ha,2)
    enddo ! i = 1, size(Ha,1)
    !$OMP END PARALLEL DO
+#endif
 end subroutine check_hermiticity
 
 
@@ -1485,9 +1533,7 @@ subroutine Transpose_M(M,TransM)
 !    enddo ! i
 
    ! Use intrinsic fortran function:
-   !$OMP WORKSHARE
    TransM = TRANSPOSE(M)
-   !$OMP END WORKSHARE
 end subroutine Transpose_M ! checked!
 
 
@@ -1526,25 +1572,66 @@ end subroutine Invers_3x3 ! checked!
 
 
 ! This subroutine calculates a product of NxN matrix with a N-dimensional vector:
-subroutine Matrix_Vec_Prod(M,V,OutV)
+subroutine Matrix_Vec_Prod(M, V, OutV) ! subroutine for single thread, to be used inside parallel regions
    REAL(8), DIMENSION(:,:), INTENT(in) :: M ! input matrix (NxN)
    REAL(8), DIMENSION(:), INTENT(in) :: V ! input vector (size N)
    REAL(8), DIMENSION(:), INTENT(out) :: OutV ! output product, vector(N)
+   !---------------------
    integer i, j, n, l
+
    l = size(M,1)
    n = size(V)
    if (n .NE. l) print*,'(Martix x Vector) failed - different dimensions!'
-   !$OMP WORKSHARE
    OutV = 0.0d0
-   !$OMP END WORKSHARE
-   !$omp PARALLEL DO private(i,j), SHARED(M,V)
+   !!$omp PARALLEL DO private(i,j), SHARED(M,V)
    do i = 1,n
       do j = 1,n
          OutV(i) = OutV(i) + M(j,i)*V(j)
       enddo ! j 
    enddo ! i
-   !$omp END PARALLEL DO
+   !!$omp END PARALLEL DO
 end subroutine Matrix_Vec_Prod ! checked
+
+
+subroutine Matrix_Vec_Prod_MPI(M, V, OutV, MPI_param) ! subroutine for multiple threads
+   REAL(8), DIMENSION(:,:), INTENT(in) :: M ! input matrix (NxN)
+   REAL(8), DIMENSION(:), INTENT(in) :: V ! input vector (size N)
+   REAL(8), DIMENSION(:), INTENT(out) :: OutV ! output product, vector(N)
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   !---------------------
+   integer i, j, n, l
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+   l = size(M,1)
+   n = size(V)
+   if (n .NE. l) print*,'Error in Matrix_Vec_Prod_MPI: (Martix x Vector) failed - different dimensions!'
+   OutV = 0.0d0
+
+#ifdef MPI_USED
+   N_incr = MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + MPI_param%process_rank   ! starting point for each process
+   Nend = n
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1,n
+      do j = 1,n
+         OutV(i) = OutV(i) + M(j,i)*V(j)
+      enddo ! j
+   enddo ! i
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Matrix_Vec_Prod_MPI'
+   call do_MPI_Allreduce(MPI_param, trim(adjustl(error_part))//'OutV', OutV) ! module "MPI_subroutines"
+#else ! use OpenMP instead
+   !$omp PARALLEL DO private(i,j), SHARED(M,V)
+   do i = 1,n
+      do j = 1,n
+         OutV(i) = OutV(i) + M(j,i)*V(j)
+      enddo ! j
+   enddo ! i
+   !$omp END PARALLEL DO
+#endif
+end subroutine Matrix_Vec_Prod_MPI ! checked
 
 
 

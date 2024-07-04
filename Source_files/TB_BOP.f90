@@ -60,11 +60,9 @@ subroutine construct_TB_H_BOP(numpar, TB_Hamil, matter, M_Vij, M_SVij, M_E0ij, M
    character(200) :: Error_descript
    Error_descript = ''
    
-!$OMP WORKSHARE
    Scell(NSC)%Ha0 = Scell(NSC)%Ha	! save Hamiltonial from previous time-step
    Scell(NSC)%Ei0 = Scell(NSC)%Ei	! save energy levels for the next timestep
    Scell(NSC)%H_non0 = Scell(NSC)%H_non	! save non-diagonalized Hamiltonian from last time-step
-!$OMP END WORKSHARE
 
     ! Construct TB Hamiltonian (with BOP parameters),  orthogonalize it,  and then solve generalized eigenvalue problem:
    call Hamil_tot_BOP(numpar, Scell, NSC, M_Vij, M_SVij, M_E0ij, M_lmn, Err)	! see below
@@ -175,19 +173,15 @@ deallocate(Hij1, Sij1)
 !$omp end parallel
 
    ! 2)    ! Save the non-orthogonalized Hamiltonian:
-   !$OMP WORKSHARE
    Scell(NSC)%H_non = Hij		! nondiagonalized Hamiltonian
    Scell(NSC)%Sij = Sij		! save Overlap matrix
-   !$OMP END WORKSHARE
 
    !-----------------------------------
    ! 3) Orthogonalize the Hamiltonian using Lowedin procidure
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
    call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err)	! module "TB_NRL"
    
-   !$OMP WORKSHARE
    Scell(NSC)%Hij = Hij ! save orthogonalized but non-diagonalized Hamiltonian
-   !$OMP END WORKSHARE
    
    forall (i = 1:size(Hij,1),  j = 1:size(Hij,2), (ABS(Hij(i,j)) < 1.0d-10))
       Hij(i,j) = 0.0d0

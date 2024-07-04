@@ -49,7 +49,7 @@ use Dealing_with_CDF, only : write_CDF_file
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 30.06.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 04.07.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -69,6 +69,10 @@ subroutine write_output_files(numpar, time, matter, Scell)
    real(8) :: Pressure
    real(8), dimension(3,3) :: Stress
    integer NSC
+
+
+   ! Prepare output:
+   if (numpar%save_PCF) call pair_correlation_function(Scell(1)%MDatoms, matter, Scell, 1, numpar%MPI_param) ! module "Atomic_tools"
 
 
    !--------------------------------------------------------------------------
@@ -828,7 +832,7 @@ subroutine write_PCF(FN, atoms, matter, Scell, NSC)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
    integer i
-   call pair_correlation_function(atoms, matter, Scell, NSC) ! module "Atomic_tools"
+
    do i = 1,size(matter%PCF,2)
       write(FN, '(f25.16,es25.16)') matter%PCF(1,i), matter%PCF(2,i)
    enddo
@@ -1492,6 +1496,7 @@ subroutine write_energies(FN, time, nrg)
    nrg%Total + nrg%E_supce + nrg%El_high + nrg%Eh_tot, & ! Total energy (incl. holes)
    nrg%E_vdW, &   ! van der Waals
    nrg%E_expwall  ! Short-range repulsive
+   print*, nrg%Total, nrg%E_supce, nrg%El_high
 end subroutine write_energies
 
 

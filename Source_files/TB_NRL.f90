@@ -80,11 +80,9 @@ subroutine construct_TB_H_NRL(numpar, matter, TB_Hamil, M_Vij, M_SVij, M_lmn, Sc
    integer i, Nx, Ny, Nz
    Error_descript = ''
 
-!$OMP WORKSHARE
    Scell(NSC)%Ha0 = Scell(NSC)%Ha	! save Hamiltonial from previous time-step
    Scell(NSC)%Ei0 = Scell(NSC)%Ei	! save energy levels for the next timestep
    Scell(NSC)%H_non0 = Scell(NSC)%H_non	! save non-diagonalized Hamiltonian from last time-step
-!$OMP END WORKSHARE
 
     ! Construct TB Hamiltonian (with Mehl parameters),  orthogonalize it,  and then solve generalized eigenvalue problem:
    call Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err)	! see below
@@ -265,21 +263,17 @@ subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err
 
 
    ! 2) Convert the Hamiltonian on-site energies from Rydbergs into eVs:
-   !$OMP WORKSHARE
    Hij = Hij*g_Ry	! [Ry] into [eV]
    ! Save the non-orthogonalized Hamiltonian:
    Scell(NSC)%H_non = Hij		! nondiagonalized Hamiltonian
    Scell(NSC)%Sij = Sij		! save Overlap matrix
-   !$OMP END WORKSHARE
    
    !-----------------------------------
    ! 3) Orthogonalize the Hamiltonian using Lowedin procidure
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
    call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, Scell(NSC)%eigen_S)	! below
    
-   !$OMP WORKSHARE
    Scell(NSC)%Hij = Hij ! save orthogonalized but non-diagonalized Hamiltonian
-   !$OMP END WORKSHARE
    
    !-----------------------------------
    ! 4) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
@@ -493,22 +487,18 @@ subroutine Hamil_tot_NRL_unitcell(numpar, Scell, NSC, TB_Hamil, Err)
 !$omp end parallel
 
    ! 2) Convert the Hamiltonian on-site energies from Rydbergs into eVs:
-   !$OMP WORKSHARE
    Hij = Hij*g_Ry	! [Ry] into [eV]
    ! Save the non-orthogonalized Hamiltonian:
    Scell(NSC)%H_non = Hij		! nondiagonalized Hamiltonian
    Scell(NSC)%Sij = Sij		! save Overlap matrix
-   !$OMP END WORKSHARE
    
    !-----------------------------------
    ! 3) Orthogonalize the Hamiltonian using Lowedin procidure
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
    call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, Scell(NSC)%eigen_S) ! below
    
-   !$OMP WORKSHARE
    where (ABS(Hij) < epsylon) Hij = 0.0d0
    Scell(NSC)%Hij = Hij ! save orthogonalized but non-diagonalized Hamiltonian
-   !$OMP END WORKSHARE
    
    !-----------------------------------
    ! 4) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
@@ -721,10 +711,10 @@ subroutine Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, eigen_S) ! below
       print*, trim(adjustl(Error_descript))
    endif
    ! Test if diagonalization of S matrix worked well:
-   !$OMP WORKSHARE
+
    N_neg = COUNT(Ev < 0.0d0)
    N_zero = COUNT(ABS(Ev) < epsylon)
-   !$OMP END WORKSHARE
+
    if ( (N_zero > 0) .or. (N_neg > 0) ) then
       print*, 'Subroutine Loewdin_Orthogonalization has problems in the overlap matrix:'
       print*, 'Negative: ', N_neg, 'Zeros: ', N_zero
@@ -738,11 +728,11 @@ subroutine Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, eigen_S) ! below
 
    ! 2) construct S = [1/sqrt(Ev)]:
    allocate(s_mat(Nsiz,Nsiz)) ! temporary array with matrix of 1/sqrt(Ev)
-   !$OMP WORKSHARE
+
    s_mat = 0.0d0 ! to start from
    ! Construct S matrix if eigenstates are non-zero:
    forall (i1=1:size(Ev), ABS(Ev(i1)) > epsylon) s_mat(i1,i1) = 1.0d0/dsqrt(Ev(i1))
-   !$OMP END WORKSHARE
+
 
    ! 3) construct X = S*s_mat [Szabo "Modern Quantum Chemistry" 1986, p. 144, Eq.(3.169)]
    call mkl_matrix_mult('N', 'N', Sij, s_mat, Xij) ! module "Algebra_tools"
@@ -1098,10 +1088,10 @@ subroutine Loewdin_Orthogonalization_c8(Nsiz, Sij, Hij, Err) ! below
       print*, trim(adjustl(Error_descript))
    endif
    ! Test if diagonalization of S matrix worked well:
-   !!$OMP WORKSHARE
+
    N_neg = COUNT(Ev < 0.0d0)
    N_zero = COUNT(ABS(Ev) < epsylon)
-   !!$OMP END WORKSHARE
+
    if ( (N_zero > 0) .or. (N_neg > 0) ) then
       print*, 'Subroutine Loewdin_Orthogonalization_c8 has zero or negative eigenvalues in the COMPLEX overlap matrix!'
       print*, 'Negative: ', N_neg, 'Zero: ', N_zero
@@ -1492,12 +1482,10 @@ subroutine Construct_Vij_NRL(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
    if (.not.allocated(M_SVij)) allocate(M_SVij(nat,nat,10))	! each pair of atoms, all 10 V functions
    if (.not.allocated(M_dSVij)) allocate(M_dSVij(nat,nat,10))	! each pair of atoms, all 10 V functions
    
-   !$OMP WORKSHARE
    M_Vij = 0.0d0
    M_dVij = 0.0d0
    M_SVij = 0.0d0
    M_dSVij = 0.0d0
-   !$OMP END WORKSHARE
    
    ! Construct matrix of all the radial functions for each pair of atoms, in 2 steps:
    
@@ -2092,12 +2080,11 @@ subroutine Attract_TB_Forces_Press_NRL(TB_Hamil, Scell, NSC, numpar, Aij, M_Vij,
       allocate(dS_press(9,n))
       allocate(dHij(9,n,size(Aij,2)))
       allocate(dSij(9,n,size(Aij,2)))
-      !$OMP WORKSHARE
+
       dHij = 0.0d0
       dSij = 0.0d0
       dwr_press = 0.0d0
       dS_press = 0.0d0
-      !$OMP END WORKSHARE
       
       call dHamil_tot_Press_NRL(Scell(NSC)%MDatoms, Scell, NSC, numpar, TB_Hamil, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, dHij, dSij)
       

@@ -62,7 +62,7 @@ subroutine construct_TB_H_Molteni(numpar, matter, TB_Hamil, Scell, NSC, Ha, Err)
    ! Construct TB Hamiltonian (with Molteni parameters):
    call Hamil_tot_M(numpar, Scell, NSC, TB_Hamil, Ha) ! see below
    Scell(NSC)%H_non = Ha ! save non-diagonalized Hamiltonian
-   !call check_symmetry(Ha) ! just for testing, must be hermitian Hamiltonian
+   !call check_symmetry(Ha, numpar%MPI_param) ! just for testing, must be hermitian Hamiltonian
 
    ! Diagonalize symmetric Hamiltonian to get electron energy levels:
    call sym_diagonalize(Ha, Scell(NSC)%Ei, Error_descript, check_M=.true.) ! module "Algebra_tools"
@@ -568,9 +568,9 @@ subroutine dHij_s_M(TB_Hamil, atoms, Scell, NSC, numpar, Aij, M_x1, M_xrr) ! att
       
       call dHamil_tot_s_M(dHijx_s_all, dHijy_s_all, dHijz_s_all, TB_Hamil, Scell, NSC, numpar, k, M_x1, M_xrr, M_Vs, M_dVs) ! see below
 
-!       call check_symmetry(dHijx_s_all) ! just for testing, must be hermitian Hamiltonian
-!       call check_symmetry(dHijy_s_all) ! just for testing, must be hermitian Hamiltonian
-!       call check_symmetry(dHijz_s_all) ! just for testing, must be hermitian Hamiltonian
+!       call check_symmetry(dHijx_s_all, numpar%MPI_param) ! just for testing, must be hermitian Hamiltonian
+!       call check_symmetry(dHijy_s_all, numpar%MPI_param) ! just for testing, must be hermitian Hamiltonian
+!       call check_symmetry(dHijz_s_all, numpar%MPI_param) ! just for testing, must be hermitian Hamiltonian
 
       call Attract_TB_H3_near_M(Aij, dHijx_s_all, dHijy_s_all, dHijz_s_all, Scell, NSC, Eelectr_s) ! see below
       Scell(NSC)%MDatoms(k)%forces%att(:) = Eelectr_s(:) ! save attractive forces

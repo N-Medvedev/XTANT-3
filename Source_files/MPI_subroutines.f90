@@ -3708,12 +3708,13 @@ subroutine do_MPI_Allreduce_real_variable(MPI_param, error_message, var)
    character(*), intent(in) :: error_message
    !--------------------------
    character(300) :: error_report
-
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
    ! https://rookiehpc.org/mpi/docs/mpi_allreduce/index.html
    CALL MPI_Allreduce(MPI_IN_PLACE, var, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
 
    error_report = trim(adjustl(error_message))//' {Allreduce_real_variable}'
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+#endif
 end subroutine do_MPI_Allreduce_real_variable
 
 
@@ -3725,13 +3726,14 @@ subroutine do_MPI_Allreduce_real_1d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz
    character(300) :: error_report
-
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
    Nsiz = size(array)
 
    CALL MPI_Allreduce(MPI_IN_PLACE, array, Nsiz, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
 
    error_report = trim(adjustl(error_message))//' {Allreduce_real_1d_array}'
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+#endif
 end subroutine do_MPI_Allreduce_real_1d_array
 
 
@@ -3743,7 +3745,7 @@ subroutine do_MPI_Allreduce_real_2d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz(2)
    character(300) :: error_report
-
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
    Nsiz(1) = size(array,1)
    Nsiz(2) = size(array,2)
 
@@ -3751,6 +3753,7 @@ subroutine do_MPI_Allreduce_real_2d_array(MPI_param, error_message, array)
 
    error_report = trim(adjustl(error_message))//' {Allreduce_real_2d_array}'
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+#endif
 end subroutine do_MPI_Allreduce_real_2d_array
 
 
@@ -3762,7 +3765,7 @@ subroutine do_MPI_Allreduce_real_3d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz(3)
    character(300) :: error_report
-
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
    Nsiz(1) = size(array,1)
    Nsiz(2) = size(array,2)
    Nsiz(3) = size(array,3)
@@ -3771,6 +3774,7 @@ subroutine do_MPI_Allreduce_real_3d_array(MPI_param, error_message, array)
 
    error_report = trim(adjustl(error_message))//' {Allreduce_real_3d_array}'
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+#endif
 end subroutine do_MPI_Allreduce_real_3d_array
 
 
@@ -3784,7 +3788,7 @@ subroutine do_MPI_Reduce_real_variable(MPI_param, error_message, var)
    character(*), intent(in) :: error_message
    !--------------------------
    character(300) :: error_report
-
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
    if (MPI_param%process_rank == 0) then   ! MPI master process gets the value from itself, hence MPI_IN_PLACE
       call MPI_Reduce(MPI_IN_PLACE, var, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, MPI_param%ierror)   ! module "mpi"
    else
@@ -3793,6 +3797,7 @@ subroutine do_MPI_Reduce_real_variable(MPI_param, error_message, var)
 
    error_report = trim(adjustl(error_message))//' {Reduce_real_variable}'
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+#endif
 end subroutine do_MPI_Reduce_real_variable
 
 
@@ -3804,7 +3809,7 @@ subroutine do_MPI_Reduce_real_1d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz
    character(300) :: error_report
-
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
    Nsiz = size(array)
 
    if (MPI_param%process_rank == 0) then   ! MPI master process gets the value from itself, hence MPI_IN_PLACE
@@ -3815,6 +3820,7 @@ subroutine do_MPI_Reduce_real_1d_array(MPI_param, error_message, array)
 
    error_report = trim(adjustl(error_message))//' {Reduce_real_1d_array}'
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+#endif
 end subroutine do_MPI_Reduce_real_1d_array
 
 
@@ -3826,7 +3832,7 @@ subroutine do_MPI_Reduce_real_2d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz(2)
    character(300) :: error_report
-
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
    Nsiz(1) = size(array,1)
    Nsiz(2) = size(array,2)
 
@@ -3838,6 +3844,7 @@ subroutine do_MPI_Reduce_real_2d_array(MPI_param, error_message, array)
 
    error_report = trim(adjustl(error_message))//' {Reduce_real_2d_array}'
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+#endif
 end subroutine do_MPI_Reduce_real_2d_array
 
 
@@ -3849,7 +3856,7 @@ subroutine do_MPI_Reduce_real_3d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz(3)
    character(300) :: error_report
-
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
    Nsiz(1) = size(array,1)
    Nsiz(2) = size(array,2)
    Nsiz(3) = size(array,3)
@@ -3862,6 +3869,7 @@ subroutine do_MPI_Reduce_real_3d_array(MPI_param, error_message, array)
 
    error_report = trim(adjustl(error_message))//' {Reduce_real_3d_array}'
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+#endif
 end subroutine do_MPI_Reduce_real_3d_array
 
 
