@@ -214,7 +214,7 @@ endif
 
 
 print*, '[MPI process #', g_numpar%MPI_param%process_rank, '] test pause'
-!pause 'MPI implementation is done up to here'
+pause 'MPI implementation is done up to here'
 
 
 

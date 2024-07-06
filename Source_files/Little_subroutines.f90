@@ -865,18 +865,28 @@ pure subroutine linear_interpolation(xarray, yarray, x, y, i, x0, y0, replac)
    integer, intent(in) :: i   ! index for x-array
    real(8), intent(in), optional :: x0, y0 ! assume initial value for i = 1
    logical, intent(in), optional :: replac ! replace x0 by the given one independantly on which i is it?
+
+   !Check if there is even a need to interpolate:
+   if (i > 1) then
+      if ( abs(yarray(i) - yarray(i-1) < 1.0d-6*yarray(i) ) ) then
+         y = yarray(i)  ! if the values are the same, no need to interpolate
+         return
+      endif
+   endif
+
+
    REDO: if (.not.present(replac)) then
     if (i .GT. 1) then
-      if (x - xarray(i-1) .GE. 0.0d0) then
+      if ( abs(x - xarray(i-1)) .GE. 1.0d-6*xarray(i-1)) then
          y = yarray(i-1) + (yarray(i) - yarray(i-1))/(xarray(i) - xarray(i-1))*(x - xarray(i-1))
       else
          if (present(y0) .and. present(x0)) then
             y = y0 + (yarray(i) - y0)/(xarray(i) - x0)*(x - x0)
          else
             if (present(x0)) then
-               y = (yarray(i) - 0)/(xarray(i) - x0)*(x - x0)
+               y = (yarray(i) - 0.0d0)/(xarray(i) - x0)*(x - x0)
             else
-               y = (yarray(i) - 0)/(xarray(i) - 0)*(x - 0)
+               y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
             endif
          endif
       endif
@@ -885,9 +895,9 @@ pure subroutine linear_interpolation(xarray, yarray, x, y, i, x0, y0, replac)
          y = y0 + (yarray(i) - y0)/(xarray(i) - x0)*(x - x0)
       else
          if (present(x0)) then
-            y = (yarray(i) - 0)/(xarray(i) - x0)*(x - x0)
+            y = (yarray(i) - 0.0d0)/(xarray(i) - x0)*(x - x0)
          else
-            y = (yarray(i) - 0)/(xarray(i) - 0)*(x - 0)
+            y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
          endif
       endif
     endif
@@ -896,16 +906,17 @@ pure subroutine linear_interpolation(xarray, yarray, x, y, i, x0, y0, replac)
        y = y0 + (yarray(i) - y0)/(xarray(i) - x0)*(x - x0)
     else
       if (i .GT. 1) then
-         if (x - xarray(i-1) .GE. 0.0d0) then
+         !if (x - xarray(i-1) .GE. 0.0d0) then
+         if ( abs(x - xarray(i-1)) .GE. 1.0d-6*xarray(i-1)) then
             y = yarray(i-1) + (yarray(i) - yarray(i-1))/(xarray(i) - xarray(i-1))*(x - xarray(i-1))
          else
             if (present(y0) .and. present(x0)) then
                y = y0 + (yarray(i) - y0)/(xarray(i) - x0)*(x - x0)
             else
                if (present(x0)) then
-                  y = (yarray(i) - 0)/(xarray(i) - x0)*(x - x0)
+                  y = (yarray(i) - 0.0d0)/(xarray(i) - x0)*(x - x0)
                else
-                  y = (yarray(i) - 0)/(xarray(i) - 0)*(x - 0)
+                  y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
                endif
             endif
          endif

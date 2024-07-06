@@ -29,6 +29,13 @@ use Little_subroutines, only : Find_in_array_monoton, Fermi_interpolation, linea
                         Find_in_monotonous_1D_array, Gaussian, print_progress
 use MC_cross_sections, only : TotIMFP, Mean_free_path
 
+#ifdef MPI_USED
+   use MPI_subroutines, only : MPI_barrier_wrapper
+#endif
+
+
+
+
 implicit none
 PRIVATE
 
@@ -211,7 +218,7 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    matter%Atoms(1)%Ip(Nshl) = Scell%E_gap ! [eV]
 
    ! Update VB impact-ionization scattering CS:
-   call update_ionization_CS(matter, Nshl, Scell%E_gap - Egap_old)  ! below
+   call update_ionization_CS(matter, Nshl, Scell%E_gap - Egap_old, numpar)  ! below
 
    ! For noneuqilibrium distributions (BO or relaxation time), threshold cannot be higher than
    ! the topmost level of CB, otherwise, there is no way to place an incomming electron:
@@ -271,10 +278,11 @@ end subroutine find_band_gap
 
 
 
-subroutine update_ionization_CS(matter, Nshl, dE)
+subroutine update_ionization_CS(matter, Nshl, dE, numpar)
    type(solid), intent(inout) :: matter ! materil parameters
    integer, intent(in) :: Nshl   ! VB index
    real(8), intent(in) :: dE  ! energy shift
+   type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
    !----------------------------------------
    real(8) :: IMFP
    integer :: i, j, iE, N_sh

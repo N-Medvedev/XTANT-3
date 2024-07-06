@@ -265,20 +265,25 @@ subroutine MPI_share_electron_MFPs(matter, numpar, Err)
    do i = 1, size(matter%Atoms)
       call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_EMFP%E}', matter%Atoms(i)%El_EMFP%E) ! below
       call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_EMFP%L}', matter%Atoms(i)%El_EMFP%L) ! below
+      Nsiz = size(matter%Atoms(i)%El_MFP)
       do k = 1, Nsiz
          call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_MFP(k)%E}', matter%Atoms(i)%El_MFP(k)%E) ! below
          call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_MFP(k)%L}', matter%Atoms(i)%El_MFP(k)%L) ! below
+         !print*, i, k, matter%Atoms(1)%El_MFP
       enddo ! k = 1, Nsiz
-      do j = 1, N_Te_points
-         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_MFP_vs_T(j)%E}', matter%Atoms(i)%El_MFP_vs_T(j)%E) ! below
-         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_MFP_vs_T(j)%L}', matter%Atoms(i)%El_MFP_vs_T(j)%L) ! below
-      enddo ! j = 1, N_Te_points
+      if (i == 1) then ! CS vs Te is only defined for the VB, represented as the first element (others are undefined):
+         do j = 1, N_Te_points
+            call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_MFP_vs_T(j)%E}', matter%Atoms(i)%El_MFP_vs_T(j)%E) ! below
+            call broadcast_array(MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%El_MFP_vs_T(j)%L}', matter%Atoms(i)%El_MFP_vs_T(j)%L) ! below
+         enddo ! j = 1, N_Te_points
+      endif
    enddo ! i = 1, size(matter%Atoms)
 
    !-----------------------------------------
    ! Synchronize all processes:
    call MPI_barrier_wrapper(numpar%MPI_param)   ! below
    !-----------------------------------------
+   !pause 'MPI_share_electron_MFPs'
    nullify(MPI_param)
 #endif
 end subroutine MPI_share_electron_MFPs

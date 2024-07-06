@@ -29,6 +29,9 @@ use Objects
 use Little_subroutines, only : fast_pow, count_3d, Fermi_function, d_Fermi_function, d2_Fermi_function
 use Atomic_tools, only : get_interplane_indices, shortest_distance, get_near_neighbours, get_number_of_image_cells, &
             distance_to_given_cell
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce
+#endif
 
 implicit none
 PRIVATE
@@ -133,19 +136,59 @@ subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
    integer, intent(in) :: NSC ! number of supercell
    !type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
    class(TB_vdW), dimension(:,:), allocatable, intent(in)   :: TB_Waals ! van der Waals parameters within TB
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a
    !=====================================================
    real(8) :: sum_a, a_r, V_vdW, E_pot, E_pot_one
+   real(8), dimension(Scell(1)%Na) :: E_pot_array
    integer :: Nx, Ny, Nz, zb(3)
    INTEGER(4) i1, j1, m, atom_2, x_cell, y_cell, z_cell
    logical :: origin_cell
-   integer, pointer :: KOAi, KOAj
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
    
    ! Find how many image cells along each direction we need to include:
    call get_mirror_cell_num(Scell, NSC, numpar, Scell(NSC)%MDatoms, Nx, Ny, Nz) ! subroutine above
    
    sum_a = 0.0d0
+   ! Construct matrix of all the radial functions for each pair of atoms:
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Scell(NSC)%Na
+   E_pot_array = 0.0d0  ! initializing
+   ! Do the cycle (parallel) calculations:
+   do i1 = Nstart, Nend, N_incr  ! each process does its own part
+   !do i1 = 1, Scell(NSC)%Na ! all atoms
+      XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
+         YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+            ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+               zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+               origin_cell = ALL(zb==0) ! if it is the origin cell
+
+               do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
+                  if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+                     !call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
+                     call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
+                     !sum_a = sum_a + vdW_Girifalco(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
+                     E_pot_one = vdW_energy(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
+                     sum_a = sum_a + E_pot_one
+                     E_pot_array(i1) = E_pot_array(i1) + E_pot_one
+                  endif ! (j1 .NE. i1)
+               enddo ! j1
+            enddo ZC2
+         enddo YC2
+      enddo XC2
+   enddo ! i1
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_vdW_s:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'sum_a', sum_a) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'E_pot_array', E_pot_array) ! module "MPI_subroutines"
+
+   ! And save for each atom:
+   Scell(NSC)%MDAtoms(:)%Epot = Scell(NSC)%MDAtoms(:)%Epot + E_pot_array(:)*0.5d0 ! exclude double-counting
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell, E_pot, E_pot_one) shared(NSC)
    !$omp do reduction( + : sum_a)
    XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
@@ -173,6 +216,7 @@ subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
    enddo XC
    !$omp end do
    !$omp end parallel
+#endif
    a = sum_a * 0.5d0 ! compensate for the double counting
    !pause 'get_vdW_s pause'
 end subroutine get_vdW_s

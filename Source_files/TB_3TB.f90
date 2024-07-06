@@ -41,6 +41,10 @@ use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, &
 use TB_DFTB, only : identify_DFTB_basis_size, identify_DFTB_orbitals_per_atom, Get_overlap_S_matrix_DFTB
 use Dealing_with_3TB, only: find_3bdy_ind
 
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce
+#endif
+
 
 implicit none
 PRIVATE
@@ -55,8 +59,8 @@ public :: get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, Attract_TB_Forces_P
 
 
 subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp)
-   type(Numerics_param), intent(in), target :: numpar 	! all numerical parameters
-   type(TB_H_3TB), dimension(:,:), intent(in), target :: TB	! All parameters of the Hamiltonian of TB
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(TB_H_3TB), dimension(:,:), intent(in) :: TB	! All parameters of the Hamiltonian of TB
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:,:,:), allocatable, intent(inout) :: M_Vij	! matrix of hoppings for Hamiltonian for all pairs of atoms, all orbitals
@@ -70,6 +74,8 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
    integer :: i, j, atom_2, ki, N_bs, ihop, atom_3, k, at_ind, sh1, sh2
    real(8), pointer :: rm
    integer, pointer :: nat, m, KOA1, KOA2, KOA3, mm
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    nat => Scell(NSC)%Na	! number of atoms in the supercell
    ! number of hopping integrals for this basis set in 3TB:
@@ -91,6 +97,92 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
    ! 2-body interaction terms:
 
    ! Construct matrix of all the radial functions for each pair of atoms:
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   AT10:do j = Nstart, Nend, N_incr  ! each process does its own part
+   !AT10:do j = 1,nat	! atom #1
+      m => Scell(NSC)%Near_neighbor_size(j)
+      AT20:do atom_2 = 1,m ! do only for atoms close to that one
+         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
+         ! Kinds of atoms (elements indices):
+         KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! atom #1
+         KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! atom #2
+
+         r = Scell(NSC)%Near_neighbor_dist(j,atom_2,4) ! at this distance, R [A]
+
+         ! Get Laguerre polynomials and its derivatives to be reused below:
+         call get_Laguerres(r, TB(KOA1,KOA2)%rc, Laguer) ! below
+         call get_d_Laguerres(r, TB(KOA1,KOA2)%rc, d_Laguer) ! below
+
+         ! Also get the cut-off functions, to include directly into radial dependence:
+         Fermi = Fermi_function(TB(KOA1,KOA2)%rcut, TB(KOA1,KOA2)%d, r)   ! module "Little_subroutines"
+         dFermi = d_Fermi_function(TB(KOA1,KOA2)%rcut, TB(KOA1,KOA2)%d, r)   ! module "Little_subroutines"
+
+         ! Get the exponential term:
+         exp_ad = Laguerre_exponent(r, TB(KOA1,KOA2)%rc) ! below
+         d_exp_ad = d_Laguerre_exponent(r, TB(KOA1,KOA2)%rc) ! below
+
+         ! Include the exponenet and the cut-off in the solution:
+         ! 1) First, construct the derivative via chain rule:
+         d_Laguer(:) = d_Laguer(:)*exp_ad*Fermi + Laguer(:)*(d_exp_ad*Fermi + exp_ad*dFermi)
+         ! 2) Now, update the Laguerres themselves:
+         Laguer(:) = Laguer(:)*exp_ad*Fermi
+
+         ! Save [Laguerre * exp(-a*r_ij) * cutoff]:
+         M_Lag_exp(j,i,:) = Laguer(:)
+         M_d_Lag_exp(j,i,:) = d_Laguer(:)
+
+         ! All radial functions for Hamiltonian (functions below):
+         M_Vij(j,i,1) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, Laguer, 1, 5)   ! (s s sigma)
+         M_SVij(j,i,1) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, Laguer, 1, 6)  ! (s s sigma)
+         select case (numpar%basis_size_ind)
+         case (1)    ! sp3
+            M_Vij(j,i,2) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, Laguer, 2, 5)   ! (s p sigma)
+            M_SVij(j,i,2) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, Laguer, 2, 6) ! (s p sigma)
+            M_Vij(j,i,3) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, Laguer, 4, 5)   ! (p p sigma)
+            M_SVij(j,i,3) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, Laguer, 4, 6) ! (p p sigma)
+            M_Vij(j,i,4) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, Laguer, 5, 5)   ! (p p pi)
+            M_SVij(j,i,4) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, Laguer, 5, 6) ! (p p pi)
+         case (2)    ! sp3d5
+            do ihop = 2, 10
+               M_Vij(j,i,ihop) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, Laguer, ihop, 5)
+               M_SVij(j,i,ihop) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, Laguer, ihop, 6)
+            enddo
+         endselect
+
+         ! All derivatives of the radial functions and the overlap matrix:
+         M_dVij(j,i,1) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, d_Laguer, 1, 5)   ! (s s sigma)
+         M_dSVij(j,i,1) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, d_Laguer, 1, 6) ! (s s sigma)
+         select case (numpar%basis_size_ind)
+         case (1)    ! sp3
+            M_dVij(j,i,2) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, d_Laguer, 2, 5)   ! (s p sigma)
+            M_dSVij(j,i,2) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, d_Laguer, 2, 6) ! (s p sigma)
+            M_dVij(j,i,3) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, d_Laguer, 4, 5)   ! (p p sigma)
+            M_dSVij(j,i,3) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, d_Laguer, 4, 6) ! (p p sigma)
+            M_dVij(j,i,4) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, d_Laguer, 5, 5)   ! (p p pi)
+            M_dSVij(j,i,4) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, d_Laguer, 5, 6) ! (p p pi)
+         case (2)    ! sp3d5
+            do ihop = 2, 10
+               M_dVij(j,i,ihop) = radial_function_3TB(r, TB(KOA1,KOA2)%Vrfx, d_Laguer, ihop, 5)
+               M_dSVij(j,i,ihop) = radial_function_3TB(r, TB(KOA1,KOA2)%Srfx, d_Laguer, ihop, 6)
+            enddo
+         endselect
+
+      enddo AT20
+   enddo AT10
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Construct_Vij_3TB:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_Lag_exp', M_Lag_exp) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_d_Lag_exp', M_d_Lag_exp) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_Vij', M_Vij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_SVij', M_SVij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_dVij', M_dVij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_dSVij', M_dSVij) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
 !$omp PARALLEL
 !$omp do private(j, m, atom_2, i, KOA1, KOA2, r, Laguer, d_Laguer, exp_ad, d_exp_ad, ihop, Fermi, dFermi)
    AT1:do j = 1,nat	! atom #1
@@ -170,6 +262,7 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
    enddo AT1
 !$omp end do
 !$omp END PARALLEL
+#endif
 
    nullify(rm, nat, m, KOA1, KOA2, KOA3)	! clean up at the end
 end subroutine Construct_Vij_3TB
@@ -215,7 +308,7 @@ end subroutine construct_TB_H_3TB
 
 
 subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp, M_lmn, Mjs, Err, scc, H_scc_0, H_scc_1)
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_H_3TB), dimension(:,:), intent(in) :: TB_Hamil   ! parameters of the Hamiltonian of TB
@@ -238,6 +331,9 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    real(8), pointer :: x, y, z
    integer, pointer :: KOA1, KOA2, m
    character(200) :: Error_descript
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
 
    Error_descript = ''
    epsylon = 1d-12	! acceptable tolerance : how small an overlap integral can be, before we set it to zero
@@ -265,6 +361,74 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    WNTSCC:if (do_scc == 0) then   ! no scc calculations, construct regular (zero-order) Hamiltonian:
 
       ! 1) Construct non-orthogonal Hamiltonian H and Overlap matrix S in 2 steps:
+#ifdef MPI_USED   ! use the MPI version
+      if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
+      if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = nat
+      ! Do the cycle (parallel) calculations:
+      do j = Nstart, Nend, N_incr  ! each process does its own part
+      !do j = 1,nat	! atom #1
+         m => Scell(NSC)%Near_neighbor_size(j)
+
+         do atom_2 = 0,m ! do only for atoms close to that one
+
+            if (atom_2 == 0) then ! the same atom
+               i = j    ! atom #2 = atom #1, onsite
+            else  ! different atoms
+               i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
+            endif
+
+            IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
+               ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
+               ! Contruct a block-hamiltonian:
+               call Hamilton_one_3TB(numpar%basis_size_ind, Scell(NSC), j, i, TB_Hamil, Hij1, &
+                                    M_Vij, M_Lag_exp, M_lmn, Mjs)   ! below
+
+               ! Construct overlap matrix for this pair of atoms:
+               call Get_overlap_S_matrix_3TB(numpar%basis_size_ind, j, i, Sij1, M_SVij, M_lmn)  ! below
+
+               do j1 = 1,n_orb ! all orbitals of atom #1
+                  l = (j-1)*n_orb+j1   ! atom #1 (j)
+                  do i1 = 1,n_orb ! all orbitals of atom #2
+                     k = (i-1)*n_orb+i1   ! atom #2 (i)
+                     ! We fill the upper triangle here
+                     ! (the order does not matter, just have to be consistent with the Slater-Koster functions):
+                     Hij(l,k) = Hij1(j1,i1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian
+                     Sij(l,k) = Sij1(j1,i1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices|
+                  enddo ! i1
+               enddo ! j1
+            endif IJ
+         enddo ! j
+      enddo ! i
+      deallocate(Hij1, Sij1)
+
+      ! b) Construct lower triangle - use symmetry:
+      do j = Nstart, Nend, N_incr  ! each process does its own part
+      !do j = 1,nat	! all atoms
+         m => Scell(NSC)%Near_neighbor_size(j)
+         do atom_2 = 1,m ! do only for atoms close to that one
+            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+            if (i < j) then ! lower triangle
+               do j1 = 1,n_orb ! all orbitals of atom #1
+                  l = (j-1)*n_orb+j1   ! atom #1
+                  do i1 = 1,n_orb ! all orbitals of atom #2
+                     k = (i-1)*n_orb+i1   ! atom #2
+                     Hij(l,k) = Hij(k,l)
+                     Sij(l,k) = Sij(k,l)
+                  enddo ! i1
+               enddo ! j1
+            endif
+         enddo ! j
+      enddo ! i
+
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in Hamil_tot_3TB:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Sij', Sij) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
 !$omp parallel private(j, m, atom_2, i, j1, l, i1, k, Hij1, Sij1)
       if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
       if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
@@ -331,6 +495,8 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
       enddo ! i
 !$omp end do
 !$omp end parallel
+#endif
+
       ! Check if Hamiltonian is symmetric (for testing purpuses):
 !     call check_symmetry(Hij, numpar%MPI_param) ! module "Algebra_tools"
 
@@ -360,7 +526,9 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript) ! module "Algebra_tools"
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Subroutine Hamil_tot_DFTB: '//trim(adjustl(Error_descript))
-      call Save_error_details(Err, 6, Error_descript)
+      if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+         call Save_error_details(Err, 6, Error_descript)
+      endif
       print*, trim(adjustl(Error_descript))
    endif
    Scell(NSC)%Hij_sol = Hij		! eigenvectors of nondiagonalized Hamiltonian
@@ -382,7 +550,52 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
       Scell(NSC)%PRRy = 0.0d0
       Scell(NSC)%PRRz = 0.0d0
       ! Generalized Trani expression for non-orthogonal Hamiltonian:
+#ifdef MPI_USED   ! use the MPI version
+      do j = Nstart, Nend, N_incr  ! each process does its own part
+      !do j = 1,nat	! all atoms
+         m => Scell(NSC)%Near_neighbor_size(j)
+         do atom_2 = 0,m ! do only for atoms close to that one
+            if (atom_2 .EQ. 0) then
+               i = j
+            else
+               i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+               x => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
+               y => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
+               z => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
+            endif
+            if (i > 0) then ! if there really is a nearest neighbor
+               do j1 = 1,n_orb	! all orbitals
+                  l = (j-1)*n_orb+j1
+                  do i1 = 1,n_orb	! all orbitals
+                     k = (i-1)*n_orb+i1
+                     if (i == j) then ! for the diagonal elements according to Trani:
+                        !SH_1 =  0.0d0
+                        SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        Scell(NSC)%PRRx(k,l) = SH_1
+                        Scell(NSC)%PRRy(k,l) = SH_1
+                        Scell(NSC)%PRRz(k,l) = SH_1
+                     else
+                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        Scell(NSC)%PRRx(k,l) = x*SH_1
+                        Scell(NSC)%PRRy(k,l) = y*SH_1
+                        Scell(NSC)%PRRz(k,l) = z*SH_1
+                     endif	! note that the PRR are not diagonal
+                     if (Scell(NSC)%PRRx(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRx(k,l)
+                     if (Scell(NSC)%PRRy(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRy(k,l)
+                     if (Scell(NSC)%PRRz(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRz(k,l)
+                  enddo ! i1
+               enddo ! j1
+            endif ! (i > 0)
+         enddo ! j
+      enddo ! i
 
+       ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in Hamil_tot_3TB:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRx', Scell(NSC)%PRRx) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRy', Scell(NSC)%PRRy) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRz', Scell(NSC)%PRRz) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
       !$omp parallel
       !$omp do private(j, m, atom_2, i, x, y, z, j1, l, i1, k, SH_1)
       do j = 1,nat	! all atoms
@@ -423,6 +636,8 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
       enddo ! i
       !$omp end do
       !$omp end parallel
+#endif
+
       ! mass and Plank constant cancel out in the final expression (subroutine get_Trani, module "Optical_parameters")
       temp = 1.0d0
 
@@ -3087,15 +3302,18 @@ end subroutine dHopping_Press_3TB
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! Multiplication of the two Koster-Slater angular functions (Mis*Mjs):
 
-subroutine get_Mjs_factors(basis_ind, Scell, M_lmn, Mjs)
+subroutine get_Mjs_factors(basis_ind, Scell, M_lmn, Mjs, numpar)
    integer, intent(in) :: basis_ind ! size of the basis set
    type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines
    real(8), dimension(:,:,:), allocatable, intent(inout) :: Mjs ! K-S multiplication with dummy arguments for radial function
-
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   !------------------------
    integer :: atom_2, j, i, Nsiz, nat
    integer, pointer :: m
    real(8), pointer :: x1, y1, z1, r1
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    nat = Scell%Na ! number of atoms
    ! Find the number of orbitals:
@@ -3104,6 +3322,37 @@ subroutine get_Mjs_factors(basis_ind, Scell, M_lmn, Mjs)
    if (.not.allocated(Mjs)) allocate( Mjs(nat,nat,Nsiz) )
    Mjs = 0.0d0 ! to start with
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, nat	! atom #1
+      m => Scell%Near_neighbor_size(i)
+      do atom_2 = 1,m ! do only for atoms close to that one
+         j = Scell%Near_neighbor_list(i,atom_2) ! atom #2
+         Mjs(i,j,1) = 1.0d0  ! s-s
+
+         if (basis_ind > 0) then ! p3 orbitals:
+            Mjs(i,j,2) = -M_lmn(1,i,j)   ! px-s
+            Mjs(i,j,3) = -M_lmn(2,i,j)   ! py-s
+            Mjs(i,j,4) = -M_lmn(3,i,j)   ! pz-s
+
+            if (basis_ind > 1) then ! d5 orbitals (functions from module "TB_Koster_Slater"):
+               Mjs(i,j,5) = t_s_dab(M_lmn(1,i,j),M_lmn(2,i,j),1.0d0)        ! dxy-s
+               Mjs(i,j,6) = t_s_dab(M_lmn(1,i,j),M_lmn(3,i,j),1.0d0)        ! dxz-s
+               Mjs(i,j,7) = t_s_dab(M_lmn(2,i,j),M_lmn(3,i,j),1.0d0)        ! dyz-s
+               Mjs(i,j,8) = t_s_dx2_y2(M_lmn(1,i,j),M_lmn(2,i,j),1.0d0)     ! (dx2-y2)-s
+               Mjs(i,j,9) = t_s_dz2_r2(M_lmn(1,i,j),M_lmn(2,i,j),M_lmn(3,i,j),1.0d0)    ! (d3z2-r2)-s
+            endif
+         endif
+      enddo
+   enddo
+   error_part = 'Error in 3TB: get_Mjs_factors:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Mjs', Mjs) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
 !$omp parallel
 !$omp do private(i, j, m, atom_2)
    do i = 1, nat	! atom #1
@@ -3142,6 +3391,7 @@ subroutine get_Mjs_factors(basis_ind, Scell, M_lmn, Mjs)
    enddo
 !$omp enddo
 !$omp end parallel
+#endif
    nullify(m)
 end subroutine get_Mjs_factors
 

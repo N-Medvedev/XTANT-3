@@ -1532,7 +1532,7 @@ subroutine Hamil_tot(numpar, Scell, NSC, TB_Hamil, Hij)
 
    Hij = 0.0d0
 
-#ifdef MPI_USED   ! use the MPI version
+#ifdef MPI_USED   ! use the MPI version [tested, correct]
    N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
    Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
    Nend = nat
@@ -1583,7 +1583,7 @@ subroutine Hamil_tot(numpar, Scell, NSC, TB_Hamil, Hij)
       enddo ! atom_2
    enddo ! j
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
-   error_part = 'Error in Pettifor: Hamil_tot'
+   error_part = 'Error in Pettifor: Hamil_tot:'
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
    if (numpar%optic_model .EQ. 3) then ! collect matrix elements:
       call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRx', Scell(NSC)%PRRx) ! module "MPI_subroutines"

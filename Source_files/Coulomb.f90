@@ -458,6 +458,7 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
    real(8), intent(out) :: a	! [eV]
    !=====================================================
    real(8) :: sum_a, a_r, tot_pot, Coul_pot, E_rep, E_rep_one
+   real(8), dimension(Scell(NSC)%Na) :: E_rep_array
    integer :: Nx, Ny, Nz, zb(3), N_ind
    INTEGER(4) i1, j1, m, atom_2, x_cell, y_cell, z_cell
    logical :: origin_cell
@@ -473,11 +474,11 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
    sum_a = 0.0d0
 
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
-   Scell(NSC)%MDAtoms(:)%Epot = 0.0d0 ! to start with
 
    N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
    Nstart = 1 + numpar%MPI_param%process_rank
    Nend = Scell(NSC)%Na
+   E_rep_array = 0.0d0  ! initialize
 
    ! Do the cycle (parallel) calculations:
    do i1 = Nstart, Nend, N_incr  ! each process does its own part
@@ -488,18 +489,16 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
                !zb = (/dble(Nx),dble(Ny),dble(Nx)/) ! vector of image of the super-cell
                zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
                origin_cell = ALL(zb==0) ! if it is the origin cell
-               E_rep = 0.0d0  ! to restart
+
                do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
                   if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
                      call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
                      Coul_pot = Coulomb_pot(Scell, NSC, TB_Coul, i1, j1, a_r)    ! function below
                      sum_a = sum_a + Coul_pot
-                     E_rep = Coul_pot
+                     E_rep_array(i1) = E_rep_array(i1) + Coul_pot
 !                      if (i1 == N_ind) tot_pot = tot_pot + Coul_pot
                   endif ! (j1 .NE. i1)
                enddo ! j1
-               ! And save for each atom:
-               Scell(NSC)%MDAtoms(i1)%Epot = Scell(NSC)%MDAtoms(i1)%Epot + E_rep
             enddo ZC
          enddo YC
       enddo XC
@@ -508,7 +507,9 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
    error_part = 'Error in get_Coulomb_s'
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{sum_a}', sum_a) ! module "MPI_subroutines"
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Scell(NSC)%MDAtoms(:)%Epot}', Scell(NSC)%MDAtoms(:)%Epot) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{E_rep_array}', E_rep_array) ! module "MPI_subroutines"
+   ! And save for each atom:
+   Scell(NSC)%MDAtoms(:)%Epot = Scell(NSC)%MDAtoms(:)%Epot + E_rep_array(:)
 
 #else
    !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell, Coul_pot, E_rep)
@@ -527,7 +528,7 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
                      call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
                      Coul_pot = Coulomb_pot(Scell, NSC, TB_Coul, i1, j1, a_r)    ! function below
                      sum_a = sum_a + Coul_pot
-                     E_rep = Coul_pot
+                     E_rep = E_rep + Coul_pot
 !                      if (i1 == N_ind) tot_pot = tot_pot + Coul_pot
                   endif ! (j1 .NE. i1)
                enddo ! j1

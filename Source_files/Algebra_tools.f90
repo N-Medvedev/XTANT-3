@@ -860,12 +860,12 @@ subroutine r_diagonalize(M, Ev, Error_descript, print_Ei, check_M, use_DSYEV)
 !    CALL BLACS_GET(0, 0, ICONTXT)
 !    CALL BLACS_GRIDINIT(ICONTXT, ORDER, NPROW, NPCOL)
 !    CALL BLACS_GRIDINFO(ICONTXT, NPROW, NPCOL, MYROW, MYCOL)
-!    CALL PDSYEVD('V',  'U', 4, A, 1, 1, DESC_A, W, Z, 1, 1, DESC_Z, WORK , 0 , IWORK ,  0 ,  INFO)   ! ScaLAPACK
-   call dsyevd('V','U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
+!    CALL PDSYEVD('V', 'U', N, M, 1, 1, DESC_A, W, Z, 1, 1, DESC_Z, WORK , 0 , IWORK ,  0 ,  INFO)   ! ScaLAPACK
+   call dsyevd('V','U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! use LAPACK while ScaLAPACK isn't ready
 #else
    if (.not.present(use_DSYEV)) then
-      call dsyevd('V','U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
-!       call dsyevd_2stage('V','U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
+      call dsyevd('V', 'U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
+!     call dsyevd_2stage('V','U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
    else
       call DSYEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, INFO)
    endif
@@ -1350,11 +1350,22 @@ subroutine mkl_matrix_mult_r(TRANSA, TRANSB, A, B, ResultM)
    LDA = max(1,K,M)
    LDB = max(1,K,M)
    LDC = max(1,N)
+
+#ifdef MPI_USED
+!  ScaLAPACK to be implemented:
+!  https://www.ibm.com/docs/en/pessl/5.4?topic=lps-pdgemm-pzgemm-matrix-matrix-product-general-matrix-its-transpose-its-conjugate-transpose
+!    CALL BLACS_GET (0, 0, ICONTXT)
+!    CALL BLACS_GRIDINIT(ICONTXT, ORDER, NPROW, NPCOL)
+!    CALL BLACS_GRIDINFO(ICONTXT, NPROW, NPCOL, MYROW, MYCOL)
+!    CALL PDGEMM( 'N' ,  'N' , 6  , 4  , 5 , 1.0D0  , A , 1 , 1 , DESC_A , B , 1 , 1 , DESC_B ,  2.0D0 , C , 1 , 1 , DESC_C )
+   CALL dgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)  ! use LAPACK until ScaLAPACK is implemented
+#else
 #ifdef CUBLAS	! if CUBLAS library for GPU computing is used
 !    print*, 'CUBLAS'
    CALL cublas_dgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)
 #else	! if standard MKL or BLAS library is used
    CALL dgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)
+#endif
 #endif
 end subroutine mkl_matrix_mult_r
 

@@ -31,6 +31,11 @@ use ZBL_potential, only : ZBL_pot, d_ZBL_pot, d2_ZBL_pot
 use Little_subroutines, only : Find_monotonous_LE, linear_interpolation
 use Algebra_tools, only : cubic_function, d_cubic_function, d2_cubic_function
 
+#ifdef MPI_USED
+use MPI_subroutines, only : do_MPI_Allreduce
+#endif
+
+
 implicit none
 PRIVATE
 
@@ -45,15 +50,53 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! 
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Solid), intent(in), target :: matter   ! all material parameters
-   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    real(8), intent(out) :: a  ! [eV] short-range energy
    !------------------------
    real(8) :: sum_a, Short_range_pot, E_pot
    integer(4) :: i, atom_2
    real(8), pointer :: a_r, Z1, Z2
    integer, pointer :: j, KOA1, KOA2, m
+   real(8), dimension(Scell(1)%Na) :: E_pot_array
+   integer :: Nstart, Nend, N_incr
+   character(100) :: error_part
 
    sum_a = 0.0d0
+
+
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = Scell(NSC)%Na
+   E_pot_array = 0.0d0  ! initialize
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, Scell(NSC)%Na ! all atoms
+      m => Scell(NSC)%Near_neighbor_size(i)
+      KOA1 => Scell(NSC)%MDatoms(i)%KOA
+      Z1 => matter%Atoms(KOA1)%Z
+      do atom_2 = 1,m ! do only for atoms close to that one
+         j => Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+         if (j .GT. 0) then
+            KOA2 => Scell(NSC)%MDatoms(j)%KOA
+            Z2 => matter%Atoms(KOA2)%Z
+            a_r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4)	! at this distance, R
+            Short_range_pot = Shortrange_pot(TB_Expwall(KOA1,KOA2), a_r, Z1, Z2)    ! function below
+            sum_a = sum_a + Short_range_pot  ! total
+            E_pot_array(i) = E_pot_array(i) + Short_range_pot  ! for one atom
+!             print*, 'get_short_range_rep_s', sum_a, Short_range_pot, a_r, KOA1, KOA2
+         endif ! (j .GT. 0)
+      enddo ! j
+   enddo ! i
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_short_range_rep_s'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{sum_a}', sum_a) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{E_pot_array}', E_pot_array) ! module "MPI_subroutines"
+   ! And save for each atom:
+   Scell(NSC)%MDAtoms(:)%Epot = Scell(NSC)%MDAtoms(:)%Epot + E_pot_array(:)*0.5d0 ! to exclude double-counting
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(i, m, KOA1, Z1, atom_2, j, KOA2, Z2, a_r, Short_range_pot, E_pot)
    !$omp do reduction( + : sum_a)
    do i = 1, Scell(NSC)%Na ! all atoms
@@ -77,6 +120,7 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! 
    enddo ! i
    !$omp end do
    !$omp end parallel
+#endif
    a = sum_a*0.5d0   ! [eV], factor to compensate for double-counting
    nullify(a_r, j, m, KOA1, KOA2, Z1, Z2)
 end subroutine get_short_range_rep_s
@@ -791,15 +835,53 @@ subroutine get_Exp_wall_s(TB_Expwall, Scell, NSC, numpar, a)   ! Exponential wal
    type(TB_Exp_wall_simple), dimension(:,:), intent(in) :: TB_Expwall	! Exponential wall parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a	! [eV] exponential "wall" energy
    !----------------------
    real(8), pointer :: a_r
    real(8) :: sum_a, Expwall_pot, E_pot
+   real(8), dimension(Scell(1)%Na) :: E_pot_array
    INTEGER(4) i, atom_2
    integer, pointer :: j, KOA1, KOA2, m
+   integer :: Nstart, Nend, N_incr
+   character(100) :: error_part
    
    sum_a = 0.0d0
+
+
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = Scell(NSC)%Na
+   E_pot_array = 0.0d0  ! initializing
+
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, Scell(NSC)%Na ! all atoms
+      m => Scell(NSC)%Near_neighbor_size(i)
+      KOA1 => Scell(NSC)%MDatoms(i)%KOA
+      do atom_2 = 1,m ! do only for atoms close to that one
+         j => Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+         if (j .GT. 0) then
+            KOA2 => Scell(NSC)%MDatoms(j)%KOA
+            a_r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4)	! at this distance, R
+            Expwall_pot = Exp_wall_pot(TB_Expwall(KOA1,KOA2), a_r)    ! function below
+            sum_a = sum_a + Expwall_pot   ! total
+            E_pot_array(i) = E_pot_array(i) + Expwall_pot   ! for one atom
+         endif ! (j .GT. 0)
+      enddo ! j
+   enddo ! i
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_Exp_wall_s'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{sum_a}', sum_a) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{E_pot_array}', E_pot_array) ! module "MPI_subroutines"
+
+   ! And save for each atom:
+   Scell(NSC)%MDAtoms(:)%Epot = Scell(NSC)%MDAtoms(:)%Epot + E_pot_array(:) * 0.5d0   ! exclude double-counting
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(i, m, KOA1, atom_2, j, KOA2, a_r, Expwall_pot, E_pot)
    !$omp do reduction( + : sum_a)
    do i = 1, Scell(NSC)%Na ! all atoms
@@ -821,6 +903,8 @@ subroutine get_Exp_wall_s(TB_Expwall, Scell, NSC, numpar, a)   ! Exponential wal
    enddo ! i
    !$omp end do
    !$omp end parallel
+#endif
+
    a = sum_a*0.5d0	! [eV], factor to compensate for double-counting
    nullify(a_r, j, m, KOA1, KOA2)
 end subroutine get_Exp_wall_s

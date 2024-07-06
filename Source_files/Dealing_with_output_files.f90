@@ -1496,7 +1496,7 @@ subroutine write_energies(FN, time, nrg)
    nrg%Total + nrg%E_supce + nrg%El_high + nrg%Eh_tot, & ! Total energy (incl. holes)
    nrg%E_vdW, &   ! van der Waals
    nrg%E_expwall  ! Short-range repulsive
-   print*, nrg%Total, nrg%E_supce, nrg%El_high
+   !print*, nrg%Total, nrg%E_supce, nrg%El_high
 end subroutine write_energies
 
 

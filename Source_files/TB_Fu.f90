@@ -32,6 +32,10 @@ use Algebra_tools, only : Kronecker_delta, sym_diagonalize, Reciproc
 use Atomic_tools, only : get_fraction_of_given_sort, shortest_distance, Reciproc_rel_to_abs
 use Electron_tools, only : find_band_gap
 
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce
+#endif
+
 implicit none
 PRIVATE
 
@@ -1247,7 +1251,7 @@ end subroutine construct_TB_H_Fu
 
 
 subroutine Complex_Hamil_tot_F(numpar, Scell, NSC, atoms, TB, Hij, CHij, ksx, ksy, ksz)
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
@@ -1437,7 +1441,7 @@ end subroutine Complex_Hamil_tot_F
 
 ! hamiltonian for atoms:
 subroutine Hamil_tot(numpar, Scell, NSC, TB_Hamil, Hij)
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_H_Fu), dimension(:,:), intent(in) :: TB_Hamil   ! parameters of the Hamiltonian of TB
@@ -1447,6 +1451,9 @@ subroutine Hamil_tot(numpar, Scell, NSC, TB_Hamil, Hij)
    integer :: nat, Ne, NumTB, Nsiz
    integer :: i, j, j1, i1, k, l, atom_2, m, FN
    real(8) :: r, x, y, z, temp
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    nat = Scell(NSC)%Na
    Ne = Scell(NSC)%Ne
    Nsiz = size(Hij,1)
@@ -1465,6 +1472,67 @@ subroutine Hamil_tot(numpar, Scell, NSC, TB_Hamil, Hij)
    Hij = 0.0d0
 
    ! Eqs. (2.41), (2.42), Page 40 in H.Jeschke PhD thesis:
+#ifdef MPI_USED   ! use the MPI version [tested]
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1,nat	! all atoms
+      m = Scell(NSC)%Near_neighbor_size(j)
+      do atom_2 = 0,m ! do only for atoms close to that one
+         if (atom_2 .EQ. 0) then
+            i = j
+         else
+            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         endif
+         if (i .GT. 0) then ! if there really is a nearest neighbor
+
+            ! Which kinds of atoms are these (which TB parameters to use):
+            !NumTB = numpar%El_num_ij(Scell(NSC)%MDatoms(j)%KOA, Scell(NSC)%MDatoms(i)%KOA)
+            if (numpar%optic_model .EQ. 3) then ! create matrix element:
+               !call shortest_distance(matter, atoms, i, j, r, x1=x, y1=y, z1=z) ! module "Atomic_tools"
+               call Hamilton_one(Scell, NSC, i, j, Scell(NSC)%MDatoms, TB_Hamil, Hij1, x1=x, y1=y, z1=z) ! block-hamiltonian and the shortest distances
+            else
+               call Hamilton_one(Scell, NSC, i, j, Scell(NSC)%MDatoms, TB_Hamil, Hij1) ! this calles the block-hamiltonian
+            endif
+            do j1 = 1,4 ! all orbitals
+               l = (j-1)*4+j1
+               do i1 = 1,4 ! all orbitals
+                  k = (i-1)*4+i1
+                  !Hij((i-1)*4+i1, (j-1)*4+j1) = Hij1(i1,j1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40)
+                  Hij(k,l) = Hij1(i1,j1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40)
+
+                  if (numpar%optic_model .EQ. 3) then ! create matrix element:
+                     if (i .EQ. j) then ! for the dielectric function, according to Trani:
+                        Scell(NSC)%PRRx(k,l) = temp*0.270d0*Hij(k,l)
+                        Scell(NSC)%PRRy(k,l) = temp*0.270d0*Hij(k,l)
+                        Scell(NSC)%PRRz(k,l) = temp*0.270d0*Hij(k,l)
+                     else
+                        Scell(NSC)%PRRx(k,l) = temp*x*Hij(k,l)
+                        Scell(NSC)%PRRy(k,l) = temp*y*Hij(k,l)
+                        Scell(NSC)%PRRz(k,l) = temp*z*Hij(k,l)
+                     endif
+                     if (Scell(NSC)%PRRx(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRx(k,l)
+                     if (Scell(NSC)%PRRy(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRy(k,l)
+                     if (Scell(NSC)%PRRz(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRz(k,l)
+!                      write(*,'(i4,i4,e,e,e)') k,l, matter%PRRx(k,l), matter%PRRy(k,l), matter%PRRz(k,l)
+                  endif
+               enddo ! i1
+            enddo ! j1
+         endif ! (i > 0)
+      enddo ! j
+   enddo ! i
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Fu: Hamil_tot:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
+   if (numpar%optic_model .EQ. 3) then ! collect matrix elements:
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRx', Scell(NSC)%PRRx) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRy', Scell(NSC)%PRRy) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRz', Scell(NSC)%PRRz) ! module "MPI_subroutines"
+   endif
+
+#else
    do j = 1,nat	! all atoms
       m = Scell(NSC)%Near_neighbor_size(j)
       do atom_2 = 0,m ! do only for atoms close to that one  
@@ -1510,6 +1578,7 @@ subroutine Hamil_tot(numpar, Scell, NSC, TB_Hamil, Hij)
          endif ! (i > 0)
       enddo ! j
    enddo ! i
+#endif
 
 !   open(NEWUNIT=FN, FILE = 'OUTPUT_Hamiltonain_Si.dat')
 !      do i = 1, size(Hij,1)

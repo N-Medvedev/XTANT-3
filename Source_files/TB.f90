@@ -469,7 +469,7 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
       type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
          ! Get the overlaps between orbitals and ficticios s orbital (for 3-body parts):
-         call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+         call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs, numpar)   ! module "TB_3TB"
          ! Get the overlaps and reusable functions:
          call Construct_Vij_3TB(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
          ! Construct the Hamiltonian, diagonalize it, get the energy:
@@ -489,10 +489,10 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
    ! Get the DOS weights for each energy level, if required:
    if (allocated(Scell(NSC)%Sij)) then ! nonorthogonal Hamiltonian
-      call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha, &
+      call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, numpar, Hij=Scell(NSC)%Ha, &
                            Sij=Scell(NSC)%Sij, eigen_S=Scell(NSC)%eigen_S) ! below
    else ! orthogonal Hamiltonian
-      call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha) ! below
+      call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, numpar, Hij=Scell(NSC)%Ha) ! below
    endif
 
    ! Fill corresponding energy levels + repulsive energy cotribution:
@@ -625,10 +625,10 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
          ! Get the DOS weights for each energy level, if required:
          if (allocated(Scell(NSC)%Sij)) then
-            call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha, &
+            call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, numpar, Hij=Scell(NSC)%Ha, &
                            Sij=Scell(NSC)%Sij, eigen_S=Scell(NSC)%eigen_S) ! below
          else
-            call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha) ! below
+            call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, numpar, Hij=Scell(NSC)%Ha) ! below
          endif
 
          ! Update deviations of Mulliken charges from atomic ones:
@@ -959,7 +959,7 @@ end subroutine create_second_order_scc_term_H
 
 subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
    type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), dimension(:,:), intent(in) :: gam_ij   ! gamma parameters
    real(8), dimension(:), intent(in) :: q   ! Mulliken charges (deviation from neutral)
    real(8), dimension(:,:), allocatable, intent(inout) :: HperS
@@ -1420,7 +1420,7 @@ subroutine get_DOS_masks(Scell, matter, numpar, only_coupling, do_cartesian)
 end subroutine get_DOS_masks
 
 
- subroutine get_DOS_weights(ind, masks_DOS, DOS_weights, Hij, CHij, Sij, eigen_S)
+ subroutine get_DOS_weights(ind, masks_DOS, DOS_weights, numpar, Hij, CHij, Sij, eigen_S)
    integer, intent(in) :: ind   ! which model to use
    logical, dimension(:,:,:), intent(in) :: masks_DOS   ! partial DOS made of each orbital type, if required to be constructed
    real(8), dimension(:,:,:), allocatable, intent(inout) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
@@ -1428,11 +1428,14 @@ end subroutine get_DOS_masks
    complex, dimension(:,:), intent(in), optional :: CHij    ! complex eigenvectors
    real(8), dimension(:,:), intent(in), optional :: Sij     ! Overlap for nonorthogonal H
    real(8), dimension(:), intent(in), optional :: eigen_S   ! eigenvalues of Sij (to control for linear-dependent raws)
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    !-------------------------------
    real(8), dimension(size(masks_DOS,3)) :: temp_vec
    real(8) :: temp
    integer :: j, Nsiz, N_at, N_types, i_at, i_types, k
    logical :: include_Sij
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
 
    if (ind == 1) then ! get weighted DOS:
@@ -1440,6 +1443,7 @@ end subroutine get_DOS_masks
       N_types = size(masks_DOS,2)
       Nsiz = size(masks_DOS,3)
       if (.not.allocated(DOS_weights)) allocate(DOS_weights(N_at,N_types,Nsiz))
+      DOS_weights = 0.0d0  ! to start with
 
       ! Do we need to include overlap matrix:
       include_Sij = .false.   ! to start with
@@ -1454,6 +1458,60 @@ end subroutine get_DOS_masks
 !       print*, 'get_DOS_weights', include_Sij
 
       ! Get the contributions of all shells and elements:
+#ifdef MPI_USED   ! use the MPI version [tested]
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = Nsiz
+
+      if (include_Sij) then ! non-orthogonal, with overlap matrix Sij
+         do j = Nstart, Nend, N_incr  ! each process does its own part
+         !do j = 1, Nsiz ! for all energy levels
+            if (present(Hij)) then ! real H
+               do k = 1, Nsiz ! for all energy levels
+                  temp_vec(k) = Hij(k,j) * SUM(Hij(:,j) * Sij(k,:))
+               enddo
+            elseif (present(CHij)) then    ! complex H
+               do k = 1, Nsiz ! for all energy levels
+                  temp_vec(k) = 0.5d0*dble( conjg(CHij(k,j)) * SUM(CHij(:,j) * Sij(k,:)) + &
+                                            CHij(k,j) * SUM(conjg(CHij(:,j)) * Sij(k,:)) )
+               enddo
+            else   ! undefined
+               temp_vec(:) = 0.0d0
+            endif
+            temp = SUM(temp_vec)
+            if (temp == 0.0d0) temp = 1.0d0 ! if it's undefined, avoid crushing
+            do i_at = 1, N_at
+               do i_types = 1, N_types
+                  DOS_weights(i_at, i_types, j) = SUM(temp_vec(:), MASK = masks_DOS(i_at, i_types, :))/temp
+               enddo ! i_types
+            enddo ! i_at
+         enddo !  j = 1, Nsiz
+      else  ! orthogonal (or inconsistent Sij)
+         do j = Nstart, Nend, N_incr  ! each process does its own part
+         !do j = 1, Nsiz	! for all energy levels
+            if (present(Hij)) then ! real H
+               temp_vec(:) = Hij(:,j) * Hij(:,j)
+            elseif (present(CHij)) then    ! complex H
+               temp_vec(:) = dble(conjg(CHij(:,j)) * CHij(:,j))
+            else   ! undefined
+               temp_vec(:) = 0.0d0
+            endif
+            temp = SUM(temp_vec)
+            if (temp == 0.0d0) temp = 1.0d0  ! if it's undefined, avoid crushing
+            do i_at = 1, N_at
+               do i_types = 1, N_types
+                  DOS_weights(i_at, i_types, j) = SUM(temp_vec(:), MASK = masks_DOS(i_at, i_types, :))/temp
+               enddo ! i_types
+            enddo ! i_at
+         enddo !  j = 1, Nsiz
+      endif ! include_Sij
+
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in get_DOS_weights:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'DOS_weights', DOS_weights) ! module "MPI_subroutines"
+      !print*, '[MPI process #', numpar%MPI_param%process_rank, '] get_DOS_weights#1', DOS_weights(1, 1, 1), DOS_weights(N_at, 1, Nsiz)
+
+#else    ! OpenMP to use instead
       ORTH:if (include_Sij) then ! non-orthogonal, with overlap matrix Sij
          !$omp PARALLEL private(j, k, temp_vec, temp, i_at, i_types)
          !$omp do
@@ -1502,6 +1560,7 @@ end subroutine get_DOS_masks
          !$omp end do
          !$omp end parallel
       endif ORTH
+#endif
    endif ! (ind == 1)
 end subroutine get_DOS_weights
 
@@ -1643,17 +1702,59 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
 end subroutine get_Mulliken_each_atom
 
 
-subroutine band_potential_energy_atom(Scell)
+subroutine band_potential_energy_atom(Scell, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    !-------------------------------
    real(8), dimension(size(Scell%Ha,1), size(Scell%Ha,2)) :: D
    real(8), dimension(:), allocatable :: mulliken_Ne
    integer :: N_at, i_at, i_orb, j, Nsiz, N_orb, k
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    N_at = size(Scell%MDAtoms) ! total number of atoms
    Nsiz = size(Scell%Ha,1) ! total number of orbitals
    N_orb = Nsiz/N_at ! orbitals per atom
+   D = 0.0d0   ! initializing
 
+   ! Construct matrix of all the radial functions for each pair of atoms:
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Nsiz
+   if (allocated(Scell%Sij)) then
+      do j = Nstart, Nend, N_incr  ! each process does its own part
+      !do j = 1, Nsiz ! for all energy levels
+         do k = 1, Nsiz ! for all energy levels
+            D(k,j) = Scell%Ha(k,j) * SUM(Scell%Ha(:,j) * Scell%Sij(k,:))   ! the density matrix without occupations
+         enddo
+      enddo
+   else ! orthogonal
+      do j = Nstart, Nend, N_incr  ! each process does its own part
+      !do j = 1, Nsiz ! for all energy levels
+         D(:,j) = Scell%Ha(:,j) * Scell%Ha(:,j)
+      enddo
+   endif
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in band_potential_energy_atom:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'D', D) ! module "MPI_subroutines"
+
+   allocate(mulliken_Ne(N_at), source = 0.0d0)   ! absolute charges
+   Nend = N_at
+   do i_at = Nstart, Nend, N_incr  ! each process does its own part
+   !do i_at = 1, N_at ! all atoms
+      do i_orb = 1, N_orb  ! all orbitals of each atom
+         j = (i_at-1)*N_orb + i_orb ! current orbital among all
+         ! Sum up potential energy for all orbitals belonging to this atom:
+         mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM( Scell%Ei(:) * Scell%fe(:) * D(j,:) )
+      enddo   ! i_orb
+      ! Add Potential energy of this atom (band contribution) to the precalculated repulsive part:
+   enddo ! i_at
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'mulliken_Ne', mulliken_Ne) ! module "MPI_subroutines"
+   Scell%MDAtoms(:)%Epot = Scell%MDAtoms(:)%Epot + mulliken_Ne(:)
+
+#else ! use OpenMP instead
    if (allocated(Scell%Sij)) then
       !$omp PARALLEL private(j, k)
       !$omp do
@@ -1689,6 +1790,7 @@ subroutine band_potential_energy_atom(Scell)
    enddo ! i_at
    !$omp end do
    !$omp end parallel
+#endif
 
    deallocate(mulliken_Ne)
 end subroutine band_potential_energy_atom
@@ -3183,7 +3285,7 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
          Scell(NSC)%nrg%E_expwall = E_expwall * Na_inv ! [eV/atom], below
 
          ! Save the additionall band energy of each atom:
-         call band_potential_energy_atom(Scell(NSC)) ! above
+         call band_potential_energy_atom(Scell(NSC), numpar) ! above
       enddo
 
    endif DO_TB
@@ -3196,7 +3298,7 @@ subroutine Exponential_wall_s(TB_Expwall, Scell, NSC, matter, numpar, Pot)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Solid), intent(in) :: matter   ! all material parameters
-   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    real(8) a
    if (allocated(TB_Expwall)) then ! if we have Exponential wall potential defined
       select type(TB_Expwall)
@@ -3237,7 +3339,7 @@ subroutine vdW_s(TB_Waals, Scell, NSC, numpar, out_vdW_s)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    class(TB_vdW), dimension(:,:), allocatable, intent(inout):: TB_Waals ! van der Waals parameters within TB
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8) :: out_vdW_s ! van der Waals energy [eV]
    !---------
    real(8) a
@@ -4624,7 +4726,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_M_x1 succesful'
-         call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+         call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs, numpar)   ! module "TB_3TB"
          if (numpar%verbose) print*, 'Get_pressure 3TB : get_Mjs_factors succesful'
          call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
          if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_Vij_3TB succesful'

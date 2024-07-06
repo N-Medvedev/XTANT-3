@@ -39,6 +39,10 @@ use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_herm
 use Atomic_tools, only : Reciproc_rel_to_abs
 use Little_subroutines, only : linear_interpolation, Find_in_array_monoton
 
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce
+#endif
+
 implicit none
 PRIVATE
 
@@ -76,7 +80,7 @@ end subroutine construct_TB_H_BOP
 
 
 subroutine Hamil_tot_BOP(numpar, Scell, NSC, M_Vij, M_SVij, M_E0ij, M_lmn, Err)
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
 !    type(TB_H_BOP), dimension(:,:), intent(in) :: TB	! All parameters of the Hamiltonian of TB
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -95,6 +99,8 @@ subroutine Hamil_tot_BOP(numpar, Scell, NSC, M_Vij, M_SVij, M_E0ij, M_lmn, Err)
    real(8), pointer :: x, y, z
    integer, pointer :: KOA1, KOA2, m
    character(200) :: Error_descript
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
    
    Error_descript = ''
    epsylon = 1d-12	! acceptable tolerance : how small an overlap integral can be, before we set it to zero
@@ -109,9 +115,75 @@ subroutine Hamil_tot_BOP(numpar, Scell, NSC, M_Vij, M_SVij, M_E0ij, M_lmn, Err)
 
    !-----------------------------------
    ! 1) Construct non-orthogonal Hamiltonian H and Overlap matrix S in 2 steps:
+#ifdef MPI_USED   ! use the MPI version
+   if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
+   if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1,nat	! all atoms
+      m => Scell(NSC)%Near_neighbor_size(j)
+      do atom_2 = 0,m ! do only for atoms close to that one
+         if (atom_2 .EQ. 0) then
+            i = j
+         else
+            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         endif
+
+         IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
+            KOA1 => Scell(NSC)%MDatoms(j)%KOA
+            KOA2 => Scell(NSC)%MDatoms(i)%KOA
+            ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
+            ! Contruct a block-hamiltonian:
+            call Hamilton_one_BOP(numpar%basis_size_ind, Scell, NSC, M_Vij(j,i,:), M_E0ij, M_lmn, j, i, Hij1)   ! below
+
+            ! Construct overlap matrix for this pair of atoms:
+            call Get_overlap_S_matrix_BOP(numpar%basis_size_ind, M_SVij(j,i,:), M_lmn(:,j,i), j, i, Sij1)  ! below
+
+            do j1 = 1,n_orb ! all orbitals
+               l = (j-1)*n_orb+j1
+               do i1 = 1,n_orb ! all orbitals
+                  k = (i-1)*n_orb+i1
+                  Hij(k,l) = Hij1(i1,j1) ! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40)
+                  Sij(k,l) = Sij1(i1,j1) ! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
+                  if (ABS(Sij(k,l)) <= epsylon) Sij(k,l) = 0.0d0
+               enddo ! i1
+            enddo ! j1
+         endif IJ
+      enddo ! j
+   enddo ! i
+   deallocate(Hij1, Sij1)
+
+   ! b) Construct lower triangle - use symmetry:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1,nat	! all atoms
+      m => Scell(NSC)%Near_neighbor_size(j)
+      do atom_2 = 1,m ! do only for atoms close to that one
+         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         if (i < j) then ! it's a new pair of atoms, calculate everything
+            do j1 = 1,n_orb ! all orbitals
+               l = (j-1)*n_orb+j1
+               do i1 = 1,n_orb ! all orbitals
+                  k = (i-1)*n_orb+i1
+                  Hij(k,l) = Hij(l,k)
+                  Sij(k,l) =  Sij(l,k)
+               enddo ! i1
+            enddo ! j1
+         endif
+      enddo ! j
+   enddo ! i
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Hamil_tot_BOP:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Sij', Sij) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
 !$omp parallel private(j, m, atom_2, i, KOA1, KOA2, j1, l, i1, k, Hij1, Sij1)
-if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
-if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
+   if (.not.allocated(Hij1)) allocate(Hij1(n_orb,n_orb), source = 0.0d0)
+   if (.not.allocated(Sij1)) allocate(Sij1(n_orb,n_orb), source = 0.0d0)
 !$omp do
    do j = 1,nat	! all atoms
       m => Scell(NSC)%Near_neighbor_size(j)
@@ -171,6 +243,7 @@ deallocate(Hij1, Sij1)
    enddo ! i
 !$omp end do 
 !$omp end parallel
+#endif
 
    ! 2)    ! Save the non-orthogonalized Hamiltonian:
    Scell(NSC)%H_non = Hij		! nondiagonalized Hamiltonian
@@ -222,7 +295,54 @@ deallocate(Hij1, Sij1)
       Scell(NSC)%PRRy = 0.0d0
       Scell(NSC)%PRRz = 0.0d0
       ! Generalized Trani expression for non-orthogonal Hamiltonian:
-      
+#ifdef MPI_USED   ! use the MPI version
+      do j = Nstart, Nend, N_incr  ! each process does its own part
+      !do j = 1,nat	! all atoms
+         m => Scell(NSC)%Near_neighbor_size(j)
+         do atom_2 = 0,m ! do only for atoms close to that one
+            if (atom_2 .EQ. 0) then
+               i = j
+            else
+               i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+               x => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
+               y => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
+               z => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
+            endif
+            if (i > 0) then ! if there really is a nearest neighbor
+               do j1 = 1,n_orb	! all orbitals
+                  l = (j-1)*n_orb+j1
+                  do i1 = 1,n_orb	! all orbitals
+                     k = (i-1)*n_orb+i1
+!                      if (abs(i) > nat*n_orb) print*, 'TEST i', i, j, l, k
+                     if (i == j) then ! for the diagonal elements according to Trani:
+!                         SH_1 = 0.270d0*(Scell(NSC)%Ei(k) - Scell(NSC)%Ei(l))
+                        SH_1 =  0.0d0
+!                         SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        Scell(NSC)%PRRx(k,l) = SH_1
+                        Scell(NSC)%PRRy(k,l) = SH_1
+                        Scell(NSC)%PRRz(k,l) = SH_1
+                     else
+                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        Scell(NSC)%PRRx(k,l) = x*SH_1
+                        Scell(NSC)%PRRy(k,l) = y*SH_1
+                        Scell(NSC)%PRRz(k,l) = z*SH_1
+                     endif	! note that the PRR are not diagonal
+                     if (Scell(NSC)%PRRx(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRx(k,l)
+                     if (Scell(NSC)%PRRy(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRy(k,l)
+                     if (Scell(NSC)%PRRz(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRz(k,l)
+!                         write(*,'(i4,i4,e,e,e)') k,l, matter%PRRx(k,l), matter%PRRy(k,l), matter%PRRz(k,l)
+                  enddo ! i1
+               enddo ! j1
+            endif ! (i > 0)
+         enddo ! j
+      enddo ! i
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in Hamil_tot_BOP:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRx', Scell(NSC)%PRRx) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRy', Scell(NSC)%PRRy) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRz', Scell(NSC)%PRRz) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
       !$omp parallel
       !$omp do private(j, m, atom_2, i, x, y, z, j1, l, i1, k, SH_1)
       do j = 1,nat	! all atoms
@@ -266,6 +386,7 @@ deallocate(Hij1, Sij1)
       enddo ! i
       !$omp end do 
       !$omp end parallel
+#endif
       ! mass and Plank constant cancel out in the final expression (subroutine get_Trani, module "Optical_parameters")
       temp = 1.0d0      
       Scell(NSC)%PRRx = Scell(NSC)%PRRx * temp
@@ -450,7 +571,7 @@ end subroutine BOP_matrices_to_vec
 !cccccccccccccccccccccccccccccccccccccccccccccccccc
 ! Construct matrices that enter Hamiltonian:
 subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_E0ij, M_dE0ij)
-   type(Numerics_param), intent(in), target :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(TB_H_BOP), dimension(:,:), intent(in), target :: TB_Hamil	! All parameters of the Hamiltonian of TB
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -464,6 +585,8 @@ subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij
    integer :: j, atom_2, Vr_ind, N_bs, N_onsite
    integer, pointer :: nat, KOA1, KOA2, m, i
    real(8), pointer :: r
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
    
    ! Total number of atoms in the supercell:
    nat => Scell(NSC)%Na
@@ -480,6 +603,142 @@ subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij
    if (.not.allocated(M_dE0ij)) allocate(M_dE0ij(nat,nat,N_onsite), source = 0.0d0)   ! all on-site parameters
 
    ! Set all the parameters:
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   AT10:do j = Nstart, Nend, N_incr  ! each process does its own part
+   !AT10:do j = 1, nat
+      m => Scell(NSC)%Near_neighbor_size(j) ! how many atoms are close enough to the j-th one
+      AT20:do atom_2 = 1,m ! do only for atoms close to that one
+         i => Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         KOA1 => Scell(NSC)%MDatoms(j)%KOA
+         KOA2 => Scell(NSC)%MDatoms(i)%KOA
+         r => Scell(NSC)%Near_neighbor_dist(j,atom_2,4) ! at this distance, R [A]
+
+         ! All on-site parameters:
+         Vr_ind = 1 ! s
+         M_E0ij(j,i,Vr_ind) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
+                                      TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
+         if (numpar%basis_size_ind > 0) then  ! sp3
+            do Vr_ind = 2,3 ! p
+               M_E0ij(j,i,Vr_ind) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
+                                      TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
+            enddo
+         endif
+         if (numpar%basis_size_ind > 1) then  ! sp3d5
+            do Vr_ind = 4,6 ! d
+               M_E0ij(j,i,Vr_ind) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
+                                      TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
+            enddo
+         endif
+
+         ! All radial functions for Hamiltonian:
+         Vr_ind = 1 ! s
+         M_Vij(j,i,1) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s s sigma)
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+         M_SVij(j,i,1) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s s sigma)
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+         select case (numpar%basis_size_ind)
+         case (1)    ! sp3
+            Vr_ind = 2
+            M_Vij(j,i,2) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s p sigma)
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+            M_SVij(j,i,2) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s s sigma)
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+            Vr_ind = 3
+            M_Vij(j,i,3) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (p s sigma)
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+            M_SVij(j,i,3) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (p s sigma)
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+            Vr_ind = 6
+            M_Vij(j,i,4) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &    ! (p p sigma)
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+            M_SVij(j,i,4) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (p p sigma)
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+            Vr_ind = 7
+            M_Vij(j,i,5) =  BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &    ! (p p pi)
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+            M_SVij(j,i,5) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (p p pi)
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+         case (2)    ! sp3d5
+            do Vr_ind = 2, 14
+               M_Vij(j,i,Vr_ind) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+               M_SVij(j,i,Vr_ind) = BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+            enddo
+         endselect
+
+         !ddddddddddddddddddddddddddddddddddd
+         ! Derivatives of all on-site parameters:
+         Vr_ind = 1 ! s
+         M_dE0ij(j,i,Vr_ind) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
+                                      TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
+         if (numpar%basis_size_ind > 0) then  ! sp3
+            do Vr_ind = 2,3 ! p
+               M_dE0ij(j,i,Vr_ind) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
+                                      TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
+            enddo
+         endif
+         if (numpar%basis_size_ind > 1) then  ! sp3d5
+            do Vr_ind = 4,6 ! d
+               M_dE0ij(j,i,Vr_ind) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .true., &
+                                      TB_Hamil(KOA1,KOA2)%E_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%E_ni(Vr_ind,:)) ! below
+            enddo
+         endif
+
+         ! Derivatives of all radial functions for Hamiltonian:
+         Vr_ind = 1 ! s
+         M_dVij(j,i,1) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s s sigma)
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+         M_dSVij(j,i,1) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s s sigma)
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+         select case (numpar%basis_size_ind)
+         case (1)    ! sp3
+            Vr_ind = 2
+            M_dVij(j,i,2) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s p sigma)
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+            M_dSVij(j,i,2) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (s s sigma)
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+            Vr_ind = 3
+            M_dVij(j,i,3) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (p s sigma)
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+            M_dSVij(j,i,3) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (p s sigma)
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+            Vr_ind = 6
+            M_dVij(j,i,4) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &    ! (p p sigma)
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+            M_dSVij(j,i,4) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (p p sigma)
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+            Vr_ind = 7
+            M_dVij(j,i,5) =  d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &    ! (p p pi)
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+            M_dSVij(j,i,5) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &   ! (p p pi)
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+         case (2)    ! sp3d5
+            do Vr_ind = 2, 14
+               M_dVij(j,i,Vr_ind) =  d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &
+                                      TB_Hamil(KOA1,KOA2)%H_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%H_ni(Vr_ind,:)) ! below
+               M_dSVij(j,i,Vr_ind) = d_BOP_radial_function(r, TB_Hamil(KOA1,KOA2)%rcut, TB_Hamil(KOA1,KOA2)%dcut, .false., &
+                                      TB_Hamil(KOA1,KOA2)%S_ci(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_li(Vr_ind,:), TB_Hamil(KOA1,KOA2)%S_ni(Vr_ind,:)) ! below
+            enddo
+         endselect
+
+      enddo AT20
+   enddo AT10
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Construct_Vij_BOP:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_Vij', M_Vij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_dVij', M_dVij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_SVij', M_SVij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_dSVij', M_dSVij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_E0ij', M_E0ij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_dE0ij', M_dE0ij) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
 !$omp parallel
 !$omp do private(j, m, atom_2, i, KOA1, KOA2, r, Vr_ind)
    AT1:do j = 1, nat
@@ -603,7 +862,8 @@ subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij
    enddo AT1
 !$omp end do
 !$omp end parallel
-   
+#endif
+
    nullify(nat, KOA1, KOA2, m, i, r)
 end subroutine Construct_Vij_BOP
 

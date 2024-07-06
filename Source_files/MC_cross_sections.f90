@@ -65,6 +65,9 @@ subroutine Mean_free_path(E, mfps, MFP_cur, inversed) ! finds total mean free pa
    real(8) Ecur, MFP_temp
    integer i,j, N_temmp, Msh, N_last
    call Find_in_array_monoton(mfps%E, E, N_temmp) ! module "Little_subroutines"
+
+   !print*, 'Mean_free_path:', E, N_temmp, mfps%E(N_temmp), mfps%L(N_temmp)
+
    call linear_interpolation(mfps%E, mfps%L, E, MFP_temp, N_temmp)	! module "Little_subroutines"
    if (.not.present(inversed)) then
       if (MFP_temp < 1.0d-12) then ! avoid divide by zero
