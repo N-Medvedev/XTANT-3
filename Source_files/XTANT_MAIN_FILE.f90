@@ -434,7 +434,10 @@ enddo
 
 !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 ! Finish execution of the program:
-call close_file('delete', FN=g_numpar%FN_communication, File_name=g_numpar%Filename_communication) ! module "Dealing_with_files"
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   call close_file('delete', FN=g_numpar%FN_communication, File_name=g_numpar%Filename_communication) ! module "Dealing_with_files"
+endif
+
 2012 continue
 
 if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
@@ -602,6 +605,18 @@ endif
 if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
    if (g_Err%Err) call print_a_comforting_message(6, g_numpar%path_sep)  ! module "Dealing_with_output_files"
 endif
+
+!-------------------------------------
+#ifdef MPI_USED
+   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      print*, 'Finilizing MPI'
+   endif
+   call MPI_FINALIZE(g_numpar%MPI_param%ierror)
+   if (g_numpar%MPI_param%ierror /= 0) then
+      write(*, *) 'Error finalizing MPI!'
+   endif
+#endif
+!-------------------------------------
 
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC

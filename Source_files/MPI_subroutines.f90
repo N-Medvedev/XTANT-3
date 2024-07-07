@@ -91,7 +91,7 @@ end interface do_MPI_Reduce
 public :: get_MPI_lapsed_time, initialize_MPI, initialize_random_seed, MPI_barrier_wrapper, MPI_fileopen_wrapper, &
             MPI_fileclose_wrapper, MPI_error_wrapper, MPI_share_Read_Input_Files, MPI_share_matter, MPI_share_numpar, &
             MPI_share_initial_configuration, MPI_share_electron_MFPs, MPI_share_photon_attenuation, MPI_share_add_data, &
-            do_MPI_Reduce, do_MPI_Allreduce, broadcast_allocatable_array, MPI_share_Ritchi_CDF
+            do_MPI_Reduce, do_MPI_Allreduce, broadcast_allocatable_array, MPI_share_Ritchi_CDF, broadcast_variable
 
 
 
