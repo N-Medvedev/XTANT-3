@@ -1551,12 +1551,14 @@ end subroutine make_time_step_atoms_SC
 subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algorithm
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in) :: matter	! material parameters
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    !type(Forces), dimension(:,:), intent(inout) :: forces1	! all interatomic forces
    integer, intent(in) :: ind	! step of Matryna algorithm
    !=========================
    integer :: NSC   ! number of super-cell
    integer :: k     ! atoms index
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    do NSC = 1, size(Scell)
       ! Make MD step:
@@ -1572,7 +1574,6 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
             Scell(NSC)%MDatoms(k)%S0(:) = Scell(NSC)%MDatoms(k)%S(:)
          enddo
          !$omp end parallel do
-
          call check_periodic_boundaries(matter, Scell, NSC) ! and set the absolute coordinates out of the new relative ones
          
          ! Update absolute coordinates:

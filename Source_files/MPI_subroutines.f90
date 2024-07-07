@@ -74,6 +74,7 @@ interface do_MPI_Allreduce ! it uses MPI_SUM
    module procedure do_MPI_Allreduce_real_1d_array
    module procedure do_MPI_Allreduce_real_2d_array
    module procedure do_MPI_Allreduce_real_3d_array
+   module procedure do_MPI_Allreduce_complex_2d_array
 end interface do_MPI_Allreduce
 
 
@@ -90,7 +91,7 @@ end interface do_MPI_Reduce
 public :: get_MPI_lapsed_time, initialize_MPI, initialize_random_seed, MPI_barrier_wrapper, MPI_fileopen_wrapper, &
             MPI_fileclose_wrapper, MPI_error_wrapper, MPI_share_Read_Input_Files, MPI_share_matter, MPI_share_numpar, &
             MPI_share_initial_configuration, MPI_share_electron_MFPs, MPI_share_photon_attenuation, MPI_share_add_data, &
-            do_MPI_Reduce, do_MPI_Allreduce
+            do_MPI_Reduce, do_MPI_Allreduce, broadcast_allocatable_array, MPI_share_Ritchi_CDF
 
 
 
@@ -376,7 +377,7 @@ subroutine MPI_share_initial_configuration(Scell, matter, numpar, laser, MC, Err
    call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%TeeV}', Scell(1)%TeeV) ! below
    call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Nph}', Scell(1)%Nph) ! below
    call broadcast_variable(MPI_param, trim(adjustl(error_part))//'{Scell(1)%Nh}', Scell(1)%Nh) ! below
-
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//'{Scell(1)%G_ei_partial}', Scell(1)%G_ei_partial) ! below
 
    if (MPI_param%process_rank /= 0) then   ! MPI non-master processes
       if (.not.allocated(Scell(1)%MDAtoms)) allocate(Scell(1)%MDAtoms(Scell(1)%Na))
@@ -2504,7 +2505,7 @@ subroutine MPI_share_matter(numpar, matter)
          call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_part))//' {N1#6}') ! module "MPI_subroutines"
          if (numpar%MPI_param%process_rank /= 0) then   ! MPI non-master process
             if (array_is_allocated) then ! in the MASTER process it is allocated, so allocate it in non-master processes too
-               allocate(matter%Atoms(i)%El_MFP_vs_T(N1))
+               if (.not.allocated(matter%Atoms(i)%El_MFP_vs_T)) allocate(matter%Atoms(i)%El_MFP_vs_T(N1))
             endif
          endif
 
@@ -2533,6 +2534,57 @@ end subroutine MPI_share_matter
 
 
 
+subroutine MPI_share_Ritchi_CDF(MPI_param, matter)
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   type(Solid), intent(inout) :: matter                  ! all material parameters
+   !-----------------------
+   character(100) :: error_part, error_report
+   logical :: array_is_allocated
+   integer :: N1, i, j, Nat, Nsh
+
+#ifdef MPI_USED
+   error_part = 'ERROR in MPI_share_Ritchi_CDF' ! part of the error message
+
+   Nat = size(matter%Atoms)
+
+   ! allocate CDF arrays for non-master processes:
+   do i = 1, Nat  ! for all atoms
+      if (MPI_param%process_rank == 0) then   ! only MPI master process does it
+         if (allocated(matter%Atoms(i)%CDF)) then
+            array_is_allocated = .true.
+            N1 = size(matter%Atoms(i)%CDF)
+         else
+            array_is_allocated = .false.
+            N1 = 0
+         endif
+      endif
+
+      error_report = trim(adjustl(error_part))//' {array_is_allocated}'
+      call mpi_bcast(array_is_allocated, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
+      call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+
+      error_report = trim(adjustl(error_part))//' {N1}'
+      call mpi_bcast(N1, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
+      call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+
+      if (array_is_allocated) then  ! allocate it also in non-master MPI processes:
+         if (MPI_param%process_rank /= 0) then ! only do that for the master process
+            if (.not.allocated(matter%Atoms(i)%CDF)) allocate(matter%Atoms(i)%CDF(N1))
+         endif
+      endif
+   enddo ! i
+
+   ! allocate the arrays in the CDF-objects:
+   do i = 1, Nat   ! for all CDF functions
+      Nsh = size(matter%Atoms(i)%Ip)
+      do j = 1, Nsh  ! for all shells
+         call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {CDF(i)%A}', matter%Atoms(i)%CDF(j)%A) ! below
+         call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {CDF(i)%E0}', matter%Atoms(i)%CDF(j)%E0) ! below
+         call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {CDF(i)%G}', matter%Atoms(i)%CDF(j)%G) ! below
+      enddo ! j
+   enddo ! i
+#endif
+end subroutine MPI_share_Ritchi_CDF
 
 
 
@@ -3761,6 +3813,25 @@ subroutine do_MPI_Allreduce_real_2d_array(MPI_param, error_message, array)
 #endif
 end subroutine do_MPI_Allreduce_real_2d_array
 
+
+
+subroutine do_MPI_Allreduce_complex_2d_array(MPI_param, error_message, array)
+   complex, dimension(:,:), intent(inout) :: array
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: error_message
+   !--------------------------
+   integer :: Nsiz(2)
+   character(300) :: error_report
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+   Nsiz(1) = size(array,1)
+   Nsiz(2) = size(array,2)
+
+   CALL MPI_Allreduce(MPI_IN_PLACE, array, Nsiz(1)*Nsiz(2), MPI_COMPLEX, MPI_SUM, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
+
+   error_report = trim(adjustl(error_message))//' {Allreduce_complex_2d_array}'
+   call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report))) ! module "MPI_subroutines"
+#endif
+end subroutine do_MPI_Allreduce_complex_2d_array
 
 
 subroutine do_MPI_Allreduce_real_3d_array(MPI_param, error_message, array)

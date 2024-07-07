@@ -229,7 +229,7 @@ subroutine Construct_B(TB_Waals, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupce
    class(TB_vdW), dimension(:,:), allocatable, intent(in)   :: TB_Waals ! van der Waals parameters within TB
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
    real(8), dimension(:,:,:), allocatable, intent(out) :: Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij ! intermediate calculations matrices
    integer, intent(out) :: Nx, Ny, Nz ! number of super-cell images to consider
@@ -258,15 +258,16 @@ subroutine Construct_B(TB_Waals, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupce
    if (.not.allocated(ZijSupce))   allocate(ZijSupce(coun_cell,n,n), source=0.0d0)
 
    ! Fill the arrays that were already allocated:
-   call cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n) ! below
+   call cell_cycle_B(Scell, NSC, TB_Waals, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n) ! below
 
 end subroutine Construct_B
 
 
-subroutine cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n)
+subroutine cell_cycle_B(Scell, NSC, TB_Waals, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n)
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    class(TB_vdW), dimension(:,:), allocatable, intent(in) :: TB_Waals ! van der Waals parameters within TB
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    real(8), dimension(:,:,:), intent(inout) :: Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij
    integer, intent(in) :: Nx, Ny, Nz ! number of super-cell images to consider
    integer, intent(in) :: n ! number of atoms
@@ -276,8 +277,77 @@ subroutine cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, Zi
    integer :: i1, j1
    integer, dimension(3) :: zb
    logical :: origin_cell
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
+#ifdef MPI_USED   ! use the MPI version [tested]
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = n
+   ! Initializing:
+   Xij = 0.0d0
+   Yij = 0.0d0
+   Zij = 0.0d0
+   SXij = 0.0d0
+   SYij = 0.0d0
+   SZij = 0.0d0
+   XijSupce = 0.0d0
+   YijSupce = 0.0d0
+   ZijSupce = 0.0d0
+   Bij = 0.0d0
 
+   do i1 = Nstart, Nend, N_incr  ! each process does its own part
+   !do i1 = 1,n
+      XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
+         YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+            ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+               coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
+               zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+               origin_cell = ALL(zb==0) ! if it is the origin cell
+               do j1 = 1,n
+                  if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+                     call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, A_rij(coun_cell,i1,j1), &
+                                                x=x, y=y, z=z, sx=sx, sy=sy, sz=sz) ! module "Atomic_tools"
+
+                     ! Save necessary elements:
+                     Xij(coun_cell,i1,j1) = x
+                     Yij(coun_cell,i1,j1) = y
+                     Zij(coun_cell,i1,j1) = z
+                     SXij(coun_cell,i1,j1) = sx
+                     SYij(coun_cell,i1,j1) = sy
+                     SZij(coun_cell,i1,j1) = sz
+                     XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
+                     YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
+                     ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
+
+                     Bij(coun_cell,i1,j1) = dvdW(TB_Waals, Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA, A_rij(coun_cell,i1,j1)) ! below
+                  else ! No self-interaction
+                     A_rij(coun_cell,i1,j1) = 1.0d30
+                     Xij(coun_cell,i1,j1) = 0.0d0
+                     Yij(coun_cell,i1,j1) = 0.0d0
+                     Zij(coun_cell,i1,j1) = 0.0d0
+                     Bij(coun_cell,i1,j1) = 0.0d0
+                  endif
+               enddo ! j1
+            enddo ZC
+         enddo YC
+      enddo XC
+   enddo ! i1
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in cell_cycle_B:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Xij', Xij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Yij', Yij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Zij', Zij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'SXij', SXij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'SYij', SYij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'SZij', SZij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'XijSupce', XijSupce) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'YijSupce', YijSupce) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'ZijSupce', ZijSupce) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Bij', Bij) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
    !$omp PARALLEL private(i1,j1,x,y,z,sx,sy,sz,x_cell,y_cell,z_cell,zb,origin_cell,coun_cell)
    !$omp do
    XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
@@ -318,6 +388,7 @@ subroutine cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, Zi
    enddo XC
    !$omp end do
    !$omp end parallel
+#endif
 end subroutine cell_cycle_B
 
 
@@ -326,7 +397,7 @@ end subroutine cell_cycle_B
 subroutine d_vdW_forces(Scell, NSC, numpar, F_vdW, dF_vdW)   ! vdW force and second derivative
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), dimension(:,:), allocatable, intent(out) :: F_vdW, dF_vdW	! force and its derivative
    !=====================================================
    real(8) :: a_r, F(3), dF(3), F_r, dF_r, x, y, z, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z
@@ -334,6 +405,8 @@ subroutine d_vdW_forces(Scell, NSC, numpar, F_vdW, dF_vdW)   ! vdW force and sec
    INTEGER(4) :: n, i1, j1, m, atom_2, x_cell, y_cell, z_cell
    logical :: origin_cell
    integer, pointer :: KOA1, KOA2
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    n = Scell(NSC)%Na   ! Number of atoms
    ! Make sure the forces are allocated:
@@ -350,6 +423,67 @@ subroutine d_vdW_forces(Scell, NSC, numpar, F_vdW, dF_vdW)   ! vdW force and sec
    call get_mirror_cell_num(Scell, NSC, numpar, Scell(NSC)%MDatoms, Nx, Ny, Nz) ! subroutine above
    !print*, 'd_vdW_forces:', Nx, Ny, Nz
 
+
+#ifdef MPI_USED   ! use the MPI version [tested]
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Scell(NSC)%Na
+   do i1= Nstart, Nend, N_incr  ! each process does its own part
+   !do i1 = 1, Scell(NSC)%Na ! all atoms
+      KOA1 => Scell(NSC)%MDatoms(i1)%KOA   ! atom #1
+      XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
+         YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+            ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+               zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+               origin_cell = ALL(zb==0) ! if it is the origin cell
+
+               F = 0.0d0   ! to restart
+               dF = 0.0d0  ! to restart
+               do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
+                  if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+
+                     KOA2 => Scell(NSC)%MDatoms(j1)%KOA   ! atom #2
+
+                     !call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
+                     call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r, x, y, z) ! module "Atomic_tools"
+
+                     ! Derivatives d r_{i,j} / d r_{i,alpha}:
+                     drdrx = x/a_r
+                     drdry = y/a_r
+                     drdrz = z/a_r
+
+                     ! Second derivatives d2 r_{ij} / d r2_{i,alpha}:
+                     d2rdr2x = ddija_dria(x, a_r)  ! below
+                     d2rdr2y = ddija_dria(y, a_r)  ! below
+                     d2rdr2z = ddija_dria(z, a_r)  ! below
+
+                     ! Get the derivatives of the potential by |r|:
+                     F_r = dvdW(Scell(NSC)%TB_Waals, KOA1, KOA2, a_r)   ! below
+                     dF_r = d2vdW(Scell(NSC)%TB_Waals, KOA1, KOA2, a_r) ! below
+
+                     ! Construct the force and derivative:
+                     F(1) = F(1) + F_r*drdrx
+                     F(2) = F(2) + F_r*drdry
+                     F(3) = F(3) + F_r*drdrz
+                     dF(1) = dF(1) + dF_r*drdrx + F_r*d2rdr2x
+                     dF(2) = dF(2) + dF_r*drdry + F_r*d2rdr2y
+                     dF(3) = dF(3) + dF_r*drdrz + F_r*d2rdr2z
+
+                  endif ! (j1 .NE. i1)
+               enddo ! j1
+               ! And save for each atom:
+               F_vdW(:,i1) = F_vdW(:,i1) + F
+               dF_vdW(:,i1) = dF_vdW(:,i1) + dF
+            enddo ZC
+         enddo YC
+      enddo XC
+   enddo ! i1
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in d_vdW_forces:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'F_vdW', F_vdW) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dF_vdW', dF_vdW) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
    !$omp PARALLEL private(i1, j1, a_r, x_cell, y_cell, z_cell, zb, origin_cell, x, y, z, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, KOA1, KOA2, F_r, dF_r, F, dF)
    !$omp do
    XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
@@ -402,7 +536,7 @@ subroutine d_vdW_forces(Scell, NSC, numpar, F_vdW, dF_vdW)   ! vdW force and sec
    enddo XC
    !$omp end do
    !$omp end parallel
-
+#endif
    nullify(KOA1, KOA2)
 end subroutine d_vdW_forces
 

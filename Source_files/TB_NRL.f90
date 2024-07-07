@@ -499,7 +499,7 @@ end subroutine Hamil_tot_NRL
 
 
 subroutine Hamil_tot_NRL_unitcell(numpar, Scell, NSC, TB_Hamil, Err)
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_H_NRL), dimension(:,:), intent(in) :: TB_Hamil   ! parameters of the Hamiltonian of TB
@@ -519,6 +519,8 @@ subroutine Hamil_tot_NRL_unitcell(numpar, Scell, NSC, TB_Hamil, Err)
    integer, pointer :: KOA1, KOA2, m
    character(200) :: Error_descript
    logical :: origin_cell
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
    
    Error_descript = ''
    epsylon = 1d-12	! acceptable tolerance : how small an overlap integral can be, before we set it to zero
@@ -589,6 +591,33 @@ subroutine Hamil_tot_NRL_unitcell(numpar, Scell, NSC, TB_Hamil, Err)
 ! !$omp end parallel
 
    ! b) Construct lower triangle - use symmetry:
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1,nat	! all atoms
+      do i = 1,j	! do only for atoms close to that one
+         if (i < j) then ! it's a new pair of atoms, calculate everything
+            do j1 = 1,n_orb ! all orbitals
+               l = (j-1)*n_orb+j1
+               do i1 = 1,n_orb ! all orbitals
+                  k = (i-1)*n_orb+i1
+                  Hij(k,l) = Hij(l,k)
+                  Sij(k,l) =  Sij(l,k)
+               enddo ! i1
+            enddo ! j1
+         endif
+      enddo ! j
+   enddo ! i
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Hamil_tot_NRL_unitcell:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Sij', Sij) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
 !$omp parallel
 !$omp do  private(j, i, j1, l, i1, k)
    do j = 1,nat	! all atoms
@@ -607,6 +636,7 @@ subroutine Hamil_tot_NRL_unitcell(numpar, Scell, NSC, TB_Hamil, Err)
    enddo ! i
 !$omp end do 
 !$omp end parallel
+#endif
 
    ! 2) Convert the Hamiltonian on-site energies from Rydbergs into eVs:
    Hij = Hij*g_Ry	! [Ry] into [eV]
@@ -657,7 +687,62 @@ subroutine Hamil_tot_NRL_unitcell(numpar, Scell, NSC, TB_Hamil, Err)
       Scell(NSC)%PRRy = 0.0d0
       Scell(NSC)%PRRz = 0.0d0
       ! Generalized Trani expression for non-orthogonal Hamiltonian:
-      
+#ifdef MPI_USED   ! use the MPI version
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = nat
+      ! Do the cycle (parallel) calculations:
+      do j = Nstart, Nend, N_incr  ! each process does its own part
+      !do j = 1,nat	! all atoms
+         m => Scell(NSC)%Near_neighbor_size(j)
+         do atom_2 = 0,m ! do only for atoms close to that one
+            if (atom_2 .EQ. 0) then
+               i = j
+            else
+               i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+               x => Scell(NSC)%Near_neighbor_dist(j,atom_2,1) ! at this distance, X
+               y => Scell(NSC)%Near_neighbor_dist(j,atom_2,2) ! at this distance, Y
+               z => Scell(NSC)%Near_neighbor_dist(j,atom_2,3) ! at this distance, Z
+            endif
+            if (i > 0) then ! if there really is a nearest neighbor
+               do j1 = 1,n_orb	! all orbitals
+                  l = (j-1)*n_orb+j1
+                  do i1 = 1,n_orb	! all orbitals
+                     k = (i-1)*n_orb+i1
+                     if (i == j) then ! for the diagonal elements according to Trani:
+                        if (j1 == i1) then
+                           ! Skip the same orbital, no overlap
+                        else
+                           ! [1] Nonorthagonal expression:
+                           ! Testing alternative orthogonalized Hamiltonian:
+                           SH_1 = 1.10d0*Scell(NSC)%Hij(k,l)
+                           !Testing orthogonal expression (Trani):
+                           Scell(NSC)%PRRx(k,l) = SH_1
+                           Scell(NSC)%PRRy(k,l) = SH_1
+                           Scell(NSC)%PRRz(k,l) = SH_1
+                        endif
+                     else
+                        ! [1] Nonorthagonal expression:
+                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        Scell(NSC)%PRRx(k,l) = x*SH_1
+                        Scell(NSC)%PRRy(k,l) = y*SH_1
+                        Scell(NSC)%PRRz(k,l) = z*SH_1
+                     endif	! note that the PRR are not diagonal
+                     if (Scell(NSC)%PRRx(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRx(k,l)
+                     if (Scell(NSC)%PRRy(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRy(k,l)
+                     if (Scell(NSC)%PRRz(k,l) .GT. 1d10) print*, i, j, Scell(NSC)%PRRz(k,l)
+!                         write(*,'(i4,i4,e,e,e)') k,l, matter%PRRx(k,l), matter%PRRy(k,l), matter%PRRz(k,l)
+                  enddo ! i1
+               enddo ! j1
+            endif ! (i > 0)
+         enddo ! j
+      enddo ! i
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRx', Scell(NSC)%PRRx) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRy', Scell(NSC)%PRRy) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRz', Scell(NSC)%PRRz) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
       !$omp parallel
       !$omp do private(j, m, atom_2, i, x, y, z, j1, l, i1, k, SH_1)
       do j = 1,nat	! all atoms
@@ -716,6 +801,8 @@ subroutine Hamil_tot_NRL_unitcell(numpar, Scell, NSC, TB_Hamil, Err)
       enddo ! i
       !$omp end do 
       !$omp end parallel
+#endif
+
 !       deallocate(SH, HS)
       ! Convert to SI units used later:
       !temp = g_me*g_e/g_h*1d-10 / 2.0d0	! UNCLEAR WHERE THE 1/2 COMES FROM ???
@@ -736,13 +823,54 @@ subroutine Cycles_to_get_H1_and_S1(Scell, NSC, nat, n_orb, Nx, Ny, Nz, TB_Hamil,
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_H_NRL), dimension(:,:), intent(in) :: TB_Hamil   ! parameters of the Hamiltonian of TB
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters
    integer, intent(in) :: nat, n_orb, Nx, Ny, Nz
    real(8), dimension(:,:), intent(inout) :: Hij1, Sij1, Hij_p, Sij_p
    !-------------------------
    integer :: x_cell, y_cell, z_cell, zb(3)
    integer :: j, i, j1, l, i1, k
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1,nat	! all atoms
+      XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
+         YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+            ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+               zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+               do i = j,nat	! all pairs of atoms
+
+
+                  ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
+                  call Hamilton_one_NRL_cell(Scell, NSC, j, i, zb, TB_Hamil, numpar, Hij1)	! this calles the block-hamiltonian
+                  ! Construct overlap matrix for this pair of atoms:
+                  call Get_overlap_S_matrix_cell(Scell, NSC, j, i, zb, TB_Hamil, Sij1)
+
+                  do j1 = 1,n_orb ! all orbitals
+                     l = (j-1)*n_orb+j1
+                     do i1 = 1,n_orb ! all orbitals
+                        k = (i-1)*n_orb+i1
+                        Hij_p(k,l) = Hij_p(k,l) + Hij1(i1,j1)	! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40)
+                        if (ABS(Sij1(i1,j1)) >= 1.0d-10) Sij_p(k,l) = Sij_p(k,l) + Sij1(i1,j1)	! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
+                     enddo ! i1
+                  enddo ! j1
+               enddo ! i
+            enddo ZC
+         enddo YC
+      enddo XC
+   enddo ! j
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Cycles_to_get_H1_and_S1:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij_p', Hij_p) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Sij_p', Sij_p) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
    !$omp parallel private(j, i, x_cell, y_cell, z_cell, zb, j1, l, i1, k, Hij1, Sij1)
    !$omp do reduction( + : Hij_p, Sij_p)
    XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
@@ -751,7 +879,6 @@ subroutine Cycles_to_get_H1_and_S1(Scell, NSC, nat, n_orb, Nx, Ny, Nz, TB_Hamil,
             zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
             do j = 1,nat	! all atoms
                do i = j,nat	! all pairs of atoms
-
 
                   ! First, for the non-orthagonal Hamiltonian for this pair of atoms:
                   call Hamilton_one_NRL_cell(Scell, NSC, j, i, zb, TB_Hamil, numpar, Hij1)	! this calles the block-hamiltonian
@@ -773,6 +900,7 @@ subroutine Cycles_to_get_H1_and_S1(Scell, NSC, nat, n_orb, Nx, Ny, Nz, TB_Hamil,
    enddo XC
    !$omp end do
    !$omp end parallel
+#endif
 end subroutine Cycles_to_get_H1_and_S1
 
 
@@ -874,7 +1002,7 @@ end subroutine Loewdin_Orthogonalization
 
 subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, Err)
 ! This subroutine is unused for CDF calculations! A newer one is in the module "TB"
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(inout):: Ei	! [eV] energy levels for this complex Hamiltonian
@@ -889,6 +1017,9 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
    real(8), pointer :: x1, y1, z1
    complex(8) :: expfac, SH_1
    character(200) :: Error_descript
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    Error_descript = ''
    nol = 0.0d0
 !    temp = g_me*g_e/g_h*1d-10
@@ -920,6 +1051,61 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
    call Reciproc_rel_to_abs(ksx, ksy, ksz, Scell, NSC, kx, ky, kz) ! get absolute k-values, module "Atomic_tools"
 
    ! 1) Construct complex Hamiltonian and overlap:
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1,nat	! all atoms
+      m = Scell(NSC)%Near_neighbor_size(j)
+      do atom_2 = 0,m ! do only for atoms close to that one
+         if (atom_2 == 0) then
+            i = j
+            x1 => nol
+            y1 => nol
+            z1 => nol
+         else
+            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+            x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1)	! at this distance, X
+            y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2)	! at this distance, Y
+            z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3)	! at this distance, Z
+         endif ! (atom_2 .EQ. 0)
+
+         if (i > 0) then
+            if ((abs(kx) < 1.0d-14) .AND. (abs(ky) < 1.0d-14) .AND. (abs(kz) < 1.0d-14)) then
+               expfac = dcmplx(1.0d0,0.0d0)
+            else
+               expfac = exp(g_CI*dcmplx(kx*x1 + ky*y1 + kz*z1,0.0d0))
+            endif
+
+            do j1 = 1,norb ! all orbitals for sp3d5
+               l = (j-1)*norb+j1
+               do i1 = 1,norb ! all orbitals for sp3d5
+                  k = (i-1)*norb+i1
+                  CHij_temp(k,l) = DCMPLX(Scell(NSC)%H_non(k,l),0.0d0)*expfac
+                  CSij(k,l) = DCMPLX(Scell(NSC)%Sij(k,l),0.0d0)*expfac
+                  if ((isnan(real(CHij_temp(k,l)))) .OR. isnan(aimag(CHij_temp(k,l)))) then
+                     print*, i, j, k, l, CHij_temp(k,l)
+                     pause 'CHij_temp ISNAN in Complex_Hamil_NRL'
+                  endif
+                  if ((isnan(real(CSij(k,l)))) .OR. isnan(aimag(CSij(k,l)))) then
+                     print*, i, j, k, l, CSij(k,l)
+                     pause 'CSij ISNAN in Complex_Hamil_NRL'
+                  endif
+
+               enddo ! i1
+            enddo ! j1
+         endif ! (i > 0)
+      enddo ! atom_2
+   enddo ! j
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Complex_Hamil_NRL:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'CHij_temp', CHij_temp) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'CSij', CSij) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
    !$omp parallel
    !$omp do private(j, m, atom_2, i, x1, y1, z1, expfac, j1, l, i1, k)
    do j = 1,nat	! all atoms
@@ -970,6 +1156,7 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
    enddo ! j
    !$omp end do 
    !$omp end parallel
+#endif
 
    ! Temporarily save nonorthogonal Hamiltonian and overlap matrix:
    CHij_non = CHij_temp
@@ -1007,6 +1194,62 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
    ! 4) Calculate momentum operators:
    ! Optical matrix elements for non-orthogonal TB are taken from:
    ! [1] arXiv:1805.08918v1 -- https://128.84.21.199/abs/1805.08918
+#ifdef MPI_USED   ! use the MPI version
+   ! Do the cycle (parallel) calculations:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1,nat	! all atoms
+      m = Scell(NSC)%Near_neighbor_size(j)
+      do atom_2 = 0,m ! do only for atoms close to that one
+         if (atom_2 == 0) then
+            i = j
+         else
+            i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+            x1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,1)	! at this distance, X
+            y1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,2)	! at this distance, Y
+            z1 => Scell(NSC)%Near_neighbor_dist(j,atom_2,3)	! at this distance, Z
+         endif ! (atom_2 .EQ. 0)
+
+         if (i > 0) then
+            do j1 = 1,norb	! all orbitals for sp3d5
+               l = (j-1)*norb+j1
+               do i1 = 1,norb	! all orbitals for sp3d5
+                  k = (i-1)*norb+i1
+                  if (i == j) then ! contribution of the same atom, according to Trani:
+                     if (j1 == i1) then
+                        ! Skip the same orbital, no overlap
+                     else
+                        ! [1] Nonorthagonal expression:
+                        !SH_1 = DCMPLX(0.270d0,0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
+                        ! Testing alternative orthogonalized Hamiltonian:
+                        SH_1 = DCMPLX(1.1d0,0.0d0) * CHij_orth(k,l)
+
+                        Scell(NSC)%cPRRx(k,l) = SH_1
+                        Scell(NSC)%cPRRy(k,l) = SH_1
+                        Scell(NSC)%cPRRz(k,l) = SH_1
+                     endif
+                  else	! different atoms at distance {x,y,z}:
+                     ! [1] Nonorthagonal expression:
+                     SH_1 = CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)
+                     Scell(NSC)%cPRRx(k,l) = DCMPLX(x1,0.0d0)*SH_1
+                     Scell(NSC)%cPRRy(k,l) = DCMPLX(y1,0.0d0)*SH_1
+                     Scell(NSC)%cPRRz(k,l) = DCMPLX(z1,0.0d0)*SH_1
+                  endif
+                  if (real(Scell(NSC)%cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, Scell(NSC)%cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(k), x1
+                  if (real(Scell(NSC)%cPRRy(k,l)) .GT. 1d10) print*, i, j, Scell(NSC)%cPRRy(k,l)
+                  if (real(Scell(NSC)%cPRRz(k,l)) .GT. 1d10) print*, i, j, Scell(NSC)%cPRRz(k,l)
+               enddo ! i1
+            enddo ! j1
+         endif ! (i > 0)
+      enddo ! atom_2
+   enddo ! j
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%cPRRx', Scell(NSC)%cPRRx) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%cPRRy', Scell(NSC)%cPRRy) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%cPRRz', Scell(NSC)%cPRRz) ! module "MPI_subroutines"
+
+
+#else    ! OpenMP to use instead
    !$omp parallel
    !$omp do private(j, m, atom_2, i, x1, y1, z1, j1, l, i1, k, SH_1)
    do j = 1,nat	! all atoms
@@ -1067,7 +1310,8 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
    enddo ! j
    !$omp end do 
    !$omp end parallel
-   
+#endif
+
    ! Convert to SI units used later:
    !temp = g_me*g_e/g_h*1d-10 / 2.0d0	! UNCLEAR WHERE THE 1/2 COMES FROM ???
    ! mass and Plank constant cancel out in the final expression (subroutine get_Trani, module "Optical_parameters")
@@ -1772,6 +2016,8 @@ subroutine Construct_Vij_NRL_OMP(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, 
    ! Construct matrix of all the radial functions for each pair of atoms, in 2 steps:
 
 ! 1) Upper triangle of the matrix (i,j) - calculate every element:
+
+
 !$omp PARALLEL
 !$omp do private(j, m, atom_2, i, KOA1, KOA2, r, rm)
    AT1:do j = 1,nat	! all atoms
@@ -2037,20 +2283,43 @@ end function d_F_NRL
 ! Derivatives of the attractive part of TB:
 
 ! Subroutine for derivative of the Hamiltonian:
-subroutine get_dHij_drij_NRL(TB_Hamil, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Aij_x_Ei) ! module "TB_NRL"
+subroutine get_dHij_drij_NRL(TB_Hamil, Scell, NSC, numpar, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Aij_x_Ei) ! module "TB_NRL"
    type(TB_H_NRL), dimension(:,:), intent(in) :: TB_Hamil	! parameters of the Hamiltonian of TB
    type(Super_cell), dimension(:), intent(inout), target :: Scell	! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of supercell
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
    real(8), dimension(:,:), intent(in) :: Aij, Aij_x_Ei
    !------------------------------------------------------------
    integer :: nat, k
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
    !------------------------------------------------------------
 
    nat = size(Scell(NSC)%MDatoms)	! number of atoms
-   
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   do k = 1, nat
+      Scell(NSC)%MDatoms(k)%forces%att(:) = 0.0d0	! just to start
+   enddo
+
+   ! Do the cycle (parallel) calculations:
+   ATOMS:do k = 1, nat	! forces for all atoms
+      call get_forces(k, TB_Hamil, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Aij_x_Ei)	! see below
+   enddo ATOMS
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_dHij_drij_NRL:'
+   do k = 1, nat
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'MDatoms(k)%forces%att(:)', Scell(NSC)%MDatoms(k)%forces%att(:)) ! module "MPI_subroutines"
+   enddo
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(k) 
    !$omp do
    ATOMS:do k = 1, nat	! forces for all atoms
@@ -2059,6 +2328,7 @@ subroutine get_dHij_drij_NRL(TB_Hamil, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M
    enddo ATOMS
    !$omp end do 
    !$omp end parallel
+#endif
 end subroutine get_dHij_drij_NRL
 
 
@@ -2347,7 +2617,7 @@ subroutine Attract_TB_Forces_Press_NRL(TB_Hamil, Scell, NSC, numpar, Aij, M_Vij,
    type(TB_H_NRL), dimension(:,:), intent(in) :: TB_Hamil   ! parameters of the Hamiltonian of TB
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
@@ -2356,6 +2626,9 @@ subroutine Attract_TB_Forces_Press_NRL(TB_Hamil, Scell, NSC, numpar, Aij, M_Vij,
    real(8), allocatable, dimension(:,:) :: dwr_press, dS_press
    real(8), allocatable, dimension(:,:,:) :: dHij, dSij
    integer i, j, k, n
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    if (numpar%p_const) then	! calculate this for P=const Parrinello-Rahman MD
       n = size(Aij,1)
       allocate(dwr_press(9,n))
@@ -2374,6 +2647,24 @@ subroutine Attract_TB_Forces_Press_NRL(TB_Hamil, Scell, NSC, numpar, Aij, M_Vij,
       dHij = dHij*g_Ry*g_A2au	! [Ry] into [eV], and [1/a0] -> [1/A]
       dSij = dSij*g_A2au	! [1/a0] -> [1/A]
 
+#ifdef MPI_USED   ! use the MPI version
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = n
+      ! Do the cycle (parallel) calculations:
+      do i = Nstart, Nend, N_incr  ! each process does its own part
+      !do i = 1, n
+         do j = 1, 9
+            dwr_press(j,i) = dwr_press(j,i) + SUM(dHij(j,i,:)*Aij(i,:)) ! old, tested, good
+            dS_press(j,i) = dS_press(j,i) + SUM(dSij(j,i,:)*Aij_x_Ei(i,:))
+         enddo ! i
+      enddo ! j
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in Attract_TB_Forces_Press_NRL:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dwr_press', dwr_press) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dS_press', dS_press) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
       !$omp PARALLEL DO private(i,j)
       do j = 1, 9
          do i = 1, n 
@@ -2382,7 +2673,8 @@ subroutine Attract_TB_Forces_Press_NRL(TB_Hamil, Scell, NSC, numpar, Aij, M_Vij,
          enddo ! i
       enddo ! j
       !$OMP END PARALLEL DO
-      
+#endif
+
       Scell(NSC)%SCforce%att = 0.0d0
       do i = 1,3
          do k = 1,3
@@ -2401,19 +2693,60 @@ subroutine dHamil_tot_Press_NRL(atoms, Scell, NSC, numpar, TB_Hamil, M_Vij, M_dV
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    type(TB_H_NRL), dimension(:,:), intent(in) :: TB_Hamil ! all tight binding parameters
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
    real(8), dimension(:,:,:), intent(inout) :: dHij, dSij
+   !------------------------
    real(8), dimension(9,9,9) :: dHij1, dSij1
    integer :: i, j, j1, i1, ki, atom_2, m, nat, k, i2, j2, NumTB
    integer i4, j4, norb
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    norb = 9	! sp3d5 basis set
    nat = size(atoms)
    dHij = 0.0d0
    dSij = 0.0d0
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1,nat	! all atoms
+      m = Scell(NSC)%Near_neighbor_size(i)
+      i4 = (i-1)*norb
+      do atom_2 = 0,m ! do only for atoms close to that one
+         if (atom_2 == 0) then
+            j = i
+         else
+            j = Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+         endif
+         if (j .GT. 0) then
+            j4 = (j-1)*norb
+            call dHamilton_one_Press_NRL(i, atom_2, Scell(NSC)%MDatoms, Scell, NSC, TB_Hamil, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, dHij1, dSij1)
+            ! Eqs. (2.41), (2.42), Page 40 in H.Jeschke PhD thesis.
+            do j1 = 1,norb	! all orbitals
+               j2 = j4+j1
+               do i1 = 1,norb	! all orbitals
+                  i2 = i4+i1
+                  dHij(:,i2,j2) = dHij1(:,i1,j1)	! construct the total Hamiltonian from
+                  dSij(:,i2,j2) = dSij1(:,i1,j1)	! construct the total Overlap Matrix from
+               enddo ! i1
+            enddo ! j1
+         endif ! (j .GT. 0) then
+      enddo ! j
+   enddo ! i
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in dHamil_tot_Press_NRL:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dHij', dHij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dSij', dSij) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp PARALLEL DO private(i,m,i4,atom_2,j,j4,j1,i1,j2,i2,dHij1,dSij1)
    do i = 1,nat	! all atoms
       m = Scell(NSC)%Near_neighbor_size(i)
@@ -2442,6 +2775,7 @@ subroutine dHamil_tot_Press_NRL(atoms, Scell, NSC, numpar, TB_Hamil, M_Vij, M_dV
       enddo ! j
    enddo ! i
    !$OMP END PARALLEL DO
+#endif
 end subroutine dHamil_tot_Press_NRL ! CHECKED
 
 
@@ -2792,6 +3126,7 @@ subroutine dErdr_s_NRL(TB_Repuls, atoms, Scell, NSC, numpar) ! derivatives of th
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    !type(Forces), dimension(:,:), intent(inout) :: forces1	! all interatomic forces
    integer ian, n
+
    n = size(atoms)
    !$omp PARALLEL DO private(ian)
    do ian = 1, n  ! Forces for all atoms

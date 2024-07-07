@@ -425,8 +425,8 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
 
       ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
       error_part = 'Error in Hamil_tot_3TB:'
-      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
-      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Sij', Sij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Hij}', Hij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Sij}', Sij) ! module "MPI_subroutines"
 
 #else    ! OpenMP to use instead
 !$omp parallel private(j, m, atom_2, i, j1, l, i1, k, Hij1, Sij1)
@@ -1253,7 +1253,7 @@ end subroutine Onsite_3TB
 
 ! Subroutine for derivative of the Hamiltonian:
 subroutine get_dHij_drij_3TB(numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp)
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout), target :: Scell	! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of supercell
    type(TB_H_3TB), dimension(:,:), intent(in) :: TB	! parameters of the Hamiltonian of TB
@@ -1265,10 +1265,32 @@ subroutine get_dHij_drij_3TB(numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij,
    real(8), dimension(:,:,:), intent(in) :: M_Lag_exp, M_d_Lag_exp
    !------------------------------------------------------------
    integer :: nat, k
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
    !------------------------------------------------------------
 
    nat = size(Scell(NSC)%MDatoms)	! number of atoms
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   do k = 1, nat
+      Scell(NSC)%MDatoms(k)%forces%att(:) = 0.0d0	! just to start
+   enddo
+   ! Do the cycle (parallel) calculations:
+   ATOMS:do k = Nstart, Nend, N_incr  ! each process does its own part
+      ! (tested, correct):
+      call get_forces_3TB(k, numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
+                           M_lmn, M_Lag_exp, M_d_Lag_exp, Aij_x_Ei, Mjs) !below
 
+   enddo ATOMS
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Construct_Vij_BOP:'
+   do k = 1, nat
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'MDatoms(k)%forces%att(:)', Scell(NSC)%MDatoms(k)%forces%att(:)) ! module "MPI_subroutines"
+   enddo
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(k)
    !$omp do
    ATOMS:do k = 1, nat	! forces for all atoms
@@ -1281,7 +1303,7 @@ subroutine get_dHij_drij_3TB(numpar, Scell, NSC, TB, Aij, M_Vij, M_dVij, M_SVij,
    enddo ATOMS
    !$omp end do
    !$omp end parallel
-
+#endif
 end subroutine get_dHij_drij_3TB
 
 
@@ -2609,7 +2631,7 @@ subroutine Attract_TB_Forces_Press_3TB(Scell, NSC, TB, numpar, Aij, M_Vij, M_dVi
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_H_3TB), dimension(:,:), intent(in) :: TB	  ! all tight binding parameters
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
@@ -2621,6 +2643,9 @@ subroutine Attract_TB_Forces_Press_3TB(Scell, NSC, TB, numpar, Aij, M_Vij, M_dVi
    real(8), allocatable, dimension(:,:) :: dwr_press, dS_press
    real(8), allocatable, dimension(:,:,:) :: dHij, dSij
    integer i, j, k, n
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    if (numpar%p_const) then	! calculate this for P=const Parrinello-Rahman MD
       n = size(Aij,1)
       allocate(dwr_press(9,n))
@@ -2635,6 +2660,24 @@ subroutine Attract_TB_Forces_Press_3TB(Scell, NSC, TB, numpar, Aij, M_Vij, M_dVi
       call dHamil_tot_Press_3TB(Scell, NSC, TB, numpar, M_Vij, M_dVij, M_SVij, M_dSVij, &
                                  M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dHij, dSij)   ! below
 
+#ifdef MPI_USED   ! use the MPI version
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = n
+      ! Do the cycle (parallel) calculations:
+      do i = Nstart, Nend, N_incr  ! each process does its own part
+      !do i = 1, n
+         do j = 1, 9
+            dwr_press(j,i) = dwr_press(j,i) + SUM(dHij(j,i,:)*Aij(i,:)) ! old, tested, good
+            dS_press(j,i) = dS_press(j,i) + SUM(dSij(j,i,:)*Aij_x_Ei(i,:))
+         enddo ! i
+      enddo ! j
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in Attract_TB_Forces_Press_3TB:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dwr_press', dwr_press) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dS_press', dS_press) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
       !$omp PARALLEL DO private(i,j)
       do j = 1, 9
          do i = 1, n
@@ -2643,6 +2686,7 @@ subroutine Attract_TB_Forces_Press_3TB(Scell, NSC, TB, numpar, Aij, M_Vij, M_dVi
          enddo ! i
       enddo ! j
       !$OMP END PARALLEL DO
+#endif
 
       Scell(NSC)%SCforce%att = 0.0d0
       do i = 1,3
@@ -2662,7 +2706,7 @@ subroutine dHamil_tot_Press_3TB(Scell, NSC, TB, numpar, M_Vij, M_dVij, M_SVij, M
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_H_3TB), dimension(:,:), intent(in) :: TB	  ! all tight binding parameters
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_SVij, M_dSVij	! matrix of Overlap functions for all pairs of atoms, all orbitals, and derivatives
    real(8), dimension(:,:,:), intent(in) :: M_lmn	! matrix of directional cosines l, m, n; and derivatives
@@ -2674,12 +2718,58 @@ subroutine dHamil_tot_Press_3TB(Scell, NSC, TB, numpar, M_Vij, M_dVij, M_SVij, M
    real(8), dimension(:,:,:), allocatable :: dHij1, dSij1
    integer :: i, j, j1, i1, atom_2, m, nat, i2, j2
    integer :: i4, j4, norb, n_overlap
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    ! Depending on the basis set:
    n_overlap = identify_DFTB_basis_size(numpar%basis_size_ind)   ! module "TB_DFTB"
    norb = identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)    ! module "TB_DFTB"
    nat = size(Scell(NSC)%MDatoms)	! number of atoms
    dHij = 0.0d0 ! to start with
    dSij = 0.0d0 ! to start with
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   if (.not.allocated(dHij1)) allocate(dHij1(9,norb,norb))
+   if (.not.allocated(dSij1)) allocate(dSij1(9,norb,norb))
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1,nat	! all atoms
+      m = Scell(NSC)%Near_neighbor_size(i)
+      i4 = (i-1)*norb
+      do atom_2 = 0,m ! do only for atoms close to that one
+         if (atom_2 == 0) then
+            j = i
+         else
+            j = Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+         endif
+         if (j .GT. 0) then
+            j4 = (j-1)*norb
+            call dHamilton_one_Press_3TB(i, atom_2, numpar%basis_size_ind, Scell, NSC, TB, norb, n_overlap, &
+                                          M_Vij, M_dVij, M_SVij, M_dSVij, &
+                                          M_lmn, Mjs_in, M_Lag_exp, M_d_Lag_exp, dHij1, dSij1)  ! below
+            ! Eqs. (2.41), (2.42), Page 40 in H.Jeschke PhD thesis
+            do j1 = 1,norb	! all orbitals
+               j2 = j4+j1
+               do i1 = 1,norb	! all orbitals
+                  i2 = i4+i1
+                  dHij(:,i2,j2) = dHij1(:,i1,j1)	! construct the total Hamiltonian from
+                  dSij(:,i2,j2) = dSij1(:,i1,j1)	! construct the total Overlap Matrix from
+               enddo ! i1
+            enddo ! j1
+         endif ! (j .GT. 0) then
+      enddo ! j
+   enddo ! i
+   if (allocated(dHij1)) deallocate(dHij1)
+   if (allocated(dSij1)) deallocate(dSij1)
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in dHamil_tot_Press_3TB:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dHij', dHij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dSij', dSij) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
    !$omp parallel private(i,m,i4,atom_2,j,j4,j1,i1,j2,i2,dHij1,dSij1)
    if (.not.allocated(dHij1)) allocate(dHij1(9,norb,norb))
    if (.not.allocated(dSij1)) allocate(dSij1(9,norb,norb))
@@ -2714,6 +2804,7 @@ subroutine dHamil_tot_Press_3TB(Scell, NSC, TB, numpar, M_Vij, M_dVij, M_SVij, M
    if (allocated(dHij1)) deallocate(dHij1)
    if (allocated(dSij1)) deallocate(dSij1)
    !$omp end parallel
+#endif
 end subroutine dHamil_tot_Press_3TB
 
 

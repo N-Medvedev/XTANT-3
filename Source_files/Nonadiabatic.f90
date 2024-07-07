@@ -28,6 +28,9 @@ use Universal_constants
 use Objects
 use Atomic_tools, only : Maxwell_int_shifted, integrated_atomic_distribution
 
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce
+#endif
 
 implicit none
 PRIVATE
@@ -39,7 +42,7 @@ public :: Electron_ion_collision_int, get_G_ei, Electron_ion_coupling_Mij, Elect
 
 subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, dE_nonadiabat, kind_M, DOS_weights, G_ei_partial)
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    type(Energies), intent(inout) :: nrg	! all energies
    real(8), dimension(:,:), intent(in) :: Mij  ! Matrix element coupling electron energy levels via ion motion
    real(8), dimension(:), intent(in) :: wr  ! electron energy levels [eV]
@@ -227,7 +230,7 @@ end subroutine Electron_ion_collision_int
 subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, distre_temp, &
                               dfdt_e, dfdt_A, dfdt_B, DOS_weights, G_ei_partial)
    type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:), intent(in) :: Mij  ! Matrix element coupling electron energy levels via ion motion
    real(8), dimension(:), intent(in) :: wr, wr0  ! electron energy levels [eV], on current and last timesteps
    real(8), intent(in) :: dt_small  ! timestep [fs]
@@ -240,6 +243,8 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
    !------------------
    real(8) :: dfdt_i, wij, ViVj, Mij2, distr_at_in, distr_at_fin, dtij, dfdt, dfdt_aij, dfdt_bij, coef, coef_inv
    integer :: i, j
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    coef = 2.0d0*g_e/g_h
    coef_inv = numpar%M2_scaling*g_h/(g_e)   ! [s] with scaling factor added (e.g. 2 from d|a|^2/dt) OLD
@@ -249,6 +254,64 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
    dfdt_A = 0.0d0
    dfdt_B = 0.0d0
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = size(wr)
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, size(wr) ! all energy levels
+      dfdt_i = 0.0d0  ! implicit
+      do j = 1, size(wr) ! all pairs of energy levels
+          ! All transitions except degenerate levels
+          wij = abs( wr(i) - wr(j) )    ! [eV] energy difference between the levels = transferred energy
+          ! Exclude too large jumps, and quasidegenerate levels:
+          large_jumps:if ( (wij < numpar%acc_window) .and. (wij > numpar%degeneracy_eV) ) then
+               ! Select which scheme for the matrix element to use:
+               call get_Mij2(i, j, kind_M, Mij, dt_small, wr, wr0, coef, coef_inv, Mij2)   ! below
+
+               ! analytical integration of maxwell function:
+               if (i > j) then
+                  !distr_at_fin = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
+                  distr_at_fin = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
+                  distr_at_in = 1.0d0	! all atoms can absorb this energy
+               else
+                  distr_at_fin = 1.0d0	! all atoms can absorb this energy
+                  !distr_at_in = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
+                  distr_at_in = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
+               endif
+               !print*, i, j, integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 0), integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 1)
+
+               ! Explicit scheme (reqiures small timestep):
+               dfdt = Mij2*( distre_temp(j)*distr_at_fin*(2.0d0-distre_temp(i)) - distre_temp(i)*distr_at_in*(2.0d0-distre_temp(j)) )
+
+               ! Implicit scheme (unconditionally stable, but does not conserve number of electrons!):
+               dfdt_aij = Mij2*distr_at_fin
+               dfdt_bij = Mij2*distr_at_in
+               ! Sum the contributions up:
+               dfdt_A(i) = dfdt_A(i) + dfdt_aij*distre_temp(j)
+               dfdt_B(i) = dfdt_B(i) + dfdt_bij*(2.0d0-distre_temp(j))
+
+               !if (abs(dfdt * dt_small) < 2.0d0) then
+                   dfdt_i = dfdt_i + dfdt
+                   ! Get contributions from different shells:
+                   call Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)    ! below
+               !endif ! (abs(dfdt * dt_small) < 2.0d0)
+
+
+          endif large_jumps
+      enddo ! j
+      ! Implicit scheme:
+      dfdt_e(i) = dfdt_i
+    enddo ! i
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_el_ion_kernel:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dfdt_e}', dfdt_e) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{G_ei_partial}', G_ei_partial) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dfdt_A}', dfdt_A) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dfdt_B}', dfdt_B) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
 !$omp PARALLEL private(i,j,dfdt_i,ViVj,Mij2,distr_at_in,distr_at_fin, dtij, wij, dfdt, dfdt_aij, dfdt_bij) ! Implicit scheme
 !$omp do reduction( + : dfdt_e, G_ei_partial, dfdt_A, dfdt_B) ! explicit scheme
     do i = 1, size(wr) ! all energy levels
@@ -297,7 +360,7 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
     enddo ! i
 !$omp end do
 !$omp end parallel
-
+#endif
 end subroutine get_el_ion_kernel
 
 

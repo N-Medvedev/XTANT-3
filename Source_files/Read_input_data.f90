@@ -476,7 +476,8 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       if (numpar%user_defined_E_gap > -1.0d-14) then   ! user provided bandgap value, use it:
          !print*, trim(adjustl(numpar%At_base))
          select case (trim(adjustl(numpar%At_base)))
-         case('BEB', 'CDF:EPICS')   ! don't replace the atomci energy level
+         !case('BEB', 'CDF:EPICS')   ! don't replace the atomci energy level
+         case('BEB', 'EADL', 'EPDL', 'EPICS')   ! don't replace the atomci energy level
             ! use the atomic value for BEB cross section
          case default ! replace with the user-defined value
             Scell(i)%E_gap = numpar%user_defined_E_gap ! [eV]

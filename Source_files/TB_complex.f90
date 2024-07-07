@@ -35,6 +35,10 @@ use Little_subroutines, only : Find_in_array_monoton, linear_interpolation
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
 #endif
 
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce
+#endif
+
 implicit none
 PRIVATE
 
@@ -70,6 +74,8 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    real(8), dimension(:,:), allocatable :: DOS, DOS_temp  ! [eV] grid; [a.u.] DOS
    real(8), dimension(:,:,:), allocatable :: DOS_partial, DOS_partial_temp ! partial DOS made of each orbital type
    logical :: anything_to_do
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    !-----------------------------------------------
    ! Check if there is anything to do with the complex Hamiltonian:
@@ -102,6 +108,112 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
 
    !-----------------------------------------------
    ! Calculate what's required for all k-points:
+#ifdef MPI_USED   ! use the MPI version
+   if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N_wgrid), source = 0.0d0) ! all are there
+   if (.not.allocated(kappa_temp)) allocate(kappa_temp(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(kappa_ee_temp)) allocate(kappa_ee_temp(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(kappa_mu_grid_temp)) allocate(kappa_mu_grid_temp(Nsiz_Te), source = 0.0d0)   ! mu [eV]
+   if (.not.allocated(kappa_Ce_grid_temp)) allocate(kappa_Ce_grid_temp(Nsiz_Te), source = 0.0d0)   ! Ce
+   if (allocated(DOS)) then
+      if (.not.allocated(DOS_temp)) allocate(DOS_temp(2,Nsiz_DOS_3), source = DOS)   ! DOS
+   endif
+   if (.not.allocated(DOS_partial_temp)) allocate(DOS_partial_temp(Nsiz_DOS_1,Nsiz_DOS_2,Nsiz_DOS_3), source = 0.0d0)   ! DOS_partial
+
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Nsiz
+   ! Do the cycle (parallel) calculations:
+   do Ngp = Nstart, Nend, N_incr  ! each process does its own part
+   !do Ngp = 1, Nsiz
+      ! Split total index into 3 coordinates indices:
+      ix = ceiling( dble(Ngp)/dble(iym*izm) )
+      iy = ceiling( dble(Ngp - (ix-1)*iym*izm)/dble(izm) )
+      iz = Ngp - (ix-1)*iym*izm - (iy-1)*izm
+
+      !-------------------------------
+      ! k-points:
+      call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
+
+      if (numpar%verbose) write(*,'(a,i4,a,i6,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'MPI Process #', numpar%MPI_param%process_rank, &
+                                     ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' k-points'
+
+      !-------------------------------
+      ! Get the parameters of the complex Hamiltonian:
+      call associate_wrapper(numpar, Scell, NSC, CHij, Ei, kx, ky, kz, cPRRx, cPRRy, cPRRz)  ! below
+
+      !-------------------------------
+      ! Get DOS:
+      if (numpar%save_DOS) then ! if required
+         call get_DOS_on_k_points(numpar, Ei, CHij, DOS_temp, DOS_partial_temp) ! below
+      else  ! skip DOS calculations
+         DOS_temp = 0.0d0
+         DOS_partial_temp = 0.0d0
+      endif
+      ! Save DOS data:
+      DOS(2,:) = DOS(2,:) + DOS_temp(2,:)
+      DOS_partial = DOS_partial + DOS_partial_temp
+
+      !-------------------------------
+      ! Get the parameters of the CDF:
+      if ((numpar%optic_model == 4) .or. (numpar%optic_model == 5)) then ! if requested
+         call get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRRz, Ei, Eps_hw_temp)   ! module "Optical_parameters"
+      else  ! skip it, if not reqired
+         Eps_hw_temp = 0.0d0
+      endif
+      ! Save CDF data:
+      Eps_hw = Eps_hw + Eps_hw_temp ! sum data at different k-points
+
+      !-------------------------------
+      ! If required, do Onsager coefficients (for electronic heat conductivity):
+      kappa_temp = 0.0d0   ! to start with
+      kappa_mu_grid_temp = 0.0d0
+      kappa_Ce_grid_temp = 0.0d0
+      kappa_ee_temp = 0.0d0
+      ! Electron-phonon contribution:
+      if (numpar%do_kappa) then ! (static, KG)
+         call get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
+                              Scell(NSC)%kappa_Te_grid, kappa_mu_grid_temp, kappa_Ce_grid_temp)   ! module "Optical_parameters"
+
+         ! Contribution of the electronic term:
+         call get_kappa_e_e(numpar, matter, Scell, NSC, Ei, kappa_mu_grid_temp, &
+                              Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! module "Optical_parameters"
+      endif
+
+      if (numpar%do_kappa_dyn .and. (Ngp == 1)) then ! (dynamic)
+         ! Only gamma-point calculations, so only 1 time:
+         call get_Onsager_dynamic(numpar, matter, Scell, NSC, kappa_temp) ! module "Optical_parameters"
+
+         ! Contribution of the electronic term:
+         call get_kappa_e_e(numpar, matter, Scell, NSC, Scell(NSC)%Ei, kappa_mu_grid_temp, &
+                              Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! module "Optical_parameters"
+      endif
+
+      !-------------------------------
+      ! Save kappa - electronic heat conductivity data:
+      kappa = kappa + kappa_temp ! sum up at different k-points
+      kappa_ee = kappa_ee + kappa_ee_temp ! sum up at different k-points
+      kappa_mu_grid = kappa_mu_grid + kappa_mu_grid_temp    ! average mu
+      kappa_Ce_grid = kappa_Ce_grid + kappa_Ce_grid_temp    ! average Ce
+   enddo ! Ngp
+   if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
+   if (allocated(kappa_temp)) deallocate(kappa_temp)
+   if (allocated(kappa_ee_temp)) deallocate(kappa_ee_temp)
+   if (allocated(kappa_mu_grid_temp)) deallocate(kappa_mu_grid_temp)
+   if (allocated(kappa_Ce_grid_temp)) deallocate(kappa_Ce_grid_temp)
+   if (allocated(DOS_temp)) deallocate(DOS_temp)
+   if (allocated(DOS_partial_temp)) deallocate(DOS_partial_temp)
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in use_complex_Hamiltonian:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Eps_hw', Eps_hw) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa', kappa) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa_ee', kappa_ee) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa_mu_grid', kappa_mu_grid) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa_Ce_grid', kappa_Ce_grid) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'DOS', DOS) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'DOS_partial', DOS_partial) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
    !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, &
    !$omp                  kappa_temp, kappa_ee_temp, kappa_mu_grid_temp, kappa_Ce_grid_temp, DOS_temp, DOS_partial_temp)
    if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N_wgrid), source = 0.0d0) ! all are there
@@ -198,6 +310,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    if (allocated(DOS_temp)) deallocate(DOS_temp)
    if (allocated(DOS_partial_temp)) deallocate(DOS_partial_temp)
    !$omp end parallel
+#endif
 
    !-----------------------------------------------
    ! Save the k-point averages:
@@ -317,14 +430,14 @@ end subroutine associate_wrapper
 
 
 subroutine get_DOS_on_k_points(numpar, Ei, CHij, DOS_temp, DOS_partial_temp)
-   type (Numerics_param), intent(in) :: numpar  ! numerical parameters
+   type (Numerics_param), intent(inout) :: numpar  ! numerical parameters
    real(8), dimension(:), intent(in) :: Ei  ! [eV] energy levels
    complex, dimension(:,:), intent(in) :: CHij ! eigenvectors of the hamiltonian
    real(8), dimension(:,:), intent(inout) :: DOS_temp  ! [eV] grid; [a.u.] DOS
    real(8), dimension(:,:,:), intent(inout) :: DOS_partial_temp ! partial DOS made of each orbital type
    !-------------------------
 
-   call get_DOS_sort(Ei, DOS_temp, numpar%Smear_DOS, DOS_partial_temp, numpar%mask_DOS, CHij = CHij)  ! module "Electron_tools"
+   call get_DOS_sort(numpar, Ei, DOS_temp, numpar%Smear_DOS, DOS_partial_temp, numpar%mask_DOS, CHij = CHij)  ! module "Electron_tools"
 end subroutine get_DOS_on_k_points
 
 

@@ -212,12 +212,6 @@ if (g_numpar%change_size) then
 endif
 
 
-
-print*, '[MPI process #', g_numpar%MPI_param%process_rank, '] test pause'
-pause 'MPI implementation is done up to here'
-
-
-
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! If user set to calculate the coordinate path between two phases of material:
 if (g_numpar%do_path_coordinate) then
@@ -225,7 +219,6 @@ if (g_numpar%do_path_coordinate) then
    if (g_Err%Err .or. g_Err%Stopsignal) goto 2012      ! if the USER does not want to run the calculations
 endif
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
-
 ! After the initial data are read, and necessay files created,
 ! now we can proceed with the real calculations
 

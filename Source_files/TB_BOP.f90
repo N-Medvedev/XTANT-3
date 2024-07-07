@@ -1036,15 +1036,50 @@ subroutine get_Erep_s_BOP(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_Rep_BOP), dimension(:,:), intent(in)   :: TB_Repuls
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a
    !=====================================================
-   real(8) :: E_rep, E_rep_one
+   real(8) :: E_rep, E_rep_one, E_rep_array(Scell(NSC)%Na)
    integer :: i1, m, atom_2, j1
    integer, pointer :: KOA1, KOA2
    real(8), pointer :: r
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    a = 0.0d0    ! to start with
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Scell(NSC)%Na
+   E_rep_array = 0.0d0  ! to start with
+   ! Do the cycle (parallel) calculations:
+   do i1 = Nstart, Nend, N_incr  ! each process does its own part
+      m = Scell(NSC)%Near_neighbor_size(i1)
+      do atom_2 = 1, m ! do only for atoms close to that one
+         j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
+         if (j1 /= i1) then
+            KOA1 => Scell(NSC)%MDatoms(i1)%KOA
+            KOA2 => Scell(NSC)%MDatoms(j1)%KOA
+            r => Scell(NSC)%Near_neighbor_dist(i1,atom_2,4)  ! at this distance, R
+            E_rep_one = BOP_repulsive_one(TB_Repuls(KOA1,KOA2), r)    ! below
+            a = a + E_rep_one
+            E_rep_array(i1) = E_rep_array(i1) + E_rep_one
+         endif ! (j1 .NE. i1)
+      enddo ! j1
+   enddo ! i1
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_Erep_s_BOP:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'a', a) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'E_rep_array', E_rep_array) ! module "MPI_subroutines"
+
+   do i1 = 1, Scell(NSC)%Na
+      ! And save for each atom:
+      Scell(NSC)%MDAtoms(i1)%Epot = E_rep_array(i1)*0.5d0 ! to exclude double-counting
+   enddo
+
+#else    ! OpenMP to use instead
 !$omp parallel private(i1, m, atom_2, j1, KOA1, KOA2, r, E_rep, E_rep_one)
 !$omp do reduction( + : a)
    do i1 = 1, Scell(NSC)%Na
@@ -1067,6 +1102,7 @@ subroutine get_Erep_s_BOP(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy
    enddo ! i1
 !$omp end do
 !$omp end parallel
+#endif
    a = a/2.0d0 ! it was doubled
    nullify(KOA1, KOA2, r)
 end subroutine get_Erep_s_BOP
