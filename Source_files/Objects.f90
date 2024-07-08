@@ -866,6 +866,13 @@ type :: Used_MPI_parameters
     integer :: ierror           ! error handler
     integer :: INFO             ! info to use in subroutines calls
     !----------------
+    ! BLACS (ScaLAPACK) parameters:
+    integer :: BLACS_icontxt     ! the system context to be used in creating the BLACS context
+    integer :: BLACS_myrow       ! process row index on BLACS grid
+    integer :: BLACS_mycol       ! process column index on BLACS grid
+    integer :: BLACS_nprow       ! number of rows in BLACS grid
+    integer :: BLACS_npcol       ! number of columns in BLACS grid
+    !----------------
     character(10) :: rank_ch    ! rank process as character (for printout)
     real(8) :: Wt0, Wt1   ! wall time defined by MPI
 end type Used_MPI_parameters

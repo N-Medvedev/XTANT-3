@@ -857,10 +857,8 @@ subroutine r_diagonalize(M, Ev, Error_descript, print_Ei, check_M, use_DSYEV)
 
 #ifdef MPI_USED
 !     ScaLAPACK call is not ready yet:
-!    CALL BLACS_GET(0, 0, ICONTXT)
-!    CALL BLACS_GRIDINIT(ICONTXT, ORDER, NPROW, NPCOL)
-!    CALL BLACS_GRIDINFO(ICONTXT, NPROW, NPCOL, MYROW, MYCOL)
-!    CALL PDSYEVD('V', 'U', N, M, 1, 1, DESC_A, W, Z, 1, 1, DESC_Z, WORK , 0 , IWORK ,  0 ,  INFO)   ! ScaLAPACK
+   call ScaLAPACK_diagonalize(M, Ev, Error_descript)  ! below
+
    call dsyevd('V','U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! use LAPACK while ScaLAPACK isn't ready
 #else
    if (.not.present(use_DSYEV)) then
@@ -896,6 +894,23 @@ subroutine r_diagonalize(M, Ev, Error_descript, print_Ei, check_M, use_DSYEV)
       endif
    endif
 end subroutine r_diagonalize
+
+
+
+
+subroutine ScaLAPACK_diagonalize(M, Ev, Error_descript)
+   real(8), dimension(:,:), intent(inout) :: M	! matrix
+   real(8), dimension(:), intent(out) :: Ev	! eigenvalues
+   character(*), intent(inout) :: Error_descript	! error description
+   !-----------------------------
+   Ev = 0.0d0  ! test
+!    CALL BLACS_GET(0, 0, ICONTXT)
+!    CALL BLACS_GRIDINIT(ICONTXT, ORDER, NPROW, NPCOL)
+!    CALL BLACS_GRIDINFO(ICONTXT, NPROW, NPCOL, MYROW, MYCOL)
+!    CALL PDSYEVD('V', 'U', N, M, 1, 1, DESC_A, W, Z, 1, 1, DESC_Z, WORK , 0 , IWORK ,  0 ,  INFO)   ! ScaLAPACK
+
+end subroutine ScaLAPACK_diagonalize
+
 
 
 subroutine check_Ha_r(Mat, Eigenvec, Eigenval) ! real matrix real eigenstates
@@ -1368,6 +1383,13 @@ subroutine mkl_matrix_mult_r(TRANSA, TRANSB, A, B, ResultM)
 #endif
 #endif
 end subroutine mkl_matrix_mult_r
+
+
+
+subroutine ScaLAPACK_PDGEMM_wrapper()
+   !
+end subroutine ScaLAPACK_PDGEMM_wrapper
+
 
 
 ! This subroutine multiplies two complex matrices:

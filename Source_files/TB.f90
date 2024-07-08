@@ -3773,7 +3773,7 @@ function vdW_interplane(TB_Waals, Scell, NSC, numpar, matter)
    integer, intent(in) :: NSC ! number of supercell
    class(TB_vdW), dimension(:,:), allocatable, intent(inout):: TB_Waals ! van der Waals parameters within TB
    type(Solid), intent(inout) :: matter ! material parameters
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8) a
    if (allocated(TB_Waals)) then ! if we have vdW potential defined
       select type(TB_Waals)

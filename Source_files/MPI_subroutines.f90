@@ -88,7 +88,7 @@ end interface do_MPI_Reduce
 
 
 
-public :: get_MPI_lapsed_time, initialize_MPI, initialize_random_seed, MPI_barrier_wrapper, MPI_fileopen_wrapper, &
+public :: initialize_MPI, initialize_random_seed, Initialize_ScaLAPACK, get_MPI_lapsed_time, MPI_barrier_wrapper, MPI_fileopen_wrapper, &
             MPI_fileclose_wrapper, MPI_error_wrapper, MPI_share_Read_Input_Files, MPI_share_matter, MPI_share_numpar, &
             MPI_share_initial_configuration, MPI_share_electron_MFPs, MPI_share_photon_attenuation, MPI_share_add_data, &
             do_MPI_Reduce, do_MPI_Allreduce, broadcast_allocatable_array, MPI_share_Ritchi_CDF, broadcast_variable
@@ -100,6 +100,67 @@ public :: get_MPI_lapsed_time, initialize_MPI, initialize_random_seed, MPI_barri
 
 contains
 
+
+
+
+subroutine Initialize_ScaLAPACK(MPI_param, Err)
+   ! https://info.gwdg.de/wiki/doku.php?id=wiki:hpc:scalapack
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   type(Error_handling), intent(inout) :: Err   ! error save
+   !----------------------
+   integer :: info, nproc, nprow, npcol, myid, myrow, mycol, ctxt, ctxt_sys, ctxt_all
+   integer :: i, n_cur
+
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+   ! Determine rank of calling process and the size of processor set for BLACS:
+   ! https://www.ibm.com/docs/de/pessl/5.4?topic=blacs-pinfo-routine
+   call BLACS_PINFO(myid, nproc) ! library ScaLAPACK (must be linked in compilation; MKL)
+   ! Consistency check:
+   if ( (myid /= MPI_param%process_rank) .or. (nproc /= MPI_param%size_of_cluster) ) then
+      write(6,*) '[MPI process', MPI_param%process_rank, '] Problem with BLACS ranks:', myid, MPI_param%process_rank, nproc, MPI_param%size_of_cluster
+   endif
+
+   ! Get the internal default context:
+   ! https://www.ibm.com/docs/en/pessl/5.4?topic=blacs-get-routine
+   call BLACS_GET( 0, 0, ctxt_sys ) ! library ScaLAPACK
+   MPI_param%BLACS_icontxt = ctxt_sys  ! save into the object variable
+
+   ! Set up a process grid of the chosen size:
+   ! https://www.ibm.com/docs/en/pessl/5.5?topic=blacs-gridinit-routine
+   ctxt = MPI_param%BLACS_icontxt
+   ! Choice of the grid:
+   MPI_param%BLACS_nprow = floor(sqrt(dble(MPI_param%size_of_cluster)))
+   MPI_param%BLACS_npcol = floor(sqrt(dble(MPI_param%size_of_cluster)))
+   n_cur = MPI_param%BLACS_nprow * MPI_param%BLACS_npcol
+   i = 0 ! to start with
+   do while (n_cur < MPI_param%size_of_cluster)
+      i = i + 1
+      n_cur = MPI_param%BLACS_nprow * (MPI_param%BLACS_npcol + i)
+      if (n_cur > MPI_param%size_of_cluster) then
+         i = i - 1   ! go back to the one that wasn't above the limit
+         exit
+      endif
+   enddo
+   MPI_param%BLACS_npcol = MPI_param%BLACS_npcol + i
+   ! Set the grid:
+   call BLACS_GRIDINIT( ctxt, 'C', MPI_param%BLACS_nprow, MPI_param%BLACS_npcol )   ! library ScaLAPACK
+
+   MPI_param%BLACS_myrow = -1 ! to start with
+   MPI_param%BLACS_mycol = -1 ! to start with
+
+   ! Processes not belonging to ctxt have nothing to do
+   if (ctxt < 0) return
+
+   ! Get the process coordinates in the grid
+   call BLACS_GRIDINFO( ctxt, MPI_param%BLACS_nprow, MPI_param%BLACS_npcol, myrow, mycol )   ! library ScaLAPACK
+   MPI_param%BLACS_myrow = myrow
+   MPI_param%BLACS_mycol = mycol
+
+   !write(6,*) '[MPI process', MPI_param%process_rank, ']: grid:', myid, myrow, mycol, MPI_param%BLACS_nprow, MPI_param%BLACS_npcol
+   !  now ScaLAPACK or PBLAS procedures can be used
+#endif
+!pause 'Initialize_ScaLAPACK'
+end subroutine Initialize_ScaLAPACK
 
 
 

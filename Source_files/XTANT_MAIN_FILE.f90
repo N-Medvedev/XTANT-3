@@ -54,6 +54,8 @@ implicit none
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! MPI initialization (only if MPI is present, checked automatically via preprocessing):
 call initialize_MPI(g_numpar%MPI_param, g_Err)   ! module "MPI_subroutines"
+! Initialize ScaLAPACK:
+call Initialize_ScaLAPACK(g_numpar%MPI_param, g_Err)   ! module "MPI_subroutines"
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
