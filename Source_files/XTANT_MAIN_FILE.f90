@@ -613,7 +613,8 @@ endif
    if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
       print*, 'Finilizing MPI'
    endif
-   call MPI_FINALIZE(g_numpar%MPI_param%ierror)
+   call BLACS_EXIT(0)   ! ScaLAPACK library
+   call MPI_FINALIZE(g_numpar%MPI_param%ierror) ! MPI
    if (g_numpar%MPI_param%ierror /= 0) then
       write(*, *) 'Error finalizing MPI!'
    endif
