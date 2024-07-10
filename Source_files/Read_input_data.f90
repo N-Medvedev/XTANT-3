@@ -7526,14 +7526,22 @@ end subroutine Get_list_of_materials
 
 !WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
 
-subroutine check_all_warnings(print_to, laser, Scell, Err)
+subroutine check_all_warnings(print_to, laser, Scell, numpar, Err)
    integer, intent(in) :: print_to  ! file number to print to
-   type(Super_cell), dimension(:), intent(in) :: Scell   ! suoer-cell with all the atoms inside
    type(Pulse), dimension(:), intent(in) :: laser        ! Laser pulse parameters
+   type(Super_cell), dimension(:), intent(in) :: Scell   ! suoer-cell with all the atoms inside
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    type(Error_handling), intent(inout), optional :: Err  ! errors and warnings save
    !---------------------
    character(100) :: text
    integer :: i, Reason
+
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
 
    do i = 1, size(laser)   ! for all pulses
       ! Printout warning if absorbed dose is too high:

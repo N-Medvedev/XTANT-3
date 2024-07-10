@@ -69,7 +69,7 @@ subroutine construct_TB_H_Molteni(numpar, matter, TB_Hamil, Scell, NSC, Ha, Err)
    !call check_symmetry(Ha, numpar%MPI_param) ! just for testing, must be hermitian Hamiltonian
 
    ! Diagonalize symmetric Hamiltonian to get electron energy levels:
-   call sym_diagonalize(Ha, Scell(NSC)%Ei, Error_descript, check_M=.true.) ! module "Algebra_tools"
+   call sym_diagonalize(Ha, Scell(NSC)%Ei, Error_descript, numpar%MPI_param, check_M=.true.) ! module "Algebra_tools"
 
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Subroutine construct_TB_H_Molteni: '//trim(adjustl(Error_descript))

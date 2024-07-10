@@ -504,7 +504,7 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
    !-----------------------------------
    ! 3) Orthogonalize the Hamiltonian using Lowedin procidure
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
-   call Loewdin_Orthogonalization(Nsiz, Sij, Hij, Err, Scell(NSC)%eigen_S)    ! module "TB_NRL"
+   call Loewdin_Orthogonalization(numpar, Nsiz, Sij, Hij, Err, Scell(NSC)%eigen_S)    ! module "TB_NRL"
    
    Scell(NSC)%Hij = Hij ! save orthogonalized but non-diagonalized Hamiltonian
    
@@ -513,9 +513,9 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
    endforall
    !-----------------------------------
    ! 4) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
-!    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, check_M=.true.)
-!    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, use_DSYEV=.false.)
-   call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript) ! module "Algebra_tools"
+!    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, numpar%MPI_param, check_M=.true.)
+!    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, numpar%MPI_param, use_DSYEV=.false.)
+   call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, numpar%MPI_param) ! module "Algebra_tools"
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Subroutine Hamil_tot_DFTB: '//trim(adjustl(Error_descript))
       if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
@@ -539,7 +539,7 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
 !    ! An example of the solution of the linear eigenproblem with LAPACK subroutines:
 !    call dpotrf('U', Nsiz, Sij, Nsiz, j)
 !    call dsygst(1, 'U', Nsiz, Hij, Nsiz, Sij, Nsiz,  j)
-!    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript)
+!    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, numpar%MPI_param)
 !    call mkl_matrix_mult('N', 'N', Sij, Hij, Scell(NSC)%Ha)	! module "Algebra_tools"
 
    !ccccccccccccccccccccccccc
@@ -1594,13 +1594,13 @@ subroutine Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz,
 !    call check_hermiticity(CSij_save)   ! module "Algebra_tools"
 !    pause 'Both checked'
 
-   !call sym_diagonalize(CHij, Ei, Err%Err_descript) ! modeule "Algebra_tools"
+   !call sym_diagonalize(CHij, Ei, Err%Err_descript, numpar%MPI_param) ! modeule "Algebra_tools"
    ! Solve linear eigenproblem:
    ! 1) Orthogonalize the Hamiltonian using Loewdin procidure:
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
-   call Loewdin_Orthogonalization_c(Nsiz, CSij, CHij_temp, Err)	! module "TB_NRL"
+   call Loewdin_Orthogonalization_c(numpar, Nsiz, CSij, CHij_temp, Err)	! module "TB_NRL"
    ! 2) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
-   call sym_diagonalize(CHij_temp, Ei, Error_descript)
+   call sym_diagonalize(CHij_temp, Ei, Error_descript, numpar%MPI_param)
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Complex_Hamil_DFTB: '//trim(adjustl(Error_descript))
       if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it

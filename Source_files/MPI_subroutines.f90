@@ -144,6 +144,7 @@ subroutine Initialize_ScaLAPACK(MPI_param, Err)
    MPI_param%BLACS_npcol = MPI_param%BLACS_npcol + i
    ! Set the grid:
    call BLACS_GRIDINIT( ctxt, 'C', MPI_param%BLACS_nprow, MPI_param%BLACS_npcol )   ! library ScaLAPACK
+   MPI_param%BLACS_icontxt = ctxt
 
    MPI_param%BLACS_myrow = -1 ! to start with
    MPI_param%BLACS_mycol = -1 ! to start with

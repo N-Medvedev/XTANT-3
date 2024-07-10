@@ -831,20 +831,24 @@ end subroutine Partition
 
 
 
-subroutine r_diagonalize(M, Ev, Error_descript, print_Ei, check_M, use_DSYEV)
+subroutine r_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, use_DSYEV)
    real(8), dimension(:,:), intent(inout) :: M	! matrix
    real(8), dimension(:), intent(out) :: Ev	! eigenvalues
    character(*), intent(inout) :: Error_descript	! error description
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
    logical, intent(in), optional :: print_Ei ! print out eigenvalues or not
    logical, intent(in), optional :: check_M  ! check the diagonalized matrix
    logical, intent(in), optional :: use_DSYEV	! do not use divide-and-conquare algorithm
+   !-------------------------------
    integer :: LIWORK, LWORK, N, INFO
    real(8), dimension(:), allocatable :: LAPWORK
    INTEGER, dimension(:), allocatable :: IWORK
    !real(8), dimension(size(M,1),size(M,2)) :: M_save	! matrix
    real(8), dimension(:,:), allocatable :: M_save	! matrix
+   real(8) :: Ev_test(size(Ev))
    integer :: i_countin, FN, i, j
 
+   Error_descript = ''  ! initialize
    N = size(M,1)
    allocate(M_save(N,N))
    LIWORK = 30 + 5*N
@@ -857,9 +861,19 @@ subroutine r_diagonalize(M, Ev, Error_descript, print_Ei, check_M, use_DSYEV)
 
 #ifdef MPI_USED
 !     ScaLAPACK call is not ready yet:
-   call ScaLAPACK_diagonalize(M, Ev, Error_descript)  ! below
+   call ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param)  ! below
+   if (LEN(trim(adjustl(Error_descript))) > 0) then
+      print*, trim(adjustl(Error_descript))
+   endif
 
-   call dsyevd('V','U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! use LAPACK while ScaLAPACK isn't ready
+   M = M_save
+   call dsyevd('V','U', N, M, N, Ev_test, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! use LAPACK while ScaLAPACK isn't ready
+
+   do i = 1, N
+      print*, '[MPI process#', MPI_param%process_rank, '] Ev:', i, Ev(i), Ev_test(i)
+   enddo
+   pause 'r_diagonalize'
+
 #else
    if (.not.present(use_DSYEV)) then
       call dsyevd('V', 'U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
@@ -898,17 +912,69 @@ end subroutine r_diagonalize
 
 
 
-subroutine ScaLAPACK_diagonalize(M, Ev, Error_descript)
+subroutine ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param)
+   ! https://www.ibm.com/docs/vi/pessl/5.5?topic=easvas-pdsyevd-pzheevd-all-eigenvalues-eigenvectors-real-symmetric-complex-hermitian-matrix-using-parallel-divide-conquer-algorithm
    real(8), dimension(:,:), intent(inout) :: M	! matrix
    real(8), dimension(:), intent(out) :: Ev	! eigenvalues
    character(*), intent(inout) :: Error_descript	! error description
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
    !-----------------------------
-   Ev = 0.0d0  ! test
-!    CALL BLACS_GET(0, 0, ICONTXT)
-!    CALL BLACS_GRIDINIT(ICONTXT, ORDER, NPROW, NPCOL)
-!    CALL BLACS_GRIDINFO(ICONTXT, NPROW, NPCOL, MYROW, MYCOL)
-!    CALL PDSYEVD('V', 'U', N, M, 1, 1, DESC_A, W, Z, 1, 1, DESC_Z, WORK , 0 , IWORK ,  0 ,  INFO)   ! ScaLAPACK
+   integer :: N, desc_a(9), desc_z(9), LLD_A, LLD_Z, MYROW, MB_A, MB_Z
+   integer :: NQ, NP, LWORK, LIWORK, TRILWMIN, INFO, ctxt_sys
+   integer :: NUMROC ! function in ScaLAPACK library
+   real(8) :: M_out(size(M,1), size(M,2))
+   real, dimension(:), allocatable :: WORK
+   integer, dimension(:), allocatable :: IWORK
+   real :: M_in(size(M,1), size(M,2)), Ev_local(size(M,1))
 
+   Error_descript = ''  ! initialize
+   Ev = 0.0d0     ! to start with
+   Ev_local = 0.0d0  ! to start with
+   M_out = 0.0d0  ! to start with
+   N = size(M,1)
+   MYROW = MPI_param%BLACS_myrow
+   MB_A = 1
+   MB_Z = 1
+
+   LLD_A = MAX(1,NUMROC(N, MB_A, MYROW, 0, MPI_param%BLACS_nprow))
+   LLD_Z = MAX(1,NUMROC(N, MB_Z, MYROW, 0, MPI_param%BLACS_nprow))
+
+   ! Define the array descriptor:
+   desc_a(1) = 1
+   desc_a(2) = MPI_param%BLACS_icontxt
+   desc_a(3) = N
+   desc_a(4) = N
+   desc_a(5) = MB_A
+   desc_a(6) = MB_A
+   desc_a(7) = 0
+   desc_a(8) = 0
+   desc_a(9) = LLD_A
+   desc_z = desc_a
+
+   NQ = NUMROC( N, MB_A, MPI_param%BLACS_MYCOL, 0, MPI_param%BLACS_nprow )
+   NP = NUMROC( N, MB_A, MPI_param%BLACS_MYROW, 0, MPI_param%BLACS_npcol )
+   TRILWMIN = 3*N + MAX( MB_A*( NP+1 ), 3*MB_A )
+   TRILWMIN = TRILWMIN * 2
+   LWORK = MAX( 1+6*N+2*NP*NQ, TRILWMIN ) + 2*N
+   LIWORK = LWORK
+   allocate(WORK(LWORK), source = 0.0d0)
+   allocate(IWORK(LIWORK), source = 0)
+
+!    print*, MPI_param%process_rank, ':desc_a:', desc_a
+!    print*, 'iwork:', size(IWORK), size(M,1), size(M,2)
+!    print*, 'NQ', NQ, NP, TRILWMIN
+!    print*, 'LLD_A', LLD_A, LLD_Z
+!    print*, ANY(isnan(M)), ANY(abs(M)>1.0d20)
+
+   M_in = M
+   CALL PDSYEVD('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, WORK, LWORK, IWORK, LIWORK, INFO)   ! ScaLAPACK
+   !CALL PDSYEV('V', 'U', N, M_in, 1, 1, desc_a, Ev, M_out, 1, 1, desc_z, WORK, LWORK, IWORK, LIWORK, INFO)   ! ScaLAPACK
+   M = M_out      ! overwrite the old matrix with the eignevectors
+   Ev = Ev_local  ! output
+
+   if (INFO /= 0) then
+      write(Error_descript, '(a,i0)') 'Problem in PDSYEVD (ScaLAPACK_diagonalize), INFO:', INFO
+   endif
 end subroutine ScaLAPACK_diagonalize
 
 
@@ -960,10 +1026,11 @@ end subroutine get_eigenvalues_from_eigenvectors
 
 
 
-subroutine c_diagonalize(M, Ev, Error_descript, print_Ei, check_M)
+subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M)
    complex, dimension(:,:), intent(inout) :: M	! matrix
    real(8), dimension(:), intent(out) :: Ev	! eigenvalues
    character(*), intent(inout) :: Error_descript	! error description
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
    logical, intent(in), optional :: print_Ei ! print out eigenvalues or not
    logical, intent(in), optional :: check_M ! chech diagonalization
    !-------------------------
@@ -1060,10 +1127,11 @@ end subroutine c_diagonalize
 
 
 
-subroutine c8_diagonalize(M, Ev, Error_descript, print_Ei, check_M) ! double precision complex
+subroutine c8_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M) ! double precision complex
    complex(8), dimension(:,:), intent(inout) :: M  ! matrix
    real(8), dimension(:), intent(inout) :: Ev      ! eigenvalues
    character(*), intent(inout) :: Error_descript   ! error description
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
    logical, intent(in), optional :: print_Ei       ! print out eigenvalues or not
    logical, intent(in), optional :: check_M        ! chech diagonalization
    !-------------------------

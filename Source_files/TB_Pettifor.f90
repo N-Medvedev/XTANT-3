@@ -1451,7 +1451,7 @@ subroutine construct_TB_H_Pettifor(numpar, matter, TB_Hamil, Scell, NSC, Ha, Err
 !    call print_time('AFTER', ind=1)
 
    ! Diagonalize the Hamiltonian to get electron energy levels:
-   call sym_diagonalize(Ha, Scell(NSC)%Ei, Error_descript, check_M=.true.) ! module "Algebra_tools"
+   call sym_diagonalize(Ha, Scell(NSC)%Ei, Error_descript, numpar%MPI_param, check_M=.true.) ! module "Algebra_tools"
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Subroutine construct_TB_H_Pettifor: '//trim(adjustl(Error_descript))
       call Save_error_details(Err, 6, Error_descript)

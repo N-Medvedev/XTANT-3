@@ -284,9 +284,9 @@ if (g_numpar%verbose) call print_time_step('Initial output files set succesfully
 !WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
 ! Signal possible warning for parameters defined:
 ! Print on the screen:
-call check_all_warnings(6, g_laser, g_Scell)  ! module "Read_input_data"
+call check_all_warnings(6, g_laser, g_Scell, g_numpar)  ! module "Read_input_data"
 ! Save in the Error file:
-call check_all_warnings(g_Err%File_Num, g_laser, g_Scell, g_Err)  ! module "Read_input_data"
+call check_all_warnings(g_Err%File_Num, g_laser, g_Scell, g_numpar, g_Err)  ! module "Read_input_data"
 
 !DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD
 ! Now we can proceed with time:
@@ -302,7 +302,7 @@ do while (g_time .LT. g_numpar%t_total)
 
    AT_MOVE_1:if (g_numpar%do_atoms) then ! atoms are allowed to be moving:
 
-      ! Test coupling before MD step:
+      ! Do coupling before MD step:
       ! Nonadiabatic electron-ion coupling:
       call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
       if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)

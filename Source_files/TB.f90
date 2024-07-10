@@ -2451,13 +2451,13 @@ subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, 
          select type(ARRAY)
             type is (TB_H_Pettifor)
                call Complex_Hamil_tot(numpar, Scell, NSC, Scell(NSC)%MDAtoms, ARRAY, CHij=CHij, ksx=kx, ksy=ky, ksz=kz) ! "TB_Pettifor"
-               call sym_diagonalize(CHij, Ei, Err%Err_descript) ! modeule "Algebra_tools"
+               call sym_diagonalize(CHij, Ei, Err%Err_descript, numpar%MPI_param) ! modeule "Algebra_tools"
             type is (TB_H_Molteni)
                call Complex_Hamil_tot_Molteni(numpar, Scell, NSC, Scell(NSC)%MDAtoms, ARRAY, CHij=CHij, ksx=kx, ksy=ky, ksz=kz) ! "TB_Molteni"
-               call sym_diagonalize(CHij, Ei, Err%Err_descript) ! modeule "Algebra_tools"
+               call sym_diagonalize(CHij, Ei, Err%Err_descript, numpar%MPI_param) ! modeule "Algebra_tools"
             type is (TB_H_Fu)
                call Complex_Hamil_tot_F(numpar, Scell, NSC, Scell(NSC)%MDAtoms, ARRAY, CHij=CHij, ksx=kx, ksy=ky, ksz=kz) ! "TB_Fu"
-               call sym_diagonalize(CHij, Ei, Err%Err_descript) ! modeule "Algebra_tools"
+               call sym_diagonalize(CHij, Ei, Err%Err_descript, numpar%MPI_param) ! modeule "Algebra_tools"
             type is (TB_H_NRL)
                call Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_NRL"
             type is (TB_H_DFTB)
@@ -2638,11 +2638,11 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       !select case (abs(numpar%optic_model))
       !case (2)   ! Trani
       if (abs(numpar%optic_model) == 2) then
-         call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij)    ! below
+         call diagonalize_complex_Hamiltonian(numpar, CHij_temp, Ei, CSij)    ! below
       !case (4:5)   ! Graf-Vogl or KG
       elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
-         !call diagonalize_complex8_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
-         call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
+         !call diagonalize_complex8_Hamiltonian(numpar, CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
+         call diagonalize_complex_Hamiltonian(numpar, CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
       else  ! gamma point, no need to diagonalize
          allocate(Ei(size(Scell(NSC)%Ei)), source=Scell(NSC)%Ei)
          !CHij_temp = Scell(NSC)%Hij
@@ -2652,10 +2652,10 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       !select case (abs(numpar%optic_model))
       !case (2)   ! Trani
       if (abs(numpar%optic_model) == 2) then
-         call diagonalize_complex_Hamiltonian(CHij_temp, Ei)    ! below
+         call diagonalize_complex_Hamiltonian(numpar, CHij_temp, Ei)    ! below
       !case (4:5)  ! Graf-Vogl or KG
       elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
-         call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CHij_orth=CHij_orth, CWF_orth=CWF_orth)    ! below
+         call diagonalize_complex_Hamiltonian(numpar, CHij_temp, Ei, CHij_orth=CHij_orth, CWF_orth=CWF_orth)    ! below
          !CWF_orth = TRANSPOSE(CWF_orth)   ! test
       else  ! gamma point, no need to diagonalize
          allocate(Ei(size(Scell(NSC)%Ei)), source=Scell(NSC)%Ei)
@@ -2992,7 +2992,8 @@ end subroutine construct_complex_Hamiltonian
 
 
 
-subroutine diagonalize_complex_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
+subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CWF_orth)
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    complex, dimension(:,:), intent(inout) :: CHij	! complex hermitian Hamiltonian
    real(8), dimension(:), intent(out), allocatable :: Ei ! eigenvalues [eV]
    !type(Error_handling), intent(inout) :: Err	! error save
@@ -3016,7 +3017,7 @@ subroutine diagonalize_complex_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       endif
 
       ! Direct diagonalization:
-      call sym_diagonalize(CHij, Ei, Error_descript) ! modeule "Algebra_tools"
+      call sym_diagonalize(CHij, Ei, Error_descript, numpar%MPI_param) ! modeule "Algebra_tools"
 
       if (present(CWF_orth)) then   ! Save WF of orthogonal Hamiltonian
          CWF_orth = CHij
@@ -3030,14 +3031,14 @@ subroutine diagonalize_complex_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       allocate(CHij_temp(Nsiz,Nsiz))
 
       CHij_temp = CHij
-      call Loewdin_Orthogonalization_c(Nsiz, CSij, CHij_temp)	! module "TB_NRL"
+      call Loewdin_Orthogonalization_c(numpar, Nsiz, CSij, CHij_temp)	! module "TB_NRL"
 
       if (present(CHij_orth)) then  ! Save orthogonalized Hamiltonian (for optical coefficients below)
          CHij_orth = CHij_temp
       endif
 
       ! 2) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
-      call sym_diagonalize(CHij_temp, Ei, Error_descript)   ! module "Algebra_tools"
+      call sym_diagonalize(CHij_temp, Ei, Error_descript, numpar%MPI_param)   ! module "Algebra_tools"
       if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
          Error_descript = 'diagonalize_complex_Hamiltonian: '//trim(adjustl(Error_descript))
          !call Save_error_details(Err, 6, Error_descript)    ! module "Objects"
@@ -3064,7 +3065,8 @@ subroutine diagonalize_complex_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
 end subroutine diagonalize_complex_Hamiltonian
 
 
-subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
+subroutine diagonalize_complex8_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CWF_orth)
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    complex, dimension(:,:), intent(inout) :: CHij	! complex hermitian Hamiltonian
    real(8), dimension(:), intent(out), allocatable :: Ei ! eigenvalues [eV]
    complex(8), dimension(:,:), intent(inout), optional ::  CSij    ! overlap matrix, for nonorthogonal Hamiltonain
@@ -3099,7 +3101,7 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
 #endif
 
       ! Direct diagonalization:
-      call sym_diagonalize(CHij, Ei, Error_descript) ! modeule "Algebra_tools"
+      call sym_diagonalize(CHij, Ei, Error_descript, numpar%MPI_param) ! modeule "Algebra_tools"
    else ORTH ! nonorthogonal
       ! Solve linear eigenproblem:
       ! 1) Orthogonalize the Hamiltonian using Loewdin procidure:
@@ -3112,7 +3114,7 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
 #endif
 
       CHij_use = CHij
-      call Loewdin_Orthogonalization_c8(Nsiz, CSij, CHij_use) ! module "TB_NRL"
+      call Loewdin_Orthogonalization_c8(numpar, Nsiz, CSij, CHij_use) ! module "TB_NRL"
 
 #ifdef _OPENMP
       print*, OMP_GET_THREAD_NUM(), 'Loewdin_Orthogonalization_c8 done'
@@ -3125,8 +3127,8 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       endif
 
       ! 2) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
-      !call sym_diagonalize(CHij_use, Ei, Error_descript)   ! module "Algebra_tools"
-      call c8_diagonalize(CHij_use, Ei, Error_descript)   ! module "Algebra_tools"
+      !call sym_diagonalize(CHij_use, Ei, Error_descript, numpar%MPI_param)   ! module "Algebra_tools"
+      call c8_diagonalize(CHij_use, Ei, Error_descript, numpar%MPI_param)   ! module "Algebra_tools"
       if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
          Error_descript = 'diagonalize_complex8_Hamiltonian: '//trim(adjustl(Error_descript))
          !call Save_error_details(Err, 6, Error_descript)    ! module "Objects"
