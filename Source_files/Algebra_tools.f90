@@ -27,7 +27,7 @@ use Universal_constants
 use Objects, only : Used_MPI_parameters
 
 #ifdef MPI_USED
-   use MPI_subroutines, only : do_MPI_Allreduce
+   use MPI_subroutines, only : do_MPI_Allreduce, MPI_barrier_wrapper, broadcast_array
 #endif
 
 ! For OpenMP external library
@@ -860,24 +860,23 @@ subroutine r_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, us
    M_save = M ! save matrix before diagonalization just in case
 
 #ifdef MPI_USED
-!     ScaLAPACK call is not ready yet:
+   ! Diagonalize via call to a ScaLAPACK subroutine:
    call ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param)  ! below
    if (LEN(trim(adjustl(Error_descript))) > 0) then
       print*, trim(adjustl(Error_descript))
    endif
 
-   M = M_save
-   call dsyevd('V','U', N, M, N, Ev_test, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! use LAPACK while ScaLAPACK isn't ready
+   ! testing ScaLAPACK diagonalization:
+!    M = M_save  ! testing
+!    call dsyevd('V','U', N, M, N, Ev_test, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! use LAPACK to compare with ScaLAPACK for testing
+!    do i = 1, N
+!       print*, '[MPI process#', MPI_param%process_rank, '] Ev:', i, Ev(i), Ev_test(i)
+!    enddo
+!    pause 'r_diagonalize'
 
-   do i = 1, N
-      print*, '[MPI process#', MPI_param%process_rank, '] Ev:', i, Ev(i), Ev_test(i)
-   enddo
-   pause 'r_diagonalize'
-
-#else
+#else ! use OpenMP instead:
    if (.not.present(use_DSYEV)) then
       call dsyevd('V', 'U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
-!     call dsyevd_2stage('V','U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
    else
       call DSYEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, INFO)
    endif
@@ -914,67 +913,127 @@ end subroutine r_diagonalize
 
 subroutine ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param)
    ! https://www.ibm.com/docs/vi/pessl/5.5?topic=easvas-pdsyevd-pzheevd-all-eigenvalues-eigenvectors-real-symmetric-complex-hermitian-matrix-using-parallel-divide-conquer-algorithm
+   ! Variables BLACS_icontxt, BLACS_myrow, BLACS_mycol etc. were initialized in
+   ! the subtroutine Initialize_ScaLAPACK, module "MPI_subroutines", called at the start
+   ! of the execution of the program.
    real(8), dimension(:,:), intent(inout) :: M	! matrix
    real(8), dimension(:), intent(out) :: Ev	! eigenvalues
    character(*), intent(inout) :: Error_descript	! error description
    type(Used_MPI_parameters), intent(inout) :: MPI_param
    !-----------------------------
-   integer :: N, desc_a(9), desc_z(9), LLD_A, LLD_Z, MYROW, MB_A, MB_Z
-   integer :: NQ, NP, LWORK, LIWORK, TRILWMIN, INFO, ctxt_sys
-   integer :: NUMROC ! function in ScaLAPACK library
-   real(8) :: M_out(size(M,1), size(M,2))
-   real, dimension(:), allocatable :: WORK
+   integer :: N, desc_a(9), desc_z(9), desc_glob(9), LLD_glob, LLD_A, LLD_Z, MB_A, MB_Z, N_loc
+   integer :: NQ, NP, LWORK, LIWORK, TRILWMIN, INFO, ctxt_sys, RSRC_A, RSRC_Z
+   integer :: NUMROC, indxg2p, MPI_COMM_WORLD ! functions in ScaLAPACK library
    integer, dimension(:), allocatable :: IWORK
-   real :: M_in(size(M,1), size(M,2)), Ev_local(size(M,1))
+   real(8), dimension(:), allocatable :: WORK, Ev_local
+   real(8), dimension(:,:), allocatable :: M_in, M_out, M_temp
+   integer :: i, j, FN
+   character(100) :: file_name, error_part
+   logical :: process_skip
 
    Error_descript = ''  ! initialize
+
+#ifdef MPI_USED
+   if ( (MPI_param%BLACS_myrow < 0) .or. (MPI_param%BLACS_mycol < 0)) then ! this process is not on BLACS grid
+      process_skip = .true.
+      Ev = 0.0d0     ! to start with
+      goto 5555
+   endif
+   ! Obvious checks:
+   if (ANY(isnan(M))) print*, '[MPI#', MPI_param%process_rank, ']: NaN in ScaLAPACK_diagonalize'
+   if (ANY(abs(M)>1.0d25)) print*, '[MPI#', MPI_param%process_rank, ']: infinity in ScaLAPACK_diagonalize'
+
+   INFO = 0       ! initializing
+   N = size(M,1)  ! size of the global symmetric matrix
    Ev = 0.0d0     ! to start with
-   Ev_local = 0.0d0  ! to start with
-   M_out = 0.0d0  ! to start with
-   N = size(M,1)
-   MYROW = MPI_param%BLACS_myrow
+   allocate(Ev_local(N), source = 0.0d0)  ! to start with
+   allocate(M_temp(N,N))      ! to start with
+
+   if (MPI_param%process_rank == 0) then ! master process
+      M_temp = M  ! keeps the global matrix
+   else  ! non-master processes
+      M_temp = 0.0d0 ! to use for distributed summation
+   endif
+
+   ! Sizes of the block used in cyclically distributed matrix (1 = each element as its own block):
    MB_A = 1
    MB_Z = 1
+   ! Index of the starting process (assume master MPI process):
+   RSRC_A = 0
+   RSRC_Z = 0
 
-   LLD_A = MAX(1,NUMROC(N, MB_A, MYROW, 0, MPI_param%BLACS_nprow))
-   LLD_Z = MAX(1,NUMROC(N, MB_Z, MYROW, 0, MPI_param%BLACS_nprow))
+   ! 0) Descriptor of the global matrix (for simplicity, take it all from the master process):
+   LLD_glob = MAX(1,NUMROC( N, N, MPI_param%BLACS_myrow, 0, MPI_param%BLACS_nprow) )      ! number of raws
+   call DESCINIT(desc_glob, N, N, N, N, 0, 0, MPI_param%BLACS_icontxt, LLD_glob, INFO)    ! ScaLAPACK library
 
-   ! Define the array descriptor:
-   desc_a(1) = 1
-   desc_a(2) = MPI_param%BLACS_icontxt
-   desc_a(3) = N
-   desc_a(4) = N
-   desc_a(5) = MB_A
-   desc_a(6) = MB_A
-   desc_a(7) = 0
-   desc_a(8) = 0
-   desc_a(9) = LLD_A
-   desc_z = desc_a
+   ! 1) Start by finding the size of the *local* matrix:
+   ! Dimension of the local (belonging to particular MPI process) part of the matrix M,
+   ! to be block-cyclically distributed:
+   LLD_A = MAX(1,NUMROC(N, MB_A, MPI_param%BLACS_myrow, RSRC_A, MPI_param%BLACS_nprow))   ! number of raws
+   N_loc = MAX(1,NUMROC(N, MB_A, MPI_param%BLACS_mycol, RSRC_A, MPI_param%BLACS_npcol))   ! number of columns
+   LLD_Z = LLD_A  ! output matrix has the same dimensions as input
+   ! knowing it, allocate local matrices:
+   allocate(M_in(LLD_A,N_loc), source = 0.0d0)
+   allocate(M_out(LLD_Z,N_loc), source = 0.0d0)
 
-   NQ = NUMROC( N, MB_A, MPI_param%BLACS_MYCOL, 0, MPI_param%BLACS_nprow )
-   NP = NUMROC( N, MB_A, MPI_param%BLACS_MYROW, 0, MPI_param%BLACS_npcol )
-   TRILWMIN = 3*N + MAX( MB_A*( NP+1 ), 3*MB_A )
-   TRILWMIN = TRILWMIN * 2
-   LWORK = MAX( 1+6*N+2*NP*NQ, TRILWMIN ) + 2*N
-   LIWORK = LWORK
-   allocate(WORK(LWORK), source = 0.0d0)
-   allocate(IWORK(LIWORK), source = 0)
+   ! 2) Define the array descriptor:
+   CALL DESCINIT( desc_a, N, N, MB_A, MB_A, 0, 0, MPI_param%BLACS_icontxt, LLD_A, INFO )  ! ScaLAPACK library
+   desc_z = desc_a   ! output matrix has the same descrptor as the input
 
-!    print*, MPI_param%process_rank, ':desc_a:', desc_a
-!    print*, 'iwork:', size(IWORK), size(M,1), size(M,2)
-!    print*, 'NQ', NQ, NP, TRILWMIN
-!    print*, 'LLD_A', LLD_A, LLD_Z
-!    print*, ANY(isnan(M)), ANY(abs(M)>1.0d20)
+   ! 3) Distribute the matrix:
+   ! using the matrix summation subroutine that performes cyclinc-distributed addition:
+   ! by adding it to zero-matrix automatically creates a cyclic-distrituted matrix from the global one:
+   call pdgeadd('N', N, N, 1.0d0, M_temp, 1, 1, desc_glob, 0.0d0, M_in, 1, 1, desc_a)   ! ScaLAPACK library
 
-   M_in = M
-   CALL PDSYEVD('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, WORK, LWORK, IWORK, LIWORK, INFO)   ! ScaLAPACK
-   !CALL PDSYEV('V', 'U', N, M_in, 1, 1, desc_a, Ev, M_out, 1, 1, desc_z, WORK, LWORK, IWORK, LIWORK, INFO)   ! ScaLAPACK
-   M = M_out      ! overwrite the old matrix with the eignevectors
+   ! 4) Define the parameters for the diagonalization routine:
+   ! Get the WORK arrays for ScaLAPACK subroutine call:
+   allocate(WORK(1))    ! to start with
+   allocate(IWORK(1))   ! to start with
+   ! Query workspace size:
+   call PDSYEVD('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, work, -1, iwork, -1, info)  ! ScaLAPACK library
+   ! Use the optimal workspace parameters from this subroutine to define the BLACS work space:
+   LWORK = WORK(1)
+   LIWORK = IWORK(1)
+   deallocate(WORK)
+   deallocate(IWORK)
+   allocate(WORK(LWORK))
+   allocate(IWORK(LIWORK))
+
+   ! 5) Do the distributed symmetric matrix diagonalization:
+   CALL PDSYEVD('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, WORK, LWORK, IWORK, LIWORK, INFO)   ! ScaLAPACK library
+   !CALL PDSYEV('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, WORK, LWORK, IWORK, LIWORK, INFO)   ! ScaLAPACK library
+
+   ! 6) Collect the output data:
+   ! 6.a) Eigenvalues:
    Ev = Ev_local  ! output
+
+   ! 6.b) gather local distributed eigenvectors to the global matrix:
+   call pdgemr2d(N, N, M_out, 1, 1, desc_z, M_temp, 1, 1, desc_glob, MPI_param%BLACS_icontxt)  ! ScaLAPACK library
+   M = M_temp      ! overwrite the old matrix with the eignevectors
+
+   ! 7) MPI master thread shares the data to all processes (even those not on BLACS grid):
+5555 continue
+   error_part = 'ERROR in ScaLAPACK_diagonalize' ! part of the error message
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//' {Ev}', Ev)    ! module "MPI_subroutines"
+   call broadcast_array(MPI_param, trim(adjustl(error_part))//' {M}', M)      ! module "MPI_subroutines"
 
    if (INFO /= 0) then
       write(Error_descript, '(a,i0)') 'Problem in PDSYEVD (ScaLAPACK_diagonalize), INFO:', INFO
    endif
+
+   !-----------------------------------------
+   ! Synchronize all processes to make sure they all have the updated eigenvalues and eigenvectors:
+   call MPI_barrier_wrapper(MPI_param)   ! below
+   !-----------------------------------------
+
+   ! Clean up:
+   if (allocated(IWORK)) deallocate(IWORK)
+   if (allocated(WORK)) deallocate(WORK)
+   if (allocated(Ev_local)) deallocate(Ev_local)
+   if (allocated(M_in)) deallocate(M_in)
+   if (allocated(M_out)) deallocate(M_out)
+   if (allocated(M_temp)) deallocate(M_temp)
+#endif
 end subroutine ScaLAPACK_diagonalize
 
 
@@ -996,7 +1055,7 @@ subroutine check_Ha_r(Mat, Eigenvec, Eigenval) ! real matrix real eigenstates
       enddo
       Ev = SUM(Evec(:)*Eigenvec(:,i))
       if (ABS(Ev - Eigenval(i))/min(ABS(Ev),ABS(Eigenval(i))) .GT. 1.0d-6) then ! diagonalization went wrong:
-         print*, 'Ev:', i, Ev, Eigenval(i)
+         print*, 'Problem in check_Ha_r: Ev:', i, Ev, Eigenval(i)
       endif
    enddo
 end subroutine check_Ha_r

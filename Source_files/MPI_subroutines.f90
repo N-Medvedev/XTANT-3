@@ -91,7 +91,7 @@ end interface do_MPI_Reduce
 public :: initialize_MPI, initialize_random_seed, Initialize_ScaLAPACK, get_MPI_lapsed_time, MPI_barrier_wrapper, MPI_fileopen_wrapper, &
             MPI_fileclose_wrapper, MPI_error_wrapper, MPI_share_Read_Input_Files, MPI_share_matter, MPI_share_numpar, &
             MPI_share_initial_configuration, MPI_share_electron_MFPs, MPI_share_photon_attenuation, MPI_share_add_data, &
-            do_MPI_Reduce, do_MPI_Allreduce, broadcast_allocatable_array, MPI_share_Ritchi_CDF, broadcast_variable
+            do_MPI_Reduce, do_MPI_Allreduce, broadcast_allocatable_array, MPI_share_Ritchi_CDF, broadcast_variable, broadcast_array
 
 
 
@@ -122,15 +122,17 @@ subroutine Initialize_ScaLAPACK(MPI_param, Err)
 
    ! Get the internal default context:
    ! https://www.ibm.com/docs/en/pessl/5.4?topic=blacs-get-routine
-   call BLACS_GET( 0, 0, ctxt_sys ) ! library ScaLAPACK
+   call BLACS_GET( -1, 0, ctxt_sys ) ! library ScaLAPACK
    MPI_param%BLACS_icontxt = ctxt_sys  ! save into the object variable
+
+   !write(6,*) '[MPI process', MPI_param%process_rank, ']: grid 0:', ctxt, MPI_param%BLACS_icontxt, myid, myrow, mycol, MPI_param%BLACS_nprow, MPI_param%BLACS_npcol
 
    ! Set up a process grid of the chosen size:
    ! https://www.ibm.com/docs/en/pessl/5.5?topic=blacs-gridinit-routine
    ctxt = MPI_param%BLACS_icontxt
    ! Choice of the grid:
    MPI_param%BLACS_nprow = floor(sqrt(dble(MPI_param%size_of_cluster)))
-   MPI_param%BLACS_npcol = floor(sqrt(dble(MPI_param%size_of_cluster)))
+   MPI_param%BLACS_npcol = MPI_param%size_of_cluster / MPI_param%BLACS_nprow
    n_cur = MPI_param%BLACS_nprow * MPI_param%BLACS_npcol
    i = 0 ! to start with
    do while (n_cur < MPI_param%size_of_cluster)
@@ -142,9 +144,16 @@ subroutine Initialize_ScaLAPACK(MPI_param, Err)
       endif
    enddo
    MPI_param%BLACS_npcol = MPI_param%BLACS_npcol + i
+
+   ! Alternative choise of the grid: 1xN:
+   !MPI_param%BLACS_nprow = MPI_param%size_of_cluster
+   !MPI_param%BLACS_npcol = 1
+
    ! Set the grid:
-   call BLACS_GRIDINIT( ctxt, 'C', MPI_param%BLACS_nprow, MPI_param%BLACS_npcol )   ! library ScaLAPACK
+   call BLACS_GRIDINIT( ctxt, 'R', MPI_param%BLACS_nprow, MPI_param%BLACS_npcol )   ! library ScaLAPACK
    MPI_param%BLACS_icontxt = ctxt
+
+   !write(6,*) '[MPI process', MPI_param%process_rank, ']: grid 1:', ctxt, MPI_param%BLACS_icontxt, myid, myrow, mycol, MPI_param%BLACS_nprow, MPI_param%BLACS_npcol
 
    MPI_param%BLACS_myrow = -1 ! to start with
    MPI_param%BLACS_mycol = -1 ! to start with
@@ -157,7 +166,7 @@ subroutine Initialize_ScaLAPACK(MPI_param, Err)
    MPI_param%BLACS_myrow = myrow
    MPI_param%BLACS_mycol = mycol
 
-   !write(6,*) '[MPI process', MPI_param%process_rank, ']: grid:', myid, myrow, mycol, MPI_param%BLACS_nprow, MPI_param%BLACS_npcol
+   !write(6,*) '[MPI process', MPI_param%process_rank, ']: grid 2:', ctxt, MPI_param%BLACS_icontxt, myid, myrow, mycol, MPI_param%BLACS_nprow, MPI_param%BLACS_npcol
    !  now ScaLAPACK or PBLAS procedures can be used
 #endif
 !pause 'Initialize_ScaLAPACK'
