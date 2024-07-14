@@ -54,6 +54,7 @@ interface broadcast_array
    module procedure broadcast_2d_array_real
    module procedure broadcast_3d_array_real
    module procedure broadcast_4d_array_real
+   module procedure broadcast_2d_array_complex
 end interface broadcast_array
 
 interface broadcast_allocatable_array
@@ -3302,13 +3303,33 @@ subroutine broadcast_2d_array_real(MPI_param, error_message, array_real)
    character(300) :: error_report
 
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
-   error_report = trim(adjustl(error_message))//' {real_array}'
+   error_report = trim(adjustl(error_message))//' {real_2d_array}'
    N1 = size(array_real,1)
    N2 = size(array_real,2)
    call mpi_bcast(array_real, N1*N2, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report)) ) ! module "MPI_subroutines"
 #endif
 end subroutine broadcast_2d_array_real
+
+
+
+subroutine broadcast_2d_array_complex(MPI_param, error_message, array_real)
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: error_message
+   ! Non-allocatable, or already allocated, arrays only:
+   complex, dimension(:,:), intent(inout) :: array_real
+   !---------------------------
+   integer :: N1, N2
+   character(300) :: error_report
+
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+   error_report = trim(adjustl(error_message))//' {complex_2d_array}'
+   N1 = size(array_real,1)
+   N2 = size(array_real,2)
+   call mpi_bcast(array_real, N1*N2, MPI_COMPLEX, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
+   call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report)) ) ! module "MPI_subroutines"
+#endif
+end subroutine broadcast_2d_array_complex
 
 
 
@@ -3322,7 +3343,7 @@ subroutine broadcast_3d_array_real(MPI_param, error_message, array_real)
    character(300) :: error_report
 
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
-   error_report = trim(adjustl(error_message))//' {real_array}'
+   error_report = trim(adjustl(error_message))//' {real_3d_array}'
    N1 = size(array_real,1)
    N2 = size(array_real,2)
    N3 = size(array_real,3)
@@ -3343,7 +3364,7 @@ subroutine broadcast_4d_array_real(MPI_param, error_message, array_real)
    character(300) :: error_report
 
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
-   error_report = trim(adjustl(error_message))//' {real_array}'
+   error_report = trim(adjustl(error_message))//' {real_4d_array}'
    N1 = size(array_real,1)
    N2 = size(array_real,2)
    N3 = size(array_real,3)
