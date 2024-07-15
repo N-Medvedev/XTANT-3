@@ -42,6 +42,7 @@ PRIVATE  ! hides items not listed on public statement
 interface broadcast_variable
    module procedure broadcast_variable_int
    module procedure broadcast_variable_real
+   module procedure broadcast_variable_complex
    module procedure broadcast_variable_logic
    module procedure broadcast_variable_char
 end interface broadcast_variable
@@ -1955,11 +1956,62 @@ subroutine MPI_share_Scell(numpar, Scell)
    call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {Scell(1)%fa_tot}', Scell(1)%fa_tot) ! below
    call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {Scell(1)%fa_tot_out}', Scell(1)%fa_tot_out) ! below
 
+   ! Share optical parameters:
+   call MPI_share_eps(numpar, Scell(1)%eps)  ! below
+
    nullify(MPI_param)
 #endif
 end subroutine MPI_share_Scell
 
 
+
+subroutine MPI_share_eps(numpar, eps)
+   type(Numerics_param), intent(inout), target :: numpar 	! all numerical parameters
+   type(Drude), intent(inout) :: eps	! epsylon, dielectric function and its parameters
+   !-------------------------------------
+   type(Used_MPI_parameters), pointer :: MPI_param
+   character(100) :: error_part
+
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+   MPI_param => numpar%MPI_param ! shorthand notation
+   error_part = 'ERROR in MPI_share_eps' ! part of the error message
+
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%ReEps}', eps%ReEps) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%ReEps0}', eps%ReEps0) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%ImEps}', eps%ImEps) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%ImEps0}', eps%ImEps0) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%Eps_xx}', eps%Eps_xx) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%Eps_yy}', eps%Eps_yy) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%Eps_zz}', eps%Eps_zz) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%Eps_xy}', eps%Eps_xy) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%Eps_xz}', eps%Eps_xz) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%Eps_yx}', eps%Eps_yx) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%Eps_yz}', eps%Eps_yz) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%Eps_zx}', eps%Eps_zx) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%Eps_zy}', eps%Eps_zy) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%n}', eps%n) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%k}', eps%k) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%R}', eps%R) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%T}', eps%T) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%A}', eps%A) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%dc_cond}', eps%dc_cond) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%w}', eps%w) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%l}', eps%l) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%tau}', eps%tau) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%me_eff}', eps%me_eff) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%mh_eff}', eps%mh_eff) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%tau_e}', eps%tau_e) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%tau_h}', eps%tau_h) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%teta}', eps%teta) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%dd}', eps%dd) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%all_w}', eps%all_w) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%KK}', eps%KK) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%E_min}', eps%E_min) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%E_max}', eps%E_max) ! below
+   call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%dE}', eps%dE) ! below
+   call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {eps%Eps_hw}', eps%Eps_hw) ! below
+#endif
+end subroutine MPI_share_eps
 
 
 
@@ -3216,6 +3268,22 @@ subroutine broadcast_variable_real(MPI_param, error_message, var_real)
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report)) ) ! module "MPI_subroutines"
 #endif
 end subroutine broadcast_variable_real
+
+
+subroutine broadcast_variable_complex(MPI_param, error_message, var_real)
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   character(*), intent(in) :: error_message
+   complex, intent(inout) :: var_real
+   !---------------------------
+   character(300) :: error_report
+
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+   error_report = trim(adjustl(error_message))//' {complex}'
+   call mpi_bcast(var_real, 1, MPI_COMPLEX, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
+   call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report)) ) ! module "MPI_subroutines"
+#endif
+end subroutine broadcast_variable_complex
+
 
 
 subroutine broadcast_variable_char(MPI_param, error_message, var_char)

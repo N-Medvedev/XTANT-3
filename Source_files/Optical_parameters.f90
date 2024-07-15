@@ -1106,10 +1106,12 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
    allocate(fe_temp(Nsiz), source = 0.0d0)
    call set_Fermi(Ev, Scell(NSC)%TeeV, Scell(NSC)%mu, fe_temp) ! module "Electron_tools"
 
-
    !-------------------
    ! 1) Get frequency-independent terms:
-#ifdef MPI_USED   ! use the MPI version [tested]
+#ifdef MPI_USED   ! use the MPI version
+   ! Make sure all the processes are here:
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+
    N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
    Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
    Nend = Nsiz
@@ -1150,6 +1152,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
    error_part = 'Error in get_Kubo_Greenwood_CDF:'
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {A_sigma}', A_sigma) ! module "MPI_subroutines"
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {B_sigma}', B_sigma) ! module "MPI_subroutines"
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
 
 #else ! nonparallel / OpenMP
 !    !$omp PARALLEL private(n, m, w_mn)
@@ -1230,7 +1233,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
       Im_mid = 0.0d0
       Im_large = 0.0d0
 
-#ifdef MPI_USED   ! use the MPI version [tested]
+#ifdef MPI_USED   ! use the MPI version
       N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
       Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
       Nend = Nsiz
@@ -1262,6 +1265,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
       enddo ! n
       call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Re_eps_ij}', Re_eps_ij) ! module "MPI_subroutines"
       call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Im_eps_ij}', Im_eps_ij) ! module "MPI_subroutines"
+      call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
 
 #else ! nonparallel / OpenMP
 !       !$omp PARALLEL private(n, m, w_mn, denom, g_sigma, w_sigma)
@@ -1337,6 +1341,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
       ! Write them all into array:
       call save_Eps_hw(Eps_hw_temp, i, w*m_e_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, &
                opt_n, opt_k, Eps_xx, Eps_yy, Eps_zz, dc_cond=dc_cond) ! below
+
    enddo ! i
 
    ! Clean up:

@@ -1053,6 +1053,7 @@ subroutine get_DOS_sort(numpar, Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, 
    if (do_partial) then
       call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{partial_DOS_sum}', partial_DOS_sum) ! module "MPI_subroutines"
    endif
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
 
 #else ! use OpenMP instead
    !$omp PARALLEL private(i, j_center, j, Gaus, i_at, i_types, temp)

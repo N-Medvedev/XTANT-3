@@ -1147,6 +1147,7 @@ subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, no
    if (dont_use_MPI) then  ! don't use ScaLAPACK
       call ZHEEVD('V','U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, INFO )  ! LAPACK
    else  ! use ScaLAPACK
+      INFO = 0 ! to start with
       call ScaLAPACK_diagonalize_c(M_work, Ev, Error_descript, MPI_param)  ! below [tested, works]
       if (LEN(trim(adjustl(Error_descript))) > 0) then
          print*, trim(adjustl(Error_descript))

@@ -48,7 +48,7 @@ else ifeq ($(c),if13)
 	endif
 else ifeq ($(c),mpi)
 	F90 = mpif90
-	F90FLAGS += -qmkl=cluster -D MPI_USED
+	F90FLAGS += -qmkl=cluster -D MPI_USED -I"${MKLROOT}/include"
 
 	ifeq ($(db),y)
 		# flags for debugging
