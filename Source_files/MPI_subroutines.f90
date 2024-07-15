@@ -113,7 +113,7 @@ subroutine Initialize_ScaLAPACK(MPI_param, Err)
    integer :: info, nproc, nprow, npcol, myid, myrow, mycol, ctxt, ctxt_sys, ctxt_all
    integer :: i, n_cur
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    ! Determine rank of calling process and the size of processor set for BLACS:
    ! https://www.ibm.com/docs/de/pessl/5.4?topic=blacs-pinfo-routine
    call BLACS_PINFO(myid, nproc) ! library ScaLAPACK (must be linked in compilation; MKL)
@@ -185,7 +185,7 @@ subroutine MPI_share_photon_attenuation(matter, numpar, Err)
    character(100) :: error_part
    integer :: Nshl, N_grid, Nsiz, i, j
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    !-----------------------------------------
    ! Synchronize all processes:
    call MPI_barrier_wrapper(numpar%MPI_param)   ! below
@@ -253,7 +253,7 @@ subroutine MPI_share_electron_MFPs(matter, numpar, Err)
    character(100) :: error_part
    integer :: N_Te_points, N_grid, Nsiz, i, j, k
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    !-----------------------------------------
    ! Synchronize all processes:
    call MPI_barrier_wrapper(numpar%MPI_param)   ! below
@@ -378,7 +378,7 @@ subroutine MPI_share_initial_configuration(Scell, matter, numpar, laser, MC, Err
    integer :: Nsiz, N_arr_siz(3), i, j, n1
    logical :: array_is_allocated, array_is_allocated2
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    ! First of, allocate the TB parameterization array:
    MPI_param => numpar%MPI_param ! shorthand notation
    error_part = 'ERROR in MPI_share_initial_configuration' ! part of the error message
@@ -583,7 +583,7 @@ subroutine MPI_share_Read_Input_Files(matter, numpar, laser, Scell, Err)
    type(Error_handling), intent(inout) :: Err	! error save
    !-------------------------------------
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
 
    !--------------------------------------------------------------------------
    ! Before going any further, check if master process detected any error:
@@ -649,7 +649,7 @@ subroutine MPI_share_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals
    logical :: array_is_allocated, array_is_allocated2
 
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
 
    ! First of, allocate the TB parameterization array:
    MPI_param => numpar%MPI_param ! shorthand notation
@@ -1080,7 +1080,7 @@ subroutine MPI_share_Short_Rep_TB(MPI_param, TB_Expwall)
    character(100) :: error_part
    logical :: array_is_allocated
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_Short_Rep_TB' ! part of the error message
 
    do i = 1, size(TB_Expwall,1)
@@ -1150,7 +1150,7 @@ subroutine MPI_share_Exponential_wall_TB(MPI_param, TB_Expwall)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_Exponential_wall_TB' ! part of the error message
 
    do i = 1, size(TB_Expwall,1)
@@ -1173,7 +1173,7 @@ subroutine MPI_share_Coulomb_cut_TB(MPI_param, TB_Coul)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_Coulomb_cut_TB' ! part of the error message
 
    do i = 1, size(TB_Coul,1)
@@ -1196,7 +1196,7 @@ subroutine MPI_share_vdW_Dumitrica_TB(MPI_param, TB_Waals)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_vdW_Dumitrica_TB' ! part of the error message
 
    do i = 1, size(TB_Waals,1)
@@ -1217,7 +1217,7 @@ subroutine MPI_share_vdW_ILJ_TB(MPI_param, TB_Waals)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_vdW_ILJ_TB' ! part of the error message
 
    do i = 1, size(TB_Waals,1)
@@ -1242,7 +1242,7 @@ subroutine MPI_share_vdW_LJ_TB(MPI_param, TB_Waals)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_vdW_LJ_TB' ! part of the error message
 
    do i = 1, size(TB_Waals,1)
@@ -1266,7 +1266,7 @@ subroutine MPI_share_vdW_Girifalco_TB(MPI_param, TB_Waals)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_vdW_Girifalco_TB' ! part of the error message
 
    do i = 1, size(TB_Waals,1)
@@ -1307,7 +1307,7 @@ subroutine MPI_share_DFTB_TB_repulsive(MPI_param, TB_Repuls)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_DFTB_TB_repulsive' ! part of the error message
 
    do i = 1, size(TB_Repuls,1)
@@ -1333,7 +1333,7 @@ subroutine read_Fu_TB_repulsive(MPI_param, TB_Repuls)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in read_Fu_TB_repulsive' ! part of the error message
 
    do i = 1, size(TB_Repuls,1)
@@ -1364,7 +1364,7 @@ subroutine MPI_share_Molteni_TB_repulsive(MPI_param, TB_Repuls)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_Molteni_TB_repulsive' ! part of the error message
 
    do i = 1, size(TB_Repuls,1)
@@ -1395,7 +1395,7 @@ subroutine MPI_share_Pettifor_TB_repulsive(MPI_param, TB_Repuls)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_Pettifor_TB_repulsive' ! part of the error message
 
    do i = 1, size(TB_Repuls,1)
@@ -1425,7 +1425,7 @@ subroutine MPI_share_xTB_Params(MPI_param, TB_Hamil, TB_Repuls)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_xTB_Params' ! part of the error message
 
    do i = 1, size(TB_Hamil,1)
@@ -1452,7 +1452,7 @@ subroutine MPI_share_BOP_TB_Params(MPI_param, TB_Hamil, TB_Repuls)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_BOP_TB_Params' ! part of the error message
 
    do i = 1, size(TB_Hamil,1)
@@ -1485,7 +1485,7 @@ subroutine MPI_share_3TB_TB_Params(MPI_param, TB_Hamil)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_3TB_TB_Params' ! part of the error message
 
    do i = 1, size(TB_Hamil,1)
@@ -1518,7 +1518,7 @@ subroutine MPI_share_DFTB_TB_Params_no_rep(MPI_param, TB_Repuls, TB_Hamil)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_DFTB_TB_Params_no_rep' ! part of the error message
 
    do i = 1, size(TB_Hamil,1)
@@ -1551,7 +1551,7 @@ subroutine MPI_share_DFTB_TB_Params(MPI_param, TB_Repuls, TB_Hamil)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_DFTB_TB_Params' ! part of the error message
 
    do i = 1, size(TB_Hamil,1)
@@ -1591,7 +1591,7 @@ subroutine MPI_share_Mehl_TB_Hamiltonian(MPI_param, TB_Hamil)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_Mehl_TB_Hamiltonian' ! part of the error message
 
    do i = 1, size(TB_Hamil,1)
@@ -1627,7 +1627,7 @@ subroutine MPI_share_Molteni_TB_Hamiltonian(MPI_param, TB_Hamil)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_Molteni_TB_Hamiltonian' ! part of the error message
 
    do i = 1, size(TB_Hamil,1)
@@ -1655,7 +1655,7 @@ subroutine MPI_share_Fu_TB_Hamiltonian(MPI_param, TB_Hamil)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_Pettifor_TB_Hamiltonian' ! part of the error message
 
    do i = 1, size(TB_Hamil,1)
@@ -1688,7 +1688,7 @@ subroutine MPI_share_Pettifor_TB_Hamiltonian(MPI_param, TB_Hamil)
    integer :: i, j
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_part = 'ERROR in MPI_share_Pettifor_TB_Hamiltonian' ! part of the error message
 
    do i = 1, size(TB_Hamil,1)
@@ -1722,7 +1722,7 @@ subroutine MPI_share_laser(numpar, laser)
    character(100) :: error_part
    logical :: array_is_allocated, array_is_allocated2
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    MPI_param => numpar%MPI_param ! shorthand notation
    error_part = 'ERROR in MPI_share_laser' ! part of the error message
 
@@ -1806,7 +1806,7 @@ subroutine MPI_share_Scell(numpar, Scell)
    character(100) :: error_part
    logical :: array_is_allocated, array_is_allocated2
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    MPI_param => numpar%MPI_param ! shorthand notation
    error_part = 'ERROR in MPI_share_Scell' ! part of the error message
 
@@ -1972,7 +1972,7 @@ subroutine MPI_share_eps(numpar, eps)
    type(Used_MPI_parameters), pointer :: MPI_param
    character(100) :: error_part
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    MPI_param => numpar%MPI_param ! shorthand notation
    error_part = 'ERROR in MPI_share_eps' ! part of the error message
 
@@ -2023,7 +2023,7 @@ subroutine MPI_share_numpar(numpar)
    character(100) :: error_part
    logical :: array_is_allocated
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    MPI_param => numpar%MPI_param ! shorthand notation
    error_part = 'ERROR in MPI_share_numpar' ! part of the error message
 
@@ -2404,7 +2404,7 @@ subroutine MPI_share_matter(numpar, matter)
    character(100) :: error_part
    logical :: array_is_allocated
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
 
    MPI_param => numpar%MPI_param ! shorthand notation
    error_part = 'ERROR in MPI_share_matter' ! part of the error message
@@ -2789,7 +2789,7 @@ subroutine MPI_share_add_data(numpar, Err)
    character(100) :: error_part
    type(Used_MPI_parameters), pointer :: MPI_param
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
 
    MPI_param => numpar%MPI_param ! shorthand notation
    error_part = 'ERROR in MPI_share_add_data' ! part of the error message
@@ -3231,7 +3231,7 @@ subroutine broadcast_variable_int(MPI_param, error_message, var_int)
    !---------------------------
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {integer}'
    call mpi_bcast(var_int, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report)) ) ! module "MPI_subroutines"
@@ -3247,7 +3247,7 @@ subroutine broadcast_variable_logic(MPI_param, error_message, var_logic)
    !---------------------------
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {logical}'
    call mpi_bcast(var_logic, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report)) ) ! module "MPI_subroutines"
@@ -3262,7 +3262,7 @@ subroutine broadcast_variable_real(MPI_param, error_message, var_real)
    !---------------------------
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {real}'
    call mpi_bcast(var_real, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report)) ) ! module "MPI_subroutines"
@@ -3277,7 +3277,7 @@ subroutine broadcast_variable_complex(MPI_param, error_message, var_real)
    !---------------------------
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {complex}'
    call mpi_bcast(var_real, 1, MPI_COMPLEX, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
    call MPI_error_wrapper(MPI_param%process_rank, MPI_param%ierror, trim(adjustl(error_report)) ) ! module "MPI_subroutines"
@@ -3294,7 +3294,7 @@ subroutine broadcast_variable_char(MPI_param, error_message, var_char)
    integer :: Nsiz
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {character}'
    Nsiz = LEN(var_char)
    call mpi_bcast(var_char, Nsiz, MPI_CHARACTER, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
@@ -3313,7 +3313,7 @@ subroutine broadcast_array_logic(MPI_param, error_message, array_logic)
    integer :: Nsiz
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {logical_array}'
    Nsiz = size(array_logic)
    call mpi_bcast(array_logic, Nsiz, MPI_LOGICAL, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
@@ -3332,7 +3332,7 @@ subroutine broadcast_array_int(MPI_param, error_message, array_int)
    integer :: Nsiz
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {integer_array}'
    Nsiz = size(array_int)
    call mpi_bcast(array_int, Nsiz, MPI_INTEGER, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
@@ -3351,7 +3351,7 @@ subroutine broadcast_array_real(MPI_param, error_message, array_real)
    integer :: Nsiz
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {real_array}'
    Nsiz = size(array_real)
    call mpi_bcast(array_real, Nsiz, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
@@ -3370,7 +3370,7 @@ subroutine broadcast_2d_array_real(MPI_param, error_message, array_real)
    integer :: N1, N2
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {real_2d_array}'
    N1 = size(array_real,1)
    N2 = size(array_real,2)
@@ -3390,7 +3390,7 @@ subroutine broadcast_2d_array_complex(MPI_param, error_message, array_real)
    integer :: N1, N2
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {complex_2d_array}'
    N1 = size(array_real,1)
    N2 = size(array_real,2)
@@ -3410,7 +3410,7 @@ subroutine broadcast_3d_array_real(MPI_param, error_message, array_real)
    integer :: N1, N2, N3
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {real_3d_array}'
    N1 = size(array_real,1)
    N2 = size(array_real,2)
@@ -3431,7 +3431,7 @@ subroutine broadcast_4d_array_real(MPI_param, error_message, array_real)
    integer :: N1, N2, N3, N4
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {real_4d_array}'
    N1 = size(array_real,1)
    N2 = size(array_real,2)
@@ -3454,7 +3454,7 @@ subroutine broadcast_array_char(MPI_param, error_message, array_char)
    integer :: Nsiz, N1
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    error_report = trim(adjustl(error_message))//' {character_array}'
    Nsiz = LEN(array_char(1))
    N1 = size(array_char)
@@ -3475,7 +3475,7 @@ subroutine broadcast_allocatable_char_1d_array(MPI_param, error_message, array)
    integer :: N1, Nsiz
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    if (MPI_param%process_rank == 0) then   ! only MPI master process does it
       if (allocated(array)) then
          array_is_allocated = .true.
@@ -3528,7 +3528,7 @@ subroutine broadcast_allocatable_logic_1d_array(MPI_param, error_message, array)
    integer :: N1
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    if (MPI_param%process_rank == 0) then   ! only MPI master process does it
       if (allocated(array)) then
          array_is_allocated = .true.
@@ -3574,7 +3574,7 @@ subroutine broadcast_allocatable_logic_3d_array(MPI_param, error_message, array)
    integer :: N1, N2, N3, N3d(3)
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    if (MPI_param%process_rank == 0) then   ! only MPI master process does it
       if (allocated(array)) then
          array_is_allocated = .true.
@@ -3590,9 +3590,9 @@ subroutine broadcast_allocatable_logic_3d_array(MPI_param, error_message, array)
          N2 = 0
          N3 = 0
       endif
+      N3d = (/N1,N2,N3/)
    endif
 
-   N3d = (/N1,N2,N3/)
 
    error_report = trim(adjustl(error_message))//' {array_is_allocated}'
    call mpi_bcast(array_is_allocated, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
@@ -3630,7 +3630,7 @@ subroutine broadcast_allocatable_int_1d_array(MPI_param, error_message, array)
    integer :: N1
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    if (MPI_param%process_rank == 0) then   ! only MPI master process does it
       if (allocated(array)) then
          array_is_allocated = .true.
@@ -3677,7 +3677,7 @@ subroutine broadcast_allocatable_int_2d_array(MPI_param, error_message, array)
    integer :: N1, N2
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    if (MPI_param%process_rank == 0) then   ! only MPI master process does it
       if (allocated(array)) then
          array_is_allocated = .true.
@@ -3729,7 +3729,7 @@ subroutine broadcast_allocatable_real_1d_array(MPI_param, error_message, array)
    integer :: N1
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    if (MPI_param%process_rank == 0) then   ! only MPI master process does it
       if (allocated(array)) then
          array_is_allocated = .true.
@@ -3772,7 +3772,7 @@ subroutine broadcast_allocatable_real_2d_array(MPI_param, error_message, array)
    integer :: N1, N2
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    if (MPI_param%process_rank == 0) then   ! only MPI master process does it
       if (allocated(array)) then
          array_is_allocated = .true.
@@ -3824,7 +3824,7 @@ subroutine broadcast_allocatable_real_3d_array(MPI_param, error_message, array)
    integer :: N1, N2, N3, N3d(3)
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    if (MPI_param%process_rank == 0) then   ! only MPI master process does it
       if (allocated(array)) then
          array_is_allocated = .true.
@@ -3840,9 +3840,8 @@ subroutine broadcast_allocatable_real_3d_array(MPI_param, error_message, array)
          N2 = 0
          N3 = 0
       endif
+      N3d = (/N1,N2,N3/)
    endif
-
-   N3d = (/N1,N2,N3/)
 
    error_report = trim(adjustl(error_message))//' {array_is_allocated}'
    call mpi_bcast(array_is_allocated, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
@@ -3880,7 +3879,7 @@ subroutine broadcast_allocatable_real_4d_array(MPI_param, error_message, array)
    integer :: N4d(4)
    character(300) :: error_report
 
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    if (MPI_param%process_rank == 0) then   ! only MPI master process does it
       if (allocated(array)) then
          array_is_allocated = .true.
@@ -3925,7 +3924,7 @@ subroutine do_MPI_Allreduce_real_variable(MPI_param, error_message, var)
    character(*), intent(in) :: error_message
    !--------------------------
    character(300) :: error_report
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    ! https://rookiehpc.org/mpi/docs/mpi_allreduce/index.html
    CALL MPI_Allreduce(MPI_IN_PLACE, var, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
 
@@ -3943,7 +3942,7 @@ subroutine do_MPI_Allreduce_real_1d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz
    character(300) :: error_report
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    Nsiz = size(array)
 
    CALL MPI_Allreduce(MPI_IN_PLACE, array, Nsiz, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, MPI_param%ierror)  ! module "mpi"
@@ -3962,7 +3961,7 @@ subroutine do_MPI_Allreduce_real_2d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz(2)
    character(300) :: error_report
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    Nsiz(1) = size(array,1)
    Nsiz(2) = size(array,2)
 
@@ -3982,7 +3981,7 @@ subroutine do_MPI_Allreduce_complex_2d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz(2)
    character(300) :: error_report
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    Nsiz(1) = size(array,1)
    Nsiz(2) = size(array,2)
 
@@ -4001,7 +4000,7 @@ subroutine do_MPI_Allreduce_real_3d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz(3)
    character(300) :: error_report
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    Nsiz(1) = size(array,1)
    Nsiz(2) = size(array,2)
    Nsiz(3) = size(array,3)
@@ -4021,7 +4020,7 @@ subroutine do_MPI_Allreduce_real_4d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz(4)
    character(300) :: error_report
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    Nsiz(1) = size(array,1)
    Nsiz(2) = size(array,2)
    Nsiz(3) = size(array,3)
@@ -4043,7 +4042,7 @@ subroutine do_MPI_Reduce_real_variable(MPI_param, error_message, var)
    character(*), intent(in) :: error_message
    !--------------------------
    character(300) :: error_report
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    if (MPI_param%process_rank == 0) then   ! MPI master process gets the value from itself, hence MPI_IN_PLACE
       call MPI_Reduce(MPI_IN_PLACE, var, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, MPI_param%ierror)   ! module "mpi"
    else
@@ -4064,7 +4063,7 @@ subroutine do_MPI_Reduce_real_1d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz
    character(300) :: error_report
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    Nsiz = size(array)
 
    if (MPI_param%process_rank == 0) then   ! MPI master process gets the value from itself, hence MPI_IN_PLACE
@@ -4087,7 +4086,7 @@ subroutine do_MPI_Reduce_real_2d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz(2)
    character(300) :: error_report
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    Nsiz(1) = size(array,1)
    Nsiz(2) = size(array,2)
 
@@ -4111,7 +4110,7 @@ subroutine do_MPI_Reduce_real_3d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz(3)
    character(300) :: error_report
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    Nsiz(1) = size(array,1)
    Nsiz(2) = size(array,2)
    Nsiz(3) = size(array,3)
@@ -4136,7 +4135,7 @@ subroutine do_MPI_Reduce_real_4d_array(MPI_param, error_message, array)
    !--------------------------
    integer :: Nsiz(4)
    character(300) :: error_report
-#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+#ifdef MPI_USED
    Nsiz(1) = size(array,1)
    Nsiz(2) = size(array,2)
    Nsiz(3) = size(array,3)

@@ -118,7 +118,7 @@ cd Source_files
       echo %Starline%
 
       :: List compiler options (for release):
-      SET "Compile_options=/F9999999999 /fpp /D MPI_USED /Qmkl=cluster /real-size:64 /O3 /Qprof-gen /fp:precise /standard-semantics /assume:nofpe_summary /gen-interfaces"
+      SET "Compile_options=/F9999999999 /fpp /D MPI_USED /Qmkl=cluster /real-size:64 /O3 /Qip /fp:precise /standard-semantics /assume:nofpe_summary /gen-interfaces"
 
       :: List compiler options (for debug):
       ::SET Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /D MPI_USED /Qmkl=cluster /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check

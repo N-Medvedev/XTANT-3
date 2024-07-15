@@ -46,17 +46,39 @@ else ifeq ($(c),if13)
 		# Flags for maximum performance
 		F90FLAGS += -O5 -fpp -ipo -real-size 64
 	endif
+
+	F90FLAGS += -standard-semantics -assume nofpe_summary
 else ifeq ($(c),mpi)
 	F90 = mpif90
-	F90FLAGS += -qmkl=cluster -D MPI_USED -I"${MKLROOT}/include"
+	F90FLAGS += -D MPI_USED
+	#F90FLAGS += -lscalapack-openmpi -lblacsCinit-openmpi -lblacs-openmpi -llapack -lblas
+	#F90FLAGS += -qmkl=cluster
 
 	ifeq ($(db),y)
 		# flags for debugging
-		F90FLAGS +=  -real-size 64 -debug all -check all -fpe0 -fp-stack-check -O0 -g -fp-model precise -traceback -gen-interfaces -warn interfaces -fpp -cpp -ffree-line-length-0 -fdec-format-defaults
+		F90FLAGS += -cpp -debug all -check all -fpe0 -fp-stack-check -O0  -traceback -gen-interfaces -warn interfaces -cpp -real-size 64 -standard-semantics -assume nofpe_summary
 	else
 		# Flags for maximum performance
-		F90FLAGS += -O5 -fpp -cpp -ip -real-size 64
+		#F90FLAGS += -O5 -cpp -ffree-line-length-0  -fdefault-real-8 -fdefault-double-8
+		F90FLAGS += -O5 -fpp -cpp -real-size 64 -standard-semantics -assume nofpe_summary -ip
+		#LDFLAGS += -L$MKLROOT/lib/intel64 -L$MKLROOT/../../../lib/intel64 -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -L$MKLROOT/lib/intel64 -lmkl_blacs_openmpi_lp64 -lmkl_scalapack_lp64
 	endif
+	LDFLAGS += -mkl=cluster
+	EXE = $(EXEPATH)/XTANT_MPI.x
+else ifeq ($(c),mpii)
+	F90 = mpiifort
+	F90FLAGS += -D MPI_USED
+	#F90FLAGS += -lscalapack-openmpi -lblacsCinit-openmpi -lblacs-openmpi -llapack -lblas
+	#F90FLAGS += -qmkl=cluster
+
+	ifeq ($(db),y)
+		# flags for debugging
+		F90FLAGS += -debug all -check all -fpe0 -fp-stack-check -O0 -g -fp-model precise -traceback -gen-interfaces -warn interfaces -fpp -cpp -standard-semantics -assume nofpe_summary
+	else
+		# Flags for maximum performance
+		F90FLAGS += -O5 -fpp -cpp -ip -real-size 64 -standard-semantics -assume nofpe_summary
+	endif
+	LDFLAGS += -mkl=cluster
 	EXE = $(EXEPATH)/XTANT_MPI.x
 else
 	F90 = ifort
@@ -72,14 +94,15 @@ else
 	ifeq ($(db),y)
 		# flags for debugging	
 		#F90FLAGS += -g -fbounds-check
-		F90FLAGS += -debug all -check all -fpe0 -fp-stack-check -O0 -g -fp-model precise -traceback -gen-interfaces -warn interfaces -fpp
+		F90FLAGS += -debug all -check all -fpe0 -fp-stack-check -O0 -g -fp-model precise -traceback -gen-interfaces -warn interfaces -fpp -cpp
 	else
 		# Flags for maximum performance
-		F90FLAGS += -O5 -fpp -ipo -real-size 64
+		F90FLAGS += -O5 -fpp -cpp -ipo -real-size 64
 	endif
+
+	F90FLAGS += -standard-semantics -assume nofpe_summary
 endif
 
-F90FLAGS += -standard-semantics -assume nofpe_summary
 
 # list the files necessary for the compilation in the order of their dependencies
 OBJS = Universal_constants.o Objects.o Variables.o MPI_subroutines.o BS_Cartesian_Gaussians.o BS_Spherical_Gaussians.o Periodic_table.o Algebra_tools.o BS_Basis_sets.o TB_Koster_Slater.o Dealing_with_files.o Gnuplotting.o Little_subroutines.o Dealing_with_EADL.o Dealing_with_DFTB.o Dealing_with_3TB.o Dealing_with_BOP.o Dealing_with_xTB.o Atomic_tools.o Atomic_thermodynamics.o MC_cross_sections.o  Electron_tools.o Nonadiabatic.o Dealing_with_POSCAR.o Dealing_with_mol2.o Dealing_with_CDF.o Read_input_data.o Van_der_Waals.o Coulomb.o ZBL_potential.o Exponential_wall.o Dealing_with_output_files.o Monte_Carlo.o TB_Fu.o TB_Pettifor.o TB_Molteni.o TB_NRL.o TB_DFTB.o TB_3TB.o TB_BOP.o TB_xTB.o TB.o Dealing_with_eXYZ.o Initial_configuration.o  Optical_parameters.o TB_complex.o Transport.o XTANT_MAIN_FILE.o
@@ -106,6 +129,11 @@ else ifeq ($(c),mpi)
 	@echo "Compiling XTANT-3 with mpif90"
 	@echo "----------------------------------------------"
 	@echo "Run the code as: mpirun -np [n] ./XTANT_MPI.x"
+	@echo "----------------------------------------------"
+else ifeq ($(c),mpii)
+	@echo "Compiling XTANT-3 with mpiifort"
+	@echo "----------------------------------------------"
+	@echo "Run the code as: mpiexec -np [n] ./XTANT_MPI.x"
 	@echo "----------------------------------------------"
 else
 	@echo "Compiling XTANT-3 with ifort"
