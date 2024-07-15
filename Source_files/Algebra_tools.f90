@@ -862,6 +862,7 @@ subroutine r_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, us
    endif
 
    Error_descript = ''  ! initialize
+   INFO = 0 ! to start with
    N = size(M,1)
    allocate(M_save(N,N))
    LIWORK = 30 + 5*N
@@ -877,6 +878,7 @@ subroutine r_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, us
    call ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param, must_use_DSYEV)  ! below
    if (LEN(trim(adjustl(Error_descript))) > 0) then
       print*, trim(adjustl(Error_descript))
+      INFO = -1
    endif
 
    ! testing ScaLAPACK diagonalization:
@@ -1167,6 +1169,7 @@ subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, no
       call ScaLAPACK_diagonalize_c(M_work, Ev, Error_descript, MPI_param)  ! below [tested, works]
       if (LEN(trim(adjustl(Error_descript))) > 0) then
          print*, trim(adjustl(Error_descript))
+         INFO = -1
       endif
 
 !       ! testing ScaLAPACK diagonalization:
