@@ -1928,7 +1928,7 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
    type(Solid), intent(in) :: matter     ! material parameters
    type (Numerics_param), intent(inout) :: numpar    ! numerical parameters, including drude-function
    !-------------------------------
-   real(8), dimension(size(Scell%Ha,1), size(Scell%Ha,2)) :: D
+   real(8), dimension(:,:), allocatable :: D
    real(8), dimension(:), allocatable :: mulliken_Ne
    integer :: N_at, i_at, i_orb, j, Nsiz, N_orb, k
    integer :: N_incr, Nstart, Nend
@@ -1941,12 +1941,12 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
       N_at = size(Scell%MDAtoms) ! total number of atoms
       Nsiz = size(Scell%Ha,1) ! total number of orbitals
       N_orb = Nsiz/N_at ! orbitals per atom
+      allocate(D(Nsiz,Nsiz), source = 0.0d0)
 
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
       N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
       Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
       Nend = Nsiz
-      D = 0.0d0   ! to start with
       if (allocated(Scell%Sij)) then
          ! Do the cycle (parallel) calculations:
          do j = Nstart, Nend, N_incr  ! each process does its own part
@@ -2035,7 +2035,7 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
             enddo
          endif
       endif
-      deallocate(mulliken_Ne)
+      deallocate(mulliken_Ne, D)
    else  ! just atomic electrons
       ! Mulliken charges:
       Scell%MDAtoms(:)%q = 0.0d0
@@ -2047,7 +2047,7 @@ subroutine band_potential_energy_atom(Scell, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    !-------------------------------
-   real(8), dimension(size(Scell%Ha,1), size(Scell%Ha,2)) :: D
+   real(8), dimension(:,:), allocatable :: D
    real(8), dimension(:), allocatable :: mulliken_Ne
    integer :: N_at, i_at, i_orb, j, Nsiz, N_orb, k
    integer :: N_incr, Nstart, Nend
@@ -2056,7 +2056,8 @@ subroutine band_potential_energy_atom(Scell, numpar)
    N_at = size(Scell%MDAtoms) ! total number of atoms
    Nsiz = size(Scell%Ha,1) ! total number of orbitals
    N_orb = Nsiz/N_at ! orbitals per atom
-   D = 0.0d0   ! initializing
+   allocate(D(Nsiz,Nsiz), source = 0.0d0)
+   !D = 0.0d0   ! initializing
 
    ! Construct matrix of all the radial functions for each pair of atoms:
 #ifdef MPI_USED   ! use the MPI version
@@ -2133,7 +2134,7 @@ subroutine band_potential_energy_atom(Scell, numpar)
    !$omp end parallel
 #endif
 
-   deallocate(mulliken_Ne)
+   deallocate(mulliken_Ne, D)
 end subroutine band_potential_energy_atom
 
 
