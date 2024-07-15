@@ -4361,8 +4361,9 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
    END ASSOCIATE
 
    ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
-   call get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, dFatr) ! below
-
+   if (allocated(M_Vs)) then
+      call get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, dFatr) ! below
+   endif
 
 
    ! Repulsive TB Hamiltonian part:
