@@ -1738,11 +1738,11 @@ subroutine Hamil_tot(numpar, Scell, NSC, TB_Hamil, Hij)
    enddo ! j
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
    error_part = 'Error in Pettifor: Hamil_tot:'
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Hij}', Hij) ! module "MPI_subroutines"
    if (numpar%optic_model .EQ. 3) then ! collect matrix elements:
-      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRx', Scell(NSC)%PRRx) ! module "MPI_subroutines"
-      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRy', Scell(NSC)%PRRy) ! module "MPI_subroutines"
-      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRz', Scell(NSC)%PRRz) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Scell(NSC)%PRRx}', Scell(NSC)%PRRx) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Scell(NSC)%PRRy}', Scell(NSC)%PRRy) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Scell(NSC)%PRRz}', Scell(NSC)%PRRz) ! module "MPI_subroutines"
    endif
    !print*, '[MPI process #', numpar%MPI_param%process_rank, '] Hij #1:', Hij(256,248), Hij(256,252), Hij(256,256)
 

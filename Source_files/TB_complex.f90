@@ -119,12 +119,13 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    endif
    if (.not.allocated(DOS_partial_temp)) allocate(DOS_partial_temp(Nsiz_DOS_1,Nsiz_DOS_2,Nsiz_DOS_3), source = 0.0d0)   ! DOS_partial
 
-   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
-   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
-   Nend = Nsiz
-   ! Do the cycle (parallel) calculations:
-   do Ngp = Nstart, Nend, N_incr  ! each process does its own part
-   !do Ngp = 1, Nsiz
+   !N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   !Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   !Nend = Nsiz
+   !! Do the cycle (parallel) calculations:
+   !do Ngp = Nstart, Nend, N_incr  ! each process does its own part
+   ! Do sequential do-cycle here, because parallel calculations are inside the subroutines for diagonalization etc.:
+   do Ngp = 1, Nsiz
       ! Split total index into 3 coordinates indices:
       ix = ceiling( dble(Ngp)/dble(iym*izm) )
       iy = ceiling( dble(Ngp - (ix-1)*iym*izm)/dble(izm) )
@@ -134,8 +135,10 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       ! k-points:
       call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
 
-      if (numpar%verbose) write(*,'(a,i4,a,i6,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'MPI Process #', numpar%MPI_param%process_rank, &
-                                     ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' k-points'
+      if (numpar%MPI_param%process_rank == 0) then
+         if (numpar%verbose) write(*,'(a,i0,a,i6,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'MPI Process #', numpar%MPI_param%process_rank, &
+                                     ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' k-points {use_complex_Hamiltonian}'
+      endif
 
       !-------------------------------
       ! Get the parameters of the complex Hamiltonian:
@@ -204,14 +207,14 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    if (allocated(DOS_partial_temp)) deallocate(DOS_partial_temp)
 
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
-   error_part = 'Error in use_complex_Hamiltonian:'
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Eps_hw', Eps_hw) ! module "MPI_subroutines"
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa', kappa) ! module "MPI_subroutines"
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa_ee', kappa_ee) ! module "MPI_subroutines"
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa_mu_grid', kappa_mu_grid) ! module "MPI_subroutines"
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa_Ce_grid', kappa_Ce_grid) ! module "MPI_subroutines"
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'DOS', DOS) ! module "MPI_subroutines"
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'DOS_partial', DOS_partial) ! module "MPI_subroutines"
+!    error_part = 'Error in use_complex_Hamiltonian:'
+!    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Eps_hw', Eps_hw) ! module "MPI_subroutines"
+!    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa', kappa) ! module "MPI_subroutines"
+!    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa_ee', kappa_ee) ! module "MPI_subroutines"
+!    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa_mu_grid', kappa_mu_grid) ! module "MPI_subroutines"
+!    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'kappa_Ce_grid', kappa_Ce_grid) ! module "MPI_subroutines"
+!    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'DOS', DOS) ! module "MPI_subroutines"
+!    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'DOS_partial', DOS_partial) ! module "MPI_subroutines"
 
 #else    ! OpenMP to use instead
    !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, &

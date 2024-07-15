@@ -1106,6 +1106,7 @@ subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, no
    real(8), dimension(:), allocatable ::  RWORK
    complex, dimension(:,:), allocatable :: M_save, M_work   ! matrix
    real, dimension(size(Ev)) ::  Ev_test
+   integer :: i_countin, FN, i, j
    logical :: dont_use_MPI
 !    complex, dimension(size(M,1),size(M,2)) :: M_save	! matrix
 !    complex, dimension(size(M,1),size(M,2)) :: M_work	! matrix in 16 bit format
@@ -1117,7 +1118,6 @@ subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, no
       dont_use_MPI = .false.  ! by default, let the system decide
    endif
 
-   integer :: i_countin, FN, i, j
    N = size(M,1)
    allocate(M_save(N,N))
    allocate(M_work(N,N))
@@ -1148,18 +1148,18 @@ subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, no
    if (dont_use_MPI) then  ! don't use ScaLAPACK
       call ZHEEVD('V','U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, INFO )  ! LAPACK
    else  ! use ScaLAPACK
-      call ScaLAPACK_diagonalize_c(M_work, Ev, Error_descript, MPI_param)  ! below
+      call ScaLAPACK_diagonalize_c(M_work, Ev, Error_descript, MPI_param)  ! below [tested, works]
       if (LEN(trim(adjustl(Error_descript))) > 0) then
          print*, trim(adjustl(Error_descript))
       endif
 
-      ! testing ScaLAPACK diagonalization:
-      M_work = M_save  ! testing
-      call ZHEEVD('V','U', N, M_work, N, Ev_test, LAPWORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, INFO ) ! use LAPACK to compare with ScaLAPACK for testing
-      do i = 1, N
-         print*, '[MPI process#', MPI_param%process_rank, '] c_Ev:', i, Ev(i), Ev_test(i)
-      enddo
-      pause 'c_diagonalize'
+!       ! testing ScaLAPACK diagonalization:
+!       M_work = M_save  ! testing
+!       call ZHEEVD('V','U', N, M_work, N, Ev_test, LAPWORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, INFO ) ! use LAPACK to compare with ScaLAPACK for testing
+!       do i = 1, N
+!          print*, '[MPI process#', MPI_param%process_rank, '] c_Ev:', i, Ev(i), Ev_test(i)
+!       enddo
+!       pause 'c_diagonalize'
    endif
 
 #else ! use OpenMP instead:

@@ -41,22 +41,23 @@ else ifeq ($(c),if13)
 	ifeq ($(db),y)
 		# flags for debugging	
 		#F90FLAGS += -g -fbounds-check
-		F90FLAGS += -debug all -check all -fpe0 -fp-stack-check -O0 -g -fp-model precise -traceback -gen-interfaces -warn interfaces -fpp
+		F90FLAGS +=  -real-size 64 -debug all -check all -fpe0 -fp-stack-check -O0 -g -fp-model precise -traceback -gen-interfaces -warn interfaces -fpp
 	else
 		# Flags for maximum performance
 		F90FLAGS += -O5 -fpp -ipo -real-size 64
 	endif
 else ifeq ($(c),mpi)
-	F90 = mpifort
-	F90FLAGS += -mkl=parallel -D MPI_USED
+	F90 = mpif90
+	F90FLAGS += -mkl=cluster -D MPI_USED
 
 	ifeq ($(db),y)
 		# flags for debugging
-		F90FLAGS += -debug all -check all -fpe0 -fp-stack-check -O0 -g -fp-model precise -traceback -gen-interfaces -warn interfaces -fpp
+		F90FLAGS +=  -real-size 64 -debug all -check all -fpe0 -fp-stack-check -O0 -g -fp-model precise -traceback -gen-interfaces -warn interfaces -fpp -cpp -ffree-line-length-0 -fdec-format-defaults
 	else
 		# Flags for maximum performance
-		F90FLAGS += -O5 -fpp -ipo -real-size 64
+		F90FLAGS += -O5 -fpp -cpp -ipo -real-size 64
 	endif
+	EXE = $(EXEPATH)/XTANT_MPI.x
 else
 	F90 = ifort
 	# F90 = ifort.exe
@@ -87,27 +88,32 @@ OBJS = Universal_constants.o Objects.o Variables.o MPI_subroutines.o BS_Cartesia
 default:
 	@echo "**********************************************"
 	@echo "----------------------------------------------"
-	@echo "Run the code as ./TREKIS.x"
+	@echo "Run the code as: ./TREKIS.x"
 	@echo "----------------------------------------------"
 ifeq ($(c),gf)
 	@echo "Compiling XTANT-3 with gfortran"
 	@echo "----------------------------------------------"
-	@echo "Run the code as ./TREKIS.x"
+	@echo "Run the code as: ./TREKIS.x"
 	@echo "----------------------------------------------"
 else ifeq ($(c),gf6)
 	@echo "Compiling XTANT-3 with gfortran 6.1.0"
 	@echo "----------------------------------------------"
-	@echo "Run the code as ./TREKIS.x"
+	@echo "Run the code as: ./TREKIS.x"
 	@echo "----------------------------------------------"
 else ifeq ($(c),if13)
 	@echo "Compiling XTANT-3 with ifort 2013"
 	@echo "----------------------------------------------"
-	@echo "Run the code as ./TREKIS.x"
+	@echo "Run the code as: ./TREKIS.x"
+	@echo "----------------------------------------------"
+else ifeq ($(c),mpi)
+	@echo "Compiling XTANT-3 with mpif90"
+	@echo "----------------------------------------------"
+	@echo "Run the code as: mpirun -np [n] ./XTANT_MPI.x"
 	@echo "----------------------------------------------"
 else
 	@echo "Compiling XTANT-3 with ifort"
 	@echo "----------------------------------------------"
-	@echo "Run the code as ./TREKIS.x"
+	@echo "Run the code as: ./TREKIS.x"
 	@echo "----------------------------------------------"
 endif
 #	@echo "Version 3"
@@ -131,11 +137,6 @@ $(EXE):	$(OBJS)
 clean:
 	rm -f *.o
 	rm -f *.mod
+	rm -f *.yaml
+	rm -f *.optrpt
 	rm -f *.x
-
-# cleaning and removing all results - be careful!
-# cleanall:
-#	rm -f *.o
-#	rm -f *.mod
-#	rm -f *.x
-#	rm -rf OUT*

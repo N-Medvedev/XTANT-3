@@ -46,6 +46,10 @@ use Little_subroutines, only : deallocate_array, Find_in_array_monoton, d_Fermi_
 use MC_cross_sections, only : Mean_free_path, velosity_from_kinetic_energy
 use Nonadiabatic, only : get_Mij2, get_nonadiabatic_Pij
 
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce, MPI_barrier_wrapper
+#endif
+
 #ifdef _OPENMP
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
 #endif
@@ -226,6 +230,97 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err
    kappa = 0.0d0  ! to start with
    kappa_ee = 0.0d0  ! to start with
 
+#ifdef MPI_USED   ! use the MPI version
+   if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N), source = 0.0d0) ! all are there
+   if (.not.allocated(kappa_temp)) allocate(kappa_temp(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(kappa_ee_temp)) allocate(kappa_ee_temp(Nsiz_Te), source = 0.0d0)
+   if (.not.allocated(kappa_mu_grid_temp)) allocate(kappa_mu_grid_temp(Nsiz_Te), source = 0.0d0)   ! mu [eV]
+   if (.not.allocated(kappa_Ce_grid_temp)) allocate(kappa_Ce_grid_temp(Nsiz_Te), source = 0.0d0)   ! Ce
+   ! Do sequential do-cycle here, because the parallel regions are inside of hamiltonian calculations
+   do Ngp = 1, Nsiz
+      ! Split total index into 3 coordinates indices:
+      ix = ceiling( dble(Ngp)/dble(iym*izm) )
+      iy = ceiling( dble(Ngp - (ix-1)*iym*izm)/dble(izm) )
+      iz = Ngp - (ix-1)*iym*izm - (iy-1)*izm
+
+      ! k-points:
+      call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
+
+      if (numpar%MPI_param%process_rank == 0) then ! only master process does that
+         if (numpar%verbose) write(*,'(a,i4,a,i6,i3,i3,i3,f9.4,f9.4,f9.4,a)') '[MPI Process #', numpar%MPI_param%process_rank, &
+                                    '] point #', Ngp, ix, iy, iz, kx, ky, kz, ' Kubo-Greenwood'
+      endif
+
+      ! Get the effective momentum and kinetic-energy-related operators:
+      ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
+         select type(ARRAY)
+         type is (TB_H_Pettifor) ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+         type is (TB_H_Molteni)  ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+         type is (TB_H_Fu) ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+         type is (TB_H_NRL)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+         type is (TB_H_DFTB)  ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+         type is (TB_H_3TB)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+         type is (TB_H_xTB)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+         end select
+      END ASSOCIATE
+
+      !-------------------------------
+      ! Get the parameters of the CDF:
+      if ((numpar%optic_model == 4) .or. (numpar%optic_model == 5)) then ! if requested
+         call get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx, cPRRy, cPRRz, Ei, Eps_hw_temp)   ! below
+      else  ! skip it, if not reqired
+         Eps_hw_temp = 0.0d0
+      endif
+      ! Save data:
+      Eps_hw = Eps_hw + Eps_hw_temp ! sum data at different k-points
+
+      !-------------------------------
+      ! If required, do Onsager coefficients (for electronic heat conductivity):
+      if (numpar%do_kappa) then  ! if requested
+         call get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, kappa_temp, &
+                              Scell(NSC)%kappa_Te_grid, kappa_mu_grid_temp, kappa_Ce_grid_temp)   ! below
+      else  ! if not required
+         kappa_temp = 0.0d0
+         kappa_mu_grid_temp = 0.0d0
+         kappa_Ce_grid_temp = 0.0d0
+      endif
+
+      !-----------------------------------------
+      ! Add contribution of the electronic term:
+      if (numpar%do_kappa) then  ! if requested
+         call get_kappa_e_e(numpar, matter, Scell, NSC, Ei, kappa_mu_grid_temp, Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! below
+      else
+         kappa_ee_temp = 0.0d0
+      endif
+
+      !=========================================
+      ! Combine terms:
+      kappa = kappa + kappa_temp ! sum up at different k-points
+      kappa_mu_grid = kappa_mu_grid + kappa_mu_grid_temp    ! average mu
+      kappa_Ce_grid = kappa_Ce_grid + kappa_Ce_grid_temp    ! average Ce
+      kappa_ee = kappa_ee + kappa_ee_temp ! sum up at different k-points
+   enddo ! Ngp
+   if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
+   if (allocated(kappa_temp)) deallocate(kappa_temp)
+   if (allocated(kappa_mu_grid_temp)) deallocate(kappa_mu_grid_temp)
+   if (allocated(kappa_Ce_grid_temp)) deallocate(kappa_Ce_grid_temp)
+   if (allocated(kappa_ee_temp)) deallocate(kappa_ee_temp)
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, &
    !$omp                  kappa_temp, kappa_ee_temp, kappa_mu_grid_temp, kappa_Ce_grid_temp)
    if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N), source = 0.0d0) ! all are there
@@ -320,6 +415,7 @@ subroutine get_Kubo_Greenwood_all_complex(numpar, matter, Scell, NSC, all_w, Err
    if (allocated(kappa_Ce_grid_temp)) deallocate(kappa_Ce_grid_temp)
    if (allocated(kappa_ee_temp)) deallocate(kappa_ee_temp)
    !$omp end parallel
+#endif
 
    ! Save the k-point averages:
    Eps_hw = Eps_hw/dble(Nsiz) ! normalize k-point summation
@@ -481,7 +577,7 @@ end subroutine get_kappa_e_e
 
 subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, kappa, Te_grid, mu_grid, Ce_grid)
    ! Following Ref. [6] for evaluation of Onsager coefficients, Eqs.(6-7) (assuming w->0)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Solid), intent(in) :: matter  ! Material parameters
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -561,7 +657,7 @@ subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, E
       C = 0.0d0
 
       ! Get the Onsager coefficients:
-      call get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_dE_grid, A, B, C, model=numpar%kappa_model)   ! below
+      call get_Onsager_ABC(numpar, Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_dE_grid, A, B, C, model=numpar%kappa_model)   ! below
 
       ! Collect terms to calculate thermal conductivity:
       !prefact = g_Pi * g_h / (g_me**2 * Vol * Scell(NSC)%Te) ! prefactor in L22
@@ -585,8 +681,8 @@ subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, E
 end subroutine get_Onsager_coeffs
 
 
-subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_dE_grid, A, B, C, model)
-   !complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+subroutine get_Onsager_ABC(numpar, Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_dE_grid, A, B, C, model)
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    complex, dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
    real(8), intent(in) :: eta
@@ -597,6 +693,8 @@ subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_
    !---------------------
    real(8) :: prec, delta, Eij, P2, E_mu, A_cur, B_cur, C_cur, f_nm, f_delt
    integer :: n, m, i, N_Te_grid, Nsiz
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    prec = 1.0d-10 ! [eV] acceptance for degenerate levels
    N_Te_grid = size(mu)
@@ -606,6 +704,58 @@ subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_
    select case (model)
    !-----------------------
    case default   ! get numerical df/dE
+#ifdef MPI_USED   ! use MPI
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = Nsiz
+      ! Do the cycle (parallel) calculations:
+      do n = Nstart, Nend, N_incr  ! each process does its own part
+      !do n = 1, Nsiz ! all energy points
+         do m = 1, Nsiz
+            Eij = (Ev(m) - Ev(n))   ! [eV]
+
+            ! Get approximate delta-function:
+            delta = numerical_delta(Eij, eta)   ! [1/eV] module "Algebra_tools"
+
+            if ( (n /= m) .and. (abs(Eij) > prec) .and. (abs(delta) > prec) ) then   ! nondegenerate levels
+               ! Average momentum operator:
+               P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+                     dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+                     dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+!                P2 = ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+!                      dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+!                      dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+
+               ! Collect terms (without prefactors)
+               ! for a set of electronic temperatures:
+               do i = 1, N_Te_grid
+                  !f_nm = Scell(NSC)%fe(n) - Scell(NSC)%fe(m)
+                  !E_mu = ( (Ev(n) + Ev(m))*0.5d0 - Scell(NSC)%mu )   ! [eV]
+
+                  E_mu = ( (Ev(n) + Ev(m))*0.5d0 - mu(i) )   ! [eV]
+
+                  f_nm = fe_on_Te_grid(i,n) - fe_on_Te_grid(i,m)
+                  f_delt = f_nm * delta
+
+                  B_cur = abs(P2) * f_delt / Eij
+                  C_cur = B_cur * E_mu
+                  A_cur = C_cur * E_mu
+
+                  ! Sum up the terms:
+                  A(i) = A(i) + A_cur
+                  B(i) = B(i) + B_cur
+                  C(i) = C(i) + C_cur
+               enddo ! i
+            endif ! (n /= m)
+
+         enddo ! m
+      enddo ! n
+      error_part = 'Error in get_Onsager_ABC:case 0:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {A}', A) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {B}', B) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {C}', C) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
       !$omp PARALLEL private(n, m, Eij, delta, P2, E_mu, i, A_cur, B_cur, C_cur, f_nm, f_delt)
       !$omp do schedule(dynamic)  reduction( + : A, B, C)
       do n = 1, Nsiz ! all energy points
@@ -650,9 +800,55 @@ subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_
       enddo ! n
       !$omp end do
       !$omp end parallel
+#endif
 
    !-----------------------
    case (1) ! get analytical df/dE
+#ifdef MPI_USED   ! use MPI
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = Nsiz
+      ! Do the cycle (parallel) calculations:
+      do n = Nstart, Nend, N_incr  ! each process does its own part
+      !do n = 1, Nsiz ! all energy points
+         ! Get summ of P2:
+         P2 = 0.0d0
+         do m = 1, Nsiz
+            if ( (n /= m) ) then   ! nondegenerate levels
+               ! Average momentum operator:
+               P2 = P2 + ( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+                     dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+                     dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+!                P2 = P2 +( dble(cPRRx(n,m)) * dble(cPRRx(m,n)) + aimag(cPRRx(n,m)) * aimag(cPRRx(m,n)) + &
+!                      dble(cPRRy(n,m)) * dble(cPRRy(m,n)) + aimag(cPRRy(n,m)) * aimag(cPRRy(m,n)) + &
+!                      dble(cPRRz(n,m)) * dble(cPRRz(m,n)) + aimag(cPRRz(n,m)) * aimag(cPRRz(m,n)) ) / 3.0d0
+            endif ! (n /= m)
+         enddo ! m
+
+         ! Collect terms (without prefactors)
+         ! for a set of electronic temperatures:
+         do i = 1, N_Te_grid
+            E_mu = Ev(n) - mu(i) ! [eV]
+            f_nm = -dfe_dE_grid(i,n)   ! [1/eV]
+
+            B_cur = abs(P2) * f_nm
+            C_cur = B_cur * E_mu
+            A_cur = C_cur * E_mu
+
+            ! Sum up the terms:
+            A(i) = A(i) + A_cur
+            B(i) = B(i) + B_cur
+            C(i) = C(i) + C_cur
+
+!             print*, n, i, P2, f_nm
+         enddo ! i
+      enddo ! n
+      error_part = 'Error in get_Onsager_ABC:case 1:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {A}', A) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {B}', B) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {C}', C) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
       !$omp PARALLEL private(n, m, P2, E_mu, i, A_cur, B_cur, C_cur, f_nm)
       !$omp do schedule(dynamic)  reduction( + : A, B, C)
       do n = 1, Nsiz ! all energy points
@@ -690,6 +886,7 @@ subroutine get_Onsager_ABC(Ev, cPRRx, cPRRy, cPRRz, eta, mu, fe_on_Te_grid, dfe_
       enddo ! n
       !$omp end do
       !$omp end parallel
+#endif
    end select
 end subroutine get_Onsager_ABC
 
@@ -697,7 +894,7 @@ end subroutine get_Onsager_ABC
 
 subroutine get_Onsager_dynamic(numpar, matter, Scell, NSC, kappa)
    ! Following Ref. [6] for evaluation of Onsager coefficients, Eqs.(6-7) (assuming w->0)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Solid), intent(in) :: matter  ! Material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
@@ -733,7 +930,7 @@ end subroutine get_Onsager_dynamic
 
 
 subroutine get_Onsager_ABC_dynamic(numpar, Scell, NSC, Mij, eta, A, B, C)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:,:), allocatable, intent(inout) :: Mij ! matrix element for electron-ion coupling
@@ -742,6 +939,8 @@ subroutine get_Onsager_ABC_dynamic(numpar, Scell, NSC, Mij, eta, A, B, C)
    !---------------------
    real(8) :: prec, delta, Eij, P2, E_mu, A_cur, B_cur, C_cur, f_nm, f_delt, coef, coef_inv, dt_small, vn, vm
    integer :: n, m, i, j, Nsiz, N_orb, N_at
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    prec = 1.0d-10 ! [eV] acceptance for degenerate levels
    Nsiz = size(Scell(NSC)%Ei)   ! number of energy levels
@@ -754,6 +953,57 @@ subroutine get_Onsager_ABC_dynamic(numpar, Scell, NSC, Mij, eta, A, B, C)
    ! Calculate Tully's nonadiabatic-coupling matrix element:
    call get_coupling_matrix_elements(1, Scell, NSC, 1, 1, 1, 1, 1, 1, Mij)  ! module "TB"
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Nsiz
+   ! Do the cycle (parallel) calculations:
+   do n = Nstart, Nend, N_incr  ! each process does its own part
+   !do n = 1, Nsiz ! all energy points
+      i = 1 + (n-1)/N_orb  ! atomic index
+      !vn = sqrt( SUM(Scell(NSC)%MDatoms(i)%V(:)*Scell(NSC)%MDatoms(i)%V(:)) ) * 1.0d5  ! [(m/s)]
+
+      do m = 1, Nsiz
+         j = 1 + (m-1)/N_orb  ! atomic index
+         !vm = sqrt( SUM(Scell(NSC)%MDatoms(j)%V(:)*Scell(NSC)%MDatoms(j)%V(:)) ) * 1.0d5  ! [(m/s)]
+
+         !Eij = (Scell(NSC)%Ei(m) - Scell(NSC)%Ei(n))   ! [eV]
+         Eij = (Scell(NSC)%Ei(n) - Scell(NSC)%Ei(m))   ! [eV] test
+
+         ! Get approximate delta-function:
+         delta = numerical_delta(Eij, eta)   ! [1/eV] module "Algebra_tools"
+
+         if ( (n /= m) .and. (abs(Eij) > prec) .and. (abs(delta) > prec) ) then   ! nondegenerate levels
+            ! Average momentum operator:
+            !call get_nonadiabatic_Pij(n, m, Mij, dt_small, v, P2) ! module "Nonadiabatic"
+            call get_nonadiabatic_Pij(n, m, Mij, dt_small, Scell(NSC)%MDatoms(i)%V*1.0d5, Scell(NSC)%MDatoms(j)%V*1.0d5, P2) ! module "Nonadiabatic"
+            P2 = abs(P2)   ! [ (kg*m/s) ^2 ]
+            !if (P2 > 0.0d0) print*, 'p', n, m, sqrt(P2)
+
+            ! Collect terms (without prefactors)
+            !f_nm = Scell(NSC)%fe(n) - Scell(NSC)%fe(m)
+            f_nm = Scell(NSC)%fe(m) - Scell(NSC)%fe(n)   ! test
+            E_mu = ( (Scell(NSC)%Ei(n) + Scell(NSC)%Ei(m))*0.5d0 - Scell(NSC)%mu )   ! [eV]
+            f_delt = f_nm * delta
+
+            B_cur = abs(P2) * f_delt / Eij
+            C_cur = B_cur * E_mu
+            A_cur = C_cur * E_mu
+
+            ! Sum up the terms:
+            A = A + A_cur
+            B = B + B_cur
+            C = C + C_cur
+         endif ! (n /= m)
+         !print*, 'dyn', n, m, A, B, C, P2, f_delt
+      enddo ! m
+   enddo ! n
+   error_part = 'Error in get_Onsager_ABC_dynamic:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {A}', A) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {B}', B) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {C}', C) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(n, m, Eij, delta, P2, E_mu, A_cur, B_cur, C_cur, f_nm, f_delt, i, j)
    !$omp do schedule(dynamic)  reduction( + : A, B, C)
    do n = 1, Nsiz ! all energy points
@@ -797,11 +1047,12 @@ subroutine get_Onsager_ABC_dynamic(numpar, Scell, NSC, Mij, eta, A, B, C)
    enddo ! n
    !$omp end do
    !$omp end parallel
+#endif
 end subroutine get_Onsager_ABC_dynamic
 
 
 subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in, cPRRz_in, Ev, Eps_hw_temp)
-   type (Numerics_param), intent(in) :: numpar ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(in) :: w_grid ! frequency grid [1/s]
@@ -822,7 +1073,8 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
    real(8) :: w, Vol, prefact, w_mn, g_sigma, w_sigma, denom, prec
    real(8) :: pxpx, pxpy, pxpz, pypx, pypy, pypz, pzpx, pzpy, pzpz
    integer :: i, j, Nsiz, m, n, N_w
-
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    prec = 1.0d-10 ! [eV] acceptance for degenerate levels
    Nsiz = size(Ev)   ! number of energy levels
@@ -843,6 +1095,8 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
    allocate(f_nm_w_nm(Nsiz,Nsiz), source = 0.0d0)
    allocate(A_sigma(Nsiz,Nsiz,3,3), source = 0.0d0)
    allocate(B_sigma(Nsiz,Nsiz,3,3), source = 0.0d0)
+   Re_eps_ij = 0.0d0 ! to start with
+   Im_eps_ij = 0.0d0 ! to start with
 
 
    ! Get the Fermi function, assuming the same Te and mu for all k-points
@@ -855,6 +1109,49 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
 
    !-------------------
    ! 1) Get frequency-independent terms:
+#ifdef MPI_USED   ! use the MPI version [tested]
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Nsiz
+   ! Do the cycle (parallel) calculations:
+   do n = Nstart, Nend, N_incr  ! each process does its own part
+   !do n = 1, Nsiz ! all energy points
+      do m = 1, Nsiz
+         w_mn = (Ev(n) - Ev(m))
+         if ( (n /= m) .and. (abs(w_mn) > prec) ) then   ! nondegenerate levels
+            w_mn = w_mn/m_e_h   ! [1/s] frequency point
+            ! Keeping same distirbution for different k-points  does not work:
+            !f_nm_w_nm(n,m) = (Scell(NSC)%fe(n) - Scell(NSC)%fe(m)) / w_mn**2
+            ! Instead, use the distirbution with the same electornic surface across k-landscape:
+            f_nm_w_nm(n,m) = (fe_temp(n) - fe_temp(m)) / w_mn**2
+
+            select case(numpar%optic_model)
+            case (4:5) ! full calculations
+               ! (P) * (P) [2]:
+               A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
+               A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
+               A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
+
+               B_sigma(n,m,1,1) = dble(cPRRx(n,m)) * aimag(cPRRx(m,n)) + aimag(cPRRx(n,m)) * dble(cPRRx(m,n))
+               B_sigma(n,m,2,2) = dble(cPRRy(n,m)) * aimag(cPRRy(m,n)) + aimag(cPRRy(n,m)) * dble(cPRRy(m,n))
+               B_sigma(n,m,3,3) = dble(cPRRz(n,m)) * aimag(cPRRz(m,n)) + aimag(cPRRz(n,m)) * dble(cPRRz(m,n))
+            case (-5) ! only real part, to test
+               A_sigma(n,m,1,1) = dble(cPRRx(n,m)) * dble(cPRRx(m,n)) - aimag(cPRRx(n,m)) * aimag(cPRRx(m,n))
+               A_sigma(n,m,2,2) = dble(cPRRy(n,m)) * dble(cPRRy(m,n)) - aimag(cPRRy(n,m)) * aimag(cPRRy(m,n))
+               A_sigma(n,m,3,3) = dble(cPRRz(n,m)) * dble(cPRRz(m,n)) - aimag(cPRRz(n,m)) * aimag(cPRRz(m,n))
+
+               B_sigma(n,m,1,1) = 0.0d0
+               B_sigma(n,m,2,2) = 0.0d0
+               B_sigma(n,m,3,3) = 0.0d0
+            end select
+         endif
+      enddo
+   enddo
+   error_part = 'Error in get_Kubo_Greenwood_CDF:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {A_sigma}', A_sigma) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {B_sigma}', B_sigma) ! module "MPI_subroutines"
+
+#else ! nonparallel / OpenMP
 !    !$omp PARALLEL private(n, m, w_mn)
 !    !$omp do schedule(dynamic)
    do n = 1, Nsiz ! all energy points
@@ -915,6 +1212,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
    enddo
 !    !$omp end do
 !    !$omp end parallel
+#endif
 
    !-------------------
    ! 2) Frequency-dependent values:
@@ -932,6 +1230,40 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
       Im_mid = 0.0d0
       Im_large = 0.0d0
 
+#ifdef MPI_USED   ! use the MPI version [tested]
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = Nsiz
+      ! Do the cycle (parallel) calculations:
+      do n = Nstart, Nend, N_incr  ! each process does its own part
+      !do n = 1, Nsiz ! all energy points
+         do m = 1, Nsiz ! all energy points
+            w_mn = (Ev(n) - Ev(m))   ! [eV] frequency point
+            if ( (n /= m) .and. (abs(w_mn) > prec) ) then   ! nondegenerate levels
+               w_mn = w_mn / m_e_h   ! [1/s] frequency point
+
+               denom = (w_mn + w)**2 + m_gamm**2
+               !denom = (-w_mn + w)**2 + m_gamm**2   ! test [M]
+               g_sigma = m_gamm / denom
+               w_sigma = (w_mn + w) / denom
+               !w_sigma = (-w_mn + w) / denom  ! test [M]
+
+               ! Optical conductivity / w:
+               ! [ D ]
+               Re_eps_ij(1,1) = Re_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * g_sigma - B_sigma(n,m,1,1) * w_sigma)
+               Re_eps_ij(2,2) = Re_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * g_sigma - B_sigma(n,m,2,2) * w_sigma)
+               Re_eps_ij(3,3) = Re_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * g_sigma - B_sigma(n,m,3,3) * w_sigma)
+
+               Im_eps_ij(1,1) = Im_eps_ij(1,1) + f_nm_w_nm(n,m) * (A_sigma(n,m,1,1) * w_sigma + B_sigma(n,m,1,1) * g_sigma)
+               Im_eps_ij(2,2) = Im_eps_ij(2,2) + f_nm_w_nm(n,m) * (A_sigma(n,m,2,2) * w_sigma + B_sigma(n,m,2,2) * g_sigma)
+               Im_eps_ij(3,3) = Im_eps_ij(3,3) + f_nm_w_nm(n,m) * (A_sigma(n,m,3,3) * w_sigma + B_sigma(n,m,3,3) * g_sigma)
+            endif
+         enddo ! m
+      enddo ! n
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Re_eps_ij}', Re_eps_ij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Im_eps_ij}', Im_eps_ij) ! module "MPI_subroutines"
+
+#else ! nonparallel / OpenMP
 !       !$omp PARALLEL private(n, m, w_mn, denom, g_sigma, w_sigma)
 !       !$omp do schedule(dynamic) reduction( + : Re_eps_ij, Im_eps_ij)
       do n = 1, Nsiz ! all energy points
@@ -974,6 +1306,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
       enddo ! n
 !       !$omp end do
 !       !$omp end parallel
+#endif
 
       ! Get the prefactors: (Prefactors were already included in cPRR above!)
       !Re_eps_ij = prefact * Re_eps_ij
@@ -1072,6 +1405,83 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
       Nsiz = ixm*iym*izm
    endif
 
+
+#ifdef MPI_USED   ! use the MPI version [tested]
+   if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N), source = 0.0d0) ! all are there
+   ! Do sequential do-cycle here, because parallel calculations are inside of Hamiltonian etc.
+   do Ngp = 1, Nsiz
+      ! Split total index into 3 coordinates indices:
+      ix = ceiling( dble(Ngp)/dble(iym*izm) )
+      iy = ceiling( dble(Ngp - (ix-1)*iym*izm)/dble(izm) )
+      iz = Ngp - (ix-1)*iym*izm - (iy-1)*izm
+
+      ! k-points:
+      call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
+
+      if (numpar%MPI_param%process_rank == 0) then ! only master process does that
+         if (numpar%verbose) write(*,'(a,i4,a,i7,i3,i3,i3,f9.4,f9.4,f9.4,a)') '[MPI process #', numpar%MPI_param%process_rank, &
+                                     '] point #', Ngp, ix, iy, iz, kx, ky, kz, ' Graf-Vogl'
+      endif
+
+      ! Get the effective momentum and kinetic-energy-related operators:
+      ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
+         select type(ARRAY)
+         type is (TB_H_Pettifor) ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, cTnn=cTnn)  ! module "TB"
+         type is (TB_H_Molteni)  ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, cTnn=cTnn)  ! module "TB"
+         type is (TB_H_Fu) ! orthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, cTnn=cTnn)  ! module "TB"
+         type is (TB_H_NRL)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, cTnn=cTnn) ! module "TB"
+         type is (TB_H_DFTB)  ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, cTnn=cTnn) ! module "TB"
+         type is (TB_H_3TB)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, cTnn=cTnn) ! module "TB"
+         type is (TB_H_xTB)   ! nonorthogonal
+            call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, cTnn=cTnn) ! module "TB"
+         end select
+      END ASSOCIATE
+
+      ! Get the inverse effective mass (in units of m_e):
+      call inv_effective_mass(numpar, cPRRx, cPRRy, cPRRz, cTnn, Ei, m_eff)  ! below
+
+      ! Get the parameters of the CDF:
+      if (Scell(NSC)%eps%all_w) then ! full spectrum:
+         do i = 1, N
+            w = w_grid(i)  ! frequency
+            ! Get CDF:
+            call get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, m_eff, w, &
+               Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, Eps_xx, Eps_yy, Eps_zz)   ! below
+
+            ! Write them all into array:
+            call save_Eps_hw(Eps_hw_temp, i, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, &
+                  opt_n, opt_k, Eps_xx, Eps_yy, Eps_zz, dc_cond=dc_cond) ! below
+         enddo
+         Eps_hw = Eps_hw + Eps_hw_temp ! sum data at different k-points
+
+      else ! only for given probe:
+         w = Scell(NSC)%eps%w
+         ! Get CDF:
+         call get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ei, m_eff, w, &
+               Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, Eps_xx, Eps_yy, Eps_zz)   ! below
+
+         ! Write them all into array:
+         call save_Eps_hw(Eps_hw_temp, 1, w/g_e*g_h, Re_eps, Im_eps, Im_eps/(Re_eps*Re_eps + Im_eps*Im_eps), R, T, A, &
+               opt_n, opt_k, Eps_xx, Eps_yy, Eps_zz, dc_cond=dc_cond) ! below
+         Eps_hw = Eps_hw + Eps_hw_temp ! sum data at different k-points
+      endif ! (Scell(NSC)%eps%all_w)
+   enddo ! Ngp
+   if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, cTnn, CHij, Ei, m_eff, w, i, &
    !$omp                  Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, Eps_hw_temp, Eps_xx, Eps_yy, Eps_zz)
    if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N), source = 0.0d0) ! all are there
@@ -1121,7 +1531,7 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
       END ASSOCIATE
 
       ! Get the inverse effective mass (in units of m_e):
-      call inv_effective_mass(cPRRx, cPRRy, cPRRz, cTnn, Ei, m_eff)  ! below
+      call inv_effective_mass(numpar, cPRRx, cPRRy, cPRRz, cTnn, Ei, m_eff)  ! below
 
       ! Get the parameters of the CDF:
       if (Scell(NSC)%eps%all_w) then ! full spectrum:
@@ -1152,6 +1562,7 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
    !$omp end do
    if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
    !$omp end parallel
+#endif
 
    ! Save the k-point avreages:
    Eps_hw = Eps_hw/dble(Nsiz) ! normalize k-point summation
@@ -1315,8 +1726,8 @@ end subroutine get_Graf_Vogl_CDF
 
 
 
-subroutine inv_effective_mass(cPRRx, cPRRy, cPRRz, cTnn, Ev, m_eff)  ! Ref.[2], Eq(8)
-   !complex(8), dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
+subroutine inv_effective_mass(numpar, cPRRx, cPRRy, cPRRz, cTnn, Ev, m_eff)  ! Ref.[2], Eq(8)
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    complex, dimension(:,:), intent(in) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    real(8), dimension(:,:,:,:), intent(in) :: cTnn ! kinetic energy-related [dimensionless]
    real(8), dimension(:), intent(in) :: Ev   ! [eV] energy levels (molecular orbitals)
@@ -1324,6 +1735,8 @@ subroutine inv_effective_mass(cPRRx, cPRRy, cPRRz, cTnn, Ev, m_eff)  ! Ref.[2], 
    !-----------------------------
    integer :: Nsiz, n, m, i, j
    real(8) :: fact, me_inv
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    Nsiz = size(cTnn,1)
    me_inv = 1.0d0/g_me
@@ -1331,6 +1744,41 @@ subroutine inv_effective_mass(cPRRx, cPRRy, cPRRz, cTnn, Ev, m_eff)  ! Ref.[2], 
    if (.not.allocated(m_eff)) allocate(m_eff(Nsiz,3,3))
    m_eff = 0.0d0 ! to start with
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Nsiz
+   ! Do the cycle (parallel) calculations:
+   do n = Nstart, Nend, N_incr  ! each process does its own part
+   !do n = 1, Nsiz
+      do i = 1, 3
+         do j = 1, 3
+            ! Term 1, kinetic energy (diagonal) contribution:
+            m_eff(n,i,j) = cTnn(n,n,i,j)  ! 1/me is excluded, due to units choice
+!             print*, n, i, j, cTnn(n,n,i,j)
+         enddo ! j
+      enddo ! i
+
+      ! Term 2, momentum contribution:
+      do m = 1, Nsiz
+         if (m /= n) then ! off-diagonal terms:
+            fact = me_inv/(Ev(n) - Ev(m)) ! 1/(me*(En-Em))
+            m_eff(n,1,1) = m_eff(n,1,1) + fact * ( conjg(cPRRx(n,m))*cPRRx(m,n) + conjg(cPRRx(m,n))*cPRRx(n,m) ) ! i = x, j = x
+            m_eff(n,1,2) = m_eff(n,1,2) + fact * ( conjg(cPRRx(n,m))*cPRRy(m,n) + conjg(cPRRx(m,n))*cPRRy(n,m) ) ! i = x, j = y
+            m_eff(n,1,3) = m_eff(n,1,3) + fact * ( conjg(cPRRx(n,m))*cPRRz(m,n) + conjg(cPRRx(m,n))*cPRRz(n,m) ) ! i = x, j = z
+            m_eff(n,2,1) = m_eff(n,2,1) + fact * ( conjg(cPRRy(n,m))*cPRRx(m,n) + conjg(cPRRy(m,n))*cPRRx(n,m) ) ! i = y, j = x
+            m_eff(n,2,2) = m_eff(n,2,2) + fact * ( conjg(cPRRy(n,m))*cPRRy(m,n) + conjg(cPRRy(m,n))*cPRRy(n,m) ) ! i = y, j = y
+            m_eff(n,2,3) = m_eff(n,2,3) + fact * ( conjg(cPRRy(n,m))*cPRRz(m,n) + conjg(cPRRy(m,n))*cPRRz(n,m) ) ! i = y, j = z
+            m_eff(n,3,1) = m_eff(n,3,1) + fact * ( conjg(cPRRz(n,m))*cPRRx(m,n) + conjg(cPRRz(m,n))*cPRRx(n,m) ) ! i = z, j = x
+            m_eff(n,3,2) = m_eff(n,3,2) + fact * ( conjg(cPRRz(n,m))*cPRRy(m,n) + conjg(cPRRz(m,n))*cPRRy(n,m) ) ! i = z, j = y
+            m_eff(n,3,3) = m_eff(n,3,3) + fact * ( conjg(cPRRz(n,m))*cPRRz(m,n) + conjg(cPRRz(m,n))*cPRRz(n,m) ) ! i = z, j = z
+         endif ! (m /= n)
+      enddo ! m
+   enddo ! n
+   error_part = 'Error in Optical_parameters: inv_effective_mass:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {m_eff}', m_eff) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp parallel
    !$omp do private(n, m, i, j, fact)
    do n = 1, Nsiz
@@ -1362,6 +1810,7 @@ subroutine inv_effective_mass(cPRRx, cPRRy, cPRRz, cTnn, Ev, m_eff)  ! Ref.[2], 
    enddo ! n
    !$omp end do
    !$omp end parallel
+#endif
 !    pause 'inv_effective_mass'
 end subroutine inv_effective_mass
 
@@ -1566,9 +2015,11 @@ subroutine get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz,
    complex, dimension(:,:), allocatable :: PBx, PBy, PBz, CSij
    integer i, j, n, nn, FN, n_orb, nat, Nsiz
    character(200) :: Error_descript
-   
    real(8), dimension(:,:), allocatable :: Hij
    real(8), dimension(:), allocatable :: Ei_r, Norm1
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
 !    real(8), dimension(:), allocatable :: Ei_test
    
    Error_descript = ''
@@ -1595,6 +2046,7 @@ subroutine get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz,
 !    if (.not.allocated(Hij)) allocate(Hij(Nsiz,Nsiz))
 !    if (.not.allocated(Ei_r)) allocate(Ei_r(Nsiz))
     if (.not.allocated(Norm1)) allocate( Norm1(Nsiz) )
+    Norm1 = 0.0d0 ! to start with
    
 !    if (.not.allocated(Fnnxx)) allocate(Fnnxx(Nsiz,Nsiz))
 !    if (.not.allocated(Fnnxy)) allocate(Fnnxy(Nsiz,Nsiz))
@@ -1650,7 +2102,82 @@ subroutine get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz,
       enddo
    enddo
 
-   
+
+#ifdef MPI_USED
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Nsiz
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, Nsiz ! ensure WF normalization to 1
+      Norm1(i) = SQRT( SUM( conjg(CHij(:,i)) * CHij(:,i) ) )
+   enddo
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_Fnn_complex:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Norm1', Norm1) ! module "MPI_subroutines"
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, Nsiz
+      do nn = 1, Nsiz
+         PBx(i,nn) = SUM(cPRRx(i,:)*CHij(:,nn)) / Norm1(nn)
+         PBy(i,nn) = SUM(cPRRy(i,:)*CHij(:,nn)) / Norm1(nn)
+         PBz(i,nn) = SUM(cPRRz(i,:)*CHij(:,nn)) / Norm1(nn)
+      enddo ! j
+   enddo ! i
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'PBx', PBx) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'PBy', PBy) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'PBz', PBz) ! module "MPI_subroutines"
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+
+   do n = Nstart, Nend, N_incr  ! each process does its own part
+   !do n = 1, Nsiz
+      do nn = 1, Nsiz
+         Fnn_temp_x(n,nn) = SUM(conjg(CHij(:,n))*PBx(:,nn)) / Norm1(n)
+         Fnn_temp_y(n,nn) = SUM(conjg(CHij(:,n))*PBy(:,nn)) / Norm1(n)
+         Fnn_temp_z(n,nn) = SUM(conjg(CHij(:,n))*PBz(:,nn)) / Norm1(n)
+      enddo ! nn
+   enddo ! n
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnn_temp_x', Fnn_temp_x) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnn_temp_y', Fnn_temp_y) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnn_temp_z', Fnn_temp_z) ! module "MPI_subroutines"
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, Nsiz
+      do j = 1, Nsiz
+!          Fnnx(i,j) = CONJG(Fnn_temp_x(i,j))*Fnn_temp_x(i,j)
+!          Fnny(i,j) = CONJG(Fnn_temp_y(i,j))*Fnn_temp_y(i,j)
+!          Fnnz(i,j) = CONJG(Fnn_temp_z(i,j))*Fnn_temp_z(i,j)
+
+!        ! Must convert it to double complex, otherwise it gives wrong results!
+         Fnnx(i,j) = DCMPLX(conjg(Fnn_temp_x(i,j)))*DCMPLX(Fnn_temp_x(i,j))
+         Fnny(i,j) = DCMPLX(conjg(Fnn_temp_y(i,j)))*DCMPLX(Fnn_temp_y(i,j))
+         Fnnz(i,j) = DCMPLX(conjg(Fnn_temp_z(i,j)))*DCMPLX(Fnn_temp_z(i,j))
+         if (present(Fnnxy)) then ! off-diagonal
+            Fnnxy(i,j) = DCMPLX(conjg(Fnn_temp_x(i,j)))*DCMPLX(Fnn_temp_y(i,j))
+            Fnnxz(i,j) = DCMPLX(conjg(Fnn_temp_x(i,j)))*DCMPLX(Fnn_temp_z(i,j))
+            Fnnyx(i,j) = DCMPLX(conjg(Fnn_temp_y(i,j)))*DCMPLX(Fnn_temp_x(i,j))
+            Fnnyz(i,j) = DCMPLX(conjg(Fnn_temp_y(i,j)))*DCMPLX(Fnn_temp_z(i,j))
+            Fnnzx(i,j) = DCMPLX(conjg(Fnn_temp_z(i,j)))*DCMPLX(Fnn_temp_x(i,j))
+            Fnnzy(i,j) = DCMPLX(conjg(Fnn_temp_z(i,j)))*DCMPLX(Fnn_temp_y(i,j))
+         endif
+      enddo
+   enddo
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnnx', Fnnx) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnny', Fnny) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnnz', Fnnz) ! module "MPI_subroutines"
+   if (present(Fnnxy)) then ! off-diagonal
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnnxy', Fnnxy) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnnxz', Fnnxz) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnnyx', Fnnyx) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnnyz', Fnnyz) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnnzx', Fnnzx) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Fnnzy', Fnnzy) ! module "MPI_subroutines"
+   endif
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(i,nn,n,j)
    !$omp do
    do i = 1, Nsiz ! ensure WF normalization to 1
@@ -1701,7 +2228,7 @@ subroutine get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz,
    enddo
    !$omp end do
    !$omp end parallel
-
+#endif
 
 !   open(NEWUNIT=FN, FILE = 'OUTPUT_PBx.dat')
 !      do i = 1, size(PBx,1)
@@ -1756,7 +2283,7 @@ subroutine get_trani_all(numpar, Scell, NSC, Ei, Ha, fe, all_w) ! Ref. [2]
 
 !    call print_time_step('Start opt time:', g_time, msec=.true.)   ! module "Little_subroutines"call print_
    
-   call get_Fnn(Scell, NSC, Ha, Ei, Fnnx, Fnny, Fnnz) ! see below
+   call get_Fnn(numpar, Scell, NSC, Ha, Ei, Fnnx, Fnny, Fnnz) ! see below
     ! With off-diagonal elements:
 !     call get_Fnn(Scell, NSC, Ha, Ei, Fnnxx, Fnnyy, Fnnzz, Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy)
 
@@ -1835,12 +2362,15 @@ subroutine get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps
    real(8) Im_mid(3), Im_small(3), Im_large(3)	! x, y, z
    real(8) Re_mid_off(6), Re_small_off(6), Re_large_off(6)	! xy, xz, yx, yz, zx, zy
    real(8) Im_mid_off(6), Im_small_off(6), Im_large_off(6)	    ! xy, xz, yx, yz, zx, zy
-   
 !    real(8), dimension(:,:), allocatable :: Re_array, Im_array
    real(8) dc(3) ! x, y, z
 !    real(8) Ret(3,3), Imt(3,3) ! x, y, z
 !    real(8) Re_eps_t(3,3), Im_eps_t(3,3)
    integer i, j, NEL, FN
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+
    NEL = size(Ei)
    
 !    allocate(Re_array(NEL,3))
@@ -1884,6 +2414,95 @@ subroutine get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps
 !    call set_Erf_distribution(Ei,Scell(NSC)%TeeV,Scell(NSC)%mu,fe_temp)	! module "Electron_tools"
    !-----------------------------------------------
 
+#ifdef MPI_USED   ! use the MPI version [tested]
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = NEL
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1,NEL
+      fi => fe_temp(i)
+      do j = 1,NEL
+         fj => fe_temp(j)
+         fij = (fi - fj)
+         Eij = (Ei(i) - Ei(j))
+         if ((abs(Eij) > 1d-13) .and. (abs(fij) > 1.0d-14)) then
+            Eijw = hw - Eij*g_e	! [J]
+            temp = fij/(Eij*Eij)/(Eijw*Eijw + hg2)
+            temp2 = temp*Eijw
+
+            ! To avoid the problem of large and small numbers, save them independently:
+            temp3 = temp2*Fnnx(i,j) ! xx
+            call split_into_orders(temp3, Re_small(1), Re_mid(1), Re_large(1))   ! below
+            temp3 = temp*Fnnx(i,j)  ! xx
+            call split_into_orders(temp3, Im_small(1), Im_mid(1), Im_large(1))   ! below
+
+            temp3 = temp2*Fnny(i,j) ! yy
+            call split_into_orders(temp3, Re_small(2), Re_mid(2), Re_large(2))   ! below
+            temp3 = temp*Fnny(i,j)  ! yy
+            call split_into_orders(temp3, Im_small(2), Im_mid(2), Im_large(2))   ! below
+
+            temp3 = temp2*Fnnz(i,j) ! zz
+            call split_into_orders(temp3, Re_small(3), Re_mid(3), Re_large(3))   ! below
+            temp3 = temp*Fnnz(i,j)   ! zz
+            call split_into_orders(temp3, Im_small(3), Im_mid(3), Im_large(3))   ! below
+
+            ! Off-diagonal elements:
+            if (present(Fnnxy)) then
+               temp3 = temp2*Fnnxy(i,j) ! xy
+               call split_into_orders(temp3, Re_small_off(1), Re_mid_off(1), Re_large_off(1))   ! below
+               temp3 = temp*Fnnxy(i,j)  ! xy
+               call split_into_orders(temp3, Im_small_off(1), Im_mid_off(1), Im_large_off(1))   ! below
+
+               temp3 = temp2*Fnnxz(i,j) ! xz
+               call split_into_orders(temp3, Re_small_off(2), Re_mid_off(2), Re_large_off(2))   ! below
+               temp3 = temp*Fnnxz(i,j)  ! xz
+               call split_into_orders(temp3, Im_small_off(2), Im_mid_off(2), Im_large_off(2))   ! below
+
+               Re_small_off(3) = Re_small_off(1)    ! yx
+               Re_large_off(3) = Re_large_off(1)
+               Re_mid_off(3) = Re_mid_off(1)
+               Im_small_off(3) = Im_small_off(1)    ! yx
+               Im_large_off(3) = Im_large_off(1)
+               Im_mid_off(3) = Im_mid_off(1)
+
+               temp3 = temp2*Fnnyz(i,j) ! yz
+               call split_into_orders(temp3, Re_small_off(4), Re_mid_off(4), Re_large_off(4))   ! below
+               temp3 = temp*Fnnyz(i,j)  ! yz
+               call split_into_orders(temp3, Im_small_off(4), Im_mid_off(4), Im_large_off(4))   ! below
+
+               Re_small_off(5) = Re_small_off(2)    ! zx
+               Re_large_off(5) = Re_large_off(2)
+               Re_mid_off(5) = Re_mid_off(2)
+               Im_small_off(5) = Im_small_off(2)    ! zx
+               Im_large_off(5) = Im_large_off(2)
+               Im_mid_off(5) = Im_mid_off(2)
+
+               Re_small_off(6) = Re_small_off(4)    ! zy
+               Re_large_off(6) = Re_large_off(4)
+               Re_mid_off(6) = Re_mid_off(4)
+               Im_small_off(6) = Im_small_off(4)    ! zy
+               Im_large_off(6) = Im_large_off(4)
+               Im_mid_off(6) = Im_mid_off(4)
+            endif
+         endif
+      enddo
+   enddo
+   error_part = 'Error in get_trani:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Re_mid}', Re_mid) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Re_small}', Re_small) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Re_large}', Re_large) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Im_mid}', Im_mid) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Im_small}', Im_small) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Im_large}', Im_large) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Re_small_off}', Re_small_off) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Re_mid_off}', Re_mid_off) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Re_large_off}', Re_large_off) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Im_small_off}', Im_small_off) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Im_mid_off}', Im_mid_off) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Im_large_off}', Im_large_off) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(i,j,fi,fj,fij,Eij,Eijw,temp,temp2, temp3)
 !    !$omp do reduction( + : Re,Im)
    !$omp do reduction( + : Re_mid, Re_small, Re_large, Im_mid, Im_small, Im_large, Re_small_off, Re_mid_off, Re_large_off, Im_small_off, Im_mid_off, Im_large_off)
@@ -1989,7 +2608,8 @@ subroutine get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps
    enddo
    !$omp end do
    !$omp end parallel
-   
+#endif
+
    ! test:
 !    write(*,'(a,es,es,es,es,es,es)') 'Re(1)', Re(1), Re_mid(1), Re_small(1), Im(1), Im_mid(1), Im_small(1)
 !    write(*,'(a,es,es,es,es,es,es)') 'Re(2)', Re(2), Re_mid(2), Re_small(2), Im(2), Im_mid(2), Im_small(2)
@@ -2117,8 +2737,8 @@ subroutine split_into_orders(temp, V_small, V_mid, V_large)
 end subroutine split_into_orders
 
 
-subroutine get_Fnn(Scell, NSC, Ha, Ei, Fnnx, Fnny, Fnnz, Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy) ! Ref. [2]
-! subroutine get_Fnn(matter, Ha, Ei, Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz)
+subroutine get_Fnn(numpar, Scell, NSC, Ha, Ei, Fnnx, Fnny, Fnnz, Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy) ! Ref. [2]
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(in) :: Ei	! energy levels [eV]
@@ -2131,14 +2751,17 @@ subroutine get_Fnn(Scell, NSC, Ha, Ei, Fnnx, Fnny, Fnnz, Fnnxy, Fnnxz, Fnnyx, Fn
 !    real(8), dimension(size(Fnnxx,1),size(Fnnxx,2)) :: Fnn_temp_x, Fnn_temp_y, Fnn_temp_z
 !    real(8), dimension(size(Fnnxx,1),size(Fnnxx,2)) :: PBx, PBy, PBz
    integer i, j, m, n, nn, FN
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    m = size(Ha,1)
-   allocate(Fnn_temp_x(size(Fnnx,1),size(Fnnx,2)))
-   allocate(Fnn_temp_y(size(Fnnx,1),size(Fnnx,2)))
-   allocate(Fnn_temp_z(size(Fnnx,1),size(Fnnx,2)))
-   allocate(PBx(size(Fnnx,1),size(Fnnx,2)))
-   allocate(PBy(size(Fnnx,1),size(Fnnx,2)))
-   allocate(PBz(size(Fnnx,1),size(Fnnx,2)))
-   allocate(Norm1(size(Fnnx,1)))
+   allocate(Fnn_temp_x(size(Fnnx,1),size(Fnnx,2)), source = 0.0d0)
+   allocate(Fnn_temp_y(size(Fnnx,1),size(Fnnx,2)), source = 0.0d0)
+   allocate(Fnn_temp_z(size(Fnnx,1),size(Fnnx,2)), source = 0.0d0)
+   allocate(PBx(size(Fnnx,1),size(Fnnx,2)), source = 0.0d0)
+   allocate(PBy(size(Fnnx,1),size(Fnnx,2)), source = 0.0d0)
+   allocate(PBz(size(Fnnx,1),size(Fnnx,2)), source = 0.0d0)
+   allocate(Norm1(size(Fnnx,1)), source = 0.0d0)
 
    ! Do it with mkl:
 !    CALL dgemm ('T','N', m, m, m, 1.0d0, Scell(NSC)%PRRx, m, Ha, m, 0.0d0, PBx, m) ! Original
@@ -2149,7 +2772,50 @@ subroutine get_Fnn(Scell, NSC, Ha, Ei, Fnnx, Fnny, Fnnz, Fnnxy, Fnnxz, Fnnyx, Fn
    CALL dgemm ('N','N', m, m, m, 1.0d0, Scell(NSC)%PRRy, m, Ha, m, 0.0d0, PBy, m)
    CALL dgemm ('N','N', m, m, m, 1.0d0, Scell(NSC)%PRRz, m, Ha, m, 0.0d0, PBz, m)
    
-   
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = m
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, m ! ensure WF normalization to 1
+      Norm1(i) = DSQRT(SUM( Ha(i,:) * Ha(i,:) ))
+   enddo
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_Fnn:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Norm1}', Norm1) ! module "MPI_subroutines"
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, m
+      PBx(:,i) = PBx(:,i) / Norm1(i)
+      PBy(:,i) = PBy(:,i) / Norm1(i)
+      PBz(:,i) = PBz(:,i) / Norm1(i)
+   enddo ! i
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {PBx}', PBx) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {PBy}', PBy) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {PBz}', PBz) ! module "MPI_subroutines"
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+
+   ! Do it with mkl:
+   CALL dgemm ('T','N', m, m, m, 1.0d0, PBx, m, Ha, m, 0.0d0, Fnn_temp_x, m)
+   CALL dgemm ('T','N', m, m, m, 1.0d0, PBy, m, Ha, m, 0.0d0, Fnn_temp_y, m)
+   CALL dgemm ('T','N', m, m, m, 1.0d0, PBz, m, Ha, m, 0.0d0, Fnn_temp_z, m)
+
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, m
+      Fnn_temp_x(:,i) = Fnn_temp_x(:,i) / Norm1(i)
+      Fnn_temp_y(:,i) = Fnn_temp_y(:,i) / Norm1(i)
+      Fnn_temp_z(:,i) = Fnn_temp_z(:,i) / Norm1(i)
+   enddo ! i
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Fnn_temp_x}', Fnn_temp_x) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Fnn_temp_y}', Fnn_temp_y) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Fnn_temp_z}', Fnn_temp_z) ! module "MPI_subroutines"
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp parallel private(i)
    !$omp do
    do i = 1, m ! ensure WF normalization to 1
@@ -2183,7 +2849,8 @@ subroutine get_Fnn(Scell, NSC, Ha, Ei, Fnnx, Fnny, Fnnz, Fnnxy, Fnnxz, Fnnyx, Fn
    enddo ! i
    !$omp end do
    !$omp end parallel
-   
+#endif
+
    ! Do whole arrays at once:
    Fnnx = Fnn_temp_x*Fnn_temp_x
    Fnny = Fnn_temp_y*Fnn_temp_y
