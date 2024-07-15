@@ -225,16 +225,20 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    select case (numpar%el_ion_scheme)
    case (3:4)
       if ( (numpar%verbose) .and. (numpar%E_cut > (Scell%E_top-Scell%E_bottom) ) ) then
-         print*, 'E_cut > E_CB, which is impossible in nonequilibrium simulation,', &
-         ' resetting it to E_cut=', Scell%E_top-Scell%E_bottom
+         if (numpar%MPI_param%process_rank == 0) then ! only master process does it
+            print*, 'E_cut > E_CB, which is impossible in nonequilibrium simulation,', &
+            ' resetting it to E_cut=', Scell%E_top-Scell%E_bottom
+         endif
       endif
       numpar%E_cut = min(numpar%E_cut, Scell%E_top-Scell%E_bottom) ! [eV]
 
       ! Also ionization potential and the cross-section may need to be adjusted:
       if (matter%Atoms(1)%Ip(Nshl) > (Scell%E_top-Scell%E_bottom) ) then
          if (numpar%verbose) then
-            print*, 'Ionization potential is smaller than CB width,', ' it will be reset to Ip=', Scell%E_top-Scell%E_bottom
-            print*, 'Note that it will affect the cross-section'
+            if (numpar%MPI_param%process_rank == 0) then ! only master process does it
+               print*, 'Ionization potential is smaller than CB width,', ' it will be reset to Ip=', Scell%E_top-Scell%E_bottom
+               print*, 'Note that it will affect the cross-section'
+            endif
          endif
          Egap_old = matter%Atoms(1)%Ip(Nshl)
          matter%Atoms(1)%Ip(Nshl) = Scell%E_top-Scell%E_bottom ! change it to the width of CB
@@ -255,7 +259,9 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
 
    ! In case we have a very wide gap material, cut-off cannot be smaller than the gap:
    if (numpar%E_cut < Scell%E_gap) then
-      if (numpar%verbose) print*, 'Potential problem: E_cut < E_gap, resetting it'
+      if (numpar%MPI_param%process_rank == 0) then ! only master process does it
+         if (numpar%verbose) print*, 'Potential problem: E_cut < E_gap, resetting it'
+      endif
       numpar%E_cut = Scell%E_gap
    endif
 
@@ -265,8 +271,10 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
       case default  ! BEB:
          ! Renormalization is optional:
          if (numpar%E_cut < matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) ) then
-            if (numpar%verbose) print*, 'Electron cut-off energy cannot be smaller than the highest ionization otential,', &
-            'resetting it to E_cut=', matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+            if (numpar%MPI_param%process_rank == 0) then ! only master process does it
+               if (numpar%verbose) print*, 'Electron cut-off energy cannot be smaller than the highest ionization otential,', &
+               'resetting it to E_cut=', matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+            endif
             numpar%E_cut = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
          endif
    end select

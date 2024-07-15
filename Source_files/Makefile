@@ -48,14 +48,14 @@ else ifeq ($(c),if13)
 	endif
 else ifeq ($(c),mpi)
 	F90 = mpif90
-	F90FLAGS += -mkl=cluster -D MPI_USED
+	F90FLAGS += -qmkl=cluster -D MPI_USED
 
 	ifeq ($(db),y)
 		# flags for debugging
 		F90FLAGS +=  -real-size 64 -debug all -check all -fpe0 -fp-stack-check -O0 -g -fp-model precise -traceback -gen-interfaces -warn interfaces -fpp -cpp -ffree-line-length-0 -fdec-format-defaults
 	else
 		# Flags for maximum performance
-		F90FLAGS += -O5 -fpp -cpp -ipo -real-size 64
+		F90FLAGS += -O5 -fpp -cpp -ip -real-size 64
 	endif
 	EXE = $(EXEPATH)/XTANT_MPI.x
 else
@@ -87,9 +87,6 @@ OBJS = Universal_constants.o Objects.o Variables.o MPI_subroutines.o BS_Cartesia
 # print explanations
 default:
 	@echo "**********************************************"
-	@echo "----------------------------------------------"
-	@echo "Run the code as: ./TREKIS.x"
-	@echo "----------------------------------------------"
 ifeq ($(c),gf)
 	@echo "Compiling XTANT-3 with gfortran"
 	@echo "----------------------------------------------"

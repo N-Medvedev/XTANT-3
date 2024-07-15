@@ -2024,16 +2024,17 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
 #endif
 
       ! Testing:
-      if (numpar%verbose) then
-         do i_at = 1, size(matter%Atoms)
-            N_at = COUNT(MASK = (Scell%MDatoms(:)%KOA == i_at))
-            if (N_at <= 0) N_at = 1   ! in case there are no atoms of this kind
-            write(*,'(a,f,f)') ' Mulliken average charge: '//trim(adjustl(matter%Atoms(i_at)%Name))//':', &
+      if (numpar%MPI_param%process_rank == 0) then ! only master process does it
+         if (numpar%verbose) then
+            do i_at = 1, size(matter%Atoms)
+               N_at = COUNT(MASK = (Scell%MDatoms(:)%KOA == i_at))
+               if (N_at <= 0) N_at = 1   ! in case there are no atoms of this kind
+               write(*,'(a,f,f)') ' Mulliken average charge: '//trim(adjustl(matter%Atoms(i_at)%Name))//':', &
                      SUM(Scell%MDAtoms(:)%q, MASK = (Scell%MDatoms(:)%KOA == i_at)) / dble(N_at), &
                      matter%Atoms(i_at)%mulliken_q
-         enddo
+            enddo
+         endif
       endif
-
       deallocate(mulliken_Ne)
    else  ! just atomic electrons
       ! Mulliken charges:

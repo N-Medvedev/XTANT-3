@@ -938,11 +938,11 @@ subroutine ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param)
    logical :: process_skip
 
    Error_descript = ''  ! initialize
+   Ev = 0.0d0     ! to start with
 
 #ifdef MPI_USED
    if ( (MPI_param%BLACS_myrow < 0) .or. (MPI_param%BLACS_mycol < 0)) then ! this process is not on BLACS grid
       process_skip = .true.
-      Ev = 0.0d0     ! to start with
       goto 5555
    endif
    ! Obvious checks:
@@ -951,7 +951,6 @@ subroutine ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param)
 
    INFO = 0       ! initializing
    N = size(M,1)  ! size of the global symmetric matrix
-   Ev = 0.0d0     ! to start with
    allocate(Ev_local(N), source = 0.0d0)  ! to start with
    allocate(M_temp(N,N))      ! to start with
 
@@ -1245,11 +1244,11 @@ subroutine ScaLAPACK_diagonalize_c(M, Ev, Error_descript, MPI_param)
    logical :: process_skip
 
    Error_descript = ''  ! initialize
+   Ev = 0.0d0     ! to start with
 
 #ifdef MPI_USED
    if ( (MPI_param%BLACS_myrow < 0) .or. (MPI_param%BLACS_mycol < 0)) then ! this process is not on BLACS grid
       process_skip = .true.
-      Ev = 0.0d0     ! to start with
       goto 5556
    endif
    ! Obvious checks:
@@ -1258,7 +1257,6 @@ subroutine ScaLAPACK_diagonalize_c(M, Ev, Error_descript, MPI_param)
 
    INFO = 0       ! initializing
    N = size(M,1)  ! size of the global symmetric matrix
-   Ev = 0.0d0     ! to start with
    allocate(Ev_local(N), source = 0.0d0)  ! to start with
    allocate(M_temp(N,N))      ! to start with
 
