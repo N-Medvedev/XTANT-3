@@ -515,7 +515,7 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
    ! 4) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
 !    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, numpar%MPI_param, check_M=.true.)
 !    call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, numpar%MPI_param, use_DSYEV=.false.)
-   call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, numpar%MPI_param) ! module "Algebra_tools"
+   call sym_diagonalize(Hij, Scell(NSC)%Ei, Error_descript, numpar%MPI_param, use_DSYEV=.true.) ! module "Algebra_tools"
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Subroutine Hamil_tot_DFTB: '//trim(adjustl(Error_descript))
       if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it

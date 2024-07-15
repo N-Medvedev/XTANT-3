@@ -853,6 +853,13 @@ subroutine r_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, us
    real(8), dimension(:,:), allocatable :: M_save	! matrix
    real(8) :: Ev_test(size(Ev))
    integer :: i_countin, FN, i, j
+   logical :: must_use_DSYEV
+
+   if (present(use_DSYEV)) then
+      must_use_DSYEV = use_DSYEV
+   else
+      must_use_DSYEV = .false.   ! default
+   endif
 
    Error_descript = ''  ! initialize
    N = size(M,1)
@@ -867,7 +874,7 @@ subroutine r_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, us
 
 #ifdef MPI_USED
    ! Diagonalize via call to a ScaLAPACK subroutine:
-   call ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param)  ! below
+   call ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param, must_use_DSYEV)  ! below
    if (LEN(trim(adjustl(Error_descript))) > 0) then
       print*, trim(adjustl(Error_descript))
    endif
@@ -881,10 +888,10 @@ subroutine r_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, us
 !    pause 'r_diagonalize'
 
 #else ! use OpenMP instead:
-   if (.not.present(use_DSYEV)) then
+   if (.not.must_use_DSYEV) then
       call dsyevd('V', 'U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO) ! LAPACK
-   else
-      call DSYEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, INFO)
+   else  ! don't use divide-and-conquare method of diagonalization
+      call DSYEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, INFO)  ! LAPACK
    endif
 #endif
 
@@ -917,7 +924,7 @@ end subroutine r_diagonalize
 
 
 
-subroutine ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param)
+subroutine ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param, must_use_DSYEV)
    ! https://www.ibm.com/docs/vi/pessl/5.5?topic=easvas-pdsyevd-pzheevd-all-eigenvalues-eigenvectors-real-symmetric-complex-hermitian-matrix-using-parallel-divide-conquer-algorithm
    ! Variables BLACS_icontxt, BLACS_myrow, BLACS_mycol etc. were initialized in
    ! the subtroutine Initialize_ScaLAPACK, module "MPI_subroutines", called at the start
@@ -926,6 +933,7 @@ subroutine ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param)
    real(8), dimension(:), intent(out) :: Ev	! eigenvalues
    character(*), intent(inout) :: Error_descript	! error description
    type(Used_MPI_parameters), intent(inout) :: MPI_param
+   logical, intent(in) :: must_use_DSYEV
    !-----------------------------
    integer :: N, desc_a(9), desc_z(9), desc_glob(9), LLD_glob, LLD_A, LLD_Z, MB_A, MB_Z, N_loc
    integer :: NQ, NP, LWORK, LIWORK, TRILWMIN, INFO, ctxt_sys, RSRC_A, RSRC_Z
@@ -995,18 +1003,26 @@ subroutine ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param)
    allocate(WORK(1))    ! to start with
    allocate(IWORK(1))   ! to start with
    ! Query workspace size:
-   call PDSYEVD('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, work, -1, iwork, -1, info)  ! ScaLAPACK library
+   if (.not.must_use_DSYEV) then
+      call PDSYEVD('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, work, -1, iwork, -1, info)  ! ScaLAPACK library
+      LIWORK = IWORK(1)
+   else  ! do not use divide-and-conquare
+      call PDSYEV('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, work, -1, info)  ! ScaLAPACK library
+      LIWORK = 0
+   endif
    ! Use the optimal workspace parameters from this subroutine to define the BLACS work space:
    LWORK = WORK(1)
-   LIWORK = IWORK(1)
    deallocate(WORK)
    deallocate(IWORK)
    allocate(WORK(LWORK))
    allocate(IWORK(LIWORK))
 
    ! 5) Do the distributed symmetric matrix diagonalization:
-   CALL PDSYEVD('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, WORK, LWORK, IWORK, LIWORK, INFO)   ! ScaLAPACK library
-   !CALL PDSYEV('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, WORK, LWORK, IWORK, LIWORK, INFO)   ! ScaLAPACK library
+   if (.not.must_use_DSYEV) then
+      CALL PDSYEVD('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, WORK, LWORK, IWORK, LIWORK, INFO)   ! ScaLAPACK library
+   else  ! do not use divide-and-conquare
+      call PDSYEV('V', 'U', N, M_in, 1, 1, desc_a, Ev_local, M_out, 1, 1, desc_z, WORK, LWORK, INFO)   ! ScaLAPACK library
+   endif
    if (INFO /= 0) then
       write(Error_descript, '(a,i0)') 'Problem in PDSYEVD (ScaLAPACK_diagonalize), INFO:', INFO
    endif
