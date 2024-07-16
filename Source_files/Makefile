@@ -52,11 +52,9 @@ else ifeq ($(c),mpi)
 	F90 = mpif90
 	F90FLAGS += -D MPI_USED
 	#F90FLAGS += -lscalapack-openmpi -lblacsCinit-openmpi -lblacs-openmpi -llapack -lblas
-	#F90FLAGS += -qmkl=cluster
-
 	ifeq ($(db),y)
 		# flags for debugging
-		F90FLAGS += -cpp -debug all -check all -fpe0 -fp-stack-check -O0  -traceback -gen-interfaces -warn interfaces -cpp -real-size 64 -standard-semantics -assume nofpe_summary
+		F90FLAGS += -cpp -debug all -check all -fpe0 -fp-stack-check -O0  -traceback -gen-interfaces -warn interfaces -fpp -real-size 64 -standard-semantics -assume nofpe_summary
 	else
 		# Flags for maximum performance
 		#F90FLAGS += -O5 -cpp -ffree-line-length-0  -fdefault-real-8 -fdefault-double-8

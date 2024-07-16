@@ -480,6 +480,9 @@ subroutine Electron_ion_coupling_Mij(wr, Ha, Ha0, Mij, kind_M, Sij) ! calculates
    real(8) :: eps, Norm_val0, Norm_val1
    
    N = size(wr)
+   !print*, 'Electron_ion_coupling_Mij:', N
+   !print*, 'size:', size(wr)
+
    if (.not. allocated(Mij)) allocate(Mij(N,N))
    Mij = 0.0d0
    eps = 1.0d-13    ! acceptable error
