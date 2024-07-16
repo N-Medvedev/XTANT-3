@@ -40,6 +40,10 @@ use Dealing_with_files, only : Count_lines_in_file, read_file
 use Dealing_with_EADL, only : m_EPDL_file, READ_EPDL_TYPE_FILE_real, next_designator, Read_EPDL_data
 use Algebra_tools, only : sort_array
 
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce, broadcast_allocatable_array, MPI_share_electron_MFPs, MPI_share_Ritchi_CDF
+#endif
+
 implicit none
 PRIVATE
 
@@ -65,6 +69,9 @@ subroutine Mean_free_path(E, mfps, MFP_cur, inversed) ! finds total mean free pa
    real(8) Ecur, MFP_temp
    integer i,j, N_temmp, Msh, N_last
    call Find_in_array_monoton(mfps%E, E, N_temmp) ! module "Little_subroutines"
+
+   !print*, 'Mean_free_path:', E, N_temmp, mfps%E(N_temmp), mfps%L(N_temmp)
+
    call linear_interpolation(mfps%E, mfps%L, E, MFP_temp, N_temmp)	! module "Little_subroutines"
    if (.not.present(inversed)) then
       if (MFP_temp < 1.0d-12) then ! avoid divide by zero
@@ -202,7 +209,7 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
    integer, intent(in) :: NSC ! supercell index
    type(Solid), intent(inout) :: matter ! parameters of the material
    type(Pulse), dimension(:), intent(in) :: laser ! Laser pulse parameters
-   type(Numerics_param), intent(in) :: numpar  ! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar  ! all numerical parameters
    real(8), intent(in) :: TeeV   ! [eV] electronic tempreature
    type(Error_handling), intent(inout) :: Err	! error save
    !===============================================
@@ -213,14 +220,9 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
    integer i, j, k, Nshl, my_id, Reason, count_lines, N_Te_points
    real(8) :: Ele, L, dEdx, Omega, ksum, fsum, Te_temp
    integer OMP_GET_THREAD_NUM, OMP_GET_NUM_THREADS
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
    
-   !--------------------------------------------------------------------------
-   ! Make sure non-master MPI processes aren't doing anything wrong here
-   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
-      return
-   endif
-   !--------------------------------------------------------------------------
-
    ! Set grid for MFPs:
    call get_grid_4CS(N_grid, maxval(laser(:)%hw), matter%Atoms(1)%El_MFP(1)%E, matter) ! below
 
@@ -231,10 +233,18 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
       N_Te_points = 51  ! points in Te, by 1000K step
       allocate(matter%Atoms(1)%El_MFP_vs_T(N_Te_points))
       do i = 1, N_Te_points
-         allocate(matter%Atoms(1)%El_MFP_vs_T(i)%L(N_grid))
-         allocate(matter%Atoms(1)%El_MFP_vs_T(i)%E(N_grid))
+         allocate(matter%Atoms(1)%El_MFP_vs_T(i)%L(N_grid), source = 0.0d0)
+         allocate(matter%Atoms(1)%El_MFP_vs_T(i)%E(N_grid), source = 0.0d0)
       enddo
    endif
+
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      !return
+      goto 9902
+   endif
+   !--------------------------------------------------------------------------
 
    ! Total inelastic mean free paths:
    if (.not.allocated(matter%El_MFP_tot%L)) allocate(matter%El_MFP_tot%L(N_grid))
@@ -405,11 +415,44 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
    enddo
 
 
+9902  continue
+
+
+   !--------------------------------------------------------------
+#ifdef MPI_USED   ! use the MPI version
+   error_part = 'Error in get_MFPs:'
+   ! Allocating MFP arrays to be used and filled:
+   ! type of electron scattering cross-section used for each shell:
+   do i = 1, size(matter%Atoms)
+      call broadcast_allocatable_array(numpar%MPI_param, trim(adjustl(error_part))//' {matter%Atoms(i)%TOCS}', matter%Atoms(i)%TOCS) ! module "MPI_subroutines"
+   enddo
+   ! Pass info on the array sizes etc. (the actual values of calculated MFPs are shared later):
+   call MPI_share_electron_MFPs(matter, numpar, Err)   ! module "MPI_subroutines"
+   ! and CDF function, if required:
+   call MPI_share_Ritchi_CDF(numpar%MPI_param, matter) ! module "MPI_subroutines"
+#endif
+
    !TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT
    ! Get the mean free paths vs Te:
    Nshl = size(matter%Atoms(1)%Ip)
    select case (matter%Atoms(1)%TOCS(Nshl)) ! Valence band and CDF only
    case (1) ! CDF
+#ifdef MPI_USED   ! use the MPI version
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = N_Te_points
+      ! Do the cycle (parallel) calculations:
+      do i = Nstart, Nend, N_incr  ! each process does its own part
+      !do i = 1, N_Te_points   ! for all electronic temperature points
+         Te_temp = dble((i-1)*1000)*g_kb_EV ! electronic temperature [eV]
+         call IMFP_vs_Te_files(matter, laser, numpar, Te_temp, i) ! below
+      enddo ! i = 1, N_Te_points
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      do i = 1, N_Te_points   ! for all electronic temperature points
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{matter%Atoms(1)%El_MFP_vs_T(:)%E}', matter%Atoms(1)%El_MFP_vs_T(i)%E) ! module "MPI_subroutines"
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{matter%Atoms(1)%El_MFP_vs_T(:)%L}', matter%Atoms(1)%El_MFP_vs_T(i)%L) ! module "MPI_subroutines"
+      enddo
+#else ! use OpenMP instead
       !$omp PARALLEL private(i, Te_temp)
       !$omp do schedule(dynamic)
       do i = 1, N_Te_points   ! for all electronic temperature points
@@ -418,7 +461,15 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
       enddo ! i = 1, N_Te_points
       !$omp end do
       !$omp end parallel
+#endif
    endselect
+
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
 
    !iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
    ! Make the inverse MFPs, since that's how we use them in the MC code:

@@ -31,6 +31,11 @@ use MC_cross_sections, only : which_shell, which_atom, NRG_transfer_elastic_atom
                         Mean_free_path
 use Electron_tools, only : update_cross_section, Do_relaxation_time, set_high_DOS
 
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce
+#endif
+
+
 implicit none
 PRIVATE
 
@@ -53,6 +58,8 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
    integer NSC, stat, i, j, N, Nph
    real(8), dimension(:,:), allocatable :: MChole
    real(8), dimension(size(Scell(1)%fe)) :: d_fe, d_fe_cur
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
    
    NSC = 1 ! for the moment, we have only one supercell
 
@@ -83,7 +90,46 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
          N_ph = 0.0d0
          Eh = 0.0d0
          E_atoms_heating = 0.0d0
-         ! The iteration in MC are largely independent, so they can be parallelized with openmp:
+         ! The iteration in MC are largely independent, so they can be parallelized:
+#ifdef MPI_USED   ! use the MPI version
+         N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+         Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+         Nend = numpar%NMC
+         ! Do the cycle (parallel) calculations:
+         DO_STAT:do stat = Nstart, Nend, N_incr  ! each process does its own part
+         !DO_STAT:do stat = 1,numpar%NMC ! Statistics in MC, iterate the same thing and average
+            ! Set initial data:
+            Eetot_cur = Scell(NSC)%nrg%El_low	! [eV] starting total energy of low-energy electrons
+            noeVB_cur = Scell(NSC)%Ne_low		! number of low-energy electrons
+            d_fe_cur = 0.0d0  ! change of the distribution in each iteration
+
+            ! Perform the MC run:
+            call MC_run(tim, MC(stat), Scell(NSC), laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, d_fe_cur, min_df)
+            ! Add up the data from this run to total data:
+            Eetot_stat = Eetot_stat + Eetot_cur  ! [eV] VB-electrons
+            noeVB_stat = noeVB_stat + noeVB_cur  ! number VB-electrons
+            d_fe = d_fe + d_fe_cur  ! change in distribution of low-energy electrons
+            E_atoms_heating = E_atoms_heating + E_atoms_cur ! [eV] heating of atoms by electron elastic scattering
+            call sort_out_electrons(MC(stat), MC(stat)%electrons, Ne_high, Ne_emit, Ee_HE) ! below
+            call sort_out_holes(MC(stat), MC(stat)%holes, MChole, Ne_holes, Eh)   ! below
+            N_ph = N_ph + Nph  ! number absorbed photons
+         enddo DO_STAT
+
+         ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+         error_part = 'Error in MC_Propagate:'
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Eetot_stat}', Eetot_stat) ! module "MPI_subroutines"
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{noeVB_stat}', noeVB_stat) ! module "MPI_subroutines"
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Ee_HE}', Ee_HE) ! module "MPI_subroutines"
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Ne_high}', Ne_high) ! module "MPI_subroutines"
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Ne_emit}', Ne_emit) ! module "MPI_subroutines"
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Eh}', Eh) ! module "MPI_subroutines"
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Ne_holes}', Ne_holes) ! module "MPI_subroutines"
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{MChole}', MChole) ! module "MPI_subroutines"
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{N_ph}', N_ph) ! module "MPI_subroutines"
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{E_atoms_heating}', E_atoms_heating) ! module "MPI_subroutines"
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{d_fe}', d_fe) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
 !$omp parallel &
 !$omp private (stat, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, d_fe_cur, i)
 !$omp do schedule(dynamic) reduction( + : Eetot_stat, noeVB_stat, Ee_HE, Ne_high, Ne_emit, &
@@ -108,6 +154,7 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
          enddo DO_STAT
 !$omp end do
 !$omp end parallel
+#endif
          ! Average all the outcome over the statistics:
          Scell(NSC)%nrg%E_glob = Scell(NSC)%nrg%E_glob + (Eetot_stat/NMC_real - Scell(NSC)%nrg%El_low)
          Scell(NSC)%nrg%El_low = Eetot_stat/NMC_real
@@ -128,7 +175,9 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
          Scell(NSC)%fe(:) = Scell(NSC)%fe(:) + d_fe(:)/NMC_real
 
          ! And the distribution on the grid:
-         call get_high_energy_distribution(Scell(NSC), MC, numpar)  ! below
+         if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            call get_high_energy_distribution(Scell(NSC), MC, numpar)  ! below
+         endif
 
          ! Consistency checks:
          ! Make sure there are no unphysical values (fe<0 or fe>2):

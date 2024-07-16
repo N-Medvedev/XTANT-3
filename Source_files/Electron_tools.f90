@@ -29,6 +29,13 @@ use Little_subroutines, only : Find_in_array_monoton, Fermi_interpolation, linea
                         Find_in_monotonous_1D_array, Gaussian, print_progress
 use MC_cross_sections, only : TotIMFP, Mean_free_path
 
+#ifdef MPI_USED
+   use MPI_subroutines, only : MPI_barrier_wrapper, do_MPI_Allreduce
+#endif
+
+
+
+
 implicit none
 PRIVATE
 
@@ -211,23 +218,27 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    matter%Atoms(1)%Ip(Nshl) = Scell%E_gap ! [eV]
 
    ! Update VB impact-ionization scattering CS:
-   call update_ionization_CS(matter, Nshl, Scell%E_gap - Egap_old)  ! below
+   call update_ionization_CS(matter, Nshl, Scell%E_gap - Egap_old, numpar)  ! below
 
    ! For noneuqilibrium distributions (BO or relaxation time), threshold cannot be higher than
    ! the topmost level of CB, otherwise, there is no way to place an incomming electron:
    select case (numpar%el_ion_scheme)
    case (3:4)
       if ( (numpar%verbose) .and. (numpar%E_cut > (Scell%E_top-Scell%E_bottom) ) ) then
-         print*, 'E_cut > E_CB, which is impossible in nonequilibrium simulation,', &
-         ' resetting it to E_cut=', Scell%E_top-Scell%E_bottom
+         if (numpar%MPI_param%process_rank == 0) then ! only master process does it
+            print*, 'E_cut > E_CB, which is impossible in nonequilibrium simulation,', &
+            ' resetting it to E_cut=', Scell%E_top-Scell%E_bottom
+         endif
       endif
       numpar%E_cut = min(numpar%E_cut, Scell%E_top-Scell%E_bottom) ! [eV]
 
       ! Also ionization potential and the cross-section may need to be adjusted:
       if (matter%Atoms(1)%Ip(Nshl) > (Scell%E_top-Scell%E_bottom) ) then
          if (numpar%verbose) then
-            print*, 'Ionization potential is smaller than CB width,', ' it will be reset to Ip=', Scell%E_top-Scell%E_bottom
-            print*, 'Note that it will affect the cross-section'
+            if (numpar%MPI_param%process_rank == 0) then ! only master process does it
+               print*, 'Ionization potential is smaller than CB width,', ' it will be reset to Ip=', Scell%E_top-Scell%E_bottom
+               print*, 'Note that it will affect the cross-section'
+            endif
          endif
          Egap_old = matter%Atoms(1)%Ip(Nshl)
          matter%Atoms(1)%Ip(Nshl) = Scell%E_top-Scell%E_bottom ! change it to the width of CB
@@ -248,7 +259,9 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
 
    ! In case we have a very wide gap material, cut-off cannot be smaller than the gap:
    if (numpar%E_cut < Scell%E_gap) then
-      if (numpar%verbose) print*, 'Potential problem: E_cut < E_gap, resetting it'
+      if (numpar%MPI_param%process_rank == 0) then ! only master process does it
+         if (numpar%verbose) print*, 'Potential problem: E_cut < E_gap, resetting it'
+      endif
       numpar%E_cut = Scell%E_gap
    endif
 
@@ -258,8 +271,10 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
       case default  ! BEB:
          ! Renormalization is optional:
          if (numpar%E_cut < matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) ) then
-            if (numpar%verbose) print*, 'Electron cut-off energy cannot be smaller than the highest ionization otential,', &
-            'resetting it to E_cut=', matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+            if (numpar%MPI_param%process_rank == 0) then ! only master process does it
+               if (numpar%verbose) print*, 'Electron cut-off energy cannot be smaller than the highest ionization otential,', &
+               'resetting it to E_cut=', matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
+            endif
             numpar%E_cut = matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip))
          endif
    end select
@@ -271,10 +286,11 @@ end subroutine find_band_gap
 
 
 
-subroutine update_ionization_CS(matter, Nshl, dE)
+subroutine update_ionization_CS(matter, Nshl, dE, numpar)
    type(solid), intent(inout) :: matter ! materil parameters
    integer, intent(in) :: Nshl   ! VB index
    real(8), intent(in) :: dE  ! energy shift
+   type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
    !----------------------------------------
    real(8) :: IMFP
    integer :: i, j, iE, N_sh
@@ -624,6 +640,10 @@ subroutine Boltzmann_e_e_IN(Ev, fe, M_ee, dt) ! calculates change of distributio
    ! Construct an array that will be reused multiple times: fe(i)*(2-fe(j)):
    call Two_Vect_Matr(fe,two_minus_fe,fe_2_fe) ! module "Algebra_tools"
    
+#ifdef MPI_USED   ! use the MPI version
+   ! NOT DONE YET
+
+#else ! use OpenMP instead
 !$omp PARALLEL private(i)
 !$omp do schedule(dynamic) reduction( + : fe_temp)
    do i = 1, N ! all energy levels on which we looking for changes (left-hand side of the equation)
@@ -631,6 +651,7 @@ subroutine Boltzmann_e_e_IN(Ev, fe, M_ee, dt) ! calculates change of distributio
    enddo
 !$omp end do
 !$omp end parallel
+#endif
 
    ! Test the energy conservation:
    call set_total_el_energy(Ev,fe_temp,E_tot2)
@@ -920,7 +941,8 @@ end subroutine  electronic_entropy
 
 
 
-subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
+subroutine get_DOS_sort(numpar, Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), dimension(:), intent(in) :: Ei	! [eV] energy levels
    real(8), dimension(:,:), intent(inout) :: DOS	! [eV] grid; [a.u.] DOS
    real(8), intent(in) :: smearing	! [eV] smearing used for DOS calculations
@@ -934,6 +956,8 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
    real(8), dimension(:), allocatable :: DOS_sum
    real(8), dimension(:,:,:), allocatable :: partial_DOS_sum
    logical :: do_partial
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
    
 !    print*, 'get_DOS_sort test 0'
    
@@ -953,7 +977,85 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
    endif
    
 !     print*, 'get_DOS_sort test 1', Ngridsiz
-   
+
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Ngridsiz
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, Ngridsiz	! for all grid points
+      ! Do the summation in two parts:
+      call Find_in_monotonous_1D_array(Ei, DOS(1,i), j_center)	! module "Little_subroutines"
+      ! 1) Contribution from the levels above the chosen point:
+      if (j_center <= Nsiz) then
+         EL:do j = j_center, Nsiz	! for all energy levels above, up to the last one
+            call Gaussian(Ei(j), sigma, DOS(1,i), Gaus)	! module "Little_subroutines"
+            if (Gaus < epsylon) exit EL	! no need to continue, the contribution from higher levels is negligible
+            DOS_sum(i) = DOS_sum(i) + Gaus
+            if (do_partial) then
+               if (present(Hij)) then
+                  temp = SUM( Hij(:,j) * Hij(:,j) )
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
+                        enddo
+                     enddo
+                  endif
+               elseif (present(CHij)) then
+                  temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
+                        enddo
+                     enddo
+                  endif
+               endif
+            endif
+         enddo EL
+      endif ! (j_center <= Nsiz)
+      ! 2) Contribution from the levels below the given point:
+      if (j_center > 1) then
+         EL2:do j = (j_center-1), 1, -1	! for all energy levels below, down to the first one
+            call Gaussian(Ei(j), sigma, DOS(1,i), Gaus)	! module "Little_subroutines"
+            if (Gaus < epsylon) exit EL2	! no need to continue, the contribution from higher levels is negligible
+            DOS_sum(i) = DOS_sum(i) + Gaus
+            if (do_partial) then
+               if (present(Hij)) then
+                  temp = SUM( Hij(:,j) * Hij(:,j) )
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
+                        enddo
+                     enddo
+                  endif
+               elseif (present(CHij)) then
+                  temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
+                        enddo
+                     enddo
+                  endif
+               endif
+            endif
+         enddo EL2
+      endif ! (j_center > 1)
+   enddo !  i = 1, Ngridsiz
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_DOS_sort:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{DOS_sum}', DOS_sum) ! module "MPI_subroutines"
+   if (do_partial) then
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{partial_DOS_sum}', partial_DOS_sum) ! module "MPI_subroutines"
+   endif
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(i, j_center, j, Gaus, i_at, i_types, temp)
    !$omp do schedule(dynamic) reduction( + : DOS_sum, partial_DOS_sum)
    do i = 1, Ngridsiz	! for all grid points
@@ -1041,7 +1143,7 @@ subroutine get_DOS_sort(Ei, DOS, smearing, partial_DOS, masks_DOS, Hij, CHij)
    enddo !  i = 1, Ngridsiz
    !$omp end do
    !$omp end parallel
-   
+#endif
 !     print*, 'get_DOS_sort test 5'
    
    DOS(2,:) = DOS_sum(:)

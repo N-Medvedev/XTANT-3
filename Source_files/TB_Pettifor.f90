@@ -53,7 +53,7 @@ subroutine dHij_r(TB_Hamil, atoms, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, F,
    type(TB_H_Pettifor), dimension(:,:), intent(in) :: TB_Hamil   ! parameters of the Hamiltonian of TB
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:,:), intent(in) :: M_Vs  ! matrix of functions Vs
    real(8), dimension(:,:,:), intent(in) :: M_dVs ! matrix of functions dVs
    real(8), dimension(:,:,:), intent(in) :: M_d2Vs ! matrix of functions d2Vs
@@ -66,13 +66,49 @@ subroutine dHij_r(TB_Hamil, atoms, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, F,
    real(8), dimension(:,:), allocatable :: dHijz_r_all ! allocatable
    real(8), dimension(:,:), allocatable :: d2Hijx_r2_all, d2Hijy_r2_all, d2Hijz_r2_all	! For derivatives of the forces
    integer :: N, Nat, k
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    Nat = size(Scell(1)%MDatoms)	! number of atoms
    N = size(Scell(1)%Ei)	! number of the energy levels
    if (.not.allocated(F)) allocate(F(3,Nat))
    F = 0.0d0
    if (.not.allocated(dF)) allocate(dF(3,Nat))
    dF = 0.0d0
-   
+
+
+#ifdef MPI_USED   ! use the MPI version [tested]
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Nat
+   ! Do the cycle (parallel) calculations:
+   if (.not.allocated(dHijx_r_all)) allocate(dHijx_r_all(N,N))
+   if (.not.allocated(dHijy_r_all)) allocate(dHijy_r_all(N,N))
+   if (.not.allocated(dHijz_r_all)) allocate(dHijz_r_all(N,N))
+   if (.not.allocated(d2Hijx_r2_all)) allocate(d2Hijx_r2_all(N,N))
+   if (.not.allocated(d2Hijy_r2_all)) allocate(d2Hijy_r2_all(N,N))
+   if (.not.allocated(d2Hijz_r2_all)) allocate(d2Hijz_r2_all(N,N))
+   do k = Nstart, Nend, N_incr  ! each process does its own part
+   !do k = 1, Nat	! forces and derivatives for atoms:
+      call dHamil_tot_r(dHijx_r_all, dHijy_r_all, dHijz_r_all, d2Hijx_r2_all, d2Hijy_r2_all, d2Hijz_r2_all, TB_Hamil, Scell, 1, numpar, k, M_Vs, M_dVs, M_d2Vs, M_cos) ! see below
+      call Attract_TB_H3_near(Scell(1)%Aij, dHijx_r_all, dHijy_r_all, dHijz_r_all, Scell, 1, Eelectr_r)	! see below
+      call Attract_TB_H3_near(Scell(1)%Aij, d2Hijx_r2_all, d2Hijy_r2_all, d2Hijz_r2_all, Scell, 1, Eelectr_2r)	! see below
+      F(:,k) = Eelectr_r(:)	! save attractive forces [eV/A]
+      dF(:,k) = Eelectr_2r(:)	! save derivatives of attractive forces [eV/A^2]
+   enddo ! k
+   if (allocated(dHijx_r_all)) deallocate(dHijx_r_all)
+   if (allocated(dHijy_r_all)) deallocate(dHijy_r_all)
+   if (allocated(dHijz_r_all)) deallocate(dHijz_r_all)
+   if (allocated(d2Hijx_r2_all)) deallocate(d2Hijx_r2_all)
+   if (allocated(d2Hijy_r2_all)) deallocate(d2Hijy_r2_all)
+   if (allocated(d2Hijz_r2_all)) deallocate(d2Hijz_r2_all)
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in dHij_r:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'F', F) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dF', dF) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
 !$omp PARALLEL private(k, Eelectr_r, Eelectr_2r, dHijx_r_all, dHijy_r_all, dHijz_r_all, d2Hijx_r2_all, d2Hijy_r2_all, d2Hijz_r2_all) 
    if (.not.allocated(dHijx_r_all)) allocate(dHijx_r_all(N,N))
    if (.not.allocated(dHijy_r_all)) allocate(dHijy_r_all(N,N))
@@ -96,6 +132,7 @@ subroutine dHij_r(TB_Hamil, atoms, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, F,
    if (allocated(d2Hijy_r2_all)) deallocate(d2Hijy_r2_all)
    if (allocated(d2Hijz_r2_all)) deallocate(d2Hijz_r2_all)
 !$omp end parallel
+#endif
 end subroutine dHij_r
 
 
@@ -106,7 +143,7 @@ subroutine dHij_s(TB_Hamil, atoms, Scell, NSC, numpar, Aij, M_x1, M_xrr) ! attra
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors   
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    REAL(8), DIMENSION(:,:), INTENT(in) :: Aij  ! Matrix Aij, Eq. (H.3), p.153 Jeschke's PhD thesis
    REAL(8), DIMENSION(:,:,:), INTENT(in) :: M_x1  ! Matrix of x1 elements, used for forces
    real(8), dimension(:,:,:), intent(in) :: M_xrr ! matrix of coefficients xrr, yrr, zrr
@@ -117,14 +154,47 @@ subroutine dHij_s(TB_Hamil, atoms, Scell, NSC, numpar, Aij, M_x1, M_xrr) ! attra
    real(8), dimension(:,:), allocatable :: dHijz_s_all ! allocatable
    real(8), dimension(:,:,:), allocatable :: M_Vs  ! matrix of functions Vs
    real(8), dimension(:,:,:), allocatable :: M_dVs ! matrix of functions dVs
+   real(8) :: forces_att(size(atoms),3)
    integer k, nat, nat4, my_id, OMP_GET_THREAD_NUM, num_th, OMP_SET_NUM_THREADS
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    nat = size(atoms)
    nat4 = nat*4 ! sp^3 parametrization has 4 orbitals per atom
 
    ! Construct array of functions Vs and dVs for all pairs of atoms to use for forces:
-   call Construct_M_Vs(Scell, NSC, TB_Hamil, M_Vs, M_dVs) ! subroitine below
+   call Construct_M_Vs(Scell, NSC, TB_Hamil, numpar, M_Vs, M_dVs) ! subroitine below
 
+#ifdef MPI_USED   ! use the MPI version
+   if (.not.allocated(dHijx_s_all)) allocate(dHijx_s_all(nat4,nat4))
+   if (.not.allocated(dHijy_s_all)) allocate(dHijy_s_all(nat4,nat4))
+   if (.not.allocated(dHijz_s_all)) allocate(dHijz_s_all(nat4,nat4))
 
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   forces_att = 0.0d0   ! to start with
+   do k = Nstart, Nend, N_incr  ! each process does its own part
+   !do k = 1,nat ! initial conditions for atoms:
+      call dHamil_tot_s(dHijx_s_all, dHijy_s_all, dHijz_s_all, TB_Hamil, Scell, NSC, numpar, k, M_x1, M_xrr, M_Vs, M_dVs) ! see below
+
+      call Attract_TB_H3_near(Aij, dHijx_s_all, dHijy_s_all, dHijz_s_all, Scell, NSC, Eelectr_s) ! see below
+
+      forces_att(k,:) = Eelectr_s(:) ! save attractive forces
+   enddo ! k
+   if (allocated(dHijx_s_all)) deallocate(dHijx_s_all)
+   if (allocated(dHijy_s_all)) deallocate(dHijy_s_all)
+   if (allocated(dHijz_s_all)) deallocate(dHijz_s_all)
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in dHij_s:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'forces_att', forces_att) ! module "MPI_subroutines"
+
+   do k = 1, nat
+      Scell(NSC)%MDatoms(k)%forces%att(:) = forces_att(k,:) ! save attractive forces
+   enddo
+
+#else    ! OpenMP to use instead
 !$omp PARALLEL private(k, Eelectr_s, dHijx_s_all, dHijy_s_all, dHijz_s_all) 
    if (.not.allocated(dHijx_s_all)) allocate(dHijx_s_all(nat4,nat4))
    if (.not.allocated(dHijy_s_all)) allocate(dHijy_s_all(nat4,nat4))
@@ -146,6 +216,7 @@ subroutine dHij_s(TB_Hamil, atoms, Scell, NSC, numpar, Aij, M_x1, M_xrr) ! attra
    if (allocated(dHijy_s_all)) deallocate(dHijy_s_all)
    if (allocated(dHijz_s_all)) deallocate(dHijz_s_all)
 !$omp end parallel
+#endif
 
    if (allocated(M_Vs)) deallocate(M_Vs)
    if (allocated(M_dVs)) deallocate(M_dVs)
@@ -153,10 +224,11 @@ end subroutine dHij_s
 
 
 
-subroutine Construct_M_Vs(Scell, NSC, TB_Hamil, M_Vs, M_dVs, M_d2Vs, M_cos)
+subroutine Construct_M_Vs(Scell, NSC, TB_Hamil, numpar, M_Vs, M_dVs, M_d2Vs, M_cos)
    type(Super_cell), dimension(:), intent(in), target :: Scell	! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of supercell
    type(TB_H_Pettifor), dimension(:,:), intent(in) :: TB_Hamil	! parameters of the Hamiltonian of TB
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:,:), allocatable, intent(out) :: M_Vs	! matrix of functions Vs
    real(8), dimension(:,:,:), allocatable, intent(out) :: M_dVs	! matrix of functions dVs, first derivatives
    real(8), dimension(:,:,:), allocatable, intent(out), optional :: M_d2Vs	! matrix of functions d2Vs, second rerivaties
@@ -165,6 +237,9 @@ subroutine Construct_M_Vs(Scell, NSC, TB_Hamil, M_Vs, M_dVs, M_d2Vs, M_cos)
    real(8), pointer :: r, x, y, z
    integer, pointer :: nat,  m, j
    integer i, atom_2, N, k
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    nat => Scell(NSC)%Na ! number of atoms
    N = size(TB_Hamil(Scell(NSC)%MDatoms(1)%KOA, Scell(NSC)%MDatoms(1)%KOA)%V0) ! number of orbitals per atom
    
@@ -181,6 +256,58 @@ subroutine Construct_M_Vs(Scell, NSC, TB_Hamil, M_Vs, M_dVs, M_d2Vs, M_cos)
       M_cos = 0.0d0
    endif
    
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1,nat	! all atoms
+      m => Scell(NSC)%Near_neighbor_size(i)
+      do atom_2 = 1,m ! do only for atoms close to that one
+         j => Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+         if (j .GT. 0) then
+            r => Scell(NSC)%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
+
+            ! Vs and its derivatives:
+            do k = 1, N	! for all electron orbitals (s, px, py, pz):
+               M_Vs(k,i,j) = Vs(TB_Hamil(Scell(NSC)%MDatoms(i)%KOA, Scell(NSC)%MDatoms(j)%KOA), k, r) ! function below
+               M_dVs(k,i,j) = dVs(TB_Hamil(Scell(NSC)%MDatoms(i)%KOA, Scell(NSC)%MDatoms(j)%KOA), k, r, M_Vs(k,i,j)) ! function below
+            enddo
+
+            ! Second derivatives of Vs:
+            if (present(M_d2Vs)) then
+               do k = 1, N	! all orbitals
+                  M_d2Vs(k,i,j) = d2Vs( TB_Hamil(Scell(NSC)%MDatoms(i)%KOA, Scell(NSC)%MDatoms(j)%KOA), k, r, M_Vs(k,i,j), M_dVs(k,i,j) ) ! function below
+               enddo ! k = 1, N
+            endif ! (present(M_d2Vs))
+
+            ! Directional cosines:
+            if (present(M_cos)) then
+               x => Scell(NSC)%Near_neighbor_dist(i,atom_2,1) ! at this distance, X
+               y => Scell(NSC)%Near_neighbor_dist(i,atom_2,2) ! at this distance, Y
+               z => Scell(NSC)%Near_neighbor_dist(i,atom_2,3) ! at this distance, Z
+               M_cos(i,j,1) = x/r
+               M_cos(i,j,2) = y/r
+               M_cos(i,j,3) = z/r
+            endif ! (present(M_cos))
+         endif !  (j .GT. 0)
+      enddo ! atom_2 = 1,m
+   enddo ! do i = 1,nat
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Construct_M_Vs:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_Vs', M_Vs) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_dVs', M_dVs) ! module "MPI_subroutines"
+   if (present(M_d2Vs)) then
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_d2Vs', M_d2Vs) ! module "MPI_subroutines"
+   endif
+   if (present(M_cos)) then
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_cos', M_cos) ! module "MPI_subroutines"
+   endif
+
+#else    ! OpenMP to use instead
    !$omp PARALLEL DO private(i, m, atom_2, j, k, x, y, z, r)
    do i = 1,nat	! all atoms
       m => Scell(NSC)%Near_neighbor_size(i)
@@ -215,7 +342,9 @@ subroutine Construct_M_Vs(Scell, NSC, TB_Hamil, M_Vs, M_dVs, M_d2Vs, M_cos)
          endif !  (j .GT. 0) 
       enddo ! atom_2 = 1,m 
    enddo ! do i = 1,nat
-   !$omp END PARALLEL DO 
+   !$omp END PARALLEL DO
+#endif
+
    nullify(nat, m, j, r, x, y, z)
 end subroutine Construct_M_Vs
 
@@ -1006,13 +1135,18 @@ subroutine Attract_TB_Forces_Press(TB_Hamil, atoms, Scell, NSC, numpar, Aij)
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    REAL(8), DIMENSION(:,:), INTENT(in) :: Aij  ! Matrix Aij, Eq. (H.3), p.153 Jeschke's PhD
+   !----------------------
    !REAL(8), DIMENSION(9,size(Aij,1)) :: dwr_press
    !REAL(8), DIMENSION(9,size(Aij,1),size(Aij,2)) :: dHij
    REAL(8), allocatable, DIMENSION(:,:) :: dwr_press
    REAL(8), allocatable, DIMENSION(:,:,:) :: dHij
    integer i, j, k, n
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+
    if (numpar%p_const) then	! calculate this for P=const Parrinello-Rahman MD
       n = size(Aij,1)
       allocate(dwr_press(9,n))
@@ -1020,6 +1154,24 @@ subroutine Attract_TB_Forces_Press(TB_Hamil, atoms, Scell, NSC, numpar, Aij)
       dHij = 0.0d0
       dwr_press = 0.0d0
       call dHamil_tot_Press(Scell(NSC)%MDatoms, Scell, NSC, numpar, TB_Hamil, dHij)
+
+#ifdef MPI_USED   ! use the MPI version
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = n
+      ! Do the cycle (parallel) calculations:
+      do i = Nstart, Nend, N_incr  ! each process does its own part
+      !do i = 1, n
+          do j = 1,9
+            dwr_press(j,i) = dwr_press(j,i) + SUM(dHij(j,i,:)*Aij(i,:)) ! old, tested, good
+         enddo ! j
+      enddo ! i
+
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in Attract_TB_Forces_Press:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dwr_press', dwr_press) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
       !$omp PARALLEL DO private(i,j)
       do i = 1, n
           do j = 1,9
@@ -1028,6 +1180,8 @@ subroutine Attract_TB_Forces_Press(TB_Hamil, atoms, Scell, NSC, numpar, Aij)
          enddo ! j
       enddo ! i
       !$OMP END PARALLEL DO
+#endif
+
       Scell(NSC)%SCforce%att = 0.0d0
       do i = 1,3
          do k = 1,3
@@ -1297,7 +1451,7 @@ subroutine construct_TB_H_Pettifor(numpar, matter, TB_Hamil, Scell, NSC, Ha, Err
 !    call print_time('AFTER', ind=1)
 
    ! Diagonalize the Hamiltonian to get electron energy levels:
-   call sym_diagonalize(Ha, Scell(NSC)%Ei, Error_descript, check_M=.true.) ! module "Algebra_tools"
+   call sym_diagonalize(Ha, Scell(NSC)%Ei, Error_descript, numpar%MPI_param, check_M=.true.) ! module "Algebra_tools"
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Subroutine construct_TB_H_Pettifor: '//trim(adjustl(Error_descript))
       call Save_error_details(Err, 6, Error_descript)
@@ -1532,7 +1686,7 @@ subroutine Hamil_tot(numpar, Scell, NSC, TB_Hamil, Hij)
 
    Hij = 0.0d0
 
-#ifdef MPI_USED   ! use the MPI version
+#ifdef MPI_USED   ! use the MPI version [tested, correct]
    N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
    Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
    Nend = nat
@@ -1583,12 +1737,12 @@ subroutine Hamil_tot(numpar, Scell, NSC, TB_Hamil, Hij)
       enddo ! atom_2
    enddo ! j
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
-   error_part = 'Error in Pettifor: Hamil_tot'
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
+   error_part = 'Error in Pettifor: Hamil_tot:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Hij}', Hij) ! module "MPI_subroutines"
    if (numpar%optic_model .EQ. 3) then ! collect matrix elements:
-      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRx', Scell(NSC)%PRRx) ! module "MPI_subroutines"
-      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRy', Scell(NSC)%PRRy) ! module "MPI_subroutines"
-      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Scell(NSC)%PRRz', Scell(NSC)%PRRz) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Scell(NSC)%PRRx}', Scell(NSC)%PRRx) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Scell(NSC)%PRRy}', Scell(NSC)%PRRy) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//' {Scell(NSC)%PRRz}', Scell(NSC)%PRRz) ! module "MPI_subroutines"
    endif
    !print*, '[MPI process #', numpar%MPI_param%process_rank, '] Hij #1:', Hij(256,248), Hij(256,252), Hij(256,256)
 
@@ -2009,17 +2163,86 @@ subroutine dErdr_s(TB_Repuls, atoms, Scell, NSC, numpar) ! derivatives of the re
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    !type(Forces), dimension(:,:), intent(inout) :: forces1	! all interatomic forces
    REAL(8), DIMENSION(3) :: x1  ! for coordinates of all atoms (X,Y,Z)-for all atoms
    real(8) dpsi(3), psi, a_r, x, y, z, r1, x0, y0, z0, a, b, ddlta, b_delta
    integer i, j, k, ik, i1, j1, ian, dik, djk, n, m, atom_2, NumTB
    real(8), DIMENSION(3) :: zb
    real(8), dimension(:,:), allocatable :: Erx_s
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    n = size(atoms)
    allocate(Erx_s(3,n)) ! x,y,z-forces for each atoms
    Erx_s = 0.0d0
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = n
+   ! Do the cycle (parallel) calculations:
+   do ian = Nstart, Nend, N_incr  ! each process does its own part
+   !do ian = 1, n  ! Forces for all atoms
+     do i1 = 1, n
+         dpsi = 0.0d0
+         psi = 0.0d0
+         m = Scell(NSC)%Near_neighbor_size(i1)
+         do atom_2 = 1,m ! do only for atoms close to that one
+            j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
+            if (j1 .GT. 0) then
+                !NumTB = numpar%El_num_ij(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA)
+                if (ian .EQ. i1) then
+                   dik = 1
+                else
+                   dik = 0
+                endif
+                if (ian .EQ. j1) then
+                   djk = 1
+                else
+                   djk = 0
+                endif
+
+                if ((j1 .NE. i1) .OR. ((dik-djk) .NE. 0)) then ! without it, it gives ERROR
+                  x = Scell(NSC)%Near_neighbor_dist(i1,atom_2,1) ! at this distance, X
+                  y = Scell(NSC)%Near_neighbor_dist(i1,atom_2,2) ! at this distance, Y
+                  z = Scell(NSC)%Near_neighbor_dist(i1,atom_2,3) ! at this distance, Z
+                  a_r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4) ! at this distance, R
+
+                  psi = psi + phi(TB_Repuls(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA),a_r) ! Eq.(F21), p.147 H.Jeschke PhD Thesis
+
+                  x1(1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
+                  x1(2) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
+                  x1(3) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
+!                   x1(1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(2,1) + z*Scell(NSC)%supce(3,1)
+!                   x1(2) = x*Scell(NSC)%supce(1,2) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(3,2)
+!                   x1(3) = x*Scell(NSC)%supce(1,3) + y*Scell(NSC)%supce(2,3) + z*Scell(NSC)%supce(3,3)
+                  b = dphi(TB_Repuls(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA),a_r)
+                  ddlta = real(dik - djk)/a_r
+                  b_delta = b*ddlta
+                  dpsi(1) = dpsi(1) + b_delta*x1(1) ! X, Eq.(F21), H.Jeschke PhD Thesis
+                  dpsi(2) = dpsi(2) + b_delta*x1(2) ! Y, Eq.(F21), H.Jeschke PhD Thesis
+                  dpsi(3) = dpsi(3) + b_delta*x1(3) ! Z, Eq.(F21), H.Jeschke PhD Thesis
+               endif
+            endif
+         enddo ! j1
+
+         a = dfx(TB_Repuls(Scell(NSC)%MDatoms(i1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),psi)
+         Erx_s(1,ian) = Erx_s(1,ian) + a*dpsi(1) ! repulsive part in X-coordinate
+         Erx_s(2,ian) = Erx_s(2,ian) + a*dpsi(2) ! repulsive part in Y-coordinate
+         Erx_s(3,ian) = Erx_s(3,ian) + a*dpsi(3) ! repulsive part in Z-coordinate
+      enddo ! i1
+   enddo ! ian
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in dErdr_s:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Erx_s', Erx_s) ! module "MPI_subroutines"
+
+   do ian = 1, n  ! Forces for all atoms
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Erx_s(:,ian) ! all repulsive forces
+   enddo
+
+#else    ! OpenMP to use instead
    !$omp PARALLEL DO private(ian,i1,dpsi,psi,m,j1,x,y,z,a_r,dik,djk,x1,b,ddlta,b_delta,a,atom_2,NumTB)
    do ian = 1, n  ! Forces for all atoms
      Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
@@ -2074,6 +2297,8 @@ subroutine dErdr_s(TB_Repuls, atoms, Scell, NSC, numpar) ! derivatives of the re
       Scell(NSC)%MDatoms(ian)%forces%rep(:) = Erx_s(:,ian) ! all repulsive forces
    enddo ! ian
    !$OMP END PARALLEL DO
+#endif
+
    deallocate(Erx_s)
 END subroutine dErdr_s
 
@@ -2084,7 +2309,7 @@ subroutine dE2rep_dr2(TB_Repuls, atoms, Scell, numpar, F, dF) ! second derivativ
    type(TB_Rep_Pettifor), dimension(:,:), intent(in)   :: TB_Repuls ! repulsive TB parameters
    type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:), allocatable, intent(out) :: F, dF	! force and its derivative
    !---------------------------------------------------
    real(8) dpsi(3), dpsi2(3),  ddlta, dik, djk
@@ -2095,6 +2320,9 @@ subroutine dE2rep_dr2(TB_Repuls, atoms, Scell, numpar, F, dF) ! second derivativ
    real(8), dimension(:,:), allocatable :: Erx_s, Erx_s2
    real(8), dimension(:,:), allocatable, target :: M_phi, M_dPhi, M_d2Phi
    real(8), pointer :: phi_point, dphi_point, d2phi_point, x, y ,z, a_r
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    NSC = 1	! we only have one supercell so far
    n = size(atoms)
    allocate(psi_vec(n))	! all psi's
@@ -2115,12 +2343,77 @@ subroutine dE2rep_dr2(TB_Repuls, atoms, Scell, numpar, F, dF) ! second derivativ
    dF(:,:) = 0.0d0	! just to start with, derivatives of forces
    
    ! Get matrices of phi(i,j) functions for all pairs of atoms (i,j):
-   call construct_phi_matrix(Scell, TB_Repuls, M_Phi, M_dPhi, M_d2Phi)	! see below
+   call construct_phi_matrix(Scell, TB_Repuls, numpar, M_Phi, M_dPhi, M_d2Phi)	! see below
    ! Get all psi(phi) functions for all atoms (i):
-   call construct_psi_matrix(M_Phi, psi_vec)	! see below
+   call construct_psi_matrix(M_Phi, psi_vec, numpar)	! see below
    ! Get all fx(psi(phi)) functions for all atoms (i):
-   call construct_dfx_matrix(Scell, TB_Repuls, psi_vec, dfx_vec, d2fx_vec)	! see below
+   call construct_dfx_matrix(Scell, TB_Repuls, numpar, psi_vec, dfx_vec, d2fx_vec)	! see below
    
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = n
+   ! Do the cycle (parallel) calculations:
+   do ian = Nstart, Nend, N_incr  ! each process does its own part
+   !do ian = 1, n	! Forces for all atoms
+     do i1 = 1, n	! contribution from all other atoms
+         dpsi = 0.0d0
+         dpsi2 = 0.0d0
+         dik = Kronecker_delta(ian, i1)	! module "Atomic_tools"
+         m = Scell(NSC)%Near_neighbor_size(i1)
+         do atom_2 = 1,m ! do only for atoms close to that one
+            j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
+            if (j1 .GT. 0) then
+               djk = Kronecker_delta(ian, j1)	! module "Atomic_tools"
+               ddlta = dik - djk
+               if ((j1 .NE. i1) .OR. (ABS(ddlta) .GE. 1.0d-12)) then ! without it, it gives ERROR
+                  x => Scell(NSC)%Near_neighbor_dist(i1,atom_2,1) ! at this distance, X
+                  y => Scell(NSC)%Near_neighbor_dist(i1,atom_2,2) ! at this distance, Y
+                  z => Scell(NSC)%Near_neighbor_dist(i1,atom_2,3) ! at this distance, Z
+                  a_r => Scell(NSC)%Near_neighbor_dist(i1,atom_2,4) ! at this distance, R
+
+                  ! Derivatives d r_{i,j} / d r_{k,alpha}
+                  drdrx = drij_drka(i1, j1, ian, x, a_r)	! module "TB_Koster_Slater"
+                  drdry = drij_drka(i1, j1, ian, y, a_r)	! module "TB_Koster_Slater"
+                  drdrz = drij_drka(i1, j1, ian, z, a_r)	! module "TB_Koster_Slater"
+
+                  ! Second derivatives d2 r_{ij} / d r2_{k,alpha}
+                  d2rdr2x = ddija_drkb(i1, j1, ian, 1, 1, x, x, a_r)	! module "TB_Koster_Slater"
+                  d2rdr2y = ddija_drkb(i1, j1, ian, 2, 2, y, y, a_r)	! module "TB_Koster_Slater"
+                  d2rdr2z = ddija_drkb(i1, j1, ian, 3, 3, z, z, a_r)	! module "TB_Koster_Slater"
+
+                  ! Precalculated patrices of Phi-functions and d Phi / d r_{i,j}
+                  dphi_point => M_dPhi(j1, i1)
+                  d2phi_point => M_d2Phi(j1, i1)
+
+                  ! d Psi / d r_{k,alpha}
+                  dpsi(1)= dpsi(1) + dphi_point*drdrx
+                  dpsi(2)= dpsi(2) + dphi_point*drdry
+                  dpsi(3)= dpsi(3) + dphi_point*drdrz
+
+                  ! d2 Psi / d r2_{k,alpha}
+                  dpsi2(1) = dpsi2(1) + d2phi_point*drdrx*drdrx + dphi_point*d2rdr2x
+                  dpsi2(2) = dpsi2(2) + d2phi_point*drdry*drdry + dphi_point*d2rdr2y
+                  dpsi2(3) = dpsi2(3) + d2phi_point*drdrz*drdrz + dphi_point*d2rdr2z
+               endif
+            endif
+         enddo ! j1
+         !write(*,'(a,i3,i3,es,es,es)') 'test a2', ian, i1, d2fx_vec(i1), a2, ABS(d2fx_vec(i1)-a2)
+
+         Erx_s(:,ian) = Erx_s(:,ian) + dfx_vec(i1)*dpsi(:)	! repulsive part in X, Y, Z-coordinate
+         Erx_s2(:,ian) = Erx_s2(:,ian) + d2fx_vec(i1)*dpsi(:)*dpsi(:) + dfx_vec(i1)*dpsi2(:)	! derivaties of the repulsive part
+      enddo ! i1
+      F(:,ian) = Erx_s(:,ian)	! all repulsive forces for this atom
+      dF(:,ian) = Erx_s2(:,ian)	! all derivatives of repulsive forces for this atom
+   enddo ! ian
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in dE2rep_dr2:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'F', F) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'FdF', dF) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
    !$omp PARALLEL DO private(ian,i1,dpsi,dpsi2,m,j1,x,y,z,a_r,dik,djk,dphi_point,d2phi_point,ddlta, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, atom_2)
    do ian = 1, n	! Forces for all atoms
      do i1 = 1, n	! contribution from all other atoms
@@ -2174,52 +2467,99 @@ subroutine dE2rep_dr2(TB_Repuls, atoms, Scell, numpar, F, dF) ! second derivativ
       dF(:,ian) = Erx_s2(:,ian)	! all derivatives of repulsive forces for this atom
    enddo ! ian
    !$OMP END PARALLEL DO
+#endif
    
    deallocate(Erx_s, Erx_s2, M_Phi, M_dPhi, M_d2Phi,  psi_vec, dfx_vec, d2fx_vec)
    nullify(phi_point, dphi_point, d2phi_point, x, y ,z, a_r)
 end subroutine dE2rep_dr2
 
 
-subroutine construct_dfx_matrix(Scell, TB_Repuls, psi_vec, dfx_vec, d2fx_vec)
+subroutine construct_dfx_matrix(Scell, TB_Repuls, numpar, psi_vec, dfx_vec, d2fx_vec)
    type(TB_Rep_Pettifor), dimension(:,:), intent(in)   :: TB_Repuls ! repulsive TB parameters
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:), intent(in) :: psi_vec	! vector of Psy functions
    real(8), dimension(:), allocatable, intent(out) :: dfx_vec	! vector of a functions
    real(8), dimension(:), allocatable, intent(out) :: d2fx_vec	! vector of a2 functions
    integer :: i1
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    if (.not.allocated(dfx_vec)) allocate(dfx_vec(size(psi_vec)))
    if (.not.allocated(d2fx_vec)) allocate(d2fx_vec(size(psi_vec)))
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = size(psi_vec)
+   ! Do the cycle (parallel) calculations:
+   do i1 = Nstart, Nend, N_incr  ! each process does its own part
+   !do i1 = 1, size(psi_vec)
+      dfx_vec(i1) = dfx(TB_Repuls(Scell(1)%MDatoms(i1)%KOA,Scell(1)%MDatoms(i1)%KOA),psi_vec(i1))	! function below
+      d2fx_vec(i1) = df2x(TB_Repuls(Scell(1)%MDatoms(i1)%KOA,Scell(1)%MDatoms(i1)%KOA),psi_vec(i1))	! function below
+   enddo
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in construct_dfx_matrix:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dfx_vec', dfx_vec) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'d2fx_vec', d2fx_vec) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
    !$omp PARALLEL DO private(i1)
    do i1 = 1, size(psi_vec)
       dfx_vec(i1) = dfx(TB_Repuls(Scell(1)%MDatoms(i1)%KOA,Scell(1)%MDatoms(i1)%KOA),psi_vec(i1))	! function below
       d2fx_vec(i1) = df2x(TB_Repuls(Scell(1)%MDatoms(i1)%KOA,Scell(1)%MDatoms(i1)%KOA),psi_vec(i1))	! function below
    enddo
    !$OMP END PARALLEL DO
+#endif
 end subroutine construct_dfx_matrix
 
 
-subroutine construct_psi_matrix(M_Phi, psi_vec)
+subroutine construct_psi_matrix(M_Phi, psi_vec, numpar)
    real(8), dimension(:,:), intent(in) :: M_Phi	! matrix of Phi functions
    real(8), dimension(:), allocatable, intent(out) :: psi_vec	! vector of Psy functions
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    integer :: i1
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    if (.not.allocated(psi_vec)) allocate(psi_vec(size(M_Phi,1)))
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = size(psi_vec)
+   ! Do the cycle (parallel) calculations:
+   do i1 = Nstart, Nend, N_incr  ! each process does its own part
+   !do i1 = 1, size(psi_vec)
+      psi_vec(i1) = SUM(M_Phi(:, i1))
+   enddo
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in construct_psi_matrix:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'psi_vec', psi_vec) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
    !$omp PARALLEL DO private(i1)
    do i1 = 1, size(psi_vec)
       psi_vec(i1) = SUM(M_Phi(:, i1))
    enddo
    !$OMP END PARALLEL DO
+#endif
 end subroutine construct_psi_matrix
 
 
-subroutine construct_phi_matrix(Scell, TB_Repuls, M_Phi, M_dPhi, M_d2Phi)
+subroutine construct_phi_matrix(Scell, TB_Repuls, numpar, M_Phi, M_dPhi, M_d2Phi)
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    type(TB_Rep_Pettifor), dimension(:,:), intent(in)   :: TB_Repuls ! repulsive TB parameters
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:), allocatable, intent(out) :: M_Phi	! matrix of Phi functions
    real(8), dimension(:,:), allocatable, intent(out) :: M_dPhi	! matrix of first derivatives of Phi functions
    real(8), dimension(:,:), allocatable, intent(out), optional :: M_d2Phi	! matrix of second derivatives of of Phi functions
    !---------------------
    real(8) :: a_r
    integer :: N, i1, m, atom_2, j1
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    N = size(Scell(1)%MDAtoms)	! number of atoms
    ! Start from allocating and setting to zero:
    if (.not.allocated(M_Phi)) allocate(M_Phi(N,N))
@@ -2231,6 +2571,39 @@ subroutine construct_phi_matrix(Scell, TB_Repuls, M_Phi, M_dPhi, M_d2Phi)
       M_d2Phi = 0.0d0
    endif
    ! Calculate the nonzero elements:
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = N
+   ! Do the cycle (parallel) calculations:
+   do i1 = Nstart, Nend, N_incr  ! each process does its own part
+   !do i1 = 1, N
+      m = Scell(1)%Near_neighbor_size(i1)
+      do atom_2 = 1,m ! do only for atoms close to that one
+         j1 = Scell(1)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
+         if (j1 .GT. 0) then
+            a_r = Scell(1)%Near_neighbor_dist(i1,atom_2,4) ! at this distance, R
+            ! Phi function:
+            M_Phi(i1,j1) = phi(TB_Repuls(Scell(1)%MDatoms(j1)%KOA, Scell(1)%MDatoms(i1)%KOA),a_r) ! function above (or below)
+            ! Derivative of Phi function:
+            M_dPhi(i1,j1) = dphi(TB_Repuls(Scell(1)%MDatoms(j1)%KOA, Scell(1)%MDatoms(i1)%KOA), a_r, M_Phi(i1,j1) )	! function above (or below)
+            ! Second derivative of Phi function:
+            if (present(M_d2Phi)) then
+               M_d2Phi(i1,j1) = d2phi(TB_Repuls(Scell(1)%MDatoms(j1)%KOA, Scell(1)%MDatoms(i1)%KOA), a_r, M_Phi(i1,j1), M_dPhi(i1,j1))	! function above (or below)
+            endif ! present(M_d2Phi)
+         endif ! (j1 .GT. 0)
+      enddo ! atom_2
+   enddo ! i1
+
+! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in construct_phi_matrix:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_Phi', M_Phi) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_dPhi', M_dPhi) ! module "MPI_subroutines"
+   if (present(M_d2Phi)) then
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_d2Phi', M_d2Phi) ! module "MPI_subroutines"
+   endif
+
+#else    ! OpenMP to use instead
    !$omp PARALLEL DO private(i1, m, atom_2, j1, a_r)
    do i1 = 1, N
       m = Scell(1)%Near_neighbor_size(i1)
@@ -2250,6 +2623,7 @@ subroutine construct_phi_matrix(Scell, TB_Repuls, M_Phi, M_dPhi, M_d2Phi)
       enddo ! atom_2
    enddo ! i1
    !$OMP END PARALLEL DO
+#endif
 end subroutine construct_phi_matrix
 
 

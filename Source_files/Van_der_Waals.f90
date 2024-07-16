@@ -29,6 +29,9 @@ use Objects
 use Little_subroutines, only : fast_pow, count_3d, Fermi_function, d_Fermi_function, d2_Fermi_function
 use Atomic_tools, only : get_interplane_indices, shortest_distance, get_near_neighbours, get_number_of_image_cells, &
             distance_to_given_cell
+#ifdef MPI_USED
+   use MPI_subroutines, only : do_MPI_Allreduce
+#endif
 
 implicit none
 PRIVATE
@@ -66,20 +69,44 @@ subroutine get_vdW_interlayer(TB_Waals, Scell, NSC, matter, numpar, a)   ! vdW e
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Solid), intent(inout) :: matter	! all material parameters
    real(8), intent(out) :: a
    !=====================================================
    real(8), dimension(Scell(NSC)%Na) :: indices ! working array of indices
    real(8) :: sum_a, a_r
    INTEGER(4) i1, j1, m, atom_2
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    sum_a = 0.0d0
    
    ! Get in which plane each atom recides:
    call get_interplane_indices(Scell, NSC, numpar, Scell(NSC)%MDatoms, matter, indices) ! module "Atomic_tools"
 !    print*, 'indices', indices
 !    pause 'indices'
-   
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Scell(NSC)%Na
+   ! Do the cycle (parallel) calculations:
+   do i1 = Nstart, Nend, N_incr  ! each process does its own part
+   !do i1 = 1, Scell(NSC)%Na ! all atoms
+      m = Scell(NSC)%Near_neighbor_size(i1)
+      do atom_2 = 1, m ! do only for atoms close to that one
+         j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
+         if ( (j1 /= i1) .and. (indices(i1) /= indices(j1)) ) then ! count only interplane energy:
+            call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
+            sum_a = sum_a + vdW_Girifalco(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
+         endif ! (j1 .NE. i1)
+      enddo ! j1
+   enddo ! i1
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_vdW_interlayer:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'sum_a', sum_a) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(i1,j1,m,atom_2,a_r)
    !$omp do reduction( + : sum_a)
    do i1 = 1, Scell(NSC)%Na ! all atoms
@@ -97,6 +124,7 @@ subroutine get_vdW_interlayer(TB_Waals, Scell, NSC, matter, numpar, a)   ! vdW e
    enddo ! i1
    !$omp end do
    !$omp end parallel
+#endif
    a = sum_a
 end subroutine get_vdW_interlayer
 
@@ -133,19 +161,59 @@ subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
    integer, intent(in) :: NSC ! number of supercell
    !type(TB_vdW_Girifalco), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
    class(TB_vdW), dimension(:,:), allocatable, intent(in)   :: TB_Waals ! van der Waals parameters within TB
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a
    !=====================================================
    real(8) :: sum_a, a_r, V_vdW, E_pot, E_pot_one
+   real(8), dimension(Scell(1)%Na) :: E_pot_array
    integer :: Nx, Ny, Nz, zb(3)
    INTEGER(4) i1, j1, m, atom_2, x_cell, y_cell, z_cell
    logical :: origin_cell
-   integer, pointer :: KOAi, KOAj
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
    
    ! Find how many image cells along each direction we need to include:
    call get_mirror_cell_num(Scell, NSC, numpar, Scell(NSC)%MDatoms, Nx, Ny, Nz) ! subroutine above
    
    sum_a = 0.0d0
+   ! Construct matrix of all the radial functions for each pair of atoms:
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Scell(NSC)%Na
+   E_pot_array = 0.0d0  ! initializing
+   ! Do the cycle (parallel) calculations:
+   do i1 = Nstart, Nend, N_incr  ! each process does its own part
+   !do i1 = 1, Scell(NSC)%Na ! all atoms
+      XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
+         YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+            ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+               zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+               origin_cell = ALL(zb==0) ! if it is the origin cell
+
+               do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
+                  if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+                     !call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
+                     call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
+                     !sum_a = sum_a + vdW_Girifalco(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
+                     E_pot_one = vdW_energy(Scell, NSC, TB_Waals, i1, j1, a_r)    ! function below
+                     sum_a = sum_a + E_pot_one
+                     E_pot_array(i1) = E_pot_array(i1) + E_pot_one
+                  endif ! (j1 .NE. i1)
+               enddo ! j1
+            enddo ZC2
+         enddo YC2
+      enddo XC2
+   enddo ! i1
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_vdW_s:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'sum_a', sum_a) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'E_pot_array', E_pot_array) ! module "MPI_subroutines"
+
+   ! And save for each atom:
+   Scell(NSC)%MDAtoms(:)%Epot = Scell(NSC)%MDAtoms(:)%Epot + E_pot_array(:)*0.5d0 ! exclude double-counting
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell, E_pot, E_pot_one) shared(NSC)
    !$omp do reduction( + : sum_a)
    XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
@@ -173,6 +241,7 @@ subroutine get_vdW_s(TB_Waals, Scell, NSC, numpar, a)   ! vdW energy
    enddo XC
    !$omp end do
    !$omp end parallel
+#endif
    a = sum_a * 0.5d0 ! compensate for the double counting
    !pause 'get_vdW_s pause'
 end subroutine get_vdW_s
@@ -185,7 +254,7 @@ subroutine Construct_B(TB_Waals, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupce
    class(TB_vdW), dimension(:,:), allocatable, intent(in)   :: TB_Waals ! van der Waals parameters within TB
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
    real(8), dimension(:,:,:), allocatable, intent(out) :: Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij ! intermediate calculations matrices
    integer, intent(out) :: Nx, Ny, Nz ! number of super-cell images to consider
@@ -214,15 +283,16 @@ subroutine Construct_B(TB_Waals, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupce
    if (.not.allocated(ZijSupce))   allocate(ZijSupce(coun_cell,n,n), source=0.0d0)
 
    ! Fill the arrays that were already allocated:
-   call cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n) ! below
+   call cell_cycle_B(Scell, NSC, TB_Waals, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n) ! below
 
 end subroutine Construct_B
 
 
-subroutine cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n)
+subroutine cell_cycle_B(Scell, NSC, TB_Waals, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz, n)
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    class(TB_vdW), dimension(:,:), allocatable, intent(in) :: TB_Waals ! van der Waals parameters within TB
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    real(8), dimension(:,:,:), intent(inout) :: Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij
    integer, intent(in) :: Nx, Ny, Nz ! number of super-cell images to consider
    integer, intent(in) :: n ! number of atoms
@@ -232,8 +302,77 @@ subroutine cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, Zi
    integer :: i1, j1
    integer, dimension(3) :: zb
    logical :: origin_cell
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
+#ifdef MPI_USED   ! use the MPI version [tested]
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = n
+   ! Initializing:
+   Xij = 0.0d0
+   Yij = 0.0d0
+   Zij = 0.0d0
+   SXij = 0.0d0
+   SYij = 0.0d0
+   SZij = 0.0d0
+   XijSupce = 0.0d0
+   YijSupce = 0.0d0
+   ZijSupce = 0.0d0
+   Bij = 0.0d0
 
+   do i1 = Nstart, Nend, N_incr  ! each process does its own part
+   !do i1 = 1,n
+      XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
+         YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+            ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+               coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
+               zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+               origin_cell = ALL(zb==0) ! if it is the origin cell
+               do j1 = 1,n
+                  if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+                     call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, A_rij(coun_cell,i1,j1), &
+                                                x=x, y=y, z=z, sx=sx, sy=sy, sz=sz) ! module "Atomic_tools"
+
+                     ! Save necessary elements:
+                     Xij(coun_cell,i1,j1) = x
+                     Yij(coun_cell,i1,j1) = y
+                     Zij(coun_cell,i1,j1) = z
+                     SXij(coun_cell,i1,j1) = sx
+                     SYij(coun_cell,i1,j1) = sy
+                     SZij(coun_cell,i1,j1) = sz
+                     XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
+                     YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
+                     ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
+
+                     Bij(coun_cell,i1,j1) = dvdW(TB_Waals, Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA, A_rij(coun_cell,i1,j1)) ! below
+                  else ! No self-interaction
+                     A_rij(coun_cell,i1,j1) = 1.0d30
+                     Xij(coun_cell,i1,j1) = 0.0d0
+                     Yij(coun_cell,i1,j1) = 0.0d0
+                     Zij(coun_cell,i1,j1) = 0.0d0
+                     Bij(coun_cell,i1,j1) = 0.0d0
+                  endif
+               enddo ! j1
+            enddo ZC
+         enddo YC
+      enddo XC
+   enddo ! i1
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in cell_cycle_B:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Xij', Xij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Yij', Yij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Zij', Zij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'SXij', SXij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'SYij', SYij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'SZij', SZij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'XijSupce', XijSupce) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'YijSupce', YijSupce) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'ZijSupce', ZijSupce) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Bij', Bij) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
    !$omp PARALLEL private(i1,j1,x,y,z,sx,sy,sz,x_cell,y_cell,z_cell,zb,origin_cell,coun_cell)
    !$omp do
    XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
@@ -274,6 +413,7 @@ subroutine cell_cycle_B(Scell, NSC, TB_Waals, Bij, A_rij, XijSupce, YijSupce, Zi
    enddo XC
    !$omp end do
    !$omp end parallel
+#endif
 end subroutine cell_cycle_B
 
 
@@ -282,7 +422,7 @@ end subroutine cell_cycle_B
 subroutine d_vdW_forces(Scell, NSC, numpar, F_vdW, dF_vdW)   ! vdW force and second derivative
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), dimension(:,:), allocatable, intent(out) :: F_vdW, dF_vdW	! force and its derivative
    !=====================================================
    real(8) :: a_r, F(3), dF(3), F_r, dF_r, x, y, z, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z
@@ -290,6 +430,8 @@ subroutine d_vdW_forces(Scell, NSC, numpar, F_vdW, dF_vdW)   ! vdW force and sec
    INTEGER(4) :: n, i1, j1, m, atom_2, x_cell, y_cell, z_cell
    logical :: origin_cell
    integer, pointer :: KOA1, KOA2
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    n = Scell(NSC)%Na   ! Number of atoms
    ! Make sure the forces are allocated:
@@ -306,6 +448,67 @@ subroutine d_vdW_forces(Scell, NSC, numpar, F_vdW, dF_vdW)   ! vdW force and sec
    call get_mirror_cell_num(Scell, NSC, numpar, Scell(NSC)%MDatoms, Nx, Ny, Nz) ! subroutine above
    !print*, 'd_vdW_forces:', Nx, Ny, Nz
 
+
+#ifdef MPI_USED   ! use the MPI version [tested]
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Scell(NSC)%Na
+   do i1= Nstart, Nend, N_incr  ! each process does its own part
+   !do i1 = 1, Scell(NSC)%Na ! all atoms
+      KOA1 => Scell(NSC)%MDatoms(i1)%KOA   ! atom #1
+      XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
+         YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+            ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+               zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+               origin_cell = ALL(zb==0) ! if it is the origin cell
+
+               F = 0.0d0   ! to restart
+               dF = 0.0d0  ! to restart
+               do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
+                  if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+
+                     KOA2 => Scell(NSC)%MDatoms(j1)%KOA   ! atom #2
+
+                     !call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
+                     call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r, x, y, z) ! module "Atomic_tools"
+
+                     ! Derivatives d r_{i,j} / d r_{i,alpha}:
+                     drdrx = x/a_r
+                     drdry = y/a_r
+                     drdrz = z/a_r
+
+                     ! Second derivatives d2 r_{ij} / d r2_{i,alpha}:
+                     d2rdr2x = ddija_dria(x, a_r)  ! below
+                     d2rdr2y = ddija_dria(y, a_r)  ! below
+                     d2rdr2z = ddija_dria(z, a_r)  ! below
+
+                     ! Get the derivatives of the potential by |r|:
+                     F_r = dvdW(Scell(NSC)%TB_Waals, KOA1, KOA2, a_r)   ! below
+                     dF_r = d2vdW(Scell(NSC)%TB_Waals, KOA1, KOA2, a_r) ! below
+
+                     ! Construct the force and derivative:
+                     F(1) = F(1) + F_r*drdrx
+                     F(2) = F(2) + F_r*drdry
+                     F(3) = F(3) + F_r*drdrz
+                     dF(1) = dF(1) + dF_r*drdrx + F_r*d2rdr2x
+                     dF(2) = dF(2) + dF_r*drdry + F_r*d2rdr2y
+                     dF(3) = dF(3) + dF_r*drdrz + F_r*d2rdr2z
+
+                  endif ! (j1 .NE. i1)
+               enddo ! j1
+               ! And save for each atom:
+               F_vdW(:,i1) = F_vdW(:,i1) + F
+               dF_vdW(:,i1) = dF_vdW(:,i1) + dF
+            enddo ZC
+         enddo YC
+      enddo XC
+   enddo ! i1
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in d_vdW_forces:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'F_vdW', F_vdW) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dF_vdW', dF_vdW) ! module "MPI_subroutines"
+
+#else    ! OpenMP to use instead
    !$omp PARALLEL private(i1, j1, a_r, x_cell, y_cell, z_cell, zb, origin_cell, x, y, z, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, KOA1, KOA2, F_r, dF_r, F, dF)
    !$omp do
    XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
@@ -358,7 +561,7 @@ subroutine d_vdW_forces(Scell, NSC, numpar, F_vdW, dF_vdW)   ! vdW force and sec
    enddo XC
    !$omp end do
    !$omp end parallel
-
+#endif
    nullify(KOA1, KOA2)
 end subroutine d_vdW_forces
 
@@ -1034,9 +1237,10 @@ subroutine dvdWdr_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, Ny
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:,:), intent(in) :: Bij, A_rij, Xij, Yij, Zij ! intermediate calculations matrices
    integer, intent(in) :: Nx, Ny, Nz ! number of super-cells to go through
+   !---------------------
    !type(Forces), dimension(:,:), intent(inout) :: forces1	! all interatomic forces
    REAL(8), DIMENSION(3) :: x1  ! for coordinates of all atoms (X,Y,Z)-for all atoms
    real(8) dpsi(3), psi, a_r, x, y, z, r1, x0, y0, z0, a, b, ddlta, b_delta
@@ -1045,10 +1249,78 @@ subroutine dvdWdr_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, Ny
    integer, DIMENSION(3) :: zb
    real(8), dimension(:,:), allocatable :: Erx_s
    logical :: origin_cell
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    n = size(atoms) ! total number of atoms
    allocate(Erx_s(3,n)) ! x,y,z-forces for each atoms
    Erx_s = 0.0d0
 
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = n
+   ! Do the cycle (parallel) calculations:
+   do ian = Nstart, Nend, N_incr  ! each process does its own part
+   !do ian = 1, n  ! Forces for all atoms
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
+      do i1 = 1, n ! contribution from all atoms
+         if (ian == i1) then
+            dik = 1
+         else
+            dik = 0
+         endif
+         dpsi = 0.0d0
+         do j1 = 1,n ! for each pair of atoms
+            if (ian == j1) then
+               djk = 1
+            else
+               djk = 0
+            endif
+            cos_if:if ((dik-djk) /= 0) then ! without it, it gives ERROR
+               XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
+                  YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+                     ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+                        zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+                        origin_cell = ALL(zb==0) ! if it is the origin cell
+                        cell_if:if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+                           ! contribution from this image of the cell:
+                           coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
+
+                           x1(1) = Xij(coun_cell,i1,j1) ! x*supce(1,1) + y*supce(1,2) + z*supce(1,3)
+                           x1(2) = Yij(coun_cell,i1,j1) ! x*supce(2,1) + y*supce(2,2) + z*supce(2,3)
+                           x1(3) = Zij(coun_cell,i1,j1) ! x*supce(3,1) + y*supce(3,2) + z*supce(3,3)
+                           b = Bij(coun_cell,i1,j1) ! dvdW(TB_Waals(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),A_rij(coun_cell,i1,j1))
+                           a_r = A_rij(coun_cell,i1,j1) ! call shortest_distance(Scell, NSC, atoms, i1, j1, A_rij(coun_cell,i1,j1), x1=x, y1=y, z1=z, sx1=sx, sy1=sy, sz1=sz)
+
+                           ddlta = dble(dik - djk)/a_r
+                           b_delta = b*ddlta
+                           dpsi(1) = dpsi(1) + b_delta*x1(1) ! X, Eq.(F21), H.Jeschke PhD Thesis
+                           dpsi(2) = dpsi(2) + b_delta*x1(2) ! Y, Eq.(F21), H.Jeschke PhD Thesis
+                           dpsi(3) = dpsi(3) + b_delta*x1(3) ! Z, Eq.(F21), H.Jeschke PhD Thesis
+                        endif cell_if
+                     enddo ZC2
+                  enddo YC2
+               enddo XC2
+            endif cos_if
+         enddo ! j1
+
+         Erx_s(1,ian) = Erx_s(1,ian) + dpsi(1) ! repulsive part in X-coordinate
+         Erx_s(2,ian) = Erx_s(2,ian) + dpsi(2) ! repulsive part in Y-coordinate
+         Erx_s(3,ian) = Erx_s(3,ian) + dpsi(3) ! repulsive part in Z-coordinate
+      enddo ! i1
+   enddo ! ian
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in dvdWdr_s:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Erx_s}', Erx_s) ! module "MPI_subroutines"
+
+   do ian = 1, n  ! Forces for all atoms
+      ! Add van der Waals force to already calculated other forces:
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)
+   enddo
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(i1,j1,ian,dik,djk,dpsi,x1,b,a_r,ddlta,b_delta, x_cell, y_cell, z_cell, coun_cell, zb, origin_cell)
    !$omp DO
    do ian = 1, n  ! Forces for all atoms
@@ -1104,6 +1376,7 @@ subroutine dvdWdr_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, Ny
    enddo ! ian
    !$omp end do
    !$omp end parallel
+#endif
 
    deallocate(Erx_s)
 !    pause 'dvdWdr_s'
@@ -1185,17 +1458,85 @@ subroutine dvdWdr_s_OLD(TB_Waals, atoms, Scell, NSC, numpar) ! derivatives of th
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    !type(Forces), dimension(:,:), intent(inout) :: forces1	! all interatomic forces
+   !-----------------------
    REAL(8), DIMENSION(3) :: x1  ! for coordinates of all atoms (X,Y,Z)-for all atoms
    real(8) dpsi(3), psi, a_r, x, y, z, r1, x0, y0, z0, a, b, ddlta, b_delta
    integer i, j, k, ik, i1, j1, ian, dik, djk, n, m, atom_2, NumTB
    real(8), DIMENSION(3) :: zb
    real(8), dimension(:,:), allocatable :: Erx_s
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    n = size(atoms)
    allocate(Erx_s(3,n)) ! x,y,z-forces for each atoms
    Erx_s = 0.0d0
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = n
+   ! Do the cycle (parallel) calculations:
+   do ian = Nstart, Nend, N_incr  ! each process does its own part
+   !do ian = 1, n  ! Forces for all atoms
+     !Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
+     do i1 = 1, n
+         dpsi = 0.0d0
+         m = Scell(NSC)%Near_neighbor_size(i1)
+         do atom_2 = 1,m ! do only for atoms close to that one
+            j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
+            if (j1 .GT. 0) then
+                if (ian .EQ. i1) then
+                   dik = 1
+                else
+                   dik = 0
+                endif
+                if (ian .EQ. j1) then
+                   djk = 1
+                else
+                   djk = 0
+                endif
+
+                if ((j1 .NE. i1) .OR. ((dik-djk) .NE. 0)) then ! without it, it gives ERROR
+                  x = Scell(NSC)%Near_neighbor_dist(i1,atom_2,1) ! at this distance, X
+                  y = Scell(NSC)%Near_neighbor_dist(i1,atom_2,2) ! at this distance, Y
+                  z = Scell(NSC)%Near_neighbor_dist(i1,atom_2,3) ! at this distance, Z
+                  a_r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4) ! at this distance, R
+
+!                   x1(1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(1,2) + z*Scell(NSC)%supce(1,3)
+!                   x1(2) = x*Scell(NSC)%supce(2,1) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(2,3)
+!                   x1(3) = x*Scell(NSC)%supce(3,1) + y*Scell(NSC)%supce(3,2) + z*Scell(NSC)%supce(3,3)
+                  x1(1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(2,1) + z*Scell(NSC)%supce(3,1)
+                  x1(2) = x*Scell(NSC)%supce(1,2) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(3,2)
+                  x1(3) = x*Scell(NSC)%supce(1,3) + y*Scell(NSC)%supce(2,3) + z*Scell(NSC)%supce(3,3)
+
+!                   b = dphi_M(TB_Repuls(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA),a_r,1)
+                  b = dvdW(TB_Waals, Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA, a_r)
+
+                  ddlta = real(dik - djk)/a_r
+                  b_delta = b*ddlta
+                  dpsi(1) = dpsi(1) + b_delta*x1(1) ! X, Eq.(F21), H.Jeschke PhD Thesis
+                  dpsi(2) = dpsi(2) + b_delta*x1(2) ! Y, Eq.(F21), H.Jeschke PhD Thesis
+                  dpsi(3) = dpsi(3) + b_delta*x1(3) ! Z, Eq.(F21), H.Jeschke PhD Thesis
+                endif
+            endif
+         enddo ! j1
+
+         Erx_s(1,ian) = Erx_s(1,ian) + dpsi(1) ! repulsive part in X-coordinate
+         Erx_s(2,ian) = Erx_s(2,ian) + dpsi(2) ! repulsive part in Y-coordinate
+         Erx_s(3,ian) = Erx_s(3,ian) + dpsi(3) ! repulsive part in Z-coordinate
+      enddo ! i1
+      ! Add van der Waals force to already calculated other forces:
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian) !*0.5d0
+      print*, 'OLD',ian, Erx_s(:,ian)
+   enddo ! ian
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in dvdWdr_s_OLD:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Erx_s}', Erx_s) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp PARALLEL DO private(ian,i1,dpsi,m,j1,x,y,z,a_r,dik,djk,x1,b,ddlta,b_delta,atom_2)
    do ian = 1, n  ! Forces for all atoms
      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
@@ -1250,8 +1591,8 @@ subroutine dvdWdr_s_OLD(TB_Waals, atoms, Scell, NSC, numpar) ! derivatives of th
       print*, 'OLD',ian, Erx_s(:,ian)
    enddo ! ian
    !$OMP END PARALLEL DO
+#endif
    deallocate(Erx_s)
-   
 END subroutine dvdWdr_s_OLD
 
 
@@ -1374,12 +1715,47 @@ subroutine get_vdW_s_D(TB_Waals, Scell, NSC, numpar, a)   ! repulsive energy, mo
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(TB_vdW_Dumitrica), dimension(:,:), intent(in)   :: TB_Waals ! van der Waals parameters within TB
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a
    !=====================================================
-   real(8) :: a_r, a_r2, a_r3, C6, sum_a, E_rep, E_rep_one
+   real(8) :: a_r, a_r2, a_r3, C6, sum_a, E_rep, E_rep_one, E_rep_array(Scell(NSC)%Na)
    INTEGER(4) i1, j1, m, atom_2
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    sum_a = 0.0d0
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Scell(NSC)%Na
+   E_rep_array = 0.0d0
+   do i1 = Nstart, Nend, N_incr  ! each process does its own part
+   !do i1 = 1, Scell(NSC)%Na ! all atoms
+      do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
+         if (j1 .NE. i1) then
+            !a_r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4)  ! at this distance, R
+            call shortest_distance(Scell, NSC, Scell(NSC)%MDatoms, i1, j1, a_r) ! module "Atomic_tools"
+            a_r2 = a_r*a_r
+            a_r3 = a_r2*a_r
+            C6 = TB_Waals(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA)%C6
+            E_rep_one = df_damp_D(TB_Waals(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA), a_r)*C6/(a_r3*a_r3) ! function below
+            sum_a = sum_a + E_rep_one
+            E_rep_array(i1) = E_rep_array(i1) + E_rep_one
+         endif ! (j1 .NE. i1)
+      enddo ! j1
+   enddo ! i1
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_Coulomb_scc_energy:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{sum_a}', sum_a) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{E_rep_array}', E_rep_array) ! module "MPI_subroutines"
+
+   do i1 = 1, Scell(NSC)%Na ! all atoms
+      ! And save for each atom:
+      Scell(NSC)%MDAtoms(i1)%Epot = Scell(NSC)%MDAtoms(i1)%Epot - E_rep_array(i1)*0.5d0 ! exclude double-counting
+   enddo
+#else ! use OpenMP instead
    !$omp PARALLEL private(i1,j1,a_r,a_r2,a_r3,C6, E_rep, E_rep_one)
    !$omp do reduction( + : sum_a)
    do i1 = 1, Scell(NSC)%Na ! all atoms
@@ -1404,6 +1780,7 @@ subroutine get_vdW_s_D(TB_Waals, Scell, NSC, numpar, a)   ! repulsive energy, mo
    enddo ! i1
    !$omp end do
    !$omp end parallel
+#endif
    a = -0.5d0*sum_a
 end subroutine get_vdW_s_D
 

@@ -54,6 +54,8 @@ implicit none
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! MPI initialization (only if MPI is present, checked automatically via preprocessing):
 call initialize_MPI(g_numpar%MPI_param, g_Err)   ! module "MPI_subroutines"
+! Initialize ScaLAPACK:
+call Initialize_ScaLAPACK(g_numpar%MPI_param, g_Err)   ! module "MPI_subroutines"
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
@@ -212,12 +214,6 @@ if (g_numpar%change_size) then
 endif
 
 
-
-print*, '[MPI process #', g_numpar%MPI_param%process_rank, '] test pause'
-!pause 'MPI implementation is done up to here'
-
-
-
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! If user set to calculate the coordinate path between two phases of material:
 if (g_numpar%do_path_coordinate) then
@@ -225,7 +221,6 @@ if (g_numpar%do_path_coordinate) then
    if (g_Err%Err .or. g_Err%Stopsignal) goto 2012      ! if the USER does not want to run the calculations
 endif
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
-
 ! After the initial data are read, and necessay files created,
 ! now we can proceed with the real calculations
 
@@ -289,9 +284,9 @@ if (g_numpar%verbose) call print_time_step('Initial output files set succesfully
 !WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
 ! Signal possible warning for parameters defined:
 ! Print on the screen:
-call check_all_warnings(6, g_laser, g_Scell)  ! module "Read_input_data"
+call check_all_warnings(6, g_laser, g_Scell, g_numpar)  ! module "Read_input_data"
 ! Save in the Error file:
-call check_all_warnings(g_Err%File_Num, g_laser, g_Scell, g_Err)  ! module "Read_input_data"
+call check_all_warnings(g_Err%File_Num, g_laser, g_Scell, g_numpar, g_Err)  ! module "Read_input_data"
 
 !DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD
 ! Now we can proceed with time:
@@ -307,7 +302,7 @@ do while (g_time .LT. g_numpar%t_total)
 
    AT_MOVE_1:if (g_numpar%do_atoms) then ! atoms are allowed to be moving:
 
-      ! Test coupling before MD step:
+      ! Do coupling before MD step:
       ! Nonadiabatic electron-ion coupling:
       call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
       if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
@@ -441,7 +436,10 @@ enddo
 
 !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 ! Finish execution of the program:
-call close_file('delete', FN=g_numpar%FN_communication, File_name=g_numpar%Filename_communication) ! module "Dealing_with_files"
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   call close_file('delete', FN=g_numpar%FN_communication, File_name=g_numpar%Filename_communication) ! module "Dealing_with_files"
+endif
+
 2012 continue
 
 if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
@@ -609,6 +607,19 @@ endif
 if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
    if (g_Err%Err) call print_a_comforting_message(6, g_numpar%path_sep)  ! module "Dealing_with_output_files"
 endif
+
+!-------------------------------------
+#ifdef MPI_USED
+   if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+      print*, 'Finilizing MPI'
+   endif
+   !call BLACS_EXIT(0)   ! ScaLAPACK library
+   call MPI_FINALIZE(g_numpar%MPI_param%ierror) ! MPI
+   if (g_numpar%MPI_param%ierror /= 0) then
+      write(*, *) 'Error finalizing MPI!'
+   endif
+#endif
+!-------------------------------------
 
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC

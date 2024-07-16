@@ -46,10 +46,14 @@ use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_
                            m_QUOTES_file, printout_warning
 use Dealing_with_CDF, only : write_CDF_file
 
+#ifdef MPI_USED
+use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
+#endif
+
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 04.07.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 16.07.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1496,7 +1500,7 @@ subroutine write_energies(FN, time, nrg)
    nrg%Total + nrg%E_supce + nrg%El_high + nrg%Eh_tot, & ! Total energy (incl. holes)
    nrg%E_vdW, &   ! van der Waals
    nrg%E_expwall  ! Short-range repulsive
-   print*, nrg%Total, nrg%E_supce, nrg%El_high
+   !print*, nrg%Total, nrg%E_supce, nrg%El_high
 end subroutine write_energies
 
 
@@ -4730,10 +4734,18 @@ subroutine communicate(FN, time, numpar, matter)
    type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
    type(Solid), intent(inout) :: matter ! parameters of the material
    integer :: Reason, i, MOD_TIM, sz
-   character(200) :: readline, given_line, File_name
+   character(200) :: readline, given_line, File_name, error_part
    real(8) given_num
-   logical :: read_well, read_well_2, file_opened
+   logical :: read_well, read_well_2, file_opened, smth_read_master
    
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      goto 7779
+   endif
+
+   smth_read_master = .false.
+
    File_name = numpar%Filename_communication
    inquire(UNIT=FN,opened=file_opened)
    if (file_opened) close(FN) ! for windows, we have to close the file to let the user write into it
@@ -4755,7 +4767,10 @@ subroutine communicate(FN, time, numpar, matter)
       Reason = 1  ! to start with
       do while (Reason >= 0) ! read all lines if there is more than one
          call pars_comunications_file(FN, i, given_line, given_num, Reason) ! below
-         if (Reason == 0) call act_on_comunication(given_line, given_num, numpar, matter, time)   ! below
+         if (Reason == 0) then
+            call act_on_comunication(given_line, given_num, numpar, matter, time)   ! below
+            smth_read_master = .true.
+         endif
       enddo
       rewind(FN,IOSTAT=Reason)
       write(FN,'(a)',IOSTAT=Reason) ''
@@ -4769,6 +4784,30 @@ subroutine communicate(FN, time, numpar, matter)
       close(FN,ERR=7778) ! we have to close the file to let the user write into it
 7778  continue ! in case if the program could not close the file
    endif COM_OPEN
+
+7779 continue
+!----------------------------
+! If anything changed in the master-process, tell it to all the others:
+#ifdef MPI_USED
+   error_part = 'Error in "communicate":'
+   call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {smth_read_master}', smth_read_master) ! module "MPI_subroutines"
+   if (smth_read_master) then
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%MOD_TIME}', numpar%MOD_TIME) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%verbose}', numpar%verbose) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%t_total}', numpar%t_total) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%dt}', numpar%dt) ! module "MPI_subroutines"
+      call reset_support_times(numpar)   ! above
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%dt}', numpar%dt) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%dt_save}', numpar%dt_save) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%NOMP}', numpar%NOMP) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%Transport}', numpar%Transport) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {matter%tau_bath}', matter%tau_bath) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {matter%T_bath}', matter%T_bath) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%Transport_e}', numpar%Transport_e) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {matter%tau_bath_e}', matter%tau_bath_e) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {matter%T_bath_e}', matter%T_bath_e) ! module "MPI_subroutines"
+   endif
+#endif
 end subroutine communicate
 
 

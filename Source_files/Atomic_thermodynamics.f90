@@ -262,7 +262,9 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
       !print*, 'Fv:', Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(6), Scell(NSC)%Fv
    endif
 
-   if (numpar%verbose) print*, 'get_atomic_distribution done succesfully'
+   if (numpar%MPI_param%process_rank == 0) then
+      if (numpar%verbose) print*, 'get_atomic_distribution done succesfully'
+   endif
 end subroutine get_atomic_distribution
 
 

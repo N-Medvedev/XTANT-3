@@ -236,7 +236,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                                     M_E0ij, M_dE0ij, HperS, Err)   ! Below
 
             ! Get the matrix of coefficients used for calculation of forces:
-            call Construct_Aij(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Aij) ! see below
+            call Construct_Aij(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Aij) ! see below
 
             ! Construct forces:
             if (numpar%do_atoms) then ! atoms are allowed to be moving:
@@ -262,9 +262,9 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
 
                type is (TB_H_NRL)
                   ! Get the energy-weighted density matrix:
-                  call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+                  call Construct_Aij_x_En(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
                   ! Get the derivatives of the Hamiltonian:
-                  call get_dHij_drij_NRL(ARRAY, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei)	! module "TB_NRL"
+                  call get_dHij_drij_NRL(ARRAY, Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei)	! module "TB_NRL"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
                   call Attract_TB_Forces_Press_NRL(ARRAY, Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_NRL"
 
@@ -272,9 +272,9 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                   ! Get the energy-weighted density matrix:
                   ! If we need SCC, get the charges:
                   if (numpar%scc) then ! include SCC term
-                     call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei, HperS) ! see below
+                     call Construct_Aij_x_En(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei, HperS) ! see below
                   else ! no SCC term
-                     call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+                     call Construct_Aij_x_En(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
                   endif
                   ! Get the derivatives of the Hamiltonian:
                   call get_dHij_drij_DFTB(numpar, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_DFTB"
@@ -284,10 +284,10 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                type is (TB_H_3TB)
                   ! Get the energy-weighted density matrix:
                   if (numpar%scc) then ! include SCC term
-                     call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei_scc_part, M_Aij_x_Ei, HperS) ! below [B 0]
-                     !call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei, HperS) ! below [B 1]
+                     call Construct_Aij_x_En(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei_scc_part, M_Aij_x_Ei, HperS) ! below [B 0]
+                     !call Construct_Aij_x_En(numpar, cell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei, HperS) ! below [B 1]
                   else ! no SCC term
-                     call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+                     call Construct_Aij_x_En(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
                   endif
                   ! Get the derivatives of the Hamiltonian:
                   call get_dHij_drij_3TB(numpar, Scell, NSC, ARRAY, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, &
@@ -298,7 +298,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
 
                type is (TB_H_BOP)
                   ! Get the energy-weighted density matrix:
-                  call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+                  call Construct_Aij_x_En(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
                   ! Get the derivatives of the Hamiltonian:
                   !
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
@@ -306,7 +306,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
 
                type is (TB_H_xTB)
                   ! Get the energy-weighted density matrix:
-                  call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+                  call Construct_Aij_x_En(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
                   ! Get the derivatives of the Hamiltonian:
                   !call get_dHij_drij_xTB(numpar, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei)	! module "TB_xTB"
                   ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
@@ -344,7 +344,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
                call dErdr_Pressure_s_NRL(ARRAY2, Scell(NSC)%MDatoms, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_NRL"
             type is (TB_Rep_DFTB) ! TB parametrization according to DFTB
                ! Get repulsive forces acting on all atoms:
-               call dErdr_s_DFTB(ARRAY2, Scell, NSC) ! derivatives of the repulsive energy by s; module "TB_DFTB"
+               call dErdr_s_DFTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by s; module "TB_DFTB"
                ! Get repulsive forces acting on the supercell:
                call dErdr_Pressure_s_DFTB(ARRAY2, Scell, NSC, numpar) ! derivatives of the repulsive energy by h; module "TB_DFTB"
             type is (TB_Rep_DFTB_no) ! TB parametrization according to DFTB
@@ -469,7 +469,7 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
       type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
          ! Get the overlaps between orbitals and ficticios s orbital (for 3-body parts):
-         call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+         call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs, numpar)   ! module "TB_3TB"
          ! Get the overlaps and reusable functions:
          call Construct_Vij_3TB(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
          ! Construct the Hamiltonian, diagonalize it, get the energy:
@@ -489,10 +489,10 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
    ! Get the DOS weights for each energy level, if required:
    if (allocated(Scell(NSC)%Sij)) then ! nonorthogonal Hamiltonian
-      call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha, &
+      call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, numpar, Hij=Scell(NSC)%Ha, &
                            Sij=Scell(NSC)%Sij, eigen_S=Scell(NSC)%eigen_S) ! below
    else ! orthogonal Hamiltonian
-      call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha) ! below
+      call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, numpar, Hij=Scell(NSC)%Ha) ! below
    endif
 
    ! Fill corresponding energy levels + repulsive energy cotribution:
@@ -507,7 +507,7 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
             call set_initial_fe(Scell, matter, Err) ! module "Electron_tools"
             call get_new_global_energy(Scell(NSC), Scell(NSC)%nrg) ! module "Electron_tools"
             if (numpar%scc) call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
-                     Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne, matter%Atoms(:)%mulliken_q) ! below
+                     Scell(NSC)%fe, matter, numpar, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne, matter%Atoms(:)%mulliken_q) ! below
          endif
       case (2) ! distribution for given Ee + repulsive energy:
          call get_new_energies(Scell, matter, numpar, t, Err) ! below
@@ -625,15 +625,15 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
          ! Get the DOS weights for each energy level, if required:
          if (allocated(Scell(NSC)%Sij)) then
-            call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha, &
+            call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, numpar, Hij=Scell(NSC)%Ha, &
                            Sij=Scell(NSC)%Sij, eigen_S=Scell(NSC)%eigen_S) ! below
          else
-            call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, Hij=Scell(NSC)%Ha) ! below
+            call get_DOS_weights(1, numpar%mask_DOS, numpar%DOS_weights, numpar, Hij=Scell(NSC)%Ha) ! below
          endif
 
          ! Update deviations of Mulliken charges from atomic ones:
          call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell(NSC)%Ha, &
-                            Scell(NSC)%fe, matter, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne, q1) ! below
+                            Scell(NSC)%fe, matter, numpar, Scell(NSC)%MDAtoms, matter%Atoms(:)%mulliken_Ne, q1) ! below
          q00 = q0 ! save for the next step of scc cycle
          q0 = q   ! save for the next step of scc cycle
          ! Mixing of the fraction of old and new charges:
@@ -680,7 +680,7 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
       call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei) ! module "Algebra_tools"
 
       ! 2) Get the Coulomb contribution to energy from the charge redistribution:
-      call get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, Scell(NSC)%nrg%E_coul_scc)   ! below
+      call get_Coulomb_scc_energy(Scell, NSC, matter, numpar, gam_ij, Scell(NSC)%nrg%E_coul_scc)   ! below
 
       ! Fill corresponding energy levels + repulsive energy cotribution:
       select case (which_fe)
@@ -700,25 +700,50 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 end subroutine create_and_diagonalize_H
 
 
-subroutine get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, E_coulomb)   ! Coulomb energy
+subroutine get_Coulomb_scc_energy(Scell, NSC, matter, numpar, gam_ij, E_coulomb)   ! Coulomb energy
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(solid), intent(in), target :: matter   ! material parameters
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    real(8), dimension(:,:), intent(in) :: gam_ij  ! effective energy values [eV]
    real(8), intent(out) :: E_coulomb  ! Total Coulomb energy of all atoms [eV]
    !=====================================================
    real(8) :: sum_a, Coul_pot, q(size(matter%Atoms))
    integer :: j, nat, atom_2, i
    integer, pointer :: m, KOA1, KOA2
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    nat = Scell(NSC)%Na  ! number of atoms
    sum_a = 0.0d0        ! to start with
    E_coulomb = 0.0d0    ! to start with
-
-   !q(:) = matter%Atoms(:)%NVB - matter%Atoms(:)%mulliken_Ne ! Mulliken charges of all elements [M 0]
    q(:) = matter%Atoms(:)%mulliken_q
-!    q(:) = -q(:)
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1, nat  ! atom #1
+      KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! kind of atom #1
+      m => Scell(NSC)%Near_neighbor_size(j)  ! number of nearest neighbors of atom #1
+      do atom_2 = 1, m  ! only for atoms close to #1
+         i = Scell(NSC)%Near_neighbor_list(j,atom_2) ! atom #2
+         KOA2 => Scell(NSC)%MDatoms(i)%KOA   ! kind of atom #2
+
+         ! Energy:
+         Coul_pot = gam_ij(j,i) * q(KOA1) * q(KOA2)
+
+         ! Add to total:
+         sum_a = sum_a + Coul_pot
+      enddo ! atom_2
+   enddo ! j
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_Coulomb_scc_energy:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{sum_a}', sum_a) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp PARALLEL private( j, KOA1, m, atom_2, i, KOA2, Coul_pot )
    !$omp do reduction( + : sum_a)
    do j = 1, nat  ! atom #1
@@ -737,6 +762,8 @@ subroutine get_Coulomb_scc_energy(Scell, NSC, matter, gam_ij, E_coulomb)   ! Cou
    enddo ! j
    !$omp end do
    !$omp end parallel
+#endif
+
    ! Total Coulomb energy, excluding double-counting:
    !E_coulomb = sum_a * 0.5d0   ! [eV] ! [A 0]
    E_coulomb = -sum_a * 0.25d0   ! [eV] ! [A 1]
@@ -748,7 +775,7 @@ end subroutine get_Coulomb_scc_energy
 
 
 subroutine Coulomb_force_from_SCC(numpar, matter, Scell, NSC) ! see below
-   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC
    type(Solid), intent(in) :: matter ! material parameters
@@ -768,13 +795,16 @@ subroutine Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)
    type(Super_cell), dimension(:), intent(inout), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC
    type(Solid), intent(in) :: matter ! material parameters
-   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    !---------------------------------------
    real(8), dimension(3) :: x1  ! for coordinates of all atoms (X,Y,Z)-for all atoms
-   real(8) dpsi(3), psi, a_r, r1, x0, y0, z0, a, b, ddlta, b_delta, q(size(matter%Atoms)), r_cut, alpha
+   real(8) dpsi(3), psi, a_r, r1, x0, y0, z0, a, b, ddlta, b_delta, q(size(matter%Atoms)), r_cut, alpha, forces_rep(Scell(NSC)%Na,3)
    integer i, j, k, ik, i1, ian, dik, djk, n, atom_2
    integer, pointer :: KOA1, KOA2, m, j1
    real(8), pointer ::  x, y, z
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    n = Scell(NSC)%Na ! number of atoms
 
    ! Get the cot off distance
@@ -784,6 +814,45 @@ subroutine Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)
    ! Get the charges for all different elements in the material:
    q(:) = matter%Atoms(:)%mulliken_q
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = n
+   forces_rep(:,:) = 0.0d0 ! to start with
+   ! Do the cycle (parallel) calculations:
+   do ian = Nstart, Nend, N_incr  ! each process does its own part
+   !do ian = 1, n  ! Forces for all atoms
+      m => Scell(NSC)%Near_neighbor_size(ian)
+      KOA1 => Scell(NSC)%MDatoms(ian)%KOA
+      dpsi = 0.0d0
+      do atom_2 = 1, m   ! contribution from neighboring atoms
+         j1 => Scell(NSC)%Near_neighbor_list(ian, atom_2)	! this is the list of such close atoms
+         KOA2 => Scell(NSC)%MDatoms(j1)%KOA
+
+         a_r = Scell(NSC)%Near_neighbor_dist(ian,atom_2,4) ! at this distance, R
+         x  => Scell(NSC)%Near_neighbor_dist(ian,atom_2,1) ! at this distance, X
+         y  => Scell(NSC)%Near_neighbor_dist(ian,atom_2,2) ! at this distance, Y
+         z  => Scell(NSC)%Near_neighbor_dist(ian,atom_2,3) ! at this distance, Z
+
+         x1(:) = x*Scell(NSC)%supce(:,1) + y*Scell(NSC)%supce(:,2) + z*Scell(NSC)%supce(:,3)
+
+         call d_get_gamma_scc(matter%Atoms(KOA1)%Hubbard_U, matter%Atoms(KOA2)%Hubbard_U, &
+                                 a_r, ian, j1, b, r_cut, alpha, numpar%scc_gam_ind)  ! below
+         ! include charges to construct the projections of the forces:
+         b = b*q(KOA1)*q(KOA2)
+         dpsi(:) = dpsi(:) + b*x1(:)/a_r
+      enddo ! atom_2
+      forces_rep(ian,:) = forces_rep(ian,:) + dpsi(:)
+   enddo ! ian
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Coulomb_force_from_SCC_s:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{forces_rep}', forces_rep) ! module "MPI_subroutines"
+
+   do ian = 1, n  ! Forces for all atoms
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + forces_rep(ian,:)
+   enddo ! ian
+
+#else ! use OpenMP instead:
    !$omp PARALLEL private(ian, m, KOA1, dpsi, atom_2, j1, KOA2, x, y, z, x1, a_r, b)
    !$omp DO
    do ian = 1, n  ! Forces for all atoms
@@ -813,6 +882,7 @@ subroutine Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)
    enddo ! ian
    !$omp end do
    !$omp end parallel
+#endif
 
    nullify(j1, m, KOA1, KOA2, x, y, z)
 end subroutine Coulomb_force_from_SCC_s
@@ -890,16 +960,74 @@ end subroutine Coulomb_force_from_SCC_Pressure_s
 subroutine create_second_order_scc_term_H(Scell, matter, numpar, Sij, HperS, H_scc_1)
    type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
    type(Solid), intent(in) :: matter ! material parameters
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), dimension(:,:), intent(in) :: Sij, HperS  ! overlap materix, gamma parameteres
    real(8), dimension(:,:), intent(inout) :: H_scc_1  ! second-order scc correction to Hamiltonian
    !------------------
    integer, pointer :: nat, m
    integer :: j, atom_2, i, j1, l, i1, k, n_orb
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    nat => Scell%Na	! number of atoms in the supercell
    n_orb = identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)  ! module "TB_DFTB"
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   H_scc_1 = 0.0d0   ! to start with
+   ! Do the cycle (parallel) calculations:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1,nat	! atom #1
+      m => Scell%Near_neighbor_size(j)
+      do atom_2 = 0,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! for all atoms, no cut off
+
+         if (atom_2 == 0) then ! the same atom
+            i = j    ! atom #2 = atom #1, onsite
+         else  ! different atoms
+            i = Scell%Near_neighbor_list(j,atom_2) ! atom #2
+            !i = atom_2 ! atom #2 - no cut off
+         endif
+
+         IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
+            do j1 = 1,n_orb ! all orbitals of atom #1
+               l = (j-1)*n_orb+j1   ! atom #1 (j)
+               do i1 = 1,n_orb ! all orbitals of atom #2
+                  k = (i-1)*n_orb+i1   ! atom #2 (i)
+                  ! We fill the upper triangle here
+                  H_scc_1(l,k) = Sij(l,k) * HperS(l,k)
+               enddo ! i1
+            enddo ! j1
+         endif IJ
+      enddo ! j
+   enddo ! i
+   ! b) Construct lower triangle - use symmetry:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1,nat	! all atoms
+      m => Scell%Near_neighbor_size(j)
+      do atom_2 = 1,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! for all atoms, no cut off
+         i = Scell%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         !i = atom_2 ! this is the list of such close atoms - no cut off
+         if (i < j) then ! lower triangle
+            do j1 = 1,n_orb ! all orbitals of atom #1
+               l = (j-1)*n_orb+j1   ! atom #1
+               do i1 = 1,n_orb ! all orbitals of atom #2
+                  k = (i-1)*n_orb+i1   ! atom #2
+                  H_scc_1(l,k) = H_scc_1(k,l)
+               enddo ! i1
+            enddo ! j1
+         endif
+      enddo ! j
+   enddo ! i
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in create_second_order_scc_term_H:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{H_scc_1}', H_scc_1) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead:
 !$omp parallel private(j, m, atom_2, i, j1, l, i1, k)
 !$omp do
    do j = 1,nat	! atom #1
@@ -951,6 +1079,7 @@ subroutine create_second_order_scc_term_H(Scell, matter, numpar, Sij, HperS, H_s
    enddo ! i
 !$omp end do
 !$omp end parallel
+#endif
 
    nullify(nat, m)
 end subroutine create_second_order_scc_term_H
@@ -959,7 +1088,7 @@ end subroutine create_second_order_scc_term_H
 
 subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
    type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), dimension(:,:), intent(in) :: gam_ij   ! gamma parameters
    real(8), dimension(:), intent(in) :: q   ! Mulliken charges (deviation from neutral)
    real(8), dimension(:,:), allocatable, intent(inout) :: HperS
@@ -967,6 +1096,8 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
    integer, pointer :: nat, m, m2, KOA1, KOA2, KOA3
    integer :: j, atom_2, i, j1, l, i1, k, atom_3, n_orb, n
    real(8) :: H_ij, H_ij_1, H_ij_2
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    if (.not.allocated(HperS)) allocate(HperS(size(Scell%Ha,1),size(Scell%Ha,2)))
    HperS = 0.0d0  ! to start with
@@ -974,6 +1105,94 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
    nat => Scell%Na	! number of atoms in the supercell
    n_orb = identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)  ! module "TB_DFTB"
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1,nat	! atom #1
+      KOA1 => Scell%MDatoms(j)%KOA   ! atom #1
+      m => Scell%Near_neighbor_size(j)
+
+      H_ij_1 = 0.0d0   ! to start with
+      do atom_3 = 0, m  ! sum up interactions between atom #1 and atom #3
+      !do atom_3 = 1, nat  ! sum up interactions between atom #1 and atom #3 - no cut off
+         if (atom_3 == 0) then ! the same atom
+            n = j    ! atom #3 = atom #1, onsite
+         else  ! different atoms
+            n = Scell%Near_neighbor_list(j,atom_3) ! index of atom #3
+            !n = atom_3 ! index of atom #3 - no cut off
+         endif
+         KOA3 => Scell%MDatoms(n)%KOA   ! type of atom #3
+         ! Construct a part of the second-order correction to the Hamiltonian:
+         H_ij_1 = H_ij_1 + gam_ij(j,n) * q(KOA3)  ! First half of the last term in Eq.(10) [1]
+      enddo ! atom_3
+
+      do atom_2 = 0,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
+         if (atom_2 == 0) then ! the same atom
+            i = j    ! atom #2 = atom #1, onsite
+         else  ! different atoms
+            i = Scell%Near_neighbor_list(j,atom_2) ! atom #2
+            !i = atom_2 ! atom #2 - no cut off
+         endif
+
+         IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
+            KOA2 => Scell%MDatoms(i)%KOA   ! atom #2
+
+            m2 => Scell%Near_neighbor_size(i)
+            H_ij_2 = 0.0d0 ! to start with
+            do atom_3 = 0, m2 ! sum up interactions between atom #2 and atom #3
+            !do atom_3 = 1, nat ! sum up interactions between atom #2 and atom #3 - no cut off
+               if (atom_3 == 0) then ! the same atom
+                  n = i    ! atom #3 = atom #2, onsite
+               else  ! different atoms
+                  n = Scell%Near_neighbor_list(i,atom_3) ! index of atom #3
+                  !n = atom_3 ! index of atom #3 - no cut off
+               endif
+               KOA3 => Scell%MDatoms(n)%KOA   ! type of atom #3
+               ! Construct a part of the second-order correction to the Hamiltonian:
+               H_ij_2 = H_ij_2 + gam_ij(i,n) * q(KOA3)  ! Second half of the last term in Eq.(10) [1]
+            enddo ! atom_3
+
+            ! Save it into all shells of the two atoms:
+            do j1 = 1,n_orb ! all orbitals of atom #1
+               l = (j-1)*n_orb+j1   ! atom #1 (j)
+               do i1 = 1,n_orb ! all orbitals of atom #2
+                  k = (i-1)*n_orb+i1   ! atom #2 (i)
+                  ! We fill the upper triangle here
+                  HperS(l,k) = 0.5d0*(H_ij_1+H_ij_2)
+               enddo ! i1
+            enddo ! j1
+
+         endif IJ
+      enddo ! j
+   enddo ! i
+   ! b) Construct lower triangle - use symmetry:
+   do j = 1,nat	! all atoms
+      m => Scell%Near_neighbor_size(j)
+      do atom_2 = 1,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
+         i = Scell%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         !i = atom_2 ! this is the list of such close atoms - no cut off
+         if (i < j) then ! lower triangle
+            do j1 = 1,n_orb ! all orbitals of atom #1
+               l = (j-1)*n_orb+j1   ! atom #1
+               do i1 = 1,n_orb ! all orbitals of atom #2
+                  k = (i-1)*n_orb+i1   ! atom #2
+                  HperS(l,k) = HperS(k,l)
+               enddo ! i1
+            enddo ! j1
+         endif
+      enddo ! j
+   enddo ! i
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_HperS:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{HperS}', HperS) ! module "MPI_subroutines"
+
+
+#else ! use OpenMP instead
 !$omp parallel private(j, m, atom_2, i, KOA1, KOA2, KOA3, m2, j1, l, i1, k, n, atom_3, H_ij_1, H_ij_2)
 !$omp do
    do j = 1,nat	! atom #1
@@ -1059,6 +1278,7 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
    enddo ! i
 !$omp end do
 !$omp end parallel
+#endif
 
    nullify(nat, m, KOA1, KOA2, KOA3)
 end subroutine get_HperS
@@ -1069,12 +1289,14 @@ end subroutine get_HperS
 subroutine get_all_gam_ij(Scell, matter, numpar, gam_ij)
    type(Super_cell), intent(in), target :: Scell  ! supercell with all the atoms as one object
    type(Solid), intent(in) :: matter ! material parameters
-   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    real(8), dimension(:,:), allocatable, intent(inout) :: gam_ij
    !------------------
    integer, pointer :: nat, m, KOA1, KOA2
    integer :: j, atom_2, i
    real(8) :: r, r_cut, alpha
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    nat => Scell%Na	! number of atoms in the supercell
    if(.not.allocated(gam_ij)) allocate(gam_ij(nat,nat))
@@ -1084,7 +1306,55 @@ subroutine get_all_gam_ij(Scell, matter, numpar, gam_ij)
    r_cut = cut_off_distance(Scell) ! module "Coulomb"
    alpha = 3.0d0/(4.0d0*r_cut) ! Wolf's parameter chosen according to optimal value from [4]
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do j = Nstart, Nend, N_incr  ! each process does its own part
+   !do j = 1,nat	! atom #1
+      KOA1 => Scell%MDatoms(j)%KOA   ! atom #1
+      m => Scell%Near_neighbor_size(j)
+      do atom_2 = 0,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
 
+         if (atom_2 == 0) then ! the same atom
+            i = j    ! atom #2 = atom #1, onsite
+            r = 0.0d0   ! same atom, no distance
+         else  ! different atoms
+            i = Scell%Near_neighbor_list(j,atom_2) ! atom #2
+            !i = atom_2 ! atom #2 - no cut off
+            r = Scell%Near_neighbor_dist(j,atom_2,4) ! at this distance, R [A]
+            !call shortest_distance(Scell, j, i, r) ! at this distance, R [A] - no cut off
+         endif
+
+         IJ:if (i >= j) then ! it's a new pair of atoms, calculate everything
+            KOA2 => Scell%MDatoms(i)%KOA   ! atom #2
+
+            ! Get the gamma parameter for scc calculations:
+            call get_gamma_scc(matter%Atoms(KOA1)%Hubbard_U, matter%Atoms(KOA2)%Hubbard_U, &
+                                 r, j, i, gam_ij(j,i), r_cut, alpha, numpar%scc_gam_ind)  !  below
+
+         endif IJ
+      enddo ! j
+   enddo ! i
+   ! b) Construct lower triangle - use symmetry:
+   do j = 1,nat	! all atoms
+      m => Scell%Near_neighbor_size(j)
+      do atom_2 = 1,m ! do only for atoms close to that one
+      !do atom_2 = 1,nat ! do only for atoms close to that one - no cut off
+         i = Scell%Near_neighbor_list(j,atom_2) ! this is the list of such close atoms
+         !i = atom_2 ! this is the list of such close atoms - no cut off
+         if (i < j) then ! lower triangle
+            gam_ij(j,i) = gam_ij(i,j)
+         endif
+      enddo ! j
+   enddo ! i
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_all_gam_ij:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{gam_ij}', gam_ij) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
 !$omp parallel private(j, m, atom_2, i, KOA1, KOA2, r)
 !$omp do
    do j = 1,nat	! atom #1
@@ -1132,6 +1402,7 @@ subroutine get_all_gam_ij(Scell, matter, numpar, gam_ij)
       enddo ! i
 !$omp end do
 !$omp end parallel
+#endif
 
    nullify(nat, m, KOA1, KOA2)
 end subroutine get_all_gam_ij
@@ -1420,7 +1691,7 @@ subroutine get_DOS_masks(Scell, matter, numpar, only_coupling, do_cartesian)
 end subroutine get_DOS_masks
 
 
- subroutine get_DOS_weights(ind, masks_DOS, DOS_weights, Hij, CHij, Sij, eigen_S)
+ subroutine get_DOS_weights(ind, masks_DOS, DOS_weights, numpar, Hij, CHij, Sij, eigen_S)
    integer, intent(in) :: ind   ! which model to use
    logical, dimension(:,:,:), intent(in) :: masks_DOS   ! partial DOS made of each orbital type, if required to be constructed
    real(8), dimension(:,:,:), allocatable, intent(inout) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
@@ -1428,11 +1699,14 @@ end subroutine get_DOS_masks
    complex, dimension(:,:), intent(in), optional :: CHij    ! complex eigenvectors
    real(8), dimension(:,:), intent(in), optional :: Sij     ! Overlap for nonorthogonal H
    real(8), dimension(:), intent(in), optional :: eigen_S   ! eigenvalues of Sij (to control for linear-dependent raws)
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    !-------------------------------
    real(8), dimension(size(masks_DOS,3)) :: temp_vec
    real(8) :: temp
    integer :: j, Nsiz, N_at, N_types, i_at, i_types, k
    logical :: include_Sij
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
 
    if (ind == 1) then ! get weighted DOS:
@@ -1440,6 +1714,7 @@ end subroutine get_DOS_masks
       N_types = size(masks_DOS,2)
       Nsiz = size(masks_DOS,3)
       if (.not.allocated(DOS_weights)) allocate(DOS_weights(N_at,N_types,Nsiz))
+      DOS_weights = 0.0d0  ! to start with
 
       ! Do we need to include overlap matrix:
       include_Sij = .false.   ! to start with
@@ -1454,6 +1729,60 @@ end subroutine get_DOS_masks
 !       print*, 'get_DOS_weights', include_Sij
 
       ! Get the contributions of all shells and elements:
+#ifdef MPI_USED   ! use the MPI version [tested]
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = Nsiz
+
+      if (include_Sij) then ! non-orthogonal, with overlap matrix Sij
+         do j = Nstart, Nend, N_incr  ! each process does its own part
+         !do j = 1, Nsiz ! for all energy levels
+            if (present(Hij)) then ! real H
+               do k = 1, Nsiz ! for all energy levels
+                  temp_vec(k) = Hij(k,j) * SUM(Hij(:,j) * Sij(k,:))
+               enddo
+            elseif (present(CHij)) then    ! complex H
+               do k = 1, Nsiz ! for all energy levels
+                  temp_vec(k) = 0.5d0*dble( conjg(CHij(k,j)) * SUM(CHij(:,j) * Sij(k,:)) + &
+                                            CHij(k,j) * SUM(conjg(CHij(:,j)) * Sij(k,:)) )
+               enddo
+            else   ! undefined
+               temp_vec(:) = 0.0d0
+            endif
+            temp = SUM(temp_vec)
+            if (temp == 0.0d0) temp = 1.0d0 ! if it's undefined, avoid crushing
+            do i_at = 1, N_at
+               do i_types = 1, N_types
+                  DOS_weights(i_at, i_types, j) = SUM(temp_vec(:), MASK = masks_DOS(i_at, i_types, :))/temp
+               enddo ! i_types
+            enddo ! i_at
+         enddo !  j = 1, Nsiz
+      else  ! orthogonal (or inconsistent Sij)
+         do j = Nstart, Nend, N_incr  ! each process does its own part
+         !do j = 1, Nsiz	! for all energy levels
+            if (present(Hij)) then ! real H
+               temp_vec(:) = Hij(:,j) * Hij(:,j)
+            elseif (present(CHij)) then    ! complex H
+               temp_vec(:) = dble(conjg(CHij(:,j)) * CHij(:,j))
+            else   ! undefined
+               temp_vec(:) = 0.0d0
+            endif
+            temp = SUM(temp_vec)
+            if (temp == 0.0d0) temp = 1.0d0  ! if it's undefined, avoid crushing
+            do i_at = 1, N_at
+               do i_types = 1, N_types
+                  DOS_weights(i_at, i_types, j) = SUM(temp_vec(:), MASK = masks_DOS(i_at, i_types, :))/temp
+               enddo ! i_types
+            enddo ! i_at
+         enddo !  j = 1, Nsiz
+      endif ! include_Sij
+
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in get_DOS_weights:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'DOS_weights', DOS_weights) ! module "MPI_subroutines"
+      !print*, '[MPI process #', numpar%MPI_param%process_rank, '] get_DOS_weights#1', DOS_weights(1, 1, 1), DOS_weights(N_at, 1, Nsiz)
+
+#else    ! OpenMP to use instead
       ORTH:if (include_Sij) then ! non-orthogonal, with overlap matrix Sij
          !$omp PARALLEL private(j, k, temp_vec, temp, i_at, i_types)
          !$omp do
@@ -1502,6 +1831,7 @@ end subroutine get_DOS_masks
          !$omp end do
          !$omp end parallel
       endif ORTH
+#endif
    endif ! (ind == 1)
 end subroutine get_DOS_weights
 
@@ -1510,35 +1840,56 @@ end subroutine get_DOS_weights
 subroutine get_Mullikens_all(Scell, matter, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Solid), intent(inout) :: matter     ! material parameters
-   type (Numerics_param), intent(in) :: numpar    ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar    ! numerical parameters, including drude-function
    !-------------------------------
    ! 1) Do the avereage Mullikens:
    call get_Mulliken(numpar%Mulliken_model, numpar%mask_DOS, numpar%DOS_weights, Scell%Ha, &
-         Scell%fe, matter, Scell%MDAtoms, matter%Atoms(:)%mulliken_Ne, matter%Atoms(:)%mulliken_q) ! below
+         Scell%fe, matter, numpar, Scell%MDAtoms, matter%Atoms(:)%mulliken_Ne, matter%Atoms(:)%mulliken_q) ! below
 
    ! 2) Do the Mullikens for each atom:
    call get_Mulliken_each_atom(numpar%Mulliken_model, Scell, matter, numpar)   ! below
 end subroutine get_Mullikens_all
 
 
-subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter, MDatoms, mulliken_Ne, mulliken_q)
+subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter, numpar, MDatoms, mulliken_Ne, mulliken_q)
    integer, intent(in) :: Mulliken_model   ! which model to use
    logical, dimension(:,:,:), intent(in) :: masks_DOS   ! partial DOS made of each orbital type, if required to be constructed
    real(8), dimension(:,:,:), intent(in) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
    real(8), dimension(:,:), intent(in) :: Hij      ! real eigenvectors
    real(8), dimension(:), intent(in) :: fe    ! electron distribution
    type(Solid), intent(in) :: matter     ! material parameters
+   type (Numerics_param), intent(inout) :: numpar    ! numerical parameters, including drude-function
    type(Atom), dimension(:), intent(in) :: MDAtoms ! all MD atoms
    real(8), dimension(:), intent(out) :: mulliken_Ne   ! Mulliken electron populations
    real(8), dimension(:), intent(out), optional :: mulliken_q   ! Mulliken charges
    !-------------------------------
    real(8) :: temp
    integer :: j, Nsiz, N_at, N_types, i_at, i_types, Nat
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+
    if (Mulliken_model >= 1) then ! get Mulliken populations and charges
       N_at = size(masks_DOS,1)
       N_types = size(masks_DOS,2)
       ! Check atomic charges:
       mulliken_Ne(:) = 0.0d0  ! to start from
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = N_at
+      ! Do the cycle (parallel) calculations:
+      do i_at = Nstart, Nend, N_incr  ! each process does its own part
+      !do i_at = 1, N_at
+         do i_types = 1, N_types
+            mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(fe(:) * DOS_weights(i_at, i_types,:))
+         enddo   ! i_types
+      enddo ! i_at
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in get_Mulliken:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{mulliken_Ne}', mulliken_Ne) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
       !$omp PARALLEL private(i_at, i_types, j)
       !$omp do
       do i_at = 1, N_at
@@ -1548,6 +1899,8 @@ subroutine get_Mulliken(Mulliken_model, masks_DOS, DOS_weights, Hij, fe, matter,
       enddo ! i_at
       !$omp end do
       !$omp end parallel
+#endif
+
       ! Normalize to the number of atoms:
       do i_at = 1, N_at
          ! how many atoms of this kind are in the supercell:
@@ -1573,11 +1926,14 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
    integer, intent(in) :: Mulliken_model   ! which model to use
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Solid), intent(in) :: matter     ! material parameters
-   type (Numerics_param), intent(in) :: numpar    ! numerical parameters, including drude-function
+   type (Numerics_param), intent(inout) :: numpar    ! numerical parameters, including drude-function
    !-------------------------------
-   real(8), dimension(size(Scell%Ha,1), size(Scell%Ha,2)) :: D
+   real(8), dimension(:,:), allocatable :: D
    real(8), dimension(:), allocatable :: mulliken_Ne
    integer :: N_at, i_at, i_orb, j, Nsiz, N_orb, k
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
 
    if (numpar%save_XYZ .and. numpar%save_XYZ_extra(2)) then ! get Mulliken populations and charges
       !print*, 'get_Mulliken_each_atom:', Mulliken_model
@@ -1585,7 +1941,31 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
       N_at = size(Scell%MDAtoms) ! total number of atoms
       Nsiz = size(Scell%Ha,1) ! total number of orbitals
       N_orb = Nsiz/N_at ! orbitals per atom
+      allocate(D(Nsiz,Nsiz), source = 0.0d0)
 
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = Nsiz
+      if (allocated(Scell%Sij)) then
+         ! Do the cycle (parallel) calculations:
+         do j = Nstart, Nend, N_incr  ! each process does its own part
+         !do j = 1, Nsiz ! for all energy levels
+            do k = 1, Nsiz ! for all energy levels
+               D(k,j) = Scell%Ha(k,j) * SUM(Scell%Ha(:,j) * Scell%Sij(k,:))   ! the density matrix without occupations
+            enddo
+         enddo
+      else ! orthogonal
+         ! Do the cycle (parallel) calculations:
+         do j = Nstart, Nend, N_incr  ! each process does its own part
+         !do j = 1, Nsiz ! for all energy levels
+            D(:,j) = Scell%Ha(:,j) * Scell%Ha(:,j)
+         enddo
+      endif
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in get_Mulliken_each_atom:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{D}', D) ! module "MPI_subroutines"
+#else ! use OpenMP instead
       if (allocated(Scell%Sij)) then
          !$omp PARALLEL private(j, k)
          !$omp do
@@ -1605,10 +1985,28 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
          !$omp end do
          !$omp end parallel
       endif
-
+#endif
 
       allocate(mulliken_Ne(N_at), source = 0.0d0)   ! absolute charges
 
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+      Nend = N_at
+      do i_at = Nstart, Nend, N_incr  ! each process does its own part
+      !do i_at = 1, N_at ! all atoms
+         do i_orb = 1, N_orb  ! all orbitals of each atom
+            j = (i_at-1)*N_orb + i_orb ! current orbital among all
+            mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(j,:))
+         enddo   ! i_orb
+      enddo ! i_at
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in get_Mulliken_each_atom:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{mulliken_Ne}', mulliken_Ne) ! module "MPI_subroutines"
+
+      ! Mulliken charge as a deviation from the normal electron population:
+      Scell%MDAtoms(:)%q = matter%Atoms( Scell%MDAtoms(:)%KOA )%NVB - mulliken_Ne(:)
+      !print*, i_at, Scell%MDAtoms(i_at)%q, matter%Atoms( Scell%MDAtoms(i_at)%KOA )%mulliken_q
+
+#else ! use OpenMP instead
       !$omp PARALLEL private(i_at, i_orb, j)
       !$omp do
       do i_at = 1, N_at ! all atoms
@@ -1623,19 +2021,21 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
       enddo ! i_at
       !$omp end do
       !$omp end parallel
+#endif
 
       ! Testing:
-      if (numpar%verbose) then
-         do i_at = 1, size(matter%Atoms)
-            N_at = COUNT(MASK = (Scell%MDatoms(:)%KOA == i_at))
-            if (N_at <= 0) N_at = 1   ! in case there are no atoms of this kind
-            write(*,'(a,f,f)') ' Mulliken average charge: '//trim(adjustl(matter%Atoms(i_at)%Name))//':', &
+      if (numpar%MPI_param%process_rank == 0) then ! only master process does it
+         if (numpar%verbose) then
+            do i_at = 1, size(matter%Atoms)
+               N_at = COUNT(MASK = (Scell%MDatoms(:)%KOA == i_at))
+               if (N_at <= 0) N_at = 1   ! in case there are no atoms of this kind
+               write(*,'(a,f,f)') ' Mulliken average charge: '//trim(adjustl(matter%Atoms(i_at)%Name))//':', &
                      SUM(Scell%MDAtoms(:)%q, MASK = (Scell%MDatoms(:)%KOA == i_at)) / dble(N_at), &
                      matter%Atoms(i_at)%mulliken_q
-         enddo
+            enddo
+         endif
       endif
-
-      deallocate(mulliken_Ne)
+      deallocate(mulliken_Ne, D)
    else  ! just atomic electrons
       ! Mulliken charges:
       Scell%MDAtoms(:)%q = 0.0d0
@@ -1643,17 +2043,60 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
 end subroutine get_Mulliken_each_atom
 
 
-subroutine band_potential_energy_atom(Scell)
+subroutine band_potential_energy_atom(Scell, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    !-------------------------------
-   real(8), dimension(size(Scell%Ha,1), size(Scell%Ha,2)) :: D
+   real(8), dimension(:,:), allocatable :: D
    real(8), dimension(:), allocatable :: mulliken_Ne
    integer :: N_at, i_at, i_orb, j, Nsiz, N_orb, k
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    N_at = size(Scell%MDAtoms) ! total number of atoms
    Nsiz = size(Scell%Ha,1) ! total number of orbitals
    N_orb = Nsiz/N_at ! orbitals per atom
+   allocate(D(Nsiz,Nsiz), source = 0.0d0)
+   !D = 0.0d0   ! initializing
 
+   ! Construct matrix of all the radial functions for each pair of atoms:
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Nsiz
+   if (allocated(Scell%Sij)) then
+      do j = Nstart, Nend, N_incr  ! each process does its own part
+      !do j = 1, Nsiz ! for all energy levels
+         do k = 1, Nsiz ! for all energy levels
+            D(k,j) = Scell%Ha(k,j) * SUM(Scell%Ha(:,j) * Scell%Sij(k,:))   ! the density matrix without occupations
+         enddo
+      enddo
+   else ! orthogonal
+      do j = Nstart, Nend, N_incr  ! each process does its own part
+      !do j = 1, Nsiz ! for all energy levels
+         D(:,j) = Scell%Ha(:,j) * Scell%Ha(:,j)
+      enddo
+   endif
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in band_potential_energy_atom:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'D', D) ! module "MPI_subroutines"
+
+   allocate(mulliken_Ne(N_at), source = 0.0d0)   ! absolute charges
+   Nend = N_at
+   do i_at = Nstart, Nend, N_incr  ! each process does its own part
+   !do i_at = 1, N_at ! all atoms
+      do i_orb = 1, N_orb  ! all orbitals of each atom
+         j = (i_at-1)*N_orb + i_orb ! current orbital among all
+         ! Sum up potential energy for all orbitals belonging to this atom:
+         mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM( Scell%Ei(:) * Scell%fe(:) * D(j,:) )
+      enddo   ! i_orb
+      ! Add Potential energy of this atom (band contribution) to the precalculated repulsive part:
+   enddo ! i_at
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'mulliken_Ne', mulliken_Ne) ! module "MPI_subroutines"
+   Scell%MDAtoms(:)%Epot = Scell%MDAtoms(:)%Epot + mulliken_Ne(:)
+
+#else ! use OpenMP instead
    if (allocated(Scell%Sij)) then
       !$omp PARALLEL private(j, k)
       !$omp do
@@ -1689,8 +2132,9 @@ subroutine band_potential_energy_atom(Scell)
    enddo ! i_at
    !$omp end do
    !$omp end parallel
+#endif
 
-   deallocate(mulliken_Ne)
+   deallocate(mulliken_Ne, D)
 end subroutine band_potential_energy_atom
 
 
@@ -2009,13 +2453,13 @@ subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, 
          select type(ARRAY)
             type is (TB_H_Pettifor)
                call Complex_Hamil_tot(numpar, Scell, NSC, Scell(NSC)%MDAtoms, ARRAY, CHij=CHij, ksx=kx, ksy=ky, ksz=kz) ! "TB_Pettifor"
-               call sym_diagonalize(CHij, Ei, Err%Err_descript) ! modeule "Algebra_tools"
+               call sym_diagonalize(CHij, Ei, Err%Err_descript, numpar%MPI_param) ! modeule "Algebra_tools"
             type is (TB_H_Molteni)
                call Complex_Hamil_tot_Molteni(numpar, Scell, NSC, Scell(NSC)%MDAtoms, ARRAY, CHij=CHij, ksx=kx, ksy=ky, ksz=kz) ! "TB_Molteni"
-               call sym_diagonalize(CHij, Ei, Err%Err_descript) ! modeule "Algebra_tools"
+               call sym_diagonalize(CHij, Ei, Err%Err_descript, numpar%MPI_param) ! modeule "Algebra_tools"
             type is (TB_H_Fu)
                call Complex_Hamil_tot_F(numpar, Scell, NSC, Scell(NSC)%MDAtoms, ARRAY, CHij=CHij, ksx=kx, ksy=ky, ksz=kz) ! "TB_Fu"
-               call sym_diagonalize(CHij, Ei, Err%Err_descript) ! modeule "Algebra_tools"
+               call sym_diagonalize(CHij, Ei, Err%Err_descript, numpar%MPI_param) ! modeule "Algebra_tools"
             type is (TB_H_NRL)
                call Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, Err) ! "TB_NRL"
             type is (TB_H_DFTB)
@@ -2196,11 +2640,11 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       !select case (abs(numpar%optic_model))
       !case (2)   ! Trani
       if (abs(numpar%optic_model) == 2) then
-         call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij)    ! below
+         call diagonalize_complex_Hamiltonian(numpar, CHij_temp, Ei, CSij)    ! below
       !case (4:5)   ! Graf-Vogl or KG
       elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
-         !call diagonalize_complex8_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
-         call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
+         !call diagonalize_complex8_Hamiltonian(numpar, CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
+         call diagonalize_complex_Hamiltonian(numpar, CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
       else  ! gamma point, no need to diagonalize
          allocate(Ei(size(Scell(NSC)%Ei)), source=Scell(NSC)%Ei)
          !CHij_temp = Scell(NSC)%Hij
@@ -2210,10 +2654,10 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       !select case (abs(numpar%optic_model))
       !case (2)   ! Trani
       if (abs(numpar%optic_model) == 2) then
-         call diagonalize_complex_Hamiltonian(CHij_temp, Ei)    ! below
+         call diagonalize_complex_Hamiltonian(numpar, CHij_temp, Ei)    ! below
       !case (4:5)  ! Graf-Vogl or KG
       elseif (numpar%do_kappa .or. (abs(numpar%optic_model) == 4) .or. (abs(numpar%optic_model) == 5)) then ! if requested
-         call diagonalize_complex_Hamiltonian(CHij_temp, Ei, CHij_orth=CHij_orth, CWF_orth=CWF_orth)    ! below
+         call diagonalize_complex_Hamiltonian(numpar, CHij_temp, Ei, CHij_orth=CHij_orth, CWF_orth=CWF_orth)    ! below
          !CWF_orth = TRANSPOSE(CWF_orth)   ! test
       else  ! gamma point, no need to diagonalize
          allocate(Ei(size(Scell(NSC)%Ei)), source=Scell(NSC)%Ei)
@@ -2550,7 +2994,8 @@ end subroutine construct_complex_Hamiltonian
 
 
 
-subroutine diagonalize_complex_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
+subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CWF_orth)
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    complex, dimension(:,:), intent(inout) :: CHij	! complex hermitian Hamiltonian
    real(8), dimension(:), intent(out), allocatable :: Ei ! eigenvalues [eV]
    !type(Error_handling), intent(inout) :: Err	! error save
@@ -2574,7 +3019,7 @@ subroutine diagonalize_complex_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       endif
 
       ! Direct diagonalization:
-      call sym_diagonalize(CHij, Ei, Error_descript) ! modeule "Algebra_tools"
+      call sym_diagonalize(CHij, Ei, Error_descript, numpar%MPI_param) ! modeule "Algebra_tools"
 
       if (present(CWF_orth)) then   ! Save WF of orthogonal Hamiltonian
          CWF_orth = CHij
@@ -2588,14 +3033,14 @@ subroutine diagonalize_complex_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       allocate(CHij_temp(Nsiz,Nsiz))
 
       CHij_temp = CHij
-      call Loewdin_Orthogonalization_c(Nsiz, CSij, CHij_temp)	! module "TB_NRL"
+      call Loewdin_Orthogonalization_c(numpar, Nsiz, CSij, CHij_temp)	! module "TB_NRL"
 
       if (present(CHij_orth)) then  ! Save orthogonalized Hamiltonian (for optical coefficients below)
          CHij_orth = CHij_temp
       endif
 
       ! 2) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
-      call sym_diagonalize(CHij_temp, Ei, Error_descript)   ! module "Algebra_tools"
+      call sym_diagonalize(CHij_temp, Ei, Error_descript, numpar%MPI_param)   ! module "Algebra_tools"
       if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
          Error_descript = 'diagonalize_complex_Hamiltonian: '//trim(adjustl(Error_descript))
          !call Save_error_details(Err, 6, Error_descript)    ! module "Objects"
@@ -2622,7 +3067,8 @@ subroutine diagonalize_complex_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
 end subroutine diagonalize_complex_Hamiltonian
 
 
-subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
+subroutine diagonalize_complex8_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CWF_orth)
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    complex, dimension(:,:), intent(inout) :: CHij	! complex hermitian Hamiltonian
    real(8), dimension(:), intent(out), allocatable :: Ei ! eigenvalues [eV]
    complex(8), dimension(:,:), intent(inout), optional ::  CSij    ! overlap matrix, for nonorthogonal Hamiltonain
@@ -2657,7 +3103,7 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
 #endif
 
       ! Direct diagonalization:
-      call sym_diagonalize(CHij, Ei, Error_descript) ! modeule "Algebra_tools"
+      call sym_diagonalize(CHij, Ei, Error_descript, numpar%MPI_param) ! modeule "Algebra_tools"
    else ORTH ! nonorthogonal
       ! Solve linear eigenproblem:
       ! 1) Orthogonalize the Hamiltonian using Loewdin procidure:
@@ -2670,7 +3116,7 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
 #endif
 
       CHij_use = CHij
-      call Loewdin_Orthogonalization_c8(Nsiz, CSij, CHij_use) ! module "TB_NRL"
+      call Loewdin_Orthogonalization_c8(numpar, Nsiz, CSij, CHij_use) ! module "TB_NRL"
 
 #ifdef _OPENMP
       print*, OMP_GET_THREAD_NUM(), 'Loewdin_Orthogonalization_c8 done'
@@ -2683,8 +3129,8 @@ subroutine diagonalize_complex8_Hamiltonian(CHij, Ei, CSij, CHij_orth, CWF_orth)
       endif
 
       ! 2) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
-      !call sym_diagonalize(CHij_use, Ei, Error_descript)   ! module "Algebra_tools"
-      call c8_diagonalize(CHij_use, Ei, Error_descript)   ! module "Algebra_tools"
+      !call sym_diagonalize(CHij_use, Ei, Error_descript, numpar%MPI_param)   ! module "Algebra_tools"
+      call c8_diagonalize(CHij_use, Ei, Error_descript, numpar%MPI_param)   ! module "Algebra_tools"
       if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
          Error_descript = 'diagonalize_complex8_Hamiltonian: '//trim(adjustl(Error_descript))
          !call Save_error_details(Err, 6, Error_descript)    ! module "Objects"
@@ -2824,7 +3270,7 @@ subroutine Exponential_wall_forces(TB_Expwall, Scell, NSC, matter, numpar) ! get
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of super-cell
    type(solid), intent(in) :: matter   ! materil parameters
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    !----------------------------------
     if (allocated(TB_Expwall)) then ! if we have short-range potential defined
       select type (TB_Expwall)
@@ -2850,7 +3296,7 @@ subroutine Coulomb_forces(TB_Coul, Scell, NSC, numpar)
    class(TB_Coulomb), allocatable, dimension(:,:), intent(in) :: TB_Coul ! van der Waals within TB
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of super-cell
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    !----------------------------------
    real(8), dimension(:,:,:), allocatable :: Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, XijSupce, YijSupce, ZijSupce
    integer :: Nx, Ny, Nz
@@ -2859,7 +3305,7 @@ subroutine Coulomb_forces(TB_Coul, Scell, NSC, numpar)
       select type (TB_Coul)
       type is (TB_Coulomb_cut) ! so far, it is the only type we have
          ! Get multipliers used many times into temporary arrays:
-         call Construct_B_C(TB_Coul, Scell, NSC, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Coulomb"
+         call Construct_B_C(TB_Coul, Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Coulomb"
          ! Forces for all atoms:
 !          call dCoulombdr_s(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Nx, Ny, Nz) ! module "Coulomb"
          call d_Forces_s(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Nx, Ny, Nz) ! below
@@ -2889,7 +3335,7 @@ subroutine vdW_forces(TB_Waals, Scell, NSC, numpar)
    class(TB_vdW), allocatable, dimension(:,:), intent(in) :: TB_Waals ! van der Waals within TB
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC	! number of super-cell
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    !----------------------------------
    real(8), dimension(:,:,:), allocatable :: Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, XijSupce, YijSupce, ZijSupce
    integer :: Nx, Ny, Nz
@@ -2928,10 +3374,11 @@ subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, 
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:,:), intent(in) :: Bij, A_rij, Xij, Yij, Zij ! intermediate calculations matrices
    integer, intent(in) :: Nx, Ny, Nz ! number of super-cells to go through
    !type(Forces), dimension(:,:), intent(inout) :: forces1	! all interatomic forces
+   !---------------------------------
    REAL(8), DIMENSION(3) :: x1  ! for coordinates of all atoms (X,Y,Z)-for all atoms
    real(8) dpsi(3), psi, a_r, x, y, z, r1, x0, y0, z0, a, b, ddlta, b_delta
    integer i, j, k, ik, i1, j1, ian, dik, djk, n, m, atom_2
@@ -2939,9 +3386,76 @@ subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, 
    integer, DIMENSION(3) :: zb
    real(8), dimension(:,:), allocatable :: Erx_s
    logical :: origin_cell
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    n = size(atoms) ! total number of atoms
    allocate(Erx_s(3,n), source = 0.0d0) ! x,y,z-forces for each atoms
 
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = n
+   ! Do the cycle (parallel) calculations:
+   do ian = Nstart, Nend, N_incr  ! each process does its own part
+   !do ian = 1, n  ! Forces for all atoms
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
+      do i1 = 1, n ! contribution from all atoms
+         if (ian == i1) then
+            dik = 1
+         else
+            dik = 0
+         endif
+         dpsi = 0.0d0
+         do j1 = 1,n ! for each pair of atoms
+            if (ian == j1) then
+               djk = 1
+            else
+               djk = 0
+            endif
+            XC2:do x_cell = -Nx, Nx ! all images of the super-cell along X
+               YC2:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+                  ZC2:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+                     zb = (/x_cell, y_cell, z_cell/) ! vector of image of the super-cell
+                     origin_cell = ALL(zb==0) ! if it is the origin cell
+
+                     cell_if:if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+                        ! contribution from this image of the cell:
+                        coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
+
+                        x1(1) = Xij(coun_cell,i1,j1)
+                        x1(2) = Yij(coun_cell,i1,j1)
+                        x1(3) = Zij(coun_cell,i1,j1)
+                        a_r = A_rij(coun_cell,i1,j1) ! shortest distance
+
+                        b = Bij(coun_cell,i1,j1) ! dvdW(TB_Coul(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),a_r)
+
+                        ddlta = dble(dik - djk)/a_r
+                        b_delta = b*ddlta
+                        dpsi(1) = dpsi(1) + b_delta*x1(1) ! X, Eq.(F21), H.Jeschke PhD Thesis
+                        dpsi(2) = dpsi(2) + b_delta*x1(2) ! Y, Eq.(F21), H.Jeschke PhD Thesis
+                        dpsi(3) = dpsi(3) + b_delta*x1(3) ! Z, Eq.(F21), H.Jeschke PhD Thesis
+                     endif cell_if
+                     !endif cos_if
+                  enddo ZC2
+               enddo YC2
+            enddo XC2
+         enddo ! j1
+         Erx_s(:,ian) = Erx_s(:,ian) + dpsi(:) ! repulsive part in X, Y, Z -coordinate
+      enddo ! i1
+   enddo ! ian
+
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in d_Forces_s:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Erx_s}', Erx_s) ! module "MPI_subroutines"
+
+   do ian = 1, n  ! Forces for all atoms
+      ! Add van der Waals force to already calculated other forces:
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)*0.5d0
+   enddo
+
+#else ! use OpenMP instead:
    !$omp PARALLEL private(i1,j1,ian,dik,djk,dpsi,x1,b,a_r,ddlta,b_delta, x_cell, y_cell, z_cell, coun_cell, zb, origin_cell)
    !$omp DO
    do ian = 1, n  ! Forces for all atoms
@@ -2997,7 +3511,7 @@ subroutine d_Forces_s(atoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, Nx, 
    enddo ! ian
    !$omp end do
    !$omp end parallel
-
+#endif
    deallocate(Erx_s)
 END subroutine d_Forces_s
 
@@ -3183,7 +3697,7 @@ subroutine get_pot_nrg(Scell, matter, numpar)	! Repulsive potential energy
          Scell(NSC)%nrg%E_expwall = E_expwall * Na_inv ! [eV/atom], below
 
          ! Save the additionall band energy of each atom:
-         call band_potential_energy_atom(Scell(NSC)) ! above
+         call band_potential_energy_atom(Scell(NSC), numpar) ! above
       enddo
 
    endif DO_TB
@@ -3196,7 +3710,7 @@ subroutine Exponential_wall_s(TB_Expwall, Scell, NSC, matter, numpar, Pot)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    type(Solid), intent(in) :: matter   ! all material parameters
-   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    real(8) a
    if (allocated(TB_Expwall)) then ! if we have Exponential wall potential defined
       select type(TB_Expwall)
@@ -3237,7 +3751,7 @@ subroutine vdW_s(TB_Waals, Scell, NSC, numpar, out_vdW_s)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    class(TB_vdW), dimension(:,:), allocatable, intent(inout):: TB_Waals ! van der Waals parameters within TB
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8) :: out_vdW_s ! van der Waals energy [eV]
    !---------
    real(8) a
@@ -3263,7 +3777,7 @@ function vdW_interplane(TB_Waals, Scell, NSC, numpar, matter)
    integer, intent(in) :: NSC ! number of supercell
    class(TB_vdW), dimension(:,:), allocatable, intent(inout):: TB_Waals ! van der Waals parameters within TB
    type(Solid), intent(inout) :: matter ! material parameters
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8) a
    if (allocated(TB_Waals)) then ! if we have vdW potential defined
       select type(TB_Waals)
@@ -3281,7 +3795,7 @@ subroutine Erep_s(TB_Repuls, Scell, NSC, numpar, E_rep)   ! repulsive energy as 
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    class(TB_repulsive), dimension(:,:), intent(in)   :: TB_Repuls
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    real(8), intent(out) :: E_rep  ! [eV] repulsive energy
    !=====================================================
    real(8) a_r, a, b
@@ -3516,16 +4030,56 @@ subroutine get_coupling_matrix_elements(NA_kind, Scell, NSC, ix, iy, iz, ixm, iy
 end subroutine get_coupling_matrix_elements
 
 
-subroutine Construct_Aij(Ha, distre, Aij)
+subroutine Construct_Aij(numpar, Ha, distre, Aij)
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    REAL(8), DIMENSION(:,:), INTENT(in) :: Ha  ! diagonilized Hamiltonian/eigenvectors
    REAL(8), DIMENSION(:), INTENT(in) :: distre  ! electron distribution function
    REAL(8), DIMENSION(:,:), allocatable, INTENT(inout) :: Aij  ! Matrix Aij, Eq. (H.3), p.153 Jeschke's PhD thesis
+   !--------------
    integer i, k, N
    real(8), dimension(:,:), allocatable :: Atemp
+   real(8) :: Vect1(size(distre))
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+
    N = size(distre)
    if (.not. allocated(Aij)) allocate(Aij(N,N))
-   allocate(Atemp(N,N))
+   allocate(Atemp(N,N), source = 0.0d0)
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = N
+!    ! Do the cycle (parallel) calculations:
+!    do i = Nstart, Nend, N_incr  ! each process does its own part
+!    !do i = 1, N
+!       Atemp(i,:) = distre(:)*Ha(i,:)
+!    enddo ! i
+!    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+!    error_part = 'Error in Construct_Aij:'
+!    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Atemp}', Atemp) ! module "MPI_subroutines"
+!
+!    ! While ScaLAPACK is not implemented yet, use LAPACK:
+!    call dgemm ('N','T', N, N, N, 1.0d0, Atemp, N, Ha, N, 0.0d0, Aij, N) ! mkl
+
+   ! Use the version without lapack:
+   Aij = 0.0d0 ! to start with
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+      Vect1(:) = distre(:)*Ha(i,:)
+      do k = i, Nend
+         Aij(i,k) = SUM(Vect1(:)*Ha(k,:))
+         if (k .NE. i) then
+            Aij(k,i) = Aij(i,k) ! it's simmetric
+         endif
+      enddo ! k
+   enddo ! i
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Construct_Aij:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Aij}', Aij) ! module "MPI_subroutines"
+
+
+#else ! use OpenMP instead:
    !$omp PARALLEL private(i)
    !$omp do !!reduction( + : Aij1)
    do i = 1, N
@@ -3535,8 +4089,10 @@ subroutine Construct_Aij(Ha, distre, Aij)
    !$omp end parallel
 
    call dgemm ('N','T', N, N, N, 1.0d0, Atemp, N, Ha, N, 0.0d0, Aij, N) ! mkl
+#endif
+
    deallocate(Atemp)
-   
+
    ! test:
 !    do i = 1, N
 !       do k = 1, N
@@ -3547,7 +4103,8 @@ subroutine Construct_Aij(Ha, distre, Aij)
 end subroutine Construct_Aij
 
 
-subroutine Construct_Aij_x_En(Ha, distre, En, Aij, H_ssc_1_per_S)
+subroutine Construct_Aij_x_En(numpar, Ha, distre, En, Aij, H_ssc_1_per_S)
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    REAL(8), DIMENSION(:,:), INTENT(in) :: Ha 	! diagonilized Hamiltonian/eigenvectors
    REAL(8), DIMENSION(:), INTENT(in) :: distre 	! electron distribution function
    REAL(8), DIMENSION(:), INTENT(in) :: En	! eigenstates [eV]
@@ -3557,10 +4114,39 @@ subroutine Construct_Aij_x_En(Ha, distre, En, Aij, H_ssc_1_per_S)
    !----------------------------------------
    integer i, k, N
    real(8), dimension(:,:), allocatable :: Atemp
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
    N = size(distre)
    if (.not. allocated(Aij)) allocate(Aij(N,N))
    allocate(Atemp(N,N))
 
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = N
+   if (present(H_ssc_1_per_S)) then ! include SCC H_1 term:
+      ! Do the cycle (parallel) calculations:
+      do i = Nstart, Nend, N_incr  ! each process does its own part
+      !do i = 1, N
+         Atemp(i,:) = distre(:)*(En(:) - H_ssc_1_per_S(i,:))*Ha(i,:)   ! original [C 0]
+      enddo ! i
+   else ! no SSC term:
+      ! Do the cycle (parallel) calculations:
+      do i = Nstart, Nend, N_incr  ! each process does its own part
+      !do i = 1, N
+         Atemp(i,:) = distre(:)*En(:)*Ha(i,:)
+      enddo ! i
+   endif
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Construct_Aij_x_En:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Atemp}', Atemp) ! module "MPI_subroutines"
+
+   ! While ScaLAPACK is not implemented yet, use LAPACK:
+   call dgemm ('N','T', N, N, N, 1.0d0, Atemp, N, Ha, N, 0.0d0, Aij, N) ! mkl
+
+#else ! use OpenMP instead:
    if (present(H_ssc_1_per_S)) then ! include SCC H_1 term:
       !$omp PARALLEL private(i)
       !$omp do
@@ -3582,6 +4168,8 @@ subroutine Construct_Aij_x_En(Ha, distre, En, Aij, H_ssc_1_per_S)
    endif
 
    call dgemm ('N','T', N, N, N, 1.0d0, Atemp, N, Ha, N, 0.0d0, Aij, N) ! mkl
+#endif
+
    deallocate(Atemp)
 end subroutine Construct_Aij_x_En
 
@@ -3744,7 +4332,7 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
    F = 0.0d0   ! restart
    dF = 0.0d0  ! restart
    
-   call Construct_M_cos(Scell(1), M_cos)	! see below
+   call Construct_M_cos(Scell(1), numpar, M_cos)	! see below
    
    ! Electronic TB Hamiltonian part:
    ASSOCIATE (ARRAY => Scell(1)%TB_Hamil(:,:)) ! this is the sintax we have to use to check the class of defined types      
@@ -3752,7 +4340,7 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
       select type(ARRAY)
       type is (TB_H_Pettifor) ! TB parametrization according to Pettifor
          ! Construct array of functions Vs and dVs for all pairs of atoms to use for forces:
-         call Construct_M_Vs(Scell, 1, ARRAY, M_Vs, M_dVs, M_d2Vs) ! module "TB_Pettifor"
+         call Construct_M_Vs(Scell, 1, ARRAY, numpar, M_Vs, M_dVs, M_d2Vs) ! module "TB_Pettifor"
 
          ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
          call dHij_r(ARRAY, Scell(1)%MDatoms, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, Fatr, dFatr) ! module "TB_Pettifor"
@@ -3773,8 +4361,9 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
    END ASSOCIATE
 
    ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
-   call get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, dFatr) ! below
-
+   if (allocated(M_Vs)) then
+      call get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, dFatr) ! below
+   endif
 
 
    ! Repulsive TB Hamiltonian part:
@@ -3893,18 +4482,51 @@ end subroutine get_derivatives_and_forces_r
 
 
 
-subroutine Construct_M_cos(Scell,  M_cos)
-   type(Super_cell), intent(in), target :: Scell	! supercell with all the atoms as one object
-   real(8), dimension(:,:,:), allocatable, intent(out) :: M_cos	! matrix of directional cosines
+subroutine Construct_M_cos(Scell,  numpar, M_cos)
+   type(Super_cell), intent(in), target :: Scell   ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
+   real(8), dimension(:,:,:), allocatable, intent(out) :: M_cos   ! matrix of directional cosines
    !---------------------------
    real(8), pointer :: r, x, y, z
    integer, pointer :: nat,  m, j
    integer i, atom_2
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+
    nat => Scell%Na ! number of atoms
 
    if (.not.allocated(M_cos)) allocate(M_cos(nat,nat,3))	! for 3 directions (x, y, z)  and pairs of atoms
    M_cos = 0.0d0
    
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = nat
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1,nat	! all atoms
+      m => Scell%Near_neighbor_size(i)
+      do atom_2 = 1,m ! do only for atoms close to that one
+         j => Scell%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
+         if (j .GT. 0) then
+            x => Scell%Near_neighbor_dist(i,atom_2,1) ! at this distance, X
+            y => Scell%Near_neighbor_dist(i,atom_2,2) ! at this distance, Y
+            z => Scell%Near_neighbor_dist(i,atom_2,3) ! at this distance, Z
+            r => Scell%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
+
+            ! Directional cosines:
+            M_cos(i,j,1) = x/r
+            M_cos(i,j,2) = y/r
+            M_cos(i,j,3) = z/r
+         endif !  (j .GT. 0)
+      enddo ! atom_2 = 1,m
+   enddo ! do i = 1,nat
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Construct_M_cos:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{M_cos}', M_cos) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp PARALLEL DO private(i, m, atom_2, j, x, y, z, r)
    do i = 1,nat	! all atoms
       m => Scell%Near_neighbor_size(i)
@@ -3924,13 +4546,15 @@ subroutine Construct_M_cos(Scell,  M_cos)
       enddo ! atom_2 = 1,m 
    enddo ! do i = 1,nat
    !$omp END PARALLEL DO 
+#endif
+
    nullify(nat, m, j, r, x, y, z)
 end subroutine Construct_M_cos
 
 
 subroutine get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, dFatr)
    type(Super_cell), dimension(:), target, intent(inout) :: Scell   ! supercell with all the atoms as one object
-   type(Numerics_param), intent(in) :: numpar               ! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar               ! all numerical parameters
    real(8), dimension(:,:,:), intent(in) :: M_Vs   ! matrix of functions Vs
    real(8), dimension(:,:,:), intent(in) :: M_dVs  ! matrix of functions dVs
    real(8), dimension(:,:,:), intent(in) :: M_d2Vs ! matrix of functions d2Vs
@@ -3938,6 +4562,8 @@ subroutine get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, 
    !----------------------------------
    integer :: k, NSC, Nat, N
    integer, pointer :: KOA1, KOA2
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
 
    NSC = 1  ! supercell number
 
@@ -3949,6 +4575,20 @@ subroutine get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, 
    if (.not.allocated(dFatr)) allocate(dFatr(3,Nat))
    dFatr = 0.0d0  ! to start with
 
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Nat
+ ! Do the cycle (parallel) calculations:
+   ATOMS:do k = Nstart, Nend, N_incr  ! each process does its own part
+   !ATOMS:do k = 1, Nat  ! forces and derivatives for all atoms
+      !call get_forces_r(k, numpar, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Aij_x_Ei)	! see below
+   enddo ATOMS
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in get_TB_attractive_forces_r:'
+   !call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{?}', ?) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
    !$omp PARALLEL private(k)
    !$omp do
    ATOMS:do k = 1, Nat  ! forces and derivatives for all atoms
@@ -3956,7 +4596,7 @@ subroutine get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, 
    enddo ATOMS
    !$omp end do
    !$omp end parallel
-
+#endif
 
    nullify(KOA1, KOA2)
 end subroutine get_TB_attractive_forces_r
@@ -4612,23 +5252,23 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          call Construct_Vij_NRL(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_NRL"
-         call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+         call Construct_Aij_x_En(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
          call Attract_TB_Forces_Press_NRL(ARRAY, Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_NRL"
       type is (TB_H_DFTB) ! TB parametrization according to DFTB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          call Construct_Vij_DFTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_DFTB"
-         call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+         call Construct_Aij_x_En(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
          call Attract_TB_Forces_Press_DFTB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_DFTB"
       type is (TB_H_3TB) ! TB parametrization according to 3TB
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
          if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_M_x1 succesful'
-         call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs)   ! module "TB_3TB"
+         call get_Mjs_factors(numpar%basis_size_ind, Scell(NSC), M_lmn, Mjs, numpar)   ! module "TB_3TB"
          if (numpar%verbose) print*, 'Get_pressure 3TB : get_Mjs_factors succesful'
          call Construct_Vij_3TB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij, M_Lag_exp, M_d_Lag_exp)	! module "TB_3TB"
          if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_Vij_3TB succesful'
-         call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+         call Construct_Aij_x_En(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
          if (numpar%verbose) print*, 'Get_pressure 3TB : Construct_Aij_x_En succesful'
          call Attract_TB_Forces_Press_3TB(Scell, NSC, ARRAY, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei, Mjs, M_Lag_exp, M_d_Lag_exp) ! module "TB_3TB"
          if (numpar%verbose) print*, 'Get_pressure 3TB : Attract_TB_Forces_Press_3TB succesful'
@@ -4636,7 +5276,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
          ! Get attractive forces for supercell from the derivatives of the Hamiltonian:
          call Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn) ! see below
 !          call Construct_Vij_xTB(numpar, ARRAY, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dSVij)	! module "TB_xTB"
-         call Construct_Aij_x_En(Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
+         call Construct_Aij_x_En(numpar, Scell(NSC)%Ha, Scell(NSC)%fe, Scell(NSC)%Ei, M_Aij_x_Ei) ! see below
 !          call Attract_TB_Forces_Press_xTB(Scell, NSC, numpar, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, M_Aij_x_Ei) ! module "TB_xTB"
       end select
    END ASSOCIATE
@@ -4704,7 +5344,7 @@ subroutine Get_pressure(Scell, numpar, matter, P, stress_tensor_OUT)
       select type (ARRAY2)
       type is (TB_Coulomb_cut) ! so far, it is the only type we have
          ! Get multipliers used many times into temporary arrays:
-         call Construct_B_C(ARRAY2, Scell, NSC, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Coulomb"
+         call Construct_B_C(ARRAY2, Scell, NSC, numpar, Scell(NSC)%MDatoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! module "Coulomb"
          call d_Forces_Pressure(Scell(NSC)%MDatoms, Scell, NSC, numpar, Bij, A_rij, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz) ! below
          if (allocated(Bij))   deallocate(Bij)
          if (allocated(A_rij)) deallocate(A_rij)
@@ -5040,9 +5680,9 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! Obsolete subroutine
             ! Partial DOS if needed:
             select case (numpar%DOS_splitting)
             case (1)
-               call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS, Scell(NSC)%partial_DOS, numpar%mask_DOS, Hij = Scell(NSC)%Ha)	! module "Electron_tools"
+               call get_DOS_sort(numpar, Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS, Scell(NSC)%partial_DOS, numpar%mask_DOS, Hij = Scell(NSC)%Ha)	! module "Electron_tools"
             case default    ! No need to sort DOS per orbitals
-               call get_DOS_sort(Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS)	! module "Electron_tools"
+               call get_DOS_sort(numpar, Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS)	! module "Electron_tools"
             endselect
          end select
 !           call print_time_step('After DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
@@ -5113,10 +5753,10 @@ subroutine get_DOS_sort_complex(numpar, Scell, NSC, DOS, smearing, Err, partial_
 
                ! And get the DOS for this k point:
                if (do_partial) then
-                  call get_DOS_sort(Ei, DOS_cur, smearing, part_DOS_cur, masks_DOS, CHij = CHij)	! module "Electron_tools"
+                  call get_DOS_sort(numpar, Ei, DOS_cur, smearing, part_DOS_cur, masks_DOS, CHij = CHij)	! module "Electron_tools"
                   partial_DOS(:,:,:) = partial_DOS(:,:,:) + part_DOS_cur(:,:,:)  ! save contributions of partial DOS
                else
-                  call get_DOS_sort(Ei, DOS_cur, smearing)	! module "Electron_tools"
+                  call get_DOS_sort(numpar, Ei, DOS_cur, smearing)	! module "Electron_tools"
                endif
                DOS(2,:) = DOS(2,:) + DOS_cur(2,:)	! save contributions from all k points
             endif

@@ -11,10 +11,10 @@ setlocal EnableDelayedExpansion
 cd Source_files
 
 :: read argument from user
-   SET arg1=%1 
-    
+   SET arg1=%1
+
 :: in case of empty argument, assume no debug
-   IF "%1"=="" ( 
+   IF "%1"=="" (
       SET arg1=NODEBUG
    )
 
@@ -30,7 +30,7 @@ cd Source_files
       SET arg1=FAST
    )
 
-   
+
    SET "Starline=************************************************************************************"
    echo %Starline%
    echo Started compilation: %date% %time%
@@ -62,8 +62,8 @@ cd Source_files
       echo Started at: %date% %time%
       echo %Starline%
 
-      :: List compiler options 
-      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /Qmkl=parallel /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics"
+      :: List compiler options
+      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /Qmkl=parallel /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check"
 
       :: Set name of the executable:
       SET "Name_of_exe=XTANT_DEBUG.exe"
@@ -77,7 +77,7 @@ cd Source_files
 
       :: List compiler options
       ::SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /Qmkl=parallel /Qopenmp /real-size:64 /debug:all /O1 /Qipo /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics"
-      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /Qmkl=parallel /Qopenmp /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics"
+      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /Qmkl=parallel /Qopenmp /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check"
 
       :: Set name of the executable:
       SET "Name_of_exe=XTANT_DEBUG_OMP.exe"
@@ -118,10 +118,10 @@ cd Source_files
       echo %Starline%
 
       :: List compiler options (for release):
-      ::SET "Compile_options=/F9999999999 /fpp /D MPI_USED /Qmkl=parallel /real-size:64 /O3 /Qipo /standard-semantics /assume:nofpe_summary"
+      SET "Compile_options=/F9999999999 /fpp /D MPI_USED /Qmkl=cluster /real-size:64 /O3 /Qip /fp:precise /standard-semantics /assume:nofpe_summary /gen-interfaces"
 
       :: List compiler options (for debug):
-      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /D MPI_USED /Qmkl=parallel /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics
+      ::SET Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /D MPI_USED /Qmkl=cluster /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check
 
       :: Set name of the executable:
       SET "Name_of_exe=XTANT_MPI.exe"
@@ -130,9 +130,6 @@ cd Source_files
       :: Set the compiler name:
       SET "Compiler=mpiifx"
    )
-
-:: Compile modules
-::   ifx.exe -c %Compile_options% %List_of_files%
 
    :: compile modules one by one:
    IF /I not %arg1%==clean (

@@ -458,6 +458,7 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
    real(8), intent(out) :: a	! [eV]
    !=====================================================
    real(8) :: sum_a, a_r, tot_pot, Coul_pot, E_rep, E_rep_one
+   real(8), dimension(Scell(NSC)%Na) :: E_rep_array
    integer :: Nx, Ny, Nz, zb(3), N_ind
    INTEGER(4) i1, j1, m, atom_2, x_cell, y_cell, z_cell
    logical :: origin_cell
@@ -473,11 +474,11 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
    sum_a = 0.0d0
 
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
-   Scell(NSC)%MDAtoms(:)%Epot = 0.0d0 ! to start with
 
    N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
    Nstart = 1 + numpar%MPI_param%process_rank
    Nend = Scell(NSC)%Na
+   E_rep_array = 0.0d0  ! initialize
 
    ! Do the cycle (parallel) calculations:
    do i1 = Nstart, Nend, N_incr  ! each process does its own part
@@ -488,18 +489,16 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
                !zb = (/dble(Nx),dble(Ny),dble(Nx)/) ! vector of image of the super-cell
                zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
                origin_cell = ALL(zb==0) ! if it is the origin cell
-               E_rep = 0.0d0  ! to restart
+
                do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
                   if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
                      call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
                      Coul_pot = Coulomb_pot(Scell, NSC, TB_Coul, i1, j1, a_r)    ! function below
                      sum_a = sum_a + Coul_pot
-                     E_rep = Coul_pot
+                     E_rep_array(i1) = E_rep_array(i1) + Coul_pot
 !                      if (i1 == N_ind) tot_pot = tot_pot + Coul_pot
                   endif ! (j1 .NE. i1)
                enddo ! j1
-               ! And save for each atom:
-               Scell(NSC)%MDAtoms(i1)%Epot = Scell(NSC)%MDAtoms(i1)%Epot + E_rep
             enddo ZC
          enddo YC
       enddo XC
@@ -508,7 +507,9 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
    error_part = 'Error in get_Coulomb_s'
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{sum_a}', sum_a) ! module "MPI_subroutines"
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Scell(NSC)%MDAtoms(:)%Epot}', Scell(NSC)%MDAtoms(:)%Epot) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{E_rep_array}', E_rep_array) ! module "MPI_subroutines"
+   ! And save for each atom:
+   Scell(NSC)%MDAtoms(:)%Epot = Scell(NSC)%MDAtoms(:)%Epot + E_rep_array(:)
 
 #else
    !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell, Coul_pot, E_rep)
@@ -527,7 +528,7 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
                      call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
                      Coul_pot = Coulomb_pot(Scell, NSC, TB_Coul, i1, j1, a_r)    ! function below
                      sum_a = sum_a + Coul_pot
-                     E_rep = Coul_pot
+                     E_rep = E_rep + Coul_pot
 !                      if (i1 == N_ind) tot_pot = tot_pot + Coul_pot
                   endif ! (j1 .NE. i1)
                enddo ! j1
@@ -709,18 +710,22 @@ end function d2_Coulomb
 
 
 ! Construct matrices of multipliers often used later to calculate derivatives of vdW:
-subroutine Construct_B_C(TB_Coul, Scell, NSC, atoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz)
+subroutine Construct_B_C(TB_Coul, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij, Nx, Ny, Nz)
    type(TB_Coulomb_cut), dimension(:,:), intent(in)   :: TB_Coul ! van der Waals parameters within TB
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
    real(8), dimension(:,:,:), allocatable, intent(out) :: Bij, A_rij, XijSupce, YijSupce, ZijSupce, Xij, Yij, Zij, SXij, SYij, SZij ! intermediate calculations matrices
    integer, intent(out) :: Nx, Ny, Nz ! number of super-cell images to consider
+   !----------------------
    real(8) :: x, y, z, sx, sy, sz
    integer :: x_cell, y_cell, z_cell, coun_cell
    integer :: i1, j1, n
    integer, DIMENSION(3) :: zb
    logical :: origin_cell
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
    
    n = size(atoms) ! total number of atoms
   
@@ -755,6 +760,68 @@ subroutine Construct_B_C(TB_Coul, Scell, NSC, atoms, Bij, A_rij, XijSupce, YijSu
    CHARGE:if (Scell(NSC)%Q <= 1.0d-12) then ! no charge, no force
       ! do nothing then, it's all zero
    else CHARGE ! there is charge, get Coulomb
+
+#ifdef MPI_USED
+      N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+      Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+      Nend = n
+      ! Do the cycle (parallel) calculations:
+      do i1 = Nstart, Nend, N_incr  ! each process does its own part
+      !do i1 = 1,n
+         do j1 = 1,n
+            XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
+               YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+                  ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+                     coun_cell = count_3d(Nx,Ny,Nz,x_cell,y_cell,z_cell) ! module "Little_sobroutine"
+                     zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+                     origin_cell = ALL(zb==0) ! if it is the origin cell
+                     if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
+                        call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, A_rij(coun_cell,i1,j1), x=x, y=y, z=z, sx=sx,sy=sy,sz=sz) ! module "Atomic_tools"
+                        !call shortest_distance(Scell, NSC, atoms, i1, j1, A_rij(coun_cell,i1,j1), x1=x, y1=y, z1=z, sx1=sx, sy1=sy, sz1=sz) ! module "Atomic_tools"
+
+                        ! Save necessary elements:
+                        Xij(coun_cell,i1,j1) = x
+                        Yij(coun_cell,i1,j1) = y
+                        Zij(coun_cell,i1,j1) = z
+                        SXij(coun_cell,i1,j1) = sx
+                        SYij(coun_cell,i1,j1) = sy
+                        SZij(coun_cell,i1,j1) = sz
+
+                        XijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,1) + y*Scell(NSC)%supce(2,1) + z*Scell(NSC)%supce(3,1)
+                        YijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,2) + y*Scell(NSC)%supce(2,2) + z*Scell(NSC)%supce(3,2)
+                        ZijSupce(coun_cell,i1,j1) = x*Scell(NSC)%supce(1,3) + y*Scell(NSC)%supce(2,3) + z*Scell(NSC)%supce(3,3)
+                        !Bij(coun_cell,i1,j1) = dvdW(TB_Coul(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA),A_rij(coun_cell,i1,j1)) ! function above
+                        Bij(coun_cell,i1,j1) = dCoulomb(Scell(NSC), TB_Coul(Scell(NSC)%MDatoms(j1)%KOA,Scell(NSC)%MDatoms(i1)%KOA), A_rij(coun_cell,i1,j1)) ! function above
+
+!                         print*, 'TEST', coun_cell,i1,j1, Xij(coun_cell,i1,j1), Yij(coun_cell,i1,j1), Zij(coun_cell,i1,j1), A_rij(coun_cell,i1,j1), Bij(coun_cell,i1,j1)
+                     else ! No self-interaction
+                        A_rij(coun_cell,i1,j1) = 1.0d30
+                        Xij(coun_cell,i1,j1) = 0.0d0
+                        Yij(coun_cell,i1,j1) = 0.0d0
+                        Zij(coun_cell,i1,j1) = 0.0d0
+                        Bij(coun_cell,i1,j1) = 0.0d0
+                     endif
+                  enddo ZC
+               enddo YC
+            enddo XC
+         enddo ! j1
+      enddo ! i1
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in Construct_B_C:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{A_rij}', A_rij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Xij}', Xij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Yij}', Yij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Zij}', Zij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Bij}', Bij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{XijSupce}', XijSupce) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{YijSupce}', YijSupce) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{ZijSupce}', ZijSupce) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{SXij}', SXij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{SYij}', SYij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{SZij}', SZij) ! module "MPI_subroutines"
+
+
+#else ! use OpenMP instead:
       !$omp PARALLEL private(i1,j1,x,y,z,sx,sy,sz,x_cell,y_cell,z_cell,zb,origin_cell,coun_cell)
       !$omp do
       do i1 = 1,n
@@ -798,6 +865,7 @@ subroutine Construct_B_C(TB_Coul, Scell, NSC, atoms, Bij, A_rij, XijSupce, YijSu
       enddo ! i1
       !$omp end do
       !$omp end parallel
+#endif
    endif CHARGE
 !    pause 'Construct_B'
 end subroutine Construct_B_C
