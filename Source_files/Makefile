@@ -16,7 +16,7 @@ LD = ld
 ifeq ($(c),gf)
 	F90 = gfortran
 	F90FLAGS = -ffree-line-length-0 -fdec-format-defaults -cpp -fdefault-real-8 -fdefault-double-8 -O2
-	LDFLAGS = -lblas -llapack -fopenmp
+	LDFLAGS += -lblas -llapack -fopenmp
 	# need to link OpenMP,     ^^^^^^^ even for non OpenMP compilation. Can be fixed..
 	ifeq (${OMP},y)
 		F90FLAGS += -fopenmp
@@ -24,7 +24,7 @@ ifeq ($(c),gf)
 else ifeq ($(c),gf6)
 	F90 = gfortran6.1.0
 	F90FLAGS = -ffree-line-length-0 -fdec-format-defaults -cpp -fdefault-real-8 -fdefault-double-8 -O2
-	LDFLAGS = -lblas -llapack -fopenmp
+	LDFLAGS += -lblas -llapack -fopenmp
 	ifeq (${OMP},y)
 		F90FLAGS += -fopenmp
 	endif
@@ -60,13 +60,13 @@ else ifeq ($(c),mpi)
 		#F90FLAGS += -O5 -cpp -ffree-line-length-0  -fdefault-real-8 -fdefault-double-8
 		F90FLAGS += -O5 -fpp -cpp -real-size 64 -standard-semantics -assume nofpe_summary -ipo
 	endif
-	LDFLAGS += -qmkl=cluster
+	F90FLAGS += -qmkl=cluster
 	EXE = $(EXEPATH)/XTANT_MPI.x
 else ifeq ($(c),mpii)
 	F90 = mpiifort
 	F90FLAGS += -D MPI_USED
 	#F90FLAGS += -lscalapack-openmpi -lblacsCinit-openmpi -lblacs-openmpi -llapack -lblas
-	#F90FLAGS += -qmkl=cluster
+	F90FLAGS += -qmkl=cluster
 
 	ifeq ($(db),y)
 		# flags for debugging
@@ -75,7 +75,7 @@ else ifeq ($(c),mpii)
 		# Flags for maximum performance
 		F90FLAGS += -O5 -fpp -cpp -ip -real-size 64 -standard-semantics -assume nofpe_summary
 	endif
-	LDFLAGS += -mkl=cluster
+	#LDFLAGS += -mkl=cluster
 	EXE = $(EXEPATH)/XTANT_MPI.x
 else
 	F90 = ifort
@@ -83,11 +83,9 @@ else
 	F90FLAGS = -fpp -cpp
 	
 	ifneq (${OMP},) # OMP=no means no omp
-		#F90FLAGS += -qmkl
-		LDFLAGS += -qmkl
+		F90FLAGS += -qmkl
 	else  # there is omp by default
-		#F90FLAGS += -qopenmp -qmkl=parallel
-		LDFLAGS += -qopenmp -qmkl=parallel
+		F90FLAGS += -qopenmp -mkl=parallel
 	endif
 	
 	ifeq ($(db),y)

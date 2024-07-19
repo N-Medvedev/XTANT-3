@@ -124,8 +124,8 @@ cd Source_files
       echo %Starline%
 
       :: List compiler options (for release):
-      SET "Compile_options=/F9999999999 /fpp /D MPI_USED /real-size:64 /O3 /fp:precise /standard-semantics /assume:nofpe_summary /gen-interfaces"
-      SET "Linking_options=/Qmkl=cluster"
+      SET "Compile_options=/F9999999999 /fpp /D MPI_USED /Qmkl=cluster /real-size:64 /O3 /Qip /fp:precise /standard-semantics /assume:nofpe_summary /gen-interfaces"'
+      SET Linking_options= /NODEFAULTLIB:"mkl_intel_ilp64_dll.lib"
 
       :: List compiler options (for debug):
       ::SET Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /D MPI_USED /Qmkl=cluster /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check
@@ -142,7 +142,7 @@ cd Source_files
    IF /I not %arg1%==clean (
       FOR %%A IN (%List_of_files%) DO (
          :: Construct the command line for compilation of the current module:
-         SET "Output=%Compiler% -c %Compile_options% %Linking_options% %%A 2>&1"
+         SET "Output=%Compiler% -c %Compile_options% %%A !Linking_options! 2>&1"
          echo * Compilation : !Output!
          IF ERRORLEVEL 1 (
             echo Error compiling %%A! See Captured Output above. Exiting...
@@ -161,7 +161,7 @@ cd Source_files
 :: Assemble the code from all created obj-files
 ::   ifx.exe %Compile_options% *.obj /exe:%Name_of_exe%
 :: Construct the command line for creation fo executable:
-      SET "Output=%Compiler% %Linking_options% %Compile_options% *.obj /exe:%Name_of_exe% 2>&1"
+      SET "Output=%Compiler% %Compile_options% *.obj /exe:%Name_of_exe% !Linking_options! 2>&1"
       IF ERRORLEVEL 1 (
          echo Error compiling %%A! See Captured Output above. Exiting...
          EXIT /B 1
