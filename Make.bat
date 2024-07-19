@@ -37,6 +37,7 @@ cd Source_files
 
    :: Set the default compiler name:
    SET "Compiler=ifx"
+   SET "Linking_options="
 
 :: List of all program files to be compiled
    SET "List_of_files=Universal_constants.f90 Objects.f90 Variables.f90 MPI_subroutines.f90 BS_Cartesian_Gaussians.f90 BS_Spherical_Gaussians.f90 Periodic_table.f90 Algebra_tools.f90 BS_Basis_sets.f90 TB_Koster_Slater.f90 Dealing_with_files.f90 Gnuplotting.f90 Little_subroutines.f90 Dealing_with_EADL.f90 Dealing_with_DFTB.f90 Dealing_with_3TB.f90 Dealing_with_BOP.f90 Dealing_with_xTB.f90 Atomic_tools.f90 Atomic_thermodynamics.f90 MC_cross_sections.f90 Electron_tools.f90 Nonadiabatic.f90 Dealing_with_POSCAR.f90 Dealing_with_mol2.f90 Dealing_with_CDF.f90 Read_input_data.f90 Van_der_Waals.f90 Coulomb.f90 ZBL_potential.f90 Exponential_wall.f90  Dealing_with_output_files.f90 Monte_Carlo.f90 TB_Fu.f90 TB_Pettifor.f90 TB_Molteni.f90 TB_NRL.f90 TB_DFTB.f90 TB_3TB.f90 TB_BOP.f90 TB_xTB.f90 TB.f90 Dealing_with_eXYZ.f90 Initial_configuration.f90 Optical_parameters.f90 TB_complex.f90 Transport.f90 XTANT_MAIN_FILE.f90"
@@ -63,7 +64,8 @@ cd Source_files
       echo %Starline%
 
       :: List compiler options
-      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /Qmkl=parallel /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check"
+      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check"
+      SET "Linking_options=/Qmkl=parallel"
 
       :: Set name of the executable:
       SET "Name_of_exe=XTANT_DEBUG.exe"
@@ -77,7 +79,8 @@ cd Source_files
 
       :: List compiler options
       ::SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /Qmkl=parallel /Qopenmp /real-size:64 /debug:all /O1 /Qipo /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics"
-      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /Qmkl=parallel /Qopenmp /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check"
+      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check"
+      SET "Linking_options=/Qopenmp /Qmkl=parallel"
 
       :: Set name of the executable:
       SET "Name_of_exe=XTANT_DEBUG_OMP.exe"
@@ -90,7 +93,9 @@ cd Source_files
       echo %Starline%
 
       :: List compiler options
-      SET "Compile_options=/F9999999999 /fpp /Qopenmp /Qmkl=parallel /real-size:64 /O1 /fpe:0 /fp:fast /Qipo /Qopt-report /standard-semantics"
+      SET "Compile_options=/F9999999999 /fpp /real-size:64 /O1 /fpe:0 /fp:fast /Qipo /Qopt-report /standard-semantics"
+      SET "Linking_options=/Qopenmp /Qmkl=parallel"
+
       :: Set name of the executable:
       SET "Name_of_exe=XTANT_OMP.exe"
 
@@ -104,7 +109,8 @@ cd Source_files
       echo %Starline%
 
       :: List compiler options
-      SET "Compile_options=/F9999999999 /fpp /Qopenmp /Qmkl=parallel /real-size:64 /O3 /Qipo /standard-semantics /assume:nofpe_summary"
+      SET "Compile_options=/F9999999999 /fpp /real-size:64 /O3 /Qipo /standard-semantics /assume:nofpe_summary"
+      SET "Linking_options=/Qopenmp /Qmkl=parallel"
 
       :: Set name of the executable:
       SET "Name_of_exe=XTANT.exe"
@@ -118,7 +124,8 @@ cd Source_files
       echo %Starline%
 
       :: List compiler options (for release):
-      SET "Compile_options=/F9999999999 /fpp /D MPI_USED /Qmkl=cluster /real-size:64 /O3 /Qip /fp:precise /standard-semantics /assume:nofpe_summary /gen-interfaces"
+      SET "Compile_options=/F9999999999 /fpp /D MPI_USED /real-size:64 /O3 /fp:precise /standard-semantics /assume:nofpe_summary /gen-interfaces"
+      SET "Linking_options=/Qmkl=cluster"
 
       :: List compiler options (for debug):
       ::SET Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /D MPI_USED /Qmkl=cluster /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check
@@ -135,7 +142,7 @@ cd Source_files
    IF /I not %arg1%==clean (
       FOR %%A IN (%List_of_files%) DO (
          :: Construct the command line for compilation of the current module:
-         SET "Output=%Compiler% -c %Compile_options% %%A 2>&1"
+         SET "Output=%Compiler% -c %Compile_options% %Linking_options% %%A 2>&1"
          echo * Compilation : !Output!
          IF ERRORLEVEL 1 (
             echo Error compiling %%A! See Captured Output above. Exiting...
@@ -154,7 +161,7 @@ cd Source_files
 :: Assemble the code from all created obj-files
 ::   ifx.exe %Compile_options% *.obj /exe:%Name_of_exe%
 :: Construct the command line for creation fo executable:
-      SET "Output=%Compiler% %Compile_options% *.obj /exe:%Name_of_exe% 2>&1"
+      SET "Output=%Compiler% %Linking_options% %Compile_options% *.obj /exe:%Name_of_exe% 2>&1"
       IF ERRORLEVEL 1 (
          echo Error compiling %%A! See Captured Output above. Exiting...
          EXIT /B 1

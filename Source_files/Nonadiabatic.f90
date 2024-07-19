@@ -154,8 +154,10 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
             if ((distre_temp2(i) > 2.0d0) .OR. (distre_temp2(i) < 0.0d0)) then
                N_steps = INT(N_steps*2.0d0)  ! decrease time step in Boltzmann equation and recalculate
                if (N_steps > 1000) then
-                  print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (1)'
-                  write(*,'(i5, e25.16, e25.16, e25.16, e25.16, e25.16, e25.16)') i, dt_small, coef, coef_inv, distre_temp2(i), dfdt_e(i), dfdt_e(i)*dt_small
+                  if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+                     print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (1)'
+                     write(*,'(i5, e25.16, e25.16, e25.16, e25.16, e25.16, e25.16)') i, dt_small, coef, coef_inv, distre_temp2(i), dfdt_e(i), dfdt_e(i)*dt_small
+                  endif
                endif
                ! Recalculate with smaller time steps:
                goto 110
@@ -198,9 +200,11 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
             goto 110
          else
             if (print_error) then
-               print*, 'Trouble noticed in Electron_ion_collision_int:'
-               print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (2):'
-               print*, N_tot_cut, Scell%Ne_low
+               if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+                  print*, 'Trouble noticed in Electron_ion_collision_int:'
+                  print*, 'N_steps=', N_steps, 'SOMETHING MIGHT BE WRONG (2):'
+                  print*, N_tot_cut, Scell%Ne_low
+               endif
                print_error = .false. ! don't repeat the same error
             endif
          endif
