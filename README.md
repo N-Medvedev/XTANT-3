@@ -2,11 +2,27 @@
 
 [![DOI](https://zenodo.org/badge/490215542.svg)](https://zenodo.org/badge/latestdoi/490215542)
 
-`X-ray-induced Thermal And Nonthermal Transitions`
+**`XTANT-3: X-ray-induced Thermal And Nonthermal Transitions`**
 
-It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matter. The code combines the following methods into one model with feed-backs:
+A hybrid code for modeling femtosecond laser effects in matter. The code is capable of modeling the entire process of phase transition or damage formation in various materials irradiated with the ultrafast (femto- to pico-second) pulse. The following processes are modelled simultaneously and interconnectedly:
+* photon absorption
+* excitation of electrons
+* electron kinetics including impact ionization and elastic scattering
+* Auger-cascades of core holes
+* equilibration of the electronic ensemble (establishing Fermi-Dirac distribution)
+* coupling of electrons to the atomic system (electron-ion or electron-phonon coupling)
+* evolution of the electronic structure (band structure)
+* changes in the interatomic potential or potential-energy surface due to electronic excitation
+* atomic responce to the changes in the interatomic potential (including nonthermal melting)
+* atomic responce to the heating via electron-ion coupling (including thermal melting)
+* atomic dynamics including possible phase transition and/or ablation
+* possible cooling (via thermostats) relaxing and forming the final observable material state
 
-> a) Monte Carlo (MC) method for modeling X-ray-induced electron kinetics
+*Note: Although the code is primarily aimed at modelling X-ray-induced effects, it is also possible to model visible or NIR-laser irradiation, as long as the photon energy is larger than the bandgap of the modelled material, since only linear photon absorption is currently included (no multiphoton absorption); for metals, arbitrary non-relativistic photon energy is allowed*
+
+The code combines the following methods into one model with feed-backs:
+
+> a) Monte Carlo (MC) method for modeling photon-induced electron kinetics
  
 > b) Boltzmann equation for low-energy electrons: relaxation-time approximation (RTA) for electron-electron scattering; Boltzmann collision integrals (BCI) for nonadiabatic electron-ion (electron-phonon) coupling
  
@@ -15,6 +31,7 @@ It is a hybrid code aimed at modeling femtosecond X-ray-induced effects in matte
 > d) Molecular dynamics (MD) for tracing atomic response to modification of the interatomic potential due to electronic excitation
  
 > e) Kubo-Greenwood (or Random phase approximation, RPA) for calculation of the optical properties and electronic heat conductivity of the material
+> 
 
 ## Disclaimer
 

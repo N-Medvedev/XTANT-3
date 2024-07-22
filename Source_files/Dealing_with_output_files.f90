@@ -4529,6 +4529,9 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
 #ifdef _OPENMP
    call Print_title(FN, Scell, matter, laser, numpar, 1) ! below
 #else
+#ifdef MPI_USED
+   call Print_title(FN, Scell, matter, laser, numpar, 10) ! below
+#endif
    call Print_title(FN, Scell, matter, laser, numpar, 4) ! below
 #endif
 
