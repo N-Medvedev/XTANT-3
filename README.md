@@ -7,16 +7,16 @@
 A hybrid code for modeling femtosecond laser effects in matter. The code is capable of modeling the entire process of phase transition or damage formation in various materials irradiated with the ultrafast (femto- to pico-second) pulse. The following processes are modelled simultaneously and interconnectedly:
 * photon absorption
 * excitation of electrons
-* further electron kinetics including impact ionization and elastic scattering
+* electron kinetics including impact ionization and elastic scattering
 * Auger-cascades of core holes
 * equilibration of the electronic ensemble (establishing Fermi-Dirac distribution)
 * coupling of electrons to the atomic system (electron-ion or electron-phonon coupling)
 * evolution of the electronic structure (band structure)
 * changes in the interatomic potential or potential-energy surface due to electronic excitation
 * atomic responce to the changes in the interatomic potential (including nonthermal melting)
-* atomic responce to the heating via electron-ion coupling
+* atomic responce to the heating via electron-ion coupling (including thermal melting)
 * atomic dynamics including possible phase transition and/or ablation
-* possible cooling (via thermostats) leading to relaxation and forming the final observable material state
+* possible cooling (via thermostats) relaxing and forming the final observable material state
 
 *Note: Although the code is primarily aimed at modelling X-ray-induced effects, it is also possible to model visible or NIR-laser irradiation, as long as the photon energy is larger than the bandgap of the modelled material, since only linear photon absorption is currently included (no multiphoton absorption); for metals, arbitrary non-relativistic photon energy is allowed*
 
