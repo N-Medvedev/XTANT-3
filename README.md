@@ -41,7 +41,7 @@ Although we endeavour to ensure that the code XTANT and results delivered are co
 
 ## Tables with calculated electron-phonon coupling
 
-Two-tempreature model parameters: the tables with the results with calculated electron-ion (electron-phonon) coupling, electronic heat capacity, and electronic heat conductivity, at high electronic temepratures can be found here:
+Two-tempreature model parameters: the tables with the calculated electron-ion (electron-phonon) coupling, electronic heat capacity, and electronic heat conductivity, at high electronic temepratures can be found here:
 https://github.com/N-Medvedev/XTANT-3_coupling_data
 
 ## How to cite
