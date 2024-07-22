@@ -2,7 +2,7 @@
 
 [![DOI](https://zenodo.org/badge/490215542.svg)](https://zenodo.org/badge/latestdoi/490215542)
 
-**`XTANT-3: X-ray-induced Thermal And Nonthermal Transitions`**
+${\textsf{\color{lightgreen}XTANT-3: X-ray-induced Thermal And Nonthermal Transitions}}$
 
 A hybrid code for modeling femtosecond laser effects in matter. The code is capable of modeling the entire process of phase transition or damage formation in various materials irradiated with the ultrafast (femto- to pico-second) pulse. The following processes are modelled simultaneously and interconnectedly:
 * photon absorption
@@ -41,7 +41,7 @@ Although we endeavour to ensure that the code XTANT and results delivered are co
 
 ## Tables with calculated electron-phonon coupling
 
-Two-tempreature model parameters: the tables with the results with calculated electron-ion (electron-phonon) coupling, and electronic heat capacity, at high electronic temepratures can be found here:
+Two-tempreature model parameters: the tables with the results with calculated electron-ion (electron-phonon) coupling, electronic heat capacity, and electronic heat conductivity, at high electronic temepratures can be found here:
 https://github.com/N-Medvedev/XTANT-3_coupling_data
 
 ## How to cite
