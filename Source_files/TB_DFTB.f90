@@ -243,7 +243,9 @@ function DFTB_radial_function(r_given, r_grid, param_array, ind_array, ind_inter
     if (i_array > Nsiz) then    ! return the last value
        f_out = param_array(Nsiz, ind_array)
     else
-       call linear_interpolation(r_grid, param_array(:,ind_array), r_given, f_out, i_array, x0=0.0d0, y0=0.0d0)   ! module "Little_subroutines"
+       !call linear_interpolation(r_grid, param_array(:,ind_array), r_given, f_out, i_array, x0=0.0d0, y0=0.0d0)   ! module "Little_subroutines"
+       call linear_interpolation(r_grid, param_array(:,ind_array), r_given, f_out, i_array)   ! module "Little_subroutines"
+       !print*, 'DFTB_radial_function', r_given, r_grid(i_array-1), r_grid(i_array), ':', f_out, param_array(i_array-1,ind_array), param_array(i_array,ind_array)
     endif
     nullify(dr)
 end function DFTB_radial_function
@@ -1885,7 +1887,7 @@ end function DFTB_polinomial
       ! This works for any monotonous array:
       call Find_in_array_monoton(R, r_dist, i_array)  ! module "Little_subroutines"
       i_array = i_array - 1   ! we need floor instead of ceiling
-
+      !print*, 'DFTB_spline:', i_array, r_dist, R(i_array), R(i_array+1)
       rr0 = r_dist - R(i_array)
       rr02 = rr0 * rr0
       rr03 = rr02 * rr0

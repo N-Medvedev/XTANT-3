@@ -858,7 +858,7 @@ end subroutine interpolate_data_on_grid
 
 
 
-pure subroutine linear_interpolation(xarray, yarray, x, y, i, x0, y0, replac)
+ subroutine linear_interpolation(xarray, yarray, x, y, i, x0, y0, replac)
    real(8), dimension(:), intent(in) :: xarray, yarray	! x-array, y-array
    real(8), intent(in) :: x   ! input
    real(8), intent(out) :: y  ! output
@@ -868,29 +868,35 @@ pure subroutine linear_interpolation(xarray, yarray, x, y, i, x0, y0, replac)
 
    !Check if there is even a need to interpolate:
    if (i > 1) then
-      if ( abs(yarray(i) - yarray(i-1) < 1.0d-6*yarray(i) ) ) then
+      if ( abs(yarray(i) - yarray(i-1)) < 1.0d-6*abs(yarray(i)) ) then
+         !print*, 'L-1:', x, xarray(i-1), xarray(i), abs(x - xarray(i-1)), 1.0d-6*xarray(i-1)
          y = yarray(i)  ! if the values are the same, no need to interpolate
          return
       endif
    endif
 
 
-   REDO: if (.not.present(replac)) then
+   REDO: if (.not.present(replac)) then   ! default
     if (i .GT. 1) then
       if ( abs(x - xarray(i-1)) .GE. 1.0d-6*xarray(i-1)) then
          y = yarray(i-1) + (yarray(i) - yarray(i-1))/(xarray(i) - xarray(i-1))*(x - xarray(i-1))
+         !print*, 'L0:', x, xarray(i-1), xarray(i), abs(x - xarray(i-1)), 1.0d-6*xarray(i-1)
       else
          if (present(y0) .and. present(x0)) then
             y = y0 + (yarray(i) - y0)/(xarray(i) - x0)*(x - x0)
+            !print*, 'L1:', x, xarray(i-1), xarray(i), abs(x - xarray(i-1)), 1.0d-6*xarray(i-1)
          else
             if (present(x0)) then
                y = (yarray(i) - 0.0d0)/(xarray(i) - x0)*(x - x0)
+               !print*, 'L2:', x, xarray(i-1), xarray(i), abs(x - xarray(i-1)), 1.0d-6*xarray(i-1)
             else
                y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
+!                print*, 'y0:', x0, xarray(i-1), xarray(i), abs(x - xarray(i-1)), 1.0d-6*xarray(i-1)
+!                pause 'linear_interpolation'
             endif
          endif
       endif
-    else
+    else ! (i=1)
       if (present(y0) .and. present(x0)) then
          y = y0 + (yarray(i) - y0)/(xarray(i) - x0)*(x - x0)
       else
@@ -990,7 +996,7 @@ subroutine Find_monotonous_LE(Array, Value0, Number)    ! monotoneausly increasi
    real(8) temp_val, val_1, val_2
 
    if (isnan(Value0)) then
-        print*, 'The subroutine Find_in_monotonous_1D_array'
+        print*, 'The subroutine Find_monotonous_LE'
         print*, 'cannot proceed, the value of Value0 is', Value0
         write(*, '(f25.16,f25.16,f25.16,f25.16)') Value0, Array(i_cur), Array(i_1), Array(i_2)
         pause 'STOPPED WORKING...'
@@ -1018,7 +1024,7 @@ subroutine Find_monotonous_LE(Array, Value0, Number)    ! monotoneausly increasi
                 coun = coun + 1
                 if (coun .GT. 1e3) then
                     print*, 'PROBLEM WITH CONVERGANCE IN'
-                    print*, 'Find_in_monotonous_1D_array', coun
+                    print*, 'Find_monotonous_LE', coun
                     write(*, '(f25.16,f25.16,f25.16,f25.16)') Value0, Array(i_cur), Array(i_1), Array(i_2)
                     pause 'STOPPED WORKING...'
                 endif
@@ -1084,6 +1090,7 @@ subroutine Find_in_monotonous_1D_array(Array, Value0, Number)
    endif    ! isnan
    Number = i_cur+1
 end subroutine Find_in_monotonous_1D_array
+
 
 subroutine Find_in_monotonous_2D_array(Array, Value0, Indx, Number)
    REAL(8), dimension(:,:), INTENT(in) :: Array ! in which we are looking for the Value
