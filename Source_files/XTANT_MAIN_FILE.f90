@@ -157,6 +157,7 @@ if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does 
    call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
 endif
 
+if (g_numpar%verbose) call print_time_step('Getting electron MFPs:', msec=.true., MPI_param=g_numpar%MPI_param)
 ! Read (or create) electronic mean free paths (both, inelastic and elastic):
 call get_MFPs(g_Scell, 1, g_matter, g_laser, g_numpar, g_Scell(1)%TeeV, g_Err) ! module "MC_cross_sections"
 !--------------------------------------------------------------
