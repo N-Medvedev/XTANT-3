@@ -456,7 +456,7 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
 #else ! use OpenMP instead
       !if (numpar%verbose) call print_time_step('Setting electron MFPs vs Te:', msec=.true., MPI_param=numpar%MPI_param)
       if (numpar%path_sep .EQ. '\') then	! if it is Windows: do parallel calculations/reading from files
-         !$omp PARALLEL private(i, Te_temp, chtemp, chtemp3)
+         !$omp PARALLEL private(i, Te_temp)
          !$omp do schedule(dynamic)
          do i = 1, N_Te_points   ! for all electronic temperature points
             Te_temp = dble((i-1)*1000)*g_kb_EV ! electronic temperature [eV]
