@@ -35,7 +35,7 @@ MODULE MC_cross_sections
 use Objects
 use Universal_constants
 use Little_subroutines, only : Find_in_array_monoton, linear_interpolation, print_progress, &
-                              interpolate_data_on_grid, find_order_of_number, exclude_doubles
+                              interpolate_data_on_grid, find_order_of_number, exclude_doubles, print_time_step
 use Dealing_with_files, only : Count_lines_in_file, read_file
 use Dealing_with_EADL, only : m_EPDL_file, READ_EPDL_TYPE_FILE_real, next_designator, Read_EPDL_data
 use Algebra_tools, only : sort_array
@@ -216,6 +216,7 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
    integer N_grid, N, FN, INFO
    character(300) :: File_name, Error_descript
    character(10) :: chtemp, chtemp2
+   character(50) :: chtemp3
    logical :: redo, file_opened, file_exists, read_well
    integer i, j, k, Nshl, my_id, Reason, count_lines, N_Te_points
    real(8) :: Ele, L, dEdx, Omega, ksum, fsum, Te_temp
@@ -453,14 +454,22 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
          call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{matter%Atoms(1)%El_MFP_vs_T(:)%L}', matter%Atoms(1)%El_MFP_vs_T(i)%L) ! module "MPI_subroutines"
       enddo
 #else ! use OpenMP instead
-      !$omp PARALLEL private(i, Te_temp)
-      !$omp do schedule(dynamic)
-      do i = 1, N_Te_points   ! for all electronic temperature points
-         Te_temp = dble((i-1)*1000)*g_kb_EV ! electronic temperature [eV]
-         call IMFP_vs_Te_files(matter, laser, numpar, Te_temp, i) ! below
-      enddo ! i = 1, N_Te_points
-      !$omp end do
-      !$omp end parallel
+      !if (numpar%verbose) call print_time_step('Setting electron MFPs vs Te:', msec=.true., MPI_param=numpar%MPI_param)
+      if (numpar%path_sep .EQ. '\') then	! if it is Windows: do parallel calculations/reading from files
+         !$omp PARALLEL private(i, Te_temp, chtemp, chtemp3)
+         !$omp do schedule(dynamic)
+         do i = 1, N_Te_points   ! for all electronic temperature points
+            Te_temp = dble((i-1)*1000)*g_kb_EV ! electronic temperature [eV]
+            call IMFP_vs_Te_files(matter, laser, numpar, Te_temp, i) ! below
+         enddo ! i = 1, N_Te_points
+         !$omp end do
+         !$omp end parallel
+      else ! it is lunux: do sequantial calculations (linux may have problems with file-opn inside OMP-parallel regions):
+         do i = 1, N_Te_points   ! for all electronic temperature points
+            Te_temp = dble((i-1)*1000)*g_kb_EV ! electronic temperature [eV]
+            call IMFP_vs_Te_files(matter, laser, numpar, Te_temp, i) ! below
+         enddo ! i = 1, N_Te_points
+      endif ! (numpar%path_sep .EQ. '\')
 #endif
    endselect
 
@@ -581,7 +590,7 @@ subroutine IMFP_vs_Te_files(matter, laser, numpar, Te, N_Te)
    integer, intent(in) :: N_Te   ! index
    !-------------------
    logical :: redo, file_exists, file_opened, read_well
-   character(10) :: chtemp, ch_Te
+   character(10) :: chtemp, ch_Te, chtemt2
    character(200) :: File_name
    integer :: Nshl, FN, N, N_grid, k, Reason, count_lines
    real(8) :: Ele, L, dEdx
@@ -606,11 +615,13 @@ subroutine IMFP_vs_Te_files(matter, laser, numpar, Te, N_Te)
    FN = 312+N_Te   ! file number
 
    inquire(file=trim(adjustl(File_name)),exist=file_exists) ! check if this file already exists
+   !write(*,*) FN, trim(adjustl(File_name)), file_exists
+
    if (file_exists) then ! IMFPs are already there
-      open(UNIT=FN, FILE = trim(adjustl(File_name)))
+      open(UNIT=FN, FILE = trim(adjustl(File_name)), status='old', action='readwrite')
       inquire(file=trim(adjustl(File_name)),opened=file_opened)
       if (.not.file_opened) then ! there is no such file, create a new one
-         open(UNIT=FN, FILE = trim(adjustl(File_name)))
+         open(UNIT=FN, FILE = trim(adjustl(File_name)), status='new', action='readwrite')
          inquire(file=trim(adjustl(File_name)),opened=file_opened)
          redo = .true. ! no data, need to recalculate the MFPs
          print*, 'Could not open file with MFP => recalculating MFP'
@@ -623,7 +634,8 @@ subroutine IMFP_vs_Te_files(matter, laser, numpar, Te, N_Te)
          endif
       endif
    else
-      open(UNIT=FN, FILE = trim(adjustl(File_name)))
+      !open(UNIT=FN, FILE = trim(adjustl(File_name)))
+      open(UNIT=FN, FILE = trim(adjustl(File_name)), status='new', action='readwrite')
       redo = .true. ! no data, need to recalculate the MFPs
       if (numpar%verbose) print*, 'No file with MFP present => calculating MFP'
    endif

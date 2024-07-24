@@ -7,8 +7,10 @@ EXEPATH = .
 
 ifeq ($(db),y)
 	EXE = $(EXEPATH)/XTANT_DEBUG.x
+	exe_name = /XTANT_DEBUG.x
 else
 	EXE = $(EXEPATH)/XTANT.x
+	exe_name = /XTANT.x
 endif
 LD = ld
 
@@ -62,6 +64,7 @@ else ifeq ($(c),mpi)
 	endif
 	F90FLAGS += -qmkl=cluster
 	EXE = $(EXEPATH)/XTANT_MPI.x
+	exe_name = /XTANT_MPI.x
 else ifeq ($(c),mpii)
 	F90 = mpiifort
 	F90FLAGS += -D MPI_USED
@@ -77,6 +80,7 @@ else ifeq ($(c),mpii)
 	endif
 	#LDFLAGS += -mkl=cluster
 	EXE = $(EXEPATH)/XTANT_MPI.x
+	exe_name = /XTANT_MPI.x
 else
 	F90 = ifort
 
@@ -110,32 +114,32 @@ default:
 ifeq ($(c),gf)
 	@echo "Compiling XTANT-3 with gfortran"
 	@echo "----------------------------------------------"
-	@echo "Run the code as: ./TREKIS.x"
+	@echo "Run the code as: ." $(exe_name)
 	@echo "----------------------------------------------"
 else ifeq ($(c),gf6)
 	@echo "Compiling XTANT-3 with gfortran 6.1.0"
 	@echo "----------------------------------------------"
-	@echo "Run the code as: ./TREKIS.x"
+	@echo "Run the code as: ." $(exe_name)
 	@echo "----------------------------------------------"
 else ifeq ($(c),if13)
 	@echo "Compiling XTANT-3 with ifort 2013"
 	@echo "----------------------------------------------"
-	@echo "Run the code as: ./TREKIS.x"
+	@echo "Run the code as: ." $(exe_name)
 	@echo "----------------------------------------------"
 else ifeq ($(c),mpi)
 	@echo "Compiling XTANT-3 with mpif90"
 	@echo "----------------------------------------------"
-	@echo "Run the code as: mpirun -np [n] ./XTANT_MPI.x"
+	@echo "Run the code as: mpirun -np [n] ." $(exe_name)
 	@echo "----------------------------------------------"
 else ifeq ($(c),mpii)
 	@echo "Compiling XTANT-3 with mpiifort"
 	@echo "----------------------------------------------"
-	@echo "Run the code as: mpiexec -np [n] ./XTANT_MPI.x"
+	@echo "Run the code as: mpiexec -np [n] ." $(exe_name)
 	@echo "----------------------------------------------"
 else
 	@echo "Compiling XTANT-3 with ifort"
 	@echo "----------------------------------------------"
-	@echo "Run the code as: ./TREKIS.x"
+	@echo "Run the code as: ." $(exe_name)
 	@echo "----------------------------------------------"
 endif
 
