@@ -4033,11 +4033,15 @@ subroutine read_DFTB_TB_Params(FN, i,j, TB_Hamil, TB_Repuls, numpar, matter, Err
    inquire(file=trim(adjustl(Folder_name)),exist=file_exist)
    if (file_exist) then ! such a file exists, use it
       File_name = trim(adjustl(Folder_name))
-   else  ! no file => assume it is a directory name, and use default file name:
-      ! Construct name of the skf file:
-      call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
+   else  ! no file found:
+      File_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(Folder_name)) ! try relative path inside m_INPUT_directory
+      inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      if (.not.file_exist) then ! no file either => assume it is a directory name, and use default file name:
+         ! Construct name of the skf file:
+         call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
                                  File_name)    ! module "Dealing_with_DFTB"
-      File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+         File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+      endif
    endif
 
    ! Check if such DFTB parameterization exists:
@@ -4087,7 +4091,7 @@ subroutine read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matt
    character(*), intent(out) :: Error_descript	! error save
    integer, intent(out) :: INFO	! error description
    !------------------------------------------------------
-   character(200) :: Folder_name, File_name, Inner_folder_name, path_to_skf
+   character(200) :: Folder_name, File_name, Inner_folder_name, path_to_skf, Folder_name_inner
    integer count_lines, Reason, i_cur, ind, FN_skf, ToA, N_basis_siz
    logical file_exist, file_opened, read_well
    INFO = 0
@@ -4113,7 +4117,7 @@ subroutine read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matt
          goto 3426
       endif
       Folder_name = trim(adjustl(TB_Hamil(i,j)%param_name))    ! folder with chosen parameters sets
-   case default   ! it is a parameterization within the predefined directory 'DFTB'
+   case default   ! it is a parameterization within the predefined directory 'DFTB' or 'DFTB_no_repulsion'
       TB_Hamil(i,j)%param_name = trim(adjustl(path_to_skf)) ! name of the directory with skf files
       ! folder with all DFTB data:
       Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(m_DFTB_norep_directory))//numpar%path_sep
@@ -4151,11 +4155,16 @@ subroutine read_DFTB_TB_Params_no_rep(FN, i,j, TB_Hamil, TB_Repuls, numpar, matt
    inquire(file=trim(adjustl(Folder_name)),exist=file_exist)
    if (file_exist) then ! such a file exists, use it
       File_name = trim(adjustl(Folder_name))
-   else  ! no file => assume it is a directory name, and use default file name:
-      ! Construct name of the skf file:
-      call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
+   else  ! no file found:
+      ! Check if it is a relative path inside the INPUT_DATA directory:
+      File_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(Folder_name))
+      inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      if (.not.file_exist) then ! no file either => assume it is a directory name, and use default file name:
+         ! Construct name of the skf file:
+         call construct_skf_filename( trim(adjustl(matter%Atoms(i)%Name)), trim(adjustl(matter%Atoms(j)%Name)), &
                                  File_name, '_no_repulsion')   ! module "Dealing_with_DFTB"
-      File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+         File_name = trim(adjustl(Folder_name))//numpar%path_sep//trim(adjustl(File_name))
+      endif
    endif
 
    ! Check if such DFTB parameterization exists:
