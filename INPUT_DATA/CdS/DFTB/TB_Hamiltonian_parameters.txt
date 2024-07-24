@@ -1,0 +1,3 @@
+DFTB
+CdSe-O-H-C-N					! DFTB parameterization
+7.0d0	0.1d0					! cut-off radius
