@@ -74,7 +74,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    real(8), dimension(:,:), allocatable :: DOS, DOS_temp  ! [eV] grid; [a.u.] DOS
    real(8), dimension(:,:,:), allocatable :: DOS_partial, DOS_partial_temp ! partial DOS made of each orbital type
    logical :: anything_to_do
-   integer :: N_incr, Nstart, Nend
+   integer :: N_incr, Nstart, Nend, Thread_num
    character(100) :: error_part
 
    !-----------------------------------------------
@@ -124,6 +124,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    !Nend = Nsiz
    !! Do the cycle (parallel) calculations:
    !do Ngp = Nstart, Nend, N_incr  ! each process does its own part
+
    ! Do sequential do-cycle here, because parallel calculations are inside the subroutines for diagonalization etc.:
    do Ngp = 1, Nsiz
       ! Split total index into 3 coordinates indices:
@@ -217,7 +218,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
 !    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'DOS_partial', DOS_partial) ! module "MPI_subroutines"
 
 #else    ! OpenMP to use instead
-   !$omp PARALLEL private(ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, &
+   !$omp PARALLEL private(Thread_num, ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, &
    !$omp                  kappa_temp, kappa_ee_temp, kappa_mu_grid_temp, kappa_Ce_grid_temp, DOS_temp, DOS_partial_temp)
    if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N_wgrid), source = 0.0d0) ! all are there
    if (.not.allocated(kappa_temp)) allocate(kappa_temp(Nsiz_Te), source = 0.0d0)
@@ -240,7 +241,8 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid) ! module "TB"
 
 #ifdef _OPENMP
-      if (numpar%verbose) write(*,'(a,i4,a,i6,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'Thread #', OMP_GET_THREAD_NUM(), &
+      Thread_num = OMP_GET_THREAD_NUM()
+      if (numpar%verbose) write(*,'(a,i4,a,i6,i3,i3,i3,f9.4,f9.4,f9.4,a)') 'Thread #', Thread_num, &
                                      ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' k-points'
 #else
       if (numpar%verbose) write(*,'(a,i7,i3,i3,i3,f9.4,f9.4,f9.4,a)') ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' k-points'

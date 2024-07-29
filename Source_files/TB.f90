@@ -2646,7 +2646,11 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
          !call diagonalize_complex8_Hamiltonian(numpar, CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
          call diagonalize_complex_Hamiltonian(numpar, CHij_temp, Ei, CSij, CHij_orth, CWF_orth)    ! below
       else  ! gamma point, no need to diagonalize
-         allocate(Ei(size(Scell(NSC)%Ei)), source=Scell(NSC)%Ei)
+         if (.not.allocated(Ei)) then
+            allocate(Ei(size(Scell(NSC)%Ei)), source=Scell(NSC)%Ei)
+         else
+            Ei = Scell(NSC)%Ei
+         endif
          !CHij_temp = Scell(NSC)%Hij
       end if
    else  ! orthogonal
@@ -2660,7 +2664,11 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
          call diagonalize_complex_Hamiltonian(numpar, CHij_temp, Ei, CHij_orth=CHij_orth, CWF_orth=CWF_orth)    ! below
          !CWF_orth = TRANSPOSE(CWF_orth)   ! test
       else  ! gamma point, no need to diagonalize
-         allocate(Ei(size(Scell(NSC)%Ei)), source=Scell(NSC)%Ei)
+         if (.not.allocated(Ei)) then
+            allocate(Ei(size(Scell(NSC)%Ei)), source=Scell(NSC)%Ei)
+         else
+            Ei = Scell(NSC)%Ei
+         endif
          !CHij_temp = Scell(NSC)%Hij
       end if
    endif
