@@ -2008,8 +2008,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta = FN
-      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)  config')
-      call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K]')
+      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)  config  F*v   conf  hyperconf')
+      call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K] [-]   [K]   [K]')
 
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
@@ -3785,8 +3785,8 @@ subroutine gnu_at_temperatures(File_name, file_Ta, t0, t_last, eps_name)
       !write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:3 w l lw 1 dashtype 4 title "Entropic" ,\'
       !write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lw 1.5 dashtype 5 title "Potential" ,\'
       !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Ta)), '" u 1:8 w l lw 2 dashtype 2 title "Sine^2" ,\'
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "', trim(adjustl(file_Ta)), '" u 1:7 w l lt rgb "blue" lw LW title "Virial" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:9 w l lt rgb "green" lw 2 dashtype "__" title "Configurational" ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "', trim(adjustl(file_Ta)), '" u 1:11 w l lt rgb "blue" lw LW title "Configurational" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:12 w l lt rgb "green" lw 2 dashtype "__" title "Hyperconfig" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:2 w l lt rgb "black" lw LW title "Kinetic" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lt rgb "red" dashtype "_." lw 2 title "Fluctuational" '
    else ! It is linux
@@ -3795,8 +3795,8 @@ subroutine gnu_at_temperatures(File_name, file_Ta, t0, t_last, eps_name)
       !write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:3 w l lw 1 dashtype 4 title \"Entropic\" ,\'
       !write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lw 1.5 dashtype 5 title \"Potential\" ,\'
       !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:8 w l lw 2 dashtype 2 title \"Sine^2\" ,\'
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:7 w l lt rgb \"blue\" lw \"$LW\" title \"Virial\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:9 w l lt rgb \"green\" lw 2 dashtype \"__\" title \"Configurational\" ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:11 w l lt rgb \"blue\" lw \"$LW\" title \"Configurational\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:12 w l lt rgb \"green\" lw 2 dashtype \"__\" title \"Hyperconfig\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:2 w l lt rgb \"black\" lw \"$LW\" title \"Kinetic\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lt rgb \"red\" dashtype \"_.\" lw 2 title \"Fluctuational\" '
    endif
