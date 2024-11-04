@@ -261,6 +261,10 @@ if (g_numpar%verbose) call print_time_step('Pressure calculated succesfully:', m
 call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
 if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
+! Calculate diffraction peaks:
+call get_diffraction_peaks(g_Scell, g_matter, g_numpar)  ! module "Atomic_tools"
+if (g_numpar%verbose) call print_time_step('Diffraction peaks calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+
 ! Calculate electron heat capacity, entropy, and orbital-resolved data:
 call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
 
@@ -414,6 +418,9 @@ do while (g_time .LT. g_numpar%t_total)
 
       ! Calculate the mean square displacement of all atoms:
       call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD, g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
+
+      ! Calculate diffraction peaks:
+      call get_diffraction_peaks(g_Scell, g_matter, g_numpar)  ! module "Atomic_tools"
 
       ! Calculate electron heat capacity, entropy, and orbital-resolved data:
       call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
@@ -785,6 +792,8 @@ subroutine vary_size(do_forces, Err)   !  THIS SUBROUTINE USES GLOBAL VARIABLES
    call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
    if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
+   ! Calculate diffraction peaks:
+   call get_diffraction_peaks(g_Scell, g_matter, g_numpar)  ! module "Atomic_tools"
 
    !do i_test = 1,300 !<-
    do i_test = 1, g_numpar%change_size_step+1

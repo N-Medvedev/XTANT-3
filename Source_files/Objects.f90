@@ -627,6 +627,15 @@ type Displacement_analysis
 end type Displacement_analysis
 
 
+!==============================================
+type :: diffraction_peaks
+   real(8) :: hw    ! photon energy of the diffraction probe [eV]
+   real(8) :: l     ! lambda, photon wavelength [A]
+   real(8) :: q     ! photon momentum [1/A]
+   real(8), dimension(:), allocatable :: I_diff_peak
+   integer, dimension(:,:), allocatable :: ijk_diff_peak
+end type diffraction_peaks
+
 
 !==============================================
 ! Supercell as object:
@@ -660,6 +669,9 @@ type Super_cell
    real(8) :: MSD	! [A^2] mean square displacements average over all atoms
    real(8), dimension(:), allocatable :: MSDP	! [A^2] mean square displacements for atoms of different sorts
    type(Displacement_analysis), dimension(:), allocatable :: Displ ! [A] mean displacements for atoms masked
+   ! Diffraction peaks description:
+   type(diffraction_peaks) :: diff_peaks
+   ! Electronic parameters:
    real(8) :: mu	! [eV] electron chemical potential
    real(8), dimension(:), allocatable :: fe ! low-energy electron distribution
    real(8), dimension(:), allocatable :: fe_eq ! equivalent Fermi electron distribution
@@ -788,6 +800,7 @@ type At_data
    real(8) :: percentage ! contribution to the compound
    integer :: NVB	! number valence electrons according to periodic table
    real(8) :: Hubbard_U ! [eV] Hubbard U for SCC
+   real(8) :: form_a(5) ! coefficients needed to construct atomic form factors
    type(Basis_set), dimension(:), allocatable :: Cart_Basis  ! Cartesian GTO basis set functions for this element (if xTB is used)
    type(Basis_set), dimension(:), allocatable :: Spher_Basis  ! Spherical (pure) GTO basis set functions for this element (if xTB is used)
    real(8) :: mulliken_Ne   ! electron population according to Mulliken analysis
@@ -876,7 +889,6 @@ type :: Used_MPI_parameters
     character(10) :: rank_ch    ! rank process as character (for printout)
     real(8) :: Wt0, Wt1   ! wall time defined by MPI
 end type Used_MPI_parameters
-
 
 
 type Numerics_param
@@ -978,7 +990,7 @@ type Numerics_param
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
-   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot, FN_testmode
+   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot, FN_testmode, FN_diff_peaks
    integer, dimension(:), allocatable :: FN_displacements
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
@@ -992,7 +1004,7 @@ type Numerics_param
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
    logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS, do_kappa_dyn
-   logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN, save_CDF
+   logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN, save_CDF, save_diff_peaks
    integer :: Mulliken_model
    integer :: ind_fig_extention, change_size_step
    real(8) :: change_size_max, change_size_min

@@ -60,7 +60,8 @@ get_mean_square_displacement, Cooling_atoms, Coordinates_abs_to_rel, get_Ekin, m
 remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_atoms_Y4, check_periodic_boundaries, &
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
 Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
-update_atomic_masks_displ, numerical_acceleration, Get_testmode_add_data, integrated_atomic_distribution
+update_atomic_masks_displ, numerical_acceleration, Get_testmode_add_data, integrated_atomic_distribution, &
+get_diffraction_peaks
 
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
@@ -2160,6 +2161,18 @@ subroutine get_temperature_from_energy(Na, Ekin, Ta)
    real(8), intent(out) :: Ta ! temperature of atoms [eV]
    Ta = 2.0d0/(3.0d0*Na - 6.0d0)*Ekin ! temperature in a box with periodic boundary
 end subroutine get_temperature_from_energy
+
+
+
+subroutine get_diffraction_peaks(Scell, matter, numpar)
+   type(Super_cell), dimension(:), intent(inout), target :: Scell	! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter     ! material parameters
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   !--------------------------------
+
+end subroutine get_diffraction_peaks
+
+
 
 
 subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! currently, it calculates mean displacement, without sqaring it
