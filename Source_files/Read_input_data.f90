@@ -548,7 +548,7 @@ end subroutine Read_Input_Files
 
 subroutine get_atomic_form_factors(numpar, matter, Scell)
    type(Solid), intent(inout) :: matter   ! all material parameters
-   type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    !-----------------------------
    integer :: FN7, i
