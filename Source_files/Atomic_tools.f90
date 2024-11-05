@@ -2192,7 +2192,8 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
              (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/Scell(1)%Supce(2,2))**2 + &
              (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/Scell(1)%Supce(3,3))**2 )      ! [1/A]
          ! Convert units for form-factor evaluation:
-         q = q * 1.0d-10 * g_h      ! [1/A] -> [kg*m/s]
+         q = q * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
+         !print*, 'q', q, q /(1.0d10 * g_h)
          !-------------------------------
 
          ! kind of atom:
@@ -2203,7 +2204,11 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
          FF = form_factor(q, matter%Atoms(KOA)%form_a, Z)   ! below
 
          ! Scattering amplitude:
-         Fijk = Fijk + FF * exp(-g_2Pi * g_CI * (SUM(dble(Scell(1)%diff_peaks%ijk_diff_peak(:,i)) * Scell(1)%MDAtoms(j)%S(:)) ) )
+         !Fijk = Fijk + FF * exp(-g_2Pi * g_CI * (SUM(dble(Scell(1)%diff_peaks%ijk_diff_peak(:,i)) * Scell(1)%MDAtoms(j)%S(:)) ) )
+         Fijk = Fijk + FF * exp(-g_2Pi * g_CI * ( &
+                dble(Scell(1)%diff_peaks%ijk_diff_peak(1,i)) * Scell(1)%MDAtoms(j)%S(1) * matter%cell_x + &
+                dble(Scell(1)%diff_peaks%ijk_diff_peak(2,i)) * Scell(1)%MDAtoms(j)%S(2) * matter%cell_y + &
+                dble(Scell(1)%diff_peaks%ijk_diff_peak(3,i)) * Scell(1)%MDAtoms(j)%S(3) * matter%cell_z ) )
       enddo
 
       ! Intensity:

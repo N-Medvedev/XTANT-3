@@ -553,13 +553,28 @@ subroutine get_atomic_form_factors(numpar, matter, Scell)
    !-----------------------------
    integer :: FN7, i
    character(200) :: Folder_name, Path, File_form_factors
-   logical :: read_well
+   logical :: file_exist, read_well
    !---------------------
    ! Atomic form factors:
    if (numpar%save_diff_peaks) then ! we need form factors
       Folder_name = trim(adjustl(numpar%input_path))
       Path = trim(adjustl(Folder_name))//trim(adjustl(m_Atomic_parameters))
       File_form_factors = trim(adjustl(Path))//trim(adjustl(numpar%path_sep))//trim(adjustl(m_form_factors))
+
+      inquire(file=trim(adjustl(File_form_factors)),exist=file_exist)
+
+      if (.not.file_exist) then     ! no file found
+         read_well = .false.
+         if (allocated(Scell%diff_peaks%I_diff_peak)) deallocate(Scell%diff_peaks%I_diff_peak)
+         if (allocated(Scell%diff_peaks%ijk_diff_peak)) deallocate(Scell%diff_peaks%ijk_diff_peak)
+         numpar%save_diff_peaks = .false. ! cannot get diffraction peaks without form factors
+         if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            print*, 'File not found: '//trim(adjustl(File_form_factors))
+            print*, 'Proceed without calculations of diffraction peaks'
+         endif
+         return   ! nothing else to do here
+      endif
+
       open(newunit = FN7, FILE = trim(adjustl(File_form_factors)), status = 'old', action='read')
       read_well = .true.      ! to start with
 
@@ -569,6 +584,11 @@ subroutine get_atomic_form_factors(numpar, matter, Scell)
          if (.not.read_well) then ! cannot do diffraction peaks:
             if (allocated(Scell%diff_peaks%I_diff_peak)) deallocate(Scell%diff_peaks%I_diff_peak)
             if (allocated(Scell%diff_peaks%ijk_diff_peak)) deallocate(Scell%diff_peaks%ijk_diff_peak)
+            numpar%save_diff_peaks = .false. ! cannot get diffraction peaks without form factors
+            if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               print*, 'Could not read form factors from: '//trim(adjustl(File_form_factors))
+               print*, 'Proceed without calculations of diffraction peaks'
+            endif
             exit
          endif
          !print*, i, matter%Atoms(i)%form_a(:)
