@@ -65,6 +65,7 @@ get_diffraction_peaks
 
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
+real(8) :: m_Thom_factor, m_five_sixteenth
 
 !=======================================
 ! Yoshida parameters for 4th order MD integrator:
@@ -83,6 +84,8 @@ parameter(m_d2 = m_w0)
 parameter(m_d3 = m_d1)
 !=======================================
 
+parameter (m_Thom_factor = 20.6074d0)     ! Constant for form factors [1]
+parameter (m_five_sixteenth = 5.0d0/16.0d0)
 
  contains
 
@@ -2169,9 +2172,72 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
    type(Solid), intent(in) :: matter     ! material parameters
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    !--------------------------------
+   integer :: i, j
+   real(8) :: Nat, FF, q, Z
+   complex :: Fijk
+   integer, pointer :: KOA
 
+   ! Number of atoms:
+   Nat = dble(size(Scell(1)%MDAtoms))
+
+   ! For all selected peaks:
+   do i = 1, size(Scell(1)%diff_peaks%I_diff_peak)
+      Fijk = cmplx(0.0d0,0.0d0)     ! to start with
+      ! Sum contributions form all atoms:
+      do j = 1, int(Nat)
+         !-------------------------------
+         ! This part only works for orthagonal supercell (to be improved later!):
+         q = g_2Pi * sqrt ( &
+             (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/Scell(1)%Supce(1,1))**2 + &
+             (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/Scell(1)%Supce(2,2))**2 + &
+             (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/Scell(1)%Supce(3,3))**2 )      ! [1/A]
+         ! Convert units for form-factor evaluation:
+         q = q * 1.0d-10 * g_h      ! [1/A] -> [kg*m/s]
+         !-------------------------------
+
+         ! kind of atom:
+         KOA => Scell(1)%MDatoms(j)%KOA
+         Z = matter%Atoms(KOA)%Z  ! Z of element #j
+
+         ! form factor:
+         FF = form_factor(q, matter%Atoms(KOA)%form_a, Z)   ! below
+
+         ! Scattering amplitude:
+         Fijk = Fijk + FF * exp(-g_2Pi * g_CI * (SUM(dble(Scell(1)%diff_peaks%ijk_diff_peak(:,i)) * Scell(1)%MDAtoms(j)%S(:)) ) )
+      enddo
+
+      ! Intensity:
+      Scell(1)%diff_peaks%I_diff_peak(i) = Fijk * conjg(Fijk)
+      ! Arb.units => normalized to number of atoms in the simulation:
+      Scell(1)%diff_peaks%I_diff_peak(i) = Scell(1)%diff_peaks%I_diff_peak(i) / Nat
+   enddo
+
+   nullify(KOA)
 end subroutine get_diffraction_peaks
 
+
+
+pure function form_factor(q, a, Z) result(FF)
+   ! [1]  F. Salvat, J. M. Fernandez-Varea, E. Acosta, J. Sempau
+   ! "PENELOPE: A Code System for Monte Carlo Simulation of Electron and Photon Transport", OECD (2001)
+   real(8) FF
+   real(8), intent(in) :: q, Z, a(5)      ! [kg*m/s] ; [-]; [-]
+   real(8) fxz, Fk, x, x2, x4, demf, b, CapQ, al, mc
+   mc = g_me*g_cvel
+   x = q/mc*m_Thom_factor     ! [1] Eq.(2.5)
+   x2 = x*x
+   x4 = x2*x2
+   demf = 1.0d0 + a(4)*x2 + a(5)*x4
+   fxz = Z*(1.0d0 + a(1)*x2 + a(2)*x*x2 + a(3)*x4) / (demf*demf)     ! [1] Eq.(2.7)
+   FF = fxz
+   if ((Z > 10.0d0) .and. (fxz < 2.0d0)) then
+      al = g_alpha*(Z - m_five_sixteenth)    ! [1] Eq.(2.9)
+      b = sqrt(1.0d0 - al*al)    ! [1] Eq.(2.9)
+      CapQ = q/(2.0d0*mc*al)     ! [1] Eq.(2.9)
+      Fk = sin(2.0d0*b*atan(CapQ))/(b*CapQ*(1.0d0 + CapQ*CapQ)**b)   ! [1] Eq.(2.8)
+      if (FF < Fk) FF = Fk
+   endif
+end function form_factor
 
 
 

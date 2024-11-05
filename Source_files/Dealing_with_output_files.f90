@@ -2001,7 +2001,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
          write(text1, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(1,i)
          write(text2, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(2,i)
          write(text3, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(3,i)
-         chtemp2 = trim(adjustl(chtemp2))//'    <'//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//'>'//' '
+         chtemp2 = trim(adjustl(chtemp2))//'    ('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'//' '
       enddo
       !print*, trim(adjustl(chtemp2))
       call create_file_header(numpar%FN_diff_peaks, '#Time  '//trim(adjustl(chtemp2)) )    ! below
@@ -3117,7 +3117,7 @@ function make_diff_peak_name(Scell, i) result(peak_name)
    write(text1, '(i0)') Scell%diff_peaks%ijk_diff_peak(1,i)
    write(text2, '(i0)') Scell%diff_peaks%ijk_diff_peak(2,i)
    write(text3, '(i0)') Scell%diff_peaks%ijk_diff_peak(3,i)
-   peak_name = '<'//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//'>'
+   peak_name = '('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'
 end function make_diff_peak_name
 
 
@@ -6143,7 +6143,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(text1, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(1,i)
          write(text2, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(2,i)
          write(text3, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(3,i)
-         write(print_to,'(a)', advance='no') '<'//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//'>'//' '
+         write(print_to,'(a)', advance='no') '('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'//' '
       enddo
       write(print_to,'(a)') ''
       optional_output = .true.   ! there is at least some optional output
