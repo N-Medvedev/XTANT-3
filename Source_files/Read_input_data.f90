@@ -501,6 +501,9 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
 
       ! Read atomic form factors from file:
       call get_atomic_form_factors(numpar, matter, Scell(i))    ! below
+      ! Set powder diffraction arrays:
+      call set_powder_diffraction_grid(numpar, Scell(i))  ! below
+
    enddo
 
    ! Check if the user provided atomic data to overwrite the default values:
@@ -544,6 +547,30 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
 3416 continue !exit in case if input files could not be read
 end subroutine Read_Input_Files
 
+
+subroutine set_powder_diffraction_grid(numpar, Scell)
+   type(Numerics_param), intent(in) :: numpar  ! all numerical parameters
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   !----------------
+   integer :: i, Nsiz
+   real(8) :: d_theta
+
+   if (numpar%save_diff_peaks) then ! only if diffraction is required
+      ! Choose the number of points:
+      d_theta = 1.0d0   ! [deg]
+      Nsiz = int(360.0d0 / d_theta)  ! points in theta grid [deg]
+      allocate(Scell%diff_peaks%two_theta(Nsiz))
+      allocate(Scell%diff_peaks%I_powder(Nsiz))
+      ! Set the 2-theta grid:
+      do i = 1, Nsiz
+         Scell%diff_peaks%two_theta(i) = d_theta*dble(i)
+         !print*, i, Scell%diff_peaks%two_theta(i)
+      enddo
+      ! [deg] -> [rad]
+      Scell%diff_peaks%two_theta(:) = Scell%diff_peaks%two_theta(:) * g_Pi/180.0d0
+   endif
+   !pause 'set_powder_diffraction_grid'
+end subroutine set_powder_diffraction_grid
 
 
 subroutine get_atomic_form_factors(numpar, matter, Scell)
@@ -6818,7 +6845,10 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
    case ('Diffraction', 'diffraction', 'DIFFRACTION', 'Diffract', 'DIFFRACT', 'diffract', 'diffraction_peaks')
       ! Calculate evolution of the following diffraction peaks:
       read(string_in,*,IOSTAT=Reason) string, N, Scell(1)%diff_peaks%hw ! number of peaks; photon enegry [eV]
-      if (N > 0) then   ! allocate number of peaks:
+      ! Get the photon wavelength:
+      Scell(1)%diff_peaks%l = g_2Pi * g_h * g_cvel / (Scell(1)%diff_peaks%hw*g_e)     ! [m]
+
+      if (N >= 0) then   ! allocate number of peaks:
          numpar%save_diff_peaks = .true.
          allocate(Scell(1)%diff_peaks%I_diff_peak(N), source = 0.0d0)
          allocate(Scell(1)%diff_peaks%ijk_diff_peak(3,N), source = 0)

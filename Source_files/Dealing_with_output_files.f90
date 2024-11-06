@@ -6138,7 +6138,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    endif
 
    if (numpar%save_diff_peaks) then
-      write(print_to,'(a)') ' Diffraction peaks:'
+      write(text1, '(f16.2)') Scell(1)%diff_peaks%hw
+      write(text2, '(f16.4)') Scell(1)%diff_peaks%l*1.0d10
+      write(print_to,'(a)') ' Diffraction peaks for X-ray ('//trim(adjustl(text1))//' [eV], '//trim(adjustl(text2))//' [A]):'
       do i = 1, size(Scell(1)%diff_peaks%I_diff_peak)
          write(text1, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(1,i)
          write(text2, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(2,i)

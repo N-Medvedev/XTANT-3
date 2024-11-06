@@ -38,7 +38,7 @@ complex :: g_CI
 
 ! Conversion coefficients:
 real(8) :: g_au2A, g_A2au, g_au2ev, g_ev2au, g_au2am, g_am2au, g_au2fs, g_fs2au, g_ev2kc, g_kc2ev, g_au2kc, g_kc2au, g_au2ic, &
-g_ic2au, g_ev2ic, g_ic2ev, g_ev2kj, g_kj2ev, g_in2cm, g_ft2m, g_yd2m, g_cm2in, g_m2ft, g_m2yd, g_ev2Ry
+g_ic2au, g_ev2ic, g_ic2ev, g_ev2kj, g_kj2ev, g_in2cm, g_ft2m, g_yd2m, g_cm2in, g_m2ft, g_m2yd, g_ev2Ry, g_rad2deg, g_deg2rad
 
 !UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU
 ! Universal constants:
@@ -127,6 +127,8 @@ parameter (g_m2ft	= 3.2808398950131d0)	! [m] ->  [feet]
 parameter (g_m2yd	= 1.0936132983377d0)	! [m] -> [yard]
 parameter (g_ms2Afs = 1.0d-5)                   ! [m/s] -> [A/fs]
 parameter (g_Afs2ms = 1.0d5)                    ! [A/fs] -> [m/s]
+parameter (g_rad2deg = 180.0d0/g_Pi)    ! [rad] -> [deg]
+parameter (g_deg2rad = g_Pi/180.0d0)    ! [deg] -> [rad]
 !UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU
 
 END MODULE Universal_constants
