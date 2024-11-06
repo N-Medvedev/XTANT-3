@@ -3078,9 +3078,9 @@ subroutine gnu_diffraction_peaks(Scell, File_name, file_diffraction_peaks, t0, t
       endif
    else ! more than one peak:
 
+      peak_name = make_diff_peak_name(Scell, 1) ! below
       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
          ! First peak:
-         peak_name = make_diff_peak_name(Scell, 1) ! below
          write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_diffraction_peaks)), ' "u 1:2 w l lw LW title "'//trim(adjustl(peak_name))//'" ,\'
          ! Next peaks:
          do i = 2, size(Scell%diff_peaks%I_diff_peak)-1
