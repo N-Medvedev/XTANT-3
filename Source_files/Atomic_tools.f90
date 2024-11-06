@@ -2217,6 +2217,15 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
       Scell(1)%diff_peaks%I_diff_peak(i) = Scell(1)%diff_peaks%I_diff_peak(i) / Nat
    enddo
 
+   ! First value for normalization:
+   if (.not.allocated(Scell(1)%diff_peaks%I_diff_peak_first)) then ! save the first value
+      allocate(Scell(1)%diff_peaks%I_diff_peak_first ( size(Scell(1)%diff_peaks%I_diff_peak) ) )
+      Scell(1)%diff_peaks%I_diff_peak_first = Scell(1)%diff_peaks%I_diff_peak
+   endif
+
+   ! Normalize the peak intensities to the initial values:
+   Scell(1)%diff_peaks%I_diff_peak = Scell(1)%diff_peaks%I_diff_peak/Scell(1)%diff_peaks%I_diff_peak_first
+
    nullify(KOA)
 end subroutine get_diffraction_peaks
 

@@ -632,7 +632,7 @@ type :: diffraction_peaks
    real(8) :: hw    ! photon energy of the diffraction probe [eV]
    real(8) :: l     ! lambda, photon wavelength [A]
    real(8) :: q     ! photon momentum [1/A]
-   real(8), dimension(:), allocatable :: I_diff_peak
+   real(8), dimension(:), allocatable :: I_diff_peak, I_diff_peak_first
    integer, dimension(:,:), allocatable :: ijk_diff_peak
 end type diffraction_peaks
 
