@@ -53,7 +53,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 24.07.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 08.11.2024)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -166,12 +166,20 @@ subroutine write_output_files(numpar, time, matter, Scell)
       if (Scell(1)%eps%all_w) call write_optical_all_hw(numpar%FN_all_w, time, Scell(1)%eps) ! CDF spectrum
       if (numpar%save_NN) call save_nearest_neighbors(numpar%FN_neighbors, Scell, 1, time)   ! atomic nearest neighbors
 
+
+      if (numpar%save_diff_peaks) then ! selected diffraction peaks and powder spectrum
+         call save_diffraction_peaks(numpar%FN_diff_peaks, time, Scell(1))    ! below
+         call save_diffraction_powder(numpar%FN_diff_powder, time, Scell(1))    ! below
+      endif
+
+
       if (numpar%save_testmode) then   ! testmode additional data (center of mass, rotation, total force, etc.)
          call save_testmode_data(numpar%FN_testmode, time, Scell(1))  ! below
       endif
 
    enddo ! NSC
 end subroutine write_output_files
+
 
 
 subroutine printout_CDF_file(numpar, matter, Scell)
@@ -1453,7 +1461,7 @@ end subroutine write_atomic_relatives
 subroutine write_numbers(FN, time, Scell)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: time	! [fs]
-   type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    !write(FN,'(f25.16,f25.16,es,es25.16,es25.16,es25.16,es25.16)') time, Scell%Ne_low/dble(Scell%Na), Scell%Ne_CB/dble(Scell%Na), &
    write(FN,'(f25.16,f25.16,es,es25.16,es25.16,es25.16,es25.16)') time, &
       (Scell%Ne_low-Scell%Ne_CB)/dble(Scell%Na), &    ! valence-band electrons (below E_fermi)
@@ -1542,7 +1550,7 @@ end subroutine write_temperatures_n_displacements
 subroutine save_testmode_data(FN, time, Scell)  ! center-of-mass, rotation, total forces, etc.
    integer, intent(in) :: FN      ! file number to write to
    real(8), intent(in) :: time   ! [fs]
-   type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    !-------------------------------
    write(FN, '(es25.16, $)') time, &   ! time
                              Scell%V_CoM, & ! center of mass velosity (3)
@@ -1556,7 +1564,7 @@ end subroutine save_testmode_data
 subroutine write_sectional_displacements(FN_displacements, time, Scell, matter) ! atomic displaecements
    integer, dimension(:), intent(in) :: FN_displacements   ! file numbers to write to
    real(8), intent(in) :: time   ! [fs]
-   type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter ! parameters of the material
    !-------------------------------
    integer :: Nsiz, i, j, N_at
@@ -1582,8 +1590,41 @@ end subroutine write_sectional_displacements
 
 
 
+subroutine save_diffraction_peaks(FN, time, Scell)
+   integer, intent(in) :: FN  ! file number to save to
+   real(8), intent(in) :: time   ! [fs]
+   type(Super_cell), intent(in):: Scell ! super-cell with all the atoms inside
+   !--------------
+   integer :: i
+
+   write(FN, '(es)', advance = 'no') time
+   do i = 1, size(Scell%diff_peaks%I_diff_peak)
+      write(FN, '(es)', advance = 'no') Scell%diff_peaks%I_diff_peak(i)
+   enddo
+   write(FN, '(a)') ''  ! next line
+end subroutine save_diffraction_peaks
+
+
+
+subroutine save_diffraction_powder(FN, time, Scell)
+   integer, intent(in) :: FN  ! file number to save to
+   real(8), intent(in) :: time   ! [fs]
+   type(Super_cell), intent(in):: Scell ! super-cell with all the atoms inside
+   !--------------
+   integer :: i
+
+   write(FN,'(a,f25.16)') '#', time
+   do i = 1, size(Scell%diff_peaks%two_theta)
+      write(FN, '(f25.16,es)') Scell%diff_peaks%two_theta(i)*g_rad2deg, Scell%diff_peaks%I_powder(i)
+   enddo
+   write(FN, '(a)') ''
+   write(FN, '(a)') ''
+end subroutine save_diffraction_powder
+
+
+
 subroutine prepare_output_files(Scell, matter, laser, numpar, TB_Hamil, TB_Repuls, Err)
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter ! parameters of the material
    type(Pulse), dimension(:), intent(in) :: laser	! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -1748,7 +1789,7 @@ subroutine prepare_output_files(Scell, matter, laser, numpar, TB_Hamil, TB_Repul
    endif
 
    ! Prepare all the output files (create and write titles:)
-   call create_output_files(Scell,matter,laser,numpar)
+   call create_output_files(Scell,matter,laser,numpar)      ! below
 
 9999 continue
 end subroutine prepare_output_files
@@ -1777,7 +1818,7 @@ subroutine update_save_files(time, atoms, matter, numpar, Scell)
    type(Atom), dimension(:), intent(in) :: atoms	! atomic parameters
    type(Solid), intent(in) :: matter	! Material parameters
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
-   type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    integer i
 
    ! SAVE_atoms.dat :
@@ -1815,7 +1856,7 @@ end subroutine close_save_files
 
 
 subroutine close_output_files(Scell, numpar)
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    !-------------------
    logical :: file_opened
@@ -1867,11 +1908,16 @@ subroutine close_output_files(Scell, numpar)
          if (file_opened) close(numpar%FN_displacements(i))
       enddo
    endif
+
+   if (numpar%save_diff_peaks) then
+      close(numpar%FN_diff_peaks)
+      close(numpar%FN_diff_powder)
+   endif
 end subroutine close_output_files
 
 
 subroutine create_output_files(Scell, matter, laser, numpar)
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -1908,9 +1954,11 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100) :: file_all_w		! optical coeffs for all hw
    character(100) :: file_NN		! nearest neighbors
    character(100), dimension(:), allocatable :: file_sect_displ, file_sect_displ_short  ! sectional displacements
+   character(100) :: file_diff_peaks, file_diff_powder      ! selected diffraction peaks, powder diffraction
    character(100) :: file_testmode		! testmode file
    character(100) :: chtemp
-   character(11) :: chtemp11
+   character(200) :: chtemp2
+   character(11) :: chtemp11, text1, text2, text3
 
    call make_save_files(trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep)))
 
@@ -1961,6 +2009,30 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    endif
 
 
+   if (numpar%save_diff_peaks) then ! Diffraction:
+      ! selected diffraction peaks:
+      file_diff_peaks = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_peaks)))
+      numpar%FN_diff_peaks = FN
+      ! Create the header, containing all the peaks:
+      chtemp2 = ''      ! to start with
+      do i = 1, size(Scell(1)%diff_peaks%I_diff_peak)
+         write(text1, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(1,i)
+         write(text2, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(2,i)
+         write(text3, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(3,i)
+         chtemp2 = trim(adjustl(chtemp2))//'    ('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'//' '
+      enddo
+      !print*, trim(adjustl(chtemp2))
+      call create_file_header(numpar%FN_diff_peaks, '#Time  '//trim(adjustl(chtemp2)) )    ! below
+      call create_file_header(numpar%FN_diff_peaks, '#[fs]    [arb.units]')
+
+      ! Powder diffraction:
+      file_diff_powder = trim(adjustl(file_path))//'OUTPUT_diffraction_powder.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_powder)))
+      numpar%FN_diff_powder = FN
+   endif
+
+
    file_testmode = trim(adjustl(file_path))//'OUTPUT_testmode_data.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_testmode)))
    numpar%FN_testmode = FN
@@ -2008,8 +2080,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta = FN
-      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)  config')
-      call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K]')
+      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)  config  F*v   conf  hyperconf')
+      call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K] [-]   [K]   [K]')
 
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
@@ -2218,6 +2290,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    'OUTPUT_atomic_temperatures.dat', &
    'OUTPUT_atomic_temperatures_partial.dat', &
    file_sect_displ_short, &
+   'OUTPUT_diffraction_peaks.dat', &
+   'OUTPUT_diffraction_powder.dat', &
    'OUTPUT_testmode_data.dat')  ! below
 
    ! clean up:
@@ -2235,8 +2309,9 @@ end subroutine create_file_header
 subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, &
 file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy, file_Te, file_mu, &
-file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, file_testmode)
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
+file_diffraction_peaks, file_diffraction_powder, file_testmode)
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
@@ -2264,6 +2339,7 @@ file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, fi
    character(*), intent(in) :: file_atomic_temperatures ! atomic temperatures (various definitions)
    character(*), intent(in) :: file_atomic_temperatures_part  ! partial atomic temperatures (X, Y, Z)
    character(*), dimension(:), intent(in) :: file_sect_displ
+   character(*), intent(in) :: file_diffraction_peaks, file_diffraction_powder  ! selected diffraction peaks; powder diffraction
    character(*), intent(in) :: file_testmode	! testmode data
    !----------------
    character(200) :: File_name, File_name2
@@ -2317,6 +2393,25 @@ file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, fi
                Scell(1)%Displ(j)%MSD_power, matter) ! below
          endif
       enddo ! j
+   endif
+
+
+   ! Diffraction:
+   if (numpar%save_diff_peaks) then
+      ! Diffraction peaks:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_Gnuplot'//trim(adjustl(sh_cmd))
+      call gnu_diffraction_peaks(Scell(1), File_name, file_diffraction_peaks, t0, t_last, &
+                                    'OUTPUT_diffraction_peaks.'//trim(adjustl(numpar%fig_extention))) ! below
+
+      ! Powder diffraction:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_diffraction_powder_Gnuplot'//trim(adjustl(sh_cmd))
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 10.0d0, 'Powder', '2theta (deg)', 'Peak Intensity (a.u.)', 'OUTPUT_diffraction_powder.gif', numpar%path_sep, setkey=0)
+
+      call write_diffraction_powder_gnuplot(FN, Scell, numpar, trim(adjustl(file_diffraction_powder)))      ! below
+
+      call write_gnuplot_script_ending(FN, File_name, 1)
+      close(FN)
    endif
    
    ! Pressure:
@@ -2581,6 +2676,17 @@ file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, fi
             endif
          enddo ! i
       endif
+
+      ! Diffraction:
+      if (numpar%save_diff_peaks) then
+         ! Diffraction peaks:
+         File_name  = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
+         call gnu_diffraction_peaks(Scell(1), File_name, &
+            trim(adjustl(file_diffraction_peaks(1:len(trim(adjustl(file_diffraction_peaks)))-4)))//'_CONVOLVED.dat' , &
+            t0, t_last, 'OUTPUT_diffraction_peaks_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+      endif
+
+
 
       ! Pressure:
       File_name  = trim(adjustl(file_path))//'OUTPUT_pressure_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -2981,6 +3087,81 @@ subroutine gnu_displacements_partial(File_name, file_MSD, t0, t_last, eps_name, 
 end subroutine gnu_displacements_partial
 
 
+
+subroutine gnu_diffraction_peaks(Scell, File_name, file_diffraction_peaks, t0, t_last, fig_name)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_diffraction_peaks ! input file
+   real(8), intent(in) :: t0, t_last ! time instance [fs]
+   character(*), intent(in) :: fig_name ! name of the figure
+   !------------------------
+   integer :: FN, i, i_start
+   real(8) :: x_tics
+   character(8) :: temp, time_order, chtemp
+   character(20) :: peak_name
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Diffraction peak', &
+            'Time (fs)', 'Peak intensity (arb. units)', trim(adjustl(fig_name)), g_numpar%path_sep, 0)      ! module "Gnuplotting"
+
+
+   if (size(Scell%diff_peaks%I_diff_peak) == 1) then  ! only one peak to plot
+      peak_name = make_diff_peak_name(Scell, 1) ! below
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_diffraction_peaks)), ' "u 1:2 w l lw LW title "'//trim(adjustl(peak_name))//'" '
+      else
+         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_diffraction_peaks)), '\"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(peak_name))//'\" '
+      endif
+   else ! more than one peak:
+
+      peak_name = make_diff_peak_name(Scell, 1) ! below
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         ! First peak:
+         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_diffraction_peaks)), ' "u 1:2 w l lw LW title "'//trim(adjustl(peak_name))//'" ,\'
+         ! Next peaks:
+         do i = 2, size(Scell%diff_peaks%I_diff_peak)-1
+            peak_name = make_diff_peak_name(Scell, i) ! below
+            write(FN, '(a,i3,a,a,a)') ' "" u 1:', 1+i ,' w l lw LW title "', trim(adjustl(peak_name))  ,'" ,\'
+         enddo
+         ! Last peak:
+         peak_name = make_diff_peak_name(Scell, i) ! below
+         write(FN, '(a,i3,a,a,a)') ' "" u 1:', 1+i ,' w l lw LW title "', trim(adjustl(peak_name))  ,'" '
+      else  ! Linux:
+         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_diffraction_peaks)), '\"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(peak_name))//'\" '
+         do i = 2, size(Scell%diff_peaks%I_diff_peak)-1
+            peak_name = make_diff_peak_name(Scell, i) ! below
+            write(FN, '(a,i3,a,a,a)') '\"\" u 1:', 1+i ,' w l lw \"$LW\" title \"', trim(adjustl(peak_name)), '\" ,\'
+         enddo
+         ! Last peak:
+         peak_name = make_diff_peak_name(Scell, i) ! below
+         write(FN, '(a,i3,a,a,a)') '\"\" u 1:', 1+i ,' w l lw \"$LW\" title \"', trim(adjustl(peak_name)), '\" '
+      endif
+
+   endif
+
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_diffraction_peaks
+
+
+function make_diff_peak_name(Scell, i) result(peak_name)
+   character(20) :: peak_name
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: i   ! number of the peak
+   !---------------
+   character(5) :: text1, text2, text3
+   write(text1, '(i0)') Scell%diff_peaks%ijk_diff_peak(1,i)
+   write(text2, '(i0)') Scell%diff_peaks%ijk_diff_peak(2,i)
+   write(text3, '(i0)') Scell%diff_peaks%ijk_diff_peak(3,i)
+   peak_name = '('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'
+end function make_diff_peak_name
+
+
+
 subroutine gnu_Mulliken_charges(File_name, file_electron_properties, t0, t_last, eps_name)
    character(*), intent(in) :: File_name   ! file to create
    character(*), intent(in) :: file_electron_properties	! input file
@@ -3177,7 +3358,7 @@ end subroutine gnu_numbers
 
 ! Orbital-resolved electron parameters:
 subroutine gnu_orbital_resolved(Scell, matter, numpar, File_name, file_orb, t0, t_last, eps_name)
-   type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters, including lists of earest neighbors
    character(*), intent(in) :: File_name   ! file to create
@@ -3785,8 +3966,8 @@ subroutine gnu_at_temperatures(File_name, file_Ta, t0, t_last, eps_name)
       !write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:3 w l lw 1 dashtype 4 title "Entropic" ,\'
       !write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:6 w l lw 1.5 dashtype 5 title "Potential" ,\'
       !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Ta)), '" u 1:8 w l lw 2 dashtype 2 title "Sine^2" ,\'
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "', trim(adjustl(file_Ta)), '" u 1:7 w l lt rgb "blue" lw LW title "Virial" ,\'
-      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:9 w l lt rgb "green" lw 2 dashtype "__" title "Configurational" ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "', trim(adjustl(file_Ta)), '" u 1:11 w l lt rgb "blue" lw LW title "Configurational" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:12 w l lt rgb "green" lw 2 dashtype "__" title "Hyperconfig" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:2 w l lt rgb "black" lw LW title "Kinetic" ,\'
       write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:5 w l lt rgb "red" dashtype "_." lw 2 title "Fluctuational" '
    else ! It is linux
@@ -3795,8 +3976,8 @@ subroutine gnu_at_temperatures(File_name, file_Ta, t0, t_last, eps_name)
       !write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:3 w l lw 1 dashtype 4 title \"Entropic\" ,\'
       !write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:6 w l lw 1.5 dashtype 5 title \"Potential\" ,\'
       !write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:8 w l lw 2 dashtype 2 title \"Sine^2\" ,\'
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:7 w l lt rgb \"blue\" lw \"$LW\" title \"Virial\" ,\'
-      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:9 w l lt rgb \"green\" lw 2 dashtype \"__\" title \"Configurational\" ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:11 w l lt rgb \"blue\" lw \"$LW\" title \"Configurational\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:12 w l lt rgb \"green\" lw 2 dashtype \"__\" title \"Hyperconfig\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:2 w l lt rgb \"black\" lw \"$LW\" title \"Kinetic\" ,\'
       write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:5 w l lt rgb \"red\" dashtype \"_.\" lw 2 title \"Fluctuational\" '
    endif
@@ -4059,7 +4240,7 @@ end subroutine execute_gnuplot
 
 subroutine write_energy_levels_gnuplot(FN, Scell, file_Ei)
    integer, intent(in) :: FN            ! file to write into
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    character(*), intent(in) :: file_Ei  ! file with energy levels
    integer i, M, NSC
    character(30) :: ch_temp
@@ -4088,9 +4269,62 @@ end subroutine write_energy_levels_gnuplot
 
 
 
+
+subroutine write_diffraction_powder_gnuplot(FN, Scell, numpar, file_powder, min_x, max_x)
+   integer, intent(in) :: FN            ! file to write into
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   character(*), intent(in) :: file_powder  ! file with powder diffraction spectrum
+   real(8), intent(in), optional :: min_x, max_x      ! start and end of x-grid
+   !-----------------------
+   real(8) :: x_start, x_end
+   integer :: i, M, NSC
+   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
+   logical :: do_fe_eq
+
+   if (present(min_x)) then
+      x_start = min_x
+   else ! default
+      x_start = 10.0d0
+   endif
+
+   if (present(max_x)) then
+      x_end = max_x
+   else ! default
+      x_end = 180.0d0
+   endif
+
+   do NSC = 1, size(Scell)
+      write(ch_temp,'(f)') x_end
+      write(ch_temp2,'(f)') numpar%t_start
+      write(ch_temp3,'(f)') numpar%dt_save
+      ! grid start:
+      write(ch_temp4,'(f)') x_start
+
+      if (g_numpar%path_sep .EQ. '\') then      ! if it is Windows
+         write(FN, '(a)') 'stats "'//trim(adjustl(file_powder))//'" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][:] "'//trim(adjustl(file_powder))// &
+                  '" index (i-1) u 1:2 w l lw 2 lt rgb "black" title sprintf("%i fs",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) '
+      else  ! Linux
+         write(FN, '(a)') 'stats \"'//trim(adjustl(file_powder))//'\" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+
+         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][:] \"'//trim(adjustl(file_powder))// &
+                  '\" index (i-1) u 1:2 w l lw 2 lt rgb \"black\" title sprintf(\"%i fs\",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) '
+      endif
+      write(FN, '(a)') '}'
+   enddo
+end subroutine write_diffraction_powder_gnuplot
+
+
+
 subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot, no_maxwell)
    integer, intent(in) :: FN            ! file to write into
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    character(*), intent(in) :: file_fe  ! file with atomic distribution function
    logical, optional :: its_pot, no_maxwell
@@ -4175,19 +4409,34 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot
 end subroutine write_atomic_distribution_gnuplot
 
 
-subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
+subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe, min_x, max_x)
    integer, intent(in) :: FN            ! file to write into
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    character(*), intent(in) :: file_fe  ! file with electronic distribution function
+   real(8), intent(in), optional :: min_x, max_x      ! start and end of x-grid
    !-----------------------
+   real(8) :: x_start, x_end
    integer :: i, M, NSC
    character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
    logical :: do_fe_eq
 
+   if (present(min_x)) then
+      x_start = min_x
+   else ! default
+      x_start = -25.0d0
+   endif
+
+   if (present(max_x)) then
+      x_end = max_x
+   else ! default
+      x_end = 25.0d0
+   endif
+
+
    do NSC = 1, size(Scell)
       ! Choose the maximal energy, up to what energy levels should be plotted [eV]:
-      write(ch_temp,'(f)') 25.0d0      ! Scell(NSC)%E_top
+      write(ch_temp,'(f)') x_end      ! Scell(NSC)%E_top
       write(ch_temp2,'(f)') numpar%t_start
       write(ch_temp3,'(f)') numpar%dt_save
 
@@ -4198,7 +4447,7 @@ subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe)
             do_fe_eq = .false.
       endselect
       ! minimal energy grid:
-      write(ch_temp4,'(f)') -25.0d0  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
+      write(ch_temp4,'(f)') x_start  ! (FLOOR(Scell(NSC)%E_bottom/10.0d0)*10.0)
 
       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
          write(FN, '(a)') 'stats "'//trim(adjustl(file_fe))//'" nooutput'
@@ -4253,7 +4502,7 @@ end subroutine write_distribution_gnuplot
 
 subroutine write_orb_distribution_gnuplot(FN, Scell, numpar, matter, file_fe)
    integer, intent(in) :: FN            ! file to write into
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    type(Solid), intent(in) :: matter	! Material parameters
    character(*), intent(in) :: file_fe  ! file with electronic distribution function
@@ -4352,7 +4601,7 @@ end subroutine write_orb_distribution_gnuplot
 
 subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
    integer, intent(in) :: FN            ! file to write into
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    character(*), intent(in) :: file_fe  ! file with electronic distribution function
    !-----------------------
@@ -4398,7 +4647,7 @@ end subroutine write_distribution_on_grid_gnuplot
 
 subroutine write_DOS_gnuplot(FN, Scell, numpar, matter, file_fe)
    integer, intent(in) :: FN            ! file to write into
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    type(Solid), intent(in) :: matter	! Material parameters
    character(*), intent(in) :: file_fe  ! file with electronic distribution function
@@ -4435,7 +4684,7 @@ subroutine write_DOS_gnuplot(FN, Scell, numpar, matter, file_fe)
 
          write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:] "'//trim(adjustl(file_fe))// &
                   '" index (i-1) u 1:2 w l lw 2 lt rgb "black" title sprintf("%i fs Total",(i-1)'// &
-                  '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ') ,\'
+                  '*' // trim(adjustl(ch_temp3)) // '-' // trim(adjustl(ch_temp2))// ') ,\'
 
          i_col = col ! to start with
          do i_at = 1, NKOA
@@ -4461,7 +4710,7 @@ subroutine write_DOS_gnuplot(FN, Scell, numpar, matter, file_fe)
 
          write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:] \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:2 w l lw 2 lt rgb \"black\" title sprintf(\"%i fs Total\",(i-1)'// &
-                  '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ') ,\'
+                  '*' // trim(adjustl(ch_temp3)) // '-' // trim(adjustl(ch_temp2))// ') ,\'
 
          i_col = col ! to start with
          do i_at = 1, NKOA
@@ -4490,7 +4739,7 @@ end subroutine write_DOS_gnuplot
 
 
 subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,Err)
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Pulse), dimension(:), intent(in) :: laser	! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -4599,7 +4848,7 @@ end subroutine output_parameters_file
 
 ! Create the folder where the results will be storred:
 subroutine create_output_folder(Scell, matter, laser, numpar)
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -4897,7 +5146,7 @@ end subroutine open_parameters_file
 
 
 subroutine printout_fluence_dose_conversion(Scell, laser, numpar, matter, INFO, FN_err)
-   type(Super_cell), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
    type(Solid), intent(in) :: matter ! parameters of the material
@@ -5312,7 +5561,7 @@ end subroutine pars_comunications
 
 subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    integer, intent(in) :: print_to ! the screen, or file
-   type(Super_cell), dimension(:), intent(in) :: Scell ! suoer-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter ! material parameters
    type(Pulse), dimension(:), intent(in) :: laser ! Laser pulse parameters
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
@@ -5489,8 +5738,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a)') ' TBMD part is switched off, only MC modelling is performed'
    else
       write(print_to,'(a)') ' Tight Binding parametrization schemes used are:'         
-      write(print_to,'(a,a)') ' Hamiltonian:      ', trim(adjustl(Scell(1)%TB_Hamil(1,1)%Param))
-      write(print_to,'(a,a)') ' Repulsive energy: ', trim(adjustl(Scell(1)%TB_Repuls(1,1)%Param))
+      call print_Hamiltonian_info(print_to, Scell(1), matter)  ! below
+      !write(print_to,'(a,a)') ' Hamiltonian:      ', trim(adjustl(Scell(1)%TB_Hamil(1,1)%Param))
+      !write(print_to,'(a,a)') ' Repulsive energy: ', trim(adjustl(Scell(1)%TB_Repuls(1,1)%Param))
       
       ASSOCIATE (ARRAY => Scell(1)%TB_Hamil(1,1)) ! this is the sintax we have to use to check the class of defined types
          select type(ARRAY)
@@ -5995,6 +6245,20 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    !   write(print_to,'(a)') ' No calculation of electronic heat conductivity (внтфьшсфд)'
    endif
 
+   if (numpar%save_diff_peaks) then
+      write(text1, '(f16.2)') Scell(1)%diff_peaks%hw
+      write(text2, '(f16.4)') Scell(1)%diff_peaks%l*1.0d10
+      write(print_to,'(a)') ' Diffraction peaks for X-ray ('//trim(adjustl(text1))//' [eV], '//trim(adjustl(text2))//' [A]):'
+      do i = 1, size(Scell(1)%diff_peaks%I_diff_peak)
+         write(text1, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(1,i)
+         write(text2, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(2,i)
+         write(text3, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(3,i)
+         write(print_to,'(a)', advance='no') '('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'//' '
+      enddo
+      write(print_to,'(a)') ''
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
    if (.not.optional_output) then ! there ws no optional output, report it
       write(print_to,'(a)') ' none requested by the user'
    endif
@@ -6005,6 +6269,54 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
 9999   write(print_to,'(a)') trim(adjustl(m_starline))
 end subroutine Print_title
+
+
+
+subroutine print_Hamiltonian_info(print_to, Scell, matter)
+   integer, intent(in) :: print_to
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(solid), intent(in) :: matter	! materil parameters
+   !--------------------
+   integer :: i, j, Nsiz
+   logical :: different_TB_param
+
+   different_TB_param = .false. ! to start with
+   Nsiz = size(Scell%TB_Hamil,1)
+
+   if (Nsiz > 1) then  ! more than one parameterization is possible:
+      ! Check if ther eis more than one parameterization, or are they the same:
+      CHKTB:do i = 1, Nsiz
+         do j = 1, Nsiz
+            if (trim(adjustl(Scell%TB_Hamil(i,j)%Param)) /= trim(adjustl(Scell%TB_Hamil(1,1)%Param))) then
+               different_TB_param = .true.
+               exit CHKTB
+            endif
+         enddo
+      enddo CHKTB
+   endif
+
+   ! If there is more then one TB parameterization:
+   if (different_TB_param) then
+      write(print_to,'(a)') ' Hamiltonians:      '
+      do i = 1, Nsiz
+         do j = i, Nsiz
+            write(print_to,'(a,a)') trim(adjustl((matter%Atoms(i)%Name)))//'-'//trim(adjustl((matter%Atoms(j)%Name)))//':  ', &
+                                    trim(adjustl(Scell%TB_Hamil(i,j)%Param))
+         enddo
+      enddo
+
+      write(print_to,'(a)') ' Repulsive parts:   '
+      do i = 1, Nsiz
+         do j = i, Nsiz
+            write(print_to,'(a,a)') trim(adjustl((matter%Atoms(i)%Name)))//'-'//trim(adjustl((matter%Atoms(j)%Name)))//':  ', &
+                                    trim(adjustl(Scell%TB_Repuls(i,j)%Param))
+         enddo
+      enddo
+   else ! Only one parameterization:
+      write(print_to,'(a,a)') ' Hamiltonian:      ', trim(adjustl(Scell%TB_Hamil(1,1)%Param))
+      write(print_to,'(a,a)') ' Repulsive part:   ', trim(adjustl(Scell%TB_Repuls(1,1)%Param))
+   endif
+end subroutine print_Hamiltonian_info
 
 
 subroutine XTANT_label(print_to, ind)

@@ -60,10 +60,12 @@ get_mean_square_displacement, Cooling_atoms, Coordinates_abs_to_rel, get_Ekin, m
 remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_atoms_Y4, check_periodic_boundaries, &
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
 Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
-update_atomic_masks_displ, numerical_acceleration, Get_testmode_add_data, integrated_atomic_distribution
+update_atomic_masks_displ, numerical_acceleration, Get_testmode_add_data, integrated_atomic_distribution, &
+get_diffraction_peaks
 
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
+real(8) :: m_Thom_factor, m_five_sixteenth
 
 !=======================================
 ! Yoshida parameters for 4th order MD integrator:
@@ -82,6 +84,8 @@ parameter(m_d2 = m_w0)
 parameter(m_d3 = m_d1)
 !=======================================
 
+parameter (m_Thom_factor = 20.6074d0)     ! Constant for form factors [1]
+parameter (m_five_sixteenth = 5.0d0/16.0d0)
 
  contains
 
@@ -2160,6 +2164,148 @@ subroutine get_temperature_from_energy(Na, Ekin, Ta)
    real(8), intent(out) :: Ta ! temperature of atoms [eV]
    Ta = 2.0d0/(3.0d0*Na - 6.0d0)*Ekin ! temperature in a box with periodic boundary
 end subroutine get_temperature_from_energy
+
+
+
+subroutine get_diffraction_peaks(Scell, matter, numpar)
+   type(Super_cell), dimension(:), intent(inout), target :: Scell	! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter     ! material parameters
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   !--------------------------------
+   integer :: i, j, k
+   real(8) :: Nat, FF, FF2, q, Z, Z2, Fpowder, Rij, qA, arg, F_cur
+   complex :: Fijk
+   integer, pointer :: KOA, KOA2
+
+   ! Number of atoms:
+   Nat = dble(size(Scell(1)%MDAtoms))
+
+   !----------------------
+   ! 1) Selected peaks:
+   ! For all selected peaks:
+   do i = 1, size(Scell(1)%diff_peaks%I_diff_peak)
+      Fijk = cmplx(0.0d0,0.0d0)     ! to start with
+      ! Sum contributions form all atoms:
+      do j = 1, int(Nat)
+         !-------------------------------
+         ! This part only works for orthagonal supercell (to be improved later!):
+         q = g_2Pi * sqrt ( &
+             (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/Scell(1)%Supce(1,1))**2 + &
+             (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/Scell(1)%Supce(2,2))**2 + &
+             (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/Scell(1)%Supce(3,3))**2 )      ! [1/A]
+         ! Convert units for form-factor evaluation:
+         q = q * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
+         !print*, 'q_ijk=', q, q /(1.0d10 * g_h)
+         !-------------------------------
+
+         ! kind of atom:
+         KOA => Scell(1)%MDatoms(j)%KOA
+         Z = matter%Atoms(KOA)%Z  ! Z of element #j
+
+         ! form factor:
+         FF = form_factor(q, matter%Atoms(KOA)%form_a, Z)   ! below
+
+         ! Scattering amplitude:
+         !Fijk = Fijk + FF * exp(-g_2Pi * g_CI * (SUM(dble(Scell(1)%diff_peaks%ijk_diff_peak(:,i)) * Scell(1)%MDAtoms(j)%S(:)) ) )
+         Fijk = Fijk + FF * exp(-g_2Pi * g_CI * ( &
+                dble(Scell(1)%diff_peaks%ijk_diff_peak(1,i)) * Scell(1)%MDAtoms(j)%S(1) * matter%cell_x + &
+                dble(Scell(1)%diff_peaks%ijk_diff_peak(2,i)) * Scell(1)%MDAtoms(j)%S(2) * matter%cell_y + &
+                dble(Scell(1)%diff_peaks%ijk_diff_peak(3,i)) * Scell(1)%MDAtoms(j)%S(3) * matter%cell_z ) )
+      enddo
+
+      ! Intensity:
+      Scell(1)%diff_peaks%I_diff_peak(i) = Fijk * conjg(Fijk)
+      ! Arb.units => normalized to number of atoms in the simulation:
+      Scell(1)%diff_peaks%I_diff_peak(i) = Scell(1)%diff_peaks%I_diff_peak(i) / Nat
+   enddo
+
+   ! First value for normalization:
+   if (.not.allocated(Scell(1)%diff_peaks%I_diff_peak_first)) then ! save the first value
+      allocate(Scell(1)%diff_peaks%I_diff_peak_first ( size(Scell(1)%diff_peaks%I_diff_peak) ) )
+      Scell(1)%diff_peaks%I_diff_peak_first = Scell(1)%diff_peaks%I_diff_peak
+   endif
+
+   ! Normalize the peak intensities to the initial values:
+   Scell(1)%diff_peaks%I_diff_peak = Scell(1)%diff_peaks%I_diff_peak/Scell(1)%diff_peaks%I_diff_peak_first
+
+   !----------------------
+   ! 2) Powder diffraction vs 2-theta:
+   do i = 1, size(Scell(1)%diff_peaks%I_powder) ! for all angles
+      ! Define the scattering momentum via angle:
+      qA = 4.0d0 * g_Pi * sin(Scell(1)%diff_peaks%two_theta(i)*0.5d0) / (Scell(1)%diff_peaks%l * 1.0d10)   ! [1/A]
+      ! Convert units for form-factor evaluation:
+      q = qA * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
+
+      Fpowder = 0.0d0   ! to start with
+
+      ! Sum contributions from all atoms:
+      do j = 1, int(Nat)   ! atoms
+         ! kind of atom #1:
+         KOA => Scell(1)%MDatoms(j)%KOA
+         Z = matter%Atoms(KOA)%Z  ! Z of element #j
+         ! form factor:
+         FF = form_factor(q, matter%Atoms(KOA)%form_a, Z)   ! below
+
+         ! Self-term to start with:
+         Fpowder = Fpowder + FF*FF
+
+         do k = j+1, int(Nat)   ! pairs of atoms
+            ! kind of atom #2:
+            KOA2 => Scell(1)%MDatoms(k)%KOA
+            Z2 = matter%Atoms(KOA2)%Z  ! Z of element #k
+            ! form factor:
+            FF2 = form_factor(q, matter%Atoms(KOA2)%form_a, Z2)   ! below
+
+            ! Get the distance between the atoms inside the supercell (no mirror cells):
+            Rij = sqrt( (Scell(1)%MDAtoms(j)%R(1)-Scell(1)%MDAtoms(k)%R(1))**2 + &
+                        (Scell(1)%MDAtoms(j)%R(2)-Scell(1)%MDAtoms(k)%R(2))**2 + &
+                        (Scell(1)%MDAtoms(j)%R(3)-Scell(1)%MDAtoms(k)%R(3))**2 )
+
+            arg = qA*Rij
+            if (arg > 1.0d-4) then
+               F_cur = FF*FF2*sin(arg)/arg
+            else     ! Taylor series of sine:
+               F_cur = FF*FF2*(1.0d0-1.0d0/6.0d0*arg**2)
+            endif
+
+            ! Add curкent value to the sum (factor of 2 for j<i terms identical to j>i):
+            Fpowder = Fpowder + 2.0d0*F_cur
+
+         enddo ! k
+      enddo ! j
+      Fpowder = Fpowder/Nat   ! normalize
+      Scell(1)%diff_peaks%I_powder(i) = Fpowder
+
+      !print*, Scell(1)%diff_peaks%two_theta(i)*180.0/g_Pi, qA, Scell(1)%diff_peaks%I_powder(i)
+   enddo ! i
+
+   nullify(KOA, KOA2)
+end subroutine get_diffraction_peaks
+
+
+
+pure function form_factor(q, a, Z) result(FF)
+   ! [1]  F. Salvat, J. M. Fernandez-Varea, E. Acosta, J. Sempau
+   ! "PENELOPE: A Code System for Monte Carlo Simulation of Electron and Photon Transport", OECD (2001)
+   real(8) FF
+   real(8), intent(in) :: q, Z, a(5)      ! [kg*m/s] ; [-]; [-]
+   real(8) fxz, Fk, x, x2, x4, demf, b, CapQ, al, mc
+   mc = g_me*g_cvel
+   x = q/mc*m_Thom_factor     ! [1] Eq.(2.5)
+   x2 = x*x
+   x4 = x2*x2
+   demf = 1.0d0 + a(4)*x2 + a(5)*x4
+   fxz = Z*(1.0d0 + a(1)*x2 + a(2)*x*x2 + a(3)*x4) / (demf*demf)     ! [1] Eq.(2.7)
+   FF = fxz
+   if ((Z > 10.0d0) .and. (fxz < 2.0d0)) then
+      al = g_alpha*(Z - m_five_sixteenth)    ! [1] Eq.(2.9)
+      b = sqrt(1.0d0 - al*al)    ! [1] Eq.(2.9)
+      CapQ = q/(2.0d0*mc*al)     ! [1] Eq.(2.9)
+      Fk = sin(2.0d0*b*atan(CapQ))/(b*CapQ*(1.0d0 + CapQ*CapQ)**b)   ! [1] Eq.(2.8)
+      if (FF < Fk) FF = Fk
+   endif
+end function form_factor
+
 
 
 subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! currently, it calculates mean displacement, without sqaring it

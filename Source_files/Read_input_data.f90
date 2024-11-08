@@ -62,7 +62,7 @@ PRIVATE
 
 ! Modular parameters:
 character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_MINIMUM, m_INPUT_ALL, m_Atomic_parameters, &
-                  m_Hubbard_U, m_Communication, m_COPY_INPUT
+                  m_Hubbard_U, m_Communication, m_COPY_INPUT, m_form_factors
 
 character(70), parameter :: m_starline = '*************************************************************'
 character(70), parameter :: m_dashline = '-------------------------------------------------------------'
@@ -85,6 +85,7 @@ parameter (m_INPUT_ALL = 'INPUT') ! new format with all parameters together
 parameter (m_COPY_INPUT = 'Copy_input.txt') ! file with info on preparing multiple input files by copying INPUT
 parameter (m_Atomic_parameters = 'Atomic_parameters') ! data-file with atomic parameters
 parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat') ! data-file with Hubbard-U parameters (for SCC calculations)
+parameter (m_form_factors = 'Atomic_form_factors.dat')      ! file with atomic form factors parameters
 parameter (m_Communication = 'Communication.txt')  ! file for comunication with the user
 
 character(25), parameter :: m_short_pot = 'TB_short.txt'  ! filename for short-range potential
@@ -230,6 +231,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%save_NN = .false. ! do not print out nearest neighbors numbers
    numpar%do_elastic_MC = .true. ! allow elastic scattering of electrons on atoms within MC module
    numpar%r_periodic(:) = .true. ! use periodic boundaries along each direction of the simulation box
+   numpar%save_diff_peaks = .false. ! no diffraction peaks calculation required
    ! Setting supercell for biomolecules, embedding in water:
    numpar%embed_water = .false.  ! no water added
    numpar%N_water_mol = 100      ! default number of water molecules
@@ -496,6 +498,12 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
       else ! do only MC part
           ! Run it like XCASCADE (untested, may not work!)
       endif
+
+      ! Read atomic form factors from file:
+      call get_atomic_form_factors(numpar, matter, Scell(i))    ! below
+      ! Set powder diffraction arrays:
+      call set_powder_diffraction_grid(numpar, Scell(i))  ! below
+
    enddo
 
    ! Check if the user provided atomic data to overwrite the default values:
@@ -538,6 +546,83 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
 
 3416 continue !exit in case if input files could not be read
 end subroutine Read_Input_Files
+
+
+subroutine set_powder_diffraction_grid(numpar, Scell)
+   type(Numerics_param), intent(in) :: numpar  ! all numerical parameters
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   !----------------
+   integer :: i, Nsiz
+   real(8) :: d_theta
+
+   if (numpar%save_diff_peaks) then ! only if diffraction is required
+      ! Choose the number of points:
+      d_theta = 1.0d0   ! [deg]
+      Nsiz = int(180.0d0 / d_theta)  ! points in theta grid [deg]
+      allocate(Scell%diff_peaks%two_theta(Nsiz))
+      allocate(Scell%diff_peaks%I_powder(Nsiz))
+      ! Set the 2-theta grid:
+      do i = 1, Nsiz
+         Scell%diff_peaks%two_theta(i) = d_theta*dble(i)
+         !print*, i, Scell%diff_peaks%two_theta(i)
+      enddo
+      ! [deg] -> [rad]
+      Scell%diff_peaks%two_theta(:) = Scell%diff_peaks%two_theta(:) * g_Pi/180.0d0
+   endif
+   !pause 'set_powder_diffraction_grid'
+end subroutine set_powder_diffraction_grid
+
+
+subroutine get_atomic_form_factors(numpar, matter, Scell)
+   type(Solid), intent(inout) :: matter   ! all material parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   !-----------------------------
+   integer :: FN7, i
+   character(200) :: Folder_name, Path, File_form_factors
+   logical :: file_exist, read_well
+   !---------------------
+   ! Atomic form factors:
+   if (numpar%save_diff_peaks) then ! we need form factors
+      Folder_name = trim(adjustl(numpar%input_path))
+      Path = trim(adjustl(Folder_name))//trim(adjustl(m_Atomic_parameters))
+      File_form_factors = trim(adjustl(Path))//trim(adjustl(numpar%path_sep))//trim(adjustl(m_form_factors))
+
+      inquire(file=trim(adjustl(File_form_factors)),exist=file_exist)
+
+      if (.not.file_exist) then     ! no file found
+         read_well = .false.
+         if (allocated(Scell%diff_peaks%I_diff_peak)) deallocate(Scell%diff_peaks%I_diff_peak)
+         if (allocated(Scell%diff_peaks%ijk_diff_peak)) deallocate(Scell%diff_peaks%ijk_diff_peak)
+         numpar%save_diff_peaks = .false. ! cannot get diffraction peaks without form factors
+         if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            print*, 'File not found: '//trim(adjustl(File_form_factors))
+            print*, 'Proceed without calculations of diffraction peaks'
+         endif
+         return   ! nothing else to do here
+      endif
+
+      open(newunit = FN7, FILE = trim(adjustl(File_form_factors)), status = 'old', action='read')
+      read_well = .true.      ! to start with
+
+      ! Read form factor parameters for all elements:
+      do i = 1, size(matter%Atoms)
+         call read_form_factors(FN7, int(matter%Atoms(i)%Z), matter%Atoms(i)%form_a, read_well)      ! below
+         if (.not.read_well) then ! cannot do diffraction peaks:
+            if (allocated(Scell%diff_peaks%I_diff_peak)) deallocate(Scell%diff_peaks%I_diff_peak)
+            if (allocated(Scell%diff_peaks%ijk_diff_peak)) deallocate(Scell%diff_peaks%ijk_diff_peak)
+            numpar%save_diff_peaks = .false. ! cannot get diffraction peaks without form factors
+            if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+               print*, 'Could not read form factors from: '//trim(adjustl(File_form_factors))
+               print*, 'Proceed without calculations of diffraction peaks'
+            endif
+            exit
+         endif
+         !print*, i, matter%Atoms(i)%form_a(:)
+      enddo
+      close(FN7)
+   endif
+end subroutine get_atomic_form_factors
 
 
 
@@ -733,9 +818,9 @@ subroutine read_atomic_parameters(matter, numpar, Err)
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Error_handling), intent(inout) :: Err	! error save
-   integer i
-   character(200) :: File_name
-   logical :: file_exist
+   integer i, FN7
+   character(200) :: File_name, File_form_factors, Folder_name, Path
+   logical :: file_exist, read_well
    
    select case (trim(adjustl(numpar%At_base)))
    case('CDF', 'cdf') ! read data from corresponding *.cdf file
@@ -755,7 +840,7 @@ subroutine read_atomic_parameters(matter, numpar, Err)
    case default ! ('EADL', 'BEB'), read data from EADL database
       call get_EADL_data(matter, numpar, Err) ! see below
    end select
-   
+
 !    print*, 'TEST:', allocated(matter%Atoms), size(matter%Atoms), numpar%At_base
 !    do i = 1, size(matter%Atoms)
 !       !print*, trim(adjustl(matter%Chem)), ' '//trim(adjustl(matter%Atoms(i)%Name)), matter%Atoms(i)%N_CDF(:), matter%Atoms(i)%Shl_dsgnr(:), matter%Atoms(i)%Ip(:), matter%Atoms(i)%Ne_shell(:), matter%Atoms(i)%Auger(:)
@@ -763,6 +848,55 @@ subroutine read_atomic_parameters(matter, numpar, Err)
 !    enddo
 !    call get_table_of_ij_numbers(matter, numpar) ! table of elements number to locate TB parameterization for different combinations of atoms
 end subroutine read_atomic_parameters
+
+
+
+subroutine read_form_factors(FN, Zat, a, read_well)
+   integer, intent(in) :: FN, Zat	! file number with the database; atomic number
+   real(8), dimension(5), intent(out) :: a	! coefficients used to construct form factors
+   !type(Error_handling), intent(inout) :: Err	! error log
+   logical, intent(inout) :: read_well
+   !----------------------------------
+   real(8), dimension(:,:), allocatable :: read_data	! to read the coeffs
+   real(8), dimension(:), allocatable :: read_vec	! to read the coeffs
+   integer :: N_line, N_col, i, j, Reason, count_lines
+   character(200) :: Error_descript, temp
+   N_col = size(a)
+   ! Count how many lines are in the file:
+   call Count_lines_in_file(FN, N_line, skip_lines=1)	! module "Dealing_with_files"
+   if (Zat > N_line) then	! we don't have this element in our database
+      read_well = .false.
+      write(temp,'(i4)') Zat
+      Error_descript = 'Element #'// trim(adjustl(temp)) //'in read_form_factors not found'
+      !call Save_error_details(Err, 3, Error_descript)	! module "Objects"
+      print*, trim(adjustl(Error_descript))
+   else     ! we have this element
+      allocate(read_data(N_line, N_col))
+      allocate(read_vec(N_col))
+      count_lines = 1
+      read(FN,*)  ! skip the first line with description
+      do i = 1, N_line	! read the pair creation coeffs
+         read(FN,*,IOSTAT=Reason) read_vec(:)   ! read into temporary array
+         read_data(i,:) = read_vec(:)   ! save into working array
+         call read_file(Reason, count_lines, read_well)	! module "Dealing_with_files"
+         if (.not. read_well) then
+            write(Error_descript,'(a,i3)') 'In read_form_factors could not read line ', count_lines
+            !call Save_error_details(Err, 2, Error_descript)	! module "Objects"
+            print*, trim(adjustl(Error_descript))
+            goto 9989
+         endif
+      enddo
+      rewind(FN)  ! for future use of the file
+      ! Get the coefficients:
+      a(:) = read_data(Zat,:)
+      ! Clean up at the end:
+      deallocate(read_data, read_vec)
+   endif
+9989 continue
+end subroutine read_form_factors
+
+
+
 
 
 subroutine get_CDF_data(matter, numpar, Err, File_name)
@@ -6706,6 +6840,34 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
    read(string_in,*,IOSTAT=Reason) string
 
    select case (trim(adjustl(string)))
+
+   !----------------------------------
+   case ('Diffraction', 'diffraction', 'DIFFRACTION', 'Diffract', 'DIFFRACT', 'diffract', 'diffraction_peaks')
+      ! Calculate evolution of the following diffraction peaks:
+      read(string_in,*,IOSTAT=Reason) string, N, Scell(1)%diff_peaks%hw ! number of peaks; photon enegry [eV]
+      ! Get the photon wavelength:
+      Scell(1)%diff_peaks%l = g_2Pi * g_h * g_cvel / (Scell(1)%diff_peaks%hw*g_e)     ! [m]
+
+      if (N >= 0) then   ! allocate number of peaks:
+         numpar%save_diff_peaks = .true.
+         allocate(Scell(1)%diff_peaks%I_diff_peak(N), source = 0.0d0)
+         allocate(Scell(1)%diff_peaks%ijk_diff_peak(3,N), source = 0)
+      endif
+      ! read all the peaks:
+      do i = 1, N
+         read(FN,*,IOSTAT=Reason) Scell(1)%diff_peaks%ijk_diff_peak(1,i), &
+                                  Scell(1)%diff_peaks%ijk_diff_peak(2,i), Scell(1)%diff_peaks%ijk_diff_peak(3,i)
+         if (Reason /= 0) then ! did not read well, cannot do diffraction peaks:
+            write(temp_ch1, '(i0)') i
+            write(*,'(a)') 'Incorrect format in diffraction peak provided, #'//trim(adjustl(temp_ch1))
+            write(*,'(a)') 'Diffraction peaks will not be calculated'
+            deallocate(Scell(1)%diff_peaks%I_diff_peak)
+            deallocate(Scell(1)%diff_peaks%ijk_diff_peak)
+            numpar%save_diff_peaks = .false.
+            exit
+         endif
+      enddo
+
    !----------------------------------
    case ('TEST_MODE', 'Test_Mode', 'Test_mode', 'test_mode', 'testmode', 'Testmode', 'TESTMODE')
       ! Prints out all optional data, including some unique data that are usually not needed:

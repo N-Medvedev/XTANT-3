@@ -1,0 +1,8 @@
+General
+
+Cut-off
+2.2e0	0.05e0
+
+Exp
+10.0e0	2.0e0	0.1e0
+Ф r_0 a – Energy [eV], characteristic radius [A], characteristic distance [A]
