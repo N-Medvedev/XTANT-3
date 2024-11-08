@@ -2173,7 +2173,7 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    !--------------------------------
    integer :: i, j, k
-   real(8) :: Nat, FF, FF2, q, Z, Z2, Fpowder, Rij, qA, arg
+   real(8) :: Nat, FF, FF2, q, Z, Z2, Fpowder, Rij, qA, arg, F_cur
    complex :: Fijk
    integer, pointer :: KOA, KOA2
 
@@ -2232,14 +2232,13 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
    ! 2) Powder diffraction vs 2-theta:
    do i = 1, size(Scell(1)%diff_peaks%I_powder) ! for all angles
       ! Define the scattering momentum via angle:
-      qA = 4.0d0 * g_Pi / (Scell(1)%diff_peaks%l * 1.0d10) * sin(Scell(1)%diff_peaks%two_theta(i)*0.5d0) ! [1/A]
+      qA = 4.0d0 * g_Pi * sin(Scell(1)%diff_peaks%two_theta(i)*0.5d0) / (Scell(1)%diff_peaks%l * 1.0d10)   ! [1/A]
       ! Convert units for form-factor evaluation:
       q = qA * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
-      !print*, 'qA=', qA, q
 
       Fpowder = 0.0d0   ! to start with
 
-      ! Sum contributions form all atoms:
+      ! Sum contributions from all atoms:
       do j = 1, int(Nat)   ! atoms
          ! kind of atom #1:
          KOA => Scell(1)%MDatoms(j)%KOA
@@ -2247,32 +2246,40 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
          ! form factor:
          FF = form_factor(q, matter%Atoms(KOA)%form_a, Z)   ! below
 
-         do k = 1, int(Nat)   ! pairs of atoms
-            if (k /= j) then ! exclude self
-               ! kind of atom #2:
-               KOA2 => Scell(1)%MDatoms(k)%KOA
-               Z2 = matter%Atoms(KOA2)%Z  ! Z of element #k
-               ! form factor:
-               FF2 = form_factor(q, matter%Atoms(KOA2)%form_a, Z2)   ! below
+         ! Self-term to start with:
+         Fpowder = Fpowder + FF*FF
 
-               ! Get the distance between the atoms:
-               call shortest_distance(Scell(1), j, k, Rij)   ! below
+         do k = j+1, int(Nat)   ! pairs of atoms
+            ! kind of atom #2:
+            KOA2 => Scell(1)%MDatoms(k)%KOA
+            Z2 = matter%Atoms(KOA2)%Z  ! Z of element #k
+            ! form factor:
+            FF2 = form_factor(q, matter%Atoms(KOA2)%form_a, Z2)   ! below
 
-               arg = qA*Rij
-               Fpowder = Fpowder + FF*FF2*sin(arg)/arg
+            ! Get the distance between the atoms inside the supercell (no mirror cells):
+            Rij = sqrt( (Scell(1)%MDAtoms(j)%R(1)-Scell(1)%MDAtoms(k)%R(1))**2 + &
+                        (Scell(1)%MDAtoms(j)%R(2)-Scell(1)%MDAtoms(k)%R(2))**2 + &
+                        (Scell(1)%MDAtoms(j)%R(3)-Scell(1)%MDAtoms(k)%R(3))**2 )
 
-               print*, j, k, Rij, arg, Fpowder
-            endif ! (k /= j)
+            arg = qA*Rij
+            if (arg > 1.0d-4) then
+               F_cur = FF*FF2*sin(arg)/arg
+            else     ! Taylor series of sine:
+               F_cur = FF*FF2*(1.0d0-1.0d0/6.0d0*arg**2)
+            endif
+
+            ! Add curкent value to the sum (factor of 2 for j<i terms identical to j>i):
+            Fpowder = Fpowder + 2.0d0*F_cur
+
          enddo ! k
       enddo ! j
       Fpowder = Fpowder/Nat   ! normalize
       Scell(1)%diff_peaks%I_powder(i) = Fpowder
 
-      print*, Scell(1)%diff_peaks%two_theta(i)*180.0/g_Pi, qA, Scell(1)%diff_peaks%I_powder(i)
-      pause
+      !print*, Scell(1)%diff_peaks%two_theta(i)*180.0/g_Pi, qA, Scell(1)%diff_peaks%I_powder(i)
    enddo ! i
 
-   nullify(KOA)
+   nullify(KOA, KOA2)
 end subroutine get_diffraction_peaks
 
 

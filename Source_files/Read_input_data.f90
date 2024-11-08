@@ -558,7 +558,7 @@ subroutine set_powder_diffraction_grid(numpar, Scell)
    if (numpar%save_diff_peaks) then ! only if diffraction is required
       ! Choose the number of points:
       d_theta = 1.0d0   ! [deg]
-      Nsiz = int(360.0d0 / d_theta)  ! points in theta grid [deg]
+      Nsiz = int(180.0d0 / d_theta)  ! points in theta grid [deg]
       allocate(Scell%diff_peaks%two_theta(Nsiz))
       allocate(Scell%diff_peaks%I_powder(Nsiz))
       ! Set the 2-theta grid:
