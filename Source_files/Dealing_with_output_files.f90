@@ -3131,7 +3131,7 @@ subroutine gnu_diffraction_peaks(Scell, File_name, file_diffraction_peaks, t0, t
          peak_name = make_diff_peak_name(Scell, i) ! below
          write(FN, '(a,i3,a,a,a)') ' "" u 1:', 1+i ,' w l lw LW title "', trim(adjustl(peak_name))  ,'" '
       else  ! Linux:
-         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_diffraction_peaks)), '\"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(peak_name))//'\" '
+         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_diffraction_peaks)), '\"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(peak_name))//'\" ,\'
          do i = 2, size(Scell%diff_peaks%I_diff_peak)-1
             peak_name = make_diff_peak_name(Scell, i) ! below
             write(FN, '(a,i3,a,a,a)') '\"\" u 1:', 1+i ,' w l lw \"$LW\" title \"', trim(adjustl(peak_name)), '\" ,\'
