@@ -1,0 +1,6 @@
+"Hybrid Density Functional Tight Binding (DFTB)─Molecular Mechanics Approach for a Low-Cost Expansion of DFTB Applicability"
+Gekko Budiutama, Ruicheng Li, Sergei Manzhos, and Manabu Ihara
+Journal of Chemical Theory and Computation 2023 19 (15), 5189-5198
+DOI: 10.1021/acs.jctc.3c00310
+
+https://pubs.acs.org/doi/full/10.1021/acs.jctc.3c00310
