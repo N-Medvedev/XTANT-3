@@ -1,0 +1,3 @@
+DFTB
+pbc-0-3					! DFTB parametrization
+1						! Type of repulsive: 0=polinomial, 1=spline
