@@ -151,11 +151,12 @@ call MPI_share_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC,
 if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 
-! Print the title of the program and used parameters on the screen:
-call Print_title(6, g_Scell, g_matter, g_laser, g_numpar, -1) ! module "Dealing_with_output_files"
-if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
-   call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
-endif
+! ! Print the title of the program and used parameters on the screen:
+! call Print_title(6, g_Scell, g_matter, g_laser, g_numpar, -1) ! module "Dealing_with_output_files"
+! if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+!    call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
+! endif
+
 
 if (g_numpar%verbose) call print_time_step('Getting electron MFPs:', msec=.true., MPI_param=g_numpar%MPI_param)
 ! Read (or create) electronic mean free paths (both, inelastic and elastic):
@@ -183,6 +184,12 @@ endif
 ! Process the laser pulse parameters:
 call process_laser_parameters(g_Scell(1), g_matter, g_laser, g_numpar) ! module "Monte_Carlo"
 if (g_numpar%verbose) call print_time_step('Laser pulse parameters converted succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+
+! Print the title of the program and used parameters on the screen:
+call Print_title(6, g_Scell, g_matter, g_laser, g_numpar, -1) ! module "Dealing_with_output_files"
+if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+   call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
+endif
 
 ! Create the folder where output files will be storred, and prepare the files:
 call prepare_output_files(g_Scell, g_matter, g_laser, g_numpar, g_Scell(1)%TB_Hamil(1,1), g_Scell(1)%TB_Repuls(1,1), g_Err) ! module "Dealing_with_output_files"
