@@ -39,6 +39,12 @@ default:
 	ifort -qopenmp -O5 -fpp -ipo -real-size 64 -standard-semantics XTANT_el_distribution_analysis.f90 -o XTANT_el_distribution_analysis.x
 	@echo "Executable: XTANT_el_distribution_analysis.x"
 
+	@echo "**************************************************"
+	@echo "Compiling XTANT_average_identical code"
+	ifort -qopenmp -O5 -fpp -ipo -real-size 64 -standard-semantics XTANT_average_identical.f90 -o XTANT_average_identical.x
+	@echo "Executable: XTANT_average_identical.x"
+
+
 clean:
 	rm -f *.o
 	rm -f *.mod

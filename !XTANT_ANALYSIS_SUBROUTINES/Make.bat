@@ -20,6 +20,7 @@ IF "%1"=="" (
 :: Clean up before recompiling:
 del XTANT_atomic_data_analysis.obj
 del XTANT_autocorrelators.obj
+del XTANT_average_diffraction.obj
 del XTANT_coupling_parameter.obj
 del XTANT_dielectric_function_analysis.obj
 del XTANT_fragmentation.obj
@@ -61,7 +62,7 @@ IF /I %arg1%==DEBUG (
 )
 
 :: Assemble the code from all created obj-files
-ifort.exe %Compile_options% %List_of_files% /exe:%Name_of_exe%
+ifx.exe %Compile_options% %List_of_files% /exe:%Name_of_exe%
 
 echo %Starline%
 ::   echo Completed: %date% %time%
@@ -90,7 +91,7 @@ IF /I %arg1%==DEBUG (
 )
 
 :: Assemble the code from all created obj-files
-ifort.exe %Compile_options% %List_of_files% /exe:%Name_of_exe%
+ifx.exe %Compile_options% %List_of_files% /exe:%Name_of_exe%
 
 echo %Starline%
 ::   echo Completed: %date% %time%
@@ -100,6 +101,35 @@ echo %Starline%
 
 :: Remove files that are no longer needed
 del XTANT_autocorrelators.obj
+
+
+:: *********************************************************
+
+echo Started compilation: %date% %time%
+
+:: Program files to be compiled
+SET "List_of_files= XTANT_average_diffraction.f90"
+
+:: List compiler options and the name of the executable:
+IF /I %arg1%==DEBUG (
+   :: Set name of the executable:
+   SET "Name_of_exe=XTANT_average_diffraction.exe"
+) ELSE (
+   :: Set name of the executable:
+   SET "Name_of_exe=XTANT_average_diffraction.exe"
+)
+
+:: Assemble the code from all created obj-files
+ifx.exe %Compile_options% %List_of_files% /exe:%Name_of_exe%
+
+echo %Starline%
+::   echo Completed: %date% %time%
+echo The program %Name_of_exe% was created at %date% %time%
+echo %Starline%
+
+
+:: Remove files that are no longer needed
+del XTANT_average_diffraction.obj
 
 
 :: *********************************************************
@@ -119,7 +149,7 @@ IF /I %arg1%==DEBUG (
 )
 
 :: Assemble the code from all created obj-files
-ifort.exe %Compile_options% %List_of_files% /exe:%Name_of_exe%
+ifx.exe %Compile_options% %List_of_files% /exe:%Name_of_exe%
 
 echo %Starline%
 ::   echo Completed: %date% %time%
@@ -150,7 +180,7 @@ IF /I %arg1%==DEBUG (
 )
 
 :: Assemble the code from all created obj-files
-ifort.exe %Compile_options% %List_of_files% /exe:%Name_of_exe%
+ifx.exe %Compile_options% %List_of_files% /exe:%Name_of_exe%
 
 echo %Starline%
 ::   echo Completed: %date% %time%
@@ -177,10 +207,10 @@ IF /I %arg1%==DEBUG (
 )
 
 :: Compiling:
-ifort.exe -c %Compile_options% %List_of_files%
+ifx.exe -c %Compile_options% %List_of_files%
 
 :: Assemble the code from all created obj-files
-ifort.exe %Compile_options% XTANT_fragmentation.obj /exe:%Name_of_exe%
+ifx.exe %Compile_options% XTANT_fragmentation.obj /exe:%Name_of_exe%
 
 echo %Starline%
 ::   echo Completed: %date% %time%
@@ -206,10 +236,10 @@ IF /I %arg1%==DEBUG (
 )
 
 :: Compiling:
-ifort.exe -c %Compile_options% %List_of_files%
+ifx.exe -c %Compile_options% %List_of_files%
 
 :: Assemble the code from all created obj-files
-ifort.exe %Compile_options% *.obj /exe:%Name_of_exe%
+ifx.exe %Compile_options% *.obj /exe:%Name_of_exe%
 
 echo %Starline%
 ::   echo Completed: %date% %time%
@@ -235,10 +265,10 @@ IF /I %arg1%==DEBUG (
 )
 
 :: Compiling:
-ifort.exe -c %Compile_options% %List_of_files%
+ifx.exe -c %Compile_options% %List_of_files%
 
 :: Assemble the code from all created obj-files
-ifort.exe %Compile_options% *.obj /exe:%Name_of_exe%
+ifx.exe %Compile_options% *.obj /exe:%Name_of_exe%
 
 echo %Starline%
 ::   echo Completed: %date% %time%

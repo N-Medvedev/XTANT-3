@@ -389,12 +389,12 @@ close(FN_out1)
 if (path_sep .EQ. '\') then	! if it is Windows
    !call system(trim(adjustl(Gnu_script))//'.cmd')
 !    command = "OUTPUT_Gnuplot_all.cmd"
-   command = trim(adjustl(Gnu_script))//'.cmd'
+   command = 'call '//trim(adjustl(Gnu_script))//'.cmd'
    iret = system(command)
 else ! linux:
    !call system(trim(adjustl(Gnu_script))//'.sh')
 !    command = "./OUTPUT_Gnuplot_all.sh"
-   command = trim(adjustl(Gnu_script))//'.sh'
+   command = './'//trim(adjustl(Gnu_script))//'.sh'
    iret = system(command)
 endif
 
