@@ -119,7 +119,6 @@ do i = 1, N_data   ! for all output data files
     endif
 
     open (unit=FN_in, file=trim(adjustl(File_name)), status = 'old', readonly) ! diffraction peaks
-
     print*, 'File #', i, trim(adjustl(File_name))
 
     ! Read from this file:
@@ -140,7 +139,7 @@ do i = 1, N_data   ! for all output data files
         print*, 'Cannot continue, terminating.'
         goto 2012   ! no data, nothing to do
     case (0)
-        print*, 'Read well File: '//trim(adjustl(File_name))
+        !print*, 'Read well File: '//trim(adjustl(File_name))
     end select
 
     !pause 'i = 1, N_data'
@@ -296,9 +295,8 @@ subroutine read_diffraction_data(FN_in, Read_data_peak, i, INFO)
 
     ! Get the nuimber of diffraction peaks in the file:
     call Count_lines_in_file(FN_in, N_lines, skip_lines=2) ! below
-
-    print*, 'N_col:', N_col
-    print*, 'N_lines:', N_lines
+    !print*, 'N_col:', N_col
+    !print*, 'N_lines:', N_lines
 
     ! Allocate the arrays:
     allocate(Read_data_peak(i)%Tim(N_lines))
