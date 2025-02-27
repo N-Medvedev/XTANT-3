@@ -2033,11 +2033,13 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    endif
 
 
-   file_testmode = trim(adjustl(file_path))//'OUTPUT_testmode_data.dat'
-   open(NEWUNIT=FN, FILE = trim(adjustl(file_testmode)))
-   numpar%FN_testmode = FN
-   call create_file_header(numpar%FN_testmode, '#Time	V_CoM I_tot F_tot')
-   call create_file_header(numpar%FN_testmode, '#[fs]	[A/fs:3]	[3x3]	[N:3]')
+   if (numpar%save_testmode) then   ! testmode additional data (center of mass, rotation, total force, etc.)
+      file_testmode = trim(adjustl(file_path))//'OUTPUT_testmode_data.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_testmode)))
+      numpar%FN_testmode = FN
+      call create_file_header(numpar%FN_testmode, '#Time	V_CoM I_tot F_tot')
+      call create_file_header(numpar%FN_testmode, '#[fs]	[A/fs:3]	[3x3]	[N:3]')
+   endif
 
    
    file_pressure = trim(adjustl(file_path))//'OUTPUT_pressure_and_stress.dat'

@@ -343,7 +343,7 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
 
             ! new electron (and may be hole) is created:
             call New_born_electron_n_hole(MC, KOA, shl, numpar, Scell, matter, hw, MC%electrons(j)%ti, &
-                                          Eetot_cur, noeVB_cur, d_fe, min_df)
+                                          Eetot_cur, noeVB_cur, d_fe, min_df, 'Called from MC_for_electron')
          else  elast_vs_inelast ! it is elastic scattering
             call which_atom(Ekin, matter%Atoms, EMFP, KOA) ! get which kind of atoms we scatter on, module "MC_cross_sections"
             call NRG_transfer_elastic_atomic(matter%Atoms(KOA)%Ma, matter%Atoms(KOA)%Z, Ekin, hw) ! module "MC_cross_sections"
@@ -432,7 +432,7 @@ subroutine electron_disappears(MC, j)
 end subroutine electron_disappears
 
 
-subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur, d_fe, min_df)
+subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur, d_fe, min_df, text_to_print)
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    integer, INTENT(in) ::  KOA, SHL   ! number of atom and its shell that is being ionized
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
@@ -443,10 +443,18 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
    real(8), intent(inout) :: Eetot_cur, noeVB_cur	! [eV] CB electrons energy; and number
    real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
    real(8), intent(in) :: min_df ! minimal allowed change in the distribution function
+   character(*), intent(in), optional :: text_to_print      ! extra text to print with error message
    !--------------------------------------
    REAL(8) Ee ! electron energy after ionization [eV]
    real(8) RN, norm_sum, t_dec
    integer i, IONIZ ! which level is ionized
+   character(200) :: string_print
+
+   if (present(text_to_print)) then ! if there is something to add
+      string_print = trim(adjustl(string_print))
+   else     ! if there is nothing
+      string_print = ''
+   endif
 
    ! Find from which shell an electron is excited:
    if ((KOA .EQ. 1) .and. (SHL .EQ. matter%Atoms(KOA)%sh)) then ! VB:
@@ -462,6 +470,9 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
       !if ((Scell%fe(i)+d_fe(i)*min_df) < 0.0d0) then
       if ((Scell%fe(i)+d_fe(i)*min_df) < 0.0d0) then
          print*, 'Error New_born_electron_n_hole:', i, Scell%fe(i), d_fe(i)*min_df, Ee, Scell%E_gap, numpar%E_cut
+         if (LEN(string_print) > 0) then
+            print*, trim(adjustl(string_print))
+         endif
       endif
 !       if (i > 129) then ! testing
 !          print*, 'Potential New_born_electron_n_hole:', i, Scell%fe(i), d_fe(i)*min_df
@@ -480,6 +491,9 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
          print*, 'Subroutine New_born_electron_n_hole', hw
          print*, 'Produced negative electron energy:', Ee, IONIZ
          print*, 'deep shell:', matter%Atoms(KOA)%Ip(SHL), KOA, SHL
+         if (LEN(string_print) > 0) then
+            print*, trim(adjustl(string_print))
+         endif
          pause
       endif
    endif
@@ -951,7 +965,8 @@ subroutine MC_for_hole(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur, d_f
          ! Second hole -- for simplicity, assume it occurs via virtual photon:
          call which_shell(hw, matter%Atoms, matter, 0, KOA2, Nsh2) ! module 'MC_cross_sections'
          ! Second (new) electron and hole:
-         call New_born_electron_n_hole(MC, KOA2, Nsh2, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur, d_fe, min_df)  ! below
+         call New_born_electron_n_hole(MC, KOA2, Nsh2, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur, &
+                                       d_fe, min_df, 'Called from MC_for_hole')  ! below
          KOA = MC%holes(j)%KOA     ! this atom has a hole here now
          shl = MC%holes(j)%Sh      ! this hole is in this shell now
       enddo	! time
@@ -1096,7 +1111,7 @@ subroutine MC_for_photon(tim, MC, Nph, numpar, matter, laser, Scell, Eetot_cur, 
          call which_shell(MC%photons(j)%E, matter%Atoms, matter, 0, KOA, SHL) ! module 'MC_cross_sections'
          ! Photon is absorbed, electron-hole pair is created:
          call New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, MC%photons(j)%E, t_cur, &
-                                       Eetot_cur, noeVB_cur, d_fe, min_df) ! above
+                                       Eetot_cur, noeVB_cur, d_fe, min_df, 'Called from MC_for_photon') ! above
        enddo ! j
    endif
 end subroutine MC_for_photon
