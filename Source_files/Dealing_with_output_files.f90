@@ -5265,7 +5265,7 @@ subroutine reset_dt(numpar, matter, tim_cur)
          matter%T_bath = matter%T_bath/g_kb  ! [eV] thermostat temperature for atoms
 
          matter%tau_bath = numpar%At_bath_grid_tau(numpar%i_At_bath_dt) ! new characteristic time [fs]
-         if (matter%tau_bath > 1.0d14) then  ! there is no bath, too slow to couple
+         if ((matter%tau_bath > 1.0d14) .or. (matter%T_bath < -1.0d-6)) then  ! there is no bath, too slow to couple
             numpar%Transport = .false. ! excluded
             if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
                print*, 'Atomic thermostat is off'
@@ -5290,7 +5290,7 @@ subroutine reset_dt(numpar, matter, tim_cur)
          matter%T_bath_e = matter%T_bath_e/g_kb  ! [eV] thermostat temperature for atoms
 
          matter%tau_bath_e = numpar%El_bath_grid_tau(numpar%i_El_bath_dt) ! new characteristic time [fs]
-         if (matter%tau_bath_e > 1.0d14) then  ! there is no bath, too slow to couple
+         if ((matter%tau_bath_e > 1.0d14) .or. (matter%T_bath_e < -1.0d-6)) then  ! there is no bath, too slow to couple
             numpar%Transport_e = .false. ! excluded
             if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
                print*, 'Electronic thermostat is off'
