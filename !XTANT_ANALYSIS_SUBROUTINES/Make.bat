@@ -44,7 +44,7 @@ IF /I %arg1%==DEBUG (
    echo %Starline%
 
    :: List compiler options
-   SET "Compile_options=/F9999999999 /QxHost /QaxAVX  /fpp /Qmkl=parallel /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /Qfp-stack-check /fp:precise /standard-semantics"
+   SET "Compile_options=/F9999999999 /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /Qfp-stack-check /fp:precise /standard-semantics"
 
    :: Set name of the executable:
    SET "Name_of_exe=XTANT_atomic_data_analysis.exe"
@@ -55,7 +55,7 @@ IF /I %arg1%==DEBUG (
    echo %Starline%
 
    :: List compiler options
-   SET "Compile_options= /Qopenmp /D OMP_inside /Qmkl=parallel /O3 /fpp /Qipo /real-size:64 /standard-semantics /F9999999999 "
+   SET "Compile_options= /O3 /fpp /Qipo /real-size:64 /standard-semantics /F9999999999 "
 
    :: Set name of the executable:
    SET "Name_of_exe=XTANT_atomic_data_analysis.exe"
