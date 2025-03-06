@@ -46,7 +46,7 @@
 PROGRAM XTANT
 !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
 ! Initiate modules with all the 'use' statements collected in a separate file:
-#include 'Use_statements.f90'  ! include part of the code from an external file
+#include "Use_statements.f90"  ! include part of the code from an external file
 
 implicit none
 
