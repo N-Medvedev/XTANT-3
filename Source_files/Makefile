@@ -1,6 +1,6 @@
 # The makefile compiles (type make) and makes an executable called XTANT.x
 # This file was written by N.Medvedev
-# in 2021-2024
+# in 2021-2025
 #-----------------------------------------------------
 
 EXEPATH = .
@@ -17,7 +17,7 @@ LD = ld
 # choose the compilers among gfortran, gfortran6.1.0, ifort2011, ifort2013
 ifeq ($(c),gf)
 	F90 = gfortran
-	F90FLAGS = -ffree-line-length-0 -fdec-format-defaults -cpp -fdefault-real-8 -fdefault-double-8 -O2
+	F90FLAGS = -ffree-line-length-0 -fdec -fdec-format-defaults -cpp -fdefault-real-8 -fdefault-double-8 -O2
 	LDFLAGS += -lblas -llapack -fopenmp
 	# need to link OpenMP,     ^^^^^^^ even for non OpenMP compilation. Can be fixed..
 	ifeq (${OMP},y)
@@ -25,7 +25,7 @@ ifeq ($(c),gf)
 	endif
 else ifeq ($(c),gf6)
 	F90 = gfortran6.1.0
-	F90FLAGS = -ffree-line-length-0 -fdec-format-defaults -cpp -fdefault-real-8 -fdefault-double-8 -O2
+	F90FLAGS = -ffree-line-length-0 -fdec -fdec-format-defaults -cpp -fdefault-real-8 -fdefault-double-8 -O2
 	LDFLAGS += -lblas -llapack -fopenmp
 	ifeq (${OMP},y)
 		F90FLAGS += -fopenmp
