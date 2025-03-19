@@ -1,0 +1,329 @@
+SkdefVersion = 1
+
+Globals {
+  XCFunctional = PBE {}
+  Superposition = density
+}
+
+AtomParameters {
+
+  $OCCUPATIONS_Ne {
+    1S = 1.0 1.0
+    2S = 1.0 1.0
+    2P = 3.0 3.0
+  }
+
+  $OCCUPATIONS_Ar {
+    $OCCUPATIONS_Ne
+    3S = 1.0 1.0
+    3P = 3.0 3.0
+  }
+
+  $OCCUPATIONS_Kr {
+    $OCCUPATIONS_Ar
+    3D = 5.0 5.0
+    4S = 1.0 1.0
+    4P = 3.0 3.0
+  }
+
+  $OCCUPATIONS_Xe {
+    $OCCUPATIONS_Kr
+    4D = 5.0 5.0
+    5S = 1.0 1.0
+    5P = 3.0 3.0
+  }
+
+  H {
+    AtomConfig {
+      AtomicNumber = 1
+      Mass = 1.008
+      Occupations {
+	1S = 1.0 0.0
+      }
+      ValenceShells = 1s
+      Relativistics = None
+    }
+    DftbAtom {
+      ShellResolved = No
+      DensityCompression = PowerCompression { Power = 2; Radius = 2.5 }
+      WaveCompressions = SingleAtomCompressions {
+	S = PowerCompression { Power = 2; Radius = 3.0 }
+      }
+    }
+  }
+
+ C {
+    AtomConfig {
+      AtomicNumber = 6
+      Mass = 12.01
+      Occupations {
+	1S = 1.0 1.0
+	2S = 1.0 1.0
+	2P = 2.0 0.0
+      }
+      ValenceShells = 2s 2p
+      Relativistics = zora
+    }
+    DftbAtom {
+      ShellResolved = No
+      DensityCompression = PowerCompression { Power = 2; Radius = 7.0 }
+      WaveCompressions = SingleAtomCompressions {
+	S = PowerCompression { Power = 2; Radius = 2.7 }
+	P = PowerCompression { Power = 2; Radius = 2.7 }
+      }
+    }
+  }
+
+  N {
+    AtomConfig {
+      AtomicNumber = 7
+      Mass = 14.007
+      Occupations {
+	1S = 1.0 1.0
+	2S = 1.0 1.0
+	2P = 2.0 1.0
+      }
+      ValenceShells = 2s 2p
+      Relativistics = None
+    }
+    DftbAtom {
+      ShellResolved = No
+      DensityCompression = PowerCompression{ Power = 2; Radius = 11.0 }
+      WaveCompressions = SingleAtomCompressions {
+	S = PowerCompression { Power = 2; Radius = 2.2 }
+	P = PowerCompression { Power = 2; Radius = 2.2 }
+      }
+      CustomizedOnsites {
+	2s = -0.64
+      }
+    }
+  }
+
+  Cs {
+    AtomConfig {
+      AtomicNumber = 55
+      Mass = 132.91
+      Occupations {
+	$OCCUPATIONS_Xe
+	6S = 1.0 0.0
+      }
+      ValenceShells = 6s
+      Relativistics = None
+    }
+    DftbAtom {
+      ShellResolved = Yes
+      DensityCompression = PowerCompression{ Power = 14; Radius = 10.6 }
+      WaveCompressions = SingleAtomCompressions {
+	S = PowerCompression { Power = 14; Radius = 10.6 }
+        P = PowerCompression { Power = 14; Radius = 10.6 }
+        D = PowerCompression { Power = 14; Radius = 10.6 }
+      }
+    }
+  }
+
+  I {
+    AtomConfig {
+      AtomicNumber = 53
+      Mass = 126.90
+      Occupations {
+        $OCCUPATIONS_Kr
+        5S = 1.0 1.0
+        5P = 3.0 2.0
+        4D = 5.0 5.0
+      }
+      ValenceShells = 5s 5p
+      Relativistics = Zora
+    }
+    DftbAtom {
+      ShellResolved = Yes
+      DensityCompression = PowerCompression{ Power = 2; Radius = 6.86828546 }
+      WaveCompressions = SingleAtomCompressions {
+        S = PowerCompression { Power = 2; Radius = 5.94603558 }
+        P = PowerCompression { Power = 2; Radius = 5.94603558 }
+        D = PowerCompression { Power = 2; Radius = 5.94603558 }
+      }
+    }
+  }
+
+  Pb {
+    AtomConfig {
+      AtomicNumber = 82
+      Mass = 207.2
+      Occupations {
+	$OCCUPATIONS_Xe
+	6S = 1.0 1.0
+	6P = 2.0 0.0
+	5D = 5.0 5.0
+	4F = 7.0 7.0
+      }
+      ValenceShells = 6s 6p
+      Relativistics = Zora
+    }
+    DftbAtom {
+      ShellResolved = Yes
+      DensityCompression = PowerCompression{ Power = 4; Radius = 11.84053587 }
+      WaveCompressions = SingleAtomCompressions {
+	S = PowerCompression { Power = 4; Radius = 11.0 }
+	P = PowerCompression { Power = 4; Radius = 11.0 }
+	D = PowerCompression { Power = 4; Radius = 11.0 }
+	F = PowerCompression { Power = 4; Radius = 11.0 }
+      }
+    }
+  }
+
+}
+
+
+OnecenterParameters {
+
+  $StandardDeltaFilling {
+    DeltaFilling = 0.01
+  }
+
+  H {
+    $StandardDeltaFilling
+    Calculator = SlaterAtom {
+      Exponents {
+	S = 0.50 1.0 2.0
+      }
+      MaxPowers {
+	S = 3
+      }
+    }
+  }
+
+  C {
+    $StandardDeltaFilling
+    Calculator = SlaterAtom {
+      Exponents {
+	S = 0.5 1.14 2.62 6.0
+	P = 0.5 1.14 2.62 6.0
+      }
+      MaxPowers {
+	S = 3
+	P = 3
+      }
+    }
+  }
+
+  N {
+    $StandardDeltaFilling
+    Calculator = SlaterAtom {
+      MaxSCFIterations = 600
+      Exponents {
+	S = 0.5 1.2 2.9 7.0
+	P = 0.5 1.2 2.9 7.0
+      }
+      MaxPowers {
+	S = 3
+	P = 3
+      }
+    }
+  }
+
+  Cs {
+    $StandardDeltaFilling
+    Calculator = SlaterAtom {
+      MaxSCFIterations = 300
+      SCFTolerance = 1e-08
+      Exponents {
+        S = 1.00 2.0 6.00 24.0 55.0 185.0
+        P = 1.00 2.0 6.00 24.0 55.0 185.0
+        D = 1.00 2.0 6.00 24.0 55.0 185.0
+      }
+      MaxPowers {
+        S = 3
+	P = 3
+	D = 3
+      }
+    }
+  }
+
+  I {
+    $StandardDeltaFilling
+    Calculator = SlaterAtom {
+      MaxSCFIterations = 300
+      SCFTolerance = 1e-08
+      Exponents {
+        S = 1.00 2.0 6.00 24.0 53.0 175.0
+        P = 1.00 2.0 6.00 24.0 53.0 175.0
+        D = 1.00 2.0 6.00 24.0 53.0 175.0
+      }
+      MaxPowers {
+        S = 3
+        P = 3
+	D = 3
+      }
+    }
+  }
+
+  Pb {
+    $StandardDeltaFilling
+    Calculator = SlaterAtom {
+      MaxSCFIterations = 300
+      SCFTolerance = 1e-08
+      Exponents {
+        S = 1.00 2.58 7.89 25.5 78.0 233.5
+        P = 1.00 2.58 7.89 25.5 78.0 233.5
+        D = 1.00 2.58 7.89 25.5 78.0 233.5
+        F = 1.00 2.58 7.89 25.5 78.0 233.5
+      }
+      MaxPowers {
+	S = 4
+	P = 4
+	D = 4
+	F = 4
+      }
+    }
+  }
+
+}
+
+
+TwoCenterParameters {
+
+  $EqGrid = EquidistantGrid {
+      GridStart = 0.4
+      GridSeparation = 0.02
+      Tolerance = 5e-5
+      MaxDistance = 40.0
+  }
+
+  # Various specific cutoffs to match SK-file cutoffs in mio-1-1
+  $EqGridCutoff10 = EquidistantGrid {
+      GridStart = 0.4
+      GridSeparation = 0.02
+      Tolerance = 5e-5
+      MaxDistance = -10.001
+  }
+
+  $SkTwocnt_300_150 = Sktwocnt {
+    IntegrationPoints = 300 150
+  }
+
+  $SkTwocnt_400_200 = Sktwocnt {
+    IntegrationPoints = 400 200
+  }
+  H-H { Grid = $EqGridCutoff10; Calculator = $SkTwocnt_300_150 }
+  H-C { Grid = $EqGridCutoff10; Calculator = $SkTwocnt_300_150 }
+  H-N { Grid = $EqGridCutoff10; Calculator = $SkTwocnt_300_150 }
+  H-I { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  H-Pb { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  H-Cs { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  C-C { Grid = $EqGridCutoff10; Calculator = $SkTwocnt_300_150 }
+  C-N { Grid = $EqGridCutoff10; Calculator = $SkTwocnt_300_150 }
+  C-I { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  C-Pb { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  C-Cs { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  N-N { Grid = $EqGridCutoff10; Calculator = $SkTwocnt_300_150 }
+  N-I { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  N-Pb { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  N-Cs { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  I-I { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  I-Cs { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  I-Pb { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  Pb-Pb { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  Pb-Cs { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+  Cs-Cs { Grid = $EqGrid; Calculator = $SkTwocnt_400_200 }
+
+}
