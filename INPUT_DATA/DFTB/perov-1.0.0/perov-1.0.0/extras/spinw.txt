@@ -1,0 +1,33 @@
+Spin constants
+--------------
+
+Note, the calculation of the spin constants follows here for all elements the
+convention as used for the Hubbard U values: For non-occupied atomic orbitals
+(orbitals above HOMO) the corresponding value of the HOMO is used.
+
+H:
+     -0.07174
+
+C:
+     -0.03062     -0.02505
+
+     -0.02505     -0.02265
+
+N:
+     -0.03318     -0.02755
+
+     -0.02755     -0.02545
+
+Cs:
+     -0.00949
+
+I:
+     -0.01445     -0.01132
+
+     -0.01132     -0.01145
+
+Pb:
+     -0.01335     -0.00932
+
+     -0.00932     -0.01097
+

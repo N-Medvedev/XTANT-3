@@ -5655,7 +5655,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
             write(print_to,'(a,f12.3,a)') ' Pulse duration ' , laser(i)%t*2.35482, ' [fs]'
          end select
          write(print_to,'(a,f12.3,a)') ' Pulse maximum at ' , laser(i)%t0, ' [fs]'
-         write(print_to,'(a,f12.5,a)') ' Absorbed fluence ' , laser(i)%F, ' [eV/atom]'
+         write(print_to,'(a,f12.5,a)') ' Absorbed dose    ' , laser(i)%F, ' [eV/atom]'
       enddo
    endif ! FEL included or not?
    
@@ -5936,7 +5936,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
    else  ! in artificial cases, the density may be wild:
       write(print_to,'(a,es25.3,a)') ' Density of the material: ', matter%dens,' [g/cm^3]'
-      write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
+      write(print_to,'(a,es12.3,a)') ' Atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'
    endif
 
    write(print_to,'(a,a)') ' EADL database used: ', trim(adjustl(numpar%EADL_file))
@@ -5967,7 +5967,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       case (1)
          write(print_to,'(a)') ' MD algorithm used: Yoshida (4th order)'
       case (2)
-         write(print_to,'(a)') ' MD algorithm used: Martyna (4th order)'
+         write(print_to,'(a)') ' MD algorithm used: Martyna-Tuckerman (4th order)'
       case default
          write(print_to,'(a)') ' MD algorithm used: velocity Verlet (2th order)'
       endselect
@@ -5976,7 +5976,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       else
          write(print_to,'(a,f9.3,a)') ' Time step in MD simulations: ', numpar%dt,' [fs]'
       endif
-      write(print_to,'(a,f9.3,a)') ' Output data are saved every: ', numpar%dt_save,' [fs]'
+      write(print_to,'(a,f9.3,a)') ' Output data are saved every: ', max(numpar%dt_save,numpar%dt),' [fs]'
       if (numpar%p_const) then	! P=const
          write(print_to,'(a)') ' Constant pressure simulation (Parrinello-Rahman scheme, NPH) '
          ! Get the supercell mass in units of total atoms mass
@@ -6070,7 +6070,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       case (1)
          write(print_to,'(a)') ' using transient nonequilibrium atomic distribution'
       case default
-         write(print_to,'(a)') ' using equilvalent Maxwellian atomic distribution'
+         write(print_to,'(a)') ' using equivalent Maxwellian atomic distribution'
       endselect
    endif
 

@@ -1,0 +1,97 @@
+============================================
+Parametrization for metal halide perovskites
+============================================
+
+(c) 2017, Marcus Elstner, Karlsruher Institut für Technologie
+[original mio set]
+
+(c) 2024, Junke Jiang, INSA Rennes
+[extension with I, Cs, Pb, recalculating all tables for consistency]
+
+All rights reserved
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, consult the LICENSE file
+or visit http://creativecommons.org/licenses/by-sa/4.0/ .
+
+NOTE: The rights holder(s) for this work explicitly require that the attribution
+conditions of this license are enforced. Use in part or in whole of this data is
+permitted only under the condition that the scientific background of the
+Licensed Material will be CITED IN ANY PUBLICATIONS ARISING FROM ITS USE. The
+required references are specified in this file and must be included in resulting
+works.
+
+
+General information
+===================
+
+This set was designed to describe the electronic structure of 2D and 3D metal
+halide perovskites. The parameters of H, C, and N may slightly deviate from mio-1-1.
+We refer to the detailed documentation in the Slater-Koster files for further
+information. The compression radii of Cs have been taken from Ref.[JCTC13], the
+power of the confinement potential, however, is slightly different.
+
+Note: This set assumes that you use shell-resolved SCC in DFTB. In case you use
+the DFTB+ code, you can achieve it by setting `OrbitalResolvedSCC = Yes`.
+
+
+Maximal angular momenta
+-----------------------
+H: s
+C: p
+N: p
+I: p
+Cs: s
+Pb: p
+
+
+Spin constants
+--------------
+
+Note, the calculation of the spin constants follows here for all elements the
+convention as used for the Hubbard U values: For non-occupied atomic orbitals
+(orbitals above HOMO), the corresponding value of the HOMO is used.
+
+H:
+     -0.07174
+C:
+     -0.03062     -0.02505
+     -0.02505     -0.02265
+N:
+     -0.03318     -0.02755
+     -0.02755     -0.02545
+Cs:
+     -0.00949
+I:
+     -0.01445     -0.01132
+     -0.01132     -0.01145
+Pb:
+     -0.01335     -0.00932
+     -0.00932     -0.01097
+
+
+Repulsive energy:
+========================================
+
+NOTABENE: NO REPULSIVE potential is provided; there is a dummy spline only.
+          The SKFs CANNOT be used to do structural relaxation.
+
+
+Relevant publications
+=====================
+
+[PRMat25] J. Jiang et al., Phys. Rev. Materials 9, 023803 (2025).
+
+[JCTC13] M. Wahiduzzaman et al., J. Chem. Theory Comput. 9, 9, 4006 (2013).
+
+[PRB98] M. Elstner, D. Porezag, G. Jungnickel, J. Elsner, M. Haugk,
+Th. Frauenheim, S. Suhai, and G. Seifert, Phys. Rev. B 58, 7260 (1998).
+
+
+Required references
+===================
+
+H,C,N - H,C,N:      [PRMat25,PRB98]
+H,C,N,I,Cs,Pb - I:  [PRMat25]
+H,C,N,I,Cs,Pb - Cs: [PRMat25,JCTC13]
+H,C,N,I,Cs,Pb - Pb: [PRMat25]
