@@ -4296,20 +4296,22 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! Testing:
-!    do i = 1, Nat
-!       ! Convert acceleration into SI units:
-!       acc(:) = Scell(1)%MDAtoms(i)%accel(:) * 1.0d20 ! [A/fs^2] -> [m/s^2]
-!       Mass => matter%Atoms(Scell(1)%MDatoms(i)%KOA)%Ma ! atomic mass [kg]
+!     do i = 1, Nat
+!        ! Convert acceleration into SI units:
+!        acc(:) = Scell(1)%MDAtoms(i)%accel(:) * 1.0d20 ! [A/fs^2] -> [m/s^2]
+!        Mass => matter%Atoms(Scell(1)%MDatoms(i)%KOA)%Ma ! atomic mass [kg]
 !
-!       ! Get the force:
-!       Ftest(:) = Mass * acc(:) ! [N]
+!        ! Get the force:
+!        Ftest(:) = Mass * acc(:) ! [N]
 !
-!       Ftest(:) = Ftest(:) * 1.0d-10 / g_e ! [eV/A]
-!       write(*,'(i4, es,es,es,es,es,es)') i, Ftest(:), -F(:,i)   ! Tested, correct
-!    enddo
-    !print*, '===================='
-    !print*, Tconf, dble(Nat)/SUM( (dF(1,:)+dF(2,:)+dF(3,:)) / (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) )*g_kb
-    !print*, '===================='
+!        Ftest(:) = Ftest(:) * 1.0d-10 / g_e ! [eV/A]
+!        write(*,'(i4, es,es,es,es,es,es)') i, Ftest(:), -F(:,i)   ! Tested, ~correct
+! !        write(*,'(i4, es,es,es,es,es,es)') i, Scell(1)%MDAtoms(i)%accel(:), &
+! !                                           (Scell(1)%MDatoms(i)%V(:) - Scell(1)%MDatoms(i)%V0(:)) / numpar%halfdt      ! tested, ~correct
+!     enddo
+!     print*, '===================='
+!     print*, 'Tconf', Tconf, dble(Nat)/SUM( (dF(1,:)+dF(2,:)+dF(3,:)) / (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) )*g_kb
+!     print*, '===================='
     !pause 'Tconfig'
    
    ! Clean up:
@@ -4368,10 +4370,10 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
       end select
    END ASSOCIATE
 
-   ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
-   if (allocated(M_Vs)) then
-      call get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, dFatr) ! below
-   endif
+   ! Get attractive forces for atoms from the derivatives of the Hamiltonian (UNFINISHED):
+!    if (allocated(M_Vs)) then
+!       call get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, dFatr) ! below
+!    endif
 
 
    ! Repulsive TB Hamiltonian part:
