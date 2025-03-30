@@ -711,7 +711,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          
          do j = 1,size(laser) ! for each pulse:
             laser(j)%Fabs = laser(j)%F*dble(Scell(i)%Na) ! total absorbed energy by supercell [eV]
-            laser(j)%Nph = laser(j)%Fabs/laser(i)%hw     ! number of photons absorbed in supercell
+            call define_photon_spectrum_parameters(laser(j)) ! below
          enddo
 
          temp = 0.0d0
@@ -774,6 +774,36 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 !     enddo ! j
 !    pause 'set_initial_configuration'
 end subroutine set_initial_configuration
+
+
+
+subroutine define_photon_spectrum_parameters(laser)
+   type(Pulse), intent(inout) :: laser	! Laser pulse parameters
+   !-----------------------
+   integer :: i, N
+   real(8) :: int_spectrum, int_spectrum_E, mean_hw, dE, Dmean, Emean
+
+   if (.not.allocated(laser%Spectrum)) then ! single photon energy given:
+      laser%Nph = laser%Fabs/laser%hw     ! number of photons absorbed in supercell
+   else ! Spectrum given:
+      ! will be done separately, in subroutine "process_laser_parameters"
+      ! here, only get the average photon energy:
+      N = size(laser%Spectrum,2)    ! spectrum grid size
+      int_spectrum = 0.0d0    ! to start with
+      int_spectrum_E = 0.0d0  ! to start with
+      do i = 2, N ! entire spectrum
+         dE = (laser%Spectrum(1,i) - laser%Spectrum(1,i-1)) ! energy step
+         Emean = (laser%Spectrum(1,i) + laser%Spectrum(1,i)) * 0.5d0 ! mean energy on this step
+         Dmean = (laser%Spectrum(2,i) + laser%Spectrum(2,i)) * 0.5d0 ! mean dose on this step
+         int_spectrum = int_spectrum + Dmean*dE
+         int_spectrum_E = int_spectrum_E + Dmean*Emean*dE
+      enddo
+      mean_hw = int_spectrum_E / int_spectrum
+      laser%hw = mean_hw
+
+      !print*, 'define_photon_spectrum_parameters:', laser%hw
+   endif
+end subroutine define_photon_spectrum_parameters
 
 
 
