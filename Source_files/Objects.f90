@@ -857,6 +857,10 @@ type Pulse
    real(8) :: F      ! [eV/atom] absorbed dose
    real(8) :: Fabs   ! [eV] total absorbed energy per simulation box
    real(8) :: Nph    ! number of absorbed photons
+   real(8), dimension(:,:), allocatable :: Spectrum   ! Spectrum: photon energy [eV], intensity [arb.units]
+   real(8), dimension(:), allocatable :: Spectrum_abs ! Absorbed spectrum (analytical); [eV/atom]
+   real(8), dimension(:), allocatable :: Spectrum_MC  ! MC-sampled Absorbed spectrum; [eV/atom]
+   real(8), dimension(:), allocatable :: Spectrum_int ! Integrated absorbed spectrum (to use in MC); [eV/atom]
 end type Pulse
 
 

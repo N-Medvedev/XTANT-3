@@ -53,12 +53,12 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 08.11.2024)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 30.03.2025)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
 public :: close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies
-public :: XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comforting_message, printout_MFP_file
+public :: XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comforting_message, printout_MFP_file, printout_laser_spectrum
 
  contains
 
@@ -211,6 +211,127 @@ subroutine printout_CDF_file(numpar, matter, Scell)
       call close_file('close', FN=FN)  ! module "Dealing_with_files"
    endif
 end subroutine printout_CDF_file
+
+
+
+subroutine printout_laser_spectrum(laser, numpar, matter)
+   type(Pulse), dimension(:), allocatable, intent(inout) :: laser	! Laser pulse parameters
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   type(Solid), intent(in) :: matter ! parameters of the material
+   !type(Super_cell), dimension(:), intent(in):: Scell ! super-cell with all the atoms inside
+   !----------------------------
+   real(8) :: coef, t0, t_last, x_tics
+   integer :: i_pulse, N_pulse, FN, i, N_grid
+   character(200) :: file_name, text_var, file_spectrum, gnu_photon_spectrum
+   character(18) :: temp, ch_temp
+   character(11) :: sh_cmd, call_slash
+
+   !--------------------------------------------------------------------------
+   ! Make sure non-master MPI processes aren't doing anything wrong here
+   if (numpar%MPI_param%process_rank /= 0) then   ! only MPI master process does it
+      return
+   endif
+   !--------------------------------------------------------------------------
+
+
+   ! Number of pulses:
+   N_pulse = size(laser)
+
+   ! Do for each pulse:
+   do i_pulse = 1, N_pulse
+      ! Sort the number of absorbed photons, if spectrum is used:
+      if (allocated(laser(i_pulse)%Spectrum)) then ! photon spectrum given
+
+         if (N_pulse > 1) then
+            write(temp,'(i0)') i_pulse ! number of the pulse
+            temp = '_pulse_'//trim(adjustl(temp))
+         else
+            temp = ''   ! empty
+         endif
+
+         text_var = 'OUTPUT_'
+         write(text_var,'(a)') trim(adjustl(text_var))//'photon_spectrum'//trim(adjustl(temp))
+
+         file_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(text_var))//'.dat'
+         file_spectrum = trim(adjustl(text_var))//'.dat'
+
+         FN = 9989
+         open(UNIT=FN, FILE = trim(adjustl(file_name)))
+
+         ! Printout Photon spectra:
+         ! 1) Create the comment lines:
+         write(FN,'(a)') '#Energy   Incoming   Absorbed    Absorbed_sampled'
+         write(FN,'(a)') '#[eV]     [arb.units] [1/eV]   [1/eV]'
+
+         ! 2) Save spectra:
+         coef = maxval(laser(i_pulse)%Spectrum_abs(:)) / maxval(laser(i_pulse)%Spectrum(2,:))
+         N_grid = size(laser(i_pulse)%Spectrum,2)
+
+         ! Renormalize MC-sampled photon spectrumm:
+         laser(i_pulse)%Spectrum_MC = laser(i_pulse)%Spectrum_MC/dble(numpar%NMC)
+
+         do i = 1, N_grid
+            write(FN,'(f16.4, es24.8, es24.8, es24.8)') laser(i_pulse)%Spectrum(1,i), &
+                                    laser(i_pulse)%Spectrum(2,i) * coef, &
+                                    laser(i_pulse)%Spectrum_abs(i), laser(i_pulse)%Spectrum_MC(i)/dble(size(matter%Atoms))
+         enddo ! k
+         call close_file('close', FN=FN)  ! module "Dealing_with_files"
+
+
+         !=======================================================
+         ! Gnuplot the data:
+         if (numpar%path_sep .EQ. '\') then	! if it is Windows
+            call_slash = 'call '
+            sh_cmd = '.cmd'
+         else ! It is linux
+            call_slash = './'
+            sh_cmd = '.sh'
+         endif
+
+         ! Grid size:
+         t0 = laser(i_pulse)%Spectrum(1,1)
+         t_last = laser(i_pulse)%Spectrum(1,N_grid)
+
+         ! Photon spectrum gnuplotting:
+         gnu_photon_spectrum = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))// &
+                  'OUTPUT_photon_spectrum'//trim(adjustl(temp))//trim(adjustl(sh_cmd))
+         open(NEWUNIT=FN, FILE = trim(adjustl(gnu_photon_spectrum)), action="write", status="replace")
+
+         ! Find order of the number, and set number of tics as tenth of it:
+         call order_of_time((t_last - t0), ch_temp, x_tics=x_tics)	! module "Little_subroutines"
+
+         call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics,  'MFPs', &
+            'Photon energy (eV)', 'Photon spectrum (arb. units)', 'OUTPUT_photon_spectrum.'//trim(adjustl(numpar%fig_extention)), &
+            numpar%path_sep, setkey=0, set_x_log=.false., set_y_log=.false.)  ! module "Gnuplotting"
+
+         if (numpar%path_sep .EQ. '\') then  ! if it is Windows
+            write(FN, '(a,es15.6,a,es15.6,a,a,a)') 'p [', t0, ':', t_last, '][0:] "' , trim(adjustl(file_spectrum)), &
+               ' "u 1:2 w l lw LW dashtype "_" title "Incoming" ,\'
+
+            write(FN, '(a)') '"'//trim(adjustl(file_spectrum))// &
+                        '" u 1:3 w l lw LW title "Absorbed" ,\'
+
+            write(FN, '(a)') '"'//trim(adjustl(file_spectrum))// &
+                        '" u 1:4 w l lt rgb "#000000" lw LW dashtype "_." title "MC Sampled" '
+         else  ! Linux
+            write(FN, '(a,es15.6,a,es15.6,a,a,a)') 'p [', t0, ':', t_last, '][0:] \"' , trim(adjustl(file_spectrum)), &
+               '\" u 1:2 w l lw \"$LW\" dashtype \"_\" title \"Incomming" ,\'
+
+            write(FN, '(a)') '\"'//trim(adjustl(file_spectrum))// &
+                        '\" u 1:3 w l lw \"$LW\" title \"Absorbed\" ,\'
+
+            write(FN, '(a)') '\"'//trim(adjustl(file_spectrum))// &
+                        '\" u 1:4 w l lt rgb \"#000000\" lw \"$LW\" dashtype \"_.\" title \"MC Sampled\" '
+         endif
+
+         call write_gnuplot_script_ending_new(FN, gnu_photon_spectrum, numpar%path_sep) ! module "Gnuplotting"
+         close(FN)
+
+      endif ! (allocated(laser(i_pulse)%Spectrum))
+   enddo ! i_pulse
+
+end subroutine printout_laser_spectrum
+
 
 
 subroutine printout_MFP_file(numpar, matter, Scell)
@@ -4875,7 +4996,13 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
    else UDN ! 2) If user did not defined the output name, construct the default name:
 
     LAS:if (maxval(laser(:)%F) .GT. 0.0d0) then
-      write(ch1,'(f7.1)') (laser(1)%hw)	! photon energy
+
+      if (allocated(laser(1)%Spectrum)) then    ! spectrum vs. single photon energy
+         ch1 = 'spectrum'
+      else ! single photon energy
+         write(ch1,'(f7.1)') (laser(1)%hw)   ! photon energy
+      endif
+
       if (laser(1)%KOP .EQ. 1) then
          write(ch2,'(f6.1)') (laser(1)%t*2.35482d0)	! pulse duration
       else

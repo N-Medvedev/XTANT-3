@@ -6413,7 +6413,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       read(FN, '(a)', IOSTAT=Reason) read_line
       ! Few options for input of the photon energy or wavelength:
       ! May contain photon energy or wavelength of the laser, may contain units, may contain FWHM of spectral distribuition and units:
-      call get_photon_parameters(read_line, laser, i, count_lines, File_name, Err) ! below
+      call get_photon_parameters(read_line, numpar, laser, i, count_lines, File_name, Err) ! below
       if (Err%Err) goto 3417
       ! Printout warning if photon energy is too high:
       if (laser(i)%hw >= 1.0d5) then
@@ -6497,17 +6497,20 @@ end subroutine read_input_material
 
 
 
-subroutine get_photon_parameters(read_line, laser, i, count_lines, File_name, Err)
+subroutine get_photon_parameters(read_line, numpar, laser, i, count_lines, File_name, Err)
    character(*), intent(in) :: read_line  ! line read from the input file
+   type(Numerics_param), intent(in) :: numpar  ! all numerical parameters
    type(Pulse), dimension(:), intent(inout) :: laser ! Laser pulse parameters
    integer, intent(in) :: i ! laser pulse index
    integer, intent(inout) :: count_lines  ! conter in which line the error appeared
    character(*), intent(in) :: File_name  ! which file we are reading now
    type(Error_handling), intent(inout) :: Err   ! error save
    !--------------------
-   integer :: Reason
+   integer :: Reason, FN, N_lines, Sub_Reason, Sub_count_lines, j
    real(8) :: temp1, temp2, temp2_rel
    character(12) :: ch_temp1, ch_temp2
+   character(200) :: spectrum_file
+   logical :: file_exists, read_well, spectrum_done_well, file_opened
 
    ! A few options to set input:
    !--------------------
@@ -6573,7 +6576,7 @@ subroutine get_photon_parameters(read_line, laser, i, count_lines, File_name, Er
    !--------------------
    ! 4) lets try to read 2 variables: photon energy/wavelength, FWHM (both assuming eV)
    read(read_line,*,IOSTAT=Reason) temp1, temp2
-   if (Reason == 0) then  ! 3 variables in order, interprete them:
+   if (Reason == 0) then  ! 2 variables in order, interprete them:
       ! Interprete units of the mean:
       laser(i)%hw = temp1
       ! The spread (FWHM):
@@ -6585,7 +6588,7 @@ subroutine get_photon_parameters(read_line, laser, i, count_lines, File_name, Er
    !--------------------
    ! 5) lets try to read 2 variables: photon energy/wavelength and its units (assuming monochromatic pulse, no FWHM)
    read(read_line,*,IOSTAT=Reason) temp1, ch_temp1
-   if (Reason == 0) then  ! 3 variables in order, interprete them:
+   if (Reason == 0) then  ! 2 variables in order, interprete them:
       ! Interprete units of the mean:
       call photon_units(ch_temp1, temp1, laser(i)%hw, .true.) ! below
       ! No spread (FWHM):
@@ -6596,17 +6599,78 @@ subroutine get_photon_parameters(read_line, laser, i, count_lines, File_name, Er
    !--------------------
    ! 6) lets try to read 1 variable: photon energy (assuming [eV], monochromatic pulse, no FWHM)
    read(read_line,*,IOSTAT=Reason) laser(i)%hw
-   if (Reason == 0) then  ! 3 variables in order, interprete them:
+   if (Reason == 0) then  ! 1 variable:
       ! No spread (FWHM):
       laser(i)%FWHM_hw = 0.0d0
       return ! done, can exit the subroutine
+   endif
+
+
+   !--------------------
+   ! 7) if it is not a number, try to interprete it as a file with photon spectrum:
+   spectrum_done_well = .false. ! to start with
+   read(read_line,*,IOSTAT=Reason) spectrum_file
+   if (Reason == 0) then  ! 1 variable:
+      ! Check if such a file exists and contains a spectrum:
+
+      ! Look for the input file in the INPUT_DATA directory:
+      spectrum_file = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(spectrum_file))
+
+      ! If the name contains subdirectories, try to ensure the path uses correct separator:
+      call ensure_correct_path_separator(spectrum_file, numpar%path_sep)  ! module "Dealing_with_files"
+      !print*, trim(adjustl(spectrum_file))
+
+      ! Check if such a file exists:
+      inquire(file=trim(adjustl(spectrum_file)),exist=file_exists)
+      if (.not.file_exists) then
+         Reason = 5555  ! to mark the error
+         print*, 'ERROR: File with photon spectrum not found: '//trim(adjustl(spectrum_file))
+         goto 2121
+      endif
+      ! If file exists, open it:
+      open(NEWUNIT=FN, FILE = trim(adjustl(spectrum_file)), action = 'read')
+      inquire(file=trim(adjustl(spectrum_file)), opened=file_opened, number=FN)
+      if (.not.file_opened) then
+         Reason = 5556  ! to mark the error
+         print*, 'ERROR: File with photon spectrum could nto be opened: '//trim(adjustl(spectrum_file))
+         goto 2121
+      endif
+
+      ! Check how many lines are in the file:
+      call Count_lines_in_file(FN, N_lines)  ! module "Dealing_with_files"
+      ! If the file is empty, no spectrom is provided:
+      if (N_lines < 1) then
+         Reason = 5557  ! to mark the error
+         print*, 'ERROR: File with photon spectrum contains no data: '//trim(adjustl(spectrum_file))
+         goto 2121
+      endif
+
+      ! Allocate the spectrum array:
+      allocate(laser(i)%Spectrum(2,N_lines), source = 0.0d0)
+      allocate(laser(i)%Spectrum_abs(N_lines), source = 0.0d0)
+      allocate(laser(i)%Spectrum_MC(N_lines), source = 0.0d0)
+      allocate(laser(i)%Spectrum_int(N_lines), source = 0.0d0)
+
+      ! And fill it with the data:
+      Sub_count_lines = 0     ! to start with
+      do j = 1, N_lines
+         read(FN,*,IOSTAT=Sub_Reason) laser(i)%Spectrum(1,j), laser(i)%Spectrum(2,j)
+         call read_file(Sub_Reason, Sub_count_lines, read_well)
+         if (.not. read_well) then
+            Reason = 5558  ! to mark the error
+            print*, 'ERROR: Could not read line ', Sub_count_lines, ' in file '//trim(adjustl(spectrum_file))
+            goto 2121
+         endif
+      enddo
+
+      if (spectrum_done_well) return ! done well, can exit the subroutine
    endif
 
    !--------------------
    ! After all options, check if it read well:
 2121   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                            add_error_info='Line: '//trim(adjustl(read_line)))  ! below
-
+   call close_file('close', FN=FN)  ! module "Dealing_with_files"
 end subroutine get_photon_parameters
 
 

@@ -202,6 +202,9 @@ call printout_CDF_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_out
 ! Printout mean free paths, if required:
 call printout_MFP_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_output_files"
 
+! Printout pump-laser photon spectrum, if required:
+call printout_laser_spectrum(g_laser, g_numpar, g_matter)   ! module "Dealing_with_output_files"
+
 ! Collect all gnuplot files into one script to execute all together later:
 if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
    call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)), skip_execution=.true.) ! module "Gnuplotting"
@@ -456,6 +459,11 @@ if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does 
 endif
 
 2012 continue
+
+
+! Redo the pump-laser photon spectrum, now including the MC_sampled one:
+call printout_laser_spectrum(g_laser, g_numpar, g_matter)   ! module "Dealing_with_output_files"
+
 
 if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
    INQUIRE(UNIT = g_Err%File_Num, opened=file_opened, name=chtest)

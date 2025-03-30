@@ -49,7 +49,7 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
    type(Numerics_param), intent(inout) :: numpar     ! all numerical parameters
    type(Solid), intent(inout) :: matter           ! all material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! supercell with all the atoms as one object
-   type(Pulse), dimension(:), intent(in) :: laser ! laser pulse parameters
+   type(Pulse), dimension(:), intent(inout) :: laser ! laser pulse parameters
    real(8), intent(in) :: tim ! [fs] current time step
    type(Error_handling), intent(inout) :: Err     ! errors to save
    !==============================================================
@@ -254,7 +254,7 @@ subroutine MC_run(tim, MC, Scell, laser, matter, numpar, Eetot_cur, noeVB_cur, N
    real(8), intent(in) :: tim	! [fs] current time
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
-   type(Pulse), dimension(:), intent(in) :: laser	! Laser pulse parameters
+   type(Pulse), dimension(:), intent(inout) :: laser	! Laser pulse parameters
    type(solid), intent(in) :: matter	! materil parameters
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), intent(inout) :: Eetot_cur, noeVB_cur	! [eV] CB electrons energy; and number
@@ -1183,7 +1183,7 @@ end subroutine extend_MC_array
 ! Laser pulse and photons:
 subroutine choose_photon_energy(numpar, laser, MC, tim) ! see below
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
-   type(Pulse), dimension(:), intent(in) :: laser	! Laser pulse parameters
+   type(Pulse), dimension(:), intent(inout) :: laser	! Laser pulse parameters
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    real(8), intent(in) :: tim  ! current time-step [fs]
    real(8), dimension(:), allocatable :: Nphot_pulses
@@ -1198,7 +1198,8 @@ subroutine choose_photon_energy(numpar, laser, MC, tim) ! see below
       Nphot_pulses = Nphot_pulses/sum_phot ! normalize fractions of different pulses to 1
    endif
    sum_phot = Nphot_pulses(1) ! now, to summation
-   do i = 1, N
+
+   do i = 1, N    ! for all photons
       call random_number(RN)
       coun = 1 ! start counting pulses
       do while (sum_phot .LT. RN)
@@ -1207,14 +1208,57 @@ subroutine choose_photon_energy(numpar, laser, MC, tim) ! see below
       enddo
 
       ! Distribution of the photon energy:
-      if (laser(coun)%FWHM_hw > 0.0d0) then  ! if it is a distribution
-         MC%photons(i)%E = sample_gaussian(laser(coun)%hw, laser(coun)%FWHM_hw, .true.) ! module "Little_subroutine"
-      else  ! single photon energy
-         MC%photons(i)%E = laser(coun)%hw ! [eV] photon energy in this pulse #coun
-      endif
-!       print*, MC%photons(i)%E
-   enddo
+      ! If photon spectrum is given:
+      if (allocated(laser(coun)%Spectrum)) then ! photon spectrum given
+
+         MC%photons(i)%E = sample_from_spectrum(laser(coun))      ! below
+
+      else ! single energy (maybe with a spread):
+         if (laser(coun)%FWHM_hw > 0.0d0) then  ! if it is a distribution
+            MC%photons(i)%E = sample_gaussian(laser(coun)%hw, laser(coun)%FWHM_hw, .true.) ! module "Little_subroutine"
+         else  ! single photon energy
+            MC%photons(i)%E = laser(coun)%hw ! [eV] photon energy in this pulse #coun
+         endif
+      endif ! allocated(laser(coun)%Spectrum)
+
+      !print*, MC%photons(i)%E
+   enddo ! i = 1, N
+
+   !print*, sum_phot, Nphot_pulses
 end subroutine choose_photon_energy
+
+
+
+function sample_from_spectrum(laser) result(hw)
+   real(8) :: hw  ! [eV] photon energy selected from sample
+   type(Pulse), intent(inout) :: laser ! Laser pulse parameters
+   !-------------------------
+   real(8) :: RN, RN2, Sampled_spectr
+   integer :: N
+
+   call random_number(RN)
+
+   ! Total spectrum to normalize:
+   Sampled_spectr = laser%Nph * RN
+
+   ! Photon energy from integral absorbed spectrum:
+   call Find_in_array_monoton(laser%Spectrum_int, Sampled_spectr, N) ! module "Little_subroutines"
+
+   ! Photon energy:
+   call random_number(RN2)    ! sample it from this interval:
+   if (N < size(laser%Spectrum_abs)) then
+      hw = laser%Spectrum(1,N) + RN2 * (laser%Spectrum(1,N+1) - laser%Spectrum(1,N))
+   else
+      hw = laser%Spectrum(1,N-1) + RN2 * (laser%Spectrum(1,N) - laser%Spectrum(1,N-1))
+   endif
+
+   ! Save sampled photon energy:
+   laser%Spectrum_MC(N) = laser%Spectrum_MC(N) + 1.0d0      ! one more photon with this energy
+
+   !print*, N, laser%Nph, laser%Spectrum_int(size(laser%Spectrum_int))
+   !pause 'sample_from_spectrum'
+end function sample_from_spectrum
+
 
 
 subroutine total_photons(laser, numpar, tim, Nphot)
@@ -1335,25 +1379,30 @@ subroutine process_laser_parameters(Scell, matter, laser, numpar)
    type(Numerics_param), intent(in) :: numpar         ! all numerical parameters
    type(Pulse), dimension(:), intent(inout) :: laser  ! laser pulse parameters
    !-----------------------------------
-   integer :: i, Nsiz, N
-   real(8) :: eps, F_abs, d, dsc, Ltot
+   integer :: i, Nsiz, N, N_spectrum, j
+   real(8) :: eps, F_abs, d, dsc, Ltot, hw, int_spectrum, int_spectrum_E, Dmean, Dabsorbed, dE, dx, dy, dz, renorm, Etot, Ntot
 
    eps = 1.0d-12  ! precision
 
    ! Process the laser pulse parameters:
    Nsiz = size(laser)   ! how many pulses
    do i = 1, Nsiz ! for all pulses
+
+      ! Sort the absorbed energy:
       if ( (laser(i)%F < -eps) .and. (laser(i)%F_in > eps) ) then ! imcoming fluence was specified
          ! Convert incoming fluence to absorbed dose: [J/cm^2] -> [eV/atom]
          ! Supercell size along Z:
          dsc = sqrt( SUM( Scell%supce(3,:)*Scell%supce(3,:) ) )  ! [A]
          ! Distance between atoms at the borders:
-         d = maxval(Scell%MDAtoms(:)%R(3)) - minval(Scell%MDAtoms(:)%R(3))
+         !d = maxval(Scell%MDAtoms(:)%R(3)) - minval(Scell%MDAtoms(:)%R(3))
+         dx = maxval(Scell%MDAtoms(:)%R(1)) - minval(Scell%MDAtoms(:)%R(1))
+         dy = maxval(Scell%MDAtoms(:)%R(2)) - minval(Scell%MDAtoms(:)%R(2))
+         dz = maxval(Scell%MDAtoms(:)%R(3)) - minval(Scell%MDAtoms(:)%R(3))
+         d = max(dx,dy,dz)
          ! If it is a layer with empty space around it, use the distance, otherwise, use the supercell:
          if (dsc < 2.0d0*d) then
             d = dsc
          endif
-         !print*, sqrt( SUM( Scell%supce(3,:)*Scell%supce(3,:) ) ), d
 
          ! Photon attenuation length:
          call Find_in_array_monoton(matter%Ph_MFP_tot%E, laser(i)%hw, N) ! module "Little_subroutines"
@@ -1368,10 +1417,72 @@ subroutine process_laser_parameters(Scell, matter, laser, numpar)
 
          ! Absorbed energy total:
          laser(i)%Fabs = laser(i)%F*dble(Scell%Na) ! total absorbed energy by supercell [eV]
-         ! Number of absorbed photons:
+         ! Number of absorbed photons (for given photon energy; for spectrum redefined below):
          laser(i)%Nph = laser(i)%Fabs/laser(i)%hw     ! number of photons absorbed in supercell
       endif
-   enddo
+
+      ! Sort the number of absorbed photons, if spectrum is used:
+      if (allocated(laser(i)%Spectrum)) then ! photon spectrum given
+         N_spectrum = size(laser(i)%Spectrum,2) ! spectrum grid size
+         int_spectrum = 0.0d0 ! to start with
+         int_spectrum_E = 0.0d0 ! to start with
+
+         ! Convert incoming fluence to absorbed dose: [J/cm^2] -> [eV/atom]
+         ! Supercell size along Z:
+         dsc = sqrt( SUM( Scell%supce(3,:)*Scell%supce(3,:) ) )  ! [A]
+         ! Distance between atoms at the borders:
+         dx = maxval(Scell%MDAtoms(:)%R(1)) - minval(Scell%MDAtoms(:)%R(1))
+         dy = maxval(Scell%MDAtoms(:)%R(2)) - minval(Scell%MDAtoms(:)%R(2))
+         dz = maxval(Scell%MDAtoms(:)%R(3)) - minval(Scell%MDAtoms(:)%R(3))
+         d = max(dx,dy,dz)
+         ! If it is a layer with empty space around it, use the distance, otherwise, use the supercell:
+         if (dsc < 2.0d0*d) then
+            d = dsc
+         endif
+
+         do j = 2, N_spectrum ! entire spectrum
+            dE = (laser(i)%Spectrum(1,j) - laser(i)%Spectrum(1,j-1)) ! energy step
+            hw    = (laser(i)%Spectrum(1,j) + laser(i)%Spectrum(1,j-1)) * 0.5d0 ! mean energy on this step
+            Dmean = (laser(i)%Spectrum(2,j) + laser(i)%Spectrum(2,j-1)) * 0.5d0 ! mean dose on this step
+
+            ! Photon attenuation length (for this part of the spectrum):
+            call Find_in_array_monoton(matter%Ph_MFP_tot%E, hw, N) ! module "Little_subroutines"
+            Ltot = matter%Ph_MFP_tot%L(N) ! inverse mean free path [1/A]
+
+            ! Absorbed fluence in the supercell (for this part of the spectrum):
+            F_abs = Dmean * (1.0d0 - exp(-d*Ltot) ) ! [J/cm^2]
+
+            ! Absorbed dose (for this part of the spectrum):
+            Dabsorbed = F_abs/(g_e * matter%At_dens * (d*1e-8))    ! [eV/atom]
+
+            ! Save absorbed photon spectrum:
+            laser(i)%Spectrum_abs(j) = Dabsorbed      ! [eV/atom]
+
+            int_spectrum = int_spectrum + Dabsorbed*dE
+            int_spectrum_E = int_spectrum_E + Dabsorbed*hw*dE
+
+            ! Save integral absorbed photon spectrum:
+            laser(i)%Spectrum_int(j) = int_spectrum ! [eV/atom]
+
+            !print*, j, laser(i)%Spectrum_abs(j), Dabsorbed, int_spectrum
+         enddo ! j = 2, N_spectrum
+         ! Average absorbed photon energy:
+         laser(i)%hw = int_spectrum_E/int_spectrum
+         ! Number of absorbed photons (for average photon energy):
+         laser(i)%Nph = laser(i)%Fabs/laser(i)%hw     ! number of photons absorbed in supercell
+         ! Renormalize integral spectrum:
+         renorm = laser(i)%Nph / int_spectrum
+         laser(i)%Spectrum_int(:) = laser(i)%Spectrum_int(:) * renorm
+         ! Renormalize the absorbed spectrum to get the correct absorbed dose:
+         laser(i)%Spectrum_abs(:) = laser(i)%Spectrum_abs(:) * renorm    ! [eV/atom]
+
+         !print*, 'Abs:', laser(i)%Spectrum_abs(:)
+         !print*, 'Inc:', laser(i)%Spectrum(2,:)
+
+      endif
+      ! Testing: average photon energy and corresponding absorbed dose:
+      !print*, laser(i)%F, laser(i)%Nph, laser(i)%hw, laser(i)%Nph * laser(i)%hw / size(matter%Atoms), int_spectrum_E/int_spectrum
+   enddo ! i = 1, Nsiz
    !pause 'process_laser_parameters'
 end subroutine process_laser_parameters
 
