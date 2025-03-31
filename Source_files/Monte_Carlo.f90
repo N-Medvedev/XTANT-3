@@ -1456,13 +1456,13 @@ subroutine process_laser_parameters(Scell, matter, laser, numpar)
             Dabsorbed = F_abs/(g_e * matter%At_dens * (d*1e-8))    ! [eV/atom]
 
             ! Save absorbed photon spectrum:
-            laser(i)%Spectrum_abs(j) = Dabsorbed      ! [eV/atom]
+            laser(i)%Spectrum_abs(j) = Dabsorbed*dE      ! [1/atom]
 
             int_spectrum = int_spectrum + Dabsorbed*dE
             int_spectrum_E = int_spectrum_E + Dabsorbed*hw*dE
 
             ! Save integral absorbed photon spectrum:
-            laser(i)%Spectrum_int(j) = int_spectrum ! [eV/atom]
+            laser(i)%Spectrum_int(j) = int_spectrum ! [1/atom]
 
             !print*, j, laser(i)%Spectrum_abs(j), Dabsorbed, int_spectrum
          enddo ! j = 2, N_spectrum
@@ -1474,7 +1474,7 @@ subroutine process_laser_parameters(Scell, matter, laser, numpar)
          renorm = laser(i)%Nph / int_spectrum
          laser(i)%Spectrum_int(:) = laser(i)%Spectrum_int(:) * renorm
          ! Renormalize the absorbed spectrum to get the correct absorbed dose:
-         laser(i)%Spectrum_abs(:) = laser(i)%Spectrum_abs(:) * renorm    ! [eV/atom]
+         laser(i)%Spectrum_abs(:) = laser(i)%Spectrum_abs(:) * renorm    ! [1/atom]
 
          !print*, 'Abs:', laser(i)%Spectrum_abs(:)
          !print*, 'Inc:', laser(i)%Spectrum(2,:)
