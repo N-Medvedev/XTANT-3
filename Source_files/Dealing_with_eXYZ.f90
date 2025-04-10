@@ -54,6 +54,7 @@ subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_at
    ind_atoms = -1  ! Atoms are set randomly
    SC_X = 0.0d0   ! ][A
    SC_Y = 0.0d0   ! [A]
+   it_is_mixture = .false.  ! to start with, assume no mixture
 
    ! Start reading the line:
    count_lines = 0   ! to start with
@@ -115,6 +116,7 @@ subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_at
       !-----------------
       case ('Alloy', 'alloy', 'Mixture', 'mixture')
          ind_atoms = -1  ! atomic positions are set in this file
+         it_is_mixture = .true.
          !print*, "We've got an alloy, everyone!"
 
       end select
