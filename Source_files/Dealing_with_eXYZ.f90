@@ -33,11 +33,12 @@ public :: interpret_XYZ_comment_line
 
  contains
 
-subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_atoms, SC_X, SC_Y, Error_descript)
+subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_atoms, SC_X, SC_Y, it_is_mixture, Error_descript)
    character(*), intent(in) :: line_2  ! line #2 read from XYZ file
    integer, intent(out) :: ind_S, ind_R, ind_V, ind_atoms  ! indices: Element; Coordinates; Velocities; Atoms_setting
    real(8), dimension(3,3), intent(inout) :: Supce ! supercell vectors
    real(8), intent(inout) :: SC_X, SC_Y   ! sepuercell sizes along X and Y [A]
+   logical, intent(inout) :: it_is_mixture  ! flag for alloy/mixture
    character(*), intent(inout) :: Error_descript   ! error message, if any
    !----------------------
    integer :: block_start, block_end, block2_end, colon_pos, colon_pos2, current_block, str_len, eq_pos
@@ -110,6 +111,12 @@ subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_at
             call interpret_random_line(line_2(current_block+block_start+1:current_block+block_start+block_end-1) , &
                   SC_X, SC_Y) ! below
          endif
+
+      !-----------------
+      case ('Alloy', 'alloy', 'Mixture', 'mixture')
+         ind_atoms = -1  ! atomic positions are set in this file
+         !print*, "We've got an alloy, everyone!"
+
       end select
 
       ! Next block, if exists:
