@@ -867,22 +867,26 @@ subroutine interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Sce
    integer :: ind_S, ind_R, ind_V, ind_atoms
    real(8) :: SC_X, SC_Y
    character(200) :: Error_descript
+   logical :: it_is_mixture
 
-   call interpret_XYZ_comment_line(line_2, Scell(SCN)%Supce, ind_S, ind_R, ind_V, ind_atoms, SC_X, SC_Y, Error_descript)     ! module "Dealing_with_eXYZ"
+   call interpret_XYZ_comment_line(line_2, Scell(SCN)%Supce, ind_S, ind_R, ind_V, ind_atoms, SC_X, SC_Y, it_is_mixture, Error_descript)     ! module "Dealing_with_eXYZ"
    if (trim(adjustl(Error_descript)) /= '') then
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
       goto 3420
    endif
 
-   if (numpar%verbose) print*, 'In interpret_XYZ_comment, the ind_atoms=', ind_atoms
+   if (numpar%verbose) then
+      print*, 'In interpret_XYZ_comment, the ind_atoms =', ind_atoms
+      if (it_is_mixture) print*, 'In interpret_XYZ_comment, alloy/mixture is specified'
+   endif
 
    ! If atomic coordinates are provided:
    select case (ind_atoms)
    case (1) ! there are data for atomic species and coordinates
       Scell(SCN)%Supce0 = Scell(SCN)%Supce   ! initial
       if (numpar%verbose) print*, 'Reading defined atomic coordinates from xyz-file'
-      call read_XYZ_coords(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, ind_S, ind_R, ind_V, Err) ! below
+      call read_XYZ_coords(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, ind_S, ind_R, ind_V, it_is_mixture, Err) ! below
    case (0) ! to be set randomly
       if (numpar%verbose) print*, 'Setting random atomic coordinates defined in xyz-file'
       call read_XYZ_random(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, SC_X, SC_Y, numpar, Err) ! below
@@ -1068,12 +1072,13 @@ end subroutine read_XYZ_random
 
 
 
-subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, ind_S, ind_R, ind_V, Err)
+subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, ind_S, ind_R, ind_V, it_is_mixture, Err)
    integer, intent(in) :: FN, SCN, ind_S, ind_R, ind_V
    integer, intent(inout) :: count_lines
    character(*), intent(in) :: File_name_XYZ ! extended XYZ file name
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(inout) :: matter	! all material parameters
+   logical, intent(inout) :: it_is_mixture      ! falg for alloy/mixture
    type(Error_handling), intent(inout) :: Err	! error save
    !------------------------
    integer :: i, Reason, KOA
@@ -1122,12 +1127,16 @@ subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, i
          endif
 
          ! Find the index from the element name:
-         call get_KOA_from_element(El_name, matter, KOA) ! module "Dealing_with_POSCAR"
-         if (KOA <= 0) then
-            write(Error_descript,'(a,i3,a,$)') 'In the target, there is no element ', trim(adjustl(El_name)), ' from file '//trim(adjustl(File_name_XYZ))
-            call Save_error_details(Err, 3, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 3419
+         if (.not.it_is_mixture) then ! only check if atoms were already set in the file
+            call get_KOA_from_element(El_name, matter, KOA) ! module "Dealing_with_POSCAR"
+            if (KOA <= 0) then
+               write(Error_descript,'(a,a,a)') 'In the target, there is no element ', trim(adjustl(El_name)), ' from file '//trim(adjustl(File_name_XYZ))
+               call Save_error_details(Err, 3, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               goto 3419
+            endif
+         else
+            KOA = -1 ! for alloy/mix, to define later
          endif
          Scell(SCN)%MDAtoms(i)%KOA = KOA
       endif ! (ind_S == 0)
@@ -1581,6 +1590,13 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
       unit_cell = Scell(SCN)%Supce  ! use it to resize the supercell
       call set_supercell_size_from_unitcells(Scell, SCN, matter, unit_cell, .true.)   ! below
 
+      ! In case atoms were not specified yet, but must be set in a mix/alloy:
+      call make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript) ! below
+      if (INFO .NE. 0) then
+         call Save_error_details(Err, INFO, Error_descript)
+         goto 3417
+      endif
+
       ! Set coordinates in the sueprcell:
       call set_initial_coords(matter, Scell, SCN, FN, File_name, Nat=Scell(SCN)%Na, INFO=INFO, Error_descript=Error_descript, XYZ=1)
       if (INFO .NE. 0) then
@@ -1666,9 +1682,99 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
 end subroutine get_initial_atomic_coord
 
 
+subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   integer, intent(in) :: SCN ! number of supercell
+   type(solid), intent(inout) :: matter   ! material parameters
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters
+   integer, intent(out) :: INFO ! did we read well from the file
+   character(200), intent(inout) :: Error_descript
+   !---------------------
+   real(8), dimension(:,:), allocatable :: Relcoat
+   integer, dimension(:), allocatable :: KOA
+   logical, dimension(:), allocatable :: element_done
+   real(8) :: pers_tot, coef, RN
+   integer :: i, Nat, j, Na, k, i_cur, i_run, i_pers, i_cur_save
+   character(200) :: text, text1
+
+   INFO = 0 ! at the start, there is no error
+
+   if (ANY(Scell(SCN)%MDatoms(:)%KOA < 0)) then ! do only if "alloy/mixture" were specified
+      if (numpar%verbose) print*, 'Creating an alloy or a mixture (make_alloy)'
+
+      ! Unit-cell coordinates were already read from XYZ file, save them:
+      Nat = Scell(SCN)%Na*matter%cell_x*matter%cell_y*matter%cell_z ! Number of atoms in the supercell
+      allocate(Relcoat(3,Nat))
+      allocate(KOA(Nat))
+      do j = 1, size(Scell(SCN)%MDatoms)  ! atoms in the unit cell
+         Relcoat(:,j) = Scell(SCN)%MDatoms(j)%S(:)
+         KOA(j) = Scell(SCN)%MDatoms(j)%KOA
+      enddo ! j
+      ! Update the number of atoms in the supercell (from the unit cell):
+      if (size(Scell(SCN)%MDatoms) /= Nat) then
+         deallocate(Scell(SCN)%MDatoms)
+         allocate(Scell(SCN)%MDatoms(Nat))
+         do j = 1, Scell(SCN)%Na ! save those that were given in the unit cell
+            Scell(SCN)%MDatoms(j)%S(:) = Relcoat(:,j)
+            Scell(SCN)%MDatoms(j)%KOA = KOA(j)
+         enddo ! j
+      endif
+
+
+      ! Adjust percentages to nearest integers to set numbers of atoms:
+      pers_tot = SUM(matter%Atoms(:)%percentage)
+      coef = 1.0d0/pers_tot*Nat
+      do i = 1, size(matter%Atoms)
+         matter%Atoms(i)%percentage = NINT(matter%Atoms(i)%percentage*coef)
+         if (matter%Atoms(i)%percentage < 1) matter%Atoms(i)%percentage = 1 ! at least single atom must be present
+         !print*, i, trim(adjustl(matter%Atoms(i)%Name)), matter%Atoms(i)%percentage
+      enddo ! i
+
+      ! And now, make sure the number of atoms is equal to the expected one:
+      k = transfer(MAXLOC(matter%Atoms(:)%percentage),k) ! largest percentage, to be used for adjustment:
+      matter%Atoms(k)%percentage = Nat - (SUM(matter%Atoms(:)%percentage) - matter%Atoms(k)%percentage)
+      if (matter%Atoms(k)%percentage < 0) then  ! too few atoms to work
+         INFO = 10
+         write(Error_descript,'(a)') 'Insufficient number of atoms in the supercell to create an alloy'
+         print*, trim(adjustl(Error_descript))
+         return
+      endif
+      !print*, Scell(SCN)%Na, Nat, size(Scell(SCN)%MDatoms), SUM(matter%Atoms(:)%percentage)
+      !print*, matter%Atoms(:)%percentage
+
+      ! Now, distribute the elements into MD atomic array:
+      allocate(element_done(size(Scell(SCN)%MDatoms)), source = .false.)      ! to start with
+      i_run = 0   ! to start with
+      i_pers = 1  ! to start with
+      do i = 1, size(Scell(SCN)%MDatoms)  ! all all MD atoms
+         i_run = i_run + 1    ! we are in this array now
+         if (i_run > matter%Atoms(i_pers)%percentage) then ! move to the next element:
+            i_pers = i_pers + 1     ! next subarray
+            i_run = 1   ! restart counting atoms in this element subarray
+         endif
+
+         call random_number(RN)
+         i_cur = max(NINT(RN*Nat),1) ! trial index
+         i_cur_save = i_cur
+         !print*, i, i_cur, Scell(SCN)%MDatoms(i_cur)%KOA
+
+         do while (Scell(SCN)%MDatoms(i_cur)%KOA > 0) ! find undefined element
+            i_cur = i_cur + 1
+            if (i_cur > Nat) i_cur = 1    ! restart counting
+            if (i_cur == i_cur_save) exit ! we check all of them
+         enddo
+         Scell(SCN)%MDatoms(i_cur)%KOA = i_pers
+         !print*, i, i_cur, Scell(SCN)%MDatoms(i_cur)%KOA
+      enddo
+
+   endif
+
+   !pause 'make_alloy'
+end subroutine make_alloy
+
 
 subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descript,XYZ)
-   type(solid), intent(inout) :: matter	! materil parameters
+   type(solid), intent(inout) :: matter	! material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
    integer, intent(in) :: SCN ! number of supercell
    integer, intent(in) :: FN	! file number for reading initial coordinates inside the unit-cell
@@ -1737,6 +1843,7 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
          !print*, 'KOA', j, KOA(j), Scell(SCN)%MDatoms(j)%KOA
       enddo
       ! Update the size of the supercell from the unit cell:
+      !print*, 'sizes:', size(Scell(SCN)%MDatoms), Scell(SCN)%Na
       if (size(Scell(SCN)%MDatoms) /= Scell(SCN)%Na) then
          deallocate(Scell(SCN)%MDatoms)
          allocate(Scell(SCN)%MDatoms(Scell(SCN)%Na))
@@ -1777,8 +1884,14 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
                   
                   Scell(SCN)%MDatoms(j)%S(i) = (Relcoat(i,k) + a + coord_shift)/l2  ! relative coordinates of an atom
                   !Scell(SCN)%MDatoms(j)%KOA = Scell(SCN)%MDatoms(k)%KOA ! kind of atom
-                  Scell(SCN)%MDatoms(j)%KOA = KOA(k) ! kind of atom
                enddo ! i
+
+               !print*, 'one', k, Scell(SCN)%MDatoms(j)%KOA, KOA(k)
+               ! define the kind-of-atom only if it is undefined:
+               if (Scell(SCN)%MDatoms(j)%KOA < 1) then
+                  Scell(SCN)%MDatoms(j)%KOA = KOA(k) ! kind of atom
+               endif
+               !print*, 'two', j, Scell(SCN)%MDatoms(j)%KOA, KOA(k)
             enddo ! k
          enddo ! nz
       enddo ! ny
@@ -1793,17 +1906,16 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
       Scell(SCN)%MDatoms(j)%S0(:) = Scell(SCN)%MDatoms(j)%S(:)	! relative coords at "previous" time step
 !       write(*,'(i3,i2,f,f,f,f,f,f)') j, Scell(SCN)%MDatoms(j)%KOA, Scell(SCN)%MDatoms(j)%R(:), Scell(SCN)%MDatoms(j)%S(:)
    enddo ! j
-!    pause 'INITIAL CONDITIONS'
+   !pause 'INITIAL CONDITIONS'
 
    ! If we want to shift all atoms:
    ! call Shift_all_atoms(matter, atoms, 0.25d0, 0.25d0, 0.25d0) ! from the module "Atomic_tools"
 3417 continue
-
 end subroutine set_initial_coords
 
 
 subroutine set_initial_velocities(matter, Scell, NSC, atoms, numpar, allow_rotation)
-   type(solid), intent(inout) :: matter	! materil parameters
+   type(solid), intent(inout) :: matter	! material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of the super-cell
    type(Atom), dimension(:), intent(inout) :: atoms	! array of atoms in the supercell
