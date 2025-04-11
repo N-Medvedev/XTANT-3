@@ -1714,6 +1714,9 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
       if (size(Scell(SCN)%MDatoms) /= Nat) then
          deallocate(Scell(SCN)%MDatoms)
          allocate(Scell(SCN)%MDatoms(Nat))
+         do j = 1, size(Scell(SCN)%MDatoms)
+            Scell(SCN)%MDatoms(j)%KOA = -1 ! to start with
+         enddo
          do j = 1, Scell(SCN)%Na ! save those that were given in the unit cell
             Scell(SCN)%MDatoms(j)%S(:) = Relcoat(:,j)
             Scell(SCN)%MDatoms(j)%KOA = KOA(j)
@@ -1767,6 +1770,10 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
          !print*, i, i_cur, Scell(SCN)%MDatoms(i_cur)%KOA
       enddo
 
+      ! test:
+      !do i = 1, size(Scell(SCN)%MDatoms)  ! all all MD atoms
+      !   print*, i, Scell(SCN)%MDatoms(i)%KOA
+      !enddo
    endif
 
    !pause 'make_alloy'
