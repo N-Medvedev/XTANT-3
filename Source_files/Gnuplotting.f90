@@ -46,10 +46,10 @@ subroutine collect_gnuplots(path_sep, out_path, skip_execution)
    character(*), intent(in) :: path_sep, out_path    ! folder with the cmd-files
    logical, intent(in), optional :: skip_execution  ! if you don't want to execute all gnuplots
    !------------------------
-   character(200) :: File_name, command, Gnuplot_all_file, File_name_withquotes
+   character(300) :: File_name, command, Gnuplot_all_file, File_name_withquotes
    integer :: FN, N_f, i, n_slash
    integer :: open_status, iret, idir, leng
-   character(200), dimension(:), allocatable :: All_files
+   character(300), dimension(:), allocatable :: All_files
    character(300) :: output_path
    character(5) ::  call_slash, sh_cmd
    logical :: skip_exec

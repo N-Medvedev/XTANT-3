@@ -222,7 +222,7 @@ subroutine printout_laser_spectrum(laser, numpar, matter)
    !----------------------------
    real(8) :: coef, t0, t_last, x_tics
    integer :: i_pulse, N_pulse, FN, i, N_grid
-   character(200) :: file_name, text_var, file_spectrum, gnu_photon_spectrum
+   character(300) :: file_name, text_var, file_spectrum, gnu_photon_spectrum
    character(18) :: temp, ch_temp
    character(11) :: sh_cmd, call_slash
 
@@ -340,7 +340,7 @@ subroutine printout_MFP_file(numpar, matter, Scell)
    type(Super_cell), dimension(:), intent(in):: Scell ! super-cell with all the atoms inside
    !----------------------------
    real(8) :: t0, t_last, x_tics
-   character(200) :: file_name, text_var, file_electron_IMFP, file_electron_EMFP, file_photon_MFP, gnu_electron_MFP, gnu_photon_MFP
+   character(300) :: file_name, text_var, file_electron_IMFP, file_electron_EMFP, file_photon_MFP, gnu_electron_MFP, gnu_photon_MFP
    character(11) :: chtemp11, sh_cmd, call_slash
    character(8) :: temp, time_order, col, col_VB
    integer :: NSC, FN, Nsiz, i, Nshl, j, k, N_grid, j_start, count_col
@@ -4301,7 +4301,7 @@ end subroutine gnu_n_and_k
 subroutine write_gnuplot_script_ending(FN, File_name, ind)
    integer, intent(in) :: FN, ind
    character(*), intent(in) :: File_name
-   character(100) :: command
+   character(300) :: command
    integer :: iret
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
@@ -4330,7 +4330,7 @@ end subroutine write_gnuplot_script_ending
 
 subroutine execute_all_gnuplots(file_path)
    character(*), intent(in) :: file_path
-   character(100) :: command
+   character(300) :: command
    integer :: iret
    
    !call chdir(trim(adjustl(file_path)))
