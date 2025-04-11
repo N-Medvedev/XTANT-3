@@ -2465,10 +2465,10 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
    character(*), intent(in) :: file_diffraction_peaks, file_diffraction_powder  ! selected diffraction peaks; powder diffraction
    character(*), intent(in) :: file_testmode	! testmode data
    !----------------
-   character(200) :: File_name, File_name2
+   character(300) :: File_name, File_name2
    real(8) :: t0, t_last, x_tics, E_temp
    integer FN, i, j, Nshl, counter, iret, Nsiz
-   character(200) :: chtemp, command
+   character(300) :: chtemp, command
    character(11) :: chtemp11, sh_cmd, call_slash
    character(8) :: temp, time_order
    ! Starting time, to give enough time for system to thermalize before the pulse:
