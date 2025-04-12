@@ -341,6 +341,7 @@ subroutine Construct_M_Vs(Scell, NSC, TB_Hamil, numpar, M_Vs, M_dVs, M_d2Vs, M_c
             
          endif !  (j .GT. 0) 
       enddo ! atom_2 = 1,m 
+      nullify(m, j, r, x, y, z)
    enddo ! do i = 1,nat
    !$omp END PARALLEL DO
 #endif
@@ -2465,6 +2466,8 @@ subroutine dE2rep_dr2(TB_Repuls, atoms, Scell, numpar, F, dF) ! second derivativ
       enddo ! i1
       F(:,ian) = Erx_s(:,ian)	! all repulsive forces for this atom
       dF(:,ian) = Erx_s2(:,ian)	! all derivatives of repulsive forces for this atom
+
+      nullify(dphi_point, d2phi_point, x, y ,z, a_r)
    enddo ! ian
    !$OMP END PARALLEL DO
 #endif

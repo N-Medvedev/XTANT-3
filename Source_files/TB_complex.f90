@@ -29,7 +29,7 @@ use Objects
 use TB, only : k_point_choice, construct_complex_Hamiltonian
 use Optical_parameters, only : allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF, get_kappa_e_e, get_Onsager_dynamic
 use Electron_tools, only : get_DOS_sort
-use Little_subroutines, only : Find_in_array_monoton, linear_interpolation
+use Little_subroutines, only : Find_in_array_monoton, linear_interpolation, print_time_step
 
 #ifdef _OPENMP
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
@@ -90,11 +90,15 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    Nsiz_DOS_2 = size(DOS_partial,2)
    Nsiz_DOS_3 = size(DOS_partial,3)
 
+   !if (numpar%verbose) call print_time_step('use_complex_Hamiltonian: 1', msec=.true., MPI_param=numpar%MPI_param)
+
    !-----------------------------------------------
    ! For electron-temperature-dependent quantities:
    ! Define electron temperature grid:
    call set_temperature_grid(Scell(NSC), numpar, kappa, kappa_ee, kappa_mu_grid, kappa_Ce_grid) ! below
    Nsiz_Te = size(kappa)
+
+   !if (numpar%verbose) call print_time_step('use_complex_Hamiltonian: 2', msec=.true., MPI_param=numpar%MPI_param)
 
    !-----------------------------------------------
    ! Allocate the array of optical coefficients spectrum (if not allocated before):
@@ -102,9 +106,13 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    call set_frequency_grid(Scell(NSC), w_grid, Eps_hw)  ! below
    N_wgrid = size(w_grid)
 
+   !if (numpar%verbose) call print_time_step('use_complex_Hamiltonian: 3', msec=.true., MPI_param=numpar%MPI_param)
+
    !-----------------------------------------------
    ! Define the total number of k-points:
    call get_total_num_of_k_points(numpar, ixm, iym, izm, schem, Nsiz)   ! below
+
+   !if (numpar%verbose) call print_time_step('use_complex_Hamiltonian: 4', msec=.true., MPI_param=numpar%MPI_param)
 
    !-----------------------------------------------
    ! Calculate what's required for all k-points:
@@ -314,8 +322,15 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    if (allocated(kappa_Ce_grid_temp)) deallocate(kappa_Ce_grid_temp)
    if (allocated(DOS_temp)) deallocate(DOS_temp)
    if (allocated(DOS_partial_temp)) deallocate(DOS_partial_temp)
+   if (allocated(CHij)) deallocate(CHij)
+   if (allocated(cPRRx)) deallocate(cPRRx)
+   if (allocated(cPRRy)) deallocate(cPRRy)
+   if (allocated(cPRRz)) deallocate(cPRRz)
+   if (allocated(Ei)) deallocate(Ei)
    !$omp end parallel
 #endif
+
+   !if (numpar%verbose) call print_time_step('use_complex_Hamiltonian: 5', msec=.true., MPI_param=numpar%MPI_param)
 
    !-----------------------------------------------
    ! Save the k-point averages:
@@ -365,6 +380,8 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       !print*, 'use_complex_Hamiltonian:', kappa(1), kap_temp, Scell(NSC)%kappa_e
    endif
 
+   !if (numpar%verbose) call print_time_step('use_complex_Hamiltonian: 6', msec=.true., MPI_param=numpar%MPI_param)
+
    !-------------------------------
    ! Save DOS:
    if (numpar%save_DOS) then
@@ -374,6 +391,8 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
          Scell(NSC)%partial_DOS = DOS_partial/dble(Nsiz)
       end select
    endif
+
+   !if (numpar%verbose) call print_time_step('use_complex_Hamiltonian: 7', msec=.true., MPI_param=numpar%MPI_param)
 
    !-------------------------------
    ! Clean up:
@@ -389,7 +408,14 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    if (allocated(kappa_mu_grid)) deallocate(kappa_mu_grid)
    if (allocated(kappa_Ce_grid)) deallocate(kappa_Ce_grid)
    if (allocated(DOS)) deallocate(DOS)
+   if (allocated(DOS_temp)) deallocate(DOS_temp)
    if (allocated(DOS_partial)) deallocate(DOS_partial)
+   if (allocated(DOS_partial_temp)) deallocate(DOS_partial_temp)
+   if (allocated(Eps_hw_temp)) deallocate(Eps_hw_temp)
+   if (allocated(kappa_temp)) deallocate(kappa_temp)
+   if (allocated(kappa_ee_temp)) deallocate(kappa_ee_temp)
+   if (allocated(kappa_mu_grid_temp)) deallocate(kappa_mu_grid_temp)
+   if (allocated(kappa_Ce_grid_temp)) deallocate(kappa_Ce_grid_temp)
 end subroutine use_complex_Hamiltonian
 
 
@@ -459,19 +485,23 @@ subroutine create_DOS_arrays(numpar, Scell, matter, DOS, DOS_partial)
 
    ! Set grid for DOS:
    if (.not.allocated(DOS)) then
-      dE = 0.1d0  ! [eV] uniform energy grid step for DOS
-      Ei_siz = size(Scell%Ei) ! the uppermost energy level at the start
-      Estart = dble(FLOOR(Scell%Ei(1) - 50.0d0*numpar%Smear_DOS))  ! [eV]
-      Emax = min(Scell%Ei(Ei_siz) + 50.0d0*numpar%Smear_DOS,100.0)   ! no need to trace levels higher than 100 eV
-      Nsiz = CEILING( (Emax - Estart)/dE )
-      allocate(DOS(2,Nsiz), source = 0.0d0)
-      do i = 1, Nsiz ! set energy grid [eV]
-         DOS(1,i) = Estart + dE*dble(i-1)
-      enddo
 
       if (.not.allocated(Scell%DOS)) then ! it's the first time, set it:
+         dE = 0.1d0  ! [eV] uniform energy grid step for DOS
+         Ei_siz = size(Scell%Ei) ! the uppermost energy level at the start
+         Estart = dble(FLOOR(Scell%Ei(1) - 50.0d0*numpar%Smear_DOS))  ! [eV]
+         Emax = min(Scell%Ei(Ei_siz) + 50.0d0*numpar%Smear_DOS,100.0)   ! no need to trace levels higher than 100 eV
+         Nsiz = CEILING( (Emax - Estart)/dE )
+         allocate(DOS(2,Nsiz), source = 0.0d0)
+         do i = 1, Nsiz ! set energy grid [eV]
+            DOS(1,i) = Estart + dE*dble(i-1)
+         enddo
          allocate(Scell%DOS(2,Nsiz), source = 0.0d0)
          Scell%DOS(1,:) = DOS(1,:)  ! save energy grid
+      else ! it's not the first time, reuse existing DOS array:
+         Nsiz = size(Scell%DOS,2)
+         allocate(DOS(2,Nsiz), source = 0.0d0)
+         DOS(1,:) = Scell%DOS(1,:)  ! use saved energy grid
       endif
 
       n_types = size(numpar%mask_DOS,2)

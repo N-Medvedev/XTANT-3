@@ -2177,6 +2177,9 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
    complex :: Fijk
    integer, pointer :: KOA, KOA2
 
+
+   if (.not.numpar%save_diff_peaks) return      ! nothing to do here
+
    ! Number of atoms:
    Nat = dble(size(Scell(1)%MDAtoms))
 
@@ -2912,6 +2915,8 @@ subroutine shortest_distance_NEW(Scell, i1, j1, a_r, x1, y1, z1, sx1, sy1, sz1, 
          enddo ! j
       enddo ! i
    endif ! i1 = j1
+
+   nullify(atoms)
 end subroutine shortest_distance_NEW
 
 

@@ -675,7 +675,7 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
       call find_band_gap(Scell(NSC)%Ei_scc_part, Scell(NSC), matter, numpar) ! module "Electron_tools"
 
       ! Update the energy in the electronic system:
-      ! 1) Update the band structure, using the wave-functions corrected after the SCC procidure:
+      ! 1) Update the band structure, using the wave-functions corrected after the SCC procedure:
       !call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei_scc_part) ! module "Algebra_tools"
       call get_eigenvalues_from_eigenvectors(Scell(NSC)%H_non, Scell(NSC)%Ha, Scell(NSC)%Ei) ! module "Algebra_tools"
 
@@ -761,6 +761,7 @@ subroutine get_Coulomb_scc_energy(Scell, NSC, matter, numpar, gam_ij, E_coulomb)
       enddo ! atom_2
    enddo ! j
    !$omp end do
+   nullify(KOA1, KOA2, m)
    !$omp end parallel
 #endif
 
@@ -881,6 +882,7 @@ subroutine Coulomb_force_from_SCC_s(Scell, NSC, matter, numpar)
 
    enddo ! ian
    !$omp end do
+   nullify(j1, m, KOA1, KOA2, x, y, z)
    !$omp end parallel
 #endif
 
@@ -1055,6 +1057,7 @@ subroutine create_second_order_scc_term_H(Scell, matter, numpar, Sij, HperS, H_s
       enddo ! j
    enddo ! i
 !$omp end do
+   nullify(m)
 !$omp end parallel
 
    ! b) Construct lower triangle - use symmetry:
@@ -1078,6 +1081,7 @@ subroutine create_second_order_scc_term_H(Scell, matter, numpar, Sij, HperS, H_s
       enddo ! j
    enddo ! i
 !$omp end do
+   nullify(m)
 !$omp end parallel
 #endif
 
@@ -1254,6 +1258,7 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
       enddo ! j
    enddo ! i
 !$omp end do
+   nullify(m, m2, KOA1, KOA2, KOA3)
 !$omp end parallel
 
    ! b) Construct lower triangle - use symmetry:
@@ -1277,10 +1282,11 @@ subroutine get_HperS(Scell, numpar, gam_ij, q, HperS)
       enddo ! j
    enddo ! i
 !$omp end do
+   nullify(m)
 !$omp end parallel
 #endif
 
-   nullify(nat, m, KOA1, KOA2, KOA3)
+   nullify(nat, m, m2, KOA1, KOA2, KOA3)
 end subroutine get_HperS
 
 
@@ -1384,6 +1390,7 @@ subroutine get_all_gam_ij(Scell, matter, numpar, gam_ij)
       enddo ! j
    enddo ! i
 !$omp end do
+   nullify(m, KOA1, KOA2)
 !$omp end parallel
 
    ! b) Construct lower triangle - use symmetry:
@@ -1401,6 +1408,7 @@ subroutine get_all_gam_ij(Scell, matter, numpar, gam_ij)
          enddo ! j
       enddo ! i
 !$omp end do
+      nullify(m)
 !$omp end parallel
 #endif
 
@@ -3035,7 +3043,7 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
 
    else ORTH ! nonorthogonal
       ! Solve linear eigenproblem:
-      ! 1) Orthogonalize the Hamiltonian using Loewdin procidure:
+      ! 1) Orthogonalize the Hamiltonian using Loewdin procedure:
       ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
 
       allocate(CHij_temp(Nsiz,Nsiz))
@@ -3061,7 +3069,7 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
       ! 3) Convert the eigenvectors back into the non-orthogonal basis:
       call mkl_matrix_mult('N', 'N', CSij, CHij_temp, CHij)	! module "Algebra_tools"
       
-!       ! 4) If we need to renormalize the wave functions (in case they are not normalized to 1 after this procidure):
+!       ! 4) If we need to renormalize the wave functions (in case they are not normalized to 1 after this procedure):
 !       do j = 1, Nsiz
 !         CHij(:,j) = CHij(:,j) / SQRT(SUM( dconjg(CHij(:,j)) * CHij(:,j) ))
 !       enddo
@@ -3114,7 +3122,7 @@ subroutine diagonalize_complex8_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, C
       call sym_diagonalize(CHij, Ei, Error_descript, numpar%MPI_param) ! modeule "Algebra_tools"
    else ORTH ! nonorthogonal
       ! Solve linear eigenproblem:
-      ! 1) Orthogonalize the Hamiltonian using Loewdin procidure:
+      ! 1) Orthogonalize the Hamiltonian using Loewdin procedure:
       ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
 
 #ifdef _OPENMP
@@ -3265,6 +3273,7 @@ subroutine Construct_M_x1(Scell, NSC, numpar, M_x1, M_xrr, M_lmn)
       enddo
    enddo
 !$omp end do
+   nullify(x, y, z, r)
 !$omp END PARALLEL
 #endif
    nullify(x, y, z, r)
@@ -4316,6 +4325,7 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
    
    ! Clean up:
    deallocate(F, dF)
+   nullify(Mass)
 end subroutine Get_configurational_temperature
 
 
@@ -4554,6 +4564,7 @@ subroutine Construct_M_cos(Scell,  numpar, M_cos)
             M_cos(i,j,3) = z/r
          endif !  (j .GT. 0) 
       enddo ! atom_2 = 1,m 
+      nullify(m, j, r, x, y, z)
    enddo ! do i = 1,nat
    !$omp END PARALLEL DO 
 #endif
@@ -4605,6 +4616,7 @@ subroutine get_TB_attractive_forces_r(Scell, numpar, M_Vs, M_dVs, M_d2Vs, Fatr, 
       !call get_forces_r(k, numpar, Scell, NSC, Scell(NSC)%Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Aij_x_Ei)	! see below
    enddo ATOMS
    !$omp end do
+   nullify(KOA1, KOA2)
    !$omp end parallel
 #endif
 
@@ -5698,6 +5710,8 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! Obsolete subroutine
 !           call print_time_step('After DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
       endif !  (numpar%save_DOS)
    enddo ! NSC = 1, size(Scell) ! for all super-cells
+
+   if (allocated(Ei_cur)) deallocate(Ei_cur)
 end subroutine get_DOS
 
 
@@ -5782,6 +5796,8 @@ subroutine get_DOS_sort_complex(numpar, Scell, NSC, DOS, smearing, Err, partial_
       partial_DOS = partial_DOS/dble(Nsiz)
       deallocate (part_DOS_cur)
    endif
+
+   nullify(ARRAY)
 end subroutine get_DOS_sort_complex
 
 

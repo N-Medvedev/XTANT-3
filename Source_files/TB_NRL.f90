@@ -306,6 +306,7 @@ subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err
       enddo ! j
    enddo ! i
 !$omp end do 
+   nullify(KOA1, KOA2, m)
 !$omp end parallel
 
    ! b) Construct lower triangle - use symmetry:
@@ -327,7 +328,8 @@ subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err
          endif
       enddo ! j
    enddo ! i
-!$omp end do 
+!$omp end do
+   nullify(m)
 !$omp end parallel
 #endif
 
@@ -476,7 +478,8 @@ subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err
             endif ! (i > 0)
          enddo ! j
       enddo ! i
-      !$omp end do 
+      !$omp end do
+      nullify(m, x, y, z)
       !$omp end parallel
 !       deallocate(SH, HS)
 #endif
@@ -1155,7 +1158,8 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
          endif ! (i > 0)
       enddo ! atom_2
    enddo ! j
-   !$omp end do 
+   !$omp end do
+   nullify(x1, y1, z1)
    !$omp end parallel
 #endif
 
@@ -1309,7 +1313,8 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
          endif ! (i > 0)
       enddo ! atom_2
    enddo ! j
-   !$omp end do 
+   !$omp end do
+   nullify(x1, y1, z1)
    !$omp end parallel
 #endif
 
@@ -1337,7 +1342,7 @@ subroutine Loewdin_Orthogonalization_c(numpar, Nsiz, Sij, Hij, Err) ! below
 !    complex, dimension(:,:), allocatable :: Sijsave
    real(8), dimension(:,:), allocatable :: s_mat
    real(8), dimension(:), allocatable :: Ev
-   integer :: N_neg, N_zero, i1
+   integer :: N_neg, N_zero, i1, j1
    real(8) :: epsylon
    character(200) :: Error_descript
 
@@ -1382,7 +1387,14 @@ subroutine Loewdin_Orthogonalization_c(numpar, Nsiz, Sij, Hij, Err) ! below
    forall (i1=1:size(Ev), ABS(Ev(i1)) > epsylon) s_mat(i1,i1) = 1.0d0/dsqrt(Ev(i1))
 
    allocate(s_mat_complex(Nsiz,Nsiz))
-   s_mat_complex = dcmplx(s_mat,0.0d0)
+   !s_mat_complex = dcmplx(s_mat,0.0d0)
+   ! Do by elements (safer option):
+   do i1 = 1, size(s_mat,1)
+      do j1 = 1, size(s_mat,2)
+         s_mat_complex(i1,j1) = dcmplx(s_mat(i1,j1),0.0d0)
+      enddo
+   enddo
+
    deallocate(s_mat)
 
    ! 3) construct X = S*s_mat [Szabo "Modern Quantum Chemistry" 1986, p. 144, Eq.(3.169)]

@@ -2010,6 +2010,8 @@ subroutine MPI_share_eps(numpar, eps)
    call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%E_max}', eps%E_max) ! below
    call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {eps%dE}', eps%dE) ! below
    call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {eps%Eps_hw}', eps%Eps_hw) ! below
+
+   nullify(MPI_param)
 #endif
 end subroutine MPI_share_eps
 

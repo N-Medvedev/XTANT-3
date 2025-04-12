@@ -788,6 +788,7 @@ subroutine Construct_M_Vs_M(Scell, NSC, TB_Hamil, numpar, M_Vs, M_dVs)
             M_Vs(7,i,j) = Vs_M(TB_Hamil,5,Scell(NSC)%MDatoms(j)%KOA, Scell(NSC)%MDatoms(i)%KOA,r) ! function below
          endif
       enddo
+      nullify(m, j, r)
    enddo
    !$omp END PARALLEL DO
 #endif
