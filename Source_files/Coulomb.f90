@@ -149,6 +149,7 @@ subroutine get_Coulomb_Wolf_s(Scell, NSC, matter, E_coulomb, numpar, gam_ij)   !
       sum_a = sum_a + Coulomb_Wolf_self_term(q1, r_cut, alpha) ! below
    enddo ! j
    !$omp end do
+   nullify(KOA1, KOA2, r)
    !$omp end parallel
 #endif
 
@@ -308,6 +309,7 @@ subroutine d_Coulomb_forces(Scell, NSC, numpar, F_Coul, dF_Coul)   ! vdW force a
       enddo YC
    enddo XC
    !$omp end do
+   nullify(KOA1, KOA2)
    !$omp end parallel
 #endif
    nullify(KOA1, KOA2)

@@ -219,7 +219,8 @@ subroutine Hamil_tot_BOP(numpar, Scell, NSC, M_Vij, M_SVij, M_E0ij, M_lmn, Err)
       enddo ! j
    enddo ! i
 !$omp end do
-deallocate(Hij1, Sij1)
+   deallocate(Hij1, Sij1)
+   nullify(KOA1, KOA2, m)
 !$omp end parallel
 
    ! b) Construct lower triangle - use symmetry:
@@ -242,6 +243,7 @@ deallocate(Hij1, Sij1)
       enddo ! j
    enddo ! i
 !$omp end do 
+   nullify(m)
 !$omp end parallel
 #endif
 
@@ -385,6 +387,7 @@ deallocate(Hij1, Sij1)
          enddo ! j
       enddo ! i
       !$omp end do 
+      nullify(m, x, y, z)
       !$omp end parallel
 #endif
       ! mass and Plank constant cancel out in the final expression (subroutine get_Trani, module "Optical_parameters")
@@ -861,6 +864,7 @@ subroutine Construct_Vij_BOP(numpar, TB_Hamil, Scell, NSC, M_Vij, M_dVij, M_SVij
       enddo AT2
    enddo AT1
 !$omp end do
+   nullify(KOA1, KOA2, m, i, r)
 !$omp end parallel
 #endif
 
@@ -1101,6 +1105,7 @@ subroutine get_Erep_s_BOP(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energy
       Scell(NSC)%MDAtoms(i1)%Epot = E_rep*0.5d0 ! to exclude double-counting
    enddo ! i1
 !$omp end do
+   nullify(KOA1, KOA2, r)
 !$omp end parallel
 #endif
    a = a/2.0d0 ! it was doubled

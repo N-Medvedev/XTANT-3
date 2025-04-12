@@ -165,6 +165,7 @@ subroutine construct_S_matrix(MDAtoms, ChemEl, Sij, Sijx, Sijy, Sijz, C_transfor
       enddo ! j1 = 1, N_basis1
    enddo ! i1 = 1, N_atoms
 !$omp end do
+   nullify(KOA1, alpha1, C1, Norm1, KOA2, alpha2, C2, Norm2, AMa, AMb, R1, R2)
 !$omp do  private(i1, j1)
    do i1 = 1, size(Sij,1)
       do j1 = i1, size(Sij,2)

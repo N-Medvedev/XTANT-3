@@ -552,6 +552,7 @@ subroutine Construct_Vij_xTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
       enddo AT2
    enddo AT1
 !$omp end do
+   nullify(m, KOA1, KOA2)	! clean up for each thread
 !$omp END PARALLEL
 
    nullify(rm, nat, m, KOA1, KOA2)	! clean up at the end

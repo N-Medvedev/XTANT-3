@@ -119,6 +119,7 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! 
       Scell(NSC)%MDAtoms(i)%Epot = Scell(NSC)%MDAtoms(i)%Epot + E_pot*0.5d0 ! to exclude double-counting
    enddo ! i
    !$omp end do
+   nullify(a_r, j, m, KOA1, KOA2, Z1, Z2)
    !$omp end parallel
 #endif
    a = sum_a*0.5d0   ! [eV], factor to compensate for double-counting
@@ -445,12 +446,13 @@ subroutine d_Exponential_wall_forces(Scell, NSC, matter, numpar, F_wall, dF_wall
 
             !if (abs(F_r) > 1.0d-6) write(*,'(a,i0,i0,f,f,f,f,f)') 'a', i1, j1, F_r, drdrx, dF_r, d2rdr2x, F(1)
          endif ! j1 > 0
-      enddo ! j1
+      enddo ! i1
       ! And save for each atom:
       F_wall(:,i1) = F_wall(:,i1) + F
       dF_wall(:,i1) = dF_wall(:,i1) + dF
    enddo ! i1
    !$omp end do
+   nullify(m, KOA1, KOA2, j1, x, y, z, Z1, Z2)
    !$omp end parallel
 #endif
 
@@ -616,6 +618,7 @@ subroutine d_Short_range_pot_s(Scell, NSC, matter, TB_Expwall, numpar)
       ! factor 0.5 to compensate for double-counting
    enddo ! ian
    !$omp end do
+   nullify(j1, m, KOA1, KOA2, x, y, z, Z1, Z2)
    !$omp end parallel
 #endif
    !pause 'd_Short_range_pot_s'
@@ -1024,6 +1027,7 @@ subroutine get_Exp_wall_s(TB_Expwall, Scell, NSC, numpar, a)   ! Exponential wal
       Scell(NSC)%MDAtoms(i)%Epot = Scell(NSC)%MDAtoms(i)%Epot + E_pot * 0.5d0   ! exclude double-counting
    enddo ! i
    !$omp end do
+   nullify(a_r, j, m, KOA1, KOA2)
    !$omp end parallel
 #endif
 
@@ -1285,6 +1289,7 @@ subroutine d_Exp_wall_pot_s(Scell, NSC, TB_Expwall, numpar)
       Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)*0.5d0	! factor 0.5 to compensate for double-counting
    enddo ! ian
    !$omp end do
+   nullify(j1, m, KOA1, KOA2, x, y, z)
    !$omp end parallel
 #endif
 

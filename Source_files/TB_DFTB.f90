@@ -221,6 +221,7 @@ subroutine Construct_Vij_DFTB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_d
       enddo AT2
    enddo AT1
 !$omp end do
+   nullify(m, KOA1, KOA2)	! clean up for each thread
 !$omp END PARALLEL
 #endif
    nullify(rm, nat, m, KOA1, KOA2)	! clean up at the end
@@ -466,6 +467,7 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
       enddo ! i
 !$omp end do
       deallocate(Hij1, Sij1)
+      nullify(KOA1, KOA2, m)
 !$omp end parallel
 
       ! b) Construct lower triangle - use symmetry:
@@ -487,7 +489,8 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
             endif
          enddo ! j
       enddo ! i
-!$omp end do 
+!$omp end do
+      nullify(m)
 !$omp end parallel
 #endif
 
@@ -643,7 +646,8 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
             endif ! (i > 0)
          enddo ! j
       enddo ! i
-      !$omp end do 
+      !$omp end do
+      nullify(m, x, y, z)
       !$omp end parallel
 #endif
 
@@ -1583,6 +1587,7 @@ subroutine Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz,
       enddo ! atom_2
    enddo ! j
    !$omp end do 
+   nullify(x1, y1, z1)
    !$omp end parallel
 #endif
 
@@ -1710,7 +1715,8 @@ subroutine Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz,
          endif ! (i > 0)
       enddo ! atom_2
    enddo ! j
-   !$omp end do 
+   !$omp end do
+   nullify(x1, y1, z1)
    !$omp end parallel
 #endif
 
@@ -1740,9 +1746,6 @@ subroutine get_Erep_s_DFTB_no(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive en
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    real(8), intent(out) :: a    ! [eV] total repulsive energy
    !=====================================================
-   integer :: i1, m, atom_2, j1
-   integer, pointer :: KOA1, KOA2
-   real(8), pointer :: r
 
    a = 0.0d0   ! no repulsive
 end subroutine get_Erep_s_DFTB_no
@@ -1819,6 +1822,7 @@ subroutine get_Erep_s_DFTB(TB_Repuls, Scell, NSC, numpar, a)   ! repulsive energ
       !print*, i1, E_pot, Scell(NSC)%MDAtoms(i1)%Epot
    enddo ! i1
 !$omp end do
+   nullify(KOA1, KOA2, r)
 !$omp end parallel
 #endif
    a = a/2.0d0 ! it was doubled
@@ -2051,6 +2055,7 @@ subroutine dErdr_s_DFTB(TB_Repuls, Scell, NSC, numpar) ! derivatives of the repu
       Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)*0.5d0	! factor 0.5 to compensate for double-counting
    enddo ! ian
    !$omp end do
+   nullify(j1, m, KOA1, KOA2, x, y, z)
    !$omp end parallel
 #endif
 

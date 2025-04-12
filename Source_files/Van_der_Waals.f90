@@ -560,6 +560,7 @@ subroutine d_vdW_forces(Scell, NSC, numpar, F_vdW, dF_vdW)   ! vdW force and sec
       enddo YC
    enddo XC
    !$omp end do
+   nullify(KOA1, KOA2)
    !$omp end parallel
 #endif
    nullify(KOA1, KOA2)

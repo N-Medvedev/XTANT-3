@@ -261,6 +261,7 @@ subroutine Construct_Vij_3TB(numpar, TB, Scell, NSC, M_Vij, M_dVij, M_SVij, M_dS
       enddo AT2
    enddo AT1
 !$omp end do
+   nullify(m, KOA1, KOA2, KOA3)	! clean up at the end
 !$omp END PARALLEL
 #endif
 
@@ -472,6 +473,7 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
       enddo ! i
 !$omp end do
       deallocate(Hij1, Sij1)
+      nullify(m)
 !$omp end parallel
 
    ! b) Construct lower triangle - use symmetry:
@@ -494,6 +496,7 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
          enddo ! j
       enddo ! i
 !$omp end do
+      nullify(m)
 !$omp end parallel
 #endif
 
@@ -635,6 +638,7 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
          enddo ! j
       enddo ! i
       !$omp end do
+      nullify(m, x, y, z)
       !$omp end parallel
 #endif
 
@@ -3481,9 +3485,11 @@ subroutine get_Mjs_factors(basis_ind, Scell, M_lmn, Mjs, numpar)
       enddo
    enddo
 !$omp enddo
+   nullify(m)
+   !nullify(m, x1, y1, z1, r1)
 !$omp end parallel
 #endif
-   nullify(m)
+   nullify(m, x1, y1, z1, r1)
 end subroutine get_Mjs_factors
 
 

@@ -354,7 +354,8 @@ subroutine Construct_M_Vs_F(Scell, NSC, TB_Hamil, numpar, M_Vs, M_dVs, M_d2Vs, M
             endif ! (present(M_cos))
             
          endif !  (j .GT. 0) 
-      enddo ! atom_2 = 1,m 
+      enddo ! atom_2 = 1,m
+      nullify(m, j, r, x, y, z)
    enddo ! do i = 1,nat
    !$omp END PARALLEL DO 
 #endif
@@ -904,6 +905,7 @@ subroutine dHopping_r(dtsx, dtsy, dtsz,  d2tsx, d2tsy, d2tsz,  i, j, k, Scell, N
       d2tsy = 0.0d0
       d2tsz = 0.0d0
    endif
+
 end subroutine dHopping_r
 
 
@@ -2364,11 +2366,12 @@ subroutine dErdr_s_F(TB_Repuls, atoms, Scell, NSC, numpar) ! derivatives of the 
          Erx_s(3,ian) = Erx_s(3,ian) + a*dpsi(3) ! repulsive part in Z-coordinate
       enddo ! i1
       Scell(NSC)%MDatoms(ian)%forces%rep(:) = Erx_s(:,ian) ! all repulsive forces
+      nullify(KOA1, KOA2)
    enddo ! ian
    !$OMP END PARALLEL DO
 #endif
    deallocate(Erx_s)
-   nullify( KOA1, KOA2)
+   nullify(KOA1, KOA2)
 END subroutine dErdr_s_F
 
 

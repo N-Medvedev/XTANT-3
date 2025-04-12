@@ -2612,6 +2612,7 @@ subroutine get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps
       enddo
    enddo
    !$omp end do
+   nullify (fi, fj)
    !$omp end parallel
 #endif
 
