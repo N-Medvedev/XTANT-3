@@ -3477,23 +3477,23 @@ subroutine gnu_nearest_neighbors_elements(File_name, file_NN, Name, matter, t0, 
       do i = 1, matter%N_KAO-1
          write(temp, '(i0)') 2+i    ! column with data
          write(FN, '(a,a,a)') ' "', trim(adjustl(file_NN)), ' "u 1:'//trim(adjustl(temp))// &
-                              'w l lw LW title "'//trim(adjustl(Name))//'" ,\'
+                              'w l lw LW title "'//trim(adjustl(matter%Atoms(i)%Name))//'" ,\'
       enddo
       i = matter%N_KAO
       write(temp, '(i0)') matter%N_KAO+2    ! last column with data
       write(FN, '(a,a,a)') ' "', trim(adjustl(file_NN)), ' "u 1:'//trim(adjustl(temp))// &
-                              'w l lw LW title "'//trim(adjustl(Name))//'"'
+                              'w l lw LW title "'//trim(adjustl(matter%Atoms(i)%Name))//'"'
    else
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_NN)), '\"u 1:3 w l lw \"$LW\" title \"Total\"  ,\'
       do i = 1, matter%N_KAO-1
          write(temp, '(i0)') 2+i    ! column with data
          write(FN, '(a,a,a)') ' \"', trim(adjustl(file_NN)), '\"u 1:'//trim(adjustl(temp))// &
-                              'w l lw \"$LW\" title \"'//trim(adjustl(Name))//'\" ,\'
+                              'w l lw \"$LW\" title \"'//trim(adjustl(matter%Atoms(i)%Name))//'\" ,\'
       enddo
       i = matter%N_KAO
       write(temp, '(i0)') matter%N_KAO+2    ! last column with data
       write(FN, '(a,a,a)') ' \"', trim(adjustl(file_NN)), '\"u 1:'//trim(adjustl(temp))// &
-                              'w l lw \"$LW\" title \"'//trim(adjustl(Name))//'\"'
+                              'w l lw \"$LW\" title \"'//trim(adjustl(matter%Atoms(i)%Name))//'\"'
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
