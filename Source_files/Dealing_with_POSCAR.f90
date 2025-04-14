@@ -265,7 +265,7 @@ end subroutine read_POSCAR
 
 subroutine get_KOA_from_element(El_name, matter, KOA)
    character(3), intent(in) :: El_name ! name of the element
-   type(Solid), intent(inout) :: matter   ! all material parameters
+   type(Solid), intent(in) :: matter   ! all material parameters
    integer ,intent(out) :: KOA   ! number of element from the given array
    !--------------------------
    integer :: i

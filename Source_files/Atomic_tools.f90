@@ -2311,16 +2311,18 @@ end function form_factor
 
 
 
-subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! currently, it calculates mean displacement, without sqaring it
+subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power, numpar)
    type(Super_cell), dimension(:), intent(inout), target :: Scell	! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter     ! material parameters
    real(8), intent(out) :: MSD	! [A^MSD_power] mean displacements average over all atoms
    real(8), dimension(:), allocatable, intent(out) :: MSDP ! [A] mean displacement of atoms for each sort of atoms in a compound
    integer, intent(in) :: MSD_power ! power of mean displacement to print out (set integer N: <u^N>-<u0^N>)
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters
    !-------------------------
-   integer :: N, iat, ik, i,  j, k, Nat, Nsiz, i_masks
+   integer :: N, iat, ik, i,  j, k, Nat, Nsiz, i_masks, m, atom_2, NSC
+   integer :: i1, j1, i_KOA
    integer, pointer :: KOA
-   real(8) :: zb(3), x, y, z, a_r, r1, x0, y0, z0
+   real(8) :: zb(3), x, y, z, a_r, r1, x0, y0, z0, coef, coef_tot
    real(8), dimension(:), pointer :: S, S0
    
    if (.not.allocated(MSDP)) allocate(MSDP(matter%N_KAO))
@@ -2458,6 +2460,54 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power)	! c
 !       print*, 'K', Scell(1)%Displ(i_masks)%mean_disp_r_sort
 !    enddo
 
+   !--------------------------------
+   ! Also, get the element-resolved number of nearest neighbours, if required:
+   if (allocated(numpar%NN_radii)) then ! only if
+      NSC = 1
+      do i = 1, size(Scell(NSC)%NN_numbers) ! for all requested elements
+         Scell(NSC)%NN_numbers(i)%total = 0.0d0  ! reinitialize
+         Scell(NSC)%NN_numbers(i)%NNN(:) = 0.0d0 ! reinitialize
+      enddo
+
+      do i1 = 1, Scell(NSC)%Na   ! for all atoms
+         m = Scell(NSC)%Near_neighbor_size(i1)
+         do atom_2 = 1, m ! do only for atoms close to that one
+            j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
+            if (j1 /= i1) then
+               a_r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4)  ! at this distance, R
+
+               ! Find which element these data are for:
+               i_KOA = 0   ! to start with
+               do i = 1, size(Scell(NSC)%NN_numbers) ! for all requested elements
+                  if (numpar%NN_radii(i)%KOA == Scell(NSC)%MDatoms(i1)%KOA) then
+                     i_KOA = i   ! same number of element
+                     !print*, i, i1, numpar%NN_radii(i)%KOA, Scell(NSC)%MDatoms(i1)%KOA
+                     exit ! found the element
+                  endif
+               enddo
+               !print*, i1, j1, i_KOA, a_r, numpar%NN_radii(i_KOA)%r_cut
+
+               if (i_KOA > 0) then ! found the element, save data for it:
+                  coef = 1.0d0 / matter%Atoms(Scell(NSC)%MDatoms(i1)%KOA)%percentage
+
+                  ! If the atom is within the cut-off radius:
+                  if (a_r < numpar%NN_radii(i_KOA)%r_cut) then
+                     ! Total number of nearest neighbors:
+                     Scell(NSC)%NN_numbers(i_KOA)%total = Scell(NSC)%NN_numbers(i_KOA)%total + coef
+                     ! Element-specific number of nearest neighbors:
+                     Scell(NSC)%NN_numbers(i_KOA)%NNN(Scell(NSC)%MDatoms(j1)%KOA) = &
+                        Scell(NSC)%NN_numbers(i_KOA)%NNN(Scell(NSC)%MDatoms(j1)%KOA) + coef
+                  endif ! (a_r < numpar%NN_radii(i_KOA)%r_cut)
+               endif ! (i_KOA > 0)
+            endif ! (j1 .NE. i1)
+         enddo ! j1
+      enddo ! i1
+
+      !print*, numpar%NN_radii(:)%KOA, numpar%NN_radii(:)%Name
+      !print*, Scell(NSC)%NN_numbers(:)%total
+
+   endif ! (allocated(numpar%NN_radii))
+   !--------------------------------
    nullify(S,S0,KOA)
 end subroutine get_mean_square_displacement
 

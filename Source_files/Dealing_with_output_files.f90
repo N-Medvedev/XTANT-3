@@ -166,6 +166,9 @@ subroutine write_output_files(numpar, time, matter, Scell)
       if (Scell(1)%eps%all_w) call write_optical_all_hw(numpar%FN_all_w, time, Scell(1)%eps) ! CDF spectrum
       if (numpar%save_NN) call save_nearest_neighbors(numpar%FN_neighbors, Scell, 1, time)   ! atomic nearest neighbors
 
+      if (allocated(numpar%NN_radii)) then
+         call save_nearest_neighbors_element(numpar%FN_element_NN, numpar, Scell, 1, time) ! element-specific nearest neighbors
+      endif
 
       if (numpar%save_diff_peaks) then ! selected diffraction peaks and powder spectrum
          call save_diffraction_peaks(numpar%FN_diff_peaks, time, Scell(1))    ! below
@@ -1142,6 +1145,27 @@ subroutine save_nearest_neighbors(FN, Scell, NSC, tim)
 end subroutine save_nearest_neighbors
 
 
+subroutine save_nearest_neighbors_element(FN, numpar, Scell, NSC, tim) ! element-specific nearest neighbors
+   integer, dimension(:), intent(in) :: FN    ! file to write into
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   real(8), intent(in) :: tim   ! current simulation time
+   !--------------------------
+   integer :: i, j
+   real(8) :: Nat, NofN, NoNN(7)
+
+   do i = 1, size(numpar%NN_radii) ! for all requested elements
+      write(FN(i), '(es25.16,f10.6)', advance='no') tim, Scell(NSC)%NN_numbers(i)%total
+
+      do j = 1, size(Scell(NSC)%NN_numbers(i)%NNN)     ! for all elements in the compound:
+         write(FN(i), '(f10.6)', advance='no') Scell(NSC)%NN_numbers(i)%NNN(j)
+      enddo ! j
+      write(FN(i), '(a)') '' ! end line
+   enddo ! i
+end subroutine save_nearest_neighbors_element
+
+
 subroutine write_atomic_xyz(FN, atoms, matter, Supce, print_mass, print_charge, print_Ekin)
    integer, intent(in) :: FN	! file number
    type(Atom), dimension(:), intent(in) :: atoms	! atomic parameters
@@ -2011,6 +2035,13 @@ subroutine close_output_files(Scell, numpar)
    if (numpar%save_PCF) close(numpar%FN_PCF)
    if (Scell(1)%eps%all_w) close(numpar%FN_all_w)
    if (numpar%save_NN) close(numpar%FN_neighbors)
+   if (allocated(numpar%NN_radii)) then
+      Nsiz = size(numpar%FN_element_NN)   ! how many masks
+      do i = 1, Nsiz
+         close(numpar%FN_element_NN(i))
+      enddo
+   endif
+
    close(numpar%FN_Se)
    if (numpar%do_partial_thermal) then
       close(numpar%FN_Te)
@@ -2075,6 +2106,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100) :: file_all_w		! optical coeffs for all hw
    character(100) :: file_NN		! nearest neighbors
    character(100), dimension(:), allocatable :: file_sect_displ, file_sect_displ_short  ! sectional displacements
+   character(100), dimension(:), allocatable :: file_element_NN, file_element_NN_short      ! element-specific nearest neighbors
    character(100) :: file_diff_peaks, file_diff_powder      ! selected diffraction peaks, powder diffraction
    character(100) :: file_testmode		! testmode file
    character(100) :: chtemp
@@ -2382,6 +2414,27 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       write(numpar%FN_neighbors, '(a)') '#Time Average N(0)    N(1)    N(2)    N(3)    N(4)    N(5)    N(6)'
    endif
 
+   if (allocated(numpar%NN_radii)) then
+      if (.not.allocated(file_element_NN)) allocate(file_element_NN(size(numpar%NN_radii)))
+      if (.not.allocated(file_element_NN_short)) allocate(file_element_NN_short(size(numpar%NN_radii)))
+      if (.not.allocated(numpar%FN_element_NN)) allocate(numpar%FN_element_NN(size(numpar%NN_radii)))
+
+      do i = 1, size(numpar%NN_radii) ! for all requested elements
+
+         file_element_NN(i) = 'OUTPUT_nearest_neighbors_'//trim(adjustl(numpar%NN_radii(i)%Name))//'.dat'
+         file_element_NN_short(i) = file_element_NN(i)      ! save short name for gnuplotting
+         file_element_NN(i) = trim(adjustl(file_path))//trim(adjustl(file_element_NN(i)))
+
+         open(NEWUNIT=FN, FILE = trim(adjustl(file_element_NN(i))))
+         numpar%FN_element_NN(i) = FN
+         write(numpar%FN_element_NN(i), '(a)', advance='no') '#Time     Total '
+         do j = 1, size(numpar%NN_radii)     ! for all elements in the compound:
+            write(numpar%FN_element_NN(i), '(a)', advance='no') trim(adjustl(matter%Atoms(j)%Name))//'  '
+         enddo ! j
+         write(numpar%FN_element_NN(i), '(a)') '' ! end line
+      enddo ! i
+   endif
+
    do i = 1, size(Scell)
       if (Scell(i)%eps%all_w) then
          file_all_w = trim(adjustl(file_path))//'OUTPUT_dielectric_function.dat'
@@ -2406,6 +2459,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    'OUTPUT_optical_coefficients.dat', &
    file_Ei, file_PCF, &
    'OUTPUT_nearest_neighbors.dat', &
+   file_element_NN_short, &
    'OUTPUT_electron_entropy.dat', &
    'OUTPUT_electron_temperatures.dat', &
    'OUTPUT_electron_chempotentials.dat', &
@@ -2419,6 +2473,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
    ! clean up:
    if (allocated(file_sect_displ)) deallocate(file_sect_displ, file_sect_displ_short)
+   if (allocated(file_element_NN)) deallocate(file_element_NN)
 end subroutine create_output_files
 
 
@@ -2431,7 +2486,7 @@ end subroutine create_file_header
 
 subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, &
 file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
-file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_electron_entropy, file_Te, file_mu, &
+file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_element_NN, file_electron_entropy, file_Te, file_mu, &
 file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
 file_diffraction_peaks, file_diffraction_powder, file_testmode)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
@@ -2455,6 +2510,7 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
    character(*), intent(in) :: file_Ei		! energy levels
    character(*), intent(in) :: file_PCF		! pair correlation function
    character(*), intent(in) :: file_NN      ! nearest neighbors
+   character(*), dimension(:), intent(in) :: file_element_NN      ! element-specific nearest neighbors
    character(*), intent(in) :: file_electron_entropy  ! electron entropy
    character(*), intent(in) :: file_Te ! electron temperatures
    character(*), intent(in) :: file_mu ! electron chem.potentials
@@ -2581,13 +2637,15 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
    ! Electron heat conductivity:
    if (numpar%do_kappa) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity'//trim(adjustl(sh_cmd))
-      call gnu_heat_conductivity(File_name, file_heat_capacity, t0, t_last, 'OUTPUT_electron_heat_conductivity.' &
-                        //trim(adjustl(numpar%fig_extention))) ! below
+      call gnu_heat_conductivity(File_name, file_heat_capacity, &
+      numpar%kappa_Te_min, numpar%kappa_Te_max, &
+      'OUTPUT_electron_heat_conductivity.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
    if (numpar%do_kappa_dyn) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity_dyn'//trim(adjustl(sh_cmd))
-      call gnu_heat_conductivity_dyn(File_name, file_heat_capacity_dyn, t0, t_last, 'OUTPUT_electron_heat_conductivity_dyn.' &
-                        //trim(adjustl(numpar%fig_extention))) ! below
+      call gnu_heat_conductivity_dyn(File_name, file_heat_capacity_dyn, &
+      numpar%kappa_Te_min, numpar%kappa_Te_max, &
+      'OUTPUT_electron_heat_conductivity_dyn.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
 
    ! Electron entropy:
@@ -2661,6 +2719,16 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
       File_name  = trim(adjustl(file_path))//'OUTPUT_neighbors_Gnuplot'//trim(adjustl(sh_cmd))
       call gnu_nearest_neighbors(File_name, file_NN, t0, t_last, 'OUTPUT_nearest_neighbors.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
+
+   ! Element-specific nearest neighbors:
+   if (allocated(numpar%NN_radii)) then
+      do i = 1, size(numpar%NN_radii) ! for all requested elements
+         File_name  = trim(adjustl(file_path))//'OUTPUT_neighbors_'//trim(adjustl(numpar%NN_radii(i)%Name))//'_Gnuplot'//trim(adjustl(sh_cmd))
+         call gnu_nearest_neighbors_elements(File_name, file_element_NN(i), trim(adjustl(numpar%NN_radii(i)%Name)), matter, t0, t_last, &
+              'OUTPUT_nearest_neighbors_'//trim(adjustl(numpar%NN_radii(i)%Name))//'.'//trim(adjustl(numpar%fig_extention))) ! below
+      enddo ! i
+   endif
+
    
    ! Distribution function of electrons:
    if (numpar%save_fe) then
@@ -2911,6 +2979,13 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
       if (numpar%Mulliken_model >= 1) then
          File_name  = trim(adjustl(file_path))//'OUTPUT_Mulliken_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          call gnu_Mulliken_charges(File_name, trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_Mulliken_charges_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+      endif
+
+      ! Nearest neighbors:
+      if (numpar%save_NN) then
+         File_name  = trim(adjustl(file_path))//'OUTPUT_neighbors_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
+         call gnu_nearest_neighbors(File_name, trim(adjustl(file_NN(1:len(trim(adjustl(file_NN)))-4)))//'_CONVOLVED.dat', &
+            t0, t_last, 'OUTPUT_nearest_neighbors_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
       endif
       
       if (numpar%do_drude) then
@@ -3372,6 +3447,57 @@ subroutine gnu_nearest_neighbors(File_name, file_NN, t0, t_last, fig_name)
    close(FN)
 end subroutine gnu_nearest_neighbors
 
+
+
+
+subroutine gnu_nearest_neighbors_elements(File_name, file_NN, Name, matter, t0, t_last, fig_name)
+   character(*), intent(in) :: File_name    ! file to create
+   character(*), intent(in) :: file_NN      ! data file
+   character(*), intent(in) :: Name       ! element name
+   type(solid), intent(in) :: matter      ! material parameters
+   real(8), intent(in) :: t0, t_last      ! time instance [fs]
+   character(*), intent(in) :: fig_name   ! name of the figure
+   !------------------------
+   integer :: FN, i, i_start
+   real(8) :: x_tics
+   character(8) :: temp, time_order, chtemp
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Nearest neighbors', 'Time (fs)', &
+      'Nearest neighbors of '//trim(adjustl(Name)), &
+      trim(adjustl(fig_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
+
+   if (g_numpar%path_sep == '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_NN)), ' "u 1:2 w l lw LW title "Total"  ,\'
+
+      do i = 1, matter%N_KAO-1
+         write(temp, '(i0)') 2+i    ! column with data
+         write(FN, '(a,a,a)') ' "', trim(adjustl(file_NN)), ' "u 1:'//trim(adjustl(temp))// &
+                              'w l lw LW title "'//trim(adjustl(Name))//'" ,\'
+      enddo
+      i = matter%N_KAO
+      write(temp, '(i0)') matter%N_KAO+2    ! last column with data
+      write(FN, '(a,a,a)') ' "', trim(adjustl(file_NN)), ' "u 1:'//trim(adjustl(temp))// &
+                              'w l lw LW title "'//trim(adjustl(Name))//'"'
+   else
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_NN)), '\"u 1:3 w l lw \"$LW\" title \"Total\"  ,\'
+      do i = 1, matter%N_KAO-1
+         write(temp, '(i0)') 2+i    ! column with data
+         write(FN, '(a,a,a)') ' \"', trim(adjustl(file_NN)), '\"u 1:'//trim(adjustl(temp))// &
+                              'w l lw \"$LW\" title \"'//trim(adjustl(Name))//'\" ,\'
+      enddo
+      i = matter%N_KAO
+      write(temp, '(i0)') matter%N_KAO+2    ! last column with data
+      write(FN, '(a,a,a)') ' \"', trim(adjustl(file_NN)), '\"u 1:'//trim(adjustl(temp))// &
+                              'w l lw \"$LW\" title \"'//trim(adjustl(Name))//'\"'
+   endif
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_nearest_neighbors_elements
 
 
 subroutine gnu_pressure(File_name, file_pressure, t0, t_last, eps_name)
@@ -3938,15 +4064,15 @@ subroutine gnu_heat_conductivity(File_name, file_heat_capacity, t0, t_last, eps_
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
-   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron K','Time (fs)', &
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron K','Electron temperature (K)', &
             'Heat conductivity (W/(m^3 K))', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_heat_capacity)), &
-               ' "u 1:2 w l lw LW title "Electron heat capacity"  '
+               ' "u 1:2 w l lw LW title "Electron heat conductivity"  '
    else ! It is linux
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_heat_capacity)), &
-               '\"u 1:2 w l lw \"$LW\" title \"Electron heat capacity\"  '
+               '\"u 1:2 w l lw \"$LW\" title \"Electron heat conductivity\"  '
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)
@@ -6347,6 +6473,14 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    if (numpar%save_NN) then
       write(text1, '(f6.2)') numpar%NN_radius
       write(print_to,'(a,a,a)') ' Nearest neighbors numbers within the radius of ', trim(adjustl(text1)), ' [A]'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+   if (allocated(numpar%NN_radii)) then
+      write(print_to,'(a)') ' with element-specific radii of'
+      do i = 1, size(numpar%NN_radii)
+         write(text1, '(f6.2)') numpar%NN_radii(i)%r_cut
+         write(print_to,'(a,a)') ' '//numpar%NN_radii(i)%Name//' : ', trim(adjustl(text1))//' [A]'
+      enddo
       optional_output = .true.   ! there is at least some optional output
    endif
 
