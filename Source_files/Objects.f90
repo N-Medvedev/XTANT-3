@@ -638,6 +638,14 @@ type :: diffraction_peaks
 end type diffraction_peaks
 
 
+
+!==============================================
+type :: Elemental_Nearest_Neighbors
+   real(8) :: total ! total number of nearest neighbors
+   real(8), dimension(:), allocatable :: NNN  ! number of nearest neighbors
+end type Elemental_Nearest_Neighbors
+
+
 !==============================================
 ! Supercell as object:
 type Super_cell
@@ -670,6 +678,7 @@ type Super_cell
    real(8) :: MSD	! [A^2] mean square displacements average over all atoms
    real(8), dimension(:), allocatable :: MSDP	! [A^2] mean square displacements for atoms of different sorts
    type(Displacement_analysis), dimension(:), allocatable :: Displ ! [A] mean displacements for atoms masked
+   type(Elemental_Nearest_Neighbors), dimension(:), allocatable :: NN_numbers ! element-specific nearest-neighbors numbers
    ! Diffraction peaks description:
    type(diffraction_peaks) :: diff_peaks
    ! Electronic parameters:
@@ -896,6 +905,13 @@ type :: Used_MPI_parameters
 end type Used_MPI_parameters
 
 
+type Partial_Nearest_Neighbors
+   character(3) :: Name
+   integer :: KOA
+   real(8) :: r_cut
+end type Partial_Nearest_Neighbors
+
+
 type Numerics_param
    ! MPI parameters:
    type(Used_MPI_parameters) :: MPI_param
@@ -978,6 +994,7 @@ type Numerics_param
    real(8) :: at_cool_start, at_cool_dt	! [fs], cooling of atoms: when to start, and how often to do
    real(8) :: Smear_DOS	! smearing to use for DOS calculations
    real(8) :: NN_radius ! user-defined radius to count nearest neighbors (for printout only, not for MD calculations!)
+   type(Partial_Nearest_Neighbors), dimension(:), allocatable :: NN_radii ! for element-dependent radii
    integer :: MSD_power ! power of mean displacement to print out (set integer N: <u^N>-<u0^N>)
    integer :: DOS_splitting ! model to split DOS
    logical, dimension(:,:,:), allocatable :: mask_DOS ! to identify and separate different bands
@@ -996,6 +1013,7 @@ type Numerics_param
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
    integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot, FN_testmode, FN_diff_peaks, FN_diff_powder
+   integer, dimension(:), allocatable :: FN_element_NN
    integer, dimension(:), allocatable :: FN_displacements
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model

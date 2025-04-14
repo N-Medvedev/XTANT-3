@@ -268,7 +268,7 @@ call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%S
 if (g_numpar%verbose) call print_time_step('Pressure calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Calculate the mean square displacement of all atoms:
-call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
+call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power, g_numpar)    ! module "Atomic_tools"
 if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Calculate diffraction peaks:
@@ -427,7 +427,7 @@ do while (g_time .LT. g_numpar%t_total)
       call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_thermodynamics"
 
       ! Calculate the mean square displacement of all atoms:
-      call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD, g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
+      call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD, g_Scell(1)%MSDP, g_numpar%MSD_power, g_numpar) ! module "Atomic_tools"
 
       ! Calculate diffraction peaks:
       call get_diffraction_peaks(g_Scell, g_matter, g_numpar)  ! module "Atomic_tools"
@@ -804,7 +804,7 @@ subroutine vary_size(do_forces, Err)   !  THIS SUBROUTINE USES GLOBAL VARIABLES
    !print*, 'vary_size:', i_min, i_max, N_points, d_i
 
    ! Calculate the mean square displacement of all atoms:
-   call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power)	! module "Atomic_tools"
+   call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power, g_numpar) ! module "Atomic_tools"
    if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
    ! Calculate diffraction peaks:

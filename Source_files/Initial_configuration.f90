@@ -1504,7 +1504,7 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
    character(*), intent(in) :: File_name ! file with the super-cell parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(inout) :: matter	! all material parameters
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters
    type(Error_handling), intent(inout) :: Err	! error save
    integer, intent(in), optional :: ind ! read files for phase path tracing
    !=====================================
@@ -1614,20 +1614,21 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
    end select
 
 
-!    print*, 'NVB_1 = ', Scell(SCN)%Ne
    ! Check for consistency of valence electrons in chemical formula and actual atoms in the supercell:
    do j = 1, size(perc)
       perc(j) = COUNT( Scell(SCN)%MDatoms(:)%KOA == j )
-!       print*, j, matter%Atoms(j)%percentage, perc(j)
       if (perc(j) /= matter%Atoms(j)%percentage) then ! assume supercell gives the right number
-!          print*, 'Overwriting the number of VB electrons with the consistent number from supercell data'
          matter%Atoms(j)%percentage = perc(j)
       endif
    enddo
-   !print*, 'Scell(SCN)%Ne', allocated(matter%Atoms), Scell(SCN)%Na, matter%Atoms(:)%percentage, matter%Atoms(:)%NVB
 
    Scell(SCN)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)/SUM(matter%Atoms(:)%percentage)*Scell(SCN)%Na
    Scell(SCN)%Ne_low = Scell(SCN)%Ne ! at the start, all electrons are low-energy
+
+   ! Once the atomic concentrations are known, check the nearest neighbor radii:
+   call check_nearest_neighbors_radii(Scell(1), matter, numpar)   ! below
+
+
 
    if (numpar%verbose) then
       write(*, '(a)', advance='no') 'Number of valence electrons: '
@@ -1680,6 +1681,46 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
 !    enddo ! j
 
 end subroutine get_initial_atomic_coord
+
+
+
+subroutine check_nearest_neighbors_radii(Scell, matter, numpar)
+   type(Super_cell), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   type(solid), intent(in) :: matter   ! material parameters
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters
+   !--------------------
+   real(8) :: R_mean, Pers
+   integer :: i, KOA
+
+   ! If element-specific radii were defined:
+   if (allocated(numpar%NN_radii)) then
+      numpar%save_NN = .true.
+
+      Pers = 0.0d0      ! to start with
+      R_mean = 0.0d0    ! to start with
+
+      do i = 1, size(numpar%NN_radii) ! for chemical elements defined by the user
+         ! Get the kind-of-atom from the element name:
+         call get_KOA_from_element(numpar%NN_radii(i)%Name, matter, KOA) ! module "Dealing_with_POSCAR"
+         ! Save the KOA:
+         numpar%NN_radii(i)%KOA = KOA
+
+         ! Get the average radius and contribution:
+         R_mean = R_mean + numpar%NN_radii(i)%r_cut * matter%Atoms(KOA)%percentage   ! [A]
+         Pers = Pers + matter%Atoms(KOA)%percentage
+
+         ! And allocate the arrays for the data:
+         allocate(Scell%NN_numbers(i)%NNN(size(matter%Atoms)))
+      enddo
+
+      numpar%NN_radius = R_mean / Pers
+   endif
+
+   !pause 'check_nearest_neighbors_radii'
+end subroutine check_nearest_neighbors_radii
+
+
+
 
 
 subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)

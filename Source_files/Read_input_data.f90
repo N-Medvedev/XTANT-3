@@ -360,7 +360,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    Folder_name = trim(adjustl(m_INPUT_directory))//numpar%path_sep
    numpar%input_path = Folder_name ! save the address with input files
 
-   ! File in minimum-format:
+   ! File in minimum-format (depricated!):
    if (.not.present(Numb)) then ! first run, use default files:
       File_name = trim(adjustl(Folder_name))//trim(adjustl(m_INPUT_MINIMUM))//'.txt'
    else ! it's not the first run, use next set of parameters:
@@ -374,8 +374,8 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    
    !-------------------------------
    ! Read input parameters in various formats:
-   NEW_FORMAT:if (new_format_exists) then ! minimum format (inconvenient, to be deprecated)
-      call read_input_txt(File_name, Scell, matter, numpar, laser, Err) ! see above
+   NEW_FORMAT:if (new_format_exists) then ! minimum format (deprecated!)
+      call read_input_txt(File_name, Scell, matter, numpar, laser, Err) ! see below
       if (Err%Err) goto 3416
 
    !-------------------------------
@@ -5111,15 +5111,16 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 
    ! save number of nearest neighbors within the digen radius (>0) or not (<=0):
    read(FN, '(a)', IOSTAT=Reason) read_line
-   read(read_line,*,IOSTAT=Reason) numpar%NN_radius
-   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
-                              add_error_info='Line: '//trim(adjustl(read_line)))  ! below
+   call read_nearest_neighbor_radii(trim(adjustl(File_name)), read_line, numpar, Scell(1), count_lines, Reason, Err)  ! below
+   !read(read_line,*,IOSTAT=Reason) numpar%NN_radius
+   !call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+   !                           add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
-   if (numpar%NN_radius > 1.0e-2) then
-      numpar%save_NN = .true.	! included printout nearest neighbors
-   else
-      numpar%save_NN = .false.	! excluded printout nearest neighbors
-   endif
+   !if (numpar%NN_radius > 1.0e-2) then
+   !   numpar%save_NN = .true.	! included printout nearest neighbors
+   !else
+   !   numpar%save_NN = .false.	! excluded printout nearest neighbors
+   !endif
 
    !  which format to use to plot figures: eps, jpeg, gif, png, pdf
    read(FN, '(a)', IOSTAT=Reason) read_line
@@ -5162,6 +5163,120 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 3418 continue
    if (.not.old_file .and. file_opened) close(FN)
 end subroutine read_numerical_parameters
+
+
+
+subroutine read_nearest_neighbor_radii(File_name, read_line, numpar, Scell, count_lines, Reason, Err)
+   character(*), intent(in) :: File_name, read_line   ! File_name, line read from file
+   type(Numerics_param), intent(inout) :: numpar      ! all numerical parameters
+   type(Super_cell), intent(inout) :: Scell     ! supercell with all the atoms as one object
+   integer, intent(inout) :: count_lines, Reason ! number of line read, reading flag
+   type(Error_handling), intent(inout) :: Err   ! error save
+   !------------------------
+   character(200) :: Error_descript
+   character(200) :: NN_file
+   character(200) :: read_line_inside
+   logical file_exists, file_opened, read_well
+   integer :: FN, Nsiz, i
+
+
+   Reason = 0     ! to start with
+   numpar%save_NN = .false.   ! to start with
+   read_line_inside = ''      ! to start with
+
+   read(read_line,*,IOSTAT=Reason) numpar%NN_radius
+   if (Reason == 0) then      ! read the single number correctly, radius is provided:
+      if (numpar%NN_radius > 1.0e-2) then
+         numpar%save_NN = .true.    ! included printout nearest neighbors
+      else
+         numpar%save_NN = .false.   ! excluded printout nearest neighbors
+      endif
+   else ! it may be an elelemnt resolved data:
+      read(read_line,*,IOSTAT=Reason) NN_file
+      FN=8000
+
+      NN_file = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(NN_file))
+      inquire(file=trim(adjustl(NN_file)),exist=file_exists)
+      if (.not.file_exists) then
+         Reason = 1
+         Error_descript = 'File specified for nearest neighbor radius not found: '//trim(adjustl(read_line))
+         call Save_error_details(Err, 2, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         return   ! nothing else to do
+      endif
+
+      ! if file exists, try to open it:
+      open(UNIT=FN, FILE = trim(adjustl(NN_file)), status = 'old', action='read')
+      inquire(file=trim(adjustl(NN_file)),opened=file_opened)
+      if (.not.file_opened) then
+         Reason = 1
+         Error_descript = 'File '//trim(adjustl(NN_file))//' (specified for nearest neighbor radius) could not be opened, the program terminates'
+         call Save_error_details(Err, 2, Error_descript)
+         print*, trim(adjustl(Error_descript))
+         return   ! nothing else to do
+      endif
+
+      ! Read the line from the file:
+      read(FN, '(a)', IOSTAT=Reason) read_line_inside
+
+      read(read_line_inside,*,IOSTAT=Reason) numpar%NN_radius
+      if (Reason == 0) then      ! read the single number correctly, radius is provided:
+         if (numpar%NN_radius > 1.0e-2) then
+            numpar%save_NN = .true.    ! included printout nearest neighbors
+         else
+            numpar%save_NN = .false.   ! excluded printout nearest neighbors
+         endif
+         return   ! number read, nothing else to do
+      else ! try to interprete element-resolved radii:
+         rewind(FN)
+         ! Get the data for all elements:
+         call Count_lines_in_file(FN, Nsiz) ! module "Dealing_with_files"
+         if (Nsiz > 0) then
+            ! Allocate arrays:
+            allocate(numpar%NN_radii(Nsiz))
+            allocate(Scell%NN_numbers(Nsiz))
+
+            ! Read all the data from this file:
+            do i = 1, Nsiz
+               read(FN, '(a)', IOSTAT=Reason) read_line_inside
+
+               read(read_line_inside,*,IOSTAT=Reason) numpar%NN_radii(i)%Name, numpar%NN_radii(i)%r_cut
+               if (Reason /= 0) then      ! read the single number correctly, radius is provided:
+                  Reason = 1
+                  Error_descript = 'Wrong format in file '//trim(adjustl(NN_file))//', the program terminates'
+                  call Save_error_details(Err, 2, Error_descript)
+                  print*, trim(adjustl(Error_descript))
+                  return   ! nothing else to do
+               endif
+            enddo ! i = 1, Nsiz
+
+         else
+            Reason = 1
+            Error_descript = 'Could not interprete format in file '//trim(adjustl(NN_file))//', the program terminates'
+            call Save_error_details(Err, 2, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            return   ! nothing else to do
+         endif
+
+      endif
+   endif ! (Reason == 0)
+
+   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+                              add_error_info=trim(adjustl(Error_descript)))  ! below
+
+!    print*, trim(adjustl(read_line))
+!    print*, trim(adjustl(read_line_inside))
+!    print*, numpar%NN_radius, numpar%save_NN
+!    if (allocated(numpar%NN_radii)) then
+!       print*, allocated(numpar%NN_radii), size(numpar%NN_radii)
+!       print*, numpar%NN_radii(:)%Name, numpar%NN_radii(:)%r_cut
+!    else
+!       print*, allocated(numpar%NN_radii)
+!    endif
+   !pause 'read_nearest_neighbor_radii'
+end subroutine read_nearest_neighbor_radii
+
+
 
 
 subroutine standardize_At_base(At_base)
