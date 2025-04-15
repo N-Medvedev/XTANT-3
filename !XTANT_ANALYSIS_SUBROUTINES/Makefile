@@ -15,6 +15,16 @@ default:
 	@echo "Executable: XTANT_autocorrelators.x"
 
 	@echo "**************************************************"
+	@echo "Compiling XTANT_average_diffraction code"
+	ifort -qopenmp -O5 -fpp -ipo -real-size 64 -standard-semantics XTANT_average_diffraction.f90 -o XTANT_average_diffraction.x
+	@echo "Executable: XTANT_average_diffraction.x"
+
+	@echo "**************************************************"
+	@echo "Compiling XTANT_average_kappa code"
+	ifort -qopenmp -O5 -fpp -ipo -real-size 64 -standard-semantics XTANT_average_kappa.f90 -o XTANT_average_kappa.x
+	@echo "Executable: XTANT_average_kappa.x"
+
+	@echo "**************************************************"
 	@echo "Compiling XTANT_coupling_parameter code"
 	ifort -qopenmp -O5 -fpp -ipo -real-size 64 -standard-semantics XTANT_coupling_parameter.f90 -o XTANT_coupling_parameter.x
 	@echo "Executable: XTANT_coupling_parameter.x"
@@ -23,6 +33,11 @@ default:
 	@echo "Compiling XTANT_dielectric_function_analysis code"
 	ifort -qopenmp -O5 -fpp -ipo -real-size 64 -standard-semantics XTANT_dielectric_function_analysis.f90 -o XTANT_dielectric_function_analysis.x
 	@echo "Executable: XTANT_dielectric_function_analysis.x"
+
+	@echo "**************************************************"
+	@echo "Compiling XTANT_average_DOS code"
+	ifort -qopenmp -O5 -fpp -ipo -real-size 64 -standard-semantics XTANT_average_DOS.f90 -o XTANT_average_DOS.x
+	@echo "Executable: XTANT_average_DOS.x"
 
 	@echo "**************************************************"
 	@echo "Compiling XTANT_fragmentation code"
