@@ -35,6 +35,11 @@ default:
 	@echo "Executable: XTANT_dielectric_function_analysis.x"
 
 	@echo "**************************************************"
+	@echo "Compiling XTANT_average_DOS code"
+	ifort -qopenmp -O5 -fpp -ipo -real-size 64 -standard-semantics XTANT_average_DOS.f90 -o XTANT_average_DOS.x
+	@echo "Executable: XTANT_average_DOS.x"
+
+	@echo "**************************************************"
 	@echo "Compiling XTANT_fragmentation code"
 	ifort -qopenmp -O5 -fpp -ipo -real-size 64 -standard-semantics XTANT_fragmentation.f90 -o XTANT_fragmentation.x
 	@echo "Executable: XTANT_fragmentation.x"

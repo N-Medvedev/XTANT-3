@@ -24,6 +24,7 @@ del XTANT_average_diffraction.obj
 del XTANT_average_kappa.obj
 del XTANT_coupling_parameter.obj
 del XTANT_dielectric_function_analysis.obj
+del XTANT_average_DOS.obj
 del XTANT_fragmentation.obj
 del XTANT_entropy.obj
 del XTANT_el_distribution_analysis.obj
@@ -222,6 +223,35 @@ echo %Starline%
 del XTANT_dielectric_function_analysis.obj
 
 :: *********************************************************
+
+echo Started compilation: %date% %time%
+
+:: Program files to be compiled
+SET "List_of_files= XTANT_average_DOS.f90"
+
+:: List compiler options and the name of the executable:
+IF /I %arg1%==DEBUG (
+   :: Set name of the executable:
+   SET "Name_of_exe=XTANT_average_DOS.exe"
+) ELSE (
+   :: Set name of the executable:
+   SET "Name_of_exe=XTANT_average_DOS.exe"
+)
+
+:: Assemble the code from all created obj-files
+ifx.exe %Compile_options% %List_of_files% /exe:%Name_of_exe%
+
+echo %Starline%
+::   echo Completed: %date% %time%
+echo The program %Name_of_exe% was created at %date% %time%
+echo %Starline%
+
+
+:: Remove files that are no longer needed
+del XTANT_average_DOS.obj
+
+:: *********************************************************
+
 
 echo Started compilation: %date% %time%
 

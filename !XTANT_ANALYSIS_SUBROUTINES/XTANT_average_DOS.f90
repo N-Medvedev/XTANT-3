@@ -22,22 +22,22 @@
 !
 ! 1111111111111111111111111111111111111111111111111111111111111
 
-PROGRAM XTANT_average_diffraction
+PROGRAM XTANT_average_DOS
 ! Compilation:
 !
 ! for DEBUG:
-! ifort.exe -c /debug:all /check:all /check:bounds /fp:precise /fpe-all:0 /Qopenmp /Qftz- /Qfp-stack-check /Od /Zi /traceback /gen-interfaces /warn:all /warn:nounused /fpp /Qtrapuv /dbglibs XTANT_average_diffraction.f90 /link /stack:9999999999
+! ifort.exe -c /debug:all /check:all /check:bounds /fp:precise /fpe-all:0 /Qopenmp /Qftz- /Qfp-stack-check /Od /Zi /traceback /gen-interfaces /warn:all /warn:nounused /fpp /Qtrapuv /dbglibs XTANT_average_DOS.f90 /link /stack:9999999999
 !
-! ifort.exe /debug:all /check:all /check:bounds /fp:precise /fpe-all:0 /Qopenmp /Qftz- /Qfp-stack-check /Od /Zi /traceback /gen-interfaces /warn:all /warn:nounused /fpp /Qtrapuv /dbglibs XTANT_average_diffraction.obj -o XTANT_average_diffraction.exe /link /stack:9999999999
+! ifort.exe /debug:all /check:all /check:bounds /fp:precise /fpe-all:0 /Qopenmp /Qftz- /Qfp-stack-check /Od /Zi /traceback /gen-interfaces /warn:all /warn:nounused /fpp /Qtrapuv /dbglibs XTANT_average_DOS.obj -o XTANT_average_DOS.exe /link /stack:9999999999
 !
 !
 ! for RELEASE:
-! ifort.exe -c /F9999999999 /O3 /Qipo /fpp /Qopenmp /heap-arrays XTANT_average_diffraction.f90 /link /stack:9999999999
+! ifort.exe -c /F9999999999 /O3 /Qipo /fpp /Qopenmp /heap-arrays XTANT_average_DOS.f90 /link /stack:9999999999
 !
-! ifort.exe /F9999999999 /O3 /Qipo /fpp /Qopenmp /heap-arrays *.obj -o XTANT_average_diffraction.exe /link /stack:9999999999
+! ifort.exe /F9999999999 /O3 /Qipo /fpp /Qopenmp /heap-arrays *.obj -o XTANT_average_DOS.exe /link /stack:9999999999
 !
 ! To execute:
-! XTANT_average_diffraction.exe filename
+! XTANT_average_DOS.exe filename
 ! here "filename" is the file to be averaged.
 ! These files must be in the directories with identical names, except for version nmber at the end of them.
 ! The file must contain a few columns, the first of which must be time.
@@ -47,25 +47,24 @@ PROGRAM XTANT_average_diffraction
 USE IFLPORT, only : system, chdir
 
 type Instant_data   ! from all files
-   real(8), dimension(:), allocatable :: Tim            ! time instant [fs]
-   character(5), dimension(:), allocatable :: name      ! diffraction peak name
-   real(8), dimension(:,:), allocatable :: peak         ! diffraction peak intensity
+   real(8), dimension(:), allocatable :: NRG            ! energy [eV]
+   real(8), dimension(:,:), allocatable :: DOS          ! DOS
 end type Instant_data
 
 integer :: N_data  ! number of files
 integer :: N_peaks  ! number of peaks
 
-character(400) :: error_message, File_diffraction, File_out
+character(400) :: error_message, File_DOS, File_out
 character(200) :: Gnu_script, Gnu_file, command, chtemp, File_name
 character(32), dimension(10) :: char_var
 character(10) :: temp_ch, call_slash, sh_cmd
 character(1) :: path_sep
 
 character(200), dimension(:), allocatable :: Folders_with_data
-type(Instant_data), dimension(:), allocatable :: Read_data_peak           ! All data and parameters at this timestep
+type(Instant_data), dimension(:), allocatable :: Read_data_DOS           ! All data and parameters at this timestep
 
-real(8), dimension(:,:), allocatable :: ave_peak         ! diffraction peak intensity
-real(8), dimension(:), allocatable :: ave_time_grid      ! time grid for averaged data
+real(8), dimension(:,:), allocatable :: ave_DOS         ! DOS
+real(8), dimension(:), allocatable :: ave_NRG_grid      ! grid for averaged data
 
 real(8) :: temp
 
@@ -80,12 +79,12 @@ INFO = 0
 FN_in = 9999
 FN_out = 1000
 
-File_diffraction = 'OUTPUT_diffraction_peaks.dat'   ! defaul name of XTANT out file with diffraction peaks
-File_out = 'OUT_diffraction_peaks.dat'   ! name of outpout file with averaged diffraction peaks
+File_DOS = 'OUTPUT_DOS.dat'   ! defaul name of XTANT out file with DOS
+File_out = 'OUT_DOS.dat'   ! name of outpout file with averaged DOS
 
 !---------------------------------------
 print*, '******************************************************************************'
-print*, 'Averaging diffraction peaks'
+print*, 'Averaging DOS'
 print*, '******************************************************************************'
 
 
@@ -103,13 +102,13 @@ if (N_data < 1) then
 endif
 
 ! Allocate arrays with input data:
-allocate(Read_data_peak(N_data))
+allocate(Read_data_DOS(N_data))
 
 
 ! Now, read the data from each directory:
 INFO_flag = 0   ! to start with
 do i = 1, N_data   ! for all output data files
-    File_name = trim(adjustl(Folders_with_data(i)))//path_sep//trim(adjustl(File_diffraction))
+    File_name = trim(adjustl(Folders_with_data(i)))//path_sep//trim(adjustl(File_DOS))
 
     inquire(file=trim(adjustl(File_name)),exist=file_exist)
     if (.not.file_exist) then
@@ -122,7 +121,7 @@ do i = 1, N_data   ! for all output data files
     print*, 'File #', i, trim(adjustl(File_name))
 
     ! Read from this file:
-    call read_diffraction_data(FN_in, Read_data_peak, i, INFO)   ! below
+    call read_DOS_data(FN_in, Read_data_DOS, i, INFO)   ! below
     close(FN_in)    ! don't need this file anymore
 
     select case (INFO)
@@ -154,22 +153,22 @@ if (INFO_flag == -1) INFO = INFO_flag   ! make sure the INFO accounts for differ
 select case (INFO)
     case (-1)   ! different time grids used
         ! Create time grid appropriate for all used data:
-        call create_grid(ave_peak, ave_time_grid, Read_data_peak)  ! below
+        call create_grid(ave_DOS, ave_NRG_grid, Read_data_DOS)  ! below
 
         ! Now, average the data, taking into account different time grids:
-        call get_average_data(ave_peak, ave_time_grid, Read_data_peak)  ! below
+        call get_average_data(ave_DOS, ave_NRG_grid, Read_data_DOS)  ! below
 
     case default ! identical time grids, simple averaging:
         ! Allocate the averaged data array:
-        allocate(ave_peak(size(Read_data_peak(1)%peak,1),size(Read_data_peak(1)%peak,2)), source = 0.0d0)
-        do i = 1, size(ave_peak,1)    ! for all peaks
-            do j = 1, size(ave_peak,2)    ! for all timesteps
+        allocate(ave_DOS(size(Read_data_DOS(1)%DOS,1),size(Read_data_DOS(1)%DOS,2)), source = 0.0d0)
+        do i = 1, size(ave_DOS,1)    ! for all peaks
+            do j = 1, size(ave_DOS,2)    ! for all timesteps
                 temp = 0.0d0    ! to start with
-                do k = 1, size(Read_data_peak)  ! collect all data:
-                    temp = temp + Read_data_peak(k)%peak(i,j)
-                    !print*, i, j, k, Read_data_peak(k)%peak(i,j)
+                do k = 1, size(Read_data_DOS)  ! collect all data:
+                    temp = temp + Read_data_DOS(k)%DOS(i,j)
+                    !print*, i, j, k, Read_data_DOS(k)%DOS(i,j)
                 enddo
-                ave_peak(i,j) = temp/dble(N_data)
+                ave_DOS(i,j) = temp/dble(N_data)
             enddo ! j
             !pause 'test 0'
         enddo ! i
@@ -178,49 +177,20 @@ end select
 
 ! Now, print out the data:
 open (unit=FN_out, file=trim(adjustl(File_out))) ! averaged diffraction peaks
-! Write the comment line:
-write(FN_out, '(a)', advance='no') '#Time '
-do i = 1, size(Read_data_peak(1)%name)
-    write(FN_out, '(a)', advance='no') trim(adjustl(Read_data_peak(1)%name(i)))//'  '
-enddo
-write(FN_out, '(a)') '' ! end line
-write(FN_out, '(a)') '#[fs] [arb.units]'    ! comment line
 ! Write the data:
 select case (INFO)
     case (-1)   ! different time grids used
-      do i = 1, size(ave_peak,2)    ! for all timesteps
-         write(FN_out, '(es24.16,$)') ave_time_grid(i), ave_peak(:,i)    ! Time; Data for all peaks
+      do i = 1, size(ave_DOS,2)    ! for all timesteps
+         write(FN_out, '(es24.16,$)') ave_NRG_grid(i), ave_DOS(:,i)    ! Time; Data for all peaks
          write(FN_out, '(a)') '' ! end line
       enddo ! i
     case default ! identical time grids
-      do i = 1, size(ave_peak,2)    ! for all timesteps
-         write(FN_out, '(es24.16,$)') Read_data_peak(1)%Tim(i), ave_peak(:,i)    ! Time; Data for all peaks
+      do i = 1, size(ave_DOS,2)    ! for all timesteps
+         write(FN_out, '(es24.16,$)') Read_data_DOS(1)%NRG(i), ave_DOS(:,i)    ! Time; Data for all peaks
          write(FN_out, '(a)') '' ! end line
       enddo ! i
 end select
 close(FN_out)    ! don't need this file anymore
-
-
-! Now, create gnuplot script:
-! get the format of the script to be created:
-call cmd_vs_sh(path_sep, call_slash, sh_cmd)    ! below
-! create the shell script for gnuplot:
-select case (INFO)
-    case (-1)   ! different time grids used
-        call gnu_diffraction_peaks(Read_data_peak, 'OUT_diffraction_peaks'//trim(adjustl(sh_cmd)), path_sep, trim(adjustl(File_out)), &
-            ave_time_grid(1), ave_time_grid(size(ave_time_grid)), 'OUT_diffraction_peaks.png')   ! below
-    case default ! identical time grid
-        call gnu_diffraction_peaks(Read_data_peak, 'OUT_diffraction_peaks'//trim(adjustl(sh_cmd)), path_sep, trim(adjustl(File_out)), &
-            Read_data_peak(1)%Tim(1), Read_data_peak(1)%Tim(size(Read_data_peak(1)%Tim)), 'OUT_diffraction_peaks.png')   ! below
-end select
-
-! Execute gnuplot:
-if (path_sep .EQ. '\') then ! windows
-   command = trim(adjustl(call_slash))//' OUT_diffraction_peaks'//trim(adjustl(sh_cmd))
-else
-   command = trim(adjustl(call_slash))//'OUT_diffraction_peaks'//trim(adjustl(sh_cmd))
-endif
-iret = system(command)
 
 
 2012 continue   ! to exit the program
@@ -230,53 +200,45 @@ STOP
 
 
 
-subroutine get_average_data(ave_peak, ave_time_grid, Read_data_peak)
-   real(8), dimension(:,:), allocatable, intent(inout) :: ave_peak          ! diffraction peak intensity
-   real(8), dimension(:), allocatable, intent(inout) :: ave_time_grid       ! time grid for averaged data
-   type(Instant_data), dimension(:), intent(in) :: Read_data_peak           ! All data and parameters at this timestep
+subroutine get_average_data(ave_DOS, ave_NRG_grid, Read_data_DOS)
+   real(8), dimension(:,:), allocatable, intent(inout) :: ave_DOS          ! diffraction peak intensity
+   real(8), dimension(:), allocatable, intent(inout) :: ave_NRG_grid       ! time grid for averaged data
+   type(Instant_data), dimension(:), intent(in) :: Read_data_DOS           ! All data and parameters at this timestep
    !----------------------
-   real(8) :: temp, t_cur, temp_raw, t_first(size(ave_peak,1))
+   real(8) :: temp, t_cur, temp_raw, t_first(size(ave_DOS,1))
    integer :: i, j, k, N_data, i_t
 
-   N_data = size(Read_data_peak) ! number of datasets
+   N_data = size(Read_data_DOS) ! number of datasets
 
-   do i = 1, size(ave_peak,2)    ! for all timesteps
-      t_cur = ave_time_grid(i)  ! current time point on the grid
-      do j = 1, size(ave_peak,1)    ! for all peaks
+   do i = 1, size(ave_DOS,2)    ! for all NRG steps
+      t_cur = ave_NRG_grid(i)  ! current NRG point on the grid
+      do j = 1, size(ave_DOS,1)    ! for all peaks
          temp = 0.0d0    ! to start with
          do k = 1, N_data  ! collect all data:
-             ! temp = temp + Read_data_peak(k)%peak(i,j)
+             ! temp = temp + Read_data_DOS(k)%DOS(i,j)
 
              ! Find the point on the grid of raw data:
-             call Find_in_monotonous_1D_array(Read_data_peak(k)%Tim, t_cur, i_t) ! below
+             call Find_in_monotonous_1D_array(Read_data_DOS(k)%NRG, t_cur, i_t) ! below
 
-             !print*, i_t, t_cur, Read_data_peak(k)%Tim(i_t)
+             !print*, i_t, t_cur, Read_data_DOS(k)%NRG(i_t)
 
              ! Interpolate raw data for the average-time-grid:
-             if ( i_t < size(Read_data_peak(k)%Tim) ) then
-                temp_raw = Read_data_peak(k)%peak(j,i_t) + (Read_data_peak(k)%peak(j,i_t+1) - Read_data_peak(k)%peak(j,i_t)) / &
-                            ( Read_data_peak(k)%Tim(i_t+1) - Read_data_peak(k)%Tim(i_t) ) * (t_cur-Read_data_peak(k)%Tim(i_t))
+             if ( i_t < size(Read_data_DOS(k)%NRG) ) then
+                temp_raw = Read_data_DOS(k)%DOS(j,i_t) + (Read_data_DOS(k)%DOS(j,i_t+1) - Read_data_DOS(k)%DOS(j,i_t)) / &
+                            ( Read_data_DOS(k)%NRG(i_t+1) - Read_data_DOS(k)%NRG(i_t) ) * (t_cur-Read_data_DOS(k)%NRG(i_t))
              else ! last grid point
-                temp_raw = Read_data_peak(k)%peak(j,i_t-1) + (Read_data_peak(k)%peak(j,i_t) - Read_data_peak(k)%peak(j,i_t-1)) / &
-                            ( Read_data_peak(k)%Tim(i_t) - Read_data_peak(k)%Tim(i_t-1) ) * (t_cur-Read_data_peak(k)%Tim(i_t-1))
+                temp_raw = Read_data_DOS(k)%DOS(j,i_t-1) + (Read_data_DOS(k)%DOS(j,i_t) - Read_data_DOS(k)%DOS(j,i_t-1)) / &
+                            ( Read_data_DOS(k)%NRG(i_t) - Read_data_DOS(k)%NRG(i_t-1) ) * (t_cur-Read_data_DOS(k)%NRG(i_t-1))
              endif
              !print*, i, j, k, temp_raw
 
              temp = temp + temp_raw
          enddo
-         ave_peak(j,i) = temp/dble(N_data)
+         ave_DOS(j,i) = temp/dble(N_data)
          !pause 'get_average_data'
      enddo ! j
    enddo ! i
 
-   ! Renormalize the peaks to the starting value:
-   t_first = ave_peak(:,1)
-   !print*, t_first
-   !print*, 'size:', size(ave_peak,1)
-   do j = 1, size(ave_peak,2)    ! for all timesteps
-      ave_peak(:,j) = ave_peak(:,j) / t_first(:)
-   enddo
-   !pause 'get_average_data'
 end subroutine get_average_data
 
 
@@ -338,46 +300,46 @@ end subroutine Find_in_monotonous_1D_array
 
 
 
-subroutine create_grid(ave_peak, ave_time_grid, Read_data_peak)
-   real(8), dimension(:,:), allocatable, intent(inout) :: ave_peak          ! diffraction peak intensity
-   real(8), dimension(:), allocatable, intent(inout) :: ave_time_grid       ! time grid for averaged data
-   type(Instant_data), dimension(:), intent(in) :: Read_data_peak           ! All data and parameters at this timestep
+subroutine create_grid(ave_DOS, ave_NRG_grid, Read_data_DOS)
+   real(8), dimension(:,:), allocatable, intent(inout) :: ave_DOS          ! diffraction peak intensity
+   real(8), dimension(:), allocatable, intent(inout) :: ave_NRG_grid       ! time grid for averaged data
+   type(Instant_data), dimension(:), intent(in) :: Read_data_DOS           ! All data and parameters at this timestep
    !----------------------
    integer :: N_1, N_2, i
    real(8) :: start_time, end_time, cur_time, dt, dt_cur
 
-   start_time = Read_data_peak(1)%Tim(1)    ! to start with
-   do i = 1, size(Read_data_peak) ! find largest start-time
-      cur_time = Read_data_peak(i)%Tim(1)
+   start_time = Read_data_DOS(1)%NRG(1)    ! to start with
+   do i = 1, size(Read_data_DOS) ! find largest start-time
+      cur_time = Read_data_DOS(i)%NRG(1)
       if (cur_time > start_time) start_time = cur_time
       !print*, 'start:', i, cur_time, start_time
    enddo
 
-   end_time = Read_data_peak(1)%Tim(size(Read_data_peak(1)%Tim))    ! to start with
-   do i = 1, size(Read_data_peak) ! find smallest end-time
-      cur_time = Read_data_peak(i)%Tim(size(Read_data_peak(i)%Tim))
+   end_time = Read_data_DOS(1)%NRG(size(Read_data_DOS(1)%NRG))    ! to start with
+   do i = 1, size(Read_data_DOS) ! find smallest end-time
+      cur_time = Read_data_DOS(i)%NRG(size(Read_data_DOS(i)%NRG))
       if (cur_time < end_time) end_time = cur_time
       !print*, 'end:', i, cur_time, end_time
    enddo
 
-   dt = Read_data_peak(1)%Tim(2) - Read_data_peak(1)%Tim(1) ! to start with
-   do i = 1, size(Read_data_peak) ! find smallest end-time
-      dt_cur = Read_data_peak(i)%Tim(2) - Read_data_peak(i)%Tim(1)
+   dt = Read_data_DOS(1)%NRG(2) - Read_data_DOS(1)%NRG(1) ! to start with
+   do i = 1, size(Read_data_DOS) ! find smallest end-time
+      dt_cur = Read_data_DOS(i)%NRG(2) - Read_data_DOS(i)%NRG(1)
       if (dt_cur < dt) dt = dt_cur
       !print*, 'dr:', i, dt_cur, dt
    enddo
 
    ! Now, set the grid for average data:
-   N_1 = size(Read_data_peak(1)%peak,1) ! number of peaks
+   N_1 = size(Read_data_DOS(1)%DOS,1) ! number of peaks
    N_2 = int( (end_time - start_time)/dt )  ! number of timesteps
 
-   allocate(ave_time_grid(N_2), source = 0.0d0)
-   allocate(ave_peak(N_1, N_2), source = 0.0d0)
+   allocate(ave_NRG_grid(N_2), source = 0.0d0)
+   allocate(ave_DOS(N_1, N_2), source = 0.0d0)
 
    ! Set the time grid:
-   ave_time_grid(1) = start_time
+   ave_NRG_grid(1) = start_time
    do i = 2, N_2
-      ave_time_grid(i) = ave_time_grid(i-1) + dt
+      ave_NRG_grid(i) = ave_NRG_grid(i-1) + dt
    enddo
 
    !print*, start_time, end_time, dt, N_1, N_2
@@ -385,85 +347,9 @@ subroutine create_grid(ave_peak, ave_time_grid, Read_data_peak)
 end subroutine create_grid
 
 
-
-
-pure subroutine cmd_vs_sh(path_sep, call_slash, sh_cmd)
-   character(*), intent(in) :: path_sep
-   character(*), intent(out) :: call_slash, sh_cmd
-   if (path_sep .EQ. '\') then	! if it is Windows
-      call_slash = 'call '
-      sh_cmd = '.cmd'
-   else ! It is linux
-      call_slash = './'
-      sh_cmd = '.sh'
-   endif
-end subroutine cmd_vs_sh
-
-
-subroutine gnu_diffraction_peaks(Read_data_peak, File_name, path_sep, file_diffraction_peaks, t0, t_last, fig_name)
-   type(Instant_data), dimension(:), intent(in) :: Read_data_peak           ! All data and parameters at this timestep
-   character(*), intent(in) :: File_name, path_sep   ! file to create
-   character(*), intent(in) :: file_diffraction_peaks ! input file
-   real(8), intent(in) :: t0, t_last ! time instance [fs]
-   character(*), intent(in) :: fig_name ! name of the figure
-   !------------------------
-   integer :: FN, i, i_start
-   real(8) :: x_tics
-   character(8) :: temp, time_order, chtemp
-   character(20) :: peak_name
-
-   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-
-   ! Find order of the number, and set number of tics as tenth of it:
-   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
-
-   call write_gnuplot_script_header_new(FN, 4, 3.0d0, x_tics, 'Diffraction peak', &
-            'Time (fs)', 'Peak intensity (arb. units)', trim(adjustl(fig_name)), path_sep, 0)      ! module "Gnuplotting"
-
-
-   if (size(Read_data_peak(1)%name) == 1) then  ! only one peak to plot
-      peak_name = Read_data_peak(1)%name(1) ! below
-      if (path_sep .EQ. '\') then	! if it is Windows
-         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_diffraction_peaks)), ' "u 1:2 w l lw LW title "'//trim(adjustl(peak_name))//'" '
-      else
-         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_diffraction_peaks)), '\"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(peak_name))//'\" '
-      endif
-   else ! more than one peak:
-
-      peak_name = Read_data_peak(1)%name(1) ! below
-      if (path_sep .EQ. '\') then	! if it is Windows
-         ! First peak:
-         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_diffraction_peaks)), ' "u 1:2 w l lw LW title "'//trim(adjustl(peak_name))//'" ,\'
-         ! Next peaks:
-         do i = 2, size(Read_data_peak(1)%name)-1
-            peak_name = Read_data_peak(1)%name(i) ! below
-            write(FN, '(a,i3,a,a,a)') ' "" u 1:', 1+i ,' w l lw LW title "', trim(adjustl(peak_name))  ,'" ,\'
-         enddo
-         ! Last peak:
-         peak_name = Read_data_peak(1)%name(i) ! below
-         write(FN, '(a,i3,a,a,a)') ' "" u 1:', 1+i ,' w l lw LW title "', trim(adjustl(peak_name))  ,'" '
-      else  ! Linux:
-         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_diffraction_peaks)), '\"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(peak_name))//'\" ,\'
-         do i = 2, size(Read_data_peak(1)%name)-1
-            peak_name = Read_data_peak(1)%name(i) ! below
-            write(FN, '(a,i3,a,a,a)') '\"\" u 1:', 1+i ,' w l lw \"$LW\" title \"', trim(adjustl(peak_name)), '\" ,\'
-         enddo
-         ! Last peak:
-         peak_name = Read_data_peak(1)%name(i) ! below
-         write(FN, '(a,i3,a,a,a)') '\"\" u 1:', 1+i ,' w l lw \"$LW\" title \"', trim(adjustl(peak_name)), '\" '
-      endif
-
-   endif
-
-   call write_gnuplot_script_ending(FN, File_name, 1, path_sep)
-   close(FN)
-end subroutine gnu_diffraction_peaks
-
-
-
-subroutine read_diffraction_data(FN_in, Read_data_peak, i, INFO)
+subroutine read_DOS_data(FN_in, Read_data_DOS, i, INFO)
     integer, intent(in) :: FN_in ! file number (must be already openned)
-    type(Instant_data), dimension(:), intent(inout) :: Read_data_peak           ! All data and parameters at this timestep
+    type(Instant_data), dimension(:), intent(inout) :: Read_data_DOS           ! All data and parameters at this timestep
     integer, intent(in) :: i    ! data file index
     integer, intent(inout) :: INFO  ! info flag:
     ! 0     =   all good
@@ -476,21 +362,20 @@ subroutine read_diffraction_data(FN_in, Read_data_peak, i, INFO)
     character(10) :: temp_ch
 
     ! Get the nuimber of diffraction peaks in the file:
-    call Count_columns_in_file(FN_in, N_col, skip_lines=2) ! below
+    call Count_columns_in_file(FN_in, N_col) ! below
     N_col = N_col - 1   ! exclude the first column (with timestep)
 
     ! Get the nuimber of diffraction peaks in the file:
-    call Count_lines_in_file(FN_in, N_lines, skip_lines=2) ! below
+    call Count_lines_in_file(FN_in, N_lines, skip_lines=0) ! below
     !print*, 'N_col:', N_col
     !print*, 'N_lines:', N_lines
 
     ! Allocate the arrays:
-    allocate(Read_data_peak(i)%Tim(N_lines))
-    allocate(Read_data_peak(i)%name(N_col))
-    allocate(Read_data_peak(i)%peak(N_col,N_lines))
+    allocate(Read_data_DOS(i)%NRG(N_lines))
+    allocate(Read_data_DOS(i)%DOS(N_col,N_lines))
     ! Compare it to the first data file:
-    i_siz_1 = size(Read_data_peak(1)%Tim)
-    i_col_1 = size(Read_data_peak(1)%name)
+    i_siz_1 = size(Read_data_DOS(1)%NRG)
+    i_col_1 = size(Read_data_DOS(1)%DOS,1)
     if (N_lines /= i_siz_1) then
         INFO = -1
         !return ! different time grids are allowed!
@@ -500,31 +385,17 @@ subroutine read_diffraction_data(FN_in, Read_data_peak, i, INFO)
         return
     endif
 
-    ! If the data file format is ok, read the data:
-    ! Fist line contains diffraction peaks description:
-    read(FN_in,'(a)',IOSTAT=Reason) read_string
-    if (Reason .LT. 0) then
-        print*, 'Error in read #1: ', Reason
-        INFO = 2
-        return
-    endif
-    read(read_string, *, IOSTAT=Reason) temp_ch, Read_data_peak(i)%name(:)
-    !print*, temp_ch, Read_data_peak(i)%name(:)
-
-    ! Skip comment line:
-    read(FN_in,'(a)',IOSTAT=Reason)
-
     ! Read the data:
     do j = 1, N_lines
-        read(FN_in, *, IOSTAT=Reason) Read_data_peak(i)%Tim(j), Read_data_peak(i)%peak(:,j)
+        read(FN_in, *, IOSTAT=Reason) Read_data_DOS(i)%NRG(j), Read_data_DOS(i)%DOS(:,j)
         if (Reason .LT. 0) then
             print*, 'Error in read #1: ', Reason, 'Line #:', j
             INFO = 2
             return
         endif
-        !print*, j, Read_data_peak(i)%Tim(j), Read_data_peak(i)%peak(:,j)
+        !print*, j, Read_data_DOS(i)%NRG(j), Read_data_DOS(i)%DOS(:,j)
     enddo
-end subroutine read_diffraction_data
+end subroutine read_DOS_data
 
 
 
@@ -892,25 +763,40 @@ subroutine create_file_header(FN, text)
 end subroutine create_file_header
 
 
+
 subroutine Count_lines_in_file(File_num, N, skip_lines)
     integer, INTENT(in) :: File_num     ! number of file to be opened
     integer, INTENT(out) :: N           ! number of lines in this file
     integer, intent(in), optional :: skip_lines ! if you want to start not from the first line
-    integer i
+    integer i, Reason
+    real(8) :: temp
+
     if (present(skip_lines)) then ! in case you want to skip some comment lines and count only lines with data
        do i=1,skip_lines
-          read(File_num,*, end=604) 
+          read(File_num, *, end=604)
        enddo
        604 continue
+
+       ! assume real nmumbers in the file:
+       i = 0
+       do
+           read(File_num, *, IOSTAT=Reason, end=605) temp
+           if (Reason /= 0) exit ! found something that's not real number, probably end of file
+           i = i + 1
+       enddo
+       605 continue
+       rewind (File_num) ! to read next time from the beginning, not continue from the line we ended now.
+       N = i
+    else ! nothing to skip, use universal routine:
+       i = 0
+       do
+           read(File_num,*, end=603)
+           i = i + 1
+       enddo
+       603 continue
+       rewind (File_num) ! to read next time from the beginning, not continue from the line we ended now.
+       N = i
     endif
-    i = 0
-    do
-        read(File_num,*, end=603)
-        i = i + 1
-    enddo
-    603 continue
-    rewind (File_num) ! to read next time from the beginning, not continue from the line we ended now.
-    N = i
 end subroutine Count_lines_in_file
 
 
@@ -978,4 +864,4 @@ subroutine Path_separator(path_sep)
    endif 
 end subroutine Path_separator
 
-END PROGRAM XTANT_average_diffraction
+END PROGRAM XTANT_average_DOS
