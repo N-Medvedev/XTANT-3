@@ -53,7 +53,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 14.04.2025)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 22.04.2025)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -3472,28 +3472,28 @@ subroutine gnu_nearest_neighbors_elements(File_name, file_NN, Name, matter, t0, 
       trim(adjustl(fig_name)), g_numpar%path_sep, 1)	! module "Gnuplotting"
 
    if (g_numpar%path_sep == '\') then	! if it is Windows
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_NN)), ' "u 1:2 w l lw LW title "Total"  ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_NN)), ' " u 1:2 w l lw LW title "Total"  ,\'
 
       do i = 1, matter%N_KAO-1
          write(temp, '(i0)') 2+i    ! column with data
-         write(FN, '(a,a,a)') ' "', trim(adjustl(file_NN)), ' "u 1:'//trim(adjustl(temp))// &
-                              'w l lw LW title "'//trim(adjustl(matter%Atoms(i)%Name))//'" ,\'
+         write(FN, '(a,a,a)') ' "', trim(adjustl(file_NN)), ' " u 1:'//trim(adjustl(temp))// &
+                              ' w l lw LW title "'//trim(adjustl(matter%Atoms(i)%Name))//'" ,\'
       enddo
       i = matter%N_KAO
       write(temp, '(i0)') matter%N_KAO+2    ! last column with data
       write(FN, '(a,a,a)') ' "', trim(adjustl(file_NN)), ' "u 1:'//trim(adjustl(temp))// &
-                              'w l lw LW title "'//trim(adjustl(matter%Atoms(i)%Name))//'"'
+                              ' w l lw LW title "'//trim(adjustl(matter%Atoms(i)%Name))//'"'
    else
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_NN)), '\"u 1:3 w l lw \"$LW\" title \"Total\"  ,\'
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_NN)), '\" u 1:2 w l lw \"$LW\" title \"Total\"  ,\'
       do i = 1, matter%N_KAO-1
          write(temp, '(i0)') 2+i    ! column with data
-         write(FN, '(a,a,a)') ' \"', trim(adjustl(file_NN)), '\"u 1:'//trim(adjustl(temp))// &
-                              'w l lw \"$LW\" title \"'//trim(adjustl(matter%Atoms(i)%Name))//'\" ,\'
+         write(FN, '(a,a,a)') ' \"', trim(adjustl(file_NN)), '\" u 1:'//trim(adjustl(temp))// &
+                              ' w l lw \"$LW\" title \"'//trim(adjustl(matter%Atoms(i)%Name))//'\" ,\'
       enddo
       i = matter%N_KAO
       write(temp, '(i0)') matter%N_KAO+2    ! last column with data
       write(FN, '(a,a,a)') ' \"', trim(adjustl(file_NN)), '\"u 1:'//trim(adjustl(temp))// &
-                              'w l lw \"$LW\" title \"'//trim(adjustl(matter%Atoms(i)%Name))//'\"'
+                              ' w l lw \"$LW\" title \"'//trim(adjustl(matter%Atoms(i)%Name))//'\"'
    endif
    call write_gnuplot_script_ending(FN, File_name, 1)
    close(FN)

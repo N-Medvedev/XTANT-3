@@ -82,6 +82,9 @@ subroutine deallocate_all()
    if (allocated(g_numpar%El_bath_grid_Ta)) deallocate(g_numpar%El_bath_grid_Ta)
    if (allocated(g_numpar%El_bath_grid_tau)) deallocate(g_numpar%El_bath_grid_tau)
    if (allocated(g_numpar%k_grid)) deallocate(g_numpar%k_grid)
+   if (allocated(g_numpar%NN_radii)) deallocate(g_numpar%NN_radii)
+   if (allocated(g_numpar%FN_element_NN)) deallocate(g_numpar%FN_element_NN)
+   if (allocated(g_numpar%FN_displacements)) deallocate(g_numpar%FN_displacements)
 end subroutine deallocate_all
 
 
