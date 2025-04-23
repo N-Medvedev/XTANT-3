@@ -7980,7 +7980,7 @@ subroutine printout_warning(print_to, ind, text_to_print, text_to_add) ! standar
       endif
       write(print_to, '(a)') 'Atomic temperature is too high '//trim(adjustl(ch_lng))
       write(print_to, '(a)') 'Tight binding molecular dynamics may not handle it well.'
-      write(print_to, '(a)') 'Atoma coming too close may pose trouble, if short-range repulsion is not taken care of.'
+      write(print_to, '(a)') 'Atoms coming too close may pose trouble, if short-range repulsion is not taken care of.'
       write(print_to, '(a)') 'Proceed with caution, or reduce the atomic tempreature below ~1 eV'
    !---------------------
    case (4) ! too high dose / fluence

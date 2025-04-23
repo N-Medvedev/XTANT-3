@@ -1223,8 +1223,11 @@ subroutine Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, nrg)
 
       ! Get the scaling coefficient:
       b = dE_nonadiabat/Ekin_tot   ! ration entering the scaling
+
       if (b < -1.0d0) then
          alpha = 0.0d0
+         write(*,'(a,es16.6,es16.6,es16.6)') 'WARNING: in Rescale_atomic_velocities, change too high:', b, dE_nonadiabat, Ekin_tot
+         write(*,'(a)') 'Some energy may be lost'
       else
          alpha = sqrt(1.0d0 + b)
       endif
@@ -2471,9 +2474,13 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power, num
 
       do i1 = 1, Scell(NSC)%Na   ! for all atoms
          m = Scell(NSC)%Near_neighbor_size(i1)
+
+         if (m > Scell(NSC)%Na) exit ! prevent the run if it wasn't defined yet
+
          do atom_2 = 1, m ! do only for atoms close to that one
             j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2) ! this is the list of such close atoms
-            if (j1 /= i1) then
+            !if (j1 /= i1) then
+            if ((j1 /= i1) .and. (j1 > 0)) then ! if it's not the same atom, and if there are neighbours at all
                a_r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4)  ! at this distance, R
 
                ! Find which element these data are for:
