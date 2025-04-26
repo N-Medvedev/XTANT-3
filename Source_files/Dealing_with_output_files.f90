@@ -6274,7 +6274,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
       !if ((numpar%tau_fe_CB > -1.0e-7) .and. (numpar%tau_fe_VB > -1.0e-7)) then ! Partial thermalization is on:
       if (numpar%do_partial_thermal) then ! Partial thermalization is on:
-         write(print_to,'(a)') ' Band-resolved relaxation is appplied with characteristic times:'
+         write(print_to,'(a)') ' Band-resolved relaxation is applied with characteristic times:'
 
          if (numpar%tau_fe_VB < numpar%dt/30.0d0) then ! it's basically instantaneous
             write(text1, '(f13.6)') 0.0e0
