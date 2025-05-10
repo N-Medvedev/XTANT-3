@@ -1749,6 +1749,7 @@ subroutine make_atomic_substitution(substitution_data, Scell, SCN, matter, numpa
    !---------------------
    real(8) :: pers_tot, coef, RN
    character(3) :: El_name1, El_name2
+   character(20) :: ch_temp
    integer :: KOA1, KOA2, NATS, Na_el1, Nat, i, i_cur, i_cur_save, counter
    logical :: element_exists, found_element
 
@@ -1791,6 +1792,13 @@ subroutine make_atomic_substitution(substitution_data, Scell, SCN, matter, numpa
    Na_el1 = COUNT(Scell(SCN)%MDatoms(:)%KOA == KOA1) ! how many atoms of this element in the supercell
    NATS = MAX(1, NINT(Na_el1 * substitution_data%percentage))     ! how many atoms to substitute (not less than 1)
    Nat = Scell(SCN)%Na  ! total number of atoms
+
+   if (numpar%verbose) then
+      print*, 'Atomic substitution will be performed:'
+      write(ch_temp,'(f12.3)') (Na_el1*substitution_data%percentage)/Na_el1*100.0
+      print*, trim(adjustl(ch_temp))//'% of atoms of '//trim(adjustl(El_name1))// &
+                                                     ' will be replaced with '//trim(adjustl(El_name2))
+   endif
 
    !print*, Na_el1, NATS, Na_el1 * substitution_data%percentage
 
