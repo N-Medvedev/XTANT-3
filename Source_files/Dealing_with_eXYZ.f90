@@ -29,16 +29,28 @@ use Dealing_with_files, only : read_file, Count_lines_in_file
 implicit none
 PRIVATE
 
-public :: interpret_XYZ_comment_line
+!==============================================
+! For substitution of atoms
+type Substitute_data
+   logical :: required  ! is it required?
+   character(3) :: Atoms_to_substitute
+   character(3) :: Atoms_substituting
+   real(8) :: percentage   ! percentage of atoms to be substituted
+endtype Substitute_data
+!==============================================
+
+public :: interpret_XYZ_comment_line, Substitute_data
 
  contains
 
-subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_atoms, SC_X, SC_Y, it_is_mixture, Error_descript)
+subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_atoms, SC_X, SC_Y, &
+                                      it_is_mixture, substitution_data, Error_descript)
    character(*), intent(in) :: line_2  ! line #2 read from XYZ file
    integer, intent(out) :: ind_S, ind_R, ind_V, ind_atoms  ! indices: Element; Coordinates; Velocities; Atoms_setting
    real(8), dimension(3,3), intent(inout) :: Supce ! supercell vectors
    real(8), intent(inout) :: SC_X, SC_Y   ! sepuercell sizes along X and Y [A]
    logical, intent(inout) :: it_is_mixture  ! flag for alloy/mixture
+   type(Substitute_data), intent(inout) :: substitution_data  ! flag for substitution
    character(*), intent(inout) :: Error_descript   ! error message, if any
    !----------------------
    integer :: block_start, block_end, block2_end, colon_pos, colon_pos2, current_block, str_len, eq_pos
@@ -55,6 +67,7 @@ subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_at
    SC_X = 0.0d0   ! ][A
    SC_Y = 0.0d0   ! [A]
    it_is_mixture = .false.  ! to start with, assume no mixture
+   substitution_data%required = .false.  ! to start with, assume no substitution
 
    ! Start reading the line:
    count_lines = 0   ! to start with
@@ -119,6 +132,19 @@ subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_at
          it_is_mixture = .true.
          !print*, "We've got an alloy, everyone!"
 
+      !-----------------
+      case ('Substitution', 'substitution', 'Substitute', 'substitute')
+         substitution_data%required = .true.
+         ind_atoms = 1  ! atoms are set in this file (some to be substituted later)
+         ! Read properties, if given:
+         block_min = max(current_block+eq_pos+1, current_block+block_start+1)
+         block_max = max(current_block+block_start+block_end-1 , str_len)
+         call interprete_substitute_line( line_2(current_block+block_start+1:current_block+block_start+block_end-1), substitution_data) ! below
+
+      !-----------------
+      case default
+         print*, 'Unknown flag in 2d line in xyz-file:', trim(adjustl(text_read))
+
       end select
 
       ! Next block, if exists:
@@ -129,6 +155,41 @@ subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_at
 
 2012 continue
 end subroutine interpret_XYZ_comment_line
+
+
+
+subroutine interprete_substitute_line(prop_block, substitution_data)
+   character(*), intent(in) :: prop_block
+   type(Substitute_data), intent(inout) :: substitution_data  ! flag for substitution
+   !------------------------
+   character(3) :: text_read1, text_read2
+   real(8) :: real_read
+   integer :: Reason, count_lines
+   logical :: read_well
+
+   ! Defaults to start with:
+   substitution_data%Atoms_to_substitute = ""
+   substitution_data%Atoms_substituting = ""
+   substitution_data%percentage = 0.0d0
+
+   ! Read the data:
+   count_lines = 0
+   read(prop_block,*,IOSTAT=Reason) text_read1, text_read2, real_read
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      print*, 'Problem in soubroutine interprete_substitute_line:'
+      print*, 'Could not interprete block data in line #2: ', prop_block
+      print*, 'Icorrect format: atoms to substitute, substituting atoms, and percentage'
+      print*, 'No atomic substitution will be made!'
+      substitution_data%required =.false.
+   else  ! Interpret it:
+      substitution_data%Atoms_to_substitute = trim(adjustl(text_read1))
+      substitution_data%Atoms_substituting = trim(adjustl(text_read2))
+      substitution_data%percentage = real_read
+   endif
+
+   !print*, substitution_data%required, substitution_data%Atoms_to_substitute, substitution_data%Atoms_substituting, substitution_data%percentage
+end subroutine interprete_substitute_line
 
 
 subroutine interpret_random_line(prop_block, SC_X, SC_Y)

@@ -38,7 +38,7 @@ use Dealing_with_BOP, only : m_repulsive, m_N_BOP_rep_grid
 use ZBL_potential, only : ZBL_pot
 use TB_xTB, only : identify_xTB_orbitals_per_atom
 use Little_subroutines, only : linear_interpolation, Find_in_array_monoton, deallocate_array
-use Dealing_with_eXYZ, only : interpret_XYZ_comment_line
+use Dealing_with_eXYZ, only : interpret_XYZ_comment_line, Substitute_data
 use Periodic_table, only : Decompose_compound
 use Read_input_data, only : m_Atomic_parameters, m_dashline
 use Dealing_with_POSCAR, only : read_POSCAR, get_KOA_from_element
@@ -52,7 +52,6 @@ real(8) :: m_H2O_dist, m_H2O_theta, m_one_third
 parameter (m_H2O_dist = 0.943d0)    ! [A] distance between H and O atoms in H2O molecule
 parameter (m_H2O_theta = 106.0d0 * g_Pi/180.0d0)   ! [deg] H-O-H angle in H2O molecule
 parameter (m_one_third = 1.0d0/3.0d0)
-
 
 
 public :: create_BOP_repulsive, set_initial_configuration
@@ -91,6 +90,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
    character(10) :: file_extension
    logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2, XYZ_file_exists, POSCAR_file_exists, mol2_file_exists
    real(8) RN, temp, Mass, V2, Ta
+   type(Substitute_data) :: substitution_data
 
 
    !--------------------------------------------------------------------------
@@ -428,13 +428,13 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             endif
 
             ! 1) Read the unit cell:
-            call read_XYZ(FN_XYZ, File_name_XYZ, Scell, i, matter, numpar, Err) ! see below
+            call read_XYZ(FN_XYZ, File_name_XYZ, Scell, i, matter, numpar, substitution_data, Err) ! see below
             if ( trim(adjustl(Err%Err_descript)) /= '' ) then
                goto 3416
             endif
 
             ! 2) Make the supercell, if required:
-            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 3, matter, numpar, Err) ! below
+            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 3, matter, numpar, Err, substitution_data=substitution_data) ! below
             if ( trim(adjustl(Err%Err_descript)) /= '' ) then
                goto 3416
             endif
@@ -807,13 +807,14 @@ end subroutine define_photon_spectrum_parameters
 
 
 
-subroutine read_XYZ(FN_XYZ, File_name_XYZ, Scell, SCN, matter, numpar, Err) ! extended XYZ format
+subroutine read_XYZ(FN_XYZ, File_name_XYZ, Scell, SCN, matter, numpar, substitution_data, Err) ! extended XYZ format
    integer, intent(in) :: FN_XYZ ! extended XYZ file number (must be already open)
    character(*), intent(in) :: File_name_XYZ ! extended XYZ file name
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
    integer, intent(in) :: SCN ! number of the supercell (always =1)
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Substitute_data), intent(inout) :: substitution_data
    type(Error_handling), intent(inout) :: Err	! error save
    !-------------------
 
@@ -845,7 +846,7 @@ subroutine read_XYZ(FN_XYZ, File_name_XYZ, Scell, SCN, matter, numpar, Err) ! ex
    endif
 
    ! Having read this line, act accordingly:
-   call interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Scell, SCN, matter, numpar, Err)   ! below
+   call interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Scell, SCN, matter, numpar, substitution_data, Err)   ! below
 
    ! Get the volume of the now-defined supercell:
    call Det_3x3(Scell(SCN)%supce,Scell(SCN)%V) ! module "Algebra_tools"
@@ -854,7 +855,7 @@ subroutine read_XYZ(FN_XYZ, File_name_XYZ, Scell, SCN, matter, numpar, Err) ! ex
 end subroutine read_XYZ
 
 
-subroutine interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Scell, SCN, matter, numpar, Err)
+subroutine interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Scell, SCN, matter, numpar, substitution_data, Err)
    integer, intent(in) :: FN_XYZ, SCN
    integer, intent(inout) :: count_lines
    character(*), intent(in) :: File_name_XYZ ! extended XYZ file name
@@ -862,6 +863,7 @@ subroutine interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Sce
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
+   type(Substitute_data), intent(inout) :: substitution_data
    type(Error_handling), intent(inout) :: Err	! error save
    !--------------------
    integer :: ind_S, ind_R, ind_V, ind_atoms
@@ -869,7 +871,8 @@ subroutine interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Sce
    character(200) :: Error_descript
    logical :: it_is_mixture
 
-   call interpret_XYZ_comment_line(line_2, Scell(SCN)%Supce, ind_S, ind_R, ind_V, ind_atoms, SC_X, SC_Y, it_is_mixture, Error_descript)     ! module "Dealing_with_eXYZ"
+   call interpret_XYZ_comment_line(line_2, Scell(SCN)%Supce, ind_S, ind_R, ind_V, ind_atoms, SC_X, SC_Y, &
+                                   it_is_mixture, substitution_data, Error_descript)     ! module "Dealing_with_eXYZ"
    if (trim(adjustl(Error_descript)) /= '') then
       call Save_error_details(Err, 3, Error_descript)
       print*, trim(adjustl(Error_descript))
@@ -879,6 +882,7 @@ subroutine interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Sce
    if (numpar%verbose) then
       print*, 'In interpret_XYZ_comment, the ind_atoms =', ind_atoms
       if (it_is_mixture) print*, 'In interpret_XYZ_comment, alloy/mixture is specified'
+      if (substitution_data%required) print*, 'In interpret_XYZ_comment, substitution is required'
    endif
 
    ! If atomic coordinates are provided:
@@ -886,7 +890,8 @@ subroutine interpret_XYZ_comment(FN_XYZ, File_name_XYZ, count_lines, line_2, Sce
    case (1) ! there are data for atomic species and coordinates
       Scell(SCN)%Supce0 = Scell(SCN)%Supce   ! initial
       if (numpar%verbose) print*, 'Reading defined atomic coordinates from xyz-file'
-      call read_XYZ_coords(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, ind_S, ind_R, ind_V, it_is_mixture, Err) ! below
+      call read_XYZ_coords(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, ind_S, ind_R, ind_V, &
+                           it_is_mixture, Err) ! below
    case (0) ! to be set randomly
       if (numpar%verbose) print*, 'Setting random atomic coordinates defined in xyz-file'
       call read_XYZ_random(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matter, SC_X, SC_Y, numpar, Err) ! below
@@ -1078,7 +1083,7 @@ subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, i
    character(*), intent(in) :: File_name_XYZ ! extended XYZ file name
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
    type(Solid), intent(inout) :: matter	! all material parameters
-   logical, intent(inout) :: it_is_mixture      ! falg for alloy/mixture
+   logical, intent(inout) :: it_is_mixture      ! flag for alloy/mixture
    type(Error_handling), intent(inout) :: Err	! error save
    !------------------------
    integer :: i, Reason, KOA
@@ -1499,7 +1504,7 @@ end subroutine embed_molecule_in_water
 
 
 
-subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter, numpar, Err, ind)
+subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter, numpar, Err, ind, substitution_data)
    integer, intent(in) :: FN, which_one, SCN ! file number; type of file to read from (2=unit-cell, 1=super-cell); number of supercell
    character(*), intent(in) :: File_name ! file with the super-cell parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
@@ -1507,6 +1512,7 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
    type(Numerics_param), intent(inout) :: numpar	! numerical parameters
    type(Error_handling), intent(inout) :: Err	! error save
    integer, intent(in), optional :: ind ! read files for phase path tracing
+   type(Substitute_data), intent(in), optional :: substitution_data     ! flags for atomic substitution
    !=====================================
    integer :: INFO, Na, i, j
    integer Reason, count_lines
@@ -1602,6 +1608,18 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
       if (INFO .NE. 0) then
          call Save_error_details(Err, INFO, Error_descript)
          goto 3417
+      endif
+
+
+      ! In case some atoms need to be substituted:
+      if (present(substitution_data)) then ! atomic substitution may be required
+         if (substitution_data%required) then ! do atomic substitution
+            call make_atomic_substitution(substitution_data, Scell, SCN, matter, numpar, INFO, Error_descript) ! below
+            if (INFO .NE. 0) then
+               call Save_error_details(Err, INFO, Error_descript)
+               goto 3417
+            endif
+         endif
       endif
 
    case default ! coordinates in the unit cell
@@ -1720,6 +1738,114 @@ subroutine check_nearest_neighbors_radii(Scell, matter, numpar)
 end subroutine check_nearest_neighbors_radii
 
 
+subroutine make_atomic_substitution(substitution_data, Scell, SCN, matter, numpar, INFO, Error_descript) ! below
+   type(Substitute_data), intent(in) :: substitution_data ! data to substitute atoms
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   integer, intent(in) :: SCN ! number of supercell
+   type(solid), intent(inout) :: matter   ! material parameters
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters
+   integer, intent(out) :: INFO ! did we read well from the file
+   character(200), intent(inout) :: Error_descript
+   !---------------------
+   real(8) :: pers_tot, coef, RN
+   character(3) :: El_name1, El_name2
+   character(20) :: ch_temp
+   integer :: KOA1, KOA2, NATS, Na_el1, Nat, i, i_cur, i_cur_save, counter
+   logical :: element_exists, found_element
+
+   INFO = 0 ! to start with, no error
+
+   ! Element to substitute:
+   El_name1 = substitution_data%Atoms_to_substitute
+   call get_KOA_from_element(El_name1, matter, KOA1) ! module "Dealing_with_POSCAR"
+
+   ! Substituting element:
+   El_name2 = substitution_data%Atoms_substituting
+   call get_KOA_from_element(El_name2, matter, KOA2) ! module "Dealing_with_POSCAR"
+   ! Check if element was listed in the chemical formula:
+   if (KOA2 < 1) then ! the element was not listed
+      print*, trim(adjustl(m_dashline))
+      print*, 'In make_atomic_substitution subroutine, substituting element '//trim(adjustl(El_name2))
+      print*, 'is not listed in the chemical formula in the INPUT file (line #2)'
+      print*, 'Proceeding without atomic substitution!'
+      print*, trim(adjustl(m_dashline))
+      return
+   endif
+
+
+   ! Checl if there is any element to substitute:
+   element_exists = ANY(Scell(SCN)%MDatoms(:)%KOA == KOA1)
+   if (.not.element_exists) then ! the element to substitute does not exist
+      print*, trim(adjustl(m_dashline))
+      print*, 'In make_atomic_substitution subroutine, element to substitute '//trim(adjustl(El_name2))
+      print*, 'does not exist in the chemical formula in the INPUT file (line #2)'
+      print*, 'Proceeding without atomic substitution!'
+      print*, trim(adjustl(m_dashline))
+      return
+   endif
+
+   !print*, KOA1, KOA2, element_exists
+
+   ! Make substitution of random atoms of the given element with the specified another element
+   ! (To create substitution or implantation)
+   ! 1) Find how many atoms are to be substituted:
+   Na_el1 = COUNT(Scell(SCN)%MDatoms(:)%KOA == KOA1) ! how many atoms of this element in the supercell
+   NATS = MAX(1, NINT(Na_el1 * substitution_data%percentage))     ! how many atoms to substitute (not less than 1)
+   Nat = Scell(SCN)%Na  ! total number of atoms
+
+   if (numpar%verbose) then
+      print*, 'Atomic substitution will be performed:'
+      write(ch_temp,'(f12.3)') (Na_el1*substitution_data%percentage)/Na_el1*100.0
+      print*, trim(adjustl(ch_temp))//'% of atoms of '//trim(adjustl(El_name1))// &
+                                                     ' will be replaced with '//trim(adjustl(El_name2))
+   endif
+
+   !print*, Na_el1, NATS, Na_el1 * substitution_data%percentage
+
+   ! 2) Substitute atoms:
+   do i = 1, NATS ! for all required
+      ! 2.1) Choose randomly atoms to substitute:
+      call random_number(RN)
+      i_cur = max(NINT(RN*Nat),1) ! trial index
+      i_cur_save = i_cur      ! save the number for future
+      counter = 1 ! reset counter for trials
+      found_element = .false. ! reset flag marking found element
+      do while (.not. found_element)
+         if (Scell(SCN)%MDatoms(i_cur)%KOA == KOA1) then ! found an element to substitute
+            found_element = .true.
+            exit
+         endif
+         ! Try to chose another one:
+         call random_number(RN)
+         i_cur = max(NINT(RN*Nat),1) ! trial index
+         counter = counter + 1      ! next trial
+         if (counter > Nat) exit ! enough trials, use different method of finding
+      enddo ! (.not. found_element)
+      ! If element was not randomly found, just scan through them all one by one:
+      if (.not. found_element) then
+         if (i_cur_save < Nat) then
+            i_cur = i_cur_save + 1      ! start from this one
+         else
+            i_cur = 1
+         endif
+         do while (i_cur /= i_cur_save) ! go over all of them, until find or return to the starting one
+            if (Scell(SCN)%MDatoms(i_cur)%KOA == KOA1) then ! found an element to substitute
+               found_element = .true.
+               exit
+            endif
+            i_cur = i_cur + 1 ! next element to try
+            if (i_cur > Nat) i_cur = 1
+         enddo ! (i_cur /= i_cur_save)
+      endif ! (.not. found_element)
+
+      ! 2.2) Once chosen, substitute it:
+      !print*, 'Before', i_cur, Scell(SCN)%MDatoms(i_cur)%KOA, matter%Atoms(Scell(SCN)%MDatoms(i_cur)%KOA)%Name
+      Scell(SCN)%MDatoms(i_cur)%KOA = KOA2
+      !print*, 'After', i_cur, Scell(SCN)%MDatoms(i_cur)%KOA, matter%Atoms(Scell(SCN)%MDatoms(i_cur)%KOA)%Name
+   enddo ! i = 1, NATS
+
+   !pause 'make_atomic_substitution'
+end subroutine make_atomic_substitution
 
 
 
@@ -1790,7 +1916,7 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
       allocate(element_done(size(Scell(SCN)%MDatoms)), source = .false.)      ! to start with
       i_run = 0   ! to start with
       i_pers = 1  ! to start with
-      do i = 1, size(Scell(SCN)%MDatoms)  ! all all MD atoms
+      do i = 1, size(Scell(SCN)%MDatoms)  ! all MD atoms
          i_run = i_run + 1    ! we are in this array now
          if (i_run > matter%Atoms(i_pers)%percentage) then ! move to the next element:
             i_pers = i_pers + 1     ! next subarray
