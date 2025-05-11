@@ -1610,7 +1610,6 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
          goto 3417
       endif
 
-
       ! In case some atoms need to be substituted:
       if (present(substitution_data)) then ! atomic substitution may be required
          if (substitution_data%required) then ! do atomic substitution
@@ -1784,8 +1783,6 @@ subroutine make_atomic_substitution(substitution_data, Scell, SCN, matter, numpa
       return
    endif
 
-   !print*, KOA1, KOA2, element_exists
-
    ! Make substitution of random atoms of the given element with the specified another element
    ! (To create substitution or implantation)
    ! 1) Find how many atoms are to be substituted:
@@ -1799,8 +1796,6 @@ subroutine make_atomic_substitution(substitution_data, Scell, SCN, matter, numpa
       print*, trim(adjustl(ch_temp))//'% of atoms of '//trim(adjustl(El_name1))// &
                                                      ' will be replaced with '//trim(adjustl(El_name2))
    endif
-
-   !print*, Na_el1, NATS, Na_el1 * substitution_data%percentage
 
    ! 2) Substitute atoms:
    do i = 1, NATS ! for all required
@@ -1844,7 +1839,6 @@ subroutine make_atomic_substitution(substitution_data, Scell, SCN, matter, numpa
       !print*, 'After', i_cur, Scell(SCN)%MDatoms(i_cur)%KOA, matter%Atoms(Scell(SCN)%MDatoms(i_cur)%KOA)%Name
    enddo ! i = 1, NATS
 
-   !pause 'make_atomic_substitution'
 end subroutine make_atomic_substitution
 
 
@@ -2021,6 +2015,7 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
       if (size(Scell(SCN)%MDatoms) /= Scell(SCN)%Na) then
          deallocate(Scell(SCN)%MDatoms)
          allocate(Scell(SCN)%MDatoms(Scell(SCN)%Na))
+         Scell(SCN)%MDatoms(:)%KOA = 0    ! reinitialize
       endif
    endif
 
@@ -2060,12 +2055,10 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
                   !Scell(SCN)%MDatoms(j)%KOA = Scell(SCN)%MDatoms(k)%KOA ! kind of atom
                enddo ! i
 
-               !print*, 'one', k, Scell(SCN)%MDatoms(j)%KOA, KOA(k)
                ! define the kind-of-atom only if it is undefined:
                if (Scell(SCN)%MDatoms(j)%KOA < 1) then
                   Scell(SCN)%MDatoms(j)%KOA = KOA(k) ! kind of atom
                endif
-               !print*, 'two', j, Scell(SCN)%MDatoms(j)%KOA, KOA(k)
             enddo ! k
          enddo ! nz
       enddo ! ny
@@ -2116,9 +2109,6 @@ subroutine set_initial_velocities(matter, Scell, NSC, atoms, numpar, allow_rotat
    !AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
    ! Find unconnected fragments of which the material is constructed (can be one piece too):
    call get_fragments_indices(Scell, NSC, numpar, atoms, matter, indices) ! module "Atomic_tools"
-   
-!     print*, 'indices', indices
-!     pause
    
    !AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
    ! Eliminate initial angular momentum of the super-cell and each fragment inside:
