@@ -1,0 +1,5 @@
+Wenbo Sun, Tammo van der Heide, Van-Quan Vuong, Thomas Frauenheim, Michael A. Sentef, Bálint Aradi, Carlos R. Lien-Medrano, 
+"Hybrid Functional DFTB Parametrizations for Modeling Organic Photovoltaic Systems"
+J. Chem. Theory Comput. 2025
+
+https://pubs.acs.org/doi/10.1021/acs.jctc.5c00232
