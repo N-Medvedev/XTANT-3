@@ -4933,7 +4933,7 @@ subroutine write_DOS_gnuplot(FN, Scell, numpar, matter, file_fe)
 
          write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:] "'//trim(adjustl(file_fe))// &
                   '" index (i-1) u 1:2 w l lw 2 lt rgb "black" title sprintf("%i fs Total",(i-1)'// &
-                  '*' // trim(adjustl(ch_temp3)) // '-' // trim(adjustl(ch_temp2))// ') ,\'
+                  '*' // trim(adjustl(ch_temp3)) // '+' // trim(adjustl(ch_temp2))// ') ,\'
 
          i_col = col ! to start with
          do i_at = 1, NKOA
@@ -4959,7 +4959,7 @@ subroutine write_DOS_gnuplot(FN, Scell, numpar, matter, file_fe)
 
          write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:] \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:2 w l lw 2 lt rgb \"black\" title sprintf(\"%i fs Total\",(i-1)'// &
-                  '*' // trim(adjustl(ch_temp3)) // '-' // trim(adjustl(ch_temp2))// ') ,\'
+                  '*' // trim(adjustl(ch_temp3)) // '+' // trim(adjustl(ch_temp2))// ') ,\'
 
          i_col = col ! to start with
          do i_at = 1, NKOA
