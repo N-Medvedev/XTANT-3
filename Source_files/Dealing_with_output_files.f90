@@ -5134,9 +5134,12 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
       else
          write(ch2,'(f6.1)') laser(1)%t		! pulse duration
       endif
-      if (laser(1)%F < 1.0e4) then
+
+      if (laser(1)%F < 1.0e-2) then ! low dose
+         write(ch3,'(f7.6)') laser(1)%F   ! dose [eV/atom]
+      elseif (laser(1)%F < 1.0e4) then ! mideum dose
          write(ch3,'(f7.2)') laser(1)%F   ! dose [eV/atom]
-      else
+      else ! high dose
          write(ch3,'(es12.2)') laser(1)%F ! dose [eV/atom]
       endif
 
@@ -5159,7 +5162,7 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
                trim(adjustl(ch2)), '_F=', trim(adjustl(ch3))
          endif
       endif 
-    else LAS
+    else LAS ! no pulse
       if (numpar%path_sep .EQ. '\') then	! if it is Windows
          do i = 1,size(Scell)
             write(ch1,'(f8.1)') Scell(i)%Te ! electron temperature [K]
