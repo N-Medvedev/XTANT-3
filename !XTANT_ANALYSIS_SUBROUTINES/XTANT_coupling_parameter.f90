@@ -57,7 +57,7 @@ real(8), dimension(:), allocatable :: mu_ave, Ce_ave, E_ave, P_ave, Grun_ave
 integer :: FN1, FN2, FN3, FN4, FN5, FN6, FN7, FN8
 integer :: FN_out, FN_out2, FN_out3, FN_out4, FN_out5, FN_out6  ! file number
 integer :: Reason, i, j, siz, Tsiz, N_arg, i_arg, INFO
-logical :: read_well, file_exist, file_exist2
+logical :: read_well, file_exist, file_exist2, do_partial
 
 
 !---------------------------------------
@@ -217,6 +217,15 @@ if (allocated(Ce_mean_part)) then
    allocate(Ce_part_ave( Tsiz, size(Ce_mean_part,3) ) )
 endif
 
+! Check if the basis set included for plotting here:
+select case (size(G_part_ave,2))
+case(3,6,11) ! single element, s, sp3, or sp3d5:
+   do_partial = .true.
+case default
+   do_partial = .false.
+end select
+
+
 do i = 1, Tsiz
    T_ave(i) = Te_grid(i)
    G_ave(i) = SUM(G_mean(:,i))/dble(siz)
@@ -254,7 +263,7 @@ if (allocated(Ce_mean_part)) then
    open (unit=FN_out5, file=trim(adjustl(File_name_out5)))
 endif
 open (unit=FN_out4, file=trim(adjustl(File_name_out4)))
-open (unit=FN_out6, file=trim(adjustl(File_name_out6)))
+if (do_partial) open (unit=FN_out6, file=trim(adjustl(File_name_out6)))
 
 write(FN_out,'(a)') 'Te    G    sigma(G)'
 write(FN_out,'(a)') 'K    W/(m^3K)    -'
@@ -268,8 +277,10 @@ write(FN_out3,'(a)') 'K    W/(m^3K) '
 write(FN_out4,'(a)') 'Te    E  P Gruneisen'
 write(FN_out4,'(a)') 'K    eV/atom    GPa Pa/(J/atom)'
 
-write(FN_out6,'(a)') '# Te    Ce_total Ce_s  Ce_p  Ce_d   G_total G_s-s G_s-p G_s-d G_p-p G_p-d G_d-d'
-write(FN_out6,'(a)') '# K    J/(m^3K)  -- W/(m^3K) --'
+if (do_partial) then
+   write(FN_out6,'(a)') '# Te    Ce_total Ce_s  Ce_p  Ce_d   G_total G_s-s G_s-p G_s-d G_p-p G_p-d G_d-d'
+   write(FN_out6,'(a)') '# K    J/(m^3K)  -- W/(m^3K) --'
+endif
 
 !oooooooooooooooooooooooooooooooooo
 ! OUT files:
@@ -298,7 +309,7 @@ do i =1,Tsiz
    endif
 
    ! The output for partial Ce and G (rescaled!) in one file:
-   if (allocated(Ce_mean_part)) then
+   if (do_partial .and. allocated(Ce_mean_part)) then
       write(FN_out6,'(es)', advance='no') T_ave(i)
       do j = 1, size(Ce_part_ave,2)
          write(FN_out6,'(es)', advance='no') Ce_part_ave(i,j)
@@ -339,15 +350,17 @@ endif
 
 
 
-call gnu_plot(File_name_out6, sh_cmd, 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_G.gif', G_part_ave, Ce_part_ave, Up_lim_Te)  ! below
+call gnu_plot(File_name_out6, File_name_out, sh_cmd, 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_G.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_Coupling.gif', G_part_ave, Ce_part_ave, Up_lim_Te, scaling_G, Matter_name)  ! below
 
 
 close (FN_out)
 close (FN_out2)
 close (FN_out4)
 if (allocated(G_mean_part)) close (FN_out3)
-if (allocated(Ce_mean_part)) close (FN_out5)
-
+if (allocated(Ce_mean_part)) then
+   close (FN_out5)
+   if (do_partial) close (FN_out6)
+endif
 2012  print*, 'XTANT: analysis with Coupling_parameter is executed'
 
 
@@ -355,14 +368,25 @@ if (allocated(Ce_mean_part)) close (FN_out5)
  contains
 
 
-subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, Ce_part_ave, Up_lim_Te)
-   character(*), intent(in) :: File_name_out, sh_cmd, File_Ce_gif, File_G_gif
+subroutine gnu_plot(File_name_out, File_name_Average, sh_cmd, File_Ce_gif, File_G_gif, File_Gtot_gif, G_part_ave, Ce_part_ave, Up_lim_Te, &
+                    Scaling_fact, Matter_name)
+   character(*), intent(in) :: File_name_out, sh_cmd, File_Ce_gif, File_G_gif, File_Gtot_gif, File_name_Average, Matter_name
    real(8), dimension(:,:), intent(in) :: G_part_ave, Ce_part_ave
-   real(8), intent(in) :: Up_lim_Te
+   real(8), intent(in) :: Up_lim_Te, Scaling_fact
    !-------------------
-   character(300) :: File_name, File_name2, command, char_Te
+   character(300) :: File_name, File_name2, command, char_Te, File_name3, char_scal
    integer :: FN, iret
    real(8) :: x_tics
+   logical :: do_partial
+
+   ! Check if the basis set included for plotting here:
+   select case (size(G_part_ave,2))
+   case(3,6,11) ! single element, s, sp3, or sp3d5:
+      do_partial = .true.
+   case default
+      do_partial = .false.
+   end select
+
 
    if (Up_lim_Te < 10000.0e0) then
       x_tics = 1000.0d0  ! [K]
@@ -374,13 +398,14 @@ subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, 
 
    write(char_Te, '(i0)') CEILING(Up_lim_Te/1000.0e0)*1000
 
-   ! Script for Ce:
-   File_name  = 'OUT_gnuplot_Ce'//trim(adjustl(sh_cmd))
-   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+   if (do_partial) then
+    ! Script for Ce:
+    File_name  = 'OUT_gnuplot_Ce'//trim(adjustl(sh_cmd))
+    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
-   call write_gnuplot_script_header_new(FN, 3, 3.0d0, x_tics,  'Ce', 'Electron temperature (K)', 'Electron heat capacity (J/(m^3K))',  trim(adjustl(File_Ce_gif)), path_sep, 2)
+    call write_gnuplot_script_header_new(FN, 3, 3.0d0, x_tics,  'Ce', 'Electron temperature (K)', 'Electron heat capacity (J/(m^3K))',  trim(adjustl(File_Ce_gif)), path_sep, 2)
 
-   if (path_sep .EQ. '\') then	! if it is Windows
+    if (path_sep .EQ. '\') then	! if it is Windows
       if (size(Ce_part_ave,2) < 3) then ! s
          write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), ' "u 1:2 w l lw LW title "Total" '
       else ! more than one line
@@ -397,7 +422,7 @@ subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, 
          write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:4 w l lw LW title "p" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:5 w l lw LW title "d" '
       endif
-   else
+    else
       if (size(Ce_part_ave,2) < 3) then ! s
          write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] \"' , trim(adjustl(File_name_out)), '\"u 1:4 w l lw \"$LW\" title \"Total\" '
       else
@@ -412,20 +437,22 @@ subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, 
          write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:4 w l lw \"$LW\" title "p" ,\'
          write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:5 w l lw \"$LW\" title "d" '
       endif
-   endif
-   call write_gnuplot_script_ending_new(FN, File_name, path_sep)
-   close(FN)
+    endif
+    call write_gnuplot_script_ending_new(FN, File_name, path_sep)
+    close(FN)
+   endif ! do_partial
 
 
    ! Coupling parameter:
-   File_name2  = 'OUT_gnuplot_G'//trim(adjustl(sh_cmd))
-   open(NEWUNIT=FN, FILE = trim(adjustl(File_name2)), action="write", status="replace")
+   if (do_partial) then
+    File_name2  = 'OUT_gnuplot_G'//trim(adjustl(sh_cmd))
+    open(NEWUNIT=FN, FILE = trim(adjustl(File_name2)), action="write", status="replace")
 
-   call write_gnuplot_script_header_new(FN, 3, 3.0d0, x_tics,  'G', 'Electron temperature (K)', 'Electron-phonon coupling (W/(m^3K))',  trim(adjustl(File_G_gif)), path_sep, 0)
+    call write_gnuplot_script_header_new(FN, 3, 3.0d0, x_tics,  'G', 'Electron temperature (K)', 'Electron-phonon coupling (W/(m^3K))',  trim(adjustl(File_G_gif)), path_sep, 0)
 
-   if (path_sep .EQ. '\') then	! if it is Windows
+    if (path_sep .EQ. '\') then	! if it is Windows
       if (size(G_part_ave,2) < 4) then ! s
-         write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), ' "u 1:3 w l lw LW title "Total" '
+         write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), ' "u 1:3 w l lw LW title "" '
       elseif (size(G_part_ave,2) == 6) then ! sp3
          write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), ' "u 1:5 w l lw LW title "Total" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:6 w l lw LW title "s-s" ,\'
@@ -440,7 +467,7 @@ subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, 
          write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:11 w l lw LW title "p-d" ,\'
          write(FN, '(a,a,a)') ' "', trim(adjustl(File_name_out)), ' "u 1:12 w l lw LW title "d-d" '
       endif
-   else
+    else
       if (size(G_part_ave,2) < 4) then ! s
          write(FN, '(a,es25.16,a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_out)), '\"u 1:3 w l lw \"$LW\" title \"Total\" '
       elseif (size(G_part_ave,2) == 6) then ! sp3
@@ -457,14 +484,37 @@ subroutine gnu_plot(File_name_out, sh_cmd, File_Ce_gif, File_G_gif, G_part_ave, 
          write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:11 w l lw \"$LW\" title "p-d" ,\'
          write(FN, '(a,a,a)') '\"', trim(adjustl(File_name_out)), '\"u 1:12 w l lw \"$LW\" title "d-d" '
       endif
+    endif
+    call write_gnuplot_script_ending_new(FN, File_name2, path_sep)
+    close(FN)
+   endif ! do_partial
+
+   ! Average coupling parameter:
+   File_name3  = 'OUT_gnuplot_G_average'//trim(adjustl(sh_cmd))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name3)), action="write", status="replace")
+
+   call write_gnuplot_script_header_new(FN, 3, 3.0d0, x_tics,  'G', 'Electron temperature (K)', 'Electron-phonon coupling (W/(m^3K))',  trim(adjustl(File_Gtot_gif)), path_sep, 0)
+
+   write(char_scal,'(f17.6)') Scaling_fact
+   if (path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_Average)), ' "u 1:($2*' &
+            //trim(adjustl(char_scal)) //') w l lw LW title "'//trim(adjustl(Matter_name))//'" '
+   else
+      write(FN, '(a,es25.16,a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_Average)), '\"u 1:(\$2*' &
+            //trim(adjustl(char_scal)) //') w l lw \"$LW\" title \"'//trim(adjustl(Matter_name))//'\" '
    endif
-   call write_gnuplot_script_ending_new(FN, File_name2, path_sep)
+   call write_gnuplot_script_ending_new(FN, File_name3, path_sep)
    close(FN)
 
+
    ! Execute gnuplot scripts to make figures:
-   command = "."//trim(adjustl(path_sep))//trim(adjustl(File_name))
-   iret = system(command)
-   command = "."//trim(adjustl(path_sep))//trim(adjustl(File_name2))
+   if (do_partial) then
+      command = "."//trim(adjustl(path_sep))//trim(adjustl(File_name))
+      iret = system(command)
+      command = "."//trim(adjustl(path_sep))//trim(adjustl(File_name2))
+      iret = system(command)
+   endif ! do_partial
+   command = "."//trim(adjustl(path_sep))//trim(adjustl(File_name3))
    iret = system(command)
 end subroutine gnu_plot
 
