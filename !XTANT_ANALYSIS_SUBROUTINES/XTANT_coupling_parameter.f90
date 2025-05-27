@@ -156,8 +156,14 @@ allocate(P_mean( size(G_mean,1) , size(G_mean,2) ) )
 allocate(E_mean( size(G_mean,1) , size(G_mean,2) ) )
 allocate(Grun_mean( size(G_mean,1) , size(G_mean,2) ) )
 
+
 ! Get all the data and set them on the grid:
 siz = size(Folders_with_data)
+
+
+print*, 'Averaging over ', siz, ' simulations'
+
+
 do i = 1, siz	! for all output data files
    File_name1 = trim(adjustl(Folders_with_data(i)))//path_sep//trim(adjustl(File_electron))
    File_name2 = trim(adjustl(Folders_with_data(i)))//path_sep//trim(adjustl(File_temperatures))
