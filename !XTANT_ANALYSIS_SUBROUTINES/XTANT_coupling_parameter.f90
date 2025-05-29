@@ -133,8 +133,8 @@ ALLARG:do i_arg = 1, N_arg ! read all the arguments passed
    end select
 enddo ALLARG
 
-
-! print*, 'starting_time', starting_time
+! test:
+!print*, 'starting_time', starting_time
 
 ! Get all the output folders names:
 call collect_all_output(Folders_with_data)	! below
@@ -540,7 +540,7 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
    character(10) :: temp, temp2
    logical :: file_exists, short_named
    integer :: open_status, v, i, Reason
-   real(8) :: r_temp, t0, t_FWHM
+   real(8) :: r_temp, t0, t_FWHM, t_end
 
    scaling_G = 4.0d0 ! to start with, no known scaling
    short_named = .false.   ! to start with
@@ -622,6 +622,9 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
    read(FN8,*) Matter_name
    do i = 2, 12   ! read some more to get the  pulse start
       read(FN8,*) string
+      if (i == 6) then ! line with pulse end
+         read(string, *) t_end
+      endif
       if (i == 10) then ! line for pulse duration:
          read(string, *) t_FWHM
       endif
@@ -630,7 +633,8 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
       endif
    enddo
    if (starting_time < -1.0d10) then ! user did not provide the starting time, use automatic estimation
-      starting_time = t0 - 2.0d0*t_FWHM
+      !starting_time = t0 - 2.0d0*t_FWHM  ! Old default
+      starting_time = -1.5e0 * t_end      ! New default
    endif
    !print*, scaling_G, trim(adjustl(Matter_name)), starting_time
    print*, 'Scaling factor used: ', scaling_G
@@ -691,7 +695,7 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
    integer, intent(in), optional :: i_fold, siz
    !000000000000000000000000000
    integer :: i, Nsiz, i_num, j, j_low, j_high, j_l, j_h, Ncol, k
-   real(8) :: Te(2), G(6), T_temp, E_file_read(9), P_file_read(2)
+   real(8) :: Te(2), G(6), T_temp, E_file_read(9), P_file_read(2), starting_time_local
    real(8) :: G_temp, G_low, G_high
    real(8) :: mu_temp, mu_low, mu_high
    real(8) :: Ce_temp, Ce_low, Ce_high
@@ -775,6 +779,13 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
 
 !       print*, i, G_read(i), G_part_read(i,1:4)
    enddo
+
+
+   if (starting_time < -1.0d6) then ! starting time not provided, use automatic estimation
+      starting_time_local = -1.5d0 * tim(size(tim))
+   else ! starting time provided
+      starting_time_local = starting_time
+   endif
    
    ! Sort the data by electronic temperature:
    if (present(G_mean_part)) then
@@ -809,7 +820,8 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
          if (Te_read(j) <= Te_grid(i)) then
             i_num = i_num + 1
             ! Add it up only if it is within the allowed time:
-            if (tim(j) > starting_time) then
+            !if (tim(j) > starting_time) then
+            if (tim(j) > starting_time_local) then
                G_temp = G_temp + G_read(j)
                mu_temp = mu_temp + mu_read(j)
                Ce_temp = Ce_temp + Ce_read(j)
@@ -825,7 +837,7 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
 !                print*, j, G_read(j), G_part_read(j,1:4)
 !                pause
             else
-!                print*, 'The value is excluded:', j, tim(j), starting_time
+                !print*, 'The value is excluded:', j, tim(j), starting_time_local, starting_time
             endif
          else
             j = j - 1
@@ -898,7 +910,8 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
             endif
          enddo
          ! Add it up only if it is within the allowed time:
-         if (tim(j_l) > starting_time) then   
+         !if (tim(j_l) > starting_time) then
+         if (tim(j) > starting_time_local) then
             if (j_h == j_l) then
                G_mean(i) = G_read(j_h)
                mu_mean(i) = mu_read(j_h)
@@ -937,7 +950,7 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
                endif
             endif
          else
-!             print*, 'The value is excluded2:', j_l, tim(j_l), starting_time
+            !print*, 'The value is excluded2:', j_l, tim(j_l), starting_time_local, starting_time
          endif
       endif
    enddo
