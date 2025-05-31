@@ -356,7 +356,9 @@ endif
 
 
 
-call gnu_plot(File_name_out6, File_name_out, sh_cmd, 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_G.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_Coupling.gif', G_part_ave, Ce_part_ave, Up_lim_Te, scaling_G, Matter_name)  ! below
+call gnu_plot(File_name_out6, File_name_out, File_name_out2, sh_cmd, 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce.gif', &
+            'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_G.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_Coupling.gif', &
+            'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_Ce.gif', G_part_ave, Ce_part_ave, Up_lim_Te, scaling_G, Matter_name)  ! below
 
 
 close (FN_out)
@@ -374,13 +376,15 @@ endif
  contains
 
 
-subroutine gnu_plot(File_name_out, File_name_Average, sh_cmd, File_Ce_gif, File_G_gif, File_Gtot_gif, G_part_ave, Ce_part_ave, Up_lim_Te, &
-                    Scaling_fact, Matter_name)
-   character(*), intent(in) :: File_name_out, sh_cmd, File_Ce_gif, File_G_gif, File_Gtot_gif, File_name_Average, Matter_name
+subroutine gnu_plot(File_name_out, File_name_Average, File_name_Ce_Average, sh_cmd, File_Ce_gif, File_G_gif, File_Gtot_gif, File_Ctot_gif, &
+                        G_part_ave, Ce_part_ave, Up_lim_Te, &
+                        Scaling_fact, Matter_name)
+   character(*), intent(in) :: File_name_out, sh_cmd, File_Ce_gif, File_G_gif, File_Gtot_gif, File_Ctot_gif, &
+                               File_name_Average, File_name_Ce_Average, Matter_name
    real(8), dimension(:,:), intent(in) :: G_part_ave, Ce_part_ave
    real(8), intent(in) :: Up_lim_Te, Scaling_fact
    !-------------------
-   character(300) :: File_name, File_name2, command, char_Te, File_name3, char_scal
+   character(300) :: File_name, File_name2, command, char_Te, File_name3, File_name4, char_scal
    integer :: FN, iret
    real(8) :: x_tics
    logical :: do_partial
@@ -512,6 +516,20 @@ subroutine gnu_plot(File_name_out, File_name_Average, sh_cmd, File_Ce_gif, File_
    call write_gnuplot_script_ending_new(FN, File_name3, path_sep)
    close(FN)
 
+   ! Average electronic heat capacity:
+   File_name4  = 'OUT_gnuplot_Ce_average'//trim(adjustl(sh_cmd))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name4)), action="write", status="replace")
+
+   call write_gnuplot_script_header_new(FN, 3, 3.0d0, x_tics,  'Ce', 'Electron temperature (K)', 'Electron heat capacity (J/(m^3K))', trim(adjustl(File_Ctot_gif)), path_sep, 0)
+
+   if (path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_Ce_Average)), ' "u 1:3 w l lw LW title "'//trim(adjustl(Matter_name))//'" '
+   else
+      write(FN, '(a,es25.16,a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_Ce_Average)), '\"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(Matter_name))//'\" '
+   endif
+   call write_gnuplot_script_ending_new(FN, File_name4, path_sep)
+   close(FN)
+
 
    ! Execute gnuplot scripts to make figures:
    if (do_partial) then
@@ -521,6 +539,8 @@ subroutine gnu_plot(File_name_out, File_name_Average, sh_cmd, File_Ce_gif, File_
       iret = system(command)
    endif ! do_partial
    command = "."//trim(adjustl(path_sep))//trim(adjustl(File_name3))
+   iret = system(command)
+   command = "."//trim(adjustl(path_sep))//trim(adjustl(File_name4))
    iret = system(command)
 end subroutine gnu_plot
 
