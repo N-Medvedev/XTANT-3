@@ -133,8 +133,8 @@ ALLARG:do i_arg = 1, N_arg ! read all the arguments passed
    end select
 enddo ALLARG
 
-
-! print*, 'starting_time', starting_time
+! test:
+!print*, 'starting_time', starting_time
 
 ! Get all the output folders names:
 call collect_all_output(Folders_with_data)	! below
@@ -156,8 +156,14 @@ allocate(P_mean( size(G_mean,1) , size(G_mean,2) ) )
 allocate(E_mean( size(G_mean,1) , size(G_mean,2) ) )
 allocate(Grun_mean( size(G_mean,1) , size(G_mean,2) ) )
 
+
 ! Get all the data and set them on the grid:
 siz = size(Folders_with_data)
+
+
+print*, 'Averaging over ', siz, ' simulations'
+
+
 do i = 1, siz	! for all output data files
    File_name1 = trim(adjustl(Folders_with_data(i)))//path_sep//trim(adjustl(File_electron))
    File_name2 = trim(adjustl(Folders_with_data(i)))//path_sep//trim(adjustl(File_temperatures))
@@ -350,7 +356,9 @@ endif
 
 
 
-call gnu_plot(File_name_out6, File_name_out, sh_cmd, 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_G.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_Coupling.gif', G_part_ave, Ce_part_ave, Up_lim_Te, scaling_G, Matter_name)  ! below
+call gnu_plot(File_name_out6, File_name_out, File_name_out2, sh_cmd, 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_Ce.gif', &
+            'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_partial_G.gif', 'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_Coupling.gif', &
+            'OUT_XTANT3_'//trim(adjustl(Matter_name))//'_Ce.gif', G_part_ave, Ce_part_ave, Up_lim_Te, scaling_G, Matter_name)  ! below
 
 
 close (FN_out)
@@ -368,13 +376,15 @@ endif
  contains
 
 
-subroutine gnu_plot(File_name_out, File_name_Average, sh_cmd, File_Ce_gif, File_G_gif, File_Gtot_gif, G_part_ave, Ce_part_ave, Up_lim_Te, &
-                    Scaling_fact, Matter_name)
-   character(*), intent(in) :: File_name_out, sh_cmd, File_Ce_gif, File_G_gif, File_Gtot_gif, File_name_Average, Matter_name
+subroutine gnu_plot(File_name_out, File_name_Average, File_name_Ce_Average, sh_cmd, File_Ce_gif, File_G_gif, File_Gtot_gif, File_Ctot_gif, &
+                        G_part_ave, Ce_part_ave, Up_lim_Te, &
+                        Scaling_fact, Matter_name)
+   character(*), intent(in) :: File_name_out, sh_cmd, File_Ce_gif, File_G_gif, File_Gtot_gif, File_Ctot_gif, &
+                               File_name_Average, File_name_Ce_Average, Matter_name
    real(8), dimension(:,:), intent(in) :: G_part_ave, Ce_part_ave
    real(8), intent(in) :: Up_lim_Te, Scaling_fact
    !-------------------
-   character(300) :: File_name, File_name2, command, char_Te, File_name3, char_scal
+   character(300) :: File_name, File_name2, command, char_Te, File_name3, File_name4, char_scal
    integer :: FN, iret
    real(8) :: x_tics
    logical :: do_partial
@@ -506,6 +516,20 @@ subroutine gnu_plot(File_name_out, File_name_Average, sh_cmd, File_Ce_gif, File_
    call write_gnuplot_script_ending_new(FN, File_name3, path_sep)
    close(FN)
 
+   ! Average electronic heat capacity:
+   File_name4  = 'OUT_gnuplot_Ce_average'//trim(adjustl(sh_cmd))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name4)), action="write", status="replace")
+
+   call write_gnuplot_script_header_new(FN, 3, 3.0d0, x_tics,  'Ce', 'Electron temperature (K)', 'Electron heat capacity (J/(m^3K))', trim(adjustl(File_Ctot_gif)), path_sep, 0)
+
+   if (path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_Ce_Average)), ' "u 1:3 w l lw LW title "'//trim(adjustl(Matter_name))//'" '
+   else
+      write(FN, '(a,es25.16,a,a,a)') 'p [0.0:'//trim(adjustl(char_Te))//'][] "' , trim(adjustl(File_name_Ce_Average)), '\"u 1:2 w l lw \"$LW\" title \"'//trim(adjustl(Matter_name))//'\" '
+   endif
+   call write_gnuplot_script_ending_new(FN, File_name4, path_sep)
+   close(FN)
+
 
    ! Execute gnuplot scripts to make figures:
    if (do_partial) then
@@ -515,6 +539,8 @@ subroutine gnu_plot(File_name_out, File_name_Average, sh_cmd, File_Ce_gif, File_
       iret = system(command)
    endif ! do_partial
    command = "."//trim(adjustl(path_sep))//trim(adjustl(File_name3))
+   iret = system(command)
+   command = "."//trim(adjustl(path_sep))//trim(adjustl(File_name4))
    iret = system(command)
 end subroutine gnu_plot
 
@@ -534,7 +560,7 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
    character(10) :: temp, temp2
    logical :: file_exists, short_named
    integer :: open_status, v, i, Reason
-   real(8) :: r_temp, t0, t_FWHM
+   real(8) :: r_temp, t0, t_FWHM, t_end
 
    scaling_G = 4.0d0 ! to start with, no known scaling
    short_named = .false.   ! to start with
@@ -616,6 +642,9 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
    read(FN8,*) Matter_name
    do i = 2, 12   ! read some more to get the  pulse start
       read(FN8,*) string
+      if (i == 6) then ! line with pulse end
+         read(string, *) t_end
+      endif
       if (i == 10) then ! line for pulse duration:
          read(string, *) t_FWHM
       endif
@@ -624,7 +653,8 @@ subroutine read_NUMPAR_file(Folders_with_data, path_sep, FN7, File_numpar, FN8, 
       endif
    enddo
    if (starting_time < -1.0d10) then ! user did not provide the starting time, use automatic estimation
-      starting_time = t0 - 2.0d0*t_FWHM
+      !starting_time = t0 - 2.0d0*t_FWHM  ! Old default
+      starting_time = -1.5e0 * t_end      ! New default
    endif
    !print*, scaling_G, trim(adjustl(Matter_name)), starting_time
    print*, 'Scaling factor used: ', scaling_G
@@ -685,7 +715,7 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
    integer, intent(in), optional :: i_fold, siz
    !000000000000000000000000000
    integer :: i, Nsiz, i_num, j, j_low, j_high, j_l, j_h, Ncol, k
-   real(8) :: Te(2), G(6), T_temp, E_file_read(9), P_file_read(2)
+   real(8) :: Te(2), G(6), T_temp, E_file_read(9), P_file_read(2), starting_time_local
    real(8) :: G_temp, G_low, G_high
    real(8) :: mu_temp, mu_low, mu_high
    real(8) :: Ce_temp, Ce_low, Ce_high
@@ -769,6 +799,13 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
 
 !       print*, i, G_read(i), G_part_read(i,1:4)
    enddo
+
+
+   if (starting_time < -1.0d6) then ! starting time not provided, use automatic estimation
+      starting_time_local = -1.5d0 * tim(size(tim))
+   else ! starting time provided
+      starting_time_local = starting_time
+   endif
    
    ! Sort the data by electronic temperature:
    if (present(G_mean_part)) then
@@ -803,7 +840,8 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
          if (Te_read(j) <= Te_grid(i)) then
             i_num = i_num + 1
             ! Add it up only if it is within the allowed time:
-            if (tim(j) > starting_time) then
+            !if (tim(j) > starting_time) then
+            if (tim(j) > starting_time_local) then
                G_temp = G_temp + G_read(j)
                mu_temp = mu_temp + mu_read(j)
                Ce_temp = Ce_temp + Ce_read(j)
@@ -819,7 +857,7 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
 !                print*, j, G_read(j), G_part_read(j,1:4)
 !                pause
             else
-!                print*, 'The value is excluded:', j, tim(j), starting_time
+                !print*, 'The value is excluded:', j, tim(j), starting_time_local, starting_time
             endif
          else
             j = j - 1
@@ -892,7 +930,8 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
             endif
          enddo
          ! Add it up only if it is within the allowed time:
-         if (tim(j_l) > starting_time) then   
+         !if (tim(j_l) > starting_time) then
+         if (tim(j) > starting_time_local) then
             if (j_h == j_l) then
                G_mean(i) = G_read(j_h)
                mu_mean(i) = mu_read(j_h)
@@ -931,7 +970,7 @@ subroutine read_and_set_on_grid(FN1, FN2, FN3, FN4, FN5, FN6, starting_time, Te_
                endif
             endif
          else
-!             print*, 'The value is excluded2:', j_l, tim(j_l), starting_time
+            !print*, 'The value is excluded2:', j_l, tim(j_l), starting_time_local, starting_time
          endif
       endif
    enddo
