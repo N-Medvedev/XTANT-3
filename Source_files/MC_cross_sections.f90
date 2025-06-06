@@ -414,7 +414,8 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
       endif
       write(FN,'(f25.16,es25.16)') matter%El_MFP_tot%E(i), matter%El_MFP_tot%L(i)
    enddo
-
+   inquire(file=trim(adjustl(File_name)),opened=file_opened)
+   if (file_opened) close(FN)
 
 9902  continue
 
