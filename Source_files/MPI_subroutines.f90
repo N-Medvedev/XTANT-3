@@ -1103,6 +1103,10 @@ subroutine MPI_share_Short_Rep_TB(MPI_param, TB_Expwall)
 
          call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Expwall(i,j)%f_ZBL%use_it}', TB_Expwall(i,j)%f_ZBL%use_it) ! below
 
+         call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Expwall(i,j)%f_NLH%use_it}', TB_Expwall(i,j)%f_NLH%use_it) ! below
+         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {TB_Expwall(i,j)%f_NLH%a}', TB_Expwall(i,j)%f_NLH%a) ! below
+         call broadcast_array(MPI_param, trim(adjustl(error_part))//' {TB_Expwall(i,j)%f_NLH%b}', TB_Expwall(i,j)%f_NLH%b) ! below
+
          call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Expwall(i,j)%f_tab%use_it}', TB_Expwall(i,j)%f_tab%use_it) ! below
          call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {TB_Expwall(i,j)%f_tab%use_spline}', TB_Expwall(i,j)%f_tab%use_spline) ! below
          call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {TB_Expwall(i,j)%f_tab%R}', TB_Expwall(i,j)%f_tab%R) ! below

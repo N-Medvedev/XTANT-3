@@ -27,7 +27,7 @@ MODULE Exponential_wall
 use Universal_constants
 use Objects
 use Coulomb, only : f_cut_L_C, d_f_cut_L_C, d2_f_cut_L_C, ddija_dria
-use ZBL_potential, only : ZBL_pot, d_ZBL_pot, d2_ZBL_pot
+use ZBL_potential, only : ZBL_pot, d_ZBL_pot, d2_ZBL_pot, NLH_pot, d_NLH_pot, d2_NLH_pot
 use Little_subroutines, only : Find_monotonous_LE, linear_interpolation
 use Algebra_tools, only : cubic_function, d_cubic_function, d2_cubic_function
 
@@ -131,9 +131,9 @@ function Shortrange_pot(TB_Expwall, a_r, Z1, Z2) result(Pot)
    real(8) Pot ! [eV] Repulsive potential
    type(TB_Short_Rep), intent(in), target :: TB_Expwall  ! Exponential wall parameters
    real(8), intent(in) :: a_r ! [A] distance between the atoms
-   real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL)
+   real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL or NLH)
    !------------------------
-   real(8) :: f_cut_large, f_pow, f_exp, f_invexp, f_ZBL, f_tab
+   real(8) :: f_cut_large, f_pow, f_exp, f_invexp, f_ZBL, f_tab, f_NLH
 
    Pot = 0.0d0 ! to start with
    if (a_r < TB_Expwall%f_cut%d0 + TB_Expwall%f_cut%dd*10.0d0) then ! only at close range
@@ -157,6 +157,13 @@ function Shortrange_pot(TB_Expwall, a_r, Z1, Z2) result(Pot)
          f_ZBL = 0.0d0
       endif
 
+      ! Contribution of the NLH potential:
+      if (TB_Expwall%f_NLH%use_it) then
+         f_NLH = NLH_pot(Z1, Z2, a_r, TB_Expwall%f_NLH%a, TB_Expwall%f_NLH%b)   ! module "ZBL_potential"
+      else
+         f_NLH = 0.0d0
+      endif
+
       ! Contribution of tabulated potential:
       f_tab = tabulated_potential(a_r, TB_Expwall%f_tab) ! below
 
@@ -165,7 +172,7 @@ function Shortrange_pot(TB_Expwall, a_r, Z1, Z2) result(Pot)
       !print*, 'Shortrange_pot-2:', a_r, TB_Expwall%f_inv_exp%use_it, TB_Expwall%f_inv_exp%C, TB_Expwall%f_inv_exp%r0
 
       ! Combine all:
-      Pot = f_invexp + f_exp + f_pow + f_ZBL + f_tab
+      Pot = f_invexp + f_exp + f_pow + f_ZBL + f_NLH + f_tab
       ! Augment with the cut-off function:
       Pot = Pot * f_cut_large  ! [eV]
    endif
@@ -178,9 +185,9 @@ function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
    real(8) :: dPot   ! derivative of the short-range potential
    type(TB_Short_Rep), intent(in), target :: TB_Expwall  ! short-range parameters
    real(8), intent(in) :: a_r ! [A] distance between the atoms
-   real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL)
+   real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL or NLH)
    !------------------------
-   real(8) :: f_cut_large, d_f_large, f_exp, d_f_exp, f_invexp, d_f_invexp, f_pow, d_f_pow, Pot, d_Pot, f_ZBL, d_f_ZBL
+   real(8) :: f_cut_large, d_f_large, f_exp, d_f_exp, f_invexp, d_f_invexp, f_pow, d_f_pow, Pot, d_Pot, f_ZBL, d_f_ZBL, f_NLH, d_f_NLH
    real(8) :: f_tab, d_f_tab
 
    dPot = 0.0d0   ! to start with
@@ -223,6 +230,16 @@ function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
       endif
 
       !------------------
+      ! Contribution of the NLH potential:
+      if (TB_Expwall%f_NLH%use_it) then
+         f_NLH = NLH_pot(Z1, Z2, a_r, TB_Expwall%f_NLH%a, TB_Expwall%f_NLH%b)   ! module "ZBL_potential"
+         d_f_NLH = d_NLH_pot(Z1, Z2, a_r, TB_Expwall%f_NLH%a, TB_Expwall%f_NLH%b)   ! module "ZBL_potential"
+      else
+         f_NLH = 0.0d0
+         d_f_NLH = 0.0d0
+      endif
+
+      !------------------
       ! Contribution of tabulated potential:
       f_tab = tabulated_potential(a_r, TB_Expwall%f_tab) ! below
       d_f_tab = d_tabulated_potential(a_r, TB_Expwall%f_tab) ! below
@@ -230,8 +247,8 @@ function d_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
 
       !------------------
       ! Combine all:
-      Pot   = f_invexp + f_exp + f_pow + f_ZBL + f_tab
-      d_Pot = d_f_invexp + d_f_exp + d_f_pow + d_f_ZBL + d_f_tab
+      Pot   = f_invexp + f_exp + f_pow + f_ZBL + f_NLH + f_tab
+      d_Pot = d_f_invexp + d_f_exp + d_f_pow + d_f_ZBL + d_f_NLH + d_f_tab
 
       !------------------
       ! Augment the potential with the cut-off function (and its derivative):
@@ -245,10 +262,10 @@ function d2_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
    real(8) :: dPot   ! second derivative of the short-range potential
    type(TB_Short_Rep), intent(in), target :: TB_Expwall  ! short-range parameters
    real(8), intent(in) :: a_r ! [A] distance between the atoms
-   real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL)
+   real(8), intent(in) :: Z1, Z2 ! atomic numbers of elements 1 and 2 (for ZBL or NLH)
    !------------------------
-   real(8) :: f_cut_large, d_f_large, f_exp, d_f_exp, f_invexp, d_f_invexp, f_pow, d_f_pow, Pot, d_Pot, f_ZBL, d_f_ZBL
-   real(8) :: f_tab, d_f_tab, d2_f_large, d2_Pot, d2_f_exp, d2_f_invexp, d2_f_pow, d2_f_ZBL, d2_f_tab
+   real(8) :: f_cut_large, d_f_large, f_exp, d_f_exp, f_invexp, d_f_invexp, f_pow, d_f_pow, Pot, d_Pot, f_ZBL, d_f_ZBL, f_NLH, d_f_NLH
+   real(8) :: f_tab, d_f_tab, d2_f_large, d2_Pot, d2_f_exp, d2_f_invexp, d2_f_pow, d2_f_ZBL, d2_f_tab, d2_f_NLH
 
    dPot = 0.0d0   ! to start with
    if (a_r < TB_Expwall%f_cut%d0 + TB_Expwall%f_cut%dd*10.0d0) then ! only at close range
@@ -303,6 +320,20 @@ function d2_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
       endif
 
       !------------------
+      ! Contribution of the NLH potential:
+      if (TB_Expwall%f_NLH%use_it) then
+         f_NLH = NLH_pot(Z1, Z2, a_r, TB_Expwall%f_NLH%a, TB_Expwall%f_NLH%b)   ! module "ZBL_potential"
+         ! its derivative:
+         d_f_NLH = d_NLH_pot(Z1, Z2, a_r, TB_Expwall%f_NLH%a, TB_Expwall%f_NLH%b)   ! module "ZBL_potential"
+         ! and second derivative:
+         d2_f_NLH = d2_NLH_pot(Z1, Z2, a_r, TB_Expwall%f_NLH%a, TB_Expwall%f_NLH%b)   ! module "ZBL_potential"
+      else
+         f_NLH = 0.0d0
+         d_f_NLH = 0.0d0
+         d2_f_NLH = 0.0d0
+      endif
+
+      !------------------
       ! Contribution of tabulated potential:
       f_tab = tabulated_potential(a_r, TB_Expwall%f_tab) ! below
       ! its derivative:
@@ -312,9 +343,9 @@ function d2_Short_range_pot(TB_Expwall, a_r, Z1, Z2) result(dPot)
 
       !------------------
       ! Combine all:
-      Pot   = f_invexp + f_exp + f_pow + f_ZBL + f_tab
-      d_Pot = d_f_invexp + d_f_exp + d_f_pow + d_f_ZBL + d_f_tab
-      d2_Pot = d2_f_invexp + d2_f_exp + d2_f_pow + d2_f_ZBL + d2_f_tab
+      Pot   = f_invexp + f_exp + f_pow + f_ZBL + f_tab + f_NLH
+      d_Pot = d_f_invexp + d_f_exp + d_f_pow + d_f_ZBL + d_f_tab + d_f_NLH
+      d2_Pot = d2_f_invexp + d2_f_exp + d2_f_pow + d2_f_ZBL + d2_f_tab + d2_f_NLH
 
       !------------------
       ! Construct the second derivative:
