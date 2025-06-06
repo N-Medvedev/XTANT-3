@@ -49,7 +49,7 @@ use TB, only : get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_p
 use Optical_parameters, only : get_optical_parameters
 use MC_cross_sections, only : get_mfps, get_photon_attenuation
 use Monte_carlo, only : MC_Propagate, process_laser_parameters
-use ZBL_potential, only : get_total_ZBL
+use ZBL_potential, only : get_total_ZBL, get_total_NLH
 use TB_complex, only : use_complex_Hamiltonian
 
 use MPI_subroutines, only : initialize_MPI, Initialize_ScaLAPACK, initialize_random_seed, MPI_share_add_data, MPI_error_wrapper, MPI_barrier_wrapper, &

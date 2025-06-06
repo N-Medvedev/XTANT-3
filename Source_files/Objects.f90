@@ -414,6 +414,14 @@ type :: Rep_ZBL
    logical :: use_it
 end type Rep_ZBL
 
+! NLH potential - see module ZBL
+type :: Rep_NLH
+   logical :: use_it
+   real(8), dimension(3) :: a ! [-] coefficients before exponential
+   real(8), dimension(3) :: b ! [1/A] coefficients inside exponential
+end type Rep_NLH
+
+
 ! Tabulated potential read from file:
 type :: Rep_tab
    logical :: use_it ! flag to use this function or not
@@ -441,6 +449,8 @@ type, EXTENDS (TB_Exp_wall) :: TB_Short_Rep
    type(Rep_ZBL) :: f_ZBL
    ! 6) Tabulated potential:
    type(Rep_tab) :: f_tab
+   ! 7) NLH:
+   type(Rep_NLH) :: f_NLH
 end type TB_Short_Rep
 
 

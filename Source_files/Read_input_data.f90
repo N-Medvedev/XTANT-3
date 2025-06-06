@@ -42,6 +42,7 @@ use Algebra_tools, only : make_cubic_splines, cubic_function
 use Dealing_with_CDF, only : read_CDF_file
 use Atomic_tools, only : update_atomic_masks_displ
 use MPI_subroutines, only : MPI_error_wrapper
+use ZBL_potential, only : get_NLH_coefficients
 
 ! MPI module from external libraries:
 #ifdef MPI_USED
@@ -62,7 +63,7 @@ PRIVATE
 
 ! Modular parameters:
 character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_MINIMUM, m_INPUT_ALL, m_Atomic_parameters, &
-                  m_Hubbard_U, m_Communication, m_COPY_INPUT, m_form_factors
+                  m_Hubbard_U, m_Communication, m_COPY_INPUT, m_form_factors, m_Short_range_potentials
 
 character(70), parameter :: m_starline = '*************************************************************'
 character(70), parameter :: m_dashline = '-------------------------------------------------------------'
@@ -87,6 +88,7 @@ parameter (m_Atomic_parameters = 'Atomic_parameters') ! data-file with atomic pa
 parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat') ! data-file with Hubbard-U parameters (for SCC calculations)
 parameter (m_form_factors = 'Atomic_form_factors.dat')      ! file with atomic form factors parameters
 parameter (m_Communication = 'Communication.txt')  ! file for comunication with the user
+parameter (m_Short_range_potentials = '!Short_range_potentials') ! path to short-range potentials stored
 
 character(25), parameter :: m_short_pot = 'TB_short.txt'  ! filename for short-range potential
 character(25), parameter :: m_wall_pot = 'TB_wall.txt'  ! obsolete filename for short-range potential
@@ -2026,6 +2028,24 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3425
                endif
+
+               ! If there is NLH potential, read its coeffs from file:
+               if (TB_Expwall(i,j)%f_NLH%use_it) then
+                  Error_descript = ''
+
+                  call get_NLH_coefficients(matter%Atoms(i)%Z, matter%Atoms(j)%Z, &
+                           TB_Expwall(i,j)%f_NLH%a, TB_Expwall(i,j)%f_NLH%b, &
+                           trim(adjustl(numpar%input_path))//trim(adjustl(m_Short_range_potentials))//trim(adjustl(numpar%path_sep)), &
+                           Error_descript) ! module "ZBL_potential"
+
+                  if (LEN(trim(adjustl(Error_descript))) > 0) then
+                     Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name))
+                     call Save_error_details(Err, INFO, Err%Err_descript)
+                     print*, trim(adjustl(Err%Err_descript))
+                     goto 3425
+                  endif
+               endif
+
             end select
             close(FN)
          else
@@ -2079,6 +2099,7 @@ subroutine read_Short_Rep_TB(FN, i,j, TB_Expwall, Error_descript, INFO)   ! belo
    TB_Expwall(i,j)%f_exp%use_it = .false.       ! no exp by default
    TB_Expwall(i,j)%f_inv_exp%use_it = .false.   ! no inverse exp by default
    TB_Expwall(i,j)%f_ZBL%use_it = .false.       ! no ZBL potential by default
+   TB_Expwall(i,j)%f_NLH%use_it = .false.       ! no NLH potential by default
    TB_Expwall(i,j)%f_cut_inv%use_it = .false.   ! no short-range cutoff by default
    TB_Expwall(i,j)%f_cut%d0 = 0.0d0 ! cut off at zero, no repulsion by default
    TB_Expwall(i,j)%f_cut%dd = 0.01d0 ! short cut-off by default
@@ -2178,6 +2199,9 @@ subroutine interpret_short_range_data(FN, count_lines, read_well, text, TB_Expwa
 
    case ('ZBL', 'zbl')
       TB_Expwall%f_ZBL%use_it = .true.
+
+   case ('NLH', 'nlh')
+      TB_Expwall%f_NLH%use_it = .true.
 
    case ('TAB', 'Tab', 'tab', 'TABLE', 'Table', 'table', 'TABULATED', 'Tabulated', 'tabulated')
       call Process_tabulated_potential(FN, TB_Expwall, count_lines, read_well, INFO, Error_descript)   ! below
