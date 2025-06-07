@@ -2,7 +2,7 @@
 
 [![DOI](https://zenodo.org/badge/490215542.svg)](https://zenodo.org/badge/latestdoi/490215542)
 
-${\textsf{\color{lightgreen}XTANT-3: X-ray-induced Thermal And Nonthermal Transitions}}$
+<b>XTANT-3: X-ray-induced Thermal And Nonthermal Transitions</b>
 
 A hybrid code for modeling femtosecond laser effects in matter. The code is capable of modeling the entire process of phase transition or damage formation in various materials irradiated with the ultrafast (femto- to pico-second) pulse. The following processes are modelled simultaneously and interconnectedly:
 * photon absorption
