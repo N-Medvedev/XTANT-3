@@ -33,7 +33,11 @@ use Dealing_with_files, only: Count_lines_in_file
 implicit none 
 PRIVATE
 
-public :: write_gnu_printout, write_gnuplot_script_header_new, collect_gnuplots, write_gnuplot_script_ending_new
+
+character(50), parameter :: m_Gnuplot_all = 'OUTPUT_Gnuplot_all'
+
+
+public :: write_gnu_printout, write_gnuplot_script_header_new, collect_gnuplots, write_gnuplot_script_ending_new, m_Gnuplot_all
 
 
  contains
@@ -64,7 +68,7 @@ subroutine collect_gnuplots(path_sep, out_path, skip_execution)
    output_path = out_path
 
    ! Create a temporary file:
-   Gnuplot_all_file = 'OUTPUT_Gnuplot_all'
+   Gnuplot_all_file = trim(adjustl(m_Gnuplot_all))
 
    ! Find the extension of the gnuplot scripts:
    call cmd_vs_sh(trim(adjustl(path_sep)), call_slash, sh_cmd)  ! below
@@ -77,7 +81,7 @@ subroutine collect_gnuplots(path_sep, out_path, skip_execution)
 
    ! Save the names of all gnuplot scripts into this file:
    if (trim(adjustl(path_sep)) == '\') then  ! if it is Windows
-      command = 'dir "'//trim(adjustl(output_path))//'"\*'//trim(adjustl(sh_cmd))//' /b >'//trim(adjustl(File_name_withquotes))
+      command = 'dir /o-d "'//trim(adjustl(output_path))//'"\*'//trim(adjustl(sh_cmd))//' /b >'//trim(adjustl(File_name_withquotes))
    else ! linux:
       command = "ls -t "//trim(adjustl(output_path))//" | grep '"//trim(adjustl(sh_cmd))//"' >"//trim(adjustl(File_name))
    endif

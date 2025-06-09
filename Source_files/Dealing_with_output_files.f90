@@ -2539,6 +2539,22 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
       call_slash = './'
       sh_cmd = '.sh'
    endif
+
+
+   ! Energy levels:
+   if (numpar%save_Ei) then
+      ! Find order of the number, and set number of tics as tenth of it:
+      call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+      File_name  = trim(adjustl(file_path))//'OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+      call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 0.2d0, x_tics, 'Energy levels', 'Time (fs)', 'Energy levels (eV)', 'OUTPUT_energy_levels.'//trim(adjustl(numpar%fig_extention)), numpar%path_sep, setkey=4)
+
+      call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_energy_levels.dat')
+      call write_gnuplot_script_ending(FN, File_name, 1)
+      close(FN)
+   endif
+
    
    ! Energies:
    File_name  = trim(adjustl(file_path))//'OUTPUT_energies_Gnuplot'//trim(adjustl(sh_cmd))
@@ -2694,20 +2710,6 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
    File_name  = trim(adjustl(file_path))//'OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
    call gnu_volume(File_name, file_supercell, t0, t_last, 'OUTPUT_volume.'//trim(adjustl(numpar%fig_extention))) ! below
 
-   ! Energy levels:
-   if (numpar%save_Ei) then
-      ! Find order of the number, and set number of tics as tenth of it:
-      call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
-
-      File_name  = trim(adjustl(file_path))//'OUTPUT_energy_levels_Gnuplot'//trim(adjustl(sh_cmd))
-      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-      call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 0.2d0, x_tics, 'Energy levels', 'Time (fs)', 'Energy levels (eV)', 'OUTPUT_energy_levels.'//trim(adjustl(numpar%fig_extention)), numpar%path_sep, setkey=4)
-      
-      call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_energy_levels.dat')
-      call write_gnuplot_script_ending(FN, File_name, 1)
-      close(FN)
-   endif
-   
    ! Mulliken charges:
    if (numpar%Mulliken_model >= 1) then
       File_name  = trim(adjustl(file_path))//'OUTPUT_Mulliken_charges_Gnuplot'//trim(adjustl(sh_cmd))
@@ -2739,7 +2741,6 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_distribution_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
       call write_gnuplot_script_header_new(FN, 6, 1.0d0, 5.0d0, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_electron_distribution.gif', numpar%path_sep, setkey=0)
-      !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
       call write_distribution_gnuplot(FN, Scell, numpar, 'OUTPUT_electron_distribution.dat')   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
@@ -2751,7 +2752,6 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
       File_name  = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_fe_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
       call write_gnuplot_script_header_new(FN, 6, 1.0d0, 5.0d0, 'Distribution', 'Energy (eV)', 'Electron distribution (a.u.)', 'OUTPUT_orbital_resolved_fe.gif', numpar%path_sep, setkey=0)
-      !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
       call write_orb_distribution_gnuplot(FN, Scell, numpar, matter, 'OUTPUT_electron_distribution.dat')   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
@@ -2766,7 +2766,6 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
       File_name  = trim(adjustl(file_path))//'OUTPUT_electron_distribution_on_grid_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
       call write_gnuplot_script_header_new(FN, 6, 1.0d0, x_tics, 'Distribution', 'Energy (eV)', 'Electron density (1/(V*E))', 'OUTPUT_electron_distribution_on_grid.gif', numpar%path_sep, setkey=0)
-      !call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_electron_distribution.dat')
       call write_distribution_on_grid_gnuplot(FN, Scell, numpar, 'OUTPUT_electron_distribution_on_grid.dat')   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
@@ -4465,11 +4464,13 @@ subroutine execute_all_gnuplots(file_path)
    
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       !call system("OUTPUT_Gnuplot_all.cmd")
-      command = "OUTPUT_Gnuplot_all.cmd"
+      !command = "OUTPUT_Gnuplot_all.cmd"
+      command = trim(adjustl(m_Gnuplot_all))//".cmd"
       iret = system(command)
    else ! linux:
       !call system("./OUTPUT_Gnuplot_all.sh")
-      command = "./OUTPUT_Gnuplot_all.sh"
+      !command = "./OUTPUT_Gnuplot_all.sh"
+      command = "./"//trim(adjustl(m_Gnuplot_all))//".sh"
       iret = system(command)
    endif
    !call chdir("../")

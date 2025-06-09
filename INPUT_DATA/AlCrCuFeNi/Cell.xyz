@@ -1,6 +1,4 @@
-4
-Lattice="3.87   0.0    0.0	0.0    3.740    0.0	0.0    0.0   3.87" Alloy="true" Properties=species:S:1:pos:S:3
+2
+Lattice="3.42   0.0    0.0	0.0    3.42    0.0	0.0    0.0   2.42" Alloy="true" Properties=species:S:1:pos:S:3
 -	0.0e0	0.0e0	0.0e0
--	0.5e0	0.5e0	0.0e0
--	0.5e0	0.0e0	0.5e0
--	0.0e0	0.5e0	0.5e0
+-	0.5e0	0.5e0	5.0e0
