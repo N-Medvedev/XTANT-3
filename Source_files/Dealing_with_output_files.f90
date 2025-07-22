@@ -2433,6 +2433,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
          enddo ! j
          write(numpar%FN_element_NN(i), '(a)') '' ! end line
       enddo ! i
+   else
+      if (.not.allocated(file_element_NN_short)) allocate(file_element_NN_short(0))
    endif
 
    do i = 1, size(Scell)
