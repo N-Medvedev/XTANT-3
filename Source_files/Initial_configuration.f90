@@ -2056,7 +2056,9 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
                enddo ! i
 
                ! define the kind-of-atom only if it is undefined:
-               if (Scell(SCN)%MDatoms(j)%KOA < 1) then
+               !if (Scell(SCN)%MDatoms(j)%KOA < 1) then
+               if ((Scell(SCN)%MDatoms(j)%KOA < 1) .or. &
+                   (Scell(SCN)%MDatoms(j)%KOA > Scell(SCN)%Na)) then
                   Scell(SCN)%MDatoms(j)%KOA = KOA(k) ! kind of atom
                endif
             enddo ! k
