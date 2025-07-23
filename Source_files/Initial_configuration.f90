@@ -986,6 +986,8 @@ subroutine read_XYZ_random(FN_XYZ, File_name_XYZ, count_lines, Scell, SCN, matte
    ! Knowing the data we want to set, we can set it:
    Scell(SCN)%Na = SUM(NOA)
    allocate(Scell(SCN)%MDAtoms(Scell(SCN)%Na))
+   Scell(SCN)%MDAtoms(:)%KOA = 0    ! to start with
+
    ! Supercell:
    eps = 1.0d-10
    if ((SC_X_in > eps) .and. (SC_Y_in > eps)) then
@@ -1093,6 +1095,7 @@ subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, i
    character(200) :: Error_descript
 
    allocate(Scell(SCN)%MDAtoms(Scell(SCN)%Na))
+   Scell(SCN)%MDAtoms(:)%KOA = 0    ! to start with
 
    if (ind_S < 0) then
       write(Error_descript,'(a,i3,a,$)') 'Could not interprete line #', count_lines, ' in file '//trim(adjustl(File_name_XYZ))
@@ -1242,6 +1245,7 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    ! Increase the size of MDAtoms array:
    deallocate(Scell(SCN)%MDAtoms)
    allocate(Scell(SCN)%MDAtoms(N_tot))
+   Scell(SCN)%MDAtoms(:)%KOA = 0    ! to start with
    ! Now find the indices of H and O atomic types:
    i = 1
    i_H = i
@@ -1552,7 +1556,10 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
       endif
       
       if (.not.allocated(MDAtoms)) allocate(MDAtoms(Scell(SCN)%Na))
-      if (.not.allocated(Scell(SCN)%MDAtoms)) allocate(Scell(SCN)%MDAtoms(Scell(SCN)%Na))
+      if (.not.allocated(Scell(SCN)%MDAtoms)) then
+         allocate(Scell(SCN)%MDAtoms(Scell(SCN)%Na))
+         Scell(SCN)%MDAtoms(:)%KOA = 0    ! to start with
+      endif
       
       do i = 1, Na ! read atomic data:
          !read(FN,*,IOSTAT=Reason) Scell(SCN)%MDAtoms(i)%KOA, Scell(SCN)%MDAtoms(i)%S(:), Scell(SCN)%MDAtoms(i)%S0(:), Scell(SCN)%MDAtoms(i)%SV(:), Scell(SCN)%MDAtoms(i)%SV0(:)
@@ -1987,13 +1994,16 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
    Scell(SCN)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)/SUM(matter%Atoms(:)%percentage)*Scell(SCN)%Na
    Scell(SCN)%Ne_low = Scell(SCN)%Ne ! at the start, all electrons are low-energy
    
-   if (.not.allocated(Scell(SCN)%MDatoms)) allocate(Scell(SCN)%MDatoms(Scell(SCN)%Na))
+   if (.not.allocated(Scell(SCN)%MDatoms)) then
+      allocate(Scell(SCN)%MDatoms(Scell(SCN)%Na))
+      Scell(SCN)%MDatoms(:)%KOA = 0 ! to start with
+   endif
 
    if (to_read) then
       count_lines = 0
       do i = 1, Na
          !read(FN,*,IOSTAT=Reason) Scell(SCN)%MDatoms(i)%KOA, Relcoat(:,i)	! relative coordinates of atoms in the unit-cell
-         read(FN,*,IOSTAT=Reason) KOA(i), Relcoat(:,i)	! relative coordinates of atoms in the unit-cell
+         read(FN,*,IOSTAT=Reason) KOA(i), Relcoat(:,i)      ! relative coordinates of atoms in the unit-cell
          call read_file(Reason, count_lines, read_well)
          if (.not. read_well) then
             INFO = 3
@@ -2056,7 +2066,9 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
                enddo ! i
 
                ! define the kind-of-atom only if it is undefined:
-               if (Scell(SCN)%MDatoms(j)%KOA < 1) then
+               !if (Scell(SCN)%MDatoms(j)%KOA < 1) then
+               if ((Scell(SCN)%MDatoms(j)%KOA < 1) .or. &
+                   (Scell(SCN)%MDatoms(j)%KOA > Scell(SCN)%Na)) then
                   Scell(SCN)%MDatoms(j)%KOA = KOA(k) ! kind of atom
                endif
             enddo ! k

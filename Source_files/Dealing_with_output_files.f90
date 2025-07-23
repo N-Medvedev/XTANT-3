@@ -53,7 +53,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 09.06.2025)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 23.07.2025)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2433,6 +2433,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
          enddo ! j
          write(numpar%FN_element_NN(i), '(a)') '' ! end line
       enddo ! i
+   else
+      if (.not.allocated(file_element_NN_short)) allocate(file_element_NN_short(0))
    endif
 
    do i = 1, size(Scell)
