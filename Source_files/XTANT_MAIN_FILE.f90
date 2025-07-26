@@ -319,8 +319,8 @@ do while (g_time .LT. g_numpar%t_total)
 
       ! Do coupling before MD step:
       ! Nonadiabatic electron-ion coupling:
-      call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
-      if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
+      !call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
+      !if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
 
 
       !1111111111111111111111111111111111111111111111111111111
@@ -333,8 +333,8 @@ do while (g_time .LT. g_numpar%t_total)
 
       !2222222222222222222222222222222222222222222222222222222
       ! Nonadiabatic electron-ion coupling:
-!       call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
-!       if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true.)
+      call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
+      if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
 
       ! Quenching of atoms (zero-temperature MD):
       call Cooling_atoms(g_numpar, g_matter, g_Scell, g_time, g_numpar%at_cool_dt, g_numpar%at_cool_start, g_numpar%do_cool) ! module "Atomic_tools"

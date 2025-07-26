@@ -1396,7 +1396,7 @@ function integrated_atomic_distribution(MDAtoms, Ta, hw, ind) result(G)
    case default ! Maxwellian
       G = Maxwell_int_shifted(Ta, hw)  ! above
    case (1) ! transient nonequilibrium
-      ! integral mumber of atoms ewith energies above the given threshold:
+      ! integral mumber of atoms with energies above the given threshold:
       Nat = size(MDAtoms)
       Nat_high = count(MDAtoms(:)%Ekin >= hw)
       G = dble(Nat_high)/dble(Nat)  ! normalized
