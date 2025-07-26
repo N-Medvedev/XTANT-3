@@ -1722,7 +1722,7 @@ end subroutine get_DOS_masks
       N_types = size(masks_DOS,2)
       Nsiz = size(masks_DOS,3)
       if (.not.allocated(DOS_weights)) allocate(DOS_weights(N_at,N_types,Nsiz))
-      DOS_weights = 0.0d0  ! to start with
+      DOS_weights = 0.0d0  ! to start with [commented out for testing]
 
       ! Do we need to include overlap matrix:
       include_Sij = .false.   ! to start with

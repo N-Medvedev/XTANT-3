@@ -868,17 +868,23 @@ end subroutine interpolate_data_on_grid
 
    !Check if there is even a need to interpolate:
    if (i > 1) then
+      !Check if y-values are too close:
       if ( abs(yarray(i) - yarray(i-1)) < 1.0d-6*abs(yarray(i)) ) then
          !print*, 'L-1:', x, xarray(i-1), xarray(i), abs(x - xarray(i-1)), 1.0d-6*xarray(i-1)
          y = yarray(i)  ! if the values are the same, no need to interpolate
          return
       endif
-   endif
 
+      !Check if x-values are too close:
+      if ( abs(xarray(i) - xarray(i-1)) < 1.0d-6*abs(xarray(i)) ) then ! points too close, assume mean value:
+         y = (yarray(i-1) + yarray(i)) * 0.5d0
+         return ! nothing more to do
+      endif
+   endif ! (i > 1)
 
    REDO: if (.not.present(replac)) then   ! default
     if (i .GT. 1) then
-      if ( abs(x - xarray(i-1)) .GE. 1.0d-6*xarray(i-1)) then
+      if ( abs(x - xarray(i-1)) .GE. 1.0d-6*abs(xarray(i-1)) ) then
          y = yarray(i-1) + (yarray(i) - yarray(i-1))/(xarray(i) - xarray(i-1))*(x - xarray(i-1))
          !print*, 'L0:', x, xarray(i-1), xarray(i), abs(x - xarray(i-1)), 1.0d-6*xarray(i-1)
       else
@@ -890,7 +896,12 @@ end subroutine interpolate_data_on_grid
                y = (yarray(i) - 0.0d0)/(xarray(i) - x0)*(x - x0)
                !print*, 'L2:', x, xarray(i-1), xarray(i), abs(x - xarray(i-1)), 1.0d-6*xarray(i-1)
             else
-               y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
+               if (abs(xarray(i)) > 1.0d-8) then
+                  !y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
+                  y = yarray(i-1) + (yarray(i) - yarray(i-1))/(xarray(i) - xarray(i-1))*(x - xarray(i-1))
+               else
+                  y = yarray(i)
+               endif
 !                print*, 'y0:', x0, xarray(i-1), xarray(i), abs(x - xarray(i-1)), 1.0d-6*xarray(i-1)
 !                pause 'linear_interpolation'
             endif
@@ -903,7 +914,12 @@ end subroutine interpolate_data_on_grid
          if (present(x0)) then
             y = (yarray(i) - 0.0d0)/(xarray(i) - x0)*(x - x0)
          else
-            y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
+            if (abs(xarray(i)) > 1.0d-8) then
+               !y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
+               y = yarray(i-1) + (yarray(i) - yarray(i-1))/(xarray(i) - xarray(i-1))*(x - xarray(i-1))
+            else
+               y = yarray(i)
+            endif
          endif
       endif
     endif
@@ -913,7 +929,7 @@ end subroutine interpolate_data_on_grid
     else
       if (i .GT. 1) then
          !if (x - xarray(i-1) .GE. 0.0d0) then
-         if ( abs(x - xarray(i-1)) .GE. 1.0d-6*xarray(i-1)) then
+         if ( abs(x - xarray(i-1)) .GE. 1.0d-6*abs(xarray(i-1)) ) then
             y = yarray(i-1) + (yarray(i) - yarray(i-1))/(xarray(i) - xarray(i-1))*(x - xarray(i-1))
          else
             if (present(y0) .and. present(x0)) then
@@ -922,7 +938,12 @@ end subroutine interpolate_data_on_grid
                if (present(x0)) then
                   y = (yarray(i) - 0.0d0)/(xarray(i) - x0)*(x - x0)
                else
-                  y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
+                  if (abs(xarray(i)) > 1.0d-8) then
+                     !y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
+                     y = yarray(i-1) + (yarray(i) - yarray(i-1))/(xarray(i) - xarray(i-1))*(x - xarray(i-1))
+                  else
+                     y = yarray(i)
+                  endif
                endif
             endif
          endif

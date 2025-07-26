@@ -246,7 +246,11 @@ function DFTB_radial_function(r_given, r_grid, param_array, ind_array, ind_inter
     else
        !call linear_interpolation(r_grid, param_array(:,ind_array), r_given, f_out, i_array, x0=0.0d0, y0=0.0d0)   ! module "Little_subroutines"
        call linear_interpolation(r_grid, param_array(:,ind_array), r_given, f_out, i_array)   ! module "Little_subroutines"
-       !print*, 'DFTB_radial_function', r_given, r_grid(i_array-1), r_grid(i_array), ':', f_out, param_array(i_array-1,ind_array), param_array(i_array,ind_array)
+
+       if ( (f_out < min(param_array(i_array-1,ind_array), param_array(i_array,ind_array))) .or. &
+            (f_out > max(param_array(i_array-1,ind_array), param_array(i_array,ind_array))) ) then
+          print*, 'DFTB_radial_function', r_given, r_grid(i_array-1), r_grid(i_array), ':', f_out, param_array(i_array-1,ind_array), param_array(i_array,ind_array)
+       endif
     endif
     nullify(dr)
 end function DFTB_radial_function

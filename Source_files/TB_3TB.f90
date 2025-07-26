@@ -33,7 +33,7 @@ use Objects
 use Algebra_tools, only : mkl_matrix_mult, sym_diagonalize, Reciproc, check_hermiticity, &
                         Laguerre_up_to_6, d_Laguerre_up_to_6, check_symmetry
 use Atomic_tools, only : Reciproc_rel_to_abs, shortest_distance
-use Little_subroutines, only : linear_interpolation, Fermi_function, d_Fermi_function, Find_in_array_monoton
+use Little_subroutines, only : Fermi_function, d_Fermi_function, Find_in_array_monoton
 use Electron_tools, only : find_band_gap
 use TB_Koster_Slater
 use TB_NRL, only : test_nonorthogonal_solution, test_orthogonalization_r, &
