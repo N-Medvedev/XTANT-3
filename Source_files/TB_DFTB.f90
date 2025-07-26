@@ -249,12 +249,12 @@ function DFTB_radial_function(r_given, r_grid, param_array, ind_array, ind_inter
 
        if ( (f_out < min(param_array(i_array-1,ind_array), param_array(i_array,ind_array))) .or. &
             (f_out > max(param_array(i_array-1,ind_array), param_array(i_array,ind_array))) ) then
-          print*, 'DFTB_radial_function', r_given, r_grid(i_array-1), r_grid(i_array), ':', f_out, param_array(i_array-1,ind_array), param_array(i_array,ind_array)
+          print*, 'ERROR in DFTB_radial_function', r_given, r_grid(i_array-1), r_grid(i_array), ':', f_out, param_array(i_array-1,ind_array), param_array(i_array,ind_array)
        endif
     endif
     nullify(dr)
 end function DFTB_radial_function
- 
+
  
 function d_DFTB_radial_function(r_given, r_grid, param_array, ind_array, ind_interpl) result(f_out)
     real(8) :: f_out    ! value found in the array and interpolated
