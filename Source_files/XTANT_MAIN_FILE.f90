@@ -499,6 +499,7 @@ endif
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Printing out the duration of the program, starting and ending time and date:
 if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+
    call parse_time(chtest, c0_in=g_ctim) ! module "Little_subroutines"
    write(*,'(a)') trim(adjustl(m_starline))
    write(*,'(a,a)') 'Duration of execution of program: ', trim(adjustl(chtest))
