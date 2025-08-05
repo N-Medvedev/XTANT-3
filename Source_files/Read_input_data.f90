@@ -5341,6 +5341,8 @@ subroutine interprete_displacement_command(read_line, Scell, numpar, Reason)
    logical :: file_exists
    integer :: FN1, ch_int, i
 
+   numpar%MSD_power = 1       ! default to start with
+
    ! Try to interprete it as a number (power of mean displacement)
    ! to make back-compatible with the legacy format:
    read(read_line,*,IOSTAT=Reason) numpar%MSD_power
@@ -7819,7 +7821,7 @@ end subroutine interprete_additional_data
 subroutine Get_list_of_materials(path_sep)
    character(*), intent(in) :: path_sep ! file name
    !--------------------
-   integer :: FN_temp, FN, count_lines, Reason, i, open_status, iret
+   integer :: FN_temp, FN, count_lines, Reason, i, open_status, iret, count_materials
    character(200) :: Error_descript, File_name, read_line, command, File_scratch
    logical :: file_opened, file_exist
 
@@ -7858,6 +7860,7 @@ subroutine Get_list_of_materials(path_sep)
    ! Printout the list of materials:
    write(*,'(a)') ' Materials already available in XTANT:'
    count_lines = 0   ! to start with
+   count_materials = 0   ! to start with
    RDLST:do
       read(FN_temp,'(a)',IOSTAT=Reason) read_line
       count_lines = count_lines + 1
@@ -7886,11 +7889,15 @@ subroutine Get_list_of_materials(path_sep)
                case default   ! material name
                   write(FN,'(a)') trim(adjustl(read_line))  ! save in the file
                   write(*,'(a)') trim(adjustl(read_line))   ! print on the screen
+                  count_materials = count_materials + 1     ! count materials
                endselect
             endif ! (file_exist)
          endif ! (trim(adjustl(read_line)) == '!')
       endif ! (Reason < 0)
    enddo RDLST
+   write(read_line,'(i0)') count_materials
+   write(*,'(a)') trim(adjustl(m_starline))
+   write(*,'(a)') 'Total number of materials: '//trim(adjustl(read_line))
 
 9992 continue
    call close_file('delete', trim(adjustl(File_scratch)))   ! module "Dealing_with_files"

@@ -664,7 +664,144 @@ pure function find_order_of_number_int(num)
 end function find_order_of_number_int
 
 
+
+
 subroutine parse_time(chtest, sec_in, c0_in, c1_in)
+   character(*), intent(out) :: chtest ! split it into miuns, hours, days...
+   real(8), intent(inout), optional :: sec_in   ! time interval in [sec]
+   integer, dimension(8), intent(inout), optional :: c1_in, c0_in ! time stamp
+   !-------------------------
+   character(100) temp
+   integer, dimension(8) :: c0, c1 ! time stamps
+   integer :: years, months, days, hours, mins
+   real(8) :: sec
+
+   chtest = ''  ! to start with
+   temp = ''  ! to start with
+
+   if (present(sec_in)) then  ! data provided in total number of seconds
+      ! Use the old time decomposition:
+      call parse_time_OLD(chtest, sec_in) ! below
+   elseif (present(c0_in)) then   ! data provided in fortran time-stamp format
+      c0 = c0_in    ! use the data provided
+
+      if (present(c1_in)) then   ! data provided in fortran time-stamp format
+         c1 = c1_in ! use it
+      else ! time not present, get it
+         call date_and_time(values=c1) ! current time
+      endif
+
+      ! Use the new decomposition:
+      years = 0     ! to start with
+      months = 0    ! to start with
+      days = 0      ! to start with
+      hours = 0     ! to start with
+      mins = 0      ! to start with
+      sec = 0.0d0   ! to start with
+
+      ! Number of years passed:
+      years = c1(1)-c0(1)
+
+      ! Numaer of month passed:
+      months = c1(2)-c0(2)
+      if (months < 0) then ! over a year
+         years = years - 1  ! It's been #[years] + some months
+         months = 12 + c1(2)-c0(2)
+      endif
+
+      ! Number of days:
+      days = c1(3)-c0(3)
+      if (days < 0) then ! over a month
+         months = months - 1  ! It's been #[months] + some days
+
+         select case (c0(2)) ! which month is it?
+         case (1,3,5,7,8,10,12) ! 31-day month
+            days = (c1(3)-0) + (31-c0(3))
+         case (4,6,9,11) ! 30-day month
+            days = (c1(3)-0) + (30-c0(3))
+         case (2) ! February
+            ! Check if it is a leap year:
+            if ( MOD(c1(1), 4) == 0) then ! it is => 29 days
+               days = (c1(3)-0) + (29-c0(3))
+            else ! it is not => 28 days
+               days = (c1(3)-0) + (28-c0(3))
+            endif
+         endselect
+      endif
+
+      ! Number of hours:
+      hours = (c1(5)-c0(5)) ! hours
+      if (hours < 0) then ! over a day
+         days = days - 1  ! It's been #[days] + some hours
+         hours = (c1(5)-0) + (24-c0(5))
+      endif
+
+      ! Number of minuts:
+      mins = (c1(6)-c0(6))   ! minutes
+      if (mins < 0) then ! over an hour
+         hours = hours - 1  ! It's been #[hours] + some minutes
+         mins = (c1(6)-0) + (60.0d0 - c0(6))   ! minutes
+      endif
+
+      sec = dble(c1(7)-c0(7)) + dble(c1(8)-c0(8))*0.001d0 ! seconds + milliseconds
+      if (sec < -1.0d-9) then ! over a minute
+         mins = mins - 1  ! It's been #[mins] + some seconds
+         sec = dble(c1(7)-0) + dble(60.0d0 - c0(7)) + dble(c1(8)-c0(8))*0.001d0 ! seconds + milliseconds
+      endif
+
+      ! Write it into a variable:
+      if (years .GT. 1) then
+         write(temp, '(i0)') int(years)
+         write(chtest, '(a,a)') trim(adjustl(chtest))//' '//trim(adjustl(temp)), ' years'
+      else if (years .GT. 0) then
+         write(temp, '(i0)') int(years)
+         write(chtest, '(a,a)') trim(adjustl(chtest))//' '//trim(adjustl(temp)), ' year'
+      endif
+
+      if (months .GT. 1) then
+         write(temp, '(i0)') int(months)
+         write(chtest, '(a,a)') trim(adjustl(chtest))//' '//trim(adjustl(temp)), ' months'
+      else if (months .GT. 0) then
+         write(temp, '(i0)') int(months)
+         write(chtest, '(a,a)') trim(adjustl(chtest))//' '//trim(adjustl(temp)), ' month'
+      endif
+
+      if (days .GT. 1) then
+         write(temp, '(i0)') int(days)
+         write(chtest, '(a,a)') trim(adjustl(chtest))//' '//trim(adjustl(temp)), ' days'
+      else if (days .GT. 0.0d0) then
+         write(temp, '(i0)') int(days)
+         write(chtest, '(a,a)') trim(adjustl(chtest))//' '//trim(adjustl(temp)), ' day'
+      endif
+
+      if (hours .GT. 1) then
+         write(temp, '(i0)') int(hours)
+         write(chtest, '(a,a,a)') trim(adjustl(chtest)), ' '//trim(adjustl(temp)), ' hours'
+      else if (hours .GT. 0) then
+         write(temp, '(i0)') int(hours)
+         write(chtest, '(a,a,a)') trim(adjustl(chtest)), ' '//trim(adjustl(temp)), ' hour'
+      endif
+
+      if (mins .GT. 1) then
+         write(temp, '(i9)') int(mins)
+         write(chtest, '(a,a,a)') trim(adjustl(chtest)), ' '//trim(adjustl(temp)), ' mins'
+      else if (mins .GT. 0) then
+         write(temp, '(i9)') int(mins)
+         write(chtest, '(a,a,a)') trim(adjustl(chtest)), ' '//trim(adjustl(temp)), ' min'
+      endif
+
+      write(temp, '(f7.3)') sec
+      write(chtest, '(a,a,a)') trim(adjustl(chtest)), ' '//trim(adjustl(temp)), ' sec'
+
+   else ! no consistent format provided
+      write(chtest, '(a)') '[Time-format inconsistent]'
+   endif
+end subroutine parse_time
+
+
+
+
+subroutine parse_time_OLD(chtest, sec_in, c0_in, c1_in)
    character(*), intent(out) :: chtest ! split it into miuns, hours, days...
    real(8), intent(inout), optional :: sec_in   ! time interval in [sec]
    integer, dimension(8), intent(inout), optional :: c1_in, c0_in ! time stamp
@@ -724,7 +861,7 @@ subroutine parse_time(chtest, sec_in, c0_in, c1_in)
    endif
    write(temp, '(f7.3)') sec
    write(chtest, '(a,a,a)') trim(adjustl(chtest)), ' '//trim(adjustl(temp)), ' sec'
-end subroutine parse_time
+end subroutine parse_time_OLD
 
 
 pure function get_seconds_from_timestamp(c0, c1) result(Sec)
