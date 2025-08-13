@@ -53,7 +53,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 10.08.2025)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 13.08.2025)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2568,9 +2568,10 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
    
    ! Mean square displacement:
    File_name  = trim(adjustl(file_path))//'OUTPUT_mean_displacement_Gnuplot'//trim(adjustl(sh_cmd))
-   call gnu_MSD(File_name, file_temperatures, t0, t_last, 'OUTPUT_mean_displacement.'//trim(adjustl(numpar%fig_extention)), &
+   if (abs(numpar%MSD_power) > 1.0e-6) then ! only plot it if it's not zero
+      call gnu_MSD(File_name, file_temperatures, t0, t_last, 'OUTPUT_mean_displacement.'//trim(adjustl(numpar%fig_extention)), &
                 numpar%MSD_power) ! below
-
+   endif
 
    ! Atomic masks for sectional displacements:
    if (allocated(Scell(1)%Displ)) then
@@ -2844,9 +2845,11 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
       
       ! Mean displacement:
       File_name  = trim(adjustl(file_path))//'OUTPUT_mean_displacement_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
-      call gnu_MSD(File_name, trim(adjustl(file_temperatures(1:len(trim(adjustl(file_temperatures)))-4)))//'_CONVOLVED.dat', t0, t_last, &
+      if (abs(numpar%MSD_power) > 1.0e-6) then ! only plot it if it's not zero
+         call gnu_MSD(File_name, trim(adjustl(file_temperatures(1:len(trim(adjustl(file_temperatures)))-4)))//'_CONVOLVED.dat', t0, t_last, &
             'OUTPUT_mean_displacement_CONVOLVED.'//trim(adjustl(numpar%fig_extention)), numpar%MSD_power) ! below
-      
+      endif
+
       ! Atomic masks for sectional displacements:
       if (allocated(Scell(1)%Displ)) then
          Nsiz = size(Scell(1)%Displ)   ! how many masks
