@@ -5345,11 +5345,12 @@ subroutine interprete_displacement_command(read_line, Scell, numpar, Reason)
 
    ! Try to interprete it as a number (power of mean displacement)
    ! to make back-compatible with the legacy format:
-   read(read_line,*,IOSTAT=Reason) numpar%MSD_power
+   read(read_line,*,IOSTAT=Reason) ch_int
    if (Reason == 0) then
       if (numpar%verbose) print*, 'Atomic displacement analysis is set in legacy format'
       return ! it was a number, nothing more to do
    endif
+   numpar%MSD_power = ch_int
 
    !---------------
    ! If it was not a command, check if it was a file
