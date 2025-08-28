@@ -1,3 +1,0 @@
-DFTB
-trans3d-LANLFeC
-1				! Type of repulsive: 0=polinomial, 1=spline
