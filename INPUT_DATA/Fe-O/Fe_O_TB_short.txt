@@ -1,2 +1,0 @@
-PATH
-INPUT_DATA\!Short_range_potentials\Fe_O_trans3d-0-1.txt
