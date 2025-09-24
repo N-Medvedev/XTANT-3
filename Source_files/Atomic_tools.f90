@@ -3251,7 +3251,7 @@ end subroutine Find_nearest_neighbours
 subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
    type(Atom), dimension(:), intent(in) :: atoms	! array of atoms in the supercell
    type(solid), intent(inout) :: matter	! materil parameters
-   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Super_cell), dimension(:), intent(in), target :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
    type(Used_MPI_parameters), intent(inout) :: MPI_param
    !---------------------
@@ -3259,9 +3259,11 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
    integer n, i, m, k, j
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
+   integer, pointer :: KOA1, KOA2
 
    n = size(atoms)
    if (.not. allocated(matter%PCF)) then
+      ! Total PCF:
       m = INT(Scell(NSC)%supce(1,1)*20)
       allocate(matter%PCF(2,m))
       r = 0.0d0
@@ -3270,11 +3272,18 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
          r = r + dr 
          matter%PCF(1,i) = r
       enddo
+      ! And partial PCF:
+      if (matter%N_KAO > 1) then ! only makes sence if there is more then one element in the compound:
+         allocate(matter%PCF_part(matter%N_KAO, matter%N_KAO, m), source = 0.0d0)
+      endif
    else
       m = size(matter%PCF,2)
    endif
-   matter%PCF(2,:) = 0.0d0
 
+   matter%PCF(2,:) = 0.0d0    ! reset
+   if (matter%N_KAO > 1) then
+      matter%PCF_part = 0.0d0 ! reset
+   endif
 
 #ifdef MPI_USED
    dr = matter%PCF(1,2) - matter%PCF(1,1)
@@ -3294,15 +3303,28 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
                call Find_in_array_monoton(matter%PCF, a_r, 1, k)	! module "Little_subroutines"
             endif
             matter%PCF(2,k) = matter%PCF(2,k) + Norm/(matter%PCF(1,k)*matter%PCF(1,k))
+
+            ! Partial PCF:
+            if (matter%N_KAO > 1) then ! only makes sence if there is more then one element in the compound:
+               KOA1 => Scell(NSC)%MDatoms(i)%KOA   ! kind of atom #1
+               KOA2 => Scell(NSC)%MDatoms(j)%KOA   ! kind of atom #2
+               matter%PCF_part(min(KOA1,KOA2),max(KOA1,KOA2),k) = matter%PCF_part(min(KOA1,KOA2),max(KOA1,KOA2),k) + Norm/(matter%PCF(1,k)*matter%PCF(1,k))
+            endif
          endif
       enddo ! j
    enddo ! i
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
    error_part = 'Error in pair_correlation_function'
    call do_MPI_Allreduce(MPI_param, trim(adjustl(error_part))//'matter%PCF', matter%PCF) ! module "MPI_subroutines"
+   error_part = 'Error in pair_correlation_function_2'
+   call do_MPI_Allreduce(MPI_param, trim(adjustl(error_part))//'matter%PCF_part', matter%PCF_part) ! module "MPI_subroutines"
+   ! Restore the grid:
+   matter%PCF(1,:) = matter%PCF(1,:) / N_incr
+
+   nullify(KOA1, KOA2)
 
 #else
-   !$omp PARALLEL private(i,j,a_r,k)
+   !$omp PARALLEL private(i,j,a_r,k, KOA1, KOA2)
    !$omp do schedule(dynamic)
    do i = 1, n	! trace all atoms
       do j = 1, n	! trace all neighbours for PCF
@@ -3314,18 +3336,31 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
                call Find_in_array_monoton(matter%PCF, a_r, 1, k)	! module "Little_subroutines"
             endif
             matter%PCF(2,k) = matter%PCF(2,k) + 1.0d0
+            ! Partial PCF:
+            if (matter%N_KAO > 1) then ! only makes sence if there is more then one element in the compound:
+               KOA1 => Scell(NSC)%MDatoms(i)%KOA   ! kind of atom #1
+               KOA2 => Scell(NSC)%MDatoms(j)%KOA   ! kind of atom #2
+               matter%PCF_part(min(KOA1,KOA2), max(KOA1,KOA2), k) = matter%PCF_part(min(KOA1,KOA2), max(KOA1,KOA2), k) + 1.0d0
+            endif
          endif
       enddo ! j
    enddo ! i
    !$omp end do
    !$omp do
    do k = 1,m	! all points of the PCF
-      matter%PCF(2,k) = matter%PCF(2,k)/(matter%PCF(1,k)*matter%PCF(1,k)) 
+      matter%PCF(2,k) = matter%PCF(2,k)/(matter%PCF(1,k)*matter%PCF(1,k))
+      if (matter%N_KAO > 1) then ! only makes sence if there is more then one element in the compound:
+         matter%PCF_part(:,:,k) = matter%PCF_part(:,:,k)/(matter%PCF(1,k)*matter%PCF(1,k))
+      endif
    enddo
    !$omp end do
+   nullify(KOA1, KOA2)
    !$omp end parallel
    dr = matter%PCF(1,2) - matter%PCF(1,1)
    matter%PCF(2,:) = matter%PCF(2,:)/(4.0d0*g_Pi*dr)*Scell(NSC)%V/dble(Scell(NSC)%Na*Scell(NSC)%Na) ! normalizing per volume
+   if (matter%N_KAO > 1) then ! only makes sence if there is more then one element in the compound:
+      matter%PCF_part = matter%PCF_part/(4.0d0*g_Pi*dr)*Scell(NSC)%V/dble(Scell(NSC)%Na*Scell(NSC)%Na) ! normalizing per volume
+   endif
 #endif
 end subroutine pair_correlation_function
 
