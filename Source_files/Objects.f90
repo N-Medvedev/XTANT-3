@@ -853,6 +853,7 @@ type Solid
    type(MFP) :: El_EMFP_tot ! Total electron elastic mean free paths (inverted [1/A])
    type(MFP) :: Ph_MFP_tot  ! Total photon mean free paths for each shell (inverted [1/A])
    real(8), dimension(:,:), allocatable :: PCF	! pair correlation function (if required)
+   real(8), dimension(:,:,:), allocatable :: PCF_part   ! partial pair correlation function (for each pair of elements)
    integer :: cell_x, cell_y, cell_z	! number of unit-cells in x, y and z directions
    real(8) :: W_PR	! [kg] Parinello_Rahman super-cell mass
    real(8) :: p_ext	! [Pa] external pressure applied

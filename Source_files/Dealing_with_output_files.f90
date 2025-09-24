@@ -967,10 +967,20 @@ subroutine write_PCF(FN, atoms, matter, Scell, NSC)
    type(Solid), intent(inout) :: matter	! Material parameters
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
-   integer i
+   !-----------------
+   integer :: i, j, k
 
    do i = 1,size(matter%PCF,2)
-      write(FN, '(f25.16,es25.16)') matter%PCF(1,i), matter%PCF(2,i)
+      write(FN, '(f25.16,es25.16)',advance='no') matter%PCF(1,i), matter%PCF(2,i)
+      ! Add partial functions, if needed:
+      if (matter%N_KAO > 1) then ! only makes sence if there is more then one element in the compound:
+         do j = 1, matter%N_KAO     ! for all elements
+            do k = j, matter%N_KAO  ! for all different pairs
+               write(FN, '(es25.16)',advance='no') matter%PCF_part(j,k,i)
+            enddo
+         enddo
+      endif
+      write(FN, '(a)') ''  ! get to new line
    enddo
    write(FN, '(a)') ''
    write(FN, '(a)') ''
@@ -2073,8 +2083,9 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    type(Solid), intent(in) :: matter
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   !-------------------------------------
    character(200) :: file_path, file_name
-   integer :: FN, i, j, Nshl, Nsiz, N_at
+   integer :: FN, i, j, Nshl, Nsiz, N_at, k
    ! OUTPUT files, name and address:
    character(100) :: file_temperatures	! time [fs], Te [K], Ta [K]
    character(100) :: file_pressure	! time [fs], stress_tensore(3,3) [GPa], Pressure [GPa]
@@ -2405,6 +2416,21 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       file_PCF = trim(adjustl(file_path))//'OUTPUT_pair_correlation_function.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_PCF)))
       numpar%FN_PCF = FN
+      write(numpar%FN_PCF, '(a)', advance='no') '#Radius Total'
+      do j = 1, matter%N_KAO     ! for all elements
+         do k = j, matter%N_KAO  ! for all different pairs
+            write(numpar%FN_PCF, '(a)', advance='no') '     '//trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))
+         enddo ! k
+      enddo ! j
+      write(numpar%FN_PCF, '(a)') ''
+
+      write(numpar%FN_PCF, '(a)', advance='no') '#[A]   [a.u.]'
+      do j = 1, matter%N_KAO     ! for all elements
+         do k = j, matter%N_KAO  ! for all different pairs
+            write(numpar%FN_PCF, '(a)', advance='no') '     [a.u.]'
+         enddo ! k
+      enddo ! j
+      write(numpar%FN_PCF, '(a)') ''
    endif
    
    if (numpar%save_NN) then
@@ -2732,6 +2758,18 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
          call gnu_nearest_neighbors_elements(File_name, file_element_NN(i), trim(adjustl(numpar%NN_radii(i)%Name)), matter, t0, t_last, &
               'OUTPUT_nearest_neighbors_'//trim(adjustl(numpar%NN_radii(i)%Name))//'.'//trim(adjustl(numpar%fig_extention))) ! below
       enddo ! i
+   endif
+
+
+   ! Pair correlation function:
+   if (numpar%save_PCF) then
+      ! Pair correlation function can only be plotted as animated gif:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_pair_correlation_Gnuplot'//trim(adjustl(sh_cmd))
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 1.0d0, 'PCF', 'Energy (eV)', 'Pair correlation function (a.u.)', 'OUTPUT_pair_correlation.gif', numpar%path_sep, setkey=0)
+      call write_pair_correlation_gnuplot(FN, Scell, numpar, matter, 'OUTPUT_pair_correlation_function.dat')   ! below
+      call write_gnuplot_script_ending(FN, File_name, 1)
+      close(FN)
    endif
 
    
@@ -4662,6 +4700,108 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot
       write(FN, '(a)') '}'
    enddo
 end subroutine write_atomic_distribution_gnuplot
+
+
+
+subroutine write_pair_correlation_gnuplot(FN, Scell, numpar, matter, file_PCF, min_x, max_x)
+   integer, intent(in) :: FN            ! file to write into
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   type(solid), intent(in) :: matter	! materil parameters
+   character(*), intent(in) :: file_PCF  ! file with atomic pair correlation function
+   real(8), intent(in), optional :: min_x, max_x      ! start and end of x-grid
+   !-----------------------------------------
+   real(8) :: x_start, x_end
+   integer :: i, M, NSC, j, k, ind
+   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4, ch_i
+   logical :: do_fe_eq
+
+   if (present(min_x)) then
+      x_start = min_x
+   else ! default
+      x_start = 1.0d0
+   endif
+
+   if (present(max_x)) then
+      x_end = max_x
+   else ! default
+      x_end = 1+ceiling( 0.5d0* min (Scell(1)%supce(1,1), Scell(1)%supce(2,2), Scell(1)%supce(3,3) ) ) ! half of the supercell
+   endif
+
+   do NSC = 1, size(Scell)
+      ! Choose the maximal distance [A]:
+      write(ch_temp,'(f)') x_end
+      write(ch_temp2,'(f)') numpar%t_start
+      write(ch_temp3,'(f)') numpar%dt_save
+
+      ! minimal energy grid:
+      write(ch_temp4,'(f)') x_start
+
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a)') 'stats "'//trim(adjustl(file_PCF))//'" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+
+         ! Add partial ones:
+         if (matter%N_KAO > 1) then ! only makes sence if there is more then one element in the compound:
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:10] "'//trim(adjustl(file_PCF))// &
+                  '" index (i-1) u 1:2 w l lw 2 lt rgb "black" title sprintf("%i fs total",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) ,\'
+
+            ind = 2     ! top start counting columns
+            do j = 1, matter%N_KAO     ! for all elements
+               do k = j, matter%N_KAO  ! for all different pairs
+                  ind = ind + 1
+                  write(ch_i,'(i0)') ind
+                  if ( (j==matter%N_KAO) .and. (k==matter%N_KAO) ) then ! last line
+                     write(FN, '(a)') ' "'//trim(adjustl(file_PCF))// &
+                        '" index (i-1) u 1:'//trim(adjustl(ch_i))//' w l lw 2 title "'// &
+                        trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))//'" '
+                  else
+                     write(FN, '(a)') ' "'//trim(adjustl(file_PCF))// &
+                        '" index (i-1) u 1:'//trim(adjustl(ch_i))//' w l lw 2 title "'// &
+                        trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))//'" ,\'
+                  endif
+               enddo ! k
+            enddo ! j
+         else ! there is only one column
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:10] "'//trim(adjustl(file_PCF))// &
+                  '" index (i-1) u 1:2 w l lw 2 lt rgb "black" title sprintf("%i fs total",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) '
+
+         endif
+      else  ! Linux
+         write(FN, '(a)') 'stats \"'//trim(adjustl(file_PCF))//'\" nooutput'
+         write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
+
+         if (matter%N_KAO > 1) then ! if there are more then 1 column
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:10] \"'//trim(adjustl(file_PCF))// &
+                  '\" index (i-1) u 1:2 w l lw 2 lt rgb \"black\" title sprintf(\"%i fs total\",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) ,\'
+            ind = 2     ! top start counting columns
+            do j = 1, matter%N_KAO     ! for all elements
+               do k = j, matter%N_KAO  ! for all different pairs
+                  ind = ind + 1
+                  write(ch_i,'(i0)') ind
+                  if ( (j==matter%N_KAO) .and. (k==matter%N_KAO) ) then ! last line
+                     write(FN, '(a)') ' \"'//trim(adjustl(file_PCF))// &
+                        '\" index (i-1) u 1:'//trim(adjustl(ch_i))//' w l lw 2 title \"'// &
+                        trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))//'\" '
+                  else
+                     write(FN, '(a)') ' \"'//trim(adjustl(file_PCF))// &
+                        '\" index (i-1) u 1:'//trim(adjustl(ch_i))//' w l lw 2 title \"'// &
+                        trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))//'\" ,\'
+                  endif
+               enddo ! k
+            enddo ! j
+         else ! there is only one column
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][0:10] \"'//trim(adjustl(file_PCF))// &
+                  '\" index (i-1) u 1:2 w l lw 2 lt rgb \"black\" title sprintf(\"%i fs total\",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) '
+         endif
+      endif
+      write(FN, '(a)') '}'
+   enddo ! NSC
+end subroutine write_pair_correlation_gnuplot
 
 
 subroutine write_distribution_gnuplot(FN, Scell, numpar, file_fe, min_x, max_x)

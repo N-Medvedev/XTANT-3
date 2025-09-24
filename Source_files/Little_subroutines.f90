@@ -625,19 +625,19 @@ subroutine order_of_time(tim, text, gnu_text, x_tics)
       !pause 'order_of_time'
    endif
 
-   if (time_ord > 1e15) then ! s
+   if (time_ord > 15) then ! s
       text = '(s)'
       if (present(gnu_text)) gnu_text = '($1/1e15)'
-   else if (time_ord > 1e12) then ! ms
+   else if (time_ord > 12) then ! ms
       text = '(ms)'
       if (present(gnu_text)) gnu_text = '($1/1e12)'
-   else if (time_ord > 1e9) then ! mks
+   else if (time_ord > 9) then ! mks
       text = '(mks)'
       if (present(gnu_text)) gnu_text = '($1/1e9)'
-   else if (time_ord > 1e6) then ! ns
+   else if (time_ord > 6) then ! ns
       text = '(ns)'
       if (present(gnu_text)) gnu_text = '($1/1e6)'
-   else if (time_ord > 1e3) then ! ps
+   else if (time_ord > 3) then ! ps
       text = '(ps)'
       if (present(gnu_text)) gnu_text = '($1/1e3)'
    else ! fs
