@@ -2578,7 +2578,7 @@ file_diffraction_peaks, file_diffraction_powder, file_testmode)
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
       call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 0.2d0, x_tics, 'Energy levels', 'Time (fs)', 'Energy levels (eV)', 'OUTPUT_energy_levels.'//trim(adjustl(numpar%fig_extention)), numpar%path_sep, setkey=4)
 
-      call write_energy_levels_gnuplot(FN, Scell, 'OUTPUT_energy_levels.dat')
+      call write_energy_levels_gnuplot(FN, t0, Scell, 'OUTPUT_energy_levels.dat')
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
    endif
@@ -3165,7 +3165,7 @@ subroutine gnu_MSD(File_name, file_MSD, t0, t_last, eps_name, MSD_power)
    
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
-   
+
    if (MSD_power > 1) then
       ! Power of MSD:
       write(MSD_text,'(i2)') MSD_power
@@ -4531,12 +4531,15 @@ subroutine execute_gnuplot(File_name)
 end subroutine execute_gnuplot
 
 
-subroutine write_energy_levels_gnuplot(FN, Scell, file_Ei)
+subroutine write_energy_levels_gnuplot(FN, t0, Scell, file_Ei)
    integer, intent(in) :: FN            ! file to write into
+   real(8), intent(in) :: t0  ! starting time
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    character(*), intent(in) :: file_Ei  ! file with energy levels
    integer i, M, NSC
-   character(30) :: ch_temp
+   character(30) :: ch_temp, ch_temp2
+
+   write(ch_temp2,'(f)') t0
 
    do NSC = 1, size(Scell)
       M = size(Scell(NSC)%Ei)
@@ -4544,13 +4547,15 @@ subroutine write_energy_levels_gnuplot(FN, Scell, file_Ei)
       write(ch_temp,'(f)') 25.0d0      ! Scell(NSC)%E_top
 
       if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
-         write(FN, '(a,a,a,i5,a)') 'p [][:'//trim(adjustl(ch_temp))//'] "', trim(adjustl(file_Ei)), '"u 1:', 2, ' pt 7 ps 0.2 ,\'
+         write(FN, '(a,a,a,i5,a)') 'p ['//trim(adjustl(ch_temp2))//':][:'//trim(adjustl(ch_temp))// &
+                                      '] "', trim(adjustl(file_Ei)), '"u 1:', 2, ' pt 7 ps 0.2 ,\'
          do i = 3, M
             write(FN, '(a,a,a,i5,a)') ' "', trim(adjustl(file_Ei)), '"u 1:', i, ' pt 7 ps 0.2 ,\'
          enddo
          write(FN, '(a,a,a,i5,a)') ' "', trim(adjustl(file_Ei)), '"u 1:', M+1, ' pt 7 ps 0.2'
       else
-         write(FN, '(a,a,a,i5,a)') 'p [][:'//trim(adjustl(ch_temp))//'] \"', trim(adjustl(file_Ei)), &
+         write(FN, '(a,a,a,i5,a)') 'p ['//trim(adjustl(ch_temp2))//':][:'//trim(adjustl(ch_temp))// &
+                                      '] \"', trim(adjustl(file_Ei)), &
                                        '\"u 1:', 2, ' pt 7 ps \"$LW\" ,\'
          do i = 3, M
             write(FN, '(a,a,a,i5,a)') '\"', trim(adjustl(file_Ei)), '\"u 1:', i, ' pt 7 ps \"$LW\" ,\'

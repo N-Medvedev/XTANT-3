@@ -5347,10 +5347,10 @@ subroutine interprete_displacement_command(read_line, Scell, numpar, Reason)
    ! to make back-compatible with the legacy format:
    read(read_line,*,IOSTAT=Reason) ch_int
    if (Reason == 0) then
+      numpar%MSD_power = ch_int
       if (numpar%verbose) print*, 'Atomic displacement analysis is set in legacy format'
       return ! it was a number, nothing more to do
    endif
-   numpar%MSD_power = ch_int
 
    !---------------
    ! If it was not a command, check if it was a file
@@ -5397,10 +5397,10 @@ subroutine interprete_displacement_command(read_line, Scell, numpar, Reason)
    endif
 
    !---------------
-   ! 4) if it was none of the above, just use default: mean displacement N=1:
+   ! If it was none of the above, just use default: mean displacement N=1:
    numpar%MSD_power = 1
    Reason = 0
-   if (numpar%verbose) print*, 'Default atomic displacement analysis is used'
+   if (numpar%verbose) print*, 'Default atomic displacement analysis is used (power 1)'
 end subroutine interprete_displacement_command
 
 
@@ -5428,7 +5428,7 @@ subroutine read_displacement_command(read_line, Scell, numpar, Reason, mask_num,
    ! Set defaults:
    Scell%Displ(mask_num)%MSD_power = 1.0d0   ! default: linear mean displacement
    write(ch_temp, '(i6)') mask_num
-   Scell%Displ(mask_num)%mask_name = 'mask_'//trim(adjustl(ch_temp)) ! default namae
+   Scell%Displ(mask_num)%mask_name = 'mask_'//trim(adjustl(ch_temp)) ! default nama
    Scell%Displ(mask_num)%print_r = .true.   ! all axis-resolved displacement
 
    !---------------
