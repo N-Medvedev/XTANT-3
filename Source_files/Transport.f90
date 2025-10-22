@@ -143,6 +143,15 @@ subroutine Atomic_heat_transport(trans_mod, Scell, matter, dt, tau)
    select case (trans_mod) ! in case we later add different models for the electron transport
    case (0) ! exclude heat transport within atomic subsystem
       print*, 'No heat transport in atomic system out of simulation box is included'
+   case (2) ! Nose-Hoover thermostat (to be implemented!)
+      do NSC = 1, size(Scell) ! for all supercells (actually, only 1)
+
+         !... Nose-Hoover thermostat action ...
+
+         ! Update kinetic energy, and values on the last time-step for smooth propagation:
+         call get_kinetic_energy_abs(Scell, NSC, matter, Scell(NSC)%nrg) ! update energy value, module "Atomic_tools"
+         call save_last_timestep(Scell) ! Update the last time-step data accordingly, module "Atomic_tools"
+      enddo
    case default ! simple rate equation (Berendsen thermostat)
       do NSC = 1, size(Scell) ! for all supercells
          call rate_equation(Scell(NSC)%TaeV, matter%T_bath, dt, tau, 2) ! above

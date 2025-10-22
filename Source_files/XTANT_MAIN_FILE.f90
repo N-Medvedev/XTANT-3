@@ -606,7 +606,7 @@ endif
        if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
          write(*,'(a)') trim(adjustl(m_starline))
          write(*,'(a,a,a)')  'File ', trim(adjustl(chtest)), ' could not be found.'
-         write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
+         !write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
        endif
     else ! file either not required, or it exists, we can continue
        if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
@@ -619,17 +619,20 @@ endif
  else
     if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
       write(*,'(a)') trim(adjustl(m_starline))
-      write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
+      !write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
     endif
- endif
- if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
-   write(*,'(a)') trim(adjustl(m_starline))
  endif
 
 2016 continue
-! Just add some comforing message if something whent wrong :-(
 if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
-   if (g_Err%Err) call print_a_comforting_message(6, g_numpar%path_sep)  ! module "Dealing_with_output_files"
+   if (g_Err%Err) then ! add a comforing message if something went wrong :-(
+      write(*,'(a)')  'XTANT really tried but could not do it...'
+      write(*,'(a)') trim(adjustl(m_starline))
+      call print_a_comforting_message(6, g_numpar%path_sep)  ! module "Dealing_with_output_files"
+   else ! if finished noramally
+      write(*,'(a)')  'XTANT has done its duty, XTANT can go...'
+      write(*,'(a)') trim(adjustl(m_starline))
+   endif
 endif
 
 !-------------------------------------

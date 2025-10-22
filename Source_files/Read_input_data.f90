@@ -1116,15 +1116,18 @@ subroutine get_EADL_data(matter, numpar, Err)
       endif
 
       do j = 1,size(matter%Atoms(i)%Ip)
+         !print*, 'Auger 1:', j, matter%Atoms(i)%Auger(j)
          if (matter%Atoms(i)%Auger(j) <= 0.0d0) then ! no auger possible/nothing in the database
             matter%Atoms(i)%Auger(j) = 1d30
          else ! there is some value in the database, convert it into our units:
             matter%Atoms(i)%Auger(j)=1d15*g_h/(g_e*matter%Atoms(i)%Auger(j)) ! [fs]
          endif
+         !print*, 'Auger 2:', j, matter%Atoms(i)%Auger(j)
          ! Check that all deep shell holes decay:
          if (j > 1) then ! all shells except K-shell for now:
             if (matter%Atoms(i)%Auger(j) >= 1d20) matter%Atoms(i)%Auger(j) = matter%Atoms(i)%Auger(j-1)
          endif
+         !print*, 'Auger 3:', j, matter%Atoms(i)%Auger(j)
 !          print*, i, j, matter%Atoms(i)%Auger(j)
       enddo ! j
 
@@ -6568,6 +6571,7 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       read(read_line,*,IOSTAT=Reason) laser(i)%t	  ! PULSE FWHM-DURATION IN [fs]
       call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
       if (Err%Err) goto 3417
+      laser(i)%t = abs(laser(i)%t)  ! ensure positive pulse duration, just in case
 
       read(FN, '(a)', IOSTAT=Reason) read_line
       read(read_line,*,IOSTAT=Reason) laser(i)%KOP ! type of pulse: 0=rectangular, 1=Gaussian, 2=SASE

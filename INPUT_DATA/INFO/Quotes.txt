@@ -136,7 +136,7 @@ Carl Sagan
 "Absence of evidence is not evidence of absence."
 Carl Sagan
 
-"The most exciting phrase to hear in science, the one that heralds new discoveries, is not "Eureka!" but "That's funny..."
+"The most exciting phrase to hear in science, the one that heralds new discoveries, is not "Eureka!" but "That's funny...""
 Isaac Asimov
 
 "Self-education is, I firmly believe, the only kind of education there is."
@@ -166,7 +166,7 @@ Michio Kaku
 "The science of today is the technology of tomorrow."
 Edward Teller
 
-"In physics, you don't have to go around making trouble for yourself – nature does it for you."
+"In physics, you don't have to go around making trouble for yourself - nature does it for you."
 Frank Wilczek
 
 "Listen, I've got something very obvious to tell you. You're not allowed to give up."

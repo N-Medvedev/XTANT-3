@@ -134,13 +134,13 @@ subroutine READ_EADL_TYPE_FILE_int(FN, File_name, Z_needed, I_needed, INFO, erro
       if (present(Radiat)) then
          if (.not. allocated(Radiat)) then
             allocate(Radiat(N_shl)) ! allocate auger-times
-            Radiat = 1d-24 ! to be inversed later
+            Radiat = 1.1d-24 ! to be inverted later
          endif
       endif
       if (present(Auger)) then
          if (.not. allocated(Auger)) then
             allocate(Auger(N_shl)) ! allocate radiative times
-            Auger = 1d-24 ! to be inversed later
+            Auger = 1.1d-24 ! to be inverted later
          endif
       endif
 
