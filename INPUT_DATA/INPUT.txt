@@ -1,15 +1,15 @@
-NaBr	    NaBr.poscar
-NaBr
+NaBr	    NaBr.poscar        ! Material name; file with atomic coordinates (optional)
+NaBr                  ! Chemical formula of the material
 273.0e0               ! initial electron temperature [K]
 273.0e0               ! initial atomic temperature [K]
--100.0              ! start of simulation [fs]
-100.0               ! end of simulation [fs]
-1                   ! number of laser pulses
-d	0.5	 !0.6	0.1	! "d" absorbed dose [eV/atom] / "f" fluence [J/cm^2] ; (min, max, step)
+-100.0                ! start of simulation [fs]
+100.0                 ! end of simulation [fs]
+1                     ! number of laser pulses
+d	0.5	 !0.6	0.1	  ! "d" absorbed dose [eV/atom] / "f" fluence [J/cm^2] ; (min, max, step)
 92.0e0   0.0e0        ! hw, mean photon energy [eV], FWHM of the distribution of hw [eV] | or file with photon spectrum
-10.0e0               ! pulse FWHM-duration [fs]
-1                   ! type of pulse to be analysed: 0=rectangular, 1=Gaussian, 2=SASE
-0.0e0               ! position of the maximum of the laser pulse [fs]
+10.0e0                ! pulse FWHM-duration [fs]
+1                     ! type of pulse to be analysed: 0=rectangular, 1=Gaussian, 2=SASE
+0.0e0                 ! position of the maximum of the laser pulse [fs]
 !verbose
 !print_CDF
 !redo_MFP
@@ -20,12 +20,14 @@ d	0.5	 !0.6	0.1	! "d" absorbed dose [eV/atom] / "f" fluence [J/cm^2] ; (min, max
 !Diffraction 2   12400.0d0    ! do diffraction peaks, N, for given hw
 2 2 0
 1 1 1
+!coupling
+10
 NUMERICAL_PARAMETERS
 3   3   3       ! number of unit-cells in X,Y,Z
 1   1   1       ! periodicity along X,Y,Z directions (1=yes, 0=no)
 CDF:EPICS	    0.0e0       ! material parameters database (CDF, CDF_sp, EPICS, CDF:EPICS); E_gap [eV] (optional); file with cdf (optional)
 -1.0d0          ! [g/cm^3] density of the material (used in MC in case of EADL parameters), if <0 uses data from MD supercell
-50000            ! number of MC iterations
+50000           ! number of MC iterations
 64              ! number of threads for OPENMP (<1 = max threads available)
 2               ! MD algorithm: 0=Verlet (2d order); 1=Yoshida (4th order, slow); 2=Martyna (4th order, fast)
 1               ! frozen atoms (=0), or moving normally (=1)
