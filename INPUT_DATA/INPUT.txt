@@ -1,13 +1,13 @@
-CdS 	CdS_cubic.poscar	   ! material name directory; file with supercell and atomic coordinates
-CdS
-300.0e0               ! initial electron temperature [K]
-300.0e0               ! initial atomic temperature [K]
--3.0              ! start of simulation [fs]
--2.0              ! end of simulation [fs]
+NaBr	    NaBr.poscar
+NaBr
+273.0e0               ! initial electron temperature [K]
+273.0e0               ! initial atomic temperature [K]
+-100.0              ! start of simulation [fs]
+100.0               ! end of simulation [fs]
 1                   ! number of laser pulses
-d	5.0	 !3.0	1.0	! "d" absorbed dose [eV/atom] / "f" fluence [J/cm^2] ; (min, max, step)
-10.0e0   0.0e0        ! hw, mean photon energy [eV], FWHM of the distribution of hw [eV] | or file with photon spectrum
-20.0e0               ! pulse FWHM-duration [fs]
+d	0.5	 !0.6	0.1	! "d" absorbed dose [eV/atom] / "f" fluence [J/cm^2] ; (min, max, step)
+92.0e0   0.0e0        ! hw, mean photon energy [eV], FWHM of the distribution of hw [eV] | or file with photon spectrum
+10.0e0               ! pulse FWHM-duration [fs]
 1                   ! type of pulse to be analysed: 0=rectangular, 1=Gaussian, 2=SASE
 0.0e0               ! position of the maximum of the laser pulse [fs]
 !verbose
@@ -15,33 +15,32 @@ d	5.0	 !3.0	1.0	! "d" absorbed dose [eV/atom] / "f" fluence [J/cm^2] ; (min, max
 !redo_MFP
 !print_MFP
 !print_Ta
-output_add  Coupling
+!output_add Li_Auger
+!output_name test
 !Diffraction 2   12400.0d0    ! do diffraction peaks, N, for given hw
 2 2 0
 1 1 1
-Coupling
-10
 NUMERICAL_PARAMETERS
 3   3   3       ! number of unit-cells in X,Y,Z
 1   1   1       ! periodicity along X,Y,Z directions (1=yes, 0=no)
 CDF:EPICS	    0.0e0       ! material parameters database (CDF, CDF_sp, EPICS, CDF:EPICS); E_gap [eV] (optional); file with cdf (optional)
 -1.0d0          ! [g/cm^3] density of the material (used in MC in case of EADL parameters), if <0 uses data from MD supercell
 50000            ! number of MC iterations
-32              ! number of threads for OPENMP (<1 = max threads available)
-0               ! MD algorithm: 0=Verlet (2d order); 1=Yoshida (4th order, slow); 2=Martyna (4th order, fast)
+64              ! number of threads for OPENMP (<1 = max threads available)
+2               ! MD algorithm: 0=Verlet (2d order); 1=Yoshida (4th order, slow); 2=Martyna (4th order, fast)
 1               ! frozen atoms (=0), or moving normally (=1)
 25.5d0          ! Parinello-Rahman super-cell mass coefficient
-dt_grid.txt     ! time step for MD [fs] (or a file name with the variable time-grid)
-0.01d0           ! printout data into files every 'dt_save_time' [fs]
+1.0e0     !dt_grid.txt     ! time step for MD [fs] (or a file name with the variable time-grid)
+1.0d0           ! printout data into files every 'dt_save_time' [fs]
 0               ! 0 for V=const (NVE); 1 for P=const (NPH)
 0.0d0           ! external pressure [Pa]
 F   0   0.35    ! include SCC (True, False), model of gamma (default 0); mixing factor (default 0.35)
 4   0.0e0   -10.0e0    -10.0e0   ! 0=decoupled; 1=E_tot=const; 2=T=const; 3=BO; 4=Relaxation time; full tau [fs]; tau_CB; tau_VB
 -1	0               ! -1=nonperturbative (default), 0=no, 1=dynamical, 2=FGR (don't use) | 0=Maxwel, 1=nonequilibrium (not ready!)
--1.0d+3    1.0d0    ! [fs] when to switch on the nonadiabatic coupling; scaling factor (if needed; default=4.0)
+-1.0d+3    4.0d0    ! [fs] when to switch on the nonadiabatic coupling; scaling factor (if needed; default=4.0 do not change!)
 5.0d0   0.001d0     ! [eV] acceptance window for nonadiabatic coupling; [eV] tolerance for quasidegenerate levels
-0   -50.0   3.0     ! quenching (0=no, 1=yes); starting from when [fs]; how often [fs]
-0   300.0   10.0    ! Berendsen thermostat for atoms (0=no, 1=yes); bath temperature [K]; cooling time [fs]
+0   -50.0   4.0     ! quenching (0=no, 1=yes); starting from when [fs]; how often [fs]
+0   300.0   5.0     ! Berendsen thermostat for atoms (0=no, 1=yes); bath temperature [K]; cooling time [fs]
 0   300.0   10.0    ! Berendsen thermostat for electrons (0=no, 1=yes); bath temperature [K]; cooling time [fs]
 15.0d0          ! [eV] cut-off energy in MC (<0 means Ecut=top of CB)
 1.0d30          ! [eV] work function, for electron emission (>0 eV; <0 - number of collisions)
@@ -49,18 +48,18 @@ F   0   0.35    ! include SCC (True, False), model of gamma (default 0); mixing 
 0   0.1   1     ! printout DOS (0=no,1=Gamma,2=k-points); smearing of gaussian; print PDOS yes (1) or no (0)
 1 	        ! printout Mulliken charges for types of atoms
 0   1.0 400.0  !fa!  0.02  1.0  ! fe: N, dE, Emax: N = 0=no, 1=fe on Ei(TB), -1 orb., 2=fe, -2=fs on grid only, 3=incl.orb. (opt: dEa, Eamax)
-0           ! printout atomic pair correlation function (1) or not (0)
+1           ! printout atomic pair correlation function (1) or not (0)
 1   qe      ! printout atomic positions in XYZ (1) or not (0); additionally: q=charge, e=E_kin, m=mass
 0           ! printout atomic positions in CIF (1) or not (0)
 0           ! printout raw data file OUTPUT_coordinates_and_velosities.dat (1) or not (0)
 name:all	power:1          ! power of mean displacement to print out (set integer N: <[R(t)-R(t=0)]^N>)
--2.0e0      ! printout numbers of nearest neighbors within the given radius (<=0 No, >0 = radius in [A])
+-2.3e0      ! printout numbers of nearest neighbors within the given radius (<=0 No, >0 = radius in [A])
 png         ! which format to use to plot figures: eps, jpeg, gif, png, pdf
-3*7         ! number of k-points in each direction (used only for Trani-k!)
-!kappa
-!300.0	50000.0	100.0
-!1
+5*1         ! number of k-points in each direction (used only for Trani-k!)
 !probe
 4   1   1.0d-1  40.0d0  1.0d-1  ! optic coefs: 0=no, 1=Drude, 2=Trani-k, 3=Gamma, 4=KG; spectr (1) w/ KK (2), or no (0); min, max, d_hw (eV)
 2   800.0   -10.0   ! how many rays (0=exclude, 1=1st ray, (>1)=sum all); probe-pulse wavelength [nm]; FWHM probe pulse [fs]
 0.0    50.0d0      ! angle of prob-pulse with respect to normal [degrees]; material thickness [nm]
+!testmode
+!AUGER
+!1	1	10.0d0
