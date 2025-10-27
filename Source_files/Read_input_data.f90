@@ -4730,6 +4730,10 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
+   ! Concistency check: no negative numbers of unit cells:
+   if (matter%cell_x < 0) matter%cell_x = 1     ! minimum
+   if (matter%cell_y < 0) matter%cell_y = 1     ! minimum
+   if (matter%cell_z < 0) matter%cell_z = 1     ! minimum
 
    ! periodicity along X,Y,Z directions:
    read(FN, '(a)', IOSTAT=Reason) read_line
@@ -6376,6 +6380,10 @@ subroutine set_MD_step_grid(File_name, numpar, read_well_out, Error_descript)
       call read_file(Reason, count_lines, read_well)    ! module "Dealing_with_files"
       if (read_well) read_well_out = .true.    ! we read the grid from the file well
       numpar%i_dt = -1   ! to mark that the reset option is unused
+
+      ! Consistency check: no negative timesteps:
+      if (numpar%dt < 0) numpar%dt = 0.1d0      ! use this default
+
       ! Set often-used values:
    endif ! file_exist
    numpar%halfdt = numpar%dt/2.0d0           ! dt/2, often used
@@ -6470,9 +6478,11 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       read(read_line,*,IOSTAT=Reason) Scell(i)%Ta
       call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
       if (Err%Err) goto 3417
+      ! Consistency check: no negative kinetic temperatures:
+      if (Scell(i)%Ta < 0.0d0) Scell(i)%Ta = 0.0d0
       Scell(i)%TaeV = Scell(i)%Ta/g_kb ! [eV] atomic temperature
       ! Printout warning if atomic temperature is too high:
-      if (Scell(i)%TaeV >= 1.0) then
+      if (Scell(i)%TaeV >= 1.0) then ! Ta > 1 eV
          write(text,'(f16.3)',IOSTAT=Reason) Scell(i)%TaeV
          call printout_warning(6, 3, text_to_add=trim(adjustl(text)) ) ! below
       endif
@@ -6528,8 +6538,8 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
                'Specification of fluence provided: '//trim(adjustl(text)), read_var(:)
       endif
       ! Check if at least one number was read well:
-      if (read_var(1) < 0.0d0) then ! could not read the numberes, something went wrong
-         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      if (read_var(1) < 0.0d0) then ! could not read the numbers, something went wrong
+         write(Error_descript,'(a,i5,a,$)') '[Negative fluence] Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript)), read_var(:)
          print*, 'Line: ', trim(adjustl(read_line))
@@ -6565,6 +6575,8 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
          write(text,'(f16.3)',IOSTAT=Reason) laser(i)%hw
          call printout_warning(6, 1, text_to_add=trim(adjustl(text)) ) ! below
       endif
+      ! Consistency check: photon energy cannot be negative
+      if (laser(i)%hw < 0.0d0) laser(i)%hw = 0.0d0    ! no photons, no problem
 
 
       read(FN, '(a)', IOSTAT=Reason) read_line
@@ -7295,6 +7307,9 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
             print*, trim(adjustl(Error_descript))
             return
          endif
+         ! Consistency check: no negative wavelength:
+         if (Scell(i)%eps%l < 0.0d0) Scell(i)%eps%l = 800.0d0     ! [nm] default
+
          !if (.not.numpar%do_drude) Scell(i)%eps%tau = -0.0d0 ! to exclude convolution if there is no probe pulse
          Scell(i)%eps%ReEps0 = 0.0d0	! to start with
          Scell(i)%eps%ImEps0 = 0.0d0	! to start with
@@ -7309,6 +7324,9 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
             print*, trim(adjustl(Error_descript))
             return
          endif
+         ! Consistency check: no negative thicknesses:
+         if (Scell(i)%eps%dd < 0.0d0) Scell(i)%eps%dd = 100.0d0     ! [nm] default
+
          Scell(i)%eps%teta = Scell(i)%eps%teta*g_Pi/(180.0d0) !c [radians]
       enddo SCL
 
@@ -7323,6 +7341,11 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
          numpar%change_size_min = i_min
          numpar%change_size_max = i_max
          numpar%change_size_step = N
+         ! Consistency checks: no negative values:
+         if (numpar%change_size_min < 0.0d0) numpar%change_size_min = 0.7d0   ! default starting point for vary_size
+         if (numpar%change_size_max < 0.0d0) numpar%change_size_max = 2.1d0   ! default ending point for vary_size
+         if (numpar%change_size_step < 0) numpar%change_size_step = 100       ! default number of points for vary_size
+
          write(temp_ch1, '(f12.2)') numpar%change_size_min
          write(temp_ch2, '(f12.2)') numpar%change_size_max
          write(temp_ch3,'(i8)') numpar%change_size_step

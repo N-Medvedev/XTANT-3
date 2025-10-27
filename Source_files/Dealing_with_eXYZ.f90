@@ -269,9 +269,9 @@ subroutine interprete_properties_line(prop_block, ind_S, ind_R, ind_V)
       case ('Species','species')
          if ( (trim(adjustl(read_char)) == 'S' ) .or. &
               (trim(adjustl(read_char)) == 's' ) ) then
-            ind_S = 1   ! KOA index is set
+            ind_S = 1   ! Element name is set
          else
-            ind_S = 0   ! Element name is set
+            ind_S = 0   ! KOA index is set
          endif
       case ('Pos','pos')
          if ( (trim(adjustl(read_char)) == 'S' ) .or. &
