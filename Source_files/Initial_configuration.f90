@@ -1135,7 +1135,9 @@ subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, i
          endif
 
          ! Find the index from the element name:
-         if (.not.it_is_mixture) then ! only check if atoms were already set in the file
+         !if (.not.it_is_mixture) then ! only check if atoms were already set in the file
+         ! Check for each atom, if it was defined (for partially defined mixtures):
+         if (trim(adjustl(El_name)) /= '-') then ! a name is given for this element:
             call get_KOA_from_element(El_name, matter, KOA) ! module "Dealing_with_POSCAR"
             if (KOA <= 0) then
                write(Error_descript,'(a,a,a)') 'In the target, there is no element ', trim(adjustl(El_name)), ' from file '//trim(adjustl(File_name_XYZ))
@@ -1147,6 +1149,7 @@ subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, i
             KOA = -1 ! for alloy/mix, to define later
          endif
          Scell(SCN)%MDAtoms(i)%KOA = KOA
+         !print*, trim(adjustl(El_name)), KOA
       endif ! (ind_S == 0)
 
       ! Sort the atomic coordinates that were read:
@@ -1173,6 +1176,8 @@ subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, i
       endif
    enddo ! i = 1, Scell(SCN)%Na
    3419 continue
+
+   !pause 'read_XYZ_coords'
 end subroutine read_XYZ_coords
 
 
@@ -1861,8 +1866,10 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
    real(8), dimension(:,:), allocatable :: Relcoat
    integer, dimension(:), allocatable :: KOA
    logical, dimension(:), allocatable :: element_done
+   integer, dimension(:), allocatable :: Present_element
    real(8) :: pers_tot, coef, RN
    integer :: i, Nat, j, Na, k, i_cur, i_run, i_pers, i_cur_save
+   integer :: nx, ny, nz
    character(200) :: text, text1
 
    INFO = 0 ! at the start, there is no error
@@ -1882,6 +1889,7 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
       if (size(Scell(SCN)%MDatoms) /= Nat) then
          deallocate(Scell(SCN)%MDatoms)
          allocate(Scell(SCN)%MDatoms(Nat))
+         ! For completely undefined mixtures:
          do j = 1, size(Scell(SCN)%MDatoms)
             Scell(SCN)%MDatoms(j)%KOA = -1 ! to start with
          enddo
@@ -1889,6 +1897,19 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
             Scell(SCN)%MDatoms(j)%S(:) = Relcoat(:,j)
             Scell(SCN)%MDatoms(j)%KOA = KOA(j)
          enddo ! j
+         ! For partially-defined mixtures:
+         ! Copy all existing data from the unit cell:
+         j = 0
+         do nx = 1, matter%cell_x
+            do ny = 1, matter%cell_y
+               do nz = 1, matter%cell_z
+                  do k = 1,Scell(SCN)%Na	! number of atoms in the unit cell
+                     j = j + 1      ! count atoms
+                     Scell(SCN)%MDatoms(j)%KOA = KOA(k)
+                  enddo ! k = 1,Scell(SCN)%Na
+               enddo ! nz = 0, matter%cell_z-1
+            enddo ! ny = 0, matter%cell_y-1
+         enddo ! nx = 0, matter%cell_x-1
       endif
 
 
@@ -1912,14 +1933,37 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
       endif
       !print*, Scell(SCN)%Na, Nat, size(Scell(SCN)%MDatoms), SUM(matter%Atoms(:)%percentage)
       !print*, matter%Atoms(:)%percentage
+      !pause
+
+
+      ! Count how many elements are already present (for partially defined mixtures):
+      allocate(Present_element(size(matter%Atoms)), source = 0)   ! how many different elements in the compound
+      do i = 1, size(matter%Atoms)  ! for all elements:
+         Present_element(i) = count( Scell(SCN)%MDatoms(:)%KOA == i )
+         !print*, Present_element(i), matter%Atoms(i)%Name, matter%Atoms(i)%percentage
+      enddo
+      !pause 'make_alloy 0'
+
+      ! test:
+      !do i = 1, size(Scell(SCN)%MDatoms)  ! all MD atoms
+      !   print*, i, Scell(SCN)%MDatoms(i)%KOA
+      !enddo
+      !pause 'make_alloy 1'
+
 
       ! Now, distribute the elements into MD atomic array:
       allocate(element_done(size(Scell(SCN)%MDatoms)), source = .false.)      ! to start with
       i_run = 0   ! to start with
       i_pers = 1  ! to start with
-      do i = 1, size(Scell(SCN)%MDatoms)  ! all MD atoms
+      AMDA:do i = 1, size(Scell(SCN)%MDatoms)  ! all MD atoms
+         ! Check if this atom was already defined (for partially defined mixtures):
+         !if (Scell(SCN)%MDatoms(i)%KOA > 0) cycle ! nothing to do for this element
+
          i_run = i_run + 1    ! we are in this array now
-         if (i_run > matter%Atoms(i_pers)%percentage) then ! move to the next element:
+         !if (i_run > matter%Atoms(i_pers)%percentage) then ! move to the next element:
+         ! Exclude elements that are already defined:
+         !print*, i, i_pers, matter%Atoms(i_pers)%percentage, Present_element(i_pers)
+         if ( i_run > INT(matter%Atoms(i_pers)%percentage-dble(Present_element(i_pers))) ) then ! move to the next element:
             i_pers = i_pers + 1     ! next subarray
             i_run = 1   ! restart counting atoms in this element subarray
          endif
@@ -1930,18 +1974,28 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
          !print*, i, i_cur, Scell(SCN)%MDatoms(i_cur)%KOA
 
          do while (Scell(SCN)%MDatoms(i_cur)%KOA > 0) ! find undefined element
+            !print*, i, i_cur, Scell(SCN)%MDatoms(i_cur)%KOA
             i_cur = i_cur + 1
-            if (i_cur > Nat) i_cur = 1    ! restart counting
-            if (i_cur == i_cur_save) exit ! we check all of them
+            if (i_cur > Nat) i_cur = 1          ! restart counting
+            if (i_cur == i_cur_save) exit AMDA  ! we checked all of them
          enddo
          Scell(SCN)%MDatoms(i_cur)%KOA = i_pers
          !print*, i, i_cur, Scell(SCN)%MDatoms(i_cur)%KOA
-      enddo
+         !pause 'make_alloy 3'
+      enddo AMDA
+      !pause 'make_alloy 2'
 
       ! test:
       !do i = 1, size(Scell(SCN)%MDatoms)  ! all all MD atoms
       !   print*, i, Scell(SCN)%MDatoms(i)%KOA
       !enddo
+      ! Something went wrong:
+      if ( ANY(Scell(SCN)%MDatoms(:)%KOA > size(matter%Atoms)) ) then
+         INFO = 11
+         write(Error_descript,'(a)') 'UNKNOWN ERROR: Atomic indices in the alloy > number of elements'
+         print*, trim(adjustl(Error_descript))
+      endif
+
    endif
 
    !pause 'make_alloy'

@@ -58,7 +58,7 @@ subroutine collect_gnuplots(path_sep, out_path, skip_execution)
    character(5) ::  call_slash, sh_cmd
    logical :: skip_exec
 
-   if (present(skip_execution)) then   ! if requested, you may skip exewcution of gnuplot scripts
+   if (present(skip_execution)) then   ! if requested, you may skip execution of gnuplot scripts
       skip_exec = skip_execution
    else  ! be default, execute gnuplot scripts
       skip_exec = .false.

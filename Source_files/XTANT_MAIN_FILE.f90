@@ -89,7 +89,7 @@ call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_
 ! Master thread shares read info with all the other MPI-processes:
 call MPI_share_add_data(g_numpar, g_Err)  ! module "MPI_subroutines"
 !--------------------------------------------------------------
-if (g_Err%Err) goto 2016     ! if something when wrong, cannot proceed
+if (g_Err%Err) goto 2016     ! if something went wrong, cannot proceed
 if (g_Err%Stopsignal) goto 2016     ! if the USER does not want to run the calculations, stop
 ! Otherwise, run the calculations:
 
@@ -191,7 +191,7 @@ if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does 
    call print_time('Start at', ind=0) ! prints out the current time, module "Little_subroutines"
 endif
 
-! Create the folder where output files will be storred, and prepare the files:
+! Create the folder where output files will be stored, and prepare the files:
 call prepare_output_files(g_Scell, g_matter, g_laser, g_numpar, g_Scell(1)%TB_Hamil(1,1), g_Scell(1)%TB_Repuls(1,1), g_Err) ! module "Dealing_with_output_files"
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the output files, cannot continue, go to the end...
 if (g_numpar%verbose) call print_time_step('Output directory prepared succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
@@ -232,7 +232,7 @@ if (g_numpar%do_path_coordinate) then
    if (g_Err%Err .or. g_Err%Stopsignal) goto 2012      ! if the USER does not want to run the calculations
 endif
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
-! After the initial data are read, and necessay files created,
+! After the initial data are read, and necessary files created,
 ! now we can proceed with the real calculations
 
 ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
