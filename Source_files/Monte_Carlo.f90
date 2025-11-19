@@ -470,7 +470,7 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
       !if ((Scell%fe(i)+d_fe(i)*min_df) < 0.0d0) then
       if ((Scell%fe(i)+d_fe(i)*min_df) < 0.0d0) then
          print*, 'Error New_born_electron_n_hole:', i, Scell%fe(i), d_fe(i)*min_df, Ee, Scell%E_gap, numpar%E_cut
-         if (LEN(string_print) > 0) then
+         if (LEN(trim(adjustl(string_print))) > 0) then
             print*, trim(adjustl(string_print))
          endif
       endif
@@ -491,7 +491,7 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
          print*, 'Subroutine New_born_electron_n_hole', hw
          print*, 'Produced negative electron energy:', Ee, IONIZ
          print*, 'deep shell:', matter%Atoms(KOA)%Ip(SHL), KOA, SHL
-         if (LEN(string_print) > 0) then
+         if (LEN(trim(adjustl(string_print))) > 0) then
             print*, trim(adjustl(string_print))
          endif
          pause
