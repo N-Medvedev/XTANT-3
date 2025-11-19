@@ -1053,7 +1053,8 @@ end subroutine interpolate_data_on_grid
          else
             if (abs(xarray(i)) > 1.0d-8) then
                !y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
-               y = yarray(i-1) + (yarray(i) - yarray(i-1))/(xarray(i) - xarray(i-1))*(x - xarray(i-1))
+               !y = yarray(i-1) + (yarray(i) - yarray(i-1))/(xarray(i) - xarray(i-1))*(x - xarray(i-1))
+               y = yarray(i) - (yarray(i+1) - yarray(i))/(xarray(i+1) - xarray(i))*(xarray(i) - x)
             else
                y = yarray(i)
             endif

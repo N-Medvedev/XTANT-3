@@ -4964,6 +4964,9 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    read(FN, '(a)', IOSTAT=Reason) read_line
    read(read_line,*,IOSTAT=Reason) N, matter%T_bath_e, matter%tau_bath_e
    if (Reason == 0) then
+
+      print*, 'matter%T_bath_e :: 0 ::', matter%T_bath_e
+
       call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
       if (Err%Err) goto 3418
@@ -4974,13 +4977,22 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       endif
       matter%T_bath_e = matter%T_bath_e/g_kb	! [eV] thermostat temperature for electrons
    else
+
+      print*, 'matter%T_bath_e :: 1 ::', matter%T_bath_e
+
       ! maybe there is a filename given to read from instead of numbers:
       read(read_line,*,IOSTAT=Reason) numpar%El_bath_step_grid_file  ! name of file with parameters
+
+      print*, 'matter%T_bath_e :: 1 ::', numpar%El_bath_step_grid_file
+
       call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
       if (Err%Err) goto 3418
       ! If read well, try to interpret it and set parameters on time-grid:
       call set_Bath_grid_electrons(numpar, read_well, Error_descript)    ! below
+
+      print*, 'matter%T_bath_e :: 1 :: set_Bath_grid_electrons'
+
       if (.not. read_well) then
          goto 3418
       endif
@@ -6015,7 +6027,7 @@ subroutine set_Bath_grid_electrons(numpar, read_well_out, Error_descript)
    if (file_exist) then ! try to read it, if there is a grid provided
       open(newunit = FN, FILE = trim(adjustl(full_file_name)), status = 'old', action='read')
       ! Find the grid size from the file:
-      call Count_lines_in_file(FN, Nsiz) ! module "Dealing_with_files"
+      call Count_lines_in_file(FN, Nsiz, skip_empty=.true.) ! module "Dealing_with_files"
       ! Knowing the size, create the grid-array and read from the file:
       if (allocated(numpar%El_bath_reset_grid)) deallocate(numpar%El_bath_reset_grid) ! make sure it's possible to allocate
       allocate(numpar%El_bath_reset_grid(Nsiz)) ! allocate it
@@ -6033,11 +6045,13 @@ subroutine set_Bath_grid_electrons(numpar, read_well_out, Error_descript)
             write(Error_descript,'(a,i3)') 'In the file '//trim(adjustl(numpar%El_bath_step_grid_file))//' could not read line ', count_lines
             goto 9997  ! couldn't read the data, exit the cycle
          endif
+         print*, i, numpar%El_bath_reset_grid(i), numpar%El_bath_grid_Ta(i), numpar%El_bath_grid_tau(i)
       enddo
       numpar%i_El_bath_dt = 1 ! to start from
       read_well_out = .true.     ! we read the grid from the file well
-
 9997 call close_file('close', FN=FN) ! module "Dealing_with_files"
+   else
+      if (numpar%verbose) write(*,'(a)') 'File '//trim(adjustl(full_file_name))//' cannot be found!'
    endif ! file_exist
 end subroutine set_Bath_grid_electrons
 
@@ -6060,7 +6074,7 @@ subroutine set_Bath_grid_atoms(numpar, read_well_out, Error_descript)
    if (file_exist) then ! try to read it, if there is a grid provided
       open(newunit = FN, FILE = trim(adjustl(full_file_name)), status = 'old', action='read')
       ! Find the grid size from the file:
-      call Count_lines_in_file(FN, Nsiz) ! module "Dealing_with_files"
+      call Count_lines_in_file(FN, Nsiz, skip_empty=.true.) ! module "Dealing_with_files"
       ! Knowing the size, create the grid-array and read from the file:
       if (allocated(numpar%At_bath_reset_grid)) deallocate(numpar%At_bath_reset_grid) ! make sure it's possible to allocate
       allocate(numpar%At_bath_reset_grid(Nsiz)) ! allocate it
