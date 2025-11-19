@@ -61,7 +61,7 @@ remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
 Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
 update_atomic_masks_displ, numerical_acceleration, Get_testmode_add_data, integrated_atomic_distribution, &
-get_diffraction_peaks
+get_diffraction_peaks, get_Miller_indenx_angle
 
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
@@ -2179,6 +2179,7 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
    real(8) :: Nat, FF, FF2, q, Z, Z2, Fpowder, Rij, qA, arg, F_cur
    complex :: Fijk
    integer, pointer :: KOA, KOA2
+   logical :: save_thetas
 
 
    if (.not.numpar%save_diff_peaks) return      ! nothing to do here
@@ -2186,23 +2187,44 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
    ! Number of atoms:
    Nat = dble(size(Scell(1)%MDAtoms))
 
+   ! First time, save Miller indices angles:
+   if (.not.allocated(Scell(1)%diff_peaks%ijk_theta)) then ! save the angles
+      allocate(Scell(1)%diff_peaks%ijk_theta ( size(Scell(1)%diff_peaks%I_diff_peak) ) )
+      save_thetas = .true.    ! save the calcualted angles below
+   else
+      save_thetas = .false.   ! no need to save the angles again
+   endif
+
    !----------------------
    ! 1) Selected peaks:
    ! For all selected peaks:
    do i = 1, size(Scell(1)%diff_peaks%I_diff_peak)
       Fijk = cmplx(0.0d0,0.0d0)     ! to start with
-      ! Sum contributions form all atoms:
+
+      !-------------------------------
+      ! This part only works for orthagonal supercell (to be improved later!):
+      q = g_2Pi * sqrt ( &
+             (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/(Scell(1)%Supce(1,1)/matter%cell_x))**2 + &
+             (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/(Scell(1)%Supce(2,2)/matter%cell_y))**2 + &
+             (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/(Scell(1)%Supce(3,3)/matter%cell_z))**2 )      ! [1/A]
+      ! Convert units for form-factor evaluation:
+      q = q * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
+      !print*, 'q_ijk=', q, q /(1.0d10 * g_h), 2.0d0*asin(q/g_h * (Scell(1)%diff_peaks%l) / (4.0d0*g_Pi)) * g_rad2deg
+      !-------------------------------
+
+      ! Theta angles corresponding to the Miller indices:
+      if (save_thetas) then    ! if required
+         Scell(1)%diff_peaks%ijk_theta(i) = 2.0d0*asin(q/g_h * (Scell(1)%diff_peaks%l) / (4.0d0*g_Pi)) * g_rad2deg
+      endif
+
+      ! Sum contributions from all atoms:
       do j = 1, int(Nat)
          !-------------------------------
          ! This part only works for orthagonal supercell (to be improved later!):
-         q = g_2Pi * sqrt ( &
-             (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/Scell(1)%Supce(1,1))**2 + &
-             (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/Scell(1)%Supce(2,2))**2 + &
-             (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/Scell(1)%Supce(3,3))**2 )      ! [1/A]
-         ! Convert units for form-factor evaluation:
-         q = q * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
-         !print*, 'q_ijk=', q, q /(1.0d10 * g_h)
-         !-------------------------------
+!          q = g_2Pi * sqrt ( &
+!              (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/Scell(1)%Supce(1,1))**2 + &
+!              (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/Scell(1)%Supce(2,2))**2 + &
+!              (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/Scell(1)%Supce(3,3))**2 )      ! [1/A]
 
          ! kind of atom:
          KOA => Scell(1)%MDatoms(j)%KOA
@@ -2287,6 +2309,31 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
 
    nullify(KOA, KOA2)
 end subroutine get_diffraction_peaks
+
+
+subroutine get_Miller_indenx_angle(Scell, matter, i, ijk_theta)
+   type(Super_cell), dimension(:), intent(in) :: Scell	! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter     ! material parameters
+   integer, intent(in) :: i   ! peak index
+   real(8), intent(out) :: ijk_theta      ! [deg] angle corresponding to the Miller index
+   !----------------------
+   real(8) :: q
+
+   !-------------------------------
+   ! This part only works for orthagonal supercell (to be improved later!):
+   q = g_2Pi * sqrt ( &
+             (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/(Scell(1)%Supce(1,1)/matter%cell_x))**2 + &
+             (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/(Scell(1)%Supce(2,2)/matter%cell_y))**2 + &
+             (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/(Scell(1)%Supce(3,3)/matter%cell_z))**2 )      ! [1/A]
+   ! Convert units for form-factor evaluation:
+   q = q * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
+   !print*, 'q_ijk=', q, q /(1.0d10 * g_h), 2.0d0*asin(q/g_h * (Scell(1)%diff_peaks%l) / (4.0d0*g_Pi)) * g_rad2deg
+   !-------------------------------
+
+   ! Theta angles corresponding to the Miller indices:
+   ijk_theta = 2.0d0*asin(q/g_h * (Scell(1)%diff_peaks%l) / (4.0d0*g_Pi)) * g_rad2deg
+
+end subroutine get_Miller_indenx_angle
 
 
 

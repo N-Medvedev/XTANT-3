@@ -643,6 +643,7 @@ type :: diffraction_peaks
    real(8) :: l     ! lambda, photon wavelength [A]
    real(8), dimension(:), allocatable :: I_diff_peak, I_diff_peak_first ! peak intensities
    integer, dimension(:,:), allocatable :: ijk_diff_peak    ! Miller indices
+   real(8), dimension(:), allocatable :: ijk_theta    ! Angles corresponding to the chosen Miller indices
    real(8), dimension(:), allocatable :: two_theta
    real(8), dimension(:), allocatable :: I_powder   ! intensity vs 2-theta
 end type diffraction_peaks

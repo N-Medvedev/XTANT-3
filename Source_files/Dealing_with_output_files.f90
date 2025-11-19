@@ -34,7 +34,7 @@ MODULE Dealing_with_output_files
 
 use Universal_constants
 use Objects
-use Atomic_tools, only : pair_correlation_function
+use Atomic_tools, only : pair_correlation_function, get_Miller_indenx_angle
 use Variables, only : g_numpar, g_matter
 use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution, &
                               convert_hw_to_wavelength, convert_wavelength_to_hw, find_order_of_number, print_time
@@ -53,7 +53,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 27.10.2025)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 19.11.2025)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2086,6 +2086,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    !-------------------------------------
    character(200) :: file_path, file_name
    integer :: FN, i, j, Nshl, Nsiz, N_at, k
+   real(8) :: ijk_theta
    ! OUTPUT files, name and address:
    character(100) :: file_temperatures	! time [fs], Te [K], Ta [K]
    character(100) :: file_pressure	! time [fs], stress_tensore(3,3) [GPa], Pressure [GPa]
@@ -2121,8 +2122,9 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100) :: file_diff_peaks, file_diff_powder      ! selected diffraction peaks, powder diffraction
    character(100) :: file_testmode		! testmode file
    character(100) :: chtemp
-   character(200) :: chtemp2
+   character(200) :: chtemp2, chtemp3
    character(11) :: chtemp11, text1, text2, text3
+   !----------------
 
    call make_save_files(trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep)))
 
@@ -2180,15 +2182,22 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       numpar%FN_diff_peaks = FN
       ! Create the header, containing all the peaks:
       chtemp2 = ''      ! to start with
+      chtemp3 = ''      ! to start with
       do i = 1, size(Scell(1)%diff_peaks%I_diff_peak)
          write(text1, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(1,i)
          write(text2, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(2,i)
          write(text3, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(3,i)
-         chtemp2 = trim(adjustl(chtemp2))//'    ('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'//' '
+         chtemp2 = trim(adjustl(chtemp2))//'       ('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'
+         ! Also, get the corresponding peak angles:
+         call get_Miller_indenx_angle(Scell, matter, i, ijk_theta)     ! module "Atomic_tools"
+         write(text1, '(f8.3)') ijk_theta   ! angle
+         chtemp3 = trim(adjustl(chtemp3))//'    ('//trim(adjustl(text1))//')'
       enddo
       !print*, trim(adjustl(chtemp2))
-      call create_file_header(numpar%FN_diff_peaks, '#Time  '//trim(adjustl(chtemp2)) )    ! below
-      call create_file_header(numpar%FN_diff_peaks, '#[fs]    [arb.units]')
+
+      call create_file_header(numpar%FN_diff_peaks, '#Time          '//trim(adjustl(chtemp2)) )    ! below
+      call create_file_header(numpar%FN_diff_peaks, '#[fs]          [arb.units]')
+      call create_file_header(numpar%FN_diff_peaks, '#2theta [deg]: ' //trim(adjustl(chtemp3)) )    ! below
 
       ! Powder diffraction:
       file_diff_powder = trim(adjustl(file_path))//'OUTPUT_diffraction_powder.dat'
