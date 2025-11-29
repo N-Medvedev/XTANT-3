@@ -651,13 +651,13 @@ subroutine patch_distribution(fe, Ei, Scell, numpar)
       trouble_present = .false.
       ! And the final check:
       do i = 1, N_siz ! check that there is no problem in distribution function change
-         if (fe(i) > 2.0d0+eps) then   ! it's within [2; 2+eps]
+         if (fe(i) > 2.0d0+eps) then   ! it's outside of [2; 2+eps]
             print*, 'Problem in patch_distribution #3a:', i, fe(i)
             fe(i) = 2.0d0
             trouble_present = .true.   ! there still is a problem
          elseif (fe(i) > 2.0d0) then   ! it's within [2; 2+eps]
             fe(i) = 2.0d0        ! distribution adjusted to accceptable
-         elseif (fe(i) < -eps) then  ! it's within [0-eps;0]
+         elseif (fe(i) < -eps) then  ! it's outside of [0-eps;0]
             print*, 'Problem in patch_distribution #3b:', i, fe(i)
             fe(i) = 0.0d0        ! distribution adjusted to accceptable
             trouble_present = .true.   ! there still is a problem

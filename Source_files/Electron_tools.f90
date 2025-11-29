@@ -373,26 +373,10 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
             if (.not.allocated(Scell(NSC)%fe_eq)) allocate(Scell(NSC)%fe_eq(i_fe))
             call set_Fermi(Scell(NSC)%Ei, Scell(NSC)%TeeV, Scell(NSC)%mu, Scell(NSC)%fe_eq)   ! below
 
-         case (4) ! Relaxation-time approximation [ df/dt=(f-f0)/tau ]:
+         case (4:5) ! Relaxation-time approximation; electron-electron collision integral
             ! Relaxing electrons via rate equation with given characteristic time:
             !call Do_relaxation_time(Scell(NSC), numpar)  ! below
             ! We only update it once per simulation step, not every time this subroutine called!
-
-         case (50) ! Boltzmann electron-electron collision integral (NOT READY, DO NOT USE!):
-            if (t > -8.5d0) then ! testing, unfnished
-               call test_evolution_of_fe(Scell(NSC)%Ei, Scell(NSC)%fe, t) ! see below
-            endif
-
-            ! Only get the kinetic temperature of electrons (out-of-equilibrium):
-            call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
-                                          Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
-            Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
-
-            ! Construct Fermi function with the given transient parameters (equivalent Te and mu):
-            i_fe = size(Scell(NSC)%fe)   ! number of grid points in distribution function
-            if (.not.allocated(Scell(NSC)%fe_eq)) allocate(Scell(NSC)%fe_eq(i_fe))
-            call set_Fermi(Scell(NSC)%Ei, Scell(NSC)%TeeV, Scell(NSC)%mu, Scell(NSC)%fe_eq)   ! below
-
 
          case default ! Decoupled electrons and ions (Ee = const; instant thermalization of electrons):
             !call set_total_el_energy(Scell(NSC)%Ei, Scell(NSC)%fe, Scell(NSC)%nrg%E_tot) ! get the total electron energy
@@ -441,8 +425,46 @@ subroutine Electron_thermalization(Scell, numpar, skip_thermalization)
       else
          call Do_relaxation_time(Scell(1), numpar)  ! below
       endif
+   case (5)    ! electron-electron collision integral
+      if (present(skip_thermalization)) then
+         call Do_e_e_collision(Scell(1), numpar, skip_thermalization)  ! below
+      else
+         call Do_e_e_collision(Scell(1), numpar)  ! below
+      endif
    endselect
 end subroutine Electron_thermalization
+
+
+! Electron-electron collision integral:
+subroutine Do_e_e_collision(Scell, numpar, skip_thermalization)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
+   logical, intent(in), optional :: skip_thermalization
+   !----------------------
+   logical :: skip_step
+   integer :: i_fe
+
+   if (present(skip_thermalization)) then
+      skip_step = skip_thermalization
+   else
+      skip_step = .false.
+   endif
+
+   ! Get the equivalent (kinetic) temperature and chemical potential:
+   call Electron_Fixed_Etot(Scell%Ei, Scell%Ne_low, Scell%nrg%El_low, Scell%mu, Scell%TeeV, .true.) ! below (FAST)
+   Scell%Te = Scell%TeeV*g_kb ! save also in [K]
+
+   ! Construct Fermi function with the given transient parameters:
+   i_fe = size(Scell%fe)   ! number of grid points in distribution function
+   if (.not.allocated(Scell%fe_eq)) allocate(Scell%fe_eq(i_fe), source = 0.0d0)
+   call set_Fermi(Scell%Ei, Scell%TeeV, Scell%mu, Scell%fe_eq)   ! below
+
+   ! Solve Boltzmann collision integral:
+   if (.not.skip_step) then ! do the e-e collisions step:
+      ! NOT READY
+   endif ! (.not.skip_step)
+end subroutine Do_e_e_collision
+
 
 
 
@@ -556,52 +578,67 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial, 
 
       !--------------------------
       ! III. Extra check for smoothening unphysical artefacts that may be present after MC:
-      eps = 1.0d-6
-      extra_cycle = .false.   ! by default, assume no artifact
-      do i = 1, i_fe ! for all grid points (MO energy levels)
-         if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
-            extra_cycle = .true.   ! some artefacts present, do extra thermalization to get rid of them
-            print*, 'Extra thermalization step needed:', i, Scell%fe(i), SUM(Scell%fe)
-            exit
-         endif
-      enddo
-      ! Or, if the number of electrons does not coincide with the initial one:
-      Ne = get_N_partial(Scell%fe, 1, i_fe)  ! current number of electrons
-      Ne_eq = get_N_partial(Scell%fe_eq, 1, i_fe)  ! initial number of electrons
-      if (ABS(Ne - Ne_eq) > eps*Ne_eq) extra_cycle = .true. ! shouldn't be too different
+      call smoothening_step(Scell, numpar) ! below
 
-      if (extra_cycle) then   ! do extra thermalization
-         extra_dt = numpar%dt*0.1d0 ! use this small step to minimize the effect of extra smoothing
-         extra_tau = min(numpar%tau_fe, 10.0d0) ! artificial thermalization steps
-         N_cycle = 10000 ! limit for the cycles
-         i_cycle = 0 ! to start
-         do while (extra_cycle)
-            i_cycle = i_cycle + 1
-            extra_cycle = .false.   ! assume the problem is solved
-            if (numpar%tau_fe < extra_dt/30.0d0) then ! it's basically instantaneous
-               exp_dttau = 0.0d0
-            else  ! finite time relaxation
-               exp_dttau = dexp(-extra_dt / extra_tau)
-            endif
-            do i = 1, i_fe ! for all grid points (MO energy levels)
-               Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
-               if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
-                  !print*, 'Step:', i, Scell%fe(i)
-                  if (i_cycle < N_cycle) extra_cycle = .true.   ! artefacts still present, do another cycle of extra thermalization
-               endif
-            enddo ! i = 1, i_fe
-
-            !print*, 'Ne_extra=', i_cycle, SUM(Scell%fe), SUM(Scell%fe_eq), Scell%Ne_low, extra_cycle
-
-            ! Also a consistency check for the number of electrons:
-            Ne = get_N_partial(Scell%fe, 1, i_fe)
-            Ne_eq = get_N_partial(Scell%fe_eq, 1, i_fe)
-            if (ABS(Ne - Ne_eq) > eps*Ne_eq) extra_cycle = .true.
-            if (i_cycle > N_cycle) exit
-         enddo ! while (extra_cycle)
-      endif ! (extra_cycle)
    endif ! (.not.skip_step)
 end subroutine Do_relaxation_time
+
+
+subroutine smoothening_step(Scell, numpar)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
+   !-------------------------------
+   real(8) :: eps, Ne, Ne_eq, extra_dt, extra_tau, exp_dttau
+   integer :: i, i_fe, i_cycle, N_cycle
+   logical :: extra_cycle
+
+   eps = 1.0d-6
+   i_fe = size(Scell%fe)   ! number of grid points in distribution function
+   extra_cycle = .false.   ! by default, assume no artifact
+   do i = 1, i_fe ! for all grid points (MO energy levels)
+      if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
+         extra_cycle = .true.   ! some artefacts present, do extra thermalization to get rid of them
+         print*, 'Extra thermalization step needed:', i, Scell%fe(i), SUM(Scell%fe)
+         exit
+      endif
+   enddo
+
+   ! Or, if the number of electrons does not coincide with the initial one:
+   Ne = get_N_partial(Scell%fe, 1, i_fe)  ! current number of electrons
+   Ne_eq = get_N_partial(Scell%fe_eq, 1, i_fe)  ! initial number of electrons
+   if (ABS(Ne - Ne_eq) > eps*Ne_eq) extra_cycle = .true. ! shouldn't be too different
+
+   if (extra_cycle) then   ! do extra thermalization
+      extra_dt = numpar%dt*0.1d0 ! use this small step to minimize the effect of extra smoothing
+      extra_tau = min(numpar%tau_fe, 10.0d0) ! artificial thermalization steps
+      N_cycle = 10000 ! limit for the cycles
+      i_cycle = 0 ! to start
+      do while (extra_cycle)
+         i_cycle = i_cycle + 1
+         extra_cycle = .false.   ! assume the problem is solved
+         if (numpar%tau_fe < extra_dt/30.0d0) then ! it's basically instantaneous
+            exp_dttau = 0.0d0
+         else  ! finite time relaxation
+            exp_dttau = dexp(-extra_dt / extra_tau)
+         endif
+         do i = 1, i_fe ! for all grid points (MO energy levels)
+            Scell%fe(i) = Scell%fe_eq(i) + (Scell%fe(i) - Scell%fe_eq(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
+            if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
+               !print*, 'Step:', i, Scell%fe(i)
+               if (i_cycle < N_cycle) extra_cycle = .true.   ! artefacts still present, do another cycle of extra thermalization
+            endif
+         enddo ! i = 1, i_fe
+
+         !print*, 'Ne_extra=', i_cycle, SUM(Scell%fe), SUM(Scell%fe_eq), Scell%Ne_low, extra_cycle
+
+         ! Also a consistency check for the number of electrons:
+         Ne = get_N_partial(Scell%fe, 1, i_fe)
+         Ne_eq = get_N_partial(Scell%fe_eq, 1, i_fe)
+         if (ABS(Ne - Ne_eq) > eps*Ne_eq) extra_cycle = .true.
+         if (i_cycle > N_cycle) exit
+      enddo ! while (extra_cycle)
+   endif ! (extra_cycle)
+end subroutine smoothening_step
 
 
 

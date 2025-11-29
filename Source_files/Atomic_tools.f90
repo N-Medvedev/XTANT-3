@@ -2173,19 +2173,39 @@ end subroutine get_temperature_from_energy
 subroutine get_diffraction_peaks(Scell, matter, numpar)
    type(Super_cell), dimension(:), intent(inout), target :: Scell	! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter     ! material parameters
-   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
    !--------------------------------
    integer :: i, j, k
-   real(8) :: Nat, FF, FF2, q, Z, Z2, Fpowder, Rij, qA, arg, F_cur
+   real(8) :: Nat, FF, FF2, q, Z, Z2, Fpowder, Rij, qA, arg, F_cur, Mmean, MSD
    complex :: Fijk
    integer, pointer :: KOA, KOA2
-   logical :: save_thetas
+   logical :: save_thetas, do_DW
 
 
    if (.not.numpar%save_diff_peaks) return      ! nothing to do here
 
    ! Number of atoms:
    Nat = dble(size(Scell(1)%MDAtoms))
+
+   ! Check if Debye-Waller analysis is required:
+   if ( abs(numpar%DW_theta) > 1.0d-6 ) then ! Debye temperature > 0, analysis required
+      do_DW = .true.
+      ! Check if coefficient is already calculated:
+      if (numpar%m1 < 0.0d0) then ! undefined coefficient, get it:
+         Mmean = SUM(matter%Atoms(Scell(1)%MDAtoms(:)%KOA)%Ma) / Nat    ! average atomic mass [kg]
+         numpar%m1 = 3.0d0 * g_h / (Mmean * g_kb_J * numpar%DW_theta)   ! harmonic coefficient
+      endif
+      ! Check if the DW arrays are allocated:
+      if (.not.allocated(Scell(1)%diff_peaks%I_diff_peak_DW)) then ! save the first value
+         allocate(Scell(1)%diff_peaks%I_diff_peak_DW ( size(Scell(1)%diff_peaks%I_diff_peak) ) )
+         allocate(Scell(1)%diff_peaks%I_powder_DW ( size(Scell(1)%diff_peaks%I_powder) ) )
+      endif
+
+      ! Mean square atomic displacement:
+      call get_simple_MSD(Scell, matter, MSD, 2, numpar)  ! below
+   else
+      do_DW = .false.
+   endif
 
    ! First time, save Miller indices angles:
    if (.not.allocated(Scell(1)%diff_peaks%ijk_theta)) then ! save the angles
@@ -2203,12 +2223,12 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
 
       !-------------------------------
       ! This part only works for orthagonal supercell (to be improved later!):
-      q = g_2Pi * sqrt ( &
+      qA = g_2Pi * sqrt ( &
              (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/(Scell(1)%Supce(1,1)/matter%cell_x))**2 + &
              (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/(Scell(1)%Supce(2,2)/matter%cell_y))**2 + &
              (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/(Scell(1)%Supce(3,3)/matter%cell_z))**2 )      ! [1/A]
       ! Convert units for form-factor evaluation:
-      q = q * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
+      q = qA * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
       !print*, 'q_ijk=', q, q /(1.0d10 * g_h), 2.0d0*asin(q/g_h * (Scell(1)%diff_peaks%l) / (4.0d0*g_Pi)) * g_rad2deg
       !-------------------------------
 
@@ -2245,16 +2265,29 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
       Scell(1)%diff_peaks%I_diff_peak(i) = Fijk * conjg(Fijk)
       ! Arb.units => normalized to number of atoms in the simulation:
       Scell(1)%diff_peaks%I_diff_peak(i) = Scell(1)%diff_peaks%I_diff_peak(i) / Nat
+
+      ! Debye-Waller:
+      if (do_DW) then
+         Scell(1)%diff_peaks%I_diff_peak_DW(i) = exp( -1.0d0/3.0d0 * qA**2 * MSD )
+      endif
    enddo
 
    ! First value for normalization:
    if (.not.allocated(Scell(1)%diff_peaks%I_diff_peak_first)) then ! save the first value
       allocate(Scell(1)%diff_peaks%I_diff_peak_first ( size(Scell(1)%diff_peaks%I_diff_peak) ) )
       Scell(1)%diff_peaks%I_diff_peak_first = Scell(1)%diff_peaks%I_diff_peak
+      ! Exclude zeros:
+      where ( abs(Scell(1)%diff_peaks%I_diff_peak_first(:)) < 1.0d-10 )
+         Scell(1)%diff_peaks%I_diff_peak_first(:) = 1.0d0
+      endwhere
    endif
 
    ! Normalize the peak intensities to the initial values:
    Scell(1)%diff_peaks%I_diff_peak = Scell(1)%diff_peaks%I_diff_peak/Scell(1)%diff_peaks%I_diff_peak_first
+
+!    if (do_DW) then ! Debye-Waller: normalization not needed
+!       Scell(1)%diff_peaks%I_diff_peak_DW = Scell(1)%diff_peaks%I_diff_peak_DW/Scell(1)%diff_peaks%I_diff_peak_first_DW
+!    endif
 
    !----------------------
    ! 2) Powder diffraction vs 2-theta:
@@ -2361,6 +2394,63 @@ end function form_factor
 
 
 
+subroutine get_simple_MSD(Scell, matter, MSD, MSD_power, numpar)
+   type(Super_cell), dimension(:), intent(inout), target :: Scell	! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter     ! material parameters
+   real(8), intent(out) :: MSD	! [A^MSD_power] mean displacements average over all atoms
+   integer, intent(in) :: MSD_power ! power of mean displacement to print out (set integer N: <u^N>-<u0^N>)
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters
+   !-------------------------
+   integer :: N, i, j, k, iat, ik
+   real(8) :: zb(3), x, y, z, a_r, r1, x0, y0, z0
+   integer, pointer :: KOA
+   real(8), dimension(:), pointer :: S, S0
+
+   N = size(Scell(1)%MDAtoms)	! number of atoms
+
+   ! Get equilibrium relative coordinates from given absolute coordinates inside of the current supercell:
+   call get_coords_in_new_supce(Scell, 1)	! below (S_eq are updated, R_eq do not change)
+
+   MSD = 0.0d0	! to start with
+   do iat = 1, N	! for all atoms
+      KOA => Scell(1)%MDatoms(iat)%KOA
+      S => Scell(1)%MDAtoms(iat)%S(:)
+      S0 => Scell(1)%MDAtoms(iat)%S_eq(:)
+      a_r = 1.0d31	! just to start from
+      ! For the case of periodical boundaries:
+      do i = -1,1 ! if the distance between the atoms is more than a half of supercell, we account for
+         ! interaction with the atom not from this, but from the neigbour ("mirrored") supercell:
+         ! periodic boundary conditions
+         zb(1) = dble(i)
+         do j = -1,1
+            zb(2) = dble(j)
+            do k = -1,1
+               zb(3) = dble(k)
+               x0 = 0.0d0
+               y0 = 0.0d0
+               z0 = 0.0d0
+               do ik = 1,3
+                  x0 = x0 + (S(ik) - S0(ik) + zb(ik))*Scell(1)%supce(ik,1) ! correct
+                  y0 = y0 + (S(ik) - S0(ik) + zb(ik))*Scell(1)%supce(ik,2)
+                  z0 = z0 + (S(ik) - S0(ik) + zb(ik))*Scell(1)%supce(ik,3)
+               enddo ! ik
+               r1 = DSQRT(x0*x0 + y0*y0 + z0*z0)
+               if (r1 .LT. a_r) then
+                  x = x0
+                  y = y0
+                  z = z0
+                  a_r = r1
+               endif !  (r1 .LT. a_r)
+            enddo ! k
+         enddo ! j
+      enddo ! i
+      MSD = MSD + a_r**MSD_power ! mean displacement^N
+   enddo ! iat
+
+   MSD = MSD/dble(N)	! averaged over all atoms
+end subroutine get_simple_MSD
+
+
 subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power, numpar)
    type(Super_cell), dimension(:), intent(inout), target :: Scell	! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter     ! material parameters
@@ -2393,7 +2483,7 @@ subroutine get_mean_square_displacement(Scell, matter, MSD, MSDP, MSD_power, num
    endif
    
    ! Get equilibrium relative coordinates from given absolute coordinates inside of the current supercell:
-   call get_coords_in_new_supce(Scell, 1)	! below (S_eq arae updated, R_eq do not change)
+   call get_coords_in_new_supce(Scell, 1)	! below (S_eq are updated, R_eq do not change)
    
    MSD = 0.0d0	! to start with
    MSDP = 0.0d0 ! to start with
