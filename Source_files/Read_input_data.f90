@@ -234,6 +234,11 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%do_elastic_MC = .true. ! allow elastic scattering of electrons on atoms within MC module
    numpar%r_periodic(:) = .true. ! use periodic boundaries along each direction of the simulation box
    numpar%save_diff_peaks = .false. ! no diffraction peaks calculation required
+   numpar%DW_theta = 0.0d0    ! Debye-temperature [K]
+   numpar%m1 = -1.0d0          ! harmonic contribution coefficient (from Debye temperature)
+   numpar%m2 = 0.0d0          ! anharmonic contribution ~Q^2*T^2
+   numpar%m3 = 0.0d0          ! anharmonic contribution ~Q^2*T^3
+   numpar%m4 = 0.0d0          ! anharmonic contribution ~Q^4*T^3
    ! Setting supercell for biomolecules, embedding in water:
    numpar%embed_water = .false.  ! no water added
    numpar%N_water_mol = 100      ! default number of water molecules
@@ -4964,9 +4969,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    read(FN, '(a)', IOSTAT=Reason) read_line
    read(read_line,*,IOSTAT=Reason) N, matter%T_bath_e, matter%tau_bath_e
    if (Reason == 0) then
-
-      print*, 'matter%T_bath_e :: 0 ::', matter%T_bath_e
-
+      !print*, 'matter%T_bath_e :: 0 ::', matter%T_bath_e
       call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
       if (Err%Err) goto 3418
@@ -4977,21 +4980,17 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       endif
       matter%T_bath_e = matter%T_bath_e/g_kb	! [eV] thermostat temperature for electrons
    else
-
-      print*, 'matter%T_bath_e :: 1 ::', matter%T_bath_e
-
+      !print*, 'matter%T_bath_e :: 1 ::', matter%T_bath_e
       ! maybe there is a filename given to read from instead of numbers:
       read(read_line,*,IOSTAT=Reason) numpar%El_bath_step_grid_file  ! name of file with parameters
-
-      print*, 'matter%T_bath_e :: 1 ::', numpar%El_bath_step_grid_file
+      !print*, 'matter%T_bath_e :: 1 ::', numpar%El_bath_step_grid_file
 
       call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
       if (Err%Err) goto 3418
       ! If read well, try to interpret it and set parameters on time-grid:
       call set_Bath_grid_electrons(numpar, read_well, Error_descript)    ! below
-
-      print*, 'matter%T_bath_e :: 1 :: set_Bath_grid_electrons'
+      !print*, 'matter%T_bath_e :: 1 :: set_Bath_grid_electrons'
 
       if (.not. read_well) then
          goto 3418
@@ -7103,6 +7102,17 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
             exit
          endif
       enddo
+
+   !----------------------------------
+   case ('DW', 'dw', 'DebyeWaller', 'Debye-Waller', 'Debye_Waller')
+      ! Calculate Debye-Waller diffraction peaks with the following parameters:
+      !read(FN,*,IOSTAT=Reason) numpar%DW_theta, numpar%m2, numpar%m3, numpar%m4
+      !if (Reason /= 0) then ! did not read well, no DW analysis:
+      !   write(*,'(a)') 'No valid Debye-Waller parameters provided, DW analysis skipped'
+      !   numpar%DW_theta = 0.0d0    ! Debye-temperature [K] - 0 to skip DW analysos
+      !endif
+      ! It is currently unused, so just set to arbitrary number:
+      numpar%DW_theta = 300.0d0    ! Debye-temperature [K] - 0 to skip DW analysos
 
    !----------------------------------
    case ('TEST_MODE', 'Test_Mode', 'Test_mode', 'test_mode', 'testmode', 'Testmode', 'TESTMODE')
