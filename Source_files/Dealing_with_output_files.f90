@@ -53,7 +53,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 29.11.2025)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 01.12.2025)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -4180,7 +4180,7 @@ subroutine gnu_heat_conductivity(File_name, file_heat_capacity, t0, t_last, eps_
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Electron K','Electron temperature (K)', &
-            'Heat conductivity (W/(m^3 K))', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
+            'Heat conductivity (W/(m K))', trim(adjustl(eps_name)), g_numpar%path_sep, 0)   ! module "Gnuplotting"
 
    if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_heat_capacity)), &
