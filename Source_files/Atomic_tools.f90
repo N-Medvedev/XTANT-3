@@ -61,7 +61,7 @@ remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
 Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
 update_atomic_masks_displ, numerical_acceleration, Get_testmode_add_data, integrated_atomic_distribution, &
-get_diffraction_peaks, get_Miller_indenx_angle
+get_diffraction_peaks, get_Miller_indenx_angle, get_Debye_temperature_from_diffraction
 
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
@@ -2210,6 +2210,7 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
    ! First time, save Miller indices angles:
    if (.not.allocated(Scell(1)%diff_peaks%ijk_theta)) then ! save the angles
       allocate(Scell(1)%diff_peaks%ijk_theta ( size(Scell(1)%diff_peaks%I_diff_peak) ) )
+      allocate(Scell(1)%diff_peaks%ijk_qA  ( size(Scell(1)%diff_peaks%I_diff_peak) ) )
       save_thetas = .true.    ! save the calcualted angles below
    else
       save_thetas = .false.   ! no need to save the angles again
@@ -2235,6 +2236,8 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
       ! Theta angles corresponding to the Miller indices:
       if (save_thetas) then    ! if required
          Scell(1)%diff_peaks%ijk_theta(i) = 2.0d0*asin(q/g_h * (Scell(1)%diff_peaks%l) / (4.0d0*g_Pi)) * g_rad2deg
+         Scell(1)%diff_peaks%ijk_qA(i) = qA     ! and its q-vector
+         !print*, i, Scell(1)%diff_peaks%ijk_qA(i)
       endif
 
       ! Sum contributions from all atoms:
@@ -2266,7 +2269,7 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
       ! Arb.units => normalized to number of atoms in the simulation:
       Scell(1)%diff_peaks%I_diff_peak(i) = Scell(1)%diff_peaks%I_diff_peak(i) / Nat
 
-      ! Debye-Waller:
+      ! Debye-Waller analysis:
       if (do_DW) then
          Scell(1)%diff_peaks%I_diff_peak_DW(i) = exp( -1.0d0/3.0d0 * qA**2 * MSD )
       endif
@@ -2288,6 +2291,13 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
 !    if (do_DW) then ! Debye-Waller: normalization not needed
 !       Scell(1)%diff_peaks%I_diff_peak_DW = Scell(1)%diff_peaks%I_diff_peak_DW/Scell(1)%diff_peaks%I_diff_peak_first_DW
 !    endif
+
+
+   ! Debye temperature from Debye-Waller analysis:
+   if (do_DW) then
+      call get_Debye_temperature_from_diffraction(Scell, matter)  ! below
+   endif
+
 
    !----------------------
    ! 2) Powder diffraction vs 2-theta:
@@ -2371,6 +2381,46 @@ subroutine get_Miller_indenx_angle(Scell, matter, i, ijk_theta, qA)
    ijk_theta = 2.0d0*asin(q/g_h * (Scell(1)%diff_peaks%l) / (4.0d0*g_Pi)) * g_rad2deg
 
 end subroutine get_Miller_indenx_angle
+
+
+
+subroutine get_Debye_temperature_from_diffraction(Scell, matter)
+   type(Super_cell), dimension(:), intent(inout) :: Scell	! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter     ! material parameters
+   !-------------------
+   integer :: Npeaks, i, Nat
+   real(8) :: TDebye2, Mmean, lnIq
+
+   Npeaks = size(Scell(1)%diff_peaks%I_diff_peak)     ! how many peaks to analyse
+   Nat = size(Scell(1)%MDatoms)     ! total number of atoms
+
+   ! Get average atomic mass:
+   Mmean = SUM(matter%Atoms(Scell(1)%MDatoms(:)%KOA)%Ma) / dble(Nat)
+
+
+   if (.not.allocated(Scell(1)%diff_peaks%Debye_temperature)) then
+      allocate(Scell(1)%diff_peaks%Debye_temperature(Npeaks))
+   endif
+
+   do i = 1, Npeaks
+      lnIq = log(Scell(1)%diff_peaks%I_diff_peak(i))
+
+      if (abs(lnIq) > 1.0d-10) then ! non-zero:
+         TDebye2 = - Scell(1)%Ta * (6.0d0 * g_h**2 * (Scell(1)%diff_peaks%ijk_qA(i)*1.0d10)**2) / (Mmean * g_kb_J * lnIq)
+      else  ! undefined
+         TDebye2 = -1.0d0
+      endif
+
+      ! Make sure it is defined:
+      if (TDebye2 > 0.0d0) then
+         Scell(1)%diff_peaks%Debye_temperature(i) = sqrt(TDebye2) ! [K]
+      else  ! if indefined:
+         Scell(1)%diff_peaks%Debye_temperature(i) = -1.0d0
+      endif
+
+      !print*, 'T_D', i, Scell(1)%diff_peaks%Debye_temperature(i), Scell(1)%diff_peaks%I_diff_peak(i), Scell(1)%Ta
+   enddo
+end subroutine get_Debye_temperature_from_diffraction
 
 
 

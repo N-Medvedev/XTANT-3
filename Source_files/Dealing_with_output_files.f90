@@ -34,7 +34,7 @@ MODULE Dealing_with_output_files
 
 use Universal_constants
 use Objects
-use Atomic_tools, only : pair_correlation_function, get_Miller_indenx_angle
+use Atomic_tools, only : pair_correlation_function, get_Miller_indenx_angle, get_Debye_temperature_from_diffraction
 use Variables, only : g_numpar, g_matter
 use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution, &
                               convert_hw_to_wavelength, convert_wavelength_to_hw, find_order_of_number, print_time
@@ -53,7 +53,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 01.12.2025)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 09.12.2025)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -176,6 +176,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
          ! Check if Debye-Waller analysis is required:
          if ( abs(numpar%DW_theta) > 1.0d-6 ) then
             call save_diffraction_peaks_DW(numpar%FN_diff_peaks_DW, time, Scell(1))    ! below
+            call save_Debye_temperature_from_DW(numpar%FN_Debye_temperature, time, Scell(1))    ! below
          endif
       endif
 
@@ -1780,6 +1781,21 @@ subroutine save_diffraction_peaks_DW(FN, time, Scell)
 end subroutine save_diffraction_peaks_DW
 
 
+subroutine save_Debye_temperature_from_DW(FN, time, Scell)
+   integer, intent(in) :: FN  ! file number to save to
+   real(8), intent(in) :: time   ! [fs]
+   type(Super_cell), intent(in):: Scell ! super-cell with all the atoms inside
+   !--------------
+   integer :: i
+
+   write(FN, '(es)', advance = 'no') time
+   do i = 1, size(Scell%diff_peaks%Debye_temperature)
+      write(FN, '(es)', advance = 'no') Scell%diff_peaks%Debye_temperature(i)
+   enddo
+   write(FN, '(a)') ''  ! next line
+end subroutine save_Debye_temperature_from_DW
+
+
 
 subroutine save_diffraction_powder(FN, time, Scell)
    integer, intent(in) :: FN  ! file number to save to
@@ -2097,6 +2113,7 @@ subroutine close_output_files(Scell, numpar)
       ! Check if Debye-Waller analysis is required:
       if ( abs(numpar%DW_theta) > 1.0d-6 ) then
          close(numpar%FN_diff_peaks_DW)
+         close(numpar%FN_Debye_temperature)
       endif
    endif
 end subroutine close_output_files
@@ -2238,6 +2255,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
       ! Check if Debye-Waller analysis is required:
       if ( abs(numpar%DW_theta) > 1.0d-6 ) then
+         ! 1) DW diffraction peaks:
          file_diff_peaks_DW = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_DW.dat'
          open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_peaks_DW)))
          numpar%FN_diff_peaks_DW = FN
@@ -2261,6 +2279,21 @@ subroutine create_output_files(Scell, matter, laser, numpar)
          call create_file_header(numpar%FN_diff_peaks_DW, '#[fs]          [arb.units]')
          call create_file_header(numpar%FN_diff_peaks_DW, '#2theta [deg]: ' //trim(adjustl(chtemp3)) )    ! below
          call create_file_header(numpar%FN_diff_peaks_DW, '#q [1/A]:      ' //trim(adjustl(chtemp4)) )    ! below
+
+         ! 2) Debye temperature from the diffraction peaks:
+         file_diff_peaks_DW = trim(adjustl(file_path))//'OUTPUT_Debye_temperature_from_DW.dat'
+         open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_peaks_DW)))
+         numpar%FN_Debye_temperature = FN
+         ! Create the header, containing all the peaks:
+         chtemp2 = ''      ! to start with
+         do i = 1, size(Scell(1)%diff_peaks%I_diff_peak)
+            write(text1, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(1,i)
+            write(text2, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(2,i)
+            write(text3, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(3,i)
+            chtemp2 = trim(adjustl(chtemp2))//'       ('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'
+         enddo
+         call create_file_header(numpar%FN_Debye_temperature, '#Time          T'//trim(adjustl(chtemp2)) )    ! below
+         call create_file_header(numpar%FN_Debye_temperature, '#[fs]          [K]')
       endif ! ( abs(numpar%DW_theta) > 1.0d-6 )
    endif
 
@@ -2566,6 +2599,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    'OUTPUT_diffraction_peaks.dat', &
    'OUTPUT_diffraction_powder.dat', &
    'OUTPUT_diffraction_peaks_DW.dat', &
+   'OUTPUT_Debye_temperature_from_DW.dat', &
    'OUTPUT_testmode_data.dat')  ! below
 
    ! clean up:
@@ -2585,7 +2619,7 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
 file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_element_NN, file_electron_entropy, file_Te, file_mu, &
 file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
-file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW, file_testmode)
+file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW, file_Debye_temperature, file_testmode)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -2616,7 +2650,8 @@ file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW, file
    character(*), intent(in) :: file_atomic_temperatures_part  ! partial atomic temperatures (X, Y, Z)
    character(*), dimension(:), intent(in) :: file_sect_displ
    character(*), intent(in) :: file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW  ! diffraction peaks
-   character(*), intent(in) :: file_testmode	! testmode data
+   character(*), intent(in) :: file_Debye_temperature ! Debye temperatures
+   character(*), intent(in) :: file_testmode    ! testmode data
    !----------------
    character(300) :: File_name, File_name2
    real(8) :: t0, t_last, x_tics, E_temp
@@ -2694,7 +2729,7 @@ file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW, file
       ! Diffraction peaks:
       File_name  = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_Gnuplot'//trim(adjustl(sh_cmd))
       call gnu_diffraction_peaks(Scell(1), File_name, file_diffraction_peaks, t0, t_last, &
-                                    'OUTPUT_diffraction_peaks.'//trim(adjustl(numpar%fig_extention))) ! below
+                                    'OUTPUT_diffraction_peaks.'//trim(adjustl(numpar%fig_extention)), .false.) ! below
 
       ! Powder diffraction:
       File_name  = trim(adjustl(file_path))//'OUTPUT_diffraction_powder_Gnuplot'//trim(adjustl(sh_cmd))
@@ -2710,7 +2745,11 @@ file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW, file
       if ( abs(numpar%DW_theta) > 1.0d-6 ) then
          File_name  = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_DW_Gnuplot'//trim(adjustl(sh_cmd))
          call gnu_diffraction_peaks(Scell(1), File_name, file_diffraction_peaks_DW, t0, t_last, &
-                                    'OUTPUT_diffraction_peaks_DW.'//trim(adjustl(numpar%fig_extention))) ! below
+                                    'OUTPUT_diffraction_peaks_DW.'//trim(adjustl(numpar%fig_extention)), .true.) ! below
+
+         File_name  = trim(adjustl(file_path))//'OUTPUT_Debye_temperatures_Gnuplot'//trim(adjustl(sh_cmd))
+         call gnu_Debye_temperatures(Scell(1), File_name, file_Debye_temperature, t0, t_last, &
+                                    'OUTPUT_Debye_temperatures.'//trim(adjustl(numpar%fig_extention))) ! below
       endif
    endif
    
@@ -2992,14 +3031,19 @@ file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW, file
          File_name  = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
          call gnu_diffraction_peaks(Scell(1), File_name, &
             trim(adjustl(file_diffraction_peaks(1:len(trim(adjustl(file_diffraction_peaks)))-4)))//'_CONVOLVED.dat' , &
-            t0, t_last, 'OUTPUT_diffraction_peaks_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+            t0, t_last, 'OUTPUT_diffraction_peaks_CONVOLVED.'//trim(adjustl(numpar%fig_extention)), .false.) ! below
 
          ! Check if Debye-Waller analysis is required:
          if ( abs(numpar%DW_theta) > 1.0d-6 ) then
             File_name  = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_DW_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
             call gnu_diffraction_peaks(Scell(1), File_name, &
                trim(adjustl(file_diffraction_peaks_DW(1:len(trim(adjustl(file_diffraction_peaks_DW)))-4)))//'_CONVOLVED.dat' , &
-               t0, t_last, 'OUTPUT_diffraction_peaks_DW_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+               t0, t_last, 'OUTPUT_diffraction_peaks_DW_CONVOLVED.'//trim(adjustl(numpar%fig_extention)), .true.) ! below
+
+            File_name  = trim(adjustl(file_path))//'OUTPUT_Debye_temperatures_Gnuplot_COLVOLVED'//trim(adjustl(sh_cmd))
+            call gnu_Debye_temperatures(Scell(1), File_name, &
+               trim(adjustl(file_Debye_temperature(1:len(trim(adjustl(file_Debye_temperature)))-4)))//'_CONVOLVED.dat' , &
+               t0, t_last, 'OUTPUT_Debye_temperatures_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
          endif
       endif
 
@@ -3411,11 +3455,10 @@ subroutine gnu_displacements_partial(File_name, file_MSD, t0, t_last, eps_name, 
 end subroutine gnu_displacements_partial
 
 
-
-subroutine gnu_diffraction_peaks(Scell, File_name, file_diffraction_peaks, t0, t_last, fig_name)
+subroutine gnu_Debye_temperatures(Scell, File_name, file_Debye_temperature, t0, t_last, fig_name)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    character(*), intent(in) :: File_name   ! file to create
-   character(*), intent(in) :: file_diffraction_peaks ! input file
+   character(*), intent(in) :: file_Debye_temperature ! input file
    real(8), intent(in) :: t0, t_last ! time instance [fs]
    character(*), intent(in) :: fig_name ! name of the figure
    !------------------------
@@ -3429,8 +3472,81 @@ subroutine gnu_diffraction_peaks(Scell, File_name, file_diffraction_peaks, t0, t
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
+   call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Debye temperature', &
+            'Time (fs)', 'Debye temperature (K)', trim(adjustl(fig_name)), g_numpar%path_sep, 0)      ! module "Gnuplotting"
+
+   write(FN, '(a)') 'set encoding utf8'   ! unicode to make teta
+
+
+   if (size(Scell%diff_peaks%I_diff_peak) == 1) then  ! only one peak to plot
+      peak_name = make_diff_peak_name(Scell, 1) ! below
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Debye_temperature)), ' "u 1:2 w l lw LW title "\U+03B8_D'//trim(adjustl(peak_name))//'" '
+      else
+         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Debye_temperature)), '\"u 1:2 w l lw \"$LW\" title \"\U+03B8_D'//trim(adjustl(peak_name))//'\" '
+      endif
+   else ! more than one peak:
+
+      peak_name = make_diff_peak_name(Scell, 1) ! below
+      if (g_numpar%path_sep .EQ. '\') then	! if it is Windows
+         ! First peak:
+         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_Debye_temperature)), ' "u 1:2 w l lw LW title "\U+03B8_D'//trim(adjustl(peak_name))//'" ,\'
+         ! Next peaks:
+         do i = 2, size(Scell%diff_peaks%I_diff_peak)-1
+            peak_name = make_diff_peak_name(Scell, i) ! below
+            write(FN, '(a,i3,a,a,a)') ' "" u 1:', 1+i ,' w l lw LW title "\U+03B8_D', trim(adjustl(peak_name))  ,'" ,\'
+         enddo
+         ! Last peak:
+         peak_name = make_diff_peak_name(Scell, i) ! below
+         write(FN, '(a,i3,a,a,a)') ' "" u 1:', 1+i ,' w l lw LW title "\U+03B8_D', trim(adjustl(peak_name))  ,'" '
+      else  ! Linux:
+         write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Debye_temperature)), &
+               '\"u 1:2 w l lw \"$LW\" title \"\U+03B8_D'//trim(adjustl(peak_name))//'\" ,\'
+         do i = 2, size(Scell%diff_peaks%I_diff_peak)-1
+            peak_name = make_diff_peak_name(Scell, i) ! below
+            write(FN, '(a,i3,a,a,a)') '\"\" u 1:', 1+i ,' w l lw \"$LW\" title \"\U+03B8_D', trim(adjustl(peak_name)), '\" ,\'
+         enddo
+         ! Last peak:
+         peak_name = make_diff_peak_name(Scell, i) ! below
+         write(FN, '(a,i3,a,a,a)') '\"\" u 1:', 1+i ,' w l lw \"$LW\" title \"\U+03B8_D', trim(adjustl(peak_name)), '\" '
+      endif
+
+   endif
+
+   call write_gnuplot_script_ending(FN, File_name, 1)
+   close(FN)
+end subroutine gnu_Debye_temperatures
+
+
+
+subroutine gnu_diffraction_peaks(Scell, File_name, file_diffraction_peaks, t0, t_last, fig_name, DW)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_diffraction_peaks ! input file
+   real(8), intent(in) :: t0, t_last ! time instance [fs]
+   character(*), intent(in) :: fig_name ! name of the figure
+   logical, intent(in) :: DW  ! if it is DW, change the axis label
+   !------------------------
+   integer :: FN, i, i_start
+   real(8) :: x_tics
+   character(8) :: temp, time_order, chtemp
+   character(20) :: peak_name
+   character(50) :: y_axis_label
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   if (DW) then
+      y_axis_label = 'DW peak intensity (arb. units)'
+   else
+      y_axis_label = 'Peak intensity (arb. units)'
+   endif
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
    call write_gnuplot_script_header_new(FN, g_numpar%ind_fig_extention, 3.0d0, x_tics, 'Diffraction peak', &
-            'Time (fs)', 'Peak intensity (arb. units)', trim(adjustl(fig_name)), g_numpar%path_sep, 0)      ! module "Gnuplotting"
+            'Time (fs)', trim(adjustl(y_axis_label)), trim(adjustl(fig_name)), g_numpar%path_sep, 0)      ! module "Gnuplotting"
+            !'Time (fs)', 'Peak intensity (arb. units)', trim(adjustl(fig_name)), g_numpar%path_sep, 0)      ! module "Gnuplotting"
 
 
    if (size(Scell%diff_peaks%I_diff_peak) == 1) then  ! only one peak to plot
