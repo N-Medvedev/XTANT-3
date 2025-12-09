@@ -645,6 +645,7 @@ type :: diffraction_peaks
    real(8), dimension(:), allocatable :: I_diff_peak, I_diff_peak_first ! peak intensities
    integer, dimension(:,:), allocatable :: ijk_diff_peak    ! Miller indices
    real(8), dimension(:), allocatable :: ijk_theta    ! Angles corresponding to the chosen Miller indices
+   real(8), dimension(:), allocatable :: ijk_qA    ! Q-vectors corresponding to the chosen Miller indices
    ! Powder diffraction:
    real(8), dimension(:), allocatable :: two_theta
    real(8), dimension(:), allocatable :: I_powder   ! intensity vs 2-theta
@@ -652,6 +653,8 @@ type :: diffraction_peaks
    ! Debye-Waller analysis:
    real(8), dimension(:), allocatable :: I_diff_peak_DW, I_diff_peak_first_DW ! peak intensities
    real(8), dimension(:), allocatable :: I_powder_DW   ! intensity vs 2-theta
+   real(8), dimension(:), allocatable :: DW_temperature   ! atomic temeprature from DW analysis of peaks
+   real(8), dimension(:), allocatable :: Debye_temperature   ! Debye temeprature calculated from each diffraction peak
 end type diffraction_peaks
 
 
@@ -1032,7 +1035,8 @@ type Numerics_param
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
-   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot, FN_testmode, FN_diff_peaks, FN_diff_powder, FN_diff_peaks_DW
+   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot, FN_testmode, FN_diff_peaks, FN_diff_powder
+   integer :: FN_diff_peaks_DW, FN_Debye_temperature
    integer, dimension(:), allocatable :: FN_element_NN
    integer, dimension(:), allocatable :: FN_displacements
    integer :: MOD_TIME ! time when the communication.txt file was last modified
