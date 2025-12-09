@@ -2344,11 +2344,12 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
 end subroutine get_diffraction_peaks
 
 
-subroutine get_Miller_indenx_angle(Scell, matter, i, ijk_theta)
+subroutine get_Miller_indenx_angle(Scell, matter, i, ijk_theta, qA)
    type(Super_cell), dimension(:), intent(in) :: Scell	! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter     ! material parameters
    integer, intent(in) :: i   ! peak index
    real(8), intent(out) :: ijk_theta      ! [deg] angle corresponding to the Miller index
+   real(8), intent(out), optional :: qA   ! [1/A] q-vector corresponding to the Miller index
    !----------------------
    real(8) :: q
 
@@ -2358,6 +2359,9 @@ subroutine get_Miller_indenx_angle(Scell, matter, i, ijk_theta)
              (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/(Scell(1)%Supce(1,1)/matter%cell_x))**2 + &
              (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/(Scell(1)%Supce(2,2)/matter%cell_y))**2 + &
              (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/(Scell(1)%Supce(3,3)/matter%cell_z))**2 )      ! [1/A]
+
+   if (present(qA)) qA = q   ! to printout
+
    ! Convert units for form-factor evaluation:
    q = q * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
    !print*, 'q_ijk=', q, q /(1.0d10 * g_h), 2.0d0*asin(q/g_h * (Scell(1)%diff_peaks%l) / (4.0d0*g_Pi)) * g_rad2deg

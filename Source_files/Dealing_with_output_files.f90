@@ -2110,7 +2110,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    !-------------------------------------
    character(200) :: file_path, file_name
    integer :: FN, i, j, Nshl, Nsiz, N_at, k
-   real(8) :: ijk_theta
+   real(8) :: ijk_theta, qA
    ! OUTPUT files, name and address:
    character(100) :: file_temperatures	! time [fs], Te [K], Ta [K]
    character(100) :: file_pressure	! time [fs], stress_tensore(3,3) [GPa], Pressure [GPa]
@@ -2147,7 +2147,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100) :: file_diff_peaks_DW   ! Debye-Waller diffraction intensities
    character(100) :: file_testmode		! testmode file
    character(100) :: chtemp
-   character(200) :: chtemp2, chtemp3
+   character(200) :: chtemp2, chtemp3, chtemp4
    character(11) :: chtemp11, text1, text2, text3
    !----------------
 
@@ -2208,21 +2208,28 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       ! Create the header, containing all the peaks:
       chtemp2 = ''      ! to start with
       chtemp3 = ''      ! to start with
+      chtemp4 = ''      ! to start with
       do i = 1, size(Scell(1)%diff_peaks%I_diff_peak)
          write(text1, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(1,i)
          write(text2, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(2,i)
          write(text3, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(3,i)
          chtemp2 = trim(adjustl(chtemp2))//'       ('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'
          ! Also, get the corresponding peak angles:
-         call get_Miller_indenx_angle(Scell, matter, i, ijk_theta)     ! module "Atomic_tools"
+         call get_Miller_indenx_angle(Scell, matter, i, ijk_theta, qA)     ! module "Atomic_tools"
          write(text1, '(f8.3)') ijk_theta   ! angle
+
+         !print*, 'qA=', qA
+         text2 = ''     ! reset
+         write(text2, '(f11.5)') qA   ! q-vector
          chtemp3 = trim(adjustl(chtemp3))//'    ('//trim(adjustl(text1))//')'
+         chtemp4 = trim(adjustl(chtemp4))//'    ('//trim(adjustl(text2))//')'
       enddo
       !print*, trim(adjustl(chtemp2))
 
       call create_file_header(numpar%FN_diff_peaks, '#Time          '//trim(adjustl(chtemp2)) )    ! below
       call create_file_header(numpar%FN_diff_peaks, '#[fs]          [arb.units]')
       call create_file_header(numpar%FN_diff_peaks, '#2theta [deg]: ' //trim(adjustl(chtemp3)) )    ! below
+      call create_file_header(numpar%FN_diff_peaks, '#q [1/A]:      ' //trim(adjustl(chtemp4)) )    ! below
 
       ! Powder diffraction:
       file_diff_powder = trim(adjustl(file_path))//'OUTPUT_diffraction_powder.dat'
@@ -2237,19 +2244,23 @@ subroutine create_output_files(Scell, matter, laser, numpar)
          ! Create the header, containing all the peaks:
          chtemp2 = ''      ! to start with
          chtemp3 = ''      ! to start with
+         chtemp4 = ''      ! to start with
          do i = 1, size(Scell(1)%diff_peaks%I_diff_peak)
             write(text1, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(1,i)
             write(text2, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(2,i)
             write(text3, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(3,i)
             chtemp2 = trim(adjustl(chtemp2))//'       ('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'
             ! Also, get the corresponding peak angles:
-            call get_Miller_indenx_angle(Scell, matter, i, ijk_theta)     ! module "Atomic_tools"
+            call get_Miller_indenx_angle(Scell, matter, i, ijk_theta, qA)     ! module "Atomic_tools"
             write(text1, '(f8.3)') ijk_theta   ! angle
+            write(text2, '(f11.5)') qA   ! q-vector
             chtemp3 = trim(adjustl(chtemp3))//'    ('//trim(adjustl(text1))//')'
+            chtemp4 = trim(adjustl(chtemp4))//'    ('//trim(adjustl(text2))//')'
          enddo
          call create_file_header(numpar%FN_diff_peaks_DW, '#Time          '//trim(adjustl(chtemp2)) )    ! below
          call create_file_header(numpar%FN_diff_peaks_DW, '#[fs]          [arb.units]')
          call create_file_header(numpar%FN_diff_peaks_DW, '#2theta [deg]: ' //trim(adjustl(chtemp3)) )    ! below
+         call create_file_header(numpar%FN_diff_peaks_DW, '#q [1/A]:      ' //trim(adjustl(chtemp4)) )    ! below
       endif ! ( abs(numpar%DW_theta) > 1.0d-6 )
    endif
 
@@ -2831,7 +2842,7 @@ file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW, file
       ! Pair correlation function can only be plotted as animated gif:
       File_name  = trim(adjustl(file_path))//'OUTPUT_pair_correlation_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
-      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 1.0d0, 'PCF', 'Energy (eV)', 'Pair correlation function (a.u.)', 'OUTPUT_pair_correlation.gif', numpar%path_sep, setkey=0)
+      call write_gnuplot_script_header_new(FN, 6, 1.0d0, 1.0d0, 'PCF', 'Radius (A)', 'Pair correlation function (a.u.)', 'OUTPUT_pair_correlation.gif', numpar%path_sep, setkey=0)
       call write_pair_correlation_gnuplot(FN, Scell, numpar, matter, 'OUTPUT_pair_correlation_function.dat')   ! below
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
@@ -5275,7 +5286,7 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
          write(FN, '(a,a,a,a,a)') 'Atomic number: ', trim(adjustl(chtemp(1))), ', mass: ', trim(adjustl(chtemp(2))), ' [kg]'
 
          write(chtemp(1), '(f12.2)') dble(matter%Atoms(i)%NVB)
-         write(chtemp(2), '(f12.2)') dble(Scell(1)%Ne/Scell(1)%Na)
+         write(chtemp(2), '(f12.2)') dble(Scell(1)%Ne)/dble(Scell(1)%Na)
          write(FN, '(a,a,a,a,a)') 'Number of valence electrons: ', trim(adjustl(chtemp(1))), ' (band: ', &
                                     trim(adjustl(chtemp(2))), '/atom)'
 
