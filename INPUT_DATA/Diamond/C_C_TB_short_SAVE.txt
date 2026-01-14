@@ -1,0 +1,6 @@
+General
+
+Cut-off
+2.7d0	0.1d0		! d0 [A]; dd [A]
+
+NLH

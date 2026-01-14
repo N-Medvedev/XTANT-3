@@ -1,0 +1,90 @@
+data_phl_fe0
+_publ_contact_author_name        'Ulian G.'
+_publ_contact_author_email       gianfranco.ulian2@unibo.it
+
+loop_
+_publ_author_name
+   'Ulian, G.'
+   'Valdr\`e, G.'
+_chemical_name_systematic        phlogopite-1M
+_chemical_name_common            phlogopite-1M
+_chemical_formula_sum            'H4 O24 Mg6 Al2 Si6 K2'
+
+_cell_measurement_pressure       0
+_diffrn_ambient_pressure         0
+_cell_measurement_temperature    0
+_diffrn_ambient_temperature      0
+_exptl_crystal_recrystallization_method ?
+_chemical_melting_point          ?
+_exptl_crystal_description       ?
+_exptl_crystal_colour            ?
+_diffrn_radiation_probe          ?
+_diffrn_radiation_type           ?
+_diffrn_radiation_wavelength     ?
+_diffrn_source                   ?
+_diffrn_source_type              ?
+
+_computing_structure_solution    CRYSTAL17
+_computing_structure_refinement  CRYSTAL17
+_refine_special_details
+;
+CRYSTAL17 code (Dovesi et al., 2018)
+This is a stoichiometric phlogopite-1M model with chemical
+formula KMg3(Si3Al)O10(OH)2, optimized in athermal 
+conditions (0 K), and zero external pressure.
+The structure has been calculated with periodic boundary conditions,
+using the Density Functional Theory and B3LYP hybryd functional.
+All-electron Gaussian-type orbitals (GTO) basis set have been used 
+for each atom in the unit cell. This model was optimized with the
+DFT-D2 correction to include long-range interactions.
+;
+_cell_length_a                         5.29899
+_cell_length_b                         9.19537
+_cell_length_c                         10.20856
+_cell_angle_alpha                      90
+_cell_angle_beta                       100.22797
+_cell_angle_gamma                      90
+_space_group_name_H-M_alt              'P 2'
+_space_group_IT_number                 3
+
+loop_
+_space_group_symop_operation_xyz
+   'x, y, z'
+   '-x, y, -z'
+
+loop_
+   _atom_site_label
+   _atom_site_occupancy
+   _atom_site_fract_x
+   _atom_site_fract_y
+   _atom_site_fract_z
+   _atom_site_adp_type
+   _atom_site_B_iso_or_equiv
+   _atom_site_type_symbol
+   K1         1.0     0.000000      0.493240      0.000000     Biso  1.000000 K
+   K2         1.0     0.500000      0.005392      0.000000     Biso  1.000000 K
+   Mg1        1.0     0.000000      0.003902      0.500000     Biso  1.000000 Mg
+   Mg2        1.0     0.000000      0.333131      0.500000     Biso  1.000000 Mg
+   Mg3        1.0     0.000000      0.665236      0.500000     Biso  1.000000 Mg
+   Mg4        1.0     0.500000      0.493413      0.500000     Biso  1.000000 Mg
+   Mg5        1.0     0.500000      0.834440      0.500000     Biso  1.000000 Mg
+   Mg6        1.0     0.500000      0.172095      0.500000     Biso  1.000000 Mg
+   Si1        1.0     0.082799      0.165115      0.222554     Biso  1.000000 Si
+   Si2        1.0     0.934085      0.834244      0.771594     Biso  1.000000 Si
+   Si3        1.0     0.564659      0.666652      0.226418     Biso  1.000000 Si
+   Al1        1.0     0.416085      0.331167      0.776086     Biso  1.000000 Al
+   O(a)1      1.0     0.127318      0.163299      0.384905     Biso  1.000000 O
+   O(a)2      1.0     0.874699      0.832777      0.610630     Biso  1.000000 O
+   O(a)3      1.0     0.625380      0.669557      0.388085     Biso  1.000000 O
+   O(a)4      1.0     0.361502      0.333070      0.604161     Biso  1.000000 O
+   O(b)1      1.0     0.341460      0.204509      0.165809     Biso  1.000000 O
+   O(b)2      1.0     0.997899      0.997126      0.167800     Biso  1.000000 O
+   O(b)3      1.0     0.683152      0.774466      0.830970     Biso  1.000000 O
+   O(b)4      1.0     0.815736      0.732487      0.168001     Biso  1.000000 O
+   O(b)5      1.0     0.498916      0.507770      0.162766     Biso  1.000000 O
+   O(b)6      1.0     0.145023      0.275603      0.839995     Biso  1.000000 O
+   O(h)1      1.0     0.130663      0.504248      0.393970     Biso  1.000000 O
+   O(h)2      1.0     0.632564      0.999012      0.397415     Biso  1.000000 O
+   H1         1.0     0.099152      0.495820      0.299232     Biso  1.000000 H
+   H2         1.0     0.596362      0.012651      0.303091     Biso  1.000000 H
+

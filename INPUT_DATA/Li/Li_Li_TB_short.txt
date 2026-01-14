@@ -1,0 +1,7 @@
+General
+
+Cut-off
+2.0d0	0.05d0		! d0 [A]; dd [A]
+
+Exp
+20.0	1.5e0	1.0e0				! Energy [eV], characteristic radius [A], characteristic distance [A]
