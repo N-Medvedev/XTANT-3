@@ -1,0 +1,5 @@
+Simple_wall:exclude
+1.5d2		! C [eV]
+0.0d0		! r0 [A]
+1.63d0			! d0 [A]
+0.05d0			! dd [A]
