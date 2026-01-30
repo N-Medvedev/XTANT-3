@@ -355,12 +355,18 @@ do while (g_time .LT. g_numpar%t_total)
       endif
    endif AT_MOVE_1
 
+   !write(*,'(a,f,f,f,f)') 'test 0:', g_time, SUM(g_Scell(1)%fe), SUM(g_Scell(1)%fe_eq), g_Scell(1)%Ne_low
+
    ! Monte-Carlo for photons, high-energy electrons, and core holes:
    call MC_Propagate(g_MC, g_numpar, g_matter, g_Scell, g_laser, g_time, g_Err) ! module "Monte_Carlo"
    if (g_numpar%verbose) call print_time_step('Monte Carlo model executed succesfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
-   ! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
+   !write(*,'(a,f,f,f,f)') 'test 1:', g_time, SUM(g_Scell(1)%fe), SUM(g_Scell(1)%fe_eq), g_Scell(1)%Ne_low
+
+   ! Thermalization step for low-energy electrons (used only in nonequilibrium electron kinetics simulation):
    call Electron_thermalization(g_Scell, g_numpar) ! module "Electron_tools"
+
+   !write(*,'(a,f,f,f,f)') 'test 2:', g_time, SUM(g_Scell(1)%fe), SUM(g_Scell(1)%fe_eq), g_Scell(1)%Ne_low
 
    ! And save the (low-energy part of the) distribution on the grid, if required
    ! (its high-energy part is inside of MC_Propagate subroutine):

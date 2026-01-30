@@ -28,6 +28,9 @@ use Algebra_tools, only : Two_Vect_Matr
 use Little_subroutines, only : Find_in_array_monoton, Fermi_interpolation, linear_interpolation, &
                         Find_in_monotonous_1D_array, Gaussian, print_progress
 use MC_cross_sections, only : TotIMFP, Mean_free_path
+use Electron_electron_scattering, only: get_Boltzmann_alpha_beta, Boltzmann_solution, test_change_of_fe, &
+                                        Electron_electron_scattering_Kij
+
 
 #ifdef MPI_USED
    use MPI_subroutines, only : MPI_barrier_wrapper, do_MPI_Allreduce
@@ -44,6 +47,7 @@ public :: set_Erf_distribution, update_fe, Electron_thermalization, get_glob_ene
 public :: Do_relaxation_time, set_initial_fe, find_mu_from_N_T, set_total_el_energy, Electron_Fixed_Etot
 public :: get_new_global_energy, get_electronic_heat_capacity, get_total_el_energy, electronic_entropy
 public :: get_low_energy_distribution, set_high_DOS, get_Ce_and_mu, Diff_Fermi_Te, get_orbital_resolved_data
+public :: patch_distribution
 
  contains
 
@@ -223,7 +227,7 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    ! For noneuqilibrium distributions (BO or relaxation time), threshold cannot be higher than
    ! the topmost level of CB, otherwise, there is no way to place an incomming electron:
    select case (numpar%el_ion_scheme)
-   case (3:4)
+   case (3:5)
       if ( (numpar%verbose) .and. (numpar%E_cut > (Scell%E_top-Scell%E_bottom) ) ) then
          if (numpar%MPI_param%process_rank == 0) then ! only master process does it
             print*, 'E_cut > E_CB, which is impossible in nonequilibrium simulation,', &
@@ -431,6 +435,9 @@ subroutine Electron_thermalization(Scell, numpar, skip_thermalization)
       else
          call Do_e_e_collision(Scell(1), numpar)  ! below
       endif
+
+      ! For output, get the partial equivalent Fermi distributions of CB and VB:
+      call construct_CB_and_VB_equivalent_Fermi(Scell(1), numpar)    ! below
    endselect
 end subroutine Electron_thermalization
 
@@ -443,6 +450,7 @@ subroutine Do_e_e_collision(Scell, numpar, skip_thermalization)
    !----------------------
    logical :: skip_step
    integer :: i_fe
+   real(8), dimension(size(Scell%fe),size(Scell%fe)) :: M_ee ! electron-electron scattering matrix elements
 
    if (present(skip_thermalization)) then
       skip_step = skip_thermalization
@@ -459,11 +467,762 @@ subroutine Do_e_e_collision(Scell, numpar, skip_thermalization)
    if (.not.allocated(Scell%fe_eq)) allocate(Scell%fe_eq(i_fe), source = 0.0d0)
    call set_Fermi(Scell%Ei, Scell%TeeV, Scell%mu, Scell%fe_eq)   ! below
 
+   M_ee = 0.1d0  ! just to test!!
+
    ! Solve Boltzmann collision integral:
    if (.not.skip_step) then ! do the e-e collisions step:
-      ! NOT READY
+      ! If we don't use substeps:s
+      !call Boltzmann_e_e_IN(Scell, numpar, Scell%Ei, Scell%fe, numpar%dt) ! below
+
+      ! If we want to use substeps:
+      call Boltzmann_e_e_IN(Scell, numpar, Scell%Ei, Scell%fe, numpar%dt, Npoints=int(numpar%tau_fe)) ! below
    endif ! (.not.skip_step)
+
+
+   !--------------------------
+   ! Extra check for smoothening unphysical artefacts that may be present after MC:
+   call smoothening_step(Scell, numpar, eps_precision=1.0d-3) ! below
+
 end subroutine Do_e_e_collision
+
+
+
+! Electron-electron collision integral (UNFINISHED DUE TO PROBLEMS WITH ENERGY AND PARTICLE NUMBER CONSERVATION):
+subroutine Boltzmann_e_e_IN(Scell, numpar, Ev, fe, dt, Npoints) ! calculates change of distribution function via Boltzmann collision integral
+! See examples of Boltzmann equation in energy space e.g. in
+! [B. Rethfeld, A. Kaiser, M. Vicanek and G. Simon, Phys.Rev.B 65, 214303, (2002)]
+! (although we use here only electron-electron integral, and with very different matrix element)
+   type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   real(8), dimension(:), intent(in) :: Ev     ! [eV] electron energy levels
+   real(8), dimension(:), intent(inout) :: fe  ! electron distribution function (ocupation numbers of the energy levels Ei)
+   real(8), intent(in) :: dt ! [fs] time-step
+   integer, intent(in), optional :: Npoints     ! number of additional time-points (substeps)
+   !-----------------------------------------
+   real(8) :: Ei, Ef, Ei2, Ef2 ! energies of initial and final states for #1 and #2 electron
+   real(8), dimension(size(fe)) :: fe_temp, f_cur, f_cur0 ! temporary distribution to work with
+   real(8), dimension(size(fe),size(fe)) :: alpha_ij, beta_ij     ! coefficients in Boltzmann collision integral
+   real(8), dimension(size(fe),size(fe)) :: alpha_ij0, beta_ij0     ! coefficients in Boltzmann collision integral
+   real(8), dimension(size(fe),size(fe)) :: M_ee ! electron-electron scattering matrix elements
+   real(8) :: dt_small, split_coef
+   real(8) :: fe_f ! average final state
+   real(8) :: E_tot, E_tot2 ! total energy used for testing [eV]
+   real(8) :: N_tot, N_tot2
+   integer :: i, j, i2, j2, N, i_cur, i_f1, i_f2, N_steps, i_step, N_steps_default, i_PC, N_PC
+   logical :: within_range ! check if final energy level is within possible range
+
+   N = size(fe)   ! total number of energy levels available
+   fe_temp = fe   ! just to start
+   f_cur(:) = fe_temp(:)   ! to start with
+   f_cur0(:) = fe_temp(:)   ! to start with
+   alpha_ij = 0.0d0     ! to start with
+   beta_ij = 0.0d0      ! to start with
+   alpha_ij0 = 0.0d0    ! to start with
+   beta_ij0 = 0.0d0     ! to start with
+
+   ! Test the energy conservation:
+   call set_total_el_energy(Ev,fe_temp,E_tot)
+
+
+   ! Precalculate the overlap-matrix coefficients:
+   call get_electron_electron_overlap(Scell, M_ee)    ! below
+
+
+#ifdef MPI_USED   ! use the MPI version
+   ! NOT DONE YET
+
+#else ! use OpenMP instead
+   ! Do with a number of smaller time-steps:
+   N_steps_default = 1
+   if (present(Npoints)) then
+      if (Npoints > 0) then
+         N_steps = Npoints
+      else
+         N_steps = N_steps_default   ! number of time-substeps
+      endif
+   else
+      N_steps = N_steps_default   ! number of time-substeps
+   endif
+
+   ! Define the number of Predictor-Correction iterations:
+   N_PC = 1      ! max (N=1 means no predictor-correction used)
+   split_coef = 0.3d0   ! splitting coefficient in PC
+
+   dt_small = dt / dble(N_steps)    ! [fs] size of the substep
+   do i_step = 1, N_steps    ! time substeps
+      do i_PC  = 1, N_PC     ! Predictor-corrector
+
+      ! Get the upper triangle of coefficients alpha and beta:
+!$omp PARALLEL shared(alpha_ij, beta_ij, f_cur, fe_temp, alpha_ij0, beta_ij0)
+!$omp do schedule(dynamic) private(i)
+         do i = 1, N
+            ! Without PC:
+            !call get_Boltzmann_alpha_beta(i, Ev, M_ee, f_cur, dt_small, alpha_ij, beta_ij)  ! module "Electron_electron_scattering"
+            ! With PC:
+            call get_Boltzmann_alpha_beta(Scell, i, Ev, M_ee, f_cur, dt_small, alpha_ij0, beta_ij0)  ! module "Electron_electron_scattering"
+         enddo ! i
+!$omp end do
+!$omp barrier
+
+      ! Get the lower triangle of coefficients alpha and beta:
+!$omp do schedule(dynamic) private(i,j)
+         do i = 2, N
+            do j = 1, i-1 ! all levels from where second electron can scatter off
+               ! using symmetry coef(i,j) = coef(j,i)
+               ! Without PC:
+               !alpha_ij(i,j) = alpha_ij(j,i)
+               !beta_ij(i,j) = beta_ij(j,i)
+               ! With PC:
+               alpha_ij0(i,j) = alpha_ij0(j,i)
+               beta_ij0(i,j) = beta_ij0(j,i)
+            enddo ! j = 1, i-1
+         enddo ! i
+!$omp end do
+!$omp barrier
+
+
+         ! Predictor corrector algorithm:
+         if (i_PC == 1) then
+            alpha_ij = alpha_ij0
+            beta_ij = beta_ij0
+         else
+            ! Upper triangle:
+!$omp do schedule(dynamic) private(i,j)
+            do i = 1, N
+               do j = i, N ! all levels from where second electron can scatter off
+                  alpha_ij(i,j) = split_coef * alpha_ij0(i,j) + (1.0d0-split_coef)*alpha_ij(i,j)
+                  beta_ij(i,j)  = split_coef * beta_ij0(i,j)  + (1.0d0-split_coef)*beta_ij(i,j)
+
+                  !if (j==i) print*, i,j, alpha_ij(i,j), beta_ij(i,j)
+
+               enddo ! j = 1, i-1
+            enddo ! i
+!$omp end do
+!$omp barrier
+            ! Lower triangle:
+!$omp do schedule(dynamic) private(i,j)
+            do i = 2, N
+               do j = 1, i-1 ! all levels from where second electron can scatter off
+                  alpha_ij(i,j) = alpha_ij(j,i)
+                  beta_ij(i,j) = beta_ij(j,i)
+                  ! Test (wrong)
+                  !alpha_ij(i,j) = beta_ij(j,i)
+                  !beta_ij(i,j) = alpha_ij(j,i)
+               enddo ! j
+            enddo ! i
+!$omp end do
+!$omp barrier
+         endif
+
+!$omp do schedule(dynamic) private(i)
+         do i = 1, N ! all energy levels on which we looking for changes (left-hand side of the equation)
+            ! Without substeps:
+            !call Boltzmann_solution(i, fe_temp, fe, dt, 0) ! module "Electron_electron_scattering"
+            ! With substeps:
+            call Boltzmann_solution(i, f_cur, fe_temp, dt_small, alpha_ij, beta_ij, 0) ! module "Electron_electron_scattering"
+         enddo ! i
+!$omp end do
+!$omp end parallel
+
+         ! PC update of the distribution:
+         f_cur(:) = split_coef*f_cur(:) + (1.0d0-split_coef)*f_cur0(:)
+
+         ! Explicit solution may make f<0 or f>2, correct such cases (shouldn't happen, but just in case):
+         call patch_distribution(f_cur, Ev, Scell, numpar)    ! below
+
+         ! Correction to ensure long-term particle and energy conservation:
+         call correction_distribution(fe, Ev, f_cur)   ! below
+
+         ! Save for the next step
+         f_cur0(:) = f_cur(:)
+
+         ! Tests:
+         !N_tot = SUM(fe)
+         !N_tot2 = SUM(f_cur)
+         !write(*,'(a, i0, f, f, f, a)') 'Boltzmann_e_e N1:', i_PC, N_tot, N_tot2, ABS(N_tot2 - N_tot)/N_tot*100.0d0, '%'
+         ! Test the energy conservation:
+         !call set_total_el_energy(Ev, f_cur, E_tot2)      ! below
+         !write(*,'(a, i0, f, f, f, a, f)') 'Boltzmann_e_e E1:', i_PC, E_tot, E_tot2, ABS(E_tot2 - E_tot)/ABS(E_tot)*100.0d0, '%', &
+         !       (E_tot2 - E_tot)/(N_tot2 - N_tot)
+
+      enddo ! i_PC
+
+      ! Time-propagation:
+      fe_temp(:) = f_cur(:)   ! update for the next substep
+
+   enddo ! i_step
+#endif
+
+   ! Test the energy conservation:
+   !call set_total_el_energy(Ev, fe_temp, E_tot2)      ! below
+   !N_tot = SUM(fe)
+   !N_tot2 = SUM(fe_temp)
+   !print*, 'Boltzmann_e_e N1:', N_tot, N_tot2, ABS(N_tot2-N_tot)/N_tot*100.0d0
+   !print*, 'Boltzmann_e_e E1:', E_tot, E_tot2, ABS(E_tot2 - E_tot)/ABS(E_tot)*100.0d0
+
+   fe = fe_temp ! output: updated distribution function
+end subroutine Boltzmann_e_e_IN
+
+
+subroutine get_electron_electron_overlap(Scell, M_ee)    ! below
+   type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
+   real(8), dimension(:,:), intent(inout) :: M_ee ! matrix element for electron-ion coupling
+   !=====================================
+
+   ! Calculate nonadiabatic-coupling matrix element:
+   ASSOCIATE (ARRAY => Scell%TB_Hamil(:,:)) ! this is the sintax we have to use to check the class of defined types
+      ! Different expressions for orthogonal and non-orthogonal bases:
+      select type(ARRAY)
+      type is (TB_H_Pettifor) ! TB parametrization according to Pettifor: orthogonal
+         call Electron_electron_scattering_Kij(Scell%Ha, M_ee)      ! module "Electron_electron_scattering"
+
+      type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni: orthogonal
+         call Electron_electron_scattering_Kij(Scell%Ha, M_ee)      ! module "Electron_electron_scattering"
+
+      type is (TB_H_Fu)  ! TB parametrization accroding to Fu: orthogonal
+         call Electron_electron_scattering_Kij(Scell%Ha, M_ee)      ! module "Electron_electron_scattering"
+
+      type is (TB_H_NRL)  ! TB parametrization accroding to NRL method: non-orthogonal
+         call Electron_electron_scattering_Kij(Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
+
+      type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB: non-orthogonal
+         call Electron_electron_scattering_Kij(Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
+
+      type is (TB_H_3TB)  ! TB parametrization accroding to 3TB: non-orthogonal
+         call Electron_electron_scattering_Kij(Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
+
+      type is (TB_H_xTB)  ! TB parametrization accroding to xTB: non-orthogonal
+         call Electron_electron_scattering_Kij(Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
+
+      end select
+   END ASSOCIATE
+end subroutine get_electron_electron_overlap
+
+
+
+
+! Two-levels corection to the electron-distribution function to ensure particle and energy conservation:
+subroutine correction_distribution(fe, Ei, f_cur)
+   real(8), dimension(:),intent(in) :: fe ! original distribution (before e-e scattering)
+   real(8), dimension(:),intent(in) :: Ei ! energy levels
+   real(8), dimension(:),intent(inout) :: f_cur ! distribution to be corrected (after e-e scattering)
+   !-------------------------------------
+   integer :: i, j, Nsiz, i1, i2, Npart, coun, i_low, i_high, cou1, cou2
+   real(8) :: E_in, E_fin, N_in, N_fin, dE, dN, RN, N_cur, N_rand, df1, df2, temp, df1_min, df2_min
+   logical, dimension(size(fe)) :: fe_mask
+   real(8), dimension(size(fe)) :: f_temp
+   logical :: found_yet
+
+   Nsiz = size(fe)
+   fe_mask = .false.    ! to start with
+   f_temp = f_cur       ! to start with
+
+   ! Define initial number of particles and energy:
+   N_in = sum(fe) ! total number of particles
+   ! and total energy:
+   call set_total_el_energy(Ei, fe, E_in)      ! below
+
+   ! Define final number of particles and energy:
+   N_fin = sum(f_cur) ! total number of particles
+   ! and total energy:
+   call set_total_el_energy(Ei, f_cur, E_fin)      ! below
+
+   ! Number of particles and Energy difference:
+   dN = N_in - N_fin
+   dE = E_in - E_fin
+
+   temp = dN/N_in
+   if (abs(temp) < 1.0d-12) return ! no correction meeded
+
+   ! Go through all the pairs of levels, finding the minimal deviation:
+   df1_min = 1.0d10     ! to start with
+   df2_min = 1.0d10     ! to start with
+   found_yet = .false.  ! to start with
+   do i = 1, Nsiz !
+      do j = i, Nsiz
+         if (j == i) cycle     ! skip the same level
+
+         ! check all the levels, until we find the one that works:
+         df1 = (dN*Ei(j) - dE) / (Ei(j) - Ei(i))
+         df2 = (dN*Ei(i) - dE) / (Ei(i) - Ei(j))
+
+         ! Correct the distribution:
+         f_temp(i) = f_cur(i) + df1
+         f_temp(j) = f_cur(j) + df2
+
+         if ( (f_temp(i) >= 0.0d0) .and. (f_temp(i) <= 2.0d0) .and. &
+              (f_temp(j) >= 0.0d0) .and. (f_temp(j) <= 2.0d0) ) then ! it is appropriate
+            ! Save these energy levels, if needed:
+            if ( (abs(df1) < abs(df1_min)) .and. (abs(df2) < abs(df2_min)) ) then
+               found_yet = .true.      ! found at least something...
+               i_low = i   ! save for later
+               i_high = j  ! save for later
+               df1_min = df1
+               df2_min = df2
+            endif
+         endif
+      enddo ! j
+   enddo ! j
+
+   ! Update distribution:
+   if (found_yet) then
+      f_cur(i_low) = f_cur(i_low) + df1_min
+      f_cur(i_high) = f_cur(i_high) + df2_min
+   else
+      !print*, 'Found nothing...'
+   endif
+
+   ! Test:
+   ! Define final number of particles and energy:
+   N_fin = sum(f_cur) ! total number of particles
+   ! and total energy:
+   call set_total_el_energy(Ei, f_cur, E_fin)      ! below
+   ! Test the energy conservation:
+   dE = -(E_fin - E_in)
+   dN = -(N_fin - N_in)
+   !write(*,'(a, f, f, f, a)') 'Boltzmann_e_e N2:', N_in, N_fin, ABS(dN)/N_in*100.0d0, '%'
+   !rite(*,'(a, f, f, f, a)') 'Boltzmann_e_e E2:', E_in, E_fin, ABS(dE)/ABS(E_in)*100.0d0, '%'
+end subroutine correction_distribution
+
+
+! Two-levels corection to the electron-distribution function to ensure particle and energy conservation:
+subroutine correction_distribution_first(fe, Ei, f_cur)
+   real(8), dimension(:),intent(in) :: fe ! original distribution (before e-e scattering)
+   real(8), dimension(:),intent(in) :: Ei ! energy levels
+   real(8), dimension(:),intent(inout) :: f_cur ! distribution to be corrected (after e-e scattering)
+   !-------------------------------------
+   integer :: i, j, Nsiz, i1, i2, Npart, coun, i_low, i_high, cou1, cou2
+   real(8) :: E_in, E_fin, N_in, N_fin, dE, dN, RN, N_cur, N_rand, df1, df2, temp
+   logical, dimension(size(fe)) :: fe_mask
+   real(8), dimension(size(fe)) :: f_temp
+   logical :: found_yet
+
+   Nsiz = size(fe)
+   fe_mask = .false.    ! to start with
+   f_temp = f_cur       ! to start with
+
+   ! Define initial number of particles and energy:
+   N_in = sum(fe) ! total number of particles
+   ! and total energy:
+   call set_total_el_energy(Ei, fe, E_in)      ! below
+
+   ! Define final number of particles and energy:
+   N_fin = sum(f_cur) ! total number of particles
+   ! and total energy:
+   call set_total_el_energy(Ei, f_cur, E_fin)      ! below
+
+   ! Number of particles and Energy difference:
+   dN = N_in - N_fin
+   dE = E_in - E_fin
+
+   temp = dN/N_in
+   if (abs(temp) < 1.0d-12) return ! no correction meeded
+
+   ! Chose levels we can use for correction:
+   do i = 1, Nsiz
+      if ( (f_cur(i) > 0.1d0) .and. (f_cur(i) < 1.9d0) ) then ! let's use those levels
+         fe_mask(i) =.true.
+      endif
+   enddo
+   Npart = COUNT(fe_mask)
+
+   !print*, 'n', dN, dE, Npart
+
+   if (Npart < 2) return ! no correction possible
+
+   ! Select random levels from there:
+   ! Level 1:
+   call random_number(RN)
+   N_rand = RN * dble(Npart)
+   ! Find the randomly selected level:
+   cou1 = 0 ! to start with
+   do i = 1, Nsiz
+      if (fe_mask(i)) then ! only for the allowed levels:
+         cou1 = cou1 + 1
+         i1 = i
+         if (cou1 >= int(N_rand)) exit ! found the level
+      endif
+   enddo
+   i_low = i1 ! save for later
+
+   ! Level 2:
+   do i2 = 1, Nsiz
+      if (i2 == i1) cycle     ! skip the same level
+      i_high = i2 ! save for later
+      ! check all the levels, until we find the one that works:
+      df1 = (dN*Ei(i2) - dE) / (Ei(i2) - Ei(i1))
+      df2 = (dN*Ei(i1) - dE) / (Ei(i1) - Ei(i2))
+
+      ! Correct the distribution:
+      f_temp(i1) = f_cur(i1) + df1
+      f_temp(i2) = f_cur(i2) + df2
+
+      if ( (f_temp(i1) >= 0.0d0) .and. (f_temp(i1) <= 2.0d0) .and. &
+           (f_temp(i2) >= 0.0d0) .and. (f_temp(i2) <= 2.0d0) ) then ! it is appropriate
+         exit     ! done, no need to continue
+      endif
+   enddo
+   ! Update distribution:
+   f_cur(i_low) = f_cur(i_low) + df1
+   f_cur(i_high) = f_cur(i_high) + df2
+
+   ! Test:
+   ! Define final number of particles and energy:
+   N_fin = sum(f_cur) ! total number of particles
+   ! and total energy:
+   call set_total_el_energy(Ei, f_cur, E_fin)      ! below
+   ! Test the energy conservation:
+   dE = -(E_fin - E_in)
+   dN = -(N_fin - N_in)
+   !write(*,'(a, f, f, f, a)') 'Boltzmann_e_e N2:', N_in, N_fin, ABS(dN)/N_in*100.0d0, '%'
+   !rite(*,'(a, f, f, f, a)') 'Boltzmann_e_e E2:', E_in, E_fin, ABS(dE)/ABS(E_in)*100.0d0, '%'
+end subroutine correction_distribution_first
+
+
+! Linear function corection to the electron-distribution function to ensure particle and energy conservation:
+! ERROR: THIS VERSION OF CORRECTION PRODUCES f>2 or f<0
+subroutine lilnear_correction_distribution(fe, Ei, f_cur)
+   real(8), dimension(:),intent(in) :: fe ! original distribution (before e-e scattering)
+   real(8), dimension(:),intent(in) :: Ei ! energy levels
+   real(8), dimension(:),intent(inout) :: f_cur ! distribution to be corrected (after e-e scattering)
+   !-------------------------------------
+   integer :: i, Nsiz, Npart
+   real(8) :: E_in, E_fin, N_in, N_fin, dE, dN, E2, Epart, temp
+   real(8) :: Alpha, Beta     ! linear coefficients for distribution rescaling
+   logical, dimension(size(fe)) :: fe_mask
+   real(8), dimension(size(fe)) :: df ! distribution to be corrected (after e-e scattering)
+
+   Nsiz = size(fe)
+   fe_mask = .false.    ! to start with
+
+   ! Define initial number of particles and energy:
+   N_in = sum(fe) ! total number of particles
+   ! and total energy:
+   call set_total_el_energy(Ei, fe, E_in)      ! below
+
+   ! Define final number of particles and energy:
+   N_fin = sum(f_cur) ! total number of particles
+   ! and total energy:
+   call set_total_el_energy(Ei, f_cur, E_fin)      ! below
+
+   ! Number of particles and Energy difference:
+   dN = N_in - N_fin
+   dE = E_in - E_fin
+
+   ! Tests:
+   !write(*,'(a, f, f, f, a)') 'Boltzmann_e_e N1:', N_in, N_fin, ABS(dN)/N_in*100.0d0, '%'
+   ! Test the energy conservation:
+   !write(*,'(a, f, f, f, a)') 'Boltzmann_e_e E1:', E_in, E_fin, ABS(dE)/ABS(E_in)*100.0d0, '%'
+
+
+   ! Make a correction with a linear function, redistributing the excessive (or missing) particles and energy:
+   ! If there is excessive number of particles, remove them from where there are plenty:
+   ! 1) Define the levels to be used to correct:
+
+   ! This version of the mask produces ERRORS: f>2 or f<0
+   if (dN < 0.0d0) then
+      do i = 1, Nsiz
+         if (fe(i) <= 1.0d0) then ! half-empty
+            fe_mask(i) = .true.     ! mark pessimistic levels
+         endif
+      enddo
+   else ! if there are missing particles, add them where there are few:
+      do i = 1, Nsiz
+         if (fe(i) >= 1.0d0) then ! half-full
+            fe_mask(i) = .true.     ! mark optimistic levels
+         endif
+      enddo
+   endif ! (dN > 0.0d0)
+
+   ! 2) Calculate properties to be used in correction:
+   Npart = COUNT(fe_mask)
+   if (Npart < 1) return ! no correction possible
+
+   Epart = sum(Ei(:), MASK = fe_mask)
+   E2 = sum(Ei(:)**2, MASK = fe_mask)
+   temp = E2 - Epart**2/dble(Npart)
+   if (abs(temp) < 1.0d-12) return ! no correction possible
+
+   Alpha = ( dE - dN/dble(Npart)*Epart ) / temp
+   Beta = (dN - Epart*Alpha)/dble(Npart)
+
+   ! 3) Define the correction to the distribution:
+   df = 0.0d0     ! to start with
+   do i = 1, Nsiz
+      if (fe_mask(i)) then ! only for those levels:
+         df(i) = Alpha * Ei(i) + Beta
+      endif
+      print*, i, df(i), f_cur(i), f_cur(i)+df(i)
+   enddo
+
+   ! 4) Correct the distribution:
+   f_cur(:) = f_cur(:) + df(:)
+
+
+   ! Test:
+   ! Define final number of particles and energy:
+   N_fin = sum(f_cur) ! total number of particles
+   ! and total energy:
+   call set_total_el_energy(Ei, f_cur, E_fin)      ! below
+   ! Test the energy conservation:
+   dE = -(E_fin - E_in)
+   dN = -(N_fin - N_in)
+   !write(*,'(a, f, f, f, a)') 'Boltzmann_e_e N2:', N_in, N_fin, ABS(dN)/N_in*100.0d0, '%'
+   !write(*,'(a, f, f, f, a)') 'Boltzmann_e_e E2:', E_in, E_fin, ABS(dE)/ABS(E_in)*100.0d0, '%'
+
+   !pause 'correction_distribution'
+end subroutine lilnear_correction_distribution
+
+
+
+! Correct distribution for f>2 or f<0:
+subroutine patch_distribution(fe, Ei, Scell, numpar)
+   real(8), dimension(:),intent(in) :: Ei ! energy levels
+   real(8), dimension(:),intent(inout) :: fe ! distribution
+   type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   !-----------------------------
+   integer :: i, N_siz, i_below, i_above, counter, j
+   real(8) :: eps, df, dE, Ee
+   logical :: trouble_present, trouble_in_this_point
+
+   eps = 1.0d-10     ! how close energy levels are allowed to be
+   N_siz = size(fe)  ! number of energy levels
+   trouble_present = .true.   ! just to start
+   counter = 0 ! to start with
+
+   TP:do while (trouble_present) ! do until trouble is solved
+      trouble_present = .false.   ! assume no problem remains
+      counter = counter + 1   ! count iterations
+      ! Now, check if there is a problem:
+      do i = 1, N_siz ! check that there is no problem in distribution function change
+         trouble_in_this_point = .false.   ! assume no problem at this point "i"
+         if (fe(i) > 2.0d0+eps) then
+            trouble_present = .true.   ! there is an unphysical value, correct it and check again
+            trouble_in_this_point = .true.   ! there is an unphysical value, correct it and check again
+            df = fe(i) - 2.0d0   ! excessive part to be removed
+            !fe(i) = 2.0d0        ! distribution adjusted to accceptable
+         elseif (fe(i) > 2.0d0) then   ! it's within [2; 2+eps]
+            fe(i) = 2.0d0        ! distribution adjusted to accceptable
+         elseif (fe(i) < 0.0d0-eps) then
+            trouble_present = .true.   ! there is an unphysical value, correct it and check again
+            trouble_in_this_point = .true.   ! there is an unphysical value, correct it and check again
+            df = fe(i)      ! missing part to be added
+            !fe(i) = 0.0d0   ! distribution adjusted to accceptable
+         elseif (fe(i) < 0.0d0) then  ! it's within [0-eps;0]
+            fe(i) = 0.0d0        ! distribution adjusted to accceptable
+         endif
+
+         if (trouble_in_this_point) then ! try to solve it:
+            !print*, 'Error in patch_distribution:', counter, 'i=', i, fe(i)+df, Ei(i)
+            !if (i>1)print*, fe(i-1), Ei(i-1)
+            !if (i<size(fe)) print*, fe(i+1), Ei(i+1)
+
+            if (i >= N_siz .or. (i <= 1)) print*, 'Potential problem in patch_distribution #1:', i, fe(i), Ei(i), N_siz
+            if (counter > 2000) then
+               print*, 'Too many iterations patch_distribution:', counter, i, fe(i), Ei(i), N_siz
+               ! Just try to cut out the problematic points:
+               do j = 1, N_siz
+                  if (fe(j) > 2.0d0) then
+                     fe(j) = 2.0d0
+                  elseif (fe(j) < 0.0d0) then
+                     fe(j) = 0.0d0
+                  endif
+               enddo
+               ! And we are done here:
+               exit TP
+            endif
+
+            Ee = Ei(i)  ! this energy level contains problematic distribution point
+
+            ! Find the levels to redistribute electrons to:
+            call choose_level(Ei, fe, df, i, i_below, i_above)   ! below
+
+            if ( (i_above > N_siz .or. (i_above < 1)) .or. (i_below > N_siz .or. (i_below < 1)) ) then
+               !if (i_above > N_siz .or. (i_above < 1)) print*, 'Potential problem in patch_distribution #2a:', i, i_above, fe(i), Ei(i)
+               !if (i_below > N_siz .or. (i_below < 1)) print*, 'Potential problem in patch_distribution #2b:', i, i_below, fe(i), Ei(i)
+               trouble_present = .true.
+               exit TP
+            else
+               ! Fractions of electron distributed between two levels,
+               ! ensuring conservation of particles and energy:
+               dE = Ei(i_above)-Ei(i_below)   ! energy levels difference
+               fe(i_below) = fe(i_below) + (Ei(i_above) - Ee)/dE * df
+               fe(i_above) = fe(i_above) + (Ee - Ei(i_below))/dE * df
+               fe(i) = fe(i) - df   ! distribution changed
+            endif
+
+            !print*, 'i=', i, i_above, i_below, df, fe(i_above), fe(i_above) - (Ee - Ei(i_below))/dE * df , fe(i_below), fe(i_below) - (Ei(i_above) - Ee)/dE * df
+
+         endif
+      enddo ! i = 1, N_siz
+   enddo TP ! trouble_present
+
+   ! Check if there was a situation that electrons could not be redistributed:
+   if (trouble_present) then  ! Do thermalization instead, adjust all levels:
+      call Do_relaxation_time(Scell, numpar, skip_partial=.true.) ! module "Electron_tools"
+      trouble_present = .false.
+      ! And the final check:
+      do i = 1, N_siz ! check that there is no problem in distribution function change
+         if (fe(i) > 2.0d0+eps) then   ! it's outside of [2; 2+eps]
+            print*, 'Problem in patch_distribution #3a:', i, fe(i)
+            fe(i) = 2.0d0
+            trouble_present = .true.   ! there still is a problem
+         elseif (fe(i) > 2.0d0) then   ! it's within [2; 2+eps]
+            fe(i) = 2.0d0        ! distribution adjusted to accceptable
+         elseif (fe(i) < -eps) then  ! it's outside of [0-eps;0]
+            print*, 'Problem in patch_distribution #3b:', i, fe(i)
+            fe(i) = 0.0d0        ! distribution adjusted to accceptable
+            trouble_present = .true.   ! there still is a problem
+         elseif (fe(i) < 0.0d0) then  ! it's within [0-eps;0]
+            fe(i) = 0.0d0        ! distribution adjusted to accceptable
+         endif
+      enddo
+
+      if (trouble_present) then  ! Oh well, I am out of ideas...
+         print*, 'Problem persists, we may have lost some particles and energy...'
+      else  ! Yey, it worked!
+         print*, 'Problem avoided, nothing to worry about.'
+      endif
+   endif
+end subroutine patch_distribution
+
+
+
+subroutine choose_level(Ei, fe, df, i, i_below, i_above)
+   real(8), dimension(:),intent(in) :: Ei, fe ! distribution
+   real(8), intent(in) :: df  ! change of fe
+   integer, intent(in) :: i   ! the level given
+   integer, intent(out) :: i_below, i_above  ! two levels chosen
+   !--------------------
+   integer :: j, k, N_siz
+   real(8) :: dE, eps, fe1, fe2
+   logical :: found_it
+
+   eps = 1.0d-10
+   N_siz = size(fe)
+   found_it = .false.   ! to start with
+   ! Check below the level i:
+   FV:do j = i-1, 1, -1
+      do k = j+1, N_siz
+         if (k /= i) then
+            dE = Ei(k) - Ei(j)   ! energy levels difference
+            if (dE > eps) then
+               fe1 = fe(j) + (Ei(k) - Ei(i))/dE * df
+               fe2 = fe(k) + (Ei(i) - Ei(j))/dE * df
+               ! Check if we found an acceptable pair of levels to redistribute electrons into:
+               if ( ((fe1 >= 0.0d0) .and. (fe1 <= 2.0d0)) .and. ((fe2 >= 0.0d0) .and. (fe2 <= 2.0d0)) ) then
+                  found_it = .true.
+                  exit FV
+               endif
+            endif
+         endif ! k/=i
+      enddo ! k
+   enddo FV ! j
+   ! Check above the level i:
+   if (.not. found_it) then
+      FV2:do j = i+1, N_siz-1
+         do k = j+1, N_siz
+            if (k /= i) then
+               dE = Ei(k) - Ei(j)   ! energy levels difference
+               if (dE > eps) then
+                  fe1 = fe(j) + (Ei(k) - Ei(i))/dE * df
+                  fe2 = fe(k) + (Ei(i) - Ei(j))/dE * df
+                  ! Check if we found an acceptable pair of levels to redistribute electrons into:
+                  if ( ((fe1 >= 0.0d0) .and. (fe1 <= 2.0d0)) .and. ((fe2 >= 0.0d0) .and. (fe2 <= 2.0d0)) ) then
+                     found_it = .true.
+                     exit FV2
+                  endif
+               endif
+            endif ! k/=i
+         enddo ! k
+      enddo FV2 ! j
+   endif
+   ! Get the output values:
+   i_below = j
+   i_above = k
+
+   ! Check if there is a situation when it's impossible to find the levels:
+!   if (.not. found_it) then
+!      print*, 'Problem in choose_level:', i, i_below, i_above
+!      print*, 'fe=', fe(i), df, 'Ee=', Ei(i)
+!   endif
+
+end subroutine choose_level
+
+
+
+subroutine choose_level_OLD(Ei, fe, df, i, i_below, i_above)
+   real(8), dimension(:),intent(in) :: Ei, fe ! distribution
+   real(8), intent(in) :: df  ! change of fe
+   integer, intent(in) :: i   ! the level given
+   integer, intent(out) :: i_below, i_above  ! two levels chosen
+   !--------------------
+   integer :: j, k, N_siz
+   real(8) :: dE, eps, fe1, fe2
+   logical :: found_it
+
+   eps = 1.0d-10
+   N_siz = size(fe)
+   found_it = .false.   ! to start with
+
+   FV:do j = 1, N_siz-1
+      do k = j, N_siz
+         dE = Ei(k) - Ei(j)   ! energy levels difference
+         if (dE > eps) then
+            fe1 = fe(j) + (Ei(k) - Ei(i))/dE * df
+            fe2 = fe(k) + (Ei(i) - Ei(j))/dE * df
+            ! Check if we found an acceptable pair of levels to redistribute electrons into:
+            if ( ((fe1 >= 0.0d0) .and. (fe1 <= 2.0d0)) .and. ((fe2 >= 0.0d0) .and. (fe2 <= 2.0d0)) ) then
+               found_it = .true.
+               exit FV
+            endif
+         endif
+      enddo ! k
+   enddo FV ! j
+   ! Get the output values:
+   i_below = j
+   i_above = k
+end subroutine choose_level_OLD
+
+
+
+subroutine construct_CB_and_VB_equivalent_Fermi(Scell, numpar)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
+   !----------------------------------
+   real(8) :: Te_VB, Te_CB
+   integer :: i_fe
+
+   if (.not. numpar%do_partial_thermal) return  ! no need to do anything
+
+   i_fe = size(Scell%fe)   ! number of grid points in distribution function
+
+   ! Get the Fermi function for VB and CB separately:
+   ! VB:
+   ! Get the number of particles and energy in the band:
+   Scell%Ne_low_VB = get_N_partial(Scell%fe, 1, Scell%N_Egap) ! below
+   Scell%El_low_VB = get_E_partial(Scell%Ei, Scell%fe, 1, Scell%N_Egap) ! below
+
+   ! Get the equivalent temperature and chem.potential of the band:
+   call Electron_Fixed_Etot_partial(Scell%Ei, Scell%Ne_low_VB, Scell%El_low_VB, Scell%mu_VB, Te_VB, i_end_in=Scell%N_Egap) ! below
+   Scell%Te_VB = Te_VB*g_kb ! save in [K]
+
+   ! Construct equivalent Fermi distribution:
+   call set_Fermi(Scell%Ei, Te_VB, Scell%mu_VB, Scell%fe_eq_VB, i_end=Scell%N_Egap)  ! below
+
+   ! CB:
+   ! Get the number of particles and energy in the band:
+   Scell%Ne_low_CB = get_N_partial(Scell%fe, Scell%N_Egap+1, i_fe) ! below
+   Scell%El_low_CB = get_E_partial(Scell%Ei, Scell%fe,  Scell%N_Egap+1, i_fe) ! below
+
+   ! Get the equivalent temperature and chem.potential of the band:
+   call Electron_Fixed_Etot_partial(Scell%Ei, Scell%Ne_low_CB, Scell%El_low_CB, Scell%mu_CB, Te_CB, i_start_in=Scell%N_Egap+1) ! below
+   Scell%Te_CB = Te_CB*g_kb ! save in [K]
+
+   ! Construct equivalent Fermi distribution:
+   call set_Fermi(Scell%Ei, Te_CB, Scell%mu_CB, Scell%fe_eq_CB, i_start=Scell%N_Egap+1)  ! below
+end subroutine construct_CB_and_VB_equivalent_Fermi
 
 
 
@@ -584,21 +1343,27 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial, 
 end subroutine Do_relaxation_time
 
 
-subroutine smoothening_step(Scell, numpar)
+subroutine smoothening_step(Scell, numpar, eps_precision)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including lists of earest neighbors
+   real(8), intent(in), optional :: eps_precision     ! given precision
    !-------------------------------
    real(8) :: eps, Ne, Ne_eq, extra_dt, extra_tau, exp_dttau
    integer :: i, i_fe, i_cycle, N_cycle
    logical :: extra_cycle
 
-   eps = 1.0d-6
+   if (present(eps_precision)) then
+      eps = eps_precision
+   else ! use default value:
+      eps = 1.0d-6
+   endif
+
    i_fe = size(Scell%fe)   ! number of grid points in distribution function
    extra_cycle = .false.   ! by default, assume no artifact
    do i = 1, i_fe ! for all grid points (MO energy levels)
       if ((Scell%fe(i) > 2.0d0) .or. (Scell%fe(i) < 0.0d0)) then
          extra_cycle = .true.   ! some artefacts present, do extra thermalization to get rid of them
-         print*, 'Extra thermalization step needed:', i, Scell%fe(i), SUM(Scell%fe)
+         print*, 'Extra thermalization step needed (1):', i, Scell%fe(i), SUM(Scell%fe)
          exit
       endif
    enddo
@@ -606,7 +1371,10 @@ subroutine smoothening_step(Scell, numpar)
    ! Or, if the number of electrons does not coincide with the initial one:
    Ne = get_N_partial(Scell%fe, 1, i_fe)  ! current number of electrons
    Ne_eq = get_N_partial(Scell%fe_eq, 1, i_fe)  ! initial number of electrons
-   if (ABS(Ne - Ne_eq) > eps*Ne_eq) extra_cycle = .true. ! shouldn't be too different
+   if (ABS(Ne - Ne_eq) > eps*Ne_eq) then
+      extra_cycle = .true. ! shouldn't be too different
+      print*, 'Extra thermalization step needed (2):', Ne, Ne_eq
+   endif
 
    if (extra_cycle) then   ! do extra thermalization
       extra_dt = numpar%dt*0.1d0 ! use this small step to minimize the effect of extra smoothing
@@ -639,285 +1407,6 @@ subroutine smoothening_step(Scell, numpar)
       enddo ! while (extra_cycle)
    endif ! (extra_cycle)
 end subroutine smoothening_step
-
-
-
-! Electron-electron collision integral (UNFINISHED DUE TO PROBLEMS WITH ENERGY CONSERVATION):
-subroutine Boltzmann_e_e_IN(Ev, fe, M_ee, dt) ! calculates change of distribution function via Boltzmann collision integral
-! See examples of Boltzmann equation in energy space e.g. in 
-! [B. Rethfeld, A. Kaiser, M. Vicanek and G. Simon, Phys.Rev.B 65, 214303, (2002)]
-! (although we use here only electron-electron integral, and with very different matrix element)
-   real(8), dimension(:), intent(in) :: Ev     ! [eV] electron energy levels
-   real(8), dimension(:), intent(inout) :: fe  ! electron distribution function (ocupation numbers of the energy levels Ei)
-   real(8), dimension(:,:), intent(in) :: M_ee ! electron-electron scattering matrix elements
-   real(8), intent(in) :: dt ! [fs] time-step
-   !-----------------------------------------
-   real(8) :: Ei, Ef, Ei2, Ef2 ! energies of initial and final states for #1 and #2 electron
-   real(8), dimension(size(fe)) :: fe_temp ! temporary distribution to work with
-   real(8), dimension(size(fe)) :: two_minus_fe ! temporary distribution to work with
-   real(8), dimension(size(fe),size(fe)) :: fe_2_fe! array of multiplied fe(i)*(2-fe(j))
-
-   real(8) :: fe_f ! average final state
-   real(8) :: E_tot, E_tot2 ! total energy used for testing [eV]
-   real(8) :: prefactor, N_tot, N_tot2
-   integer :: i, i2, j2, N, i_cur, i_f1, i_f2
-   logical :: within_range ! check if final energy level is within possible range
-
-   N = size(fe) ! total number of energy levels available
-
-   prefactor =  2.0d0*g_Pi/g_h*g_e*1.0d-15*dt ! prefactor of 2Pi/h_bar*dt -> in eV and fs
-   
-   fe_temp = fe ! just to start
-   two_minus_fe = 2.0d0 - fe ! number of free places in the final states
-
-   ! Test the energy conservation:
-   call set_total_el_energy(Ev,fe_temp,E_tot)
-!    print*, 'FIRST :', E_tot/64.0d0, SUM(fe_temp)
-   
-   ! Construct an array that will be reused multiple times: fe(i)*(2-fe(j)):
-   call Two_Vect_Matr(fe,two_minus_fe,fe_2_fe) ! module "Algebra_tools"
-   
-#ifdef MPI_USED   ! use the MPI version
-   ! NOT DONE YET
-
-#else ! use OpenMP instead
-!$omp PARALLEL private(i)
-!$omp do schedule(dynamic) reduction( + : fe_temp)
-   do i = 1, N ! all energy levels on which we looking for changes (left-hand side of the equation)
-      call Boltzmann_solution(i, Ev, M_ee, fe_temp, fe, two_minus_fe, fe_2_fe, prefactor, -1) ! see below
-   enddo
-!$omp end do
-!$omp end parallel
-#endif
-
-   ! Test the energy conservation:
-   call set_total_el_energy(Ev,fe_temp,E_tot2)
-!    print*, 'SECOND:', E_tot2/64.0d0, SUM(fe_temp), ABS(E_tot2 - E_tot)/ABS(E_tot)*100.0d0
-   N_tot = SUM(fe)
-   N_tot2 = SUM(fe_temp)
-   print*, 'Boltzmann_e_e N1:', N_tot, N_tot2, ABS(N_tot2-N_tot)/N_tot*100.0d0
-   print*, 'Boltzmann_e_e E1:', E_tot, E_tot2, ABS(E_tot2 - E_tot)/ABS(E_tot)*100.0d0
- 
-   
-   fe = fe_temp ! output: updated distribution function
-   
-!     PAUSE "Boltzmann_e_e PUASE"
-!     ! Test:
-!     do i = 1,N
-!        print*, 'fe=', i, fe(i)
-!     enddo
-   
-   
-end subroutine Boltzmann_e_e_IN
-
-
-subroutine Boltzmann_solution(i, Ev, M_ee, fe_temp, fe, two_minus_fe, fe_2_fe, prefactor, scheme)
-   integer, intent(in) :: i ! current energy level
-   real(8), dimension(:), intent(in), target :: Ev     ! [eV] electron energy levels
-   real(8), dimension(:), intent(inout) :: fe_temp  ! electron distribution function on the curent time-step
-   real(8), dimension(:), intent(in) :: fe  ! electron distribution function on the last time-step
-   real(8), dimension(:), intent(in) :: two_minus_fe ! (2-fe)
-   real(8), dimension(:,:), intent(in) :: M_ee    ! electron-electron scattering matrix elements
-   real(8), dimension(:,:), intent(in) :: fe_2_fe ! array of multiplied fe(i)*(2-fe(j))
-   real(8), intent(in) :: prefactor ! multiplier in the Boltzmann collision integral
-   integer, intent(in) :: scheme ! which integration scheme in the Boltzmann equation to use: 0=explicit, 1=implicit
-   !--------------------------
-   integer :: i2, j2, N, i_f1, i_f2
-   real(8), pointer :: Ei, Ei2, Ef2
-   real(8) :: Ef, fe_f, F1, F2, F_temp, a, F2F1
-   logical :: within_range ! check if final energy level is within possible range
-   
-   N = size(fe)
-   Ei => Ev(i) ! [eV]
-   F1 = 0.0d0
-   F2 = 0.0d0
-   
-   E_FROM:do i2 = 1, N ! all levels from where electron can scatter off
-      Ei2 => Ev(i2) ! [eV]
-         
-      E_TO:do j2 = 1, N ! all levels where electron can come to
-         if (j2 /= i2) then ! transition must be between 2 different levels
-            Ef2 => Ev(j2) ! [eV]
-            Ef = Ei + (Ei2 - Ef2) ! [eV]
-            within_range = .true. ! model it by default, check later
-            ! Exclude transitions outside of energy levels given within TB:
-            if (Ef < Ev(1) .or. Ef > Ev(N)) then 
-               within_range = .false.
-            endif
-
-            if (within_range) then ! if transition is possible
-               ! Find the value of distribution in-between the energy levels:
-               call mean_distribution(Ev, fe, Ef, fe_f=fe_f, i_f1=i_f1, method=0) ! see below
-
-               select case (scheme) ! scheme of integration
-               case (0) ! explicit
-!                 F1 = F1 + M_ee(i,i_f1)*( fe_f*two_minus_fe(i)*fe(j2)*two_minus_fe(i2) - fe(i)*(2.0d0 - fe_f)*fe(i2)*two_minus_fe(j2) )
-                  F1 = F1 + M_ee(i,i_f1)*( fe_f*two_minus_fe(i)*fe_2_fe(j2,i2) - fe(i)*(2.0d0 - fe_f)*fe_2_fe(i2,j2) )
-               case default ! implicit: much more stable!
-!                   F_temp = M_ee(i,i_f1)*( fe_f*fe(j2)*two_minus_fe(i2) )
-                  F_temp = M_ee(i,i_f1)*fe_f*fe_2_fe(j2,i2)
-                  F1 = F1 + F_temp
-!                   F2 = F2 + F_temp + M_ee(i,i_f1)*( fe(i2)*two_minus_fe(j2)*(2.0d0 - fe_f) )
-                  F2 = F2 + F_temp + M_ee(i,i_f1)*( fe_2_fe(i2,j2)*(2.0d0 - fe_f) )
-               end select
-            endif ! within_range
-         endif ! (j2 /= i2)
-      enddo E_TO
-   enddo E_FROM
-   
-   select case (scheme) ! scheme of integration
-   case (0) ! explicit
-      fe_temp(i) = fe_temp(i) + prefactor*F1
-   case (1) ! implicit: much more stable (unconditionally stable?)
-      fe_temp(i) = (fe_temp(i) + 2.0d0*prefactor*F1)/(1.0d0 + prefactor*F2)
-   case default ! exact solution of dx/dt = -F2*x + F1
-      F2F1 = 2.0d0*F1/F2
-      fe_temp(i) = (fe_temp(i) - F2F1)*exp(-F2*prefactor) + F2F1
-   end select
-   
-   nullify(Ei, Ei2, Ef2) ! free pointers
-end subroutine Boltzmann_solution
-
-
-subroutine mean_distribution(Ev, fe, Ef, fe_f, i_f1, method)
-   real(8), dimension(:), intent(in) :: Ev ! [eV] electron energy levels
-   real(8), dimension(:), intent(in) :: fe ! electron distribution function
-   real(8), intent(in) :: Ef    ! given energy (in between energy levels)
-   real(8), intent(out) :: fe_f  ! distribution function at the given point between the energy levels
-   integer, intent(out), optional :: i_f1  ! number of energy level the closest one
-   integer, intent(in), optional :: method ! what kind of average do we use
-   real(8) Fm, sigma, mu, Gaus, three_sigma
-   integer i_f, i_cur, N, i_start, i_end
-   
-   N = size(eV) ! number of energy levels
-   sigma = 0.1d0 ! [eV] width of each energy level assigned
-   three_sigma = 3.0d0*sigma
-   
-   call Find_in_array_monoton(Ev, Ef, i_f) ! module "Little_subroutines"
-   if (present(i_f1)) i_f1 = i_f ! for the output
-
-   select case (method)
-   case (1) ! try Fermi interpolation :: POOR CONSERVATION PROPERTIES
-      call Fermi_interpolation(Ev, fe, Ef, fe_f, i_f) ! module "Little_subroutines"
-   case (2) ! try "geometric" average :: DOESN'T WORK
-      Fm = fe(i_f-1)*(Ef - Ev(i_f-1)) + fe(i_f)*(Ev(i_f) - Ef)
-      fe_f = fe(i_f-1)*fe(i_f)*(Ev(i_f) - Ev(i_f-1))/Fm
-   case (3) ! do gaussian width of energy levels :: DOESN'T WORK
-      fe_f = 0.0d0
-      call Find_in_array_monoton(Ev, Ef-three_sigma, i_start) ! module "Little_subroutines"
-      call Find_in_array_monoton(Ev, Ef+three_sigma, i_end) ! module "Little_subroutines"
-      do i_cur = i_start, i_end ! within three sigma range
-         call Gaussian(Ev(i_cur), sigma, Ef, Gaus)
-         fe_f = fe_f + Gaus !*(2.0d0*sqrt(2.0d0*g_Pi)*sigma) ! we use this kind of nuormalization to make 2 electrons exctly at a level
-         !print*, 'Gaus', i_cur, fe_f, Gaus, (2.0d0*sqrt(2.0d0*g_Pi)*sigma)
-      enddo
-   case (4) ! try linear interpolation + gaussian width :: DOESN'T WORK
-      if (i_f > 1) then
-         call linear_interpolation(Ev, fe, Ef, fe_f, i_f) ! module "Little_subroutines"
-         if ((Ef - Ev(i_f-1)) > (Ev(i_f) - Ef)) then
-            call Gaussian(Ev(i_f), sigma, Ef, Gaus, 2.0d0)
-         else 
-            call Gaussian(Ev(i_f-1), sigma, Ef, Gaus, 2.0d0)
-         endif
-         fe_f = fe_f*Gaus
-      else
-         fe_f = fe(1)
-      endif
-   case (5) ! linear interpolation with exclusion of too-far-lying levels
-      if (i_f > 1) then
-         if ((Ef - Ev(i_f-1)) < three_sigma .or. (Ev(i_f) - Ef) < three_sigma) then
-            call linear_interpolation(Ev, fe, Ef, fe_f, i_f) ! module "Little_subroutines"
-         endif
-      else
-         fe_f = fe(1)
-      endif
-   case default ! linear interpolation
-      if (i_f > 1) then
-         call linear_interpolation(Ev, fe, Ef, fe_f, i_f) ! module "Little_subroutines"
-      else
-         fe_f = fe(1)
-      endif
-   endselect
-
-end subroutine mean_distribution
-
-
-subroutine find_average_level(fe, Ev, i_f1, E_mean, fe_mean)
-   real(8), dimension(:), intent(in) :: Ev     ! [eV] electron energy levels
-   real(8), dimension(:), intent(in) :: fe  ! electron distribution function (ocupation numbers of the energy levels Ei)
-   integer, intent(in) :: i_f1 ! number of the level
-   real(8), intent(in) :: E_mean ! [eV] exact energy we want to find corresponding occupation to
-   real(8), intent(out) :: fe_mean ! average occupation number
-   integer :: i_plus
-   if (i_f1 == size(Ev)) then ! borderline:
-      fe_mean = fe(i_f1)
-   else ! within the borders:
-      i_plus = i_f1+1
-      fe_mean = (fe(i_f1)*(Ev(i_plus) - E_mean) + fe(i_plus)*(E_mean - Ev(i_f1))) / (Ev(i_plus) - Ev(i_f1))
-   endif
-end subroutine find_average_level
-
-
-subroutine test_evolution_of_fe(Ev, fe, t)
-   real(8), dimension(:), intent(in) :: Ev     ! [eV] electron energy levels
-   real(8), dimension(:), intent(inout) :: fe  ! electron distribution function (ocupation numbers of the energy levels Ei)
-   real(8), intent(in) :: t ! [fs] current time-step
-   !------------------------------
-   real(8), dimension(size(fe)) :: fe_test  ! electron distribution function (ocupation numbers of the energy levels Ei)
-   real(8), dimension(size(fe),size(fe)) :: M_ee ! electron-electron scattering matrix elements
-   real(8) :: dt ! [fs] time-step
-   real(8) :: Se ! electronic entropy
-   integer i
-
-   if (t < -8.4) call test_change_of_fe(fe, fe_test) ! just to test!!
-
-   M_ee = 0.1d0  ! just to test!!
-   dt = 0.001d0  ! [fs]
-
-   do i = 1, 100
-!       call Boltzmann_e_e(Ev, fe_test, M_ee, dt) ! calculates change of distribution function via Boltzmann collision integral
-      call Boltzmann_e_e_IN(Ev, fe_test, M_ee, dt) ! calculates change of distribution function via Boltzmann collision integral
-      print*, 'Boltzmann_e_e is done', i
-      call electronic_entropy(fe_test, Se) ! subroutine above
-      print*, 'Entropy:', i, Se
-   enddo
-
-end subroutine test_evolution_of_fe
-
-
-subroutine test_change_of_fe(fe, fe_test)
-   real(8), dimension(:), intent(in) :: fe
-   real(8), dimension(:), intent(out) :: fe_test
-   real(8) :: RN
-   integer :: i, N
-   N = size(fe)
-   do i = 1, N
-      call random_number(RN)
-      fe_test(i) = fe(i) + 0.001d0*(RN-0.5d0)*fe(i)
-   enddo
-
-   where (fe_test(:) > 2.0d0) ! cannot be
-      fe_test(:) = 2.0d0
-   end where
-   where (fe_test(:) < 0.0d0) ! cannot be
-      fe_test(:) = 0.0d0
-   end where
-end subroutine test_change_of_fe
-
-
-subroutine share_energy(Ev, i, j, Eprime, a, b) 
-! Shares energy between levels i and j so that total energy Eprime is conserved
-   real(8), dimension(:), intent(in) :: Ev     ! [eV] electron energy levels
-   integer, intent(in) :: i, j ! levels to which we give parts of the energy Eprime
-   real(8), intent(in) :: Eprime ! [eV] energy that is somewhere in between levels Ev(i) and Ev(j)
-   real(8), intent(out) :: a, b  ! coefficients, how much energy must be in the level i and j to conserve total energy Eprime
-   real(8) :: Ediff
-   Ediff = (Ev(i)-Ev(j))
-   a = (Eprime - Ev(j))/Ediff
-   b = (Ev(i) - Eprime)/Ediff
-!    print*, 'a,b', a, b, Eprime, Ev(i), Ev(j)
-!    pause 
-end subroutine share_energy
 
 
 
