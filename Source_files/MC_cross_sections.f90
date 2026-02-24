@@ -550,7 +550,13 @@ subroutine set_single_pole_CDF(Scell, NSC, matter, numpar, i, j)  ! only for VB/
 
       matter%Atoms(i)%CDF(j)%E0(1) = sqrt((g_h/g_e)*(g_h/g_e) * Omega)  ! [eV]
       ! Gamma set equal to E0 without effective mass (empirical approximation):
-      matter%Atoms(i)%CDF(j)%G(1) = matter%Atoms(i)%CDF(j)%E0(1)
+      !matter%Atoms(i)%CDF(j)%G(1) = matter%Atoms(i)%CDF(j)%E0(1)
+      if (matter%Atoms(i)%CDF(j)%E0(1) > 20.0d0) then ! too wide oscillator, make it smaller:
+         matter%Atoms(i)%CDF(j)%G(1) = matter%Atoms(i)%CDF(j)%E0(1) * 0.5d0
+      else ! default oscillator:
+         matter%Atoms(i)%CDF(j)%G(1) = matter%Atoms(i)%CDF(j)%E0(1)
+      endif
+
       ! A is set vie normalization (sum rule):
       matter%Atoms(i)%CDF(j)%A(1) = 1.0d0   ! just to get sum rule to renormalize below
       ! Get sum rule:

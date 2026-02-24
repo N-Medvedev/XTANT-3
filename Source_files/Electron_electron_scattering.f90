@@ -61,98 +61,55 @@ subroutine get_Boltzmann_alpha_beta(Scell, i, Ev, K_ij, fe, dt, alpha_ij, beta_i
 
    N = size(fe)   ! Number of electrons (normalization of fe)
    Ei => Ev(i)    ! Electron energy levels [eV]
-   ! Size of the basis set, to identify atoms:
-   N_basis_set = N/Scell%Na
-   ! Index of the atom, to which the level "i" belongs:
-   if (i < N) then
-      i_at = 1+i/N_basis_set
-   else
-      i_at = i/N_basis_set
-   endif
+
    ! Use symmetry: only upper triangle of (i,j)-matrix
-   !E_FROM:do j = i, N ! all levels from where second electron can scatter off
-   m => Scell%Near_neighbor_size(i_at) ! how many atoms we can interact with
-   E_FROM:do atom_2 = 0,m ! do only for atoms close to that one, which can interact
-      ! Find the distance between atoms i and j, between the two scattering electrons:
-      if (atom_2 == 0) then ! self atom
-         j_at = i_at
-         rij = 0.0d0
-      else ! different atoms
-         j_at = Scell%Near_neighbor_list(i_at,atom_2) ! this is the list of such close atoms
-         rij = Scell%Near_neighbor_dist(i_at,atom_2,4) ! at this distance, R [A]
-      endif
-      do j_cur = 1, N_basis_set  ! all orbitals of this atom
-         j = (j_at-1)*N_basis_set + j_cur
+   E_FROM:do j = i, N ! all levels from where second electron can scatter off
+      Ej => Ev(j) ! [eV]
 
-         Ej => Ev(j) ! [eV]
+      ! Get the inner sum over j (and g):
+      alpha_ij_temp = 0.0d0   ! to start with
+      beta_ij_temp = 0.0d0    ! to start with
 
-         ! Get the inner sum over j (and g):
-         alpha_ij_temp = 0.0d0   ! to start with
-         beta_ij_temp = 0.0d0    ! to start with
+      E_TO:do i_f = 1, N ! all levels where first electron can jump to
+         Ei_f => Ev(i_f) ! [eV] final level of 1st electron
+         Ej_g = Ej - (Ei_f - Ei) ! [eV] final energy (effective level) of 2d electron
 
-         !E_TO:do i_f = 1, N ! all levels where first electron can jump to
-         mf => Scell%Near_neighbor_size(i_at) ! how many atoms we can interact with
-         E_TO:do atom_3 = 0,mf ! do only for atoms close to that one, which can interact
-            ! Find the distance between atoms j and g, between which the 1st electron scatteres:
-            if (atom_3 == 0) then ! self atom
-               i_f_at = i_at
-               rif = 0.0d0
-            else ! different atoms
-               i_f_at = Scell%Near_neighbor_list(i_at,atom_3) ! this is the list of such close atoms
-               rif = Scell%Near_neighbor_dist(i_at,atom_3,4) ! at this distance, R [A]
+         ! Check if such a transition is possible:
+         within_range = .true. ! to start with
+         ! Exclude transitions outside of energy levels given within TB:
+         if (Ei_f < Ev(1) .or. Ei_f > Ev(N)) then
+            within_range = .false.
+         endif
+            ! Same for the second electron:
+         if (Ej_g < Ev(1) .or. Ej_g > Ev(N)) then
+            within_range = .false.
+         endif
+
+         if (within_range) then ! if transition is possible
+            ! Find the value of distribution in-between the energy levels (final state of 2d electron):
+            call mean_distribution(Ev, fe, Ej_g, fe_g, i_f1=j_g, method=5) ! see below
+
+            if (j_g > 0) then ! scattering is allowed:
+               if (j_g < N) then
+                  j_g_at = 1 + (j_g/N_basis_set)
+               else
+                  j_g_at = (j_g/N_basis_set)
+               endif
+
+               ! Scattering probability (i,j) -> (f,g):
+               w_ijfg = ( g_e*g_ke*1.0d10 * K_ij(i,i_f)*K_ij(j,j_g) )**2    ! [eV] just to test
+
+               ! testing:
+               !if (w_ijfg > 1.0d-20) print*, i, i_f, j, j_g, (3.0d0*g_e*g_ke/(r_ave)*1.0d10), w_ijfg, K_ij(i,i_f), K_ij(j,j_g)
+               !print*, i, i_f, j, j_g, w_ijfg, K_ij(i,i_f), K_ij(j,j_g)
+
+               ! coefficients:
+               alpha_ij_temp = alpha_ij_temp + fe(i_f) * fe_g * w_ijfg
+               beta_ij_temp = beta_ij_temp + (2.0d0 - fe(i_f)) * (2.0d0 - fe_g) * w_ijfg
             endif
 
-            do i_f_cur = 1, N_basis_set  ! all orbitals of this atom
-               ! Corresponding energy level:
-               i_f = (i_f_at-1)*N_basis_set + i_f_cur
-
-               Ei_f => Ev(i_f) ! [eV] final level of 1st electron
-               Ej_g = Ej - (Ei_f - Ei) ! [eV] final energy (effective level) of 2d electron
-
-               ! Check if such a transition is possible:
-               within_range = .true. ! to start with
-               ! Exclude transitions outside of energy levels given within TB:
-               if (Ei_f < Ev(1) .or. Ei_f > Ev(N)) then
-                  within_range = .false.
-               endif
-               ! Same for the second electron:
-               if (Ej_g < Ev(1) .or. Ej_g > Ev(N)) then
-                  within_range = .false.
-               endif
-
-               if (within_range) then ! if transition is possible
-                  ! Find the value of distribution in-between the energy levels (final state of 2d electron):
-                  call mean_distribution(Ev, fe, Ej_g, fe_g, i_f1=j_g, method=5) ! see below
-
-                  if (j_g > 0) then ! scattering is allowed:
-                     if (j_g < N) then
-                        j_g_at = 1 + (j_g/N_basis_set)
-                     else
-                        j_g_at = (j_g/N_basis_set)
-                     endif
-
-                     ! Find the distance between atoms j and g, between which the 2d electron scatteres:
-                     call shortest_distance(Scell, i_f_at, j_g_at, rjg)  ! module "Atomic_tools"
-
-                     ! Scattering probability (i,j) -> (f,g):
-                     !w_ijfg = 1.0d-3   ! [eV] just to test
-                     r_ave = (rij+rif+rjg)
-                     if (r_ave < 1.0d-5) r_ave = g_a0   ! same atom, eliminate zero distance
-                     w_ijfg = ( (3.0d0*g_e*g_ke/(r_ave)*1.0d10) * K_ij(i,i_f)*K_ij(j,j_g) )**2    ! [eV] just to test
-
-                     ! testing:
-                     !if (w_ijfg > 1.0d-20) print*, i, i_f, j, j_g, (3.0d0*g_e*g_ke/(r_ave)*1.0d10), w_ijfg, K_ij(i,i_f), K_ij(j,j_g)
-
-                     ! coefficients:
-                     alpha_ij_temp = alpha_ij_temp + fe(i_f) * fe_g * w_ijfg
-                     beta_ij_temp = beta_ij_temp + (2.0d0 - fe(i_f)) * (2.0d0 - fe_g) * w_ijfg
-                  endif
-
-               endif ! within_range
-
-            enddo ! i_f_cur
-         enddo E_TO
-      enddo ! j_cur
+         endif ! within_range
+      enddo E_TO
       alpha_ij(i,j) = alpha_ij_temp ! save the coefficient for given (i,j)
       beta_ij(i,j) = beta_ij_temp   ! save the coefficient for given (i,j)
    enddo E_FROM
@@ -406,7 +363,232 @@ end subroutine share_energy
 
 
 
-subroutine Electron_electron_scattering_Kij(Ha, Mij, Sij) ! calculates factor in electron-electron scattering matrix element
+
+subroutine Electron_electron_scattering_Kij(Scell, Ha, Mij, Sij) ! calculates factor in electron-electron scattering matrix element
+   type(Super_cell), intent(in), target :: Scell ! supercell with all the atoms as one object
+   real(8), dimension(:,:), intent(in) :: Ha  ! diagonilized Hamiltonian Ha, eigenvectors
+   real(8), dimension(:,:), intent(inout) :: Mij  ! Matrix element coupling electron WF via ion motion:
+   real(8), dimension(:,:), intent(in), optional :: Sij ! overlap matrix, in case of non-orthogonal basis set
+   !----------------------------
+   integer :: N_basis_set, i, j, N, k, atom_2, j_at, i_alpha, i_sh, i_alpha_orb, j_gamma_orb, j_sh
+   real(8), dimension(size(Ha,1))  :: Norm1   ! normalization factors
+   real(8) :: Mij_cur, Mij_temp
+   real(8) :: eps, rij
+   integer, pointer :: m
+
+   N = size(Ha,1)
+
+   Mij = 0.0d0 ! to start with
+   eps = 1.0d-13    ! acceptable error
+
+   ! Identify basis-set size:
+   N_basis_set = N/Scell%Na   ! orbitals per atom
+
+   !$omp PARALLEL private(i, j, i_alpha, i_sh, i_alpha_orb, m, atom_2, j_at, rij, j_sh, j_gamma_orb, Mij_cur, Mij_temp) shared(Norm1)
+   ! Ensure WF normalization to 1:
+   !$omp do
+   do i = 1, N
+      Norm1(i) = DSQRT(SUM( Ha(:,i) * Ha(:,i) ))
+      !print*, i, Norm1(i)
+   enddo
+   !$omp end do
+   !$OMP BARRIER
+
+   ! For all "i":
+   !$omp do
+   do i = 1, N
+      ! Use symmetry: only upper triangle of (i,j)-matrix
+      do j = i, N
+
+         Mij_cur = 0.0d0      ! to reset
+
+         ! Inner product of orbitals:
+         do i_alpha = 1, Scell%Na         ! all atoms
+            do i_sh = 1, N_basis_set      ! all orbitals
+               i_alpha_orb = (i_alpha-1)*N_basis_set + i_sh
+
+               ! Second inner-prodict orbital:
+               m => Scell%Near_neighbor_size(i_alpha) ! how many atoms we can interact with
+               do atom_2 = 0,m ! do only for atoms close to that one, which can interact
+                  ! Find the distance between atoms i and j, between the two scattering electrons:
+                  if (atom_2 == 0) then ! self atom
+                     j_at = i_alpha
+                     rij = g_a0     ! within the same atom, use "atom radius"
+                  else ! different atoms
+                     j_at = Scell%Near_neighbor_list(i_alpha,atom_2) ! this is the list of such close atoms
+                     rij = Scell%Near_neighbor_dist(i_alpha,atom_2,4) ! at this distance, R [A]
+                  endif
+
+                  ! For all orbitals of the inner-product atom:
+                  do j_sh = 1, N_basis_set  ! all orbitals of this atom
+                     j_gamma_orb = (j_at-1)*N_basis_set + j_sh
+
+                     ! Matrix element:
+                     if (present(Sij)) then ! non-orthogonal
+                        Mij_temp = (Ha(i_alpha_orb,i) / Norm1(i)) * (Ha(j_gamma_orb,j) / Norm1(j)) * Sij(i_alpha_orb,j_gamma_orb) / rij
+                        !if (j/=i) print*, i, j, i_alpha_orb, j_gamma_orb, Mij_temp, (Ha(i_alpha_orb,i) / Norm1(i)) * (Ha(j_gamma_orb,j) / Norm1(j)) * 0.10d0 / rij
+                        Mij_cur = Mij_cur + Mij_temp
+                     else  ! having no idea about the overlap matrix, just use some test-value:
+                        Mij_cur = Mij_cur + (Ha(i_alpha_orb,i) / Norm1(i)) * (Ha(j_gamma_orb,j) / Norm1(j)) * 0.10d0 / rij
+                     endif
+
+
+                  enddo ! j_sh
+               enddo ! atoms_2
+            enddo ! i_sh
+         enddo ! i_alpha
+
+         ! Save the matrix element:
+         Mij(i,j) = Mij_cur
+
+      enddo ! j = i, N
+   enddo ! i = 1, N
+   !$omp end do
+   !$OMP BARRIER
+
+   ! Lower triangle of (i,j)-matrix:
+   !$omp do
+   do i = 2, N
+      do j = 1, i-1
+         Mij(i,j) = Mij(j,i)
+      enddo ! j
+   enddo ! i
+   !$omp end do
+   !$omp end parallel
+
+   nullify(m)
+   !pause 'Electron_electron_scattering_Kij'
+end subroutine Electron_electron_scattering_Kij
+
+
+
+!------------------------------
+! Subroutines used for testing:
+
+
+
+subroutine get_Boltzmann_alpha_beta_test(Scell, i, Ev, K_ij, fe, dt, alpha_ij, beta_ij)
+   type(Super_cell), intent(in), target :: Scell ! supercell with all the atoms as one object
+   integer, intent(in) :: i   ! current energy level
+   real(8), dimension(:), intent(in), target :: Ev    ! [eV] electron energy levels
+   real(8), dimension(:,:), intent(in) :: K_ij        ! electron-electron scattering matrix elements (probabilities)
+   real(8), dimension(:), intent(in) :: fe            ! electron distribution function on the last time-step
+   real(8), intent(in) :: dt        ! time step [fs]
+   real(8), dimension(:,:), intent(inout) :: alpha_ij, beta_ij
+   !--------------------------
+   integer :: j, i_f, j_g, N, N_basis_set, j_cur, i_f_cur
+   integer :: i_at, j_at, i_f_at, j_g_at, atom_2, atom_3
+   real(8) :: Ej_g, fe_g, alpha_ij_temp, beta_ij_temp, w_ijfg
+   real(8) :: rij, rif, rjg, r_ave
+   logical :: within_range ! check if final energy level is within possible range
+   real(8), pointer :: Ei, Ej, Ei_f
+   integer, pointer :: m, mf
+
+   N = size(fe)   ! Number of electrons (normalization of fe)
+   Ei => Ev(i)    ! Electron energy levels [eV]
+   ! Size of the basis set, to identify atoms:
+   N_basis_set = N/Scell%Na
+   ! Index of the atom, to which the level "i" belongs:
+   if (i < N) then
+      i_at = 1+i/N_basis_set
+   else
+      i_at = i/N_basis_set
+   endif
+   ! Use symmetry: only upper triangle of (i,j)-matrix
+   !E_FROM:do j = i, N ! all levels from where second electron can scatter off
+   m => Scell%Near_neighbor_size(i_at) ! how many atoms we can interact with
+   E_FROM:do atom_2 = 0,m ! do only for atoms close to that one, which can interact
+      ! Find the distance between atoms i and j, between the two scattering electrons:
+      if (atom_2 == 0) then ! self atom
+         j_at = i_at
+         rij = 0.0d0
+      else ! different atoms
+         j_at = Scell%Near_neighbor_list(i_at,atom_2) ! this is the list of such close atoms
+         rij = Scell%Near_neighbor_dist(i_at,atom_2,4) ! at this distance, R [A]
+      endif
+      do j_cur = 1, N_basis_set  ! all orbitals of this atom
+         j = (j_at-1)*N_basis_set + j_cur
+
+         Ej => Ev(j) ! [eV]
+
+         ! Get the inner sum over j (and g):
+         alpha_ij_temp = 0.0d0   ! to start with
+         beta_ij_temp = 0.0d0    ! to start with
+
+         !E_TO:do i_f = 1, N ! all levels where first electron can jump to
+         mf => Scell%Near_neighbor_size(i_at) ! how many atoms we can interact with
+         E_TO:do atom_3 = 0,mf ! do only for atoms close to that one, which can interact
+            ! Find the distance between atoms j and g, between which the 1st electron scatteres:
+            if (atom_3 == 0) then ! self atom
+               i_f_at = i_at
+               rif = 0.0d0
+            else ! different atoms
+               i_f_at = Scell%Near_neighbor_list(i_at,atom_3) ! this is the list of such close atoms
+               rif = Scell%Near_neighbor_dist(i_at,atom_3,4) ! at this distance, R [A]
+            endif
+
+            do i_f_cur = 1, N_basis_set  ! all orbitals of this atom
+               ! Corresponding energy level:
+               i_f = (i_f_at-1)*N_basis_set + i_f_cur
+
+               Ei_f => Ev(i_f) ! [eV] final level of 1st electron
+               Ej_g = Ej - (Ei_f - Ei) ! [eV] final energy (effective level) of 2d electron
+
+               ! Check if such a transition is possible:
+               within_range = .true. ! to start with
+               ! Exclude transitions outside of energy levels given within TB:
+               if (Ei_f < Ev(1) .or. Ei_f > Ev(N)) then
+                  within_range = .false.
+               endif
+               ! Same for the second electron:
+               if (Ej_g < Ev(1) .or. Ej_g > Ev(N)) then
+                  within_range = .false.
+               endif
+
+               if (within_range) then ! if transition is possible
+                  ! Find the value of distribution in-between the energy levels (final state of 2d electron):
+                  call mean_distribution(Ev, fe, Ej_g, fe_g, i_f1=j_g, method=5) ! see below
+
+                  if (j_g > 0) then ! scattering is allowed:
+                     if (j_g < N) then
+                        j_g_at = 1 + (j_g/N_basis_set)
+                     else
+                        j_g_at = (j_g/N_basis_set)
+                     endif
+
+                     ! Find the distance between atoms j and g, between which the 2d electron scatteres:
+                     call shortest_distance(Scell, i_f_at, j_g_at, rjg)  ! module "Atomic_tools"
+
+                     ! Scattering probability (i,j) -> (f,g):
+                     !w_ijfg = 1.0d-3   ! [eV] just to test
+                     r_ave = (rij+rif+rjg)
+                     if (r_ave < 1.0d-5) r_ave = g_a0   ! same atom, eliminate zero distance
+                     w_ijfg = ( (3.0d0*g_e*g_ke/(r_ave)*1.0d10) * K_ij(i,i_f)*K_ij(j,j_g) )**2    ! [eV] just to test
+
+                     ! testing:
+                     !if (w_ijfg > 1.0d-20) print*, i, i_f, j, j_g, (3.0d0*g_e*g_ke/(r_ave)*1.0d10), w_ijfg, K_ij(i,i_f), K_ij(j,j_g)
+
+                     ! coefficients:
+                     alpha_ij_temp = alpha_ij_temp + fe(i_f) * fe_g * w_ijfg
+                     beta_ij_temp = beta_ij_temp + (2.0d0 - fe(i_f)) * (2.0d0 - fe_g) * w_ijfg
+                  endif
+
+               endif ! within_range
+
+            enddo ! i_f_cur
+         enddo E_TO
+      enddo ! j_cur
+      alpha_ij(i,j) = alpha_ij_temp ! save the coefficient for given (i,j)
+      beta_ij(i,j) = beta_ij_temp   ! save the coefficient for given (i,j)
+   enddo E_FROM
+
+   nullify(Ei, Ej, Ei_f, m, mf)
+
+   !pause 'get_Boltzmann_alpha_beta'
+end subroutine get_Boltzmann_alpha_beta_test
+
+
+subroutine Electron_electron_scattering_Kij_TEST0(Ha, Mij, Sij) ! calculates factor in electron-electron scattering matrix element
    real(8), dimension(:,:), intent(in) :: Ha  ! diagonilized Hamiltonian Ha, eigenvectors
    real(8), dimension(:,:), intent(inout) :: Mij  ! Matrix element coupling electron WF via ion motion:
    real(8), dimension(:,:), intent(in), optional :: Sij ! overlap matrix, in case of non-orthogonal basis set
@@ -417,12 +599,12 @@ subroutine Electron_electron_scattering_Kij(Ha, Mij, Sij) ! calculates factor in
    else  ! having no idea about the overlap matrix, just use some test-value:
       Mij = 0.01d0
    endif
-end subroutine Electron_electron_scattering_Kij
+end subroutine Electron_electron_scattering_Kij_TEST0
 
 
 
 
-! This subroutine is not ready, it is here only for testing:
+
 subroutine Electron_electron_scattering_Kij_TEST(Ha, Mij, Sij) ! calculates factor in electron-electron scattering matrix element
    real(8), dimension(:,:), intent(in) :: Ha  ! diagonilized Hamiltonian Ha, eigenvectors
    real(8), dimension(:,:), intent(inout) :: Mij  ! Matrix element coupling electron WF via ion motion:

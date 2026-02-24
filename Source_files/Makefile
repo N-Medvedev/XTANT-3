@@ -19,7 +19,6 @@ ifeq ($(c),gf)
 	F90 = gfortran
 	F90FLAGS = -ffree-line-length-0 -fdec -fdec-format-defaults -cpp -fdefault-real-8 -fdefault-double-8 -O2
 	LDFLAGS += -lblas -llapack -fopenmp
-	# need to link OpenMP,     ^^^^^^^ even for non OpenMP compilation. Can be fixed..
 	ifeq (${OMP},y)
 		F90FLAGS += -fopenmp
 	endif

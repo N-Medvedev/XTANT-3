@@ -653,7 +653,7 @@ subroutine Boltzmann_e_e_IN(Scell, numpar, Ev, fe, dt, Npoints) ! calculates cha
    enddo ! i_step
 #endif
 
-   ! Test the energy conservation:
+   ! Test the particle and energy conservation:
    !call set_total_el_energy(Ev, fe_temp, E_tot2)      ! below
    !N_tot = SUM(fe)
    !N_tot2 = SUM(fe_temp)
@@ -674,25 +674,25 @@ subroutine get_electron_electron_overlap(Scell, M_ee)    ! below
       ! Different expressions for orthogonal and non-orthogonal bases:
       select type(ARRAY)
       type is (TB_H_Pettifor) ! TB parametrization according to Pettifor: orthogonal
-         call Electron_electron_scattering_Kij(Scell%Ha, M_ee)      ! module "Electron_electron_scattering"
+         call Electron_electron_scattering_Kij(Scell, Scell%Ha, M_ee)      ! module "Electron_electron_scattering"
 
       type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni: orthogonal
-         call Electron_electron_scattering_Kij(Scell%Ha, M_ee)      ! module "Electron_electron_scattering"
+         call Electron_electron_scattering_Kij(Scell, Scell%Ha, M_ee)      ! module "Electron_electron_scattering"
 
       type is (TB_H_Fu)  ! TB parametrization accroding to Fu: orthogonal
-         call Electron_electron_scattering_Kij(Scell%Ha, M_ee)      ! module "Electron_electron_scattering"
+         call Electron_electron_scattering_Kij(Scell, Scell%Ha, M_ee)      ! module "Electron_electron_scattering"
 
       type is (TB_H_NRL)  ! TB parametrization accroding to NRL method: non-orthogonal
-         call Electron_electron_scattering_Kij(Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
+         call Electron_electron_scattering_Kij(Scell, Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
 
       type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB: non-orthogonal
-         call Electron_electron_scattering_Kij(Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
+         call Electron_electron_scattering_Kij(Scell, Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
 
       type is (TB_H_3TB)  ! TB parametrization accroding to 3TB: non-orthogonal
-         call Electron_electron_scattering_Kij(Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
+         call Electron_electron_scattering_Kij(Scell, Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
 
       type is (TB_H_xTB)  ! TB parametrization accroding to xTB: non-orthogonal
-         call Electron_electron_scattering_Kij(Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
+         call Electron_electron_scattering_Kij(Scell, Scell%Ha, M_ee, Scell%Sij)      ! module "Electron_electron_scattering"
 
       end select
    END ASSOCIATE
