@@ -4897,6 +4897,9 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    numpar%do_partial_thermal = ( (numpar%tau_fe_CB > -1.0d-8) .and. (numpar%tau_fe_VB > -1.0d-8) )
    if (numpar%tau_fe_CB < 0.0d0) numpar%tau_fe_CB = 0.0d0   ! eliminate nigative values (even within precision)
    if (numpar%tau_fe_VB < 0.0d0) numpar%tau_fe_VB = 0.0d0   ! eliminate nigative values (even within precision)
+   if (numpar%el_ion_scheme == 5) then ! Boltzmann e-e collision integral
+      ! may be set some default options, if needed
+   endif
 
    ! Col#1: -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule (DO NOT USE!)
    ! Col#2: 0=MAxwellian atomic distribution; 1=transient nonequilibrium

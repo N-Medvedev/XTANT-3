@@ -53,7 +53,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 09.12.2025)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 24.02.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -4852,7 +4852,7 @@ subroutine write_atomic_distribution_gnuplot(FN, Scell, numpar, file_fe, its_pot
       write(ch_temp3,'(f)') numpar%dt_save
 
       select case (numpar%el_ion_scheme)
-         case (3:4)
+         case (3:5)
             do_fe_eq = .true.
          case default
             do_fe_eq = .false.
@@ -5135,7 +5135,7 @@ subroutine write_orb_distribution_gnuplot(FN, Scell, numpar, matter, file_fe)
          col = 5  ! column number after which orbital-resolved data start
       else
          select case (numpar%el_ion_scheme)
-            case (3:4)
+            case (3:5)
                col = 3  ! column number after which orbital-resolved data start
             case default
                col = 2  ! column number after which orbital-resolved data start
@@ -6651,6 +6651,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(print_to,'(a)') ' No band-resolved relaxation is used'
       endif
 
+   case (5)
+      write(print_to,'(a)') ' Boltzmann electron-electron collision integral used'
    end select
 
    write(print_to,'(a)') ' Scheme used for electron-ion (electron-phonon) coupling: '
@@ -6715,7 +6717,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    write(text1, '(f7.1)') numpar%E_cut
    write(print_to,'(a, a, a)') ' Electron energy cut-off, separating high-energy- from low-energy-electrons: ', trim(adjustl(text1)), ' [eV]'
    select case (numpar%el_ion_scheme)
-   case (3:4)
+   case (3:5)
       write(print_to,'(a)') ' But it maybe dynamically adjusted to the top of CB (nonequilibrium simulation)'
    endselect
 
