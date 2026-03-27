@@ -2175,9 +2175,11 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
    type(Solid), intent(in) :: matter     ! material parameters
    type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
    !--------------------------------
-   integer :: i, j, k
+   integer :: i, j, k, N_diff_peak, N_KOA
    real(8) :: Nat, FF, FF2, q, Z, Z2, Fpowder, Rij, qA, arg, F_cur, Mmean, MSD
-   complex :: Fijk
+   complex :: Fijk, Fijk_cur
+   complex, dimension(:), allocatable :: Fijk_part
+   real(8), dimension(:,:), allocatable :: Fpowder_part
    integer, pointer :: KOA, KOA2
    logical :: save_thetas, do_DW
 
@@ -2186,6 +2188,23 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
 
    ! Number of atoms:
    Nat = dble(size(Scell(1)%MDAtoms))
+   N_KOA = size(matter%Atoms) ! number of elements
+
+   ! Check if partial (element-specific) diffraction data are required:
+   ! If more then one element is present in the compound, do it:
+   if (N_KOA > 1) then
+      N_diff_peak = size(Scell(1)%diff_peaks%I_diff_peak)   ! number of requested diffraction peaks
+      if (.not. allocated(Scell(1)%diff_peaks%I_diff_peak_part)) then ! first time, allocate arrays:
+         ! element-specific peak intensities:
+         allocate(Scell(1)%diff_peaks%I_diff_peak_part(N_KOA, N_diff_peak), source = 0.0d0)
+         ! pairwise element specific powder diffraction:
+         allocate(Scell(1)%diff_peaks%I_powder_part(N_KOA, N_KOA, size(Scell(1)%diff_peaks%I_powder)), source = 0.0d0)
+      endif
+
+      allocate(Fijk_part(N_KOA))          ! diffraction amplitudes for each element
+      allocate(Fpowder_part(N_KOA, N_KOA))     ! powder diffraction peaks for each pair of elements
+   endif
+
 
    ! Check if Debye-Waller analysis is required:
    if ( abs(numpar%DW_theta) > 1.0d-6 ) then ! Debye temperature > 0, analysis required
@@ -2221,6 +2240,7 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
    ! For all selected peaks:
    do i = 1, size(Scell(1)%diff_peaks%I_diff_peak)
       Fijk = cmplx(0.0d0,0.0d0)     ! to start with
+      if (N_KOA > 1) Fijk_part = cmplx(0.0d0,0.0d0)     ! to start with
 
       !-------------------------------
       ! This part only works for orthagonal supercell (to be improved later!):
@@ -2258,16 +2278,32 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
 
          ! Scattering amplitude:
          !Fijk = Fijk + FF * exp(-g_2Pi * g_CI * (SUM(dble(Scell(1)%diff_peaks%ijk_diff_peak(:,i)) * Scell(1)%MDAtoms(j)%S(:)) ) )
-         Fijk = Fijk + FF * exp(-g_2Pi * g_CI * ( &
+         Fijk_cur = FF * exp(-g_2Pi * g_CI * ( &
                 dble(Scell(1)%diff_peaks%ijk_diff_peak(1,i)) * Scell(1)%MDAtoms(j)%S(1) * matter%cell_x + &
                 dble(Scell(1)%diff_peaks%ijk_diff_peak(2,i)) * Scell(1)%MDAtoms(j)%S(2) * matter%cell_y + &
                 dble(Scell(1)%diff_peaks%ijk_diff_peak(3,i)) * Scell(1)%MDAtoms(j)%S(3) * matter%cell_z ) )
+         Fijk = Fijk + Fijk_cur     ! sum up the contributions
+
+         ! If we need element-specific data:
+         if (N_KOA > 1) then  ! save them
+            Fijk_part(KOA) = Fijk_part(KOA) + Fijk_cur     ! sum up the contributions
+         endif
       enddo
 
       ! Intensity:
       Scell(1)%diff_peaks%I_diff_peak(i) = Fijk * conjg(Fijk)
       ! Arb.units => normalized to number of atoms in the simulation:
       Scell(1)%diff_peaks%I_diff_peak(i) = Scell(1)%diff_peaks%I_diff_peak(i) / Nat
+
+      ! If we need element-specific data:
+      if (N_KOA > 1) then  ! save them
+         do k = 1, N_KOA
+            Scell(1)%diff_peaks%I_diff_peak_part(k, i) = Fijk_part(k) * conjg(Fijk_part(k) )
+            ! Arb.units => normalized to TOTAL number of atoms in the simulation:
+            Scell(1)%diff_peaks%I_diff_peak_part(k, i) = Scell(1)%diff_peaks%I_diff_peak_part(k, i) / Nat
+         enddo ! k
+      endif
+
 
       ! Debye-Waller analysis:
       if (do_DW) then
@@ -2287,6 +2323,13 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
 
    ! Normalize the peak intensities to the initial values:
    Scell(1)%diff_peaks%I_diff_peak = Scell(1)%diff_peaks%I_diff_peak/Scell(1)%diff_peaks%I_diff_peak_first
+
+   ! If we need element-specific data:
+   if (N_KOA > 1) then  ! save them
+      do k = 1, N_KOA
+         Scell(1)%diff_peaks%I_diff_peak_part(k,:) = Scell(1)%diff_peaks%I_diff_peak_part(k,:)/Scell(1)%diff_peaks%I_diff_peak_first(:)
+      enddo ! k
+   endif
 
 !    if (do_DW) then ! Debye-Waller: normalization not needed
 !       Scell(1)%diff_peaks%I_diff_peak_DW = Scell(1)%diff_peaks%I_diff_peak_DW/Scell(1)%diff_peaks%I_diff_peak_first_DW
@@ -2308,6 +2351,7 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
       q = qA * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
 
       Fpowder = 0.0d0   ! to start with
+      if (N_KOA > 1) Fpowder_part = 0.0d0 ! to start with
 
       ! Sum contributions from all atoms:
       do j = 1, int(Nat)   ! atoms
@@ -2319,6 +2363,9 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
 
          ! Self-term to start with:
          Fpowder = Fpowder + FF*FF
+         if (N_KOA > 1) then ! pair-of-elements specific
+            Fpowder_part(KOA,KOA) = Fpowder_part(KOA,KOA) + FF*FF
+         endif
 
          do k = j+1, int(Nat)   ! pairs of atoms
             ! kind of atom #2:
@@ -2342,10 +2389,19 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
             ! Add curкent value to the sum (factor of 2 for j<i terms identical to j>i):
             Fpowder = Fpowder + 2.0d0*F_cur
 
+            if (N_KOA > 1) then ! pair-of-elements specific
+               Fpowder_part(min(KOA,KOA2), max(KOA,KOA2)) = Fpowder_part(min(KOA,KOA2), max(KOA,KOA2)) + 2.0d0*F_cur
+            endif
+
          enddo ! k
       enddo ! j
       Fpowder = Fpowder/Nat   ! normalize
       Scell(1)%diff_peaks%I_powder(i) = Fpowder
+
+      if (N_KOA > 1) then ! pair-of-elements specific
+         Fpowder_part = Fpowder_part/Nat   ! normalize
+         Scell(1)%diff_peaks%I_powder_part(:,:,i) = Fpowder_part(:,:)
+      endif
 
       !print*, Scell(1)%diff_peaks%two_theta(i)*180.0/g_Pi, qA, Scell(1)%diff_peaks%I_powder(i)
    enddo ! i

@@ -53,7 +53,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 24.02.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 25.03.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -72,7 +72,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
    type(Energies) :: nrg   ! [eV] energies in the super-cell
    real(8) :: Pressure
    real(8), dimension(3,3) :: Stress
-   integer NSC
+   integer :: NSC, i
 
 
    ! Prepare output:
@@ -171,8 +171,15 @@ subroutine write_output_files(numpar, time, matter, Scell)
       endif
 
       if (numpar%save_diff_peaks) then ! selected diffraction peaks and powder spectrum
-         call save_diffraction_peaks(numpar%FN_diff_peaks, time, Scell(1))    ! below
-         call save_diffraction_powder(numpar%FN_diff_powder, time, Scell(1))    ! below
+         call save_diffraction_peaks(numpar%FN_diff_peaks, time, Scell(1), 0)    ! below
+
+         if (size(matter%Atoms) > 1) then ! element-specific data:
+            do i = 1, size(matter%Atoms)  ! for all elements
+               call save_diffraction_peaks(numpar%FN_diff_peaks_part(i), time, Scell(1), i)    ! below
+            enddo
+         endif
+
+         call save_diffraction_powder(numpar%FN_diff_powder, time, Scell(1), matter)    ! below
          ! Check if Debye-Waller analysis is required:
          if ( abs(numpar%DW_theta) > 1.0d-6 ) then
             call save_diffraction_peaks_DW(numpar%FN_diff_peaks_DW, time, Scell(1))    ! below
@@ -1750,17 +1757,24 @@ end subroutine write_sectional_displacements
 
 
 
-subroutine save_diffraction_peaks(FN, time, Scell)
+subroutine save_diffraction_peaks(FN, time, Scell, ind)
    integer, intent(in) :: FN  ! file number to save to
    real(8), intent(in) :: time   ! [fs]
    type(Super_cell), intent(in):: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: ind ! which element data to printout
    !--------------
    integer :: i
 
    write(FN, '(es)', advance = 'no') time
+
    do i = 1, size(Scell%diff_peaks%I_diff_peak)
-      write(FN, '(es)', advance = 'no') Scell%diff_peaks%I_diff_peak(i)
-   enddo
+      if (ind < 1) then    ! total
+         write(FN, '(es)', advance = 'no') Scell%diff_peaks%I_diff_peak(i)
+      else ! element-specific
+         write(FN, '(es)', advance = 'no') Scell%diff_peaks%I_diff_peak_part(ind, i)
+      endif
+   enddo ! i
+
    write(FN, '(a)') ''  ! next line
 end subroutine save_diffraction_peaks
 
@@ -1797,17 +1811,31 @@ end subroutine save_Debye_temperature_from_DW
 
 
 
-subroutine save_diffraction_powder(FN, time, Scell)
+subroutine save_diffraction_powder(FN, time, Scell, matter)
    integer, intent(in) :: FN  ! file number to save to
    real(8), intent(in) :: time   ! [fs]
    type(Super_cell), intent(in):: Scell ! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter ! parameters of the material
    !--------------
-   integer :: i
+   integer :: i, j, k
 
    write(FN,'(a,f25.16)') '#', time
-   do i = 1, size(Scell%diff_peaks%two_theta)
-      write(FN, '(f25.16,es)') Scell%diff_peaks%two_theta(i)*g_rad2deg, Scell%diff_peaks%I_powder(i)
-   enddo
+
+   if (.not. allocated(Scell%diff_peaks%I_diff_peak_part)) then ! no element-specific data:
+      do i = 1, size(Scell%diff_peaks%two_theta)
+         write(FN, '(f25.16,es)') Scell%diff_peaks%two_theta(i)*g_rad2deg, Scell%diff_peaks%I_powder(i)
+      enddo ! i
+   else ! there are element-specific data:
+      do i = 1, size(Scell%diff_peaks%two_theta)
+         write(FN, '(f25.16,es)', advance='no') Scell%diff_peaks%two_theta(i)*g_rad2deg, Scell%diff_peaks%I_powder(i)
+         do j = 1, matter%N_KAO     ! for all elements
+            do k = j, matter%N_KAO  ! for all different pairs
+               write(FN, '(f25.16,es)', advance='no') Scell%diff_peaks%I_powder_part(j,k,i)
+            enddo ! k
+         enddo ! j
+         write(FN, '(a)') ''
+      enddo ! i
+   endif
    write(FN, '(a)') ''
    write(FN, '(a)') ''
 end subroutine save_diffraction_powder
@@ -2110,6 +2138,15 @@ subroutine close_output_files(Scell, numpar)
    if (numpar%save_diff_peaks) then
       close(numpar%FN_diff_peaks)
       close(numpar%FN_diff_powder)
+
+      ! Check if element-specific files are there:
+      if (allocated(numpar%FN_diff_peaks_part)) then
+         Nsiz = size(numpar%FN_diff_peaks_part)   ! how many masks
+         do i = 1, Nsiz
+            close(numpar%FN_diff_peaks_part(i))
+         enddo
+      endif
+
       ! Check if Debye-Waller analysis is required:
       if ( abs(numpar%DW_theta) > 1.0d-6 ) then
          close(numpar%FN_diff_peaks_DW)
@@ -2161,6 +2198,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100), dimension(:), allocatable :: file_sect_displ, file_sect_displ_short  ! sectional displacements
    character(100), dimension(:), allocatable :: file_element_NN, file_element_NN_short      ! element-specific nearest neighbors
    character(100) :: file_diff_peaks, file_diff_powder      ! selected diffraction peaks, powder diffraction
+   character(100), dimension(:), allocatable :: file_diff_peaks_part    ! element-specific diffraction peaks
    character(100) :: file_diff_peaks_DW   ! Debye-Waller diffraction intensities
    character(100) :: file_testmode		! testmode file
    character(100) :: chtemp
@@ -2222,6 +2260,19 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       file_diff_peaks = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_peaks)))
       numpar%FN_diff_peaks = FN
+
+      ! For element-specific diffraction data:
+      if (size(matter%Atoms) > 1) then
+         allocate(file_diff_peaks_part(size(matter%Atoms)))
+         if (.not.allocated(numpar%FN_diff_peaks_part)) allocate(numpar%FN_diff_peaks_part(size(matter%Atoms)))
+         do i = 1, size(matter%Atoms)
+            file_diff_peaks_part(i) = 'OUTPUT_diffraction_peaks_'//trim(adjustl(matter%Atoms(i)%Name))//'.dat'
+            file_diff_peaks = trim(adjustl(file_path))//trim(adjustl(file_diff_peaks_part(i)))
+            open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_peaks)))
+            numpar%FN_diff_peaks_part(i) = FN
+         enddo ! i
+      endif
+
       ! Create the header, containing all the peaks:
       chtemp2 = ''      ! to start with
       chtemp3 = ''      ! to start with
@@ -2243,15 +2294,38 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       enddo
       !print*, trim(adjustl(chtemp2))
 
-      call create_file_header(numpar%FN_diff_peaks, '#Time          '//trim(adjustl(chtemp2)) )    ! below
-      call create_file_header(numpar%FN_diff_peaks, '#[fs]          [arb.units]')
-      call create_file_header(numpar%FN_diff_peaks, '#2theta [deg]: ' //trim(adjustl(chtemp3)) )    ! below
-      call create_file_header(numpar%FN_diff_peaks, '#q [1/A]:      ' //trim(adjustl(chtemp4)) )    ! below
+      call create_file_header(numpar%FN_diff_peaks, '#Time          '//trim(adjustl(chtemp2)) )       ! below
+      call create_file_header(numpar%FN_diff_peaks, '#[fs]          [arb.units]')                     ! below
+      call create_file_header(numpar%FN_diff_peaks, '#2theta [deg]: ' //trim(adjustl(chtemp3)) )      ! below
+      call create_file_header(numpar%FN_diff_peaks, '#q [1/A]:      ' //trim(adjustl(chtemp4)) )      ! below
+
+
+      ! For element-specific diffraction data:
+      if (size(matter%Atoms) > 1) then
+         do i = 1, size(matter%Atoms)
+            call create_file_header(numpar%FN_diff_peaks_part(i), '#Time          '//trim(adjustl(chtemp2)) )     ! below
+            call create_file_header(numpar%FN_diff_peaks_part(i), '#[fs]          [arb.units]')                   ! below
+            call create_file_header(numpar%FN_diff_peaks_part(i), '#2theta [deg]: ' //trim(adjustl(chtemp3)) )    ! below
+            call create_file_header(numpar%FN_diff_peaks_part(i), '#q [1/A]:      ' //trim(adjustl(chtemp4)) )    ! below
+         enddo ! i
+      endif
+
 
       ! Powder diffraction:
       file_diff_powder = trim(adjustl(file_path))//'OUTPUT_diffraction_powder.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_powder)))
       numpar%FN_diff_powder = FN
+      ! Create a header:
+      write(numpar%FN_diff_powder, '(a)', advance='no') '#Angle     Total'
+      if (size(matter%Atoms) > 1) then
+         do j = 1, matter%N_KAO     ! for all elements
+            do k = j, matter%N_KAO  ! for all different pairs
+               write(numpar%FN_diff_powder, '(a)', advance='no') '     '//trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))
+            enddo ! k
+         enddo ! j
+      endif
+      write(numpar%FN_diff_powder, '(a)') ''
+
 
       ! Check if Debye-Waller analysis is required:
       if ( abs(numpar%DW_theta) > 1.0d-6 ) then
@@ -2597,6 +2671,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    'OUTPUT_atomic_temperatures_partial.dat', &
    file_sect_displ_short, &
    'OUTPUT_diffraction_peaks.dat', &
+   file_diff_peaks_part, &
    'OUTPUT_diffraction_powder.dat', &
    'OUTPUT_diffraction_peaks_DW.dat', &
    'OUTPUT_Debye_temperature_from_DW.dat', &
@@ -2605,6 +2680,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    ! clean up:
    if (allocated(file_sect_displ)) deallocate(file_sect_displ, file_sect_displ_short)
    if (allocated(file_element_NN)) deallocate(file_element_NN)
+   if (allocated(file_diff_peaks_part)) deallocate(file_diff_peaks_part)
 end subroutine create_output_files
 
 
@@ -2619,7 +2695,8 @@ subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_tem
 file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_element_NN, file_electron_entropy, file_Te, file_mu, &
 file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
-file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW, file_Debye_temperature, file_testmode)
+file_diffraction_peaks, file_diffraction_peaks_part, file_diffraction_powder, file_diffraction_peaks_DW, file_Debye_temperature, &
+file_testmode)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -2650,6 +2727,7 @@ file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW, file
    character(*), intent(in) :: file_atomic_temperatures_part  ! partial atomic temperatures (X, Y, Z)
    character(*), dimension(:), intent(in) :: file_sect_displ
    character(*), intent(in) :: file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW  ! diffraction peaks
+   character(*), dimension(:), intent(in) :: file_diffraction_peaks_part
    character(*), intent(in) :: file_Debye_temperature ! Debye temperatures
    character(*), intent(in) :: file_testmode    ! testmode data
    !----------------
@@ -2731,12 +2809,24 @@ file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW, file
       call gnu_diffraction_peaks(Scell(1), File_name, file_diffraction_peaks, t0, t_last, &
                                     'OUTPUT_diffraction_peaks.'//trim(adjustl(numpar%fig_extention)), .false.) ! below
 
+      ! For element-specific diffraction data:
+      if (size(matter%Atoms) > 1) then
+          do j = 1, size(matter%Atoms)    ! for all elements
+             File_name  = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_'//trim(adjustl(matter%Atoms(j)%Name))// &
+                          '_Gnuplot'//trim(adjustl(sh_cmd))
+             call gnu_diffraction_peaks(Scell(1), File_name, file_diffraction_peaks_part(j), t0, t_last, &
+                                    'OUTPUT_diffraction_peaks_'//trim(adjustl(matter%Atoms(j)%Name))// &
+                                    '.'//trim(adjustl(numpar%fig_extention)), .false.) ! below
+          enddo
+      endif
+
+
       ! Powder diffraction:
       File_name  = trim(adjustl(file_path))//'OUTPUT_diffraction_powder_Gnuplot'//trim(adjustl(sh_cmd))
       open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
       call write_gnuplot_script_header_new(FN, 6, 1.0d0, 10.0d0, 'Powder', '2theta (deg)', 'Peak Intensity (a.u.)', 'OUTPUT_diffraction_powder.gif', numpar%path_sep, setkey=0)
 
-      call write_diffraction_powder_gnuplot(FN, Scell, numpar, trim(adjustl(file_diffraction_powder)))      ! below
+      call write_diffraction_powder_gnuplot(FN, Scell, matter, numpar, trim(adjustl(file_diffraction_powder)))      ! below
 
       call write_gnuplot_script_ending(FN, File_name, 1)
       close(FN)
@@ -4768,16 +4858,17 @@ end subroutine write_energy_levels_gnuplot
 
 
 
-subroutine write_diffraction_powder_gnuplot(FN, Scell, numpar, file_powder, min_x, max_x)
+subroutine write_diffraction_powder_gnuplot(FN, Scell, matter, numpar, file_powder, min_x, max_x)
    integer, intent(in) :: FN            ! file to write into
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter            ! material parameters
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    character(*), intent(in) :: file_powder  ! file with powder diffraction spectrum
    real(8), intent(in), optional :: min_x, max_x      ! start and end of x-grid
    !-----------------------
    real(8) :: x_start, x_end
-   integer :: i, M, NSC
-   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4
+   integer :: i, M, NSC, ind, j, k
+   character(30) :: ch_temp, ch_temp2, ch_temp3, ch_temp4, ch_i
    logical :: do_fe_eq
 
    if (present(min_x)) then
@@ -4803,16 +4894,63 @@ subroutine write_diffraction_powder_gnuplot(FN, Scell, numpar, file_powder, min_
          write(FN, '(a)') 'stats "'//trim(adjustl(file_powder))//'" nooutput'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
 
-         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][:] "'//trim(adjustl(file_powder))// &
+         ! Add partial ones:
+         if (matter%N_KAO > 1) then ! only makes sence if there is more then one element in the compound:
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][:] "'//trim(adjustl(file_powder))// &
+                  '" index (i-1) u 1:2 w l lw 2 lt rgb "black" title sprintf("%i fs total",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) ,\'
+
+            ind = 2     ! top start counting columns
+            do j = 1, matter%N_KAO     ! for all elements
+               do k = j, matter%N_KAO  ! for all different pairs
+                  ind = ind + 1
+                  write(ch_i,'(i0)') ind
+                  if ( (j==matter%N_KAO) .and. (k==matter%N_KAO) ) then ! last line
+                     write(FN, '(a)') ' "'//trim(adjustl(file_powder))// &
+                        '" index (i-1) u 1:'//trim(adjustl(ch_i))//' w l lw 2 title "'// &
+                        trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))//'" '
+                  else
+                     write(FN, '(a)') ' "'//trim(adjustl(file_powder))// &
+                        '" index (i-1) u 1:'//trim(adjustl(ch_i))//' w l lw 2 title "'// &
+                        trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))//'" ,\'
+                  endif
+               enddo ! k
+            enddo ! j
+         else ! there is only one column
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][:] "'//trim(adjustl(file_powder))// &
                   '" index (i-1) u 1:2 w l lw 2 lt rgb "black" title sprintf("%i fs",(i*' // trim(adjustl(ch_temp3)) // '+'// &
                   trim(adjustl(ch_temp2))// ')) '
+         endif
+
       else  ! Linux
          write(FN, '(a)') 'stats \"'//trim(adjustl(file_powder))//'\" nooutput'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
 
-         write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][:] \"'//trim(adjustl(file_powder))// &
+         if (matter%N_KAO > 1) then ! if there are more then 1 column
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][:] \"'//trim(adjustl(file_powder))// &
+                  '\" index (i-1) u 1:2 w l lw 2 lt rgb \"black\" title sprintf(\"%i fs total\",(i*' // trim(adjustl(ch_temp3)) // '+'// &
+                  trim(adjustl(ch_temp2))// ')) ,\'
+            ind = 2     ! top start counting columns
+            do j = 1, matter%N_KAO     ! for all elements
+               do k = j, matter%N_KAO  ! for all different pairs
+                  ind = ind + 1
+                  write(ch_i,'(i0)') ind
+                  if ( (j==matter%N_KAO) .and. (k==matter%N_KAO) ) then ! last line
+                     write(FN, '(a)') ' \"'//trim(adjustl(file_powder))// &
+                        '\" index (i-1) u 1:'//trim(adjustl(ch_i))//' w l lw 2 title \"'// &
+                        trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))//'\" '
+                  else
+                     write(FN, '(a)') ' \"'//trim(adjustl(file_powder))// &
+                        '\" index (i-1) u 1:'//trim(adjustl(ch_i))//' w l lw 2 title \"'// &
+                        trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))//'\" ,\'
+                  endif
+               enddo ! k
+            enddo ! j
+         else ! there is only one column
+            write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][:] \"'//trim(adjustl(file_powder))// &
                   '\" index (i-1) u 1:2 w l lw 2 lt rgb \"black\" title sprintf(\"%i fs\",(i*' // trim(adjustl(ch_temp3)) // '+'// &
                   trim(adjustl(ch_temp2))// ')) '
+         endif
       endif
       write(FN, '(a)') '}'
    enddo

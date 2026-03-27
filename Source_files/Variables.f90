@@ -85,6 +85,7 @@ subroutine deallocate_all()
    if (allocated(g_numpar%NN_radii)) deallocate(g_numpar%NN_radii)
    if (allocated(g_numpar%FN_element_NN)) deallocate(g_numpar%FN_element_NN)
    if (allocated(g_numpar%FN_displacements)) deallocate(g_numpar%FN_displacements)
+   if (allocated(g_numpar%FN_diff_peaks_part)) deallocate(g_numpar%FN_diff_peaks_part)
 end subroutine deallocate_all
 
 

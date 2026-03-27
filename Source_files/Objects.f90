@@ -655,6 +655,10 @@ type :: diffraction_peaks
    real(8), dimension(:), allocatable :: I_powder_DW   ! intensity vs 2-theta
    real(8), dimension(:), allocatable :: DW_temperature   ! atomic temeprature from DW analysis of peaks
    real(8), dimension(:), allocatable :: Debye_temperature   ! Debye temeprature calculated from each diffraction peak
+   !----------------------
+   ! Partial (element-specific) diffraction peaks:
+   real(8), dimension(:,:), allocatable :: I_diff_peak_part  ! element-specific peak intensities
+   real(8), dimension(:,:,:), allocatable :: I_powder_part   ! pair-of-elements-specific intensity vs 2-theta
 end type diffraction_peaks
 
 
@@ -1037,6 +1041,7 @@ type Numerics_param
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
    integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot, FN_testmode, FN_diff_peaks, FN_diff_powder
    integer :: FN_diff_peaks_DW, FN_Debye_temperature
+   integer, dimension(:), allocatable :: FN_diff_peaks_part
    integer, dimension(:), allocatable :: FN_element_NN
    integer, dimension(:), allocatable :: FN_displacements
    integer :: MOD_TIME ! time when the communication.txt file was last modified
