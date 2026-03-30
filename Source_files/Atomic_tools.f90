@@ -2334,13 +2334,13 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
 
    !------------------------------------------------------
    ! Normalize the peak intensities to the initial values (optional):
-   !Scell(1)%diff_peaks%I_diff_peak = Scell(1)%diff_peaks%I_diff_peak/Scell(1)%diff_peaks%I_diff_peak_first
+   Scell(1)%diff_peaks%I_diff_peak = Scell(1)%diff_peaks%I_diff_peak/Scell(1)%diff_peaks%I_diff_peak_first
    ! If we need element-specific data:
-   !if (N_KOA > 1) then  ! save them
-   !   do k = 1, N_KOA
-   !      Scell(1)%diff_peaks%I_diff_peak_part(k,:) = Scell(1)%diff_peaks%I_diff_peak_part(k,:)/Scell(1)%diff_peaks%I_diff_peak_first(:)
-   !   enddo ! k
-   !endif
+   if (N_KOA > 1) then  ! save them
+      do k = 1, N_KOA
+         Scell(1)%diff_peaks%I_diff_peak_part(k,:) = Scell(1)%diff_peaks%I_diff_peak_part(k,:)/Scell(1)%diff_peaks%I_diff_peak_first(:)
+      enddo ! k
+   endif
    !if (do_DW) then ! Debye-Waller: normalization not needed
    !   Scell(1)%diff_peaks%I_diff_peak_DW = Scell(1)%diff_peaks%I_diff_peak_DW/Scell(1)%diff_peaks%I_diff_peak_first_DW
    !endif
