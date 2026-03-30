@@ -2243,11 +2243,22 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
       if (N_KOA > 1) Fijk_part = cmplx(0.0d0,0.0d0)     ! to start with
 
       !-------------------------------
-      ! This part only works for orthagonal supercell (to be improved later!):
-      qA = g_2Pi * sqrt ( &
-             (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/(Scell(1)%Supce(1,1)/matter%cell_x))**2 + &
-             (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/(Scell(1)%Supce(2,2)/matter%cell_y))**2 + &
-             (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/(Scell(1)%Supce(3,3)/matter%cell_z))**2 )      ! [1/A]
+      ! This version only works for orthagonal supercell (used for testing):
+      !qA = g_2Pi * sqrt ( &
+      !       (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/(Scell(1)%Supce(1,1)/matter%cell_x))**2 + &
+      !       (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/(Scell(1)%Supce(2,2)/matter%cell_y))**2 + &
+      !       (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/(Scell(1)%Supce(3,3)/matter%cell_z))**2 )      ! [1/A]
+      ! This version works for non-orthogonal supercell too:
+      qA = sqrt( SUM( (Scell(1)%diff_peaks%ijk_diff_peak(1,i) * Scell(1)%k_supce(1,:)*matter%cell_x)**2 + &
+                      (Scell(1)%diff_peaks%ijk_diff_peak(2,i) * Scell(1)%k_supce(2,:)*matter%cell_y)**2 + &
+                      (Scell(1)%diff_peaks%ijk_diff_peak(3,i) * Scell(1)%k_supce(3,:)*matter%cell_y)**2) )      ! [1/A]
+
+!       print*, qA, g_2Pi * sqrt ( &
+!              (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/(Scell(1)%Supce(1,1)/matter%cell_x))**2 + &
+!              (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/(Scell(1)%Supce(2,2)/matter%cell_y))**2 + &
+!              (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/(Scell(1)%Supce(3,3)/matter%cell_z))**2 )      ! [1/A]
+!       pause 'Orthagonal vs nonorthagonal'
+
       ! Convert units for form-factor evaluation:
       q = qA * 1.0d10 * g_h      ! [1/A] -> [kg*m/s]
       !print*, 'q_ijk=', q, q /(1.0d10 * g_h), 2.0d0*asin(q/g_h * (Scell(1)%diff_peaks%l) / (4.0d0*g_Pi)) * g_rad2deg
@@ -2321,20 +2332,19 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
       endwhere
    endif
 
-   ! Normalize the peak intensities to the initial values:
-   Scell(1)%diff_peaks%I_diff_peak = Scell(1)%diff_peaks%I_diff_peak/Scell(1)%diff_peaks%I_diff_peak_first
-
+   !------------------------------------------------------
+   ! Normalize the peak intensities to the initial values (optional):
+   !Scell(1)%diff_peaks%I_diff_peak = Scell(1)%diff_peaks%I_diff_peak/Scell(1)%diff_peaks%I_diff_peak_first
    ! If we need element-specific data:
-   if (N_KOA > 1) then  ! save them
-      do k = 1, N_KOA
-         Scell(1)%diff_peaks%I_diff_peak_part(k,:) = Scell(1)%diff_peaks%I_diff_peak_part(k,:)/Scell(1)%diff_peaks%I_diff_peak_first(:)
-      enddo ! k
-   endif
-
-!    if (do_DW) then ! Debye-Waller: normalization not needed
-!       Scell(1)%diff_peaks%I_diff_peak_DW = Scell(1)%diff_peaks%I_diff_peak_DW/Scell(1)%diff_peaks%I_diff_peak_first_DW
-!    endif
-
+   !if (N_KOA > 1) then  ! save them
+   !   do k = 1, N_KOA
+   !      Scell(1)%diff_peaks%I_diff_peak_part(k,:) = Scell(1)%diff_peaks%I_diff_peak_part(k,:)/Scell(1)%diff_peaks%I_diff_peak_first(:)
+   !   enddo ! k
+   !endif
+   !if (do_DW) then ! Debye-Waller: normalization not needed
+   !   Scell(1)%diff_peaks%I_diff_peak_DW = Scell(1)%diff_peaks%I_diff_peak_DW/Scell(1)%diff_peaks%I_diff_peak_first_DW
+   !endif
+   !------------------------------------------------------
 
    ! Debye temperature from Debye-Waller analysis:
    if (do_DW) then
@@ -2386,7 +2396,7 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
                F_cur = FF*FF2*(1.0d0-1.0d0/6.0d0*arg**2)
             endif
 
-            ! Add curкent value to the sum (factor of 2 for j<i terms identical to j>i):
+            ! Add current value to the sum (factor of 2 for j<i terms identical to j>i):
             Fpowder = Fpowder + 2.0d0*F_cur
 
             if (N_KOA > 1) then ! pair-of-elements specific
