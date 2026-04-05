@@ -476,11 +476,11 @@ subroutine read_diffraction_data(FN_in, Read_data_peak, i, INFO)
     character(10) :: temp_ch
 
     ! Get the nuimber of diffraction peaks in the file:
-    call Count_columns_in_file(FN_in, N_col, skip_lines=2) ! below
+    call Count_columns_in_file(FN_in, N_col, skip_lines=4) ! below
     N_col = N_col - 1   ! exclude the first column (with timestep)
 
     ! Get the nuimber of diffraction peaks in the file:
-    call Count_lines_in_file(FN_in, N_lines, skip_lines=2) ! below
+    call Count_lines_in_file(FN_in, N_lines, skip_lines=4) ! below
     !print*, 'N_col:', N_col
     !print*, 'N_lines:', N_lines
 
@@ -501,17 +501,20 @@ subroutine read_diffraction_data(FN_in, Read_data_peak, i, INFO)
     endif
 
     ! If the data file format is ok, read the data:
-    ! Fist line contains diffraction peaks description:
+    ! First line contains diffraction peaks description:
     read(FN_in,'(a)',IOSTAT=Reason) read_string
     if (Reason .LT. 0) then
-        print*, 'Error in read #1: ', Reason
-        INFO = 2
-        return
+       print*, 'Error in read #1: ', Reason
+       INFO = 2
+       return
     endif
+    ! Interprete the line to get the peak names:
     read(read_string, *, IOSTAT=Reason) temp_ch, Read_data_peak(i)%name(:)
     !print*, temp_ch, Read_data_peak(i)%name(:)
 
-    ! Skip comment line:
+    ! Skip next 3 comment lines:
+    read(FN_in,'(a)',IOSTAT=Reason)
+    read(FN_in,'(a)',IOSTAT=Reason)
     read(FN_in,'(a)',IOSTAT=Reason)
 
     ! Read the data:
