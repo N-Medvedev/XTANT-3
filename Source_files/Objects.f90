@@ -1053,6 +1053,7 @@ type Numerics_param
    ! Different output, what to save:
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate
    logical :: save_fe_grid, save_fe_orb, save_fa, save_testmode
+   logical :: save_hw_spectrum
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
    logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS, do_kappa_dyn

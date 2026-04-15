@@ -522,6 +522,9 @@ subroutine read_diffraction_data(FN_in, Read_data_peak, i, INFO)
         read(FN_in, *, IOSTAT=Reason) Read_data_peak(i)%Tim(j), Read_data_peak(i)%peak(:,j)
         if (Reason .LT. 0) then
             print*, 'Error in read #1: ', Reason, 'Line #:', j
+            print*, 'Sizes:', size(Read_data_peak), size(Read_data_peak(i)%Tim), &
+                              size(Read_data_peak(i)%peak(:,j),1), size(Read_data_peak(i)%peak(:,j),2)
+            print*, 'Lines:', N_lines
             INFO = 2
             return
         endif

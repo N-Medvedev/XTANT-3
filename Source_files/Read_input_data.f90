@@ -26,7 +26,7 @@
 MODULE Read_input_data
 use Objects
 use Universal_constants
-use Little_subroutines, only : print_time_step, it_is_number, convert_wavelength_to_hw, convert_frequency_to_hw, basis_set_size
+use Little_subroutines, only : print_time_step, it_is_number, convert_wavelength_to_hw, convert_frequency_to_hw, basis_set_size, Gaussian
 use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file, get_file_extension, &
                               ensure_correct_path_separator
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, m_EEDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
@@ -217,6 +217,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%E_cut_dynamic = .false. ! do not change E_cut
    numpar%E_work = 1.0d30 ! [eV] work function (exclude electron emission)
    numpar%E_Coulomb = 0.0d0 ! [eV] Coulomb attraction of electrons back to the material
+   numpar%save_hw_spectrum = .false.      ! printout photon spectrum
    numpar%save_Ei = .false.	! excluded printout energy levels (band structure)
    numpar%save_DOS = .false.	! excluded calculation and printout of DOS
    numpar%Smear_DOS = 0.05d0	! [eV] default smearing for DOS calculations
@@ -6594,7 +6595,6 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       ! Consistency check: photon energy cannot be negative
       if (laser(i)%hw < 0.0d0) laser(i)%hw = 0.0d0    ! no photons, no problem
 
-
       read(FN, '(a)', IOSTAT=Reason) read_line
       read(read_line,*,IOSTAT=Reason) laser(i)%t	  ! PULSE FWHM-DURATION IN [fs]
       call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
@@ -6664,10 +6664,68 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       end select
    enddo RDID
 
+   ! Check if the laser spectrum parameters are requested:
+   call define_photon_spectrum_params(laser, numpar)    ! below
+
    if (numpar%verbose) call print_time_step('Verbose option is on, XTANT is going to be a chatterbox', msec=.true.) ! modlue "Little_subroutines"
+
    ! Close this file, it has been read through:
 3417  if (file_opened) close(FN)
 end subroutine read_input_material
+
+
+
+subroutine define_photon_spectrum_params(laser, numpar)
+   type(Pulse), dimension(:), intent(inout) :: laser ! Laser pulse parameters
+   type(Numerics_param), intent(in) :: numpar  ! all numerical parameters
+   !-------------------
+   integer :: i, Nsiz, j
+   real(8) :: E_min, E_max, dE, sigma, FWHM
+   ! Check if spectrum printing is requested:
+   if (.not. numpar%save_hw_spectrum) return
+
+   do i = 1, size(laser)      ! for all pulses
+
+      ! Check the the spectum parameters were not already provided by the user:
+      if (.not.allocated(laser(i)%Spectrum)) then ! define it
+         Nsiz = 100     ! default number of grid points
+
+         allocate(laser(i)%Spectrum(2,Nsiz), source = 0.0d0)
+         allocate(laser(i)%Spectrum_abs(Nsiz), source = 0.0d0)
+         allocate(laser(i)%Spectrum_MC(Nsiz), source = 0.0d0)
+         allocate(laser(i)%Spectrum_int(Nsiz), source = 0.0d0)
+
+         ! Set the grid for the spectrum:
+         FWHM = max(1.0d0, laser(i)%FWHM_hw)    ! make at least the minimal window around the photon energy
+         E_min = max(0.0d0, laser(i)%hw - 3.0d0*FWHM)
+         E_max = laser(i)%hw + 3.0d0*FWHM
+         dE = (E_max - E_min) / dble(Nsiz) ! step
+         sigma = laser(i)%FWHM_hw/2.35482d0	! make a gaussian parameter out of it
+         !print*, 'define_photon_spectrum_params:', E_min, E_max, dE
+
+         do j = 1, Nsiz ! for all spectral grid points
+            ! Energy grid point:
+            laser(i)%Spectrum(1,j) = E_min + dE*dble(j-1)
+
+            ! Corresponding spectral point according to Gaussian profile:
+            if (laser(i)%FWHM_hw > 1.0d-3) then
+               call Gaussian(laser(i)%hw, sigma, laser(i)%Spectrum(1,j), laser(i)%Spectrum(2,j)) ! module "Little_subroutines"
+            else ! for monochromatic pulse
+               ! Delta-functional spectrum:
+               if ( (laser(i)%hw >= laser(i)%Spectrum(1,j)) .and. (laser(i)%hw < (laser(i)%Spectrum(1,j)+dE) ) ) then
+                  laser(i)%Spectrum(2,j) = 1.0d0
+               else
+                  laser(i)%Spectrum(2,j) = 0.0d0
+               endif
+            endif
+         enddo
+         ! Normalize the spectrum per depostied dose:
+         !laser(i)%Spectrum(2,:) = laser(i)%Spectrum(2,:) * laser(i)%F / dE  ! [eV/(atom*eV)]
+
+      endif
+   enddo
+end subroutine define_photon_spectrum_params
+
 
 
 
@@ -7131,6 +7189,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       numpar%save_fe = .true.
       numpar%save_fa = .true.
       numpar%save_PCF = .true.
+      !numpar%save_hw_spectrum = .true.
 
    !----------------------------------
    case ('output_name', 'Output_name', 'Outout_Name', 'OUTPUT_NAME', 'outname', 'Outname', 'OUTNAME')
@@ -7204,6 +7263,11 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
    case ('print_Ta', 'Print_Ta', 'PRINT_TA', 'PRINT_Ta')
       ! Printout various definitions of atomic temperature:
       numpar%print_Ta = .true.
+
+   !----------------------------------
+   case ('print_spectrum', 'Print_Spectrum', 'Print_spectrum', 'print_hw', 'Print_hw')
+      ! Printout photon spectrum data:
+      numpar%save_hw_spectrum = .true.
 
    !----------------------------------
    case ('print_MFP', 'Print_MFP', 'PRINT_MFP')
