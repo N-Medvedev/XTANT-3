@@ -797,6 +797,7 @@ subroutine define_photon_spectrum_parameters(laser)
          Dmean = (laser%Spectrum(2,i) + laser%Spectrum(2,i)) * 0.5d0 ! mean dose on this step
          int_spectrum = int_spectrum + Dmean*dE
          int_spectrum_E = int_spectrum_E + Dmean*Emean*dE
+         !print*, 'define_photon_spectrum_parameters', i, dE, Emean, Dmean, int_spectrum
       enddo
       mean_hw = int_spectrum_E / int_spectrum
       laser%hw = mean_hw

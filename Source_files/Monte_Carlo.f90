@@ -26,7 +26,7 @@
 MODULE Monte_carlo
 use Objects
 use Universal_constants
-use Little_subroutines, only : sample_gaussian, Find_in_array_monoton
+use Little_subroutines, only : sample_gaussian, Find_in_array_monoton, linear_interpolation
 use MC_cross_sections, only : which_shell, which_atom, NRG_transfer_elastic_atomic, Electron_energy_transfer_inelastic, &
                         Mean_free_path
 use Electron_tools, only : update_cross_section, Do_relaxation_time, set_high_DOS, patch_distribution
@@ -1231,21 +1231,29 @@ subroutine process_laser_parameters(Scell, matter, laser, numpar)
 
          do j = 2, N_spectrum ! entire spectrum
             dE = (laser(i)%Spectrum(1,j) - laser(i)%Spectrum(1,j-1)) ! energy step
-            hw    = (laser(i)%Spectrum(1,j) + laser(i)%Spectrum(1,j-1)) * 0.5d0 ! mean energy on this step
-            Dmean = (laser(i)%Spectrum(2,j) + laser(i)%Spectrum(2,j-1)) * 0.5d0 ! mean dose on this step
+            hw    = (laser(i)%Spectrum(1,j) + laser(i)%Spectrum(1,j-1)) * 0.5d0 ! mean energy on this step [eV]
+            Dmean = (laser(i)%Spectrum(2,j) + laser(i)%Spectrum(2,j-1)) * 0.5d0 ! mean dose on this step [eV]
+            !hw    = laser(i)%Spectrum(1,j)      ! energy on this step
+            !Dmean = laser(i)%Spectrum(2,j)      ! dose on this step
 
             ! Photon attenuation length (for this part of the spectrum):
             call Find_in_array_monoton(matter%Ph_MFP_tot%E, hw, N) ! module "Little_subroutines"
-            Ltot = matter%Ph_MFP_tot%L(N) ! inverse mean free path [1/A]
+            !Ltot = matter%Ph_MFP_tot%L(N) ! inverse mean free path [1/A]
+            ! Interpolate the absorption length:
+            call linear_interpolation(matter%Ph_MFP_tot%E, matter%Ph_MFP_tot%L, hw, Ltot, N)   ! module "Little_subroutines"
+
 
             ! Absorbed fluence in the supercell (for this part of the spectrum):
             F_abs = Dmean * (1.0d0 - exp(-d*Ltot) ) ! [J/cm^2]
 
             ! Absorbed dose (for this part of the spectrum):
-            Dabsorbed = F_abs/(g_e * matter%At_dens * (d*1e-8))    ! [eV/atom]
+            !Dabsorbed = F_abs/(g_e * matter%At_dens * (d*1.0d-8))    ! [eV/atom]
+            Dabsorbed = F_abs ! [eV] to renormalize later
 
             ! Save absorbed photon spectrum:
             laser(i)%Spectrum_abs(j) = Dabsorbed*dE      ! [1/atom]
+
+            !print*, j, hw, Dmean, Dabsorbed
 
             int_spectrum = int_spectrum + Dabsorbed*dE
             int_spectrum_E = int_spectrum_E + Dabsorbed*hw*dE

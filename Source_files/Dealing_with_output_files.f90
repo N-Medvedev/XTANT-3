@@ -53,7 +53,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 25.03.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 15.04.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -255,7 +255,8 @@ subroutine printout_laser_spectrum(laser, numpar, matter)
    ! Do for each pulse:
    do i_pulse = 1, N_pulse
       ! Sort the number of absorbed photons, if spectrum is used:
-      if (allocated(laser(i_pulse)%Spectrum)) then ! photon spectrum given
+      !if (allocated(laser(i_pulse)%Spectrum)) then ! photon spectrum given
+      if (numpar%save_hw_spectrum .or. allocated(laser(i_pulse)%Spectrum)) then ! photon spectrum given
 
          if (N_pulse > 1) then
             write(temp,'(i0)') i_pulse ! number of the pulse
@@ -5917,7 +5918,6 @@ subroutine printout_fluence_dose_conversion(Scell, laser, numpar, matter, INFO, 
 
    ! For each laser pulse:
    do i = 1, Nsiz
-      !print*, 'printout_fluence_dose_conversion:', i, laser(i)%F_in, laser(i)%F
 
       if (laser(i)%F_in > 0.0d0) then
          write(hw, '(f24.3)') laser(i)%hw ! photon energy as a text
@@ -5940,7 +5940,7 @@ subroutine printout_fluence_dose_conversion(Scell, laser, numpar, matter, INFO, 
          write(6, '(a)') ' Pulse #'//trim(adjustl(PN))//': incoming fluence '//trim(adjustl(F_in))//' [J/cm^2]'
          write(6, '(a)') ' corresponds to absorbed dose '//trim(adjustl(Dose))//' [eV/atom]'
          write(6, '(a)') trim(adjustl(m_starline))
-         ! Only for EADL atomic cross section, make a worning (but not for CDF):
+         ! Only for EADL atomic cross section, make a warning (but not for CDF):
 
          if (laser(i)%hw < Scell%E_gap) then
             INFO = -1
