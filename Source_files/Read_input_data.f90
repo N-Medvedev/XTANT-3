@@ -6898,6 +6898,8 @@ subroutine get_photon_parameters(read_line, numpar, laser, i, count_lines, File_
       if (spectrum_done_well) return ! done well, can exit the subroutine
    endif
 
+   !print*, 'get_photon_parameters', laser(i)%hw
+
    !--------------------
    ! After all options, check if it read well:
 2121   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &

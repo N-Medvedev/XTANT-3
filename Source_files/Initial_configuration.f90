@@ -786,7 +786,7 @@ subroutine define_photon_spectrum_parameters(laser)
    if (.not.allocated(laser%Spectrum)) then ! single photon energy given:
       laser%Nph = laser%Fabs/laser%hw     ! number of photons absorbed in supercell
    else ! Spectrum given:
-      ! will be done separately, in subroutine "process_laser_parameters"
+      ! will be done separately, in subroutine "process_laser_parameters", module "Monte_Carlo"
       ! here, only get the average photon energy:
       N = size(laser%Spectrum,2)    ! spectrum grid size
       int_spectrum = 0.0d0    ! to start with
