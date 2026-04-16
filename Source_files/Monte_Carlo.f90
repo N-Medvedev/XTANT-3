@@ -1202,7 +1202,8 @@ subroutine process_laser_parameters(Scell, matter, laser, numpar)
 
          ! Absorbed dose:
          laser(i)%F = F_abs/(g_e * matter%At_dens * (d*1e-8))    ! [eV/atom]
-         !print*, i, Ltot, F_abs, matter%At_dens, laser(i)%F
+
+         !print*, 'one:', i, Ltot, F_abs, matter%At_dens, laser(i)%F, laser(i)%hw
 
          ! Absorbed energy total:
          laser(i)%Fabs = laser(i)%F*dble(Scell%Na) ! total absorbed energy by supercell [eV]
@@ -1251,7 +1252,7 @@ subroutine process_laser_parameters(Scell, matter, laser, numpar)
             Dabsorbed = F_abs ! [eV] to renormalize later
 
             ! Save absorbed photon spectrum:
-            laser(i)%Spectrum_abs(j) = Dabsorbed*dE      ! [1/atom]
+            laser(i)%Spectrum_abs(j) = Dabsorbed      ! [1/atom]
 
             !print*, j, hw, Dmean, Dabsorbed
 
@@ -1272,6 +1273,8 @@ subroutine process_laser_parameters(Scell, matter, laser, numpar)
          laser(i)%Spectrum_int(:) = laser(i)%Spectrum_int(:) * renorm
          ! Renormalize the absorbed spectrum to get the correct absorbed dose:
          laser(i)%Spectrum_abs(:) = laser(i)%Spectrum_abs(:) * renorm    ! [1/atom]
+
+         !print*, 'two:', i, Ltot, F_abs, matter%At_dens, laser(i)%F, laser(i)%hw
 
          !print*, 'Abs:', laser(i)%Spectrum_abs(:)
          !print*, 'Inc:', laser(i)%Spectrum(2,:)
