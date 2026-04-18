@@ -1275,6 +1275,7 @@ subroutine process_laser_parameters(Scell, matter, laser, numpar)
          laser(i)%Spectrum_abs(:) = laser(i)%Spectrum_abs(:) * renorm    ! [1/atom]
 
          !print*, 'two:', i, Ltot, F_abs, matter%At_dens, laser(i)%F, laser(i)%hw
+         !print*, 'Nph:', laser(i)%Spectrum_int(size(laser(i)%Spectrum_int)), laser(i)%Nph
 
          !print*, 'Abs:', laser(i)%Spectrum_abs(:)
          !print*, 'Inc:', laser(i)%Spectrum(2,:)

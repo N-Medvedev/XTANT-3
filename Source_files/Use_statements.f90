@@ -32,9 +32,10 @@ use Dealing_with_files, only : close_file
 use Read_input_data, only : get_add_data, Read_Input_Files, m_starline, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, &
         m_INPUT_directory, m_INPUT_ALL, check_all_warnings
 use Dealing_with_output_files, only : reset_dt, Print_title, prepare_output_files, write_output_files, convolve_output, &
-        communicate, close_save_files, close_output_files, save_duration, execute_all_gnuplots, write_energies, &
+        communicate, close_save_files, close_output_files, save_duration, write_energies, &
         XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comforting_message, printout_MFP_file, printout_laser_spectrum
 use Gnuplotting, only : collect_gnuplots
+use Plots_gnuplot, only : execute_all_gnuplots
 use Initial_configuration, only : set_initial_configuration
 use Atomic_thermodynamics, only : get_atomic_distribution, update_Ta_config_running_average
 use Atomic_tools, only : get_mean_square_displacement, save_last_timestep, Cooling_atoms, &
