@@ -521,7 +521,7 @@ endif
 if (.not.g_Err%Err) then
    if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
       write(*,'(a)')  'Executing gnuplot scripts to create plots...'
-      call execute_all_gnuplots(trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Write_output"
+      call execute_all_gnuplots(g_numpar, trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Plots_gnuplot"
       !call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)) ) ! module "Gnuplotting"
       if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully', msec=.true., MPI_param=g_numpar%MPI_param)
    endif
