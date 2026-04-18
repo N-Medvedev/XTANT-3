@@ -266,6 +266,10 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%EADL_file = m_EADL_file ! default name, module "Dealing_with_EADL"
    numpar%EPDL_file = m_EPDL_file ! default name, module "Dealing_with_EADL"
    numpar%EEDL_file = m_EEDL_file ! default name (UNUSED), module "Dealing_with_EADL"
+   ! Defaults plots and figures:
+   numpar%fig_extention = 'png'
+   numpar%ind_fig_extention = 4
+   numpar%plot_engine = 'gnu'   ! use gnuplot by default
 end subroutine initialize_default_values
 
 
@@ -5170,10 +5174,18 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 
    !  which format to use to plot figures: eps, jpeg, gif, png, pdf
    read(FN, '(a)', IOSTAT=Reason) read_line
-   read(read_line,*,IOSTAT=Reason) numpar%fig_extention
+   ! Try to read two variables:
+   read(read_line,*,IOSTAT=Reason) numpar%fig_extention, numpar%plot_engine
+   if (Reason /= 0) then ! something wrong with input
+      ! try reading just the first flag (legacy support: single variable)
+      read(read_line,*,IOSTAT=Reason) numpar%fig_extention
+      numpar%plot_engine = 'gnu'    ! revert to default
+   endif
+
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
+   ! Interprete the figure extension:
    select case ( trim(adjustl(numpar%fig_extention)) )
    case ('JPEG', 'JPEg', 'JPeg', 'Jpeg', 'jpeg', 'JPG', 'jpg')
       numpar%fig_extention = 'jpeg'
@@ -5190,6 +5202,13 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    case default ! eps
       numpar%fig_extention = 'eps'
       numpar%ind_fig_extention = 1
+   end select
+   ! Interprete the plotting engine:
+   select case ( trim(adjustl(numpar%plot_engine)) )
+   case ('PYTHON', 'Python', 'python', 'PY', 'Py', 'py')
+      numpar%plot_engine = 'py'
+   case default   ! use gnuplot by default to support legacy format:
+      numpar%plot_engine = 'gnu'
    end select
 
    ! number of k-points in each direction (used only for Trani-k!):

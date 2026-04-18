@@ -1059,12 +1059,10 @@ type Numerics_param
    logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS, do_kappa_dyn
    logical :: save_CIF, save_pressure, save_DOS, save_raw, save_NN, save_CDF, save_diff_peaks
    integer :: Mulliken_model
-   integer :: ind_fig_extention, change_size_step
    real(8) :: change_size_max, change_size_min
    real(8) :: kappa_Te_min, kappa_Te_max, kappa_dTe
    integer :: kappa_model
    character(200) :: input_CDF_file
-   character(4) :: fig_extention
    ! BOP parameters creation:
    logical :: create_BOP_repulse
    character(200) :: BOP_Folder_name, Filename_communication
@@ -1073,6 +1071,10 @@ type Numerics_param
    real(8) :: power_b
    ! Initial cell data file:
    character(200) :: Cell_filename
+   ! Figures and plots:
+   character(4) :: fig_extention
+   integer :: ind_fig_extention, change_size_step
+   character(10) :: plot_engine ! what program to use to create plots
    ! General flags:
    integer :: save_files_used ! to mark for the output printing out, whether SAVE-files are used or unit cell
    logical :: numpar_in_input ! numpar were already read from the single file, no need for separate file reading

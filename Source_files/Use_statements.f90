@@ -36,6 +36,7 @@ use Dealing_with_output_files, only : reset_dt, Print_title, prepare_output_file
         XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comforting_message, printout_MFP_file, printout_laser_spectrum
 use Gnuplotting, only : collect_gnuplots
 use Plots_gnuplot, only : execute_all_gnuplots
+use Plots_python, only : collect_python_plots, execute_all_pyplots
 use Initial_configuration, only : set_initial_configuration
 use Atomic_thermodynamics, only : get_atomic_distribution, update_Ta_config_running_average
 use Atomic_tools, only : get_mean_square_displacement, save_last_timestep, Cooling_atoms, &

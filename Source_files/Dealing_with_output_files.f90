@@ -42,6 +42,7 @@ use Dealing_with_files, only : get_file_stat, copy_file, read_file, close_file, 
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
 use Plots_gnuplot, only : Plot_electron_MFP_gunplot, Plot_photon_MFP_gunplot, create_gnuplot_scripts, Plot_laser_spectrum_gnuplot
+use Plots_python, only : Plot_electron_MFP_python, Plot_photon_MFP_python, Plot_laser_spectrum_python, create_python_plot_scripts
 use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_dashline, &
                            m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL, m_Communication, &
                            m_QUOTES_file, printout_warning
@@ -296,9 +297,14 @@ subroutine printout_laser_spectrum(laser, numpar, matter)
 
 
          !=======================================================
-         ! Gnuplot the data:
-         call Plot_laser_spectrum_gnuplot(numpar, laser, file_spectrum, i_pulse) ! module "Plots_gnuplot"
-
+         ! Plot the data:
+         !call Plot_laser_spectrum_gnuplot(numpar, laser, file_spectrum, i_pulse) ! module "Plots_gnuplot"
+         select case (g_numpar%plot_engine)    ! which engine to use for plots
+         case default ! Gnuplot
+            call Plot_laser_spectrum_gnuplot(numpar, laser, file_spectrum, i_pulse) ! module "Plots_gnuplot"
+         case ('py') ! Python
+            call Plot_laser_spectrum_python(numpar, laser, file_spectrum, i_pulse) ! module "Plots_python"
+         end select
       endif ! (allocated(laser(i_pulse)%Spectrum))
    enddo ! i_pulse
 
@@ -460,12 +466,18 @@ subroutine printout_MFP_file(numpar, matter, Scell)
 
       !=======================================================
       ! Plot the data:
-      ! 1) Electron MFPs gnuplotting:
-      call Plot_electron_MFP_gunplot(numpar, matter, file_electron_IMFP, file_electron_EMFP)    ! module "Plots_gnuplot"
-
-      ! 2) Photon attenuation lengths gnuplotting:
-      call Plot_photon_MFP_gunplot(numpar, matter, file_photon_MFP)     ! module "Plots_gnuplot"
-
+      select case (numpar%plot_engine)    ! which engine to use for plots
+      case default ! Gnuplot
+         ! 1) Electron MFPs gnuplotting:
+         call Plot_electron_MFP_gunplot(numpar, matter, file_electron_IMFP, file_electron_EMFP)    ! module "Plots_gnuplot"
+         ! 2) Photon attenuation lengths gnuplotting:
+         call Plot_photon_MFP_gunplot(numpar, matter, file_photon_MFP)     ! module "Plots_gnuplot"
+      case ('py') ! Python
+         ! 1) Electron MFPs gnuplotting:
+         call Plot_electron_MFP_python(numpar, matter, file_electron_IMFP, file_electron_EMFP)     ! module "Plots_python"
+         ! 2) Photon attenuation lengths gnuplotting:
+         call Plot_photon_MFP_python(numpar, matter, file_photon_MFP)     ! module "Plots_python"
+      end select
    endif
 end subroutine printout_MFP_file
 
@@ -2452,6 +2464,71 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    'OUTPUT_diffraction_peaks_DW.dat', &
    'OUTPUT_Debye_temperature_from_DW.dat', &
    'OUTPUT_testmode_data.dat')  ! module "Plots_gnuplot"
+
+   !=======================================================
+      ! Plot the data:
+      select case (numpar%plot_engine)    ! which engine to use for plots
+      case default ! Gnuplot
+!          call create_gnuplot_scripts(Scell, matter, numpar, laser, file_path, &
+!             'OUTPUT_temperatures.dat', &
+!             'OUTPUT_pressure_and_stress.dat', &
+!             'OUTPUT_energies.dat', &
+!             file_atoms_R, file_atoms_S, &
+!             'OUTPUT_supercell.dat', &
+!             'OUTPUT_electron_properties.dat', &
+!             'OUTPUT_electron_heat_conductivity.dat', &
+!             'OUTPUT_electron_heat_conductivity_dyn.dat', &
+!             'OUTPUT_electron_hole_numbers.dat', &
+!             'OUTPUT_orbital_resolved_data.dat', &
+!             'OUTPUT_deep_shell_holes.dat', &
+!             'OUTPUT_optical_coefficients.dat', &
+!             file_Ei, file_PCF, &
+!             'OUTPUT_nearest_neighbors.dat', &
+!             file_element_NN_short, &
+!             'OUTPUT_electron_entropy.dat', &
+!             'OUTPUT_electron_temperatures.dat', &
+!             'OUTPUT_electron_chempotentials.dat', &
+!             'OUTPUT_atomic_entropy.dat', &
+!             'OUTPUT_atomic_temperatures.dat', &
+!             'OUTPUT_atomic_temperatures_partial.dat', &
+!             file_sect_displ_short, &
+!             'OUTPUT_diffraction_peaks.dat', &
+!             file_diff_peaks_part, &
+!             'OUTPUT_diffraction_powder.dat', &
+!             'OUTPUT_diffraction_peaks_DW.dat', &
+!             'OUTPUT_Debye_temperature_from_DW.dat', &
+!             'OUTPUT_testmode_data.dat')  ! module "Plots_gnuplot"
+      case ('py') ! Python
+         call create_python_plot_scripts(Scell, matter, numpar, laser, file_path, &
+            'OUTPUT_temperatures.dat', &
+            'OUTPUT_pressure_and_stress.dat', &
+            'OUTPUT_energies.dat', &
+            file_atoms_R, file_atoms_S, &
+            'OUTPUT_supercell.dat', &
+            'OUTPUT_electron_properties.dat', &
+            'OUTPUT_electron_heat_conductivity.dat', &
+            'OUTPUT_electron_heat_conductivity_dyn.dat', &
+            'OUTPUT_electron_hole_numbers.dat', &
+            'OUTPUT_orbital_resolved_data.dat', &
+            'OUTPUT_deep_shell_holes.dat', &
+            'OUTPUT_optical_coefficients.dat', &
+            file_Ei, file_PCF, &
+            'OUTPUT_nearest_neighbors.dat', &
+            file_element_NN_short, &
+            'OUTPUT_electron_entropy.dat', &
+            'OUTPUT_electron_temperatures.dat', &
+            'OUTPUT_electron_chempotentials.dat', &
+            'OUTPUT_atomic_entropy.dat', &
+            'OUTPUT_atomic_temperatures.dat', &
+            'OUTPUT_atomic_temperatures_partial.dat', &
+            file_sect_displ_short, &
+            'OUTPUT_diffraction_peaks.dat', &
+            file_diff_peaks_part, &
+            'OUTPUT_diffraction_powder.dat', &
+            'OUTPUT_diffraction_peaks_DW.dat', &
+            'OUTPUT_Debye_temperature_from_DW.dat', &
+            'OUTPUT_testmode_data.dat')  ! module "Plots_python"
+      end select
 
    ! clean up:
    if (allocated(file_sect_displ)) deallocate(file_sect_displ, file_sect_displ_short)
