@@ -107,14 +107,265 @@ file_testmode)
 
    ! Energy levels:
    if (numpar%save_Ei) then
-      call Python_plot_energy_levels(numpar, t0, t_last, Scell, 'OUTPUT_energy_levels.dat', 'OUTPUT_energy_levels.py')  ! below
+      call Python_plot_energy_levels(numpar, t0, t_last, Scell, file_Ei, 'OUTPUT_energy_levels.py')  ! below
    endif
 
 
    ! Energies:
    call Python_plot_energies(numpar, file_energies, t0, t_last, 'OUTPUT_energies.py') ! below
 
+
+   ! Temepratures:
+   call Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_last, 'OUTPUT_temepratures.py') ! below
+
+
+   ! Mean displacement:
+   if (abs(numpar%MSD_power) > 1.0e-6) then ! only plot it if it's not zero
+      call Python_plot_MSD(matter, numpar, file_temperatures, t0, t_last, &
+            'OUTPUT_mean_displacement.py', &
+            numpar%MSD_power) ! below
+   endif
+
+
+   ! Atomic masks for sectional displacements:
+   if (allocated(Scell(1)%Displ)) then
+      Nsiz = size(Scell(1)%Displ)   ! how many masks
+      do j = 1, Nsiz    ! for all masks
+         call Python_plot_displacements(matter, numpar, file_sect_displ(j), t0, t_last, &
+            'OUTPUT_mean_displacements_'//trim(adjustl(Scell(1)%Displ(j)%mask_name))//'.py', &
+            Scell(1)%Displ(j)%MSD_power, trim(adjustl(Scell(1)%Displ(j)%mask_name)) ) ! below
+
+         ! Partial by elements, if there is more than one:
+         if (matter%N_KAO > 1) then
+            call Python_plot_displacements_partial(matter, numpar, file_sect_displ(j), t0, t_last, 'OUTPUT_mean_displacement_'// &
+               trim(adjustl(Scell(1)%Displ(j)%mask_name))//'_partial.py', &
+               Scell(1)%Displ(j)%MSD_power, trim(adjustl(Scell(1)%Displ(j)%mask_name)) ) ! below
+         endif
+      enddo ! j
+   endif
+
 end subroutine create_python_plot_scripts
+
+
+
+subroutine Python_plot_displacements_partial(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power, mask_name) ! below
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   type(Solid), intent(in) :: matter ! parameters of the material
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_MSD, script_name  ! file with energy levels, script
+   real(8), intent(in) :: MSD_power ! power of MSD
+   character(*), intent(in) :: mask_name
+   !----------------
+   integer :: FN, i, i_start
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(300) :: File_name
+   character(10) :: units, temp
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+
+   if (abs(MSD_power) > 1.0) then
+      write(temp, '(i0)') int(MSD_power)
+      write(units, '(a)') '(A$^'//trim(adjustl(temp))//'$)'
+   else
+      units = '(A)'
+   endif
+
+   allocate(col_nums(4*matter%N_KAO), source = 0)
+   allocate(col_lables(4*matter%N_KAO))
+   allocate(linestyle(4*matter%N_KAO))
+
+   i_start = 5
+   do i = 1, matter%N_KAO
+      col_nums(1 + (i-1)*4 ) = i_start + (i-1)*4
+      col_lables(1 + (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//'"'
+      col_nums(2+ (i-1)*4) = i_start + (i-1)*4 + 1
+      col_lables(2+ (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//':X"'
+      col_nums(3+ (i-1)*4) = i_start + (i-1)*4 + 2
+      col_lables(3+ (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//':Y"'
+      col_nums(4+ (i-1)*4) = i_start + (i-1)*4 + 3
+      col_lables(4+ (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//':Z"'
+      linestyle(1+ (i-1)*4) = '"-"'
+      linestyle(2+ (i-1)*4:4+ (i-1)*4) = '"--"'
+   enddo
+
+   call Create_python_plot(FN, file_MSD, col_nums, col_lables, &
+      'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
+      "best", 'OUTPUT_mean_displacement_'//trim(adjustl(mask_name))//'_partial', trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+
+   close(FN)
+end subroutine Python_plot_displacements_partial
+
+
+
+subroutine Python_plot_displacements(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power, mask_name) ! below
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   type(Solid), intent(in) :: matter ! parameters of the material
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_MSD, script_name  ! file with energy levels, script
+   real(8), intent(in) :: MSD_power ! power of MSD
+   character(*), intent(in) :: mask_name
+   !----------------
+   integer :: FN, i, i_start
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(300) :: File_name
+   character(10) :: units, temp
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+
+   if (abs(MSD_power) > 1) then
+      write(temp, '(i0)') int(MSD_power)
+      write(units, '(a)') '(A$^'//trim(adjustl(temp))//'$)'
+   else
+      units = '(A)'
+   endif
+
+   allocate(col_nums(4), source = 0)
+   allocate(col_lables(4))
+   allocate(linestyle(4))
+   col_nums(1) = 1
+   col_lables(1) = '"Average"'
+   col_nums(2) = 2
+   col_lables(2) = '"X"'
+   col_nums(3) = 3
+   col_lables(3) = '"Y"'
+   col_nums(4) = 4
+   col_lables(4) = '"Z"'
+   linestyle(1) = '"-"'
+   linestyle(2:4) = '"--"'
+
+   call Create_python_plot(FN, file_MSD, col_nums, col_lables, &
+      'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
+      "best", 'OUTPUT_mean_displacement_'//trim(adjustl(mask_name)), trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+
+   close(FN)
+end subroutine Python_plot_displacements
+
+
+
+subroutine Python_plot_MSD(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power) ! below
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   type(Solid), intent(in) :: matter ! parameters of the material
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_MSD, script_name  ! file with energy levels, script
+   integer, intent(in) :: MSD_power ! power of MSD
+   !----------------
+   integer :: FN, i, i_start
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(300) :: File_name
+   character(10) :: units, temp
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+
+   if (abs(MSD_power) > 1) then
+      write(temp, '(i)') MSD_power
+      write(units, '(a)') '(A$^'//trim(adjustl(temp))//'$)'
+   else
+      units = '(A)'
+   endif
+
+
+   if (matter%N_KAO == 1) then      ! single spieces
+      ! Prepare column indices and names:
+      allocate(col_nums(1), source = 0)
+      allocate(col_lables(1))
+      allocate(linestyle(1))
+      col_nums(1) = 4
+      col_lables(1) = '"Displacement"'
+      linestyle(1) = '"-"'
+   else ! more than one element:
+      allocate(col_nums(matter%N_KAO+1), source = 0)
+      allocate(col_lables(matter%N_KAO+1))
+      allocate(linestyle(matter%N_KAO+1))
+      i_start = 3 + matter%N_KAO
+      col_nums(1) = i_start
+      col_lables(1) = '"Average"'
+      linestyle(1) = '"-"'
+      ! All elements:
+      do i = 1, matter%N_KAO
+         col_nums(1+i) = i_start+i
+         col_lables(1+i) = '"'//trim(adjustl(matter%Atoms(i)%Name))//' atoms"'
+         linestyle(1+i) = '"--"'
+      enddo
+   endif
+
+   call Create_python_plot(FN, file_MSD, col_nums, col_lables, &
+      'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
+      "best", 'OUTPUT_mean_displacement', trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+
+   close(FN)
+end subroutine Python_plot_MSD
+
+
+
+
+subroutine Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_last, script_name) ! below
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   type(Solid), intent(in) :: matter ! parameters of the material
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_temperatures, script_name  ! file with energy levels, script
+   !----------------
+   integer :: FN, i
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(300) :: File_name
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+
+   if (matter%N_KAO == 1) then      ! single spieces
+      ! Prepare column indices and names:
+      allocate(col_nums(2), source = 0)
+      allocate(col_lables(2))
+      allocate(linestyle(2))
+      col_nums(1) = 1
+      col_lables(1) = '"Electrons"'
+      linestyle(1) = '"--"'
+      col_nums(2) = 2
+      col_lables(2) = '"Atoms"'
+      linestyle(2) = '"-"'
+   else ! more than one element:
+      allocate(col_nums(matter%N_KAO+2), source = 0)
+      allocate(col_lables(matter%N_KAO+2))
+      allocate(linestyle(matter%N_KAO+2))
+      col_nums(1) = 1
+      col_lables(1) = '"Electrons"'
+      linestyle(1) = '"--"'
+      col_nums(2) = 2
+      col_lables(2) = '"Average atoms"'
+      linestyle(2) = '"-"'
+      ! All elements:
+      do i = 1, matter%N_KAO
+         col_nums(i+2) = 2+i
+         col_lables(i+2) = '"'//trim(adjustl(matter%Atoms(i)%Name))//' atoms"'
+         linestyle(i+2) = '"-."'
+      enddo
+   endif
+
+   call Create_python_plot(FN, file_temperatures, col_nums, col_lables, &
+      'Time (fs)', 'Temperature (K)', 'Temperatures', &
+      "best", 'OUTPUT_temepratures', trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last, l_style=linestyle)     ! below
+
+   close(FN)
+end subroutine Python_plot_temperatures
+
 
 
 

@@ -2512,7 +2512,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             'OUTPUT_orbital_resolved_data.dat', &
             'OUTPUT_deep_shell_holes.dat', &
             'OUTPUT_optical_coefficients.dat', &
-            file_Ei, file_PCF, &
+            'OUTPUT_energy_levels.dat', file_PCF, &
             'OUTPUT_nearest_neighbors.dat', &
             file_element_NN_short, &
             'OUTPUT_electron_entropy.dat', &
