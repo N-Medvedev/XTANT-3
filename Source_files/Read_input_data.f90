@@ -268,6 +268,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%EEDL_file = m_EEDL_file ! default name (UNUSED), module "Dealing_with_EADL"
    ! Defaults plots and figures:
    numpar%fig_extention = 'png'
+   numpar%vid_extention = 'gif'
    numpar%ind_fig_extention = 4
    numpar%plot_engine = 'gnu'   ! use gnuplot by default
 end subroutine initialize_default_values
@@ -5175,11 +5176,16 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    !  which format to use to plot figures: eps, jpeg, gif, png, pdf
    read(FN, '(a)', IOSTAT=Reason) read_line
    ! Try to read two variables:
-   read(read_line,*,IOSTAT=Reason) numpar%fig_extention, numpar%plot_engine
+   read(read_line,*,IOSTAT=Reason) numpar%fig_extention, numpar%plot_engine, numpar%vid_extention
    if (Reason /= 0) then ! something wrong with input
-      ! try reading just the first flag (legacy support: single variable)
-      read(read_line,*,IOSTAT=Reason) numpar%fig_extention
-      numpar%plot_engine = 'gnu'    ! revert to default
+      ! Try reading just two flags:
+      read(read_line,*,IOSTAT=Reason) numpar%fig_extention, numpar%plot_engine
+      numpar%vid_extention = 'gif'  ! revert to default
+      if (Reason /= 0) then ! something wrong with input
+         ! Try reading just the first flag (legacy support: single variable)
+         read(read_line,*,IOSTAT=Reason) numpar%fig_extention
+         numpar%plot_engine = 'gnu'    ! revert to default
+      endif
    endif
 
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
@@ -5209,6 +5215,13 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       numpar%plot_engine = 'py'
    case default   ! use gnuplot by default to support legacy format:
       numpar%plot_engine = 'gnu'
+   end select
+   ! Interprete the video engine:
+   select case ( trim(adjustl(numpar%vid_extention)) )
+   case ('AVI', 'Avi', 'avi')
+      numpar%vid_extention = 'avi'
+   case default   ! use gif by default to support legacy format:
+      numpar%vid_extention = 'gif'
    end select
 
    ! number of k-points in each direction (used only for Trani-k!):

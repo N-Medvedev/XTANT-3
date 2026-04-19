@@ -39,7 +39,7 @@ implicit none
 PRIVATE
 
 
-character(50), parameter :: m_Python_plot_all = 'OUTPUT_Python_plot_all.py'
+character(50), parameter :: m_Python_plot_all = 'OUTPUT_Python_PLOT_ALL.py'
 
 
 public :: collect_python_plots, execute_all_pyplots, create_python_plot_scripts, &
@@ -105,7 +105,7 @@ file_testmode)
 
 
 
-   ! Energy levels:
+   ! Energy levels (molecular orbitals):
    if (numpar%save_Ei) then
       call Python_plot_energy_levels(numpar, t0, t_last, Scell, file_Ei, 'OUTPUT_energy_levels.py')  ! below
    endif
@@ -144,11 +144,189 @@ file_testmode)
       enddo ! j
    endif
 
+
+   ! Diffraction:
+   if (numpar%save_diff_peaks) then
+      ! Diffraction peaks for selected Miller indices:
+      call Python_plot_diffraction_peaks(Scell(1), numpar, file_diffraction_peaks, t0, t_last, &
+                                    'OUTPUT_diffraction_peaks.py', &
+                                    'OUTPUT_diffraction_peaks', 'Diffraction peaks', &
+                                    .false.) ! below
+
+      ! For element-specific diffraction data:
+      if (size(matter%Atoms) > 1) then
+          do j = 1, size(matter%Atoms)    ! for all elements
+             call Python_plot_diffraction_peaks(Scell(1), numpar, file_diffraction_peaks_part(j), t0, t_last, &
+                                    'OUTPUT_diffraction_peaks_'//trim(adjustl(matter%Atoms(j)%Name))//'.py', &
+                                    'OUTPUT_diffraction_peaks_'//trim(adjustl(matter%Atoms(j)%Name)), &
+                                    'Diffraction peaks in '//trim(adjustl(matter%Atoms(j)%Name)), &
+                                    .false.) ! below
+          enddo
+      endif
+
+      ! Powder diffraction:
+      call Python_plot_powder_diffraction(Scell(1), matter, numpar, file_diffraction_powder, 'OUTPUT_diffraction_powder.py', &
+                                          trim(adjustl(numpar%vid_extention)))      ! below
+
+      ! Check if Debye-Waller analysis is required:
+      if ( abs(numpar%DW_theta) > 1.0d-6 ) then
+         call Python_plot_diffraction_peaks(Scell(1), numpar, file_diffraction_peaks_DW, t0, t_last, &
+                                    'OUTPUT_diffraction_peaks_DW.py', &
+                                    'OUTPUT_diffraction_peaks_DW', 'Debye Waller peaks',  &
+                                    .true.) ! below
+
+         call Python_plot_Debye_temperatures(Scell(1), numpar, file_Debye_temperature, t0, t_last, &
+                                    'OUTPUT_Debye_temperatures.py') ! below
+      endif
+   endif
+
 end subroutine create_python_plot_scripts
 
 
 
-subroutine Python_plot_displacements_partial(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power, mask_name) ! below
+subroutine Python_plot_powder_diffraction(Scell, matter, numpar, file_powder_diffraction, script_name, video_format)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter ! parameters of the material
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   character(*), intent(in) :: file_powder_diffraction, script_name ! file with energy levels, script
+   character(*), intent(in) :: video_format     ! which video format to print it out in
+   !----------------
+   integer :: FN, i, i_start, ind, j, k
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(300) :: File_name
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+
+   ! Get the number of columns to print:
+   ind = 1     ! top start counting columns
+   do j = 1, matter%N_KAO     ! for all elements
+      do k = j, matter%N_KAO  ! for all different pairs
+         ind = ind + 1
+      enddo
+   enddo
+   ! allocate the arrays:
+   allocate(col_nums(ind), source = 0)
+   allocate(col_lables(ind))
+   !allocate(linestyle(size(Scell%diff_peaks%I_diff_peak)))
+   ! Set the arrays:
+   col_nums(1) = 1
+   col_lables(1) = 'Total'
+   ind = 1  ! restart
+   do j = 1, matter%N_KAO     ! for all elements
+      do k = j, matter%N_KAO  ! for all different pairs
+         ind = ind + 1
+         col_nums(ind) = ind
+         col_lables(ind) = trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))
+      enddo
+   enddo
+
+   call Create_Python_animation(FN, file_powder_diffraction, col_nums, col_lables, &
+      '2theta (deg)', 'Peak Intensity (a.u.)', 'Powder diffraction', &
+      "best", 'OUTPUT_diffraction_powder', trim(adjustl(video_format)), &
+      x_min=10.0, x_max=180.0, t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total)     ! below
+
+   close(FN)
+end subroutine Python_plot_powder_diffraction
+!       call write_gnuplot_script_header_new(FN, 6, 1.0d0, 10.0d0, 'Powder', '2theta (deg)', 'Peak Intensity (a.u.)', 'OUTPUT_diffraction_powder.gif', numpar%path_sep, setkey=0)
+
+
+
+subroutine Python_plot_Debye_temperatures(Scell, numpar, file_Debye_temperature, t0, t_last, script_name)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_Debye_temperature, script_name ! file with energy levels, script
+   !----------------
+   integer :: FN, i, i_start
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(300) :: File_name
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   allocate(col_nums(size(Scell%diff_peaks%I_diff_peak)), source = 0)
+   allocate(col_lables(size(Scell%diff_peaks%I_diff_peak)))
+   !allocate(linestyle(size(Scell%diff_peaks%I_diff_peak)))
+
+   do i = 1, size(Scell%diff_peaks%I_diff_peak)
+      col_nums(i) = i
+      col_lables(i) = make_diff_peak_name(Scell, i) ! below
+      col_lables(i) = '"'//trim(adjustl(col_lables(i)))//'"'
+   enddo
+
+   call Create_python_plot(FN, file_Debye_temperature, col_nums, col_lables, &
+      'Time (fs)', 'Debye temperature (K)', 'Debye temperatures', &
+      "best", 'OUTPUT_Debye_temperatures', trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last, y_min=0.0)     ! below
+
+   close(FN)
+end subroutine Python_plot_Debye_temperatures
+
+
+
+subroutine Python_plot_diffraction_peaks(Scell, numpar, file_diffraction, t0, t_last, script_name, plot_name, plot_label, DW)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_diffraction, script_name, plot_name, plot_label ! file with energy levels, script, plot
+   logical, intent(in) :: DW  ! if it's DW, change the axis label
+   !----------------
+   integer :: FN, i, i_start
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(300) :: File_name, y_axis_label
+   character(10) :: units, temp
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+
+   if (DW) then
+      y_axis_label = 'DW peak intensity (arb. units)'
+   else
+      y_axis_label = 'Peak intensity (arb. units)'
+   endif
+
+   allocate(col_nums(size(Scell%diff_peaks%I_diff_peak)), source = 0)
+   allocate(col_lables(size(Scell%diff_peaks%I_diff_peak)))
+   !allocate(linestyle(size(Scell%diff_peaks%I_diff_peak)))
+
+   do i = 1, size(Scell%diff_peaks%I_diff_peak)
+      col_nums(i) = i
+      col_lables(i) = make_diff_peak_name(Scell, i) ! below
+      col_lables(i) = '"'//trim(adjustl(col_lables(i)))//'"'
+   enddo
+
+   call Create_python_plot(FN, file_diffraction, col_nums, col_lables, &
+      'Time (fs)', trim(adjustl(y_axis_label)), trim(adjustl(plot_label)), &
+      "best", trim(adjustl(plot_name)), trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last, y_min=0.0)     ! below
+
+   close(FN)
+end subroutine Python_plot_diffraction_peaks
+
+function make_diff_peak_name(Scell, i) result(peak_name)
+   character(30) :: peak_name
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: i   ! number of the peak
+   !---------------
+   character(5) :: text1, text2, text3
+   write(text1, '(i0)') Scell%diff_peaks%ijk_diff_peak(1,i)
+   write(text2, '(i0)') Scell%diff_peaks%ijk_diff_peak(2,i)
+   write(text3, '(i0)') Scell%diff_peaks%ijk_diff_peak(3,i)
+   peak_name = '('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'
+end function make_diff_peak_name
+
+
+
+subroutine Python_plot_displacements_partial(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power, mask_name)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    type(Solid), intent(in) :: matter ! parameters of the material
    real(8), intent(in) :: t0, t_last      ! starting and ending time
@@ -202,7 +380,7 @@ end subroutine Python_plot_displacements_partial
 
 
 
-subroutine Python_plot_displacements(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power, mask_name) ! below
+subroutine Python_plot_displacements(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power, mask_name)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    type(Solid), intent(in) :: matter ! parameters of the material
    real(8), intent(in) :: t0, t_last      ! starting and ending time
@@ -252,7 +430,7 @@ end subroutine Python_plot_displacements
 
 
 
-subroutine Python_plot_MSD(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power) ! below
+subroutine Python_plot_MSD(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    type(Solid), intent(in) :: matter ! parameters of the material
    real(8), intent(in) :: t0, t_last      ! starting and ending time
@@ -313,7 +491,7 @@ end subroutine Python_plot_MSD
 
 
 
-subroutine Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_last, script_name) ! below
+subroutine Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_last, script_name)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    type(Solid), intent(in) :: matter ! parameters of the material
    real(8), intent(in) :: t0, t_last      ! starting and ending time
@@ -361,7 +539,7 @@ subroutine Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_las
    call Create_python_plot(FN, file_temperatures, col_nums, col_lables, &
       'Time (fs)', 'Temperature (K)', 'Temperatures', &
       "best", 'OUTPUT_temepratures', trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
 
    close(FN)
 end subroutine Python_plot_temperatures
@@ -369,7 +547,7 @@ end subroutine Python_plot_temperatures
 
 
 
-subroutine Python_plot_energies(numpar, file_energies, t0, t_last, script_name) ! below
+subroutine Python_plot_energies(numpar, file_energies, t0, t_last, script_name)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_Energies, script_name  ! file with energy levels, script
@@ -651,6 +829,217 @@ end subroutine Plot_laser_spectrum_python
 
 !===================================================================
 ! General routines to use python for plotting:
+
+subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
+      x_axis_label, y_axis_label, title, legend_position, out_name, out_format, &
+      x_min, x_max, y_min, y_max, t_start, dt, t_end, &
+      x_tics, y_tics, &
+      set_x_log, set_y_log, &
+      l_style, &
+      Data_file2, col_nums2, col_labels2, &
+      colors_inverted &
+      )
+   integer, intent(in) :: FN  ! file number (must be opened)
+   character(*), intent(in) :: Data_file  ! data file to plot data from
+   integer, dimension(:), intent(in) :: col_nums      ! array of columns to plot
+   character(*), dimension(:), allocatable, intent(in) :: col_lables    ! array of column labels
+   character(*), intent(in) :: x_axis_label, y_axis_label, title
+   character(*), intent(in) :: out_name, out_format   ! plot file name and extension
+   character(*), intent(in) :: legend_position  ! e.g. 'upper left', 'right bottom' etc.
+   real(8), intent(in), optional :: x_min, x_max, y_min, y_max, dt, t_start, t_end
+   real(8), intent(in), optional :: x_tics, y_tics
+   logical, intent(in), optional :: set_x_log, set_y_log
+   character(*), dimension(:), allocatable, intent(in), optional :: l_style    ! array of line-styles
+   character(*), intent(in), optional :: Data_file2   ! data file #2 to plot data from
+   integer, dimension(:), intent(in), optional :: col_nums2      ! array of columns to plot #2
+   character(*), dimension(:), allocatable, intent(in), optional :: col_labels2    ! array of column labels #2
+   logical, intent(in), optional :: colors_inverted
+   !------------
+   integer :: i
+   character(10) :: i_ch
+   character(40) :: x_min_txt, x_max_txt, y_min_txt, y_max_txt, dt_txt, t_start_txt, t_max_txt, col_txt
+
+   ! Set axes:
+   if (present(x_min)) then
+      write(x_min_txt,'(f24.8)') x_min
+   else
+      write(x_min_txt,'(a)') 'None'
+   endif
+   if (present(x_max)) then
+      write(x_max_txt,'(f24.8)') x_max
+   else
+      write(x_max_txt,'(a)') 'None'
+   endif
+   if (present(y_min)) then
+      write(y_min_txt,'(f24.8)') y_min
+   else
+      write(y_min_txt,'(a)') 'None'
+   endif
+   if (present(y_max)) then
+      write(y_max_txt,'(f24.8)') y_max
+   else
+      write(y_max_txt,'(a)') 'None'
+   endif
+   ! Time parameters:
+   if (present(dt)) then
+      write(dt_txt,'(f24.8)') dt
+   else
+      write(dt_txt,'(a)') '1.0'
+   endif
+   if (present(dt)) then
+      write(t_start_txt,'(f24.8)') t_start
+   else
+      write(t_start_txt,'(a)') '0.0'
+   endif
+   write(t_max_txt,'(f24.1)') max(t_start, abs(t_end))
+
+   write(FN,'(a)') 'import numpy as np'
+   write(FN,'(a)') 'import matplotlib.pyplot as plt'
+
+   select case (trim(adjustl(out_format)))
+   case ('GIF', 'Gif', 'gif')
+      write(FN,'(a)') 'from PIL import Image'
+   case default ! assume avi:
+      write(FN,'(a)') 'from matplotlib.animation import FFMpegWriter'
+   endselect
+
+   !-----------------------------
+   write(FN,'(a)') '# 1. Read the multi-block file'
+   write(FN,'(a)') 'blocks = []'
+   write(FN,'(a)') 'current = []'
+
+   write(FN,'(a)') 'with open("' // trim(adjustl(Data_file)) // '") as f:'
+   write(FN,'(a)') '    for line in f:'
+   write(FN,'(a)') '          line = line.strip()'
+   write(FN,'(a)') '          # Skip comment lines'
+   write(FN,'(a)') '          if line.startswith("#"):'
+   write(FN,'(a)') '                continue'
+   write(FN,'(a)') '          # Block separator'
+   write(FN,'(a)') '          if line == "":'
+   write(FN,'(a)') '                if current:'
+   write(FN,'(a)') '                      blocks.append(np.array(current, float))'
+   write(FN,'(a)') '                      current = []'
+   write(FN,'(a)') '          else:'
+   write(FN,'(a)') '                current.append(line.split())'
+   write(FN,'(a)') '# Add last block if not empty'
+   write(FN,'(a)') 'if current:'
+   write(FN,'(a)') '    blocks.append(np.array(current, float))'
+
+   !-----------------------------
+   write(FN,'(a)') '# 2. Prepare animation frames'
+
+   write(FN,'(a)') '# Find the optimal Y-axis:'
+   write(FN,'(a)') 'first_block = blocks[0]'
+   write(FN,'(a)') 'x = first_block[:, 0]'
+   write(FN,'(a)') 'mask = (x >= '//trim(adjustl(x_min_txt))//') & (x <= '//trim(adjustl(x_max_txt))//')'
+   write(FN,'(a)') '# Compute y-max only from filtered region'
+   write(FN,'(a)') 'ymax = first_block[mask, 1:].max()'
+   write(FN,'(a)') 'ymin = first_block[mask, 1:].min()'
+   write(FN,'(a)') 'padding = 0.1 * (ymax - ymin)'
+   write(FN,'(a)') 'y_lower = min(ymin - padding, 0)'
+   write(FN,'(a)') 'y_upper = ymax + padding'
+
+
+   !-----------------------------
+   write(FN,'(a)') '# 3. Prepare figure ONCE (no jitter)'
+
+   write(FN,'(a)') 'fig, ax = plt.subplots(figsize=(8, 6), dpi=150)'
+   write(FN,'(a)') '# Create placeholder lines ONCE'
+
+   do i = 1, size(col_nums)   ! for all lines to plot
+      write(i_ch, '(i0)') i
+      write(col_txt, '(i0)') col_nums(i)
+      if (i == 1) then ! first line
+         write(FN,'(a)') 'line'//trim(adjustl(i_ch))//', = ax.plot([], [], lw=2, color="black", label="'// &
+                             trim(adjustl(t_max_txt))//' fs '//trim(adjustl(col_lables(i)))//'", zorder=10)'
+      else ! the rest
+         write(FN,'(a)') 'line'//trim(adjustl(i_ch))//', = ax.plot([], [], lw=1.5, label="    '//trim(adjustl(col_lables(i)))//'")'
+      endif
+   enddo
+
+   write(FN,'(a)') '# Create legend once to prevent jitter:'
+   write(FN,'(a)') 'legend = ax.legend('
+   write(FN,'(a)') '    loc="upper right",'
+   write(FN,'(a)') '    bbox_to_anchor=(1.0, 1.0),'
+   write(FN,'(a)') '    fontsize=14,'
+   write(FN,'(a)') '    frameon=True,'
+   write(FN,'(a)') "    prop={'family': 'monospace', 'size': 14}"
+   write(FN,'(a)') ')'
+
+
+   write(FN,'(a)') '# Fix axes once:'
+   write(FN,'(a)') 'ax.set_xlim('//trim(adjustl(x_min_txt))//', '//trim(adjustl(x_max_txt))//')'
+   write(FN,'(a)') 'ax.set_ylim(y_lower, y_upper)'
+   write(FN,'(a)') 'ax.set_xlabel("'//trim(adjustl(x_axis_label))//'", fontsize=14)'
+   write(FN,'(a)') 'ax.set_ylabel("'//trim(adjustl(y_axis_label))//'", fontsize=14)'
+   ! Set tics:
+   write(FN,'(a)') 'plt.xticks(fontsize=12)'
+   write(FN,'(a)') 'plt.yticks(fontsize=12)'
+   write(FN,'(a)') 'ax.set_title("'//trim(adjustl(title))//'", fontsize=14, pad=12)'
+   write(FN,'(a)') 'fig.tight_layout()'
+
+
+   !-----------------------------
+   write(FN,'(a)') '# 4. Animation loop (update only data + legend text):'
+
+   write(FN,'(a)') 'frames = []'
+   write(FN,'(a)') 'for i, block in enumerate(blocks):'
+   write(FN,'(a)') '    x = block[:, 0]'
+
+   ! For all columns that we want to plot:
+   do i = 1, size(col_nums)
+      write(i_ch, '(i0)') i
+      write(col_txt, '(i0)') col_nums(i)
+      write(FN,'(a)') '    y'//trim(adjustl(i_ch))//' = block[:, '// trim(adjustl(col_txt)) //']'
+   enddo
+
+   write(FN,'(a)') '   # Update line data:'
+   do i = 1, size(col_nums)
+       write(i_ch, '(i0)') i
+       write(FN,'(a)') '    line'//trim(adjustl(i_ch))//'.set_data(x, y'//trim(adjustl(i_ch))//')'
+   enddo
+
+   write(FN,'(a)') '    # Update legend text (first entry only):'
+   write(FN,'(a)') '    time_fs = i*'//trim(adjustl(dt_txt))//' + ('//trim(adjustl(t_start_txt))//')'
+   write(FN,'(a)') '    legend.get_texts()[0].set_text(f"{time_fs:6.1f} fs '//trim(adjustl(col_lables(1)))//'")'
+
+   write(FN,'(a)') '    # Convert figure to image'
+   write(FN,'(a)') '    fig.canvas.draw()'
+   ! Outdated version:
+   !write(FN,'(a)') '    frame = Image.frombytes('
+   !write(FN,'(a)') '          "RGB",'
+   !write(FN,'(a)') '          fig.canvas.get_width_height(),'
+   !write(FN,'(a)') '          fig.canvas.tostring_rgb()'
+   !write(FN,'(a)') '    )'
+   ! New Matplotlib 3.8+ method:
+   write(FN,'(a)') '    buf = fig.canvas.buffer_rgba()'
+   write(FN,'(a)') '    w, h = fig.canvas.get_width_height()'
+   write(FN,'(a)') '    frame = Image.frombuffer("RGBA", (w, h), buf, "raw", "RGBA", 0, 1).copy()'
+   write(FN,'(a)') '    frames.append(frame)'
+
+   ! -----------------------------
+   select case (trim(adjustl(out_format)))
+   case ('GIF', 'Gif', 'gif')
+      write(FN,'(a)') '# Save as animated GIF'
+      write(FN,'(a)') 'frames[0].save('
+      write(FN,'(a)') '    "'//trim(adjustl(out_name))//'.gif",'
+      write(FN,'(a)') '    save_all=True,'
+      write(FN,'(a)') '    append_images=frames[1:],'
+      write(FN,'(a)') '    duration=100,'   ! 100 ms = gnuplot delay 10
+      write(FN,'(a)') '    loop=0'
+      write(FN,'(a)') ')'
+   case default ! assume avi
+      write(FN,'(a)') '# Save as avi'
+      write(FN,'(a)') 'writer = FFMpegWriter(fps=10, bitrate=1800)'
+      write(FN,'(a)') 'with writer.saving(fig, "'//trim(adjustl(out_name))//'.avi", dpi=150):'
+      write(FN,'(a)') 'for i in range(len(blocks)):'
+      write(FN,'(a)') '      update(i)'
+      write(FN,'(a)') '      writer.grab_frame()'
+   end select
+end subroutine Create_Python_animation
+
+
+
 subroutine Create_python_plot(FN, Data_file, col_nums, col_lables, &
       x_axis_label, y_axis_label, title, legend_position, out_name, out_format, &
       x_min, x_max, y_min, y_max, &

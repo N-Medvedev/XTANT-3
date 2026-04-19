@@ -1073,6 +1073,7 @@ type Numerics_param
    character(200) :: Cell_filename
    ! Figures and plots:
    character(4) :: fig_extention
+   character(4) :: vid_extention
    integer :: ind_fig_extention, change_size_step
    character(10) :: plot_engine ! what program to use to create plots
    ! General flags:
