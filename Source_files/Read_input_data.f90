@@ -5220,6 +5220,14 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    select case ( trim(adjustl(numpar%vid_extention)) )
    case ('AVI', 'Avi', 'avi')
       numpar%vid_extention = 'avi'
+   case ('MP4', 'Mp4', 'mp4', 'mpfour')
+      numpar%vid_extention = 'mp4'
+   case ('MOV', 'Mov', 'mov')
+      numpar%vid_extention = 'mov'
+   case ('MKV', 'MKv', 'mkv')
+      numpar%vid_extention = 'mkv'
+   case ('WebM', 'Webm', 'webm')
+      numpar%vid_extention = 'webm'
    case default   ! use gif by default to support legacy format:
       numpar%vid_extention = 'gif'
    end select

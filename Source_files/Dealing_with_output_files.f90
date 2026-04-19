@@ -55,7 +55,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 18.04.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 19.04.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1105,6 +1105,8 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    integer, intent(in) :: FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_Te, FN_mu
    !------------------------
    integer i, Nat, n_at, Nsiz, norb, N_types, i_at, i_types, i_G1
+   real(8) :: kappa_e, kappa_ph, kappa, kappa_e_inv, kappa_ph_inv
+
 
    ! Write electron properties:
    write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, &
@@ -1138,10 +1140,32 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    ! Write electron heat conductivity if requesed:
    if (numpar%do_kappa) then
       do i = 1, size(Scell(NSC)%kappa_e_vs_Te)  ! electron temperature dependence
+
+         ! Use Matthiessen's rule for total conductivity:
+         kappa_e = Scell(NSC)%kappa_e_vs_Te(i)
+         kappa_ph = Scell(NSC)%kappa_ee_vs_Te(i)
+         if (kappa_e > 1.0d-8) then
+            kappa_e_inv = 1.0d0 / kappa_e
+         else
+            kappa_e_inv = 0.0d0
+         endif
+         if (kappa_ph > 1.0d-8) then
+            kappa_ph_inv = 1.0d0 / kappa_ph
+         else
+            kappa_ph_inv = 0.0d0
+         endif
+         kappa = kappa_e_inv + kappa_ph_inv
+         if (kappa > 1.0d-8) kappa = 1.0d0/kappa
+
          write(FN_kappa, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
-            1.0d0/ ( 1.0d0/Scell(NSC)%kappa_e_vs_Te(i) + 1.0d0/Scell(NSC)%kappa_ee_vs_Te(i) ), & ! total conductivity
+            kappa, & ! total conductivity
             Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_ee_vs_Te(i), & ! electron-phonon, electron-electron contributions
             Scell(NSC)%kappa_mu_grid(i), Scell(NSC)%kappa_Ce_grid(i) ! chem.potential, electron heat capacity
+
+!          write(FN_kappa, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
+!             1.0d0/ ( 1.0d0/Scell(NSC)%kappa_e_vs_Te(i) + 1.0d0/Scell(NSC)%kappa_ee_vs_Te(i) ), & ! total conductivity
+!             Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_ee_vs_Te(i), & ! electron-phonon, electron-electron contributions
+!             Scell(NSC)%kappa_mu_grid(i), Scell(NSC)%kappa_Ce_grid(i) ! chem.potential, electron heat capacity
       enddo
       write(FN_kappa, '(a)')
       write(FN_kappa, '(a)')
@@ -1294,7 +1318,7 @@ subroutine write_orb_resolved_header(FN, Scell, matter)
    N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
 
    ! Ne:
-   write(FN, '(a)', advance='no') ' #Time   Total_Ne   '
+   write(FN, '(a)', advance='no') '#Time   Total_Ne   '
    ! All shells resolved:
    do i_at = 1, N_at
       do i_types = 1, N_types
