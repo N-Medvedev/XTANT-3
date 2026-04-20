@@ -1927,7 +1927,7 @@ subroutine Python_plot_mu(numpar, file_electron_properties, t0, t_last, script_n
    write(FN, '(a)') '# --- Legend (combined) ---'
    write(FN, '(a)') 'lines = [line1, line2]'
    write(FN, '(a)') 'labels = [l.get_label() for l in lines]'
-   write(FN, '(a)') 'ax1.legend(lines, labels, loc="upper right", fontsize=14)'
+   write(FN, '(a)') 'ax1.legend(lines, labels, loc="best", fontsize=14)'
 
    write(FN, '(a)') 'plt.title("Chemical potential and electron density", fontsize=14)'
    write(FN, '(a)') 'plt.tight_layout()'
@@ -3378,7 +3378,8 @@ subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
    case ('mp4')
       write(FN,'(a)') 'writer = FFMpegWriter('
       write(FN,'(a)') '       fps=10,'
-      write(FN,'(a)') '       codec="libx264",'
+      !write(FN,'(a)') '       codec="libx264",'      ! this codec is often missing on HPC
+      write(FN,'(a)') '       codec="mpeg4",'
       write(FN,'(a)') '       bitrate=5000,'
       write(FN,'(a)') '       extra_args=["-pix_fmt", "yuv420p"]'
       write(FN,'(a)') ' )'
