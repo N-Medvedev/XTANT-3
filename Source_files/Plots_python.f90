@@ -1127,7 +1127,7 @@ subroutine Python_plot_nearest_neighbors(numpar, file_NN, t0, t_last, script_nam
    linestyle(4) = '(0,(5,2,1,2,1,2))'
 
    col_nums(5) = 6
-   col_lables(5) = '"our neighbors"'
+   col_lables(5) = '"Four neighbors"'
    linestyle(5) = '(0,(10,3,4,3,1,2))'
 
    col_nums(6) = 7

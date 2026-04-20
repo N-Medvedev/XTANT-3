@@ -55,7 +55,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 19.04.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 20.04.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1181,7 +1181,8 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
 
 
    ! Write electron properties:
-   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, &
+   !write(FN, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)', advance='no') time, &
+   write(FN, '(es25.16, es25.16, es25.16, es25.16, es25.16E3, es25.16, es25.16, es25.16, es25.16, es25.16)', advance='no') time, &
       !Scell(NSC)%Ne_low/dble(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
       Scell(NSC)%Ne_low/Scell(NSC)%Na, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
       Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
@@ -1199,12 +1200,14 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    ! Find number of different orbital types:
    N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
    ! Total Ce:
-   write(FN_Ce, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%Ce
+   !write(FN_Ce, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%Ce
+   write(FN_Ce, '(es25.16, es25.16E3)', advance='no') time, Scell(NSC)%Ce
    ! All shells resolved:
    do i_at = 1, Nat
       do i_types = 1, N_types
          i_G1 = (i_at-1) * N_types + i_types
-         write(FN_Ce,'(es25.16)',advance='no') Scell(NSC)%Ce_part(i_G1)
+         !write(FN_Ce,'(es25.16)',advance='no') Scell(NSC)%Ce_part(i_G1)
+         write(FN_Ce,'(es25.16E3)',advance='no') Scell(NSC)%Ce_part(i_G1)
       enddo   ! i_types
    enddo ! i_at
    write(FN_Ce,'(a)') ''
