@@ -266,6 +266,11 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%EADL_file = m_EADL_file ! default name, module "Dealing_with_EADL"
    numpar%EPDL_file = m_EPDL_file ! default name, module "Dealing_with_EADL"
    numpar%EEDL_file = m_EEDL_file ! default name (UNUSED), module "Dealing_with_EADL"
+   ! Defaults plots and figures:
+   numpar%fig_extention = 'png'
+   numpar%vid_extention = 'gif'
+   numpar%ind_fig_extention = 4
+   numpar%plot_engine = 'gnu'   ! use gnuplot by default
 end subroutine initialize_default_values
 
 
@@ -5170,10 +5175,23 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 
    !  which format to use to plot figures: eps, jpeg, gif, png, pdf
    read(FN, '(a)', IOSTAT=Reason) read_line
-   read(read_line,*,IOSTAT=Reason) numpar%fig_extention
+   ! Try to read two variables:
+   read(read_line,*,IOSTAT=Reason) numpar%fig_extention, numpar%plot_engine, numpar%vid_extention
+   if (Reason /= 0) then ! something wrong with input
+      ! Try reading just two flags:
+      read(read_line,*,IOSTAT=Reason) numpar%fig_extention, numpar%plot_engine
+      numpar%vid_extention = 'gif'  ! revert to default
+      if (Reason /= 0) then ! something wrong with input
+         ! Try reading just the first flag (legacy support: single variable)
+         read(read_line,*,IOSTAT=Reason) numpar%fig_extention
+         numpar%plot_engine = 'gnu'    ! revert to default
+      endif
+   endif
+
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
+   ! Interprete the figure extension:
    select case ( trim(adjustl(numpar%fig_extention)) )
    case ('JPEG', 'JPEg', 'JPeg', 'Jpeg', 'jpeg', 'JPG', 'jpg')
       numpar%fig_extention = 'jpeg'
@@ -5190,6 +5208,28 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    case default ! eps
       numpar%fig_extention = 'eps'
       numpar%ind_fig_extention = 1
+   end select
+   ! Interprete the plotting engine:
+   select case ( trim(adjustl(numpar%plot_engine)) )
+   case ('PYTHON', 'Python', 'python', 'PY', 'Py', 'py')
+      numpar%plot_engine = 'py'
+   case default   ! use gnuplot by default to support legacy format:
+      numpar%plot_engine = 'gnu'
+   end select
+   ! Interprete the video engine:
+   select case ( trim(adjustl(numpar%vid_extention)) )
+   case ('AVI', 'Avi', 'avi')
+      numpar%vid_extention = 'avi'
+   case ('MP4', 'Mp4', 'mp4', 'mpfour')
+      numpar%vid_extention = 'mp4'
+   case ('MOV', 'Mov', 'mov')
+      numpar%vid_extention = 'mov'
+   case ('MKV', 'MKv', 'mkv')
+      numpar%vid_extention = 'mkv'
+   case ('WebM', 'Webm', 'webm')
+      numpar%vid_extention = 'webm'
+   case default   ! use gif by default to support legacy format:
+      numpar%vid_extention = 'gif'
    end select
 
    ! number of k-points in each direction (used only for Trani-k!):
@@ -5937,7 +5977,7 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
       allocate(Scell%fe_norm_high_on_grid(Nsiz), source=0.0d0)
       ! Create the grid:
       Scell%E_fe_grid(1) = Emin
-      do i = 2, Nsiz+1
+      do i = 2, Nsiz
          Scell%E_fe_grid(i) = Scell%E_fe_grid(i-1) + dE
       enddo
    endif

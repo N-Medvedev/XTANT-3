@@ -531,19 +531,47 @@ subroutine convolution(FN, Gaus_conv)
    exists:if (file_opened .and. file_named) then
       ! Input file:
       rewind(FN) ! start reading file from the first line
-      call Count_columns_in_file(FN, M, 2)   ! module "Dealing_with_files"
       call Count_lines_in_file(FN, N)  ! module "Dealing_with_files"
-      N = N - 2
-      allocate(Spectr(N,M))
-      allocate(Conv_Spectr(N,M))
 
-      Spectr = 0.0d0
-      Conv_Spectr = 0.0d0
+      if (N > 4) then   ! in case of comment lines (there can by 4 in some files)
+         call Count_columns_in_file(FN, M, 4)   ! module "Dealing_with_files"
+      elseif (N > 3) then
+         call Count_columns_in_file(FN, M, 3)   ! module "Dealing_with_files"
+      elseif (N > 2) then
+         call Count_columns_in_file(FN, M, 2)   ! module "Dealing_with_files"
+      elseif (N > 1) then
+         call Count_columns_in_file(FN, M, 1)   ! module "Dealing_with_files"
+      else
+         call Count_columns_in_file(FN, M)   ! module "Dealing_with_files"
+      endif
+
+      ! Assume 2 comment lines to start checking:
+      N = N - 2
       read(FN,'(a)',IOSTAT=Reason) First_line
       read(FN,'(a)',IOSTAT=Reason) Second_line
       if (Second_line(1:1) /= '#') then ! it is a functional line, not a comment
          backspace(FN) ! get back and read this line then
+         N = N + 1
+      else
+         N = N - 1
+         read(FN,'(a)',IOSTAT=Reason) Second_line ! third line may also be a comment in some files
+         if (Second_line(1:1) /= '#') then ! it is a functional line, not a comment
+            backspace(FN) ! get back and read this line then
+            N = N + 1
+         else ! line 4 could be a comment in some files, but not more than that...
+            N = N - 1
+            read(FN,'(a)',IOSTAT=Reason) Second_line
+            if (Second_line(1:1) /= '#') then ! it is a functional line, not a comment
+               backspace(FN) ! get back and read this line then
+               N = N + 1
+            endif
+         endif
       endif
+
+      allocate(Spectr(N,M))
+      allocate(Conv_Spectr(N,M))
+      Spectr = 0.0d0
+      Conv_Spectr = 0.0d0
 
       do i = 1, N
          read(FN,*,IOSTAT=Reason) Spectr(i,:)

@@ -3152,7 +3152,7 @@ subroutine Plot_laser_spectrum_gnuplot(numpar, laser, file_spectrum, i_pulse)
    ! Find order of the number, and set number of tics as tenth of it:
    call order_of_time((t_last - t0), ch_temp, x_tics=x_tics)	! module "Little_subroutines"
 
-   call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics,  'MFPs', &
+   call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics,  'Spectrum', &
       'Photon energy (eV)', 'Photon spectrum (arb. units)', 'OUTPUT_photon_spectrum.'//trim(adjustl(numpar%fig_extention)), &
       numpar%path_sep, setkey=0, set_x_log=.false., set_y_log=.false.)  ! module "Gnuplotting"
 

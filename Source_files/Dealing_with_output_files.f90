@@ -42,6 +42,7 @@ use Dealing_with_files, only : get_file_stat, copy_file, read_file, close_file, 
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
 use Plots_gnuplot, only : Plot_electron_MFP_gunplot, Plot_photon_MFP_gunplot, create_gnuplot_scripts, Plot_laser_spectrum_gnuplot
+use Plots_python, only : Plot_electron_MFP_python, Plot_photon_MFP_python, Plot_laser_spectrum_python, create_python_plot_scripts
 use Read_input_data, only : m_INPUT_directory, m_INFO_directory, m_INFO_file, m_HELP_file, m_starline, m_dashline, &
                            m_INPUT_MINIMUM, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_ALL, m_Communication, &
                            m_QUOTES_file, printout_warning
@@ -54,7 +55,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 18.04.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 20.04.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -296,9 +297,14 @@ subroutine printout_laser_spectrum(laser, numpar, matter)
 
 
          !=======================================================
-         ! Gnuplot the data:
-         call Plot_laser_spectrum_gnuplot(numpar, laser, file_spectrum, i_pulse) ! module "Plots_gnuplot"
-
+         ! Plot the data:
+         !call Plot_laser_spectrum_gnuplot(numpar, laser, file_spectrum, i_pulse) ! module "Plots_gnuplot"
+         select case (g_numpar%plot_engine)    ! which engine to use for plots
+         case default ! Gnuplot
+            call Plot_laser_spectrum_gnuplot(numpar, laser, file_spectrum, i_pulse) ! module "Plots_gnuplot"
+         case ('py') ! Python
+            call Plot_laser_spectrum_python(numpar, laser, file_spectrum, i_pulse) ! module "Plots_python"
+         end select
       endif ! (allocated(laser(i_pulse)%Spectrum))
    enddo ! i_pulse
 
@@ -460,12 +466,18 @@ subroutine printout_MFP_file(numpar, matter, Scell)
 
       !=======================================================
       ! Plot the data:
-      ! 1) Electron MFPs gnuplotting:
-      call Plot_electron_MFP_gunplot(numpar, matter, file_electron_IMFP, file_electron_EMFP)    ! module "Plots_gnuplot"
-
-      ! 2) Photon attenuation lengths gnuplotting:
-      call Plot_photon_MFP_gunplot(numpar, matter, file_photon_MFP)     ! module "Plots_gnuplot"
-
+      select case (numpar%plot_engine)    ! which engine to use for plots
+      case default ! Gnuplot
+         ! 1) Electron MFPs gnuplotting:
+         call Plot_electron_MFP_gunplot(numpar, matter, file_electron_IMFP, file_electron_EMFP)    ! module "Plots_gnuplot"
+         ! 2) Photon attenuation lengths gnuplotting:
+         call Plot_photon_MFP_gunplot(numpar, matter, file_photon_MFP)     ! module "Plots_gnuplot"
+      case ('py') ! Python
+         ! 1) Electron MFPs gnuplotting:
+         call Plot_electron_MFP_python(numpar, matter, file_electron_IMFP, file_electron_EMFP)     ! module "Plots_python"
+         ! 2) Photon attenuation lengths gnuplotting:
+         call Plot_photon_MFP_python(numpar, matter, file_photon_MFP)     ! module "Plots_python"
+      end select
    endif
 end subroutine printout_MFP_file
 
@@ -517,9 +529,10 @@ end subroutine save_distribution_on_grid
 
 
 
-subroutine convolve_output(Scell, numpar)
+subroutine convolve_output(Scell, numpar, matter)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
+   type(Solid), intent(in) :: matter
    !------------------
    integer i, FN, j, Nsiz
    logical file_exist, file_opened, file_named
@@ -596,6 +609,77 @@ subroutine convolve_output(Scell, numpar)
                close(FN)
             endif
          endif
+
+
+         File_name = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks.dat'
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         if (file_exist) then
+            open(UNIT=FN, FILE = trim(adjustl(File_name)))
+            call convolution(FN, Scell(i)%eps%tau) ! Debye temperatures
+            close(FN)
+         endif
+
+         if ( abs(numpar%DW_theta) > 1.0d-6 ) then
+            File_name = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_DW.dat'
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            if (file_exist) then
+               open(UNIT=FN, FILE = trim(adjustl(File_name)))
+               call convolution(FN, Scell(i)%eps%tau) ! Debye temperatures
+               close(FN)
+            endif
+
+            File_name = trim(adjustl(file_path))//'OUTPUT_Debye_temperature_from_DW.dat'
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            if (file_exist) then
+               open(UNIT=FN, FILE = trim(adjustl(File_name)))
+               call convolution(FN, Scell(i)%eps%tau) ! Debye temperatures
+               close(FN)
+            endif
+         endif
+
+         ! For element-specific diffraction data:
+         if (size(matter%Atoms) > 1) then
+            do j = 1, size(matter%Atoms)    ! for all elements
+               File_name = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_'//trim(adjustl(matter%Atoms(j)%Name))//'.dat'
+               inquire(file=trim(adjustl(File_name)),exist=file_exist)
+               if (file_exist) then
+                  open(UNIT=FN, FILE = trim(adjustl(File_name)))
+                  call convolution(FN, Scell(i)%eps%tau) ! Debye temperatures
+                  close(FN)
+               endif
+            enddo
+         endif
+
+         ! Atomic partial temperatures:
+         File_name = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         if (file_exist) then
+            open(UNIT=FN, FILE = trim(adjustl(File_name)))
+            call convolution(FN, Scell(i)%eps%tau)      ! numbers of particles
+            close(FN)
+         endif
+
+
+         ! Nearest neighbors:
+         if (numpar%save_NN) then
+            File_name = trim(adjustl(file_path))//'OUTPUT_nearest_neighbors.dat'
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            if (file_exist) then
+               open(UNIT=FN, FILE = trim(adjustl(File_name)))
+               call convolution(FN, Scell(i)%eps%tau) ! Debye temperatures
+               close(FN)
+            endif
+         endif
+
+
+         File_name = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_data.dat'
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         if (file_exist) then
+            open(UNIT=FN, FILE = trim(adjustl(File_name)))
+            call convolution(FN, Scell(i)%eps%tau)      ! numbers of particles
+            close(FN)
+         endif
+
 
          File_name = trim(adjustl(file_path))//'OUTPUT_electron_hole_numbers.dat'
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
@@ -1093,9 +1177,12 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    integer, intent(in) :: FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_Te, FN_mu
    !------------------------
    integer i, Nat, n_at, Nsiz, norb, N_types, i_at, i_types, i_G1
+   real(8) :: kappa_e, kappa_ph, kappa, kappa_e_inv, kappa_ph_inv
+
 
    ! Write electron properties:
-   write(FN, '(es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)', advance='no') time, &
+   !write(FN, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)', advance='no') time, &
+   write(FN, '(es25.16, es25.16, es25.16, es25.16, es25.16E3, es25.16, es25.16, es25.16, es25.16, es25.16)', advance='no') time, &
       !Scell(NSC)%Ne_low/dble(Scell(NSC)%Ne)*100.0d0, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
       Scell(NSC)%Ne_low/Scell(NSC)%Na, Scell(NSC)%mu, Scell(NSC)%E_gap, Scell(NSC)%Ce, Scell(NSC)%G_ei, &
       Scell(NSC)%E_VB_bottom, Scell(NSC)%E_VB_top, Scell(NSC)%E_bottom, Scell(NSC)%E_top
@@ -1113,12 +1200,14 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    ! Find number of different orbital types:
    N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
    ! Total Ce:
-   write(FN_Ce, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%Ce
+   !write(FN_Ce, '(es25.16,es25.16)', advance='no') time, Scell(NSC)%Ce
+   write(FN_Ce, '(es25.16, es25.16E3)', advance='no') time, Scell(NSC)%Ce
    ! All shells resolved:
    do i_at = 1, Nat
       do i_types = 1, N_types
          i_G1 = (i_at-1) * N_types + i_types
-         write(FN_Ce,'(es25.16)',advance='no') Scell(NSC)%Ce_part(i_G1)
+         !write(FN_Ce,'(es25.16)',advance='no') Scell(NSC)%Ce_part(i_G1)
+         write(FN_Ce,'(es25.16E3)',advance='no') Scell(NSC)%Ce_part(i_G1)
       enddo   ! i_types
    enddo ! i_at
    write(FN_Ce,'(a)') ''
@@ -1126,10 +1215,32 @@ subroutine write_electron_properties(FN, time, Scell, NSC, Ei, matter, numpar, F
    ! Write electron heat conductivity if requesed:
    if (numpar%do_kappa) then
       do i = 1, size(Scell(NSC)%kappa_e_vs_Te)  ! electron temperature dependence
+
+         ! Use Matthiessen's rule for total conductivity:
+         kappa_e = Scell(NSC)%kappa_e_vs_Te(i)
+         kappa_ph = Scell(NSC)%kappa_ee_vs_Te(i)
+         if (kappa_e > 1.0d-8) then
+            kappa_e_inv = 1.0d0 / kappa_e
+         else
+            kappa_e_inv = 0.0d0
+         endif
+         if (kappa_ph > 1.0d-8) then
+            kappa_ph_inv = 1.0d0 / kappa_ph
+         else
+            kappa_ph_inv = 0.0d0
+         endif
+         kappa = kappa_e_inv + kappa_ph_inv
+         if (kappa > 1.0d-8) kappa = 1.0d0/kappa
+
          write(FN_kappa, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
-            1.0d0/ ( 1.0d0/Scell(NSC)%kappa_e_vs_Te(i) + 1.0d0/Scell(NSC)%kappa_ee_vs_Te(i) ), & ! total conductivity
+            kappa, & ! total conductivity
             Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_ee_vs_Te(i), & ! electron-phonon, electron-electron contributions
             Scell(NSC)%kappa_mu_grid(i), Scell(NSC)%kappa_Ce_grid(i) ! chem.potential, electron heat capacity
+
+!          write(FN_kappa, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') Scell(NSC)%kappa_Te_grid(i), &
+!             1.0d0/ ( 1.0d0/Scell(NSC)%kappa_e_vs_Te(i) + 1.0d0/Scell(NSC)%kappa_ee_vs_Te(i) ), & ! total conductivity
+!             Scell(NSC)%kappa_e_vs_Te(i), Scell(NSC)%kappa_ee_vs_Te(i), & ! electron-phonon, electron-electron contributions
+!             Scell(NSC)%kappa_mu_grid(i), Scell(NSC)%kappa_Ce_grid(i) ! chem.potential, electron heat capacity
       enddo
       write(FN_kappa, '(a)')
       write(FN_kappa, '(a)')
@@ -1282,7 +1393,7 @@ subroutine write_orb_resolved_header(FN, Scell, matter)
    N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
 
    ! Ne:
-   write(FN, '(a)', advance='no') ' #Time   Total_Ne   '
+   write(FN, '(a)', advance='no') '#Time   Total_Ne   '
    ! All shells resolved:
    do i_at = 1, N_at
       do i_types = 1, N_types
@@ -2422,36 +2533,73 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       endif
    enddo
 
-   ! Prepare gnuplot scripts to plot all the output data:
-   call create_gnuplot_scripts(Scell, matter, numpar, laser, file_path, &
-   'OUTPUT_temperatures.dat', &
-   'OUTPUT_pressure_and_stress.dat', &
-   'OUTPUT_energies.dat', &
-   file_atoms_R, file_atoms_S, &
-   'OUTPUT_supercell.dat', &
-   'OUTPUT_electron_properties.dat', &
-   'OUTPUT_electron_heat_conductivity.dat', &
-   'OUTPUT_electron_heat_conductivity_dyn.dat', &
-   'OUTPUT_electron_hole_numbers.dat', &
-   'OUTPUT_orbital_resolved_data.dat', &
-   'OUTPUT_deep_shell_holes.dat', &
-   'OUTPUT_optical_coefficients.dat', &
-   file_Ei, file_PCF, &
-   'OUTPUT_nearest_neighbors.dat', &
-   file_element_NN_short, &
-   'OUTPUT_electron_entropy.dat', &
-   'OUTPUT_electron_temperatures.dat', &
-   'OUTPUT_electron_chempotentials.dat', &
-   'OUTPUT_atomic_entropy.dat', &
-   'OUTPUT_atomic_temperatures.dat', &
-   'OUTPUT_atomic_temperatures_partial.dat', &
-   file_sect_displ_short, &
-   'OUTPUT_diffraction_peaks.dat', &
-   file_diff_peaks_part, &
-   'OUTPUT_diffraction_powder.dat', &
-   'OUTPUT_diffraction_peaks_DW.dat', &
-   'OUTPUT_Debye_temperature_from_DW.dat', &
-   'OUTPUT_testmode_data.dat')  ! module "Plots_gnuplot"
+
+   !=======================================================
+      ! Plot the data:
+      select case (numpar%plot_engine)    ! which engine to use for plots
+      case default ! Gnuplot
+         ! Prepare gnuplot scripts to plot all the output data:
+         call create_gnuplot_scripts(Scell, matter, numpar, laser, file_path, &
+               'OUTPUT_temperatures.dat', &
+               'OUTPUT_pressure_and_stress.dat', &
+               'OUTPUT_energies.dat', &
+               file_atoms_R, file_atoms_S, &
+               'OUTPUT_supercell.dat', &
+               'OUTPUT_electron_properties.dat', &
+               'OUTPUT_electron_heat_conductivity.dat', &
+               'OUTPUT_electron_heat_conductivity_dyn.dat', &
+               'OUTPUT_electron_hole_numbers.dat', &
+               'OUTPUT_orbital_resolved_data.dat', &
+               'OUTPUT_deep_shell_holes.dat', &
+               'OUTPUT_optical_coefficients.dat', &
+               file_Ei, file_PCF, &
+               'OUTPUT_nearest_neighbors.dat', &
+               file_element_NN_short, &
+               'OUTPUT_electron_entropy.dat', &
+               'OUTPUT_electron_temperatures.dat', &
+               'OUTPUT_electron_chempotentials.dat', &
+               'OUTPUT_atomic_entropy.dat', &
+               'OUTPUT_atomic_temperatures.dat', &
+               'OUTPUT_atomic_temperatures_partial.dat', &
+               file_sect_displ_short, &
+               'OUTPUT_diffraction_peaks.dat', &
+               file_diff_peaks_part, &
+               'OUTPUT_diffraction_powder.dat', &
+               'OUTPUT_diffraction_peaks_DW.dat', &
+               'OUTPUT_Debye_temperature_from_DW.dat', &
+               'OUTPUT_testmode_data.dat')  ! module "Plots_gnuplot"
+
+      case ('py') ! Python
+         call create_python_plot_scripts(Scell, matter, numpar, laser, file_path, &
+            'OUTPUT_temperatures.dat', &
+            'OUTPUT_pressure_and_stress.dat', &
+            'OUTPUT_energies.dat', &
+            file_atoms_R, file_atoms_S, &
+            'OUTPUT_supercell.dat', &
+            'OUTPUT_electron_properties.dat', &
+            'OUTPUT_electron_heat_conductivity.dat', &
+            'OUTPUT_electron_heat_conductivity_dyn.dat', &
+            'OUTPUT_electron_hole_numbers.dat', &
+            'OUTPUT_orbital_resolved_data.dat', &
+            'OUTPUT_deep_shell_holes.dat', &
+            'OUTPUT_optical_coefficients.dat', &
+            'OUTPUT_energy_levels.dat', file_PCF, &
+            'OUTPUT_nearest_neighbors.dat', &
+            file_element_NN_short, &
+            'OUTPUT_electron_entropy.dat', &
+            'OUTPUT_electron_temperatures.dat', &
+            'OUTPUT_electron_chempotentials.dat', &
+            'OUTPUT_atomic_entropy.dat', &
+            'OUTPUT_atomic_temperatures.dat', &
+            'OUTPUT_atomic_temperatures_partial.dat', &
+            file_sect_displ_short, &
+            'OUTPUT_diffraction_peaks.dat', &
+            file_diff_peaks_part, &
+            'OUTPUT_diffraction_powder.dat', &
+            'OUTPUT_diffraction_peaks_DW.dat', &
+            'OUTPUT_Debye_temperature_from_DW.dat', &
+            'OUTPUT_testmode_data.dat')  ! module "Plots_python"
+      end select
 
    ! clean up:
    if (allocated(file_sect_displ)) deallocate(file_sect_displ, file_sect_displ_short)

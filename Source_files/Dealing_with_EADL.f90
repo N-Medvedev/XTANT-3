@@ -945,7 +945,12 @@ end subroutine Interpolate_EPDL
 subroutine define_PQN(READ1, Shell_name, PQN)
    integer, intent(in) :: READ1 ! shell designator
    integer, INTENT(inout), optional :: PQN !Principal quantum number
-   character(11), intent(inout), optional :: Shell_name ! names
+   character(*), intent(inout), optional :: Shell_name ! names
+   !----------------------
+
+   if (present(PQN)) PQN = 0 ! to start with
+   if (present(Shell_name)) Shell_name = '' ! to start with
+
    SELECT CASE(INT(READ1))
    CASE ( : 1)
       if (present(PQN)) PQN = 1 ! K-shell

@@ -205,9 +205,14 @@ call printout_MFP_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_out
 ! Printout pump-laser photon spectrum, if required:
 call printout_laser_spectrum(g_laser, g_numpar, g_matter)   ! module "Dealing_with_output_files"
 
-! Collect all gnuplot files into one script to execute all together later:
+! Collect all ploting scripts into one script to execute all together later:
 if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
-   call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)), skip_execution=.true.) ! module "Gnuplotting"
+   select case (g_numpar%plot_engine)    ! which engine to use for plots
+   case default ! Gnuplot
+      call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)), skip_execution=.true.) ! module "Gnuplotting"
+   case ('py') ! Python
+      call collect_python_plots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)), skip_execution=.true.) ! module "Plots_python"
+   end select
 endif
 
 
@@ -495,7 +500,7 @@ if (g_numpar%verbose) call print_time_step('Opened files closed succesfully', ms
 ! Convolve output files with finite duration of the probe pulse:
 if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
    if ( (g_Scell(1)%eps%tau > 0.0d0) .and. (.not.g_Err%Err) ) then
-      call convolve_output(g_Scell, g_numpar)  ! module "Dealing_with_output_files"
+      call convolve_output(g_Scell, g_numpar, g_matter)  ! module "Dealing_with_output_files"
       print*, 'Convolution with the probe pulse is performed'
    else
       print*, 'No convolution with the probe pulse was required'
@@ -520,10 +525,17 @@ endif
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 if (.not.g_Err%Err) then
    if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
-      write(*,'(a)')  'Executing gnuplot scripts to create plots...'
-      call execute_all_gnuplots(g_numpar, trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep)))       ! module "Plots_gnuplot"
-      !call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)) ) ! module "Gnuplotting"
-      if (g_numpar%verbose) call print_time_step('Gnuplot calles executed succesfully', msec=.true., MPI_param=g_numpar%MPI_param)
+      ! Gnuplotting:
+      write(*,'(a)')  'Executing scripts to create plots...'
+      select case (g_numpar%plot_engine)    ! which engine to use for plots
+      case default ! Gnuplot
+         call execute_all_gnuplots(g_numpar, trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep))) ! module "Plots_gnuplot"
+         if (g_numpar%verbose) call print_time_step('Gnuplot calles executed', msec=.true., MPI_param=g_numpar%MPI_param)
+      case ('py') ! Python
+         call execute_all_pyplots(g_numpar, trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep))) ! module "Plots_python"
+         if (g_numpar%verbose) call print_time_step('Python scripts executed', msec=.true., MPI_param=g_numpar%MPI_param)
+      end select
+
    endif
 endif
 
