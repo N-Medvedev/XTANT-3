@@ -275,21 +275,830 @@ file_testmode)
    endif
 
 
+   ! Element-specific nearest neighbors:
+   if (allocated(numpar%NN_radii)) then
+      do i = 1, size(numpar%NN_radii) ! for all requested elements
+         call Python_plot_nearest_neighbors_elements(matter, numpar, file_element_NN(i), trim(adjustl(numpar%NN_radii(i)%Name)), &
+              t0, t_last, &
+              'OUTPUT_nearest_neighbors_'//trim(adjustl(numpar%NN_radii(i)%Name))//'.py') ! below
+      enddo ! i
+   endif
 
 
+   ! Pair correlation function:
+   if (numpar%save_PCF) then
+      ! Pair correlation function can only be plotted as animated plot:
+      call Python_plot_pair_correlation(Scell(1), matter, numpar, 'OUTPUT_pair_correlation_function.dat', &
+                                          'OUTPUT_pair_correlation.py', trim(adjustl(numpar%vid_extention)))   ! below
+   endif
+
+
+   ! Distribution function of electrons:
+   if (numpar%save_fe) then
+      ! Distribution function can only be plotted as animated plot:
+      call Python_plot_distribution(numpar, 'OUTPUT_electron_distribution.dat', &
+                                    'OUTPUT_electron_distribution.py', trim(adjustl(numpar%vid_extention)))   ! below
+   endif
+
+
+   ! Orbital-resoloved distribution function of electrons:
+   if (numpar%save_fe_orb) then
+      ! Distribution function can only be plotted as animated plot:
+      call Python_plot_orb_distribution(Scell(1), matter, numpar, 'OUTPUT_electron_distribution.dat', &
+                                    'OUTPUT_orbital_resolved_fe.py', trim(adjustl(numpar%vid_extention)))   ! below
+   endif
+
+
+   ! Distribution function of all electrons on the grid:
+   if (numpar%save_fe_grid) then
+      ! Distribution function can only be plotted as animated plot:
+      call Python_plot_distribution_on_grid(Scell(1), numpar, 'OUTPUT_electron_distribution_on_grid.dat', &
+                                    'OUTPUT_electron_distribution_on_grid.py', trim(adjustl(numpar%vid_extention)))   ! below
+   endif
+
+
+
+   ! Distribution function of atoms:
+   if (numpar%save_fa) then
+      ! 1) Distribution of kinetic energies:
+      call Python_plot_atomic_distribution(Scell(1), numpar, 'OUTPUT_atomic_distribution.dat', 'OUTPUT_atomic_distribution_kin', &
+           'Distribution of kinetic energies', 'OUTPUT_atoms_distribution.py', trim(adjustl(numpar%vid_extention)))   ! below
+
+      ! 2) Distribution of potential energies:
+      call Python_plot_atomic_distribution(Scell(1), numpar, 'OUTPUT_atomic_distribution_pot.dat', 'OUTPUT_atomic_distribution_pot', &
+           'Distribution of potential energies', 'OUTPUT_atomic_distribution_pot.py', trim(adjustl(numpar%vid_extention)))   ! below
+
+      ! 3) Distribution of total energies:
+      call Python_plot_atomic_distribution(Scell(1), numpar, 'OUTPUT_atomic_distribution_tot.dat', 'OUTPUT_atomic_distribution_tot', &
+       'Distribution of total energies', 'OUTPUT_atomic_distribution_tot.py', trim(adjustl(numpar%vid_extention)), skip_eq=.true.)   ! below
+   endif
+
+
+
+   ! DOS of electrons:
+   if (numpar%save_DOS) then  ! Material DOS
+      select case (numpar%DOS_splitting)
+      case (1) ! with partial DOS
+         ! DOS can only be plotted as animated plot:
+         call Python_plot_DOS(Scell(1), matter, numpar, 'OUTPUT_DOS.dat', 'OUTPUT_DOS.py', trim(adjustl(numpar%vid_extention)))   ! below
+      endselect
+   endif
+
+
+
+   ! Optical coefficients
+   if (numpar%do_drude) then
+      call Python_plot_optical_coefficients(numpar, file_optics, t0, t_last, 'OUTPUT_optical_coefficients.py') ! below
+      ! also n and k:
+      call Python_plot_n_and_k(numpar, file_optics, t0, t_last, 'OUTPUT_optical_n_and_k.py') ! below
+   endif
+
+
+   !cccccccccccccccccccccccccccccccccccccccccccccc
+   ! Create also convolved plots:
+   CONV:if (Scell(1)%eps%tau > 0.0d0) then ! convolved files too:
+      ! Energies:
+      call Python_plot_energies(numpar, file_energies, t0, t_last, 'OUTPUT_energies_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Temepratures:
+      call Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_last, 'OUTPUT_temepratures_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Mean displacement:
+      if (abs(numpar%MSD_power) > 1.0e-6) then ! only plot it if it's not zero
+            call Python_plot_MSD(matter, numpar, file_temperatures, t0, t_last, &
+                  'OUTPUT_mean_displacement_CONVOLVED.py', &
+                  numpar%MSD_power, convolved=.true.) ! below
+      endif
+
+
+      ! Atomic masks for sectional displacements:
+      if (allocated(Scell(1)%Displ)) then
+            Nsiz = size(Scell(1)%Displ)   ! how many masks
+            do j = 1, Nsiz    ! for all masks
+            call Python_plot_displacements(matter, numpar, file_sect_displ(j), t0, t_last, &
+                  'OUTPUT_mean_displacements_'//trim(adjustl(Scell(1)%Displ(j)%mask_name))//'CONVOLVED.py', &
+                  Scell(1)%Displ(j)%MSD_power, trim(adjustl(Scell(1)%Displ(j)%mask_name)) , convolved=.true.) ! below
+
+            ! Partial by elements, if there is more than one:
+            if (matter%N_KAO > 1) then
+                  call Python_plot_displacements_partial(matter, numpar, file_sect_displ(j), t0, t_last, 'OUTPUT_mean_displacement_'// &
+                  trim(adjustl(Scell(1)%Displ(j)%mask_name))//'_partial_CONVOLVED.py', &
+                  Scell(1)%Displ(j)%MSD_power, trim(adjustl(Scell(1)%Displ(j)%mask_name)) , convolved=.true.) ! below
+            endif
+            enddo ! j
+      endif
+
+
+      ! Diffraction:
+      if (numpar%save_diff_peaks) then
+            ! Diffraction peaks for selected Miller indices:
+            call Python_plot_diffraction_peaks(Scell(1), numpar, file_diffraction_peaks, t0, t_last, &
+                                          'OUTPUT_diffraction_peaks_CONVOLVED.py', &
+                                          'OUTPUT_diffraction_peaks', 'Diffraction peaks', &
+                                          .false., convolved=.true.) ! below
+
+            ! For element-specific diffraction data:
+            if (size(matter%Atoms) > 1) then
+               do j = 1, size(matter%Atoms)    ! for all elements
+                  call Python_plot_diffraction_peaks(Scell(1), numpar, file_diffraction_peaks_part(j), t0, t_last, &
+                                          'OUTPUT_diffraction_peaks_'//trim(adjustl(matter%Atoms(j)%Name))//'_CONVOLVED.py', &
+                                          'OUTPUT_diffraction_peaks_'//trim(adjustl(matter%Atoms(j)%Name)), &
+                                          'Diffraction peaks in '//trim(adjustl(matter%Atoms(j)%Name)), &
+                                          .false., convolved=.true.) ! below
+               enddo
+            endif
+
+            ! Check if Debye-Waller analysis is required:
+            if ( abs(numpar%DW_theta) > 1.0d-6 ) then
+               call Python_plot_diffraction_peaks(Scell(1), numpar, file_diffraction_peaks_DW, t0, t_last, &
+                                          'OUTPUT_diffraction_peaks_DW_CONVOLVED.py', &
+                                          'OUTPUT_diffraction_peaks_DW', 'Debye Waller peaks',  &
+                                          .true., convolved=.true.) ! below
+
+               call Python_plot_Debye_temperatures(Scell(1), numpar, file_Debye_temperature, t0, t_last, &
+                                          'OUTPUT_Debye_temperatures_CONVOLVED.py', convolved=.true.) ! below
+            endif
+      endif
+
+
+      ! Pressure:
+      call Python_plot_pressure(numpar, file_pressure, t0, t_last, 'OUTPUT_pressure_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Stress tensor:
+      call Python_plot_stress(numpar, file_pressure, t0, t_last, 'OUTPUT_stress_tensor_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Numbers of particles:
+      call Python_plot_numbers(numpar, file_numbers, t0, t_last, 'OUTPUT_electrons_holes_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Orbital-resolved electron parameters:
+      call Python_plot_orbital_resolved(Scell(1), matter, numpar, file_orb, t0, t_last, 'OUTPUT_orbital_resolved_Ne_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Numbers of CB electrons:
+      call Python_plot_CB_electrons(numpar, file_numbers, t0, t_last, 'OUTPUT_CB_electrons_CONVOLVED.py', convolved=.true.)     ! below
+
+
+      ! Numbers of deep-shell holes:
+      call Python_plot_holes(matter, numpar, file_deep_holes, t0, t_last, 'OUTPUT_deep_shell_holes_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Band gap:
+      call Python_plot_Egap(numpar, file_electron_properties, t0, t_last, 'OUTPUT_Egap_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Chemical potential and Ne:
+      call Python_plot_mu(numpar, file_electron_properties, t0, t_last, 'OUTPUT_mu_and_Ne_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Boundaries of the bands:
+      call Python_plot_Ebands(numpar, file_electron_properties, t0, t_last, 'OUTPUT_bands_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Electron heat capacity:
+      call Python_plot_capacity(numpar, file_electron_properties, t0, t_last, 'OUTPUT_electron_Ce_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Electron entropy:
+      call Python_plot_entropy(numpar, file_electron_entropy, t0, t_last, 'OUTPUT_electron_entropy.py', convolved=.true.) ! below
+
+
+      ! Electron temperatures and chemical potential (for band-resolved calculations):
+      if (numpar%do_partial_thermal) then
+            call Python_plot_el_temperatures(numpar, file_Te, t0, t_last, 'OUTPUT_electron_temperatures_CONVOLVED.py', convolved=.true.) ! below
+            call Python_plot_chempots(numpar, file_mu, t0, t_last, 'OUTPUT_electron_chempotentials_CONVOLVED.py', convolved=.true.) ! below
+      endif
+
+
+      ! Atomic temperatures (various definitions):
+      if (numpar%print_Ta) then
+            ! Atomic entropy:
+            call Python_plot_entropy_atomic(numpar, file_atomic_entropy, t0, t_last, 'OUTPUT_atomic_entropy_CONVOLVED.py', convolved=.true.) ! below
+
+            call Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_last, 'OUTPUT_atomic_temperatures_CONVOLVED.py', convolved=.true.) ! below
+
+            call Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_part, t0, t_last, 'OUTPUT_atomic_temperatures_partial_CONVOLVED.py', convolved=.true.) ! below
+      endif
+
+
+      ! Electron-ion coupling parameter:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
+      call Python_plot_coupling(numpar, file_electron_properties, t0, t_last, 'OUTPUT_coupling_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Volume:
+      call Python_plot_volume(numpar, file_supercell, t0, t_last, 'OUTPUT_volume_CONVOLVED.py', convolved=.true.) ! below
+
+
+      ! Mulliken charges:
+      if (numpar%Mulliken_model >= 1) then
+            call Python_plot_Mulliken_charges(matter, numpar, file_electron_properties, t0, t_last, 'OUTPUT_Mulliken_charges_CONVOLVED.py', convolved=.true.) ! below
+      endif
+
+
+      ! Nearest neighbors:
+      if (numpar%save_NN) then
+            call Python_plot_nearest_neighbors(numpar, file_NN, t0, t_last, 'OUTPUT_nearest_neighbors_CONVOLVED.py', convolved=.true.) ! below
+      endif
+
+
+      ! Element-specific nearest neighbors:
+      if (allocated(numpar%NN_radii)) then
+            do i = 1, size(numpar%NN_radii) ! for all requested elements
+            call Python_plot_nearest_neighbors_elements(matter, numpar, file_element_NN(i), trim(adjustl(numpar%NN_radii(i)%Name)), &
+                  t0, t_last, &
+                  'OUTPUT_nearest_neighbors_'//trim(adjustl(numpar%NN_radii(i)%Name))//'_CONVOLVED.py', convolved=.true.) ! below
+            enddo ! i
+      endif
+
+
+      ! Optical coefficients
+      if (numpar%do_drude) then
+            call Python_plot_optical_coefficients(numpar, file_optics, t0, t_last, 'OUTPUT_optical_coefficients_CONVOLVED.py', convolved=.true.) ! below
+            ! also n and k:
+            call Python_plot_n_and_k(numpar, file_optics, t0, t_last, 'OUTPUT_optical_n_and_k_CONVOLVED.py', convolved=.true.) ! below
+      endif
+
+   endif CONV
 end subroutine create_python_plot_scripts
 
 
 
-subroutine Python_plot_nearest_neighbors(numpar, file_NN, t0, t_last, script_name)
+
+
+subroutine Python_plot_n_and_k(numpar, file_optics, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
-   character(*), intent(in) :: file_NN, script_name ! file with energy levels, script
+   character(*), intent(in) :: file_optics, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
+   !----------------
+   integer :: FN, i, Nsiz
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(300) :: File_name, Plot_name, Data_file_name
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   Nsiz = 2
+
+   allocate(col_nums(Nsiz), source = 0)
+   allocate(col_lables(Nsiz))
+   allocate(linestyle(Nsiz))
+
+   col_nums(1) = 4
+   col_lables(1) = '"n"'
+   call select_linestyle(1,linestyle(1))
+   col_nums(2) = 5
+   col_lables(2) = '"k"'
+   call select_linestyle(2,linestyle(2))
+
+
+   Plot_name = 'OUTPUT_optical_n_and_k'
+   Data_file_name = file_optics
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_optics(1:len(trim(adjustl(file_optics)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+      'Time (fs)', 'Optical n and k', 'Complex refractive index', &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_lables)
+end subroutine Python_plot_n_and_k
+
+
+
+subroutine Python_plot_optical_coefficients(numpar, file_optics, t0, t_last, script_name, convolved)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_optics, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
+   !----------------
+   integer :: FN, i, Nsiz
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(300) :: File_name, Plot_name, Data_file_name
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   Nsiz = 3
+
+   allocate(col_nums(Nsiz), source = 0)
+   allocate(col_lables(Nsiz))
+   allocate(linestyle(Nsiz))
+
+   col_nums(1) = 1
+   col_lables(1) = '"Reflectivity"'
+   call select_linestyle(1,linestyle(1))
+   col_nums(2) = 2
+   col_lables(2) = '"Transmission"'
+   call select_linestyle(2,linestyle(2))
+   col_nums(3) = 3
+   col_lables(3) = '"Absorption"'
+   call select_linestyle(3,linestyle(3))
+
+
+   Plot_name = 'OUTPUT_optical_coefficients'
+   Data_file_name = file_optics
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_optics(1:len(trim(adjustl(file_optics)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+      'Time (fs)', 'Optical coefficients', 'Optical coefficients', &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last, y_min=0.0, y_max = 1.0)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_lables)
+end subroutine Python_plot_optical_coefficients
+
+
+
+
+
+subroutine Python_plot_DOS(Scell, matter, numpar, file_DOS, script_name, video_format)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter ! parameters of the material
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   character(*), intent(in) :: file_DOS, script_name ! file with energy levels, script
+   character(*), intent(in) :: video_format     ! which video format to print it out in
+   !----------------
+   integer :: FN, i, i_start, ind, j, k, Nsiz, i_at, N_types, NKOA, N_at, norb, i_col, i_cur, i_types
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle, symbols
+   character(300) :: File_name
+   character(30) :: chtemp1
+   real(8) :: x_start, x_end
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Plot limits:
+   x_start = -25.0d0
+   x_end = 25.0d0
+
+   ! Find number of orbitals per atom:
+   NKOA = matter%N_KAO      ! number of kinds of atoms
+   N_at = size(Scell%MDatoms) ! number of atoms
+   Nsiz = size(Scell%Ha,1) ! total number of orbitals
+   norb = Nsiz/N_at ! orbitals per atom
+   ! Find number of different orbital types:
+   N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+
+   ! allocate the arrays:
+   Nsiz = NKOA * N_types + 1     ! assuming basis set is the same for all elements
+   allocate(col_nums(Nsiz), source = 0)
+   allocate(col_lables(Nsiz))
+   allocate(linestyle(Nsiz))
+
+   col_nums(1) = 1
+   col_lables(1) = 'Total'
+   call select_linestyle(1, linestyle(1)) ! below
+
+   i_col = 1      ! column number after which orbital-resolved data start
+   i_cur = 1      ! to start with
+   do i_at = 1, NKOA
+      do i_types = 1, N_types
+         i_cur = i_cur + 1    ! count columns
+         ! Set the arrays:
+         col_nums(i_cur) = (i_col - 1) + i_cur    ! index for python
+         chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+         col_lables(i_cur) = trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
+         call select_linestyle(i_cur, linestyle(i_cur)) ! below
+      enddo ! i_types
+   enddo ! i_at
+
+   call Create_Python_animation(FN, file_DOS, col_nums, col_lables, &
+      'Energy (eV)', 'DOS (electrons/eV)', 'Electronic density of states', &
+      "best", 'OUTPUT_DOS', trim(adjustl(video_format)), &
+      x_min=x_start, x_max=x_end, y_min=0.0, &
+      t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total, &
+      l_style=linestyle, &
+      first_line_in_front =.false.)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_lables, linestyle)
+end subroutine Python_plot_DOS
+
+
+
+
+subroutine Python_plot_atomic_distribution(Scell, numpar, file_distribution, plot_name, plot_title, script_name, video_format, skip_eq)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   character(*), intent(in) :: file_distribution, plot_name, script_name, plot_title ! file with energy levels, script
+   character(*), intent(in) :: video_format     ! which video format to print it out in
+   logical, intent(in), optional :: skip_eq     ! skip plotting equilibrium (equivalent) distribution
+   !----------------
+   integer :: FN, i, i_start, ind, j, k, Nsiz, i_at, N_types, NKOA, N_at, norb, i_col, i_cur, i_types
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle, symbols
+   character(300) :: File_name
+   character(30) :: chtemp1
+   real(8) :: x_start, x_end
+   logical :: skip_eq_plot
+
+
+   skip_eq_plot = .false. ! default
+   if (present(skip_eq)) then
+      if (skip_eq) skip_eq_plot = skip_eq
+   endif
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! allocate the arrays:
+   if (skip_eq_plot) then
+      Nsiz = 1   ! one less
+   else
+      Nsiz = 2 ! default
+   endif
+
+   allocate(col_nums(Nsiz), source = 0)
+   allocate(col_lables(Nsiz))
+   allocate(linestyle(Nsiz))
+   allocate(symbols(Nsiz))
+
+   if (.not.skip_eq_plot) then
+      col_nums(1) = 2
+      col_lables(1) = 'Equilibrium'
+      call select_linestyle(1, linestyle(1)) ! below
+      symbols(1) = '"None"'
+      col_nums(2) = 1
+      col_lables(2) = 'Nonequilibrium'
+      linestyle(2) = '"None"'
+      call select_symbols(1, symbols(2))     ! below
+   else
+      col_nums(1) = 1
+      col_lables(1) = 'Nonequilibrium'
+      linestyle(1) = '"None"'
+      call select_symbols(1, symbols(1))     ! below
+   endif
+
+   call Create_Python_animation(FN, file_distribution, col_nums, col_lables, &
+      'Energy (eV)', 'Atomic distribution (a.u.)', trim(adjustl(plot_title)), &
+      "best", trim(adjustl(plot_name)), trim(adjustl(video_format)), &
+      t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total, &
+      l_style=linestyle, symbols=symbols, &
+      first_line_in_front =.false.)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_lables, linestyle, symbols)
+end subroutine Python_plot_atomic_distribution
+
+
+
+
+
+subroutine Python_plot_distribution_on_grid(Scell, numpar, file_distribution, script_name, video_format)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   character(*), intent(in) :: file_distribution, script_name ! file with energy levels, script
+   character(*), intent(in) :: video_format     ! which video format to print it out in
+   !----------------
+   integer :: FN, i, i_start, ind, j, k, Nsiz, i_at, N_types, NKOA, N_at, norb, i_col, i_cur, i_types
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle, symbols
+   character(300) :: File_name
+   character(30) :: chtemp1
+   real(8) :: x_start, x_end
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Plot limits:
+   x_start = -25.0d0
+   x_end = Scell%E_fe_grid(size(Scell%E_fe_grid))
+
+   ! allocate the arrays:
+   Nsiz = 1
+   allocate(col_nums(Nsiz), source = 0)
+   allocate(col_lables(Nsiz))
+   allocate(linestyle(Nsiz))
+   allocate(symbols(Nsiz))
+
+   col_nums(1) =1
+   col_lables(1) = 'Spectrum'
+   linestyle(1) = '"None"'
+   call select_symbols(1, symbols(1))     ! below
+
+   call Create_Python_animation(FN, file_distribution, col_nums, col_lables, &
+      'Energy (eV)', 'Electron distribution (1/(V*E))', 'Electron spectrum', &
+      "best", 'OUTPUT_electron_distribution_on_grid', trim(adjustl(video_format)), &
+      x_min=x_start, x_max=x_end, y_min=1.0d-6, set_y_log=.true., &
+      t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total, &
+      l_style=linestyle, symbols=symbols, &
+      first_line_in_front =.false.)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_lables, linestyle, symbols)
+end subroutine Python_plot_distribution_on_grid
+
+
+
+
+
+subroutine Python_plot_orb_distribution(Scell, matter, numpar, file_distribution, script_name, video_format)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter ! parameters of the material
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   character(*), intent(in) :: file_distribution, script_name ! file with energy levels, script
+   character(*), intent(in) :: video_format     ! which video format to print it out in
+   !----------------
+   integer :: FN, i, i_start, ind, j, k, Nsiz, i_at, N_types, NKOA, N_at, norb, i_col, i_cur, i_types
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle, symbols
+   character(300) :: File_name
+   character(30) :: chtemp1
+   real(8) :: x_start, x_end
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Plot limits:
+   x_start = -25.0d0
+   x_end = 25.0d0
+
+   ! Find number of orbitals per atom:
+   NKOA = matter%N_KAO      ! number of kinds of atoms
+   N_at = size(Scell%MDatoms) ! number of atoms
+   Nsiz = size(Scell%Ha,1) ! total number of orbitals
+   norb = Nsiz/N_at ! orbitals per atom
+   ! Find number of different orbital types:
+   N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+
+   ! allocate the arrays:
+   Nsiz = NKOA * N_types      ! assuming basis set is the same for all elements
+   allocate(col_nums(Nsiz), source = 0)
+   allocate(col_lables(Nsiz))
+   allocate(linestyle(Nsiz))
+   allocate(symbols(Nsiz))
+
+   if (numpar%do_partial_thermal) then ! includes band-resolved equivalent distributions
+      i_col = 5  ! column number after which orbital-resolved data start
+   else
+      select case (numpar%el_ion_scheme)
+      case (3:5)
+         i_col = 3  ! column number after which orbital-resolved data start
+      case default
+         i_col = 2  ! column number after which orbital-resolved data start
+      endselect
+   endif
+
+   i_cur = 0      ! to start with
+   do i_at = 1, NKOA
+      do i_types = 1, N_types
+         i_cur = i_cur + 1    ! count columns
+         ! Set the arrays:
+         col_nums(i_cur) = (i_col - 1) + i_cur    ! index for python
+         chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
+         col_lables(i_cur) = trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
+         linestyle(i_cur) = '"None"'
+         call select_symbols(i_cur, symbols(i_cur))     ! below
+      enddo ! i_types
+   enddo ! i_at
+
+   call Create_Python_animation(FN, file_distribution, col_nums, col_lables, &
+      'Energy (eV)', 'Electron distribution (1/eV)', 'Orbital-resolved electron distribution', &
+      "best", 'OUTPUT_orbital_resolved_fe', trim(adjustl(video_format)), &
+      x_min=x_start, x_max=x_end, y_min=0.0, &
+      t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total, &
+      l_style=linestyle, symbols=symbols, &
+      first_line_in_front =.false.)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_lables, linestyle, symbols)
+end subroutine Python_plot_orb_distribution
+
+
+
+subroutine Python_plot_distribution(numpar, file_distribution, script_name, video_format)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   character(*), intent(in) :: file_distribution, script_name ! file with energy levels, script
+   character(*), intent(in) :: video_format     ! which video format to print it out in
+   !----------------
+   integer :: FN, i, i_start, ind, j, k, Nsiz
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle, symbols
+   character(300) :: File_name
+   real(8) :: x_start, x_end
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Plot limits:
+   x_start = -25.0d0
+   x_end = 25.0d0
+
+   if (numpar%do_partial_thermal) then ! with band-resolved equivalent distributions
+      Nsiz = 4
+   else ! only full distribution
+      Nsiz = 2
+   endif
+
+   ! allocate the arrays:
+   allocate(col_nums(Nsiz), source = 0)
+   allocate(col_lables(Nsiz))
+   allocate(linestyle(Nsiz))
+   allocate(symbols(Nsiz))
+
+   ! Set the arrays:
+   col_nums(1) = 2
+   col_lables(1) = 'Equivalent Fermi'
+   linestyle(1) = '"-"'
+   symbols(1) = '"None"'
+
+   if (numpar%do_partial_thermal) then ! with band-resolved equivalent distributions
+      col_nums(2) = 3
+      col_lables(2) = 'f$_{eq}$ in valence band'
+      call select_linestyle(2, linestyle(2))      ! below
+      symbols(2) = '"None"'
+
+      col_nums(3) = 4
+      col_lables(3) = 'f$_{eq}$ in conduction band'
+      call select_linestyle(3, linestyle(3))      ! below
+      symbols(3) = '"None"'
+
+      ind = 4     ! for the last line
+   else
+      ind = 2     ! for the last line
+   endif
+
+   col_nums(ind) = 1
+   col_lables(ind) = 'Nonequilibrium'
+   linestyle(ind) = '"None"'
+   symbols(ind) = '"o"'
+
+
+   call Create_Python_animation(FN, file_distribution, col_nums, col_lables, &
+      'Energy (eV)', 'Electron distribution (1/eV)', 'Electron distribution', &
+      "best", 'OUTPUT_electron_distribution', trim(adjustl(video_format)), &
+      x_min=x_start, x_max=x_end, y_min=0.0, &
+      t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total, &
+      l_style=linestyle, symbols=symbols, &
+      first_line_in_front =.false.)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_lables, linestyle, symbols)
+end subroutine Python_plot_distribution
+
+
+
+
+subroutine Python_plot_pair_correlation(Scell, matter, numpar, file_pair_correlation, script_name, video_format)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter ! parameters of the material
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   character(*), intent(in) :: file_pair_correlation, script_name ! file with energy levels, script
+   character(*), intent(in) :: video_format     ! which video format to print it out in
+   !----------------
+   integer :: FN, i, i_start, ind, j, k, Nsiz
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(300) :: File_name
+   real(8) :: x_start, x_end
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Plot limits:
+   x_start = 1.0d0
+   x_end = 1+ceiling( 0.5d0* min (Scell%supce(1,1), Scell%supce(2,2), Scell%supce(3,3) ) ) ! half of the supercell
+
+   ! Get the number of columns to print:
+   ind = 1     ! top start counting columns
+   if (matter%N_KAO > 1) then ! no need to do for 1 element
+      do j = 1, matter%N_KAO     ! for all elements
+         do k = j, matter%N_KAO  ! for all different pairs
+            ind = ind + 1
+         enddo
+      enddo
+   endif
+   Nsiz = ind
+   ! allocate the arrays:
+   allocate(col_nums(Nsiz), source = 0)
+   allocate(col_lables(Nsiz))
+   allocate(linestyle(Nsiz))
+   ! Set the arrays:
+   col_nums(1) = 1
+   col_lables(1) = 'Total'
+   linestyle(1) = '"-"'
+   ind = 1  ! restart
+   if (matter%N_KAO > 1) then ! no need to do for 1 element
+      do j = 1, matter%N_KAO     ! for all elements
+         do k = j, matter%N_KAO  ! for all different pairs
+            ind = ind + 1
+            col_nums(ind) = ind
+            col_lables(ind) = trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))
+            call select_linestyle(ind, linestyle(ind))      ! below
+         enddo
+      enddo
+   endif
+
+
+   call Create_Python_animation(FN, file_pair_correlation, col_nums, col_lables, &
+      'Radius (A)', 'Pair correlation function (a.u.)', 'Pair correlation function', &
+      "best", 'OUTPUT_pair_correlation', trim(adjustl(video_format)), &
+      x_min=x_start, x_max=x_end, y_min=0.0, &
+      t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total, l_style=linestyle, &
+      first_line_in_front =.false.)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_lables, linestyle)
+end subroutine Python_plot_pair_correlation
+
+
+
+
+
+subroutine Python_plot_nearest_neighbors_elements(matter, numpar, file_element_NN, element_name, t0, t_last, script_name, convolved)
+   type(Solid), intent(in) :: matter
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: element_name, file_element_NN, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz, i_cur, i_start
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   Nsiz = matter%N_KAO+1
+
+   allocate(col_nums(Nsiz), source = 0)
+   allocate(col_lables(Nsiz))
+   allocate(linestyle(Nsiz))
+
+   col_nums(1) = 1
+   col_lables(1) = '"Total"'
+   linestyle(1) = '"-"'
+
+   do i = 1, matter%N_KAO
+      col_nums(i+1) = 1+i
+      col_lables(i+1) = '"'//trim(adjustl(matter%Atoms(i)%Name))//'"'
+      call select_linestyle(i+1, linestyle(i+1)) ! below
+   enddo
+
+
+   Plot_name = 'OUTPUT_nearest_neighbors_'//trim(adjustl(element_name))
+   Data_file_name = file_element_NN
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_element_NN(1:len(trim(adjustl(file_element_NN)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+      'Time (fs)', 'Nearest neighbors fraction', 'Nearest neighbors of '//trim(adjustl(element_name)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_lables, linestyle)
+end subroutine Python_plot_nearest_neighbors_elements
+
+
+
+
+
+subroutine Python_plot_nearest_neighbors(numpar, file_NN, t0, t_last, script_name, convolved)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_NN, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
+   !----------------
+   integer :: FN, i, Nsiz, i_cur, i_start
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -329,9 +1138,19 @@ subroutine Python_plot_nearest_neighbors(numpar, file_NN, t0, t_last, script_nam
    col_lables(7) = '"Six neighbors"'
    linestyle(7) = '(0,(10,3,1,2,4,3,1,2))'
 
-   call Create_python_plot(FN, file_NN, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_nearest_neighbors'
+   Data_file_name = file_NN
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_NN(1:len(trim(adjustl(file_NN)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Nearest neighbors fraction', 'Number of nearest neighbors', &
-      "best", 'OUTPUT_nearest_neighbors', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
 
    close(FN)
@@ -340,16 +1159,17 @@ end subroutine Python_plot_nearest_neighbors
 
 
 
-subroutine Python_plot_Mulliken_charges(matter, numpar, file_electron_properties, t0, t_last, script_name)
+subroutine Python_plot_Mulliken_charges(matter, numpar, file_electron_properties, t0, t_last, script_name, convolved)
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_electron_properties, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz, i_cur, i_start
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -367,27 +1187,24 @@ subroutine Python_plot_Mulliken_charges(matter, numpar, file_electron_properties
       col_nums(i) = i_cur
       write(col_lables(i),'(a)') '"'//matter%Atoms(i)%Name//'"'
       !set different style for different elements:
-      select case (i)   ! currently, supports 7 different elements (may be added if needed)
-      case (1)    ! solid
-         linestyle(i) = '"-"'
-      case (2)    ! dashed
-         linestyle(i) = '"--"'
-      case (3)    ! dash-dot
-         linestyle(i) = '"-."'
-      case (4)    ! dash-dot-dot
-         linestyle(i) = '(0,(5,2,1,2,1,2))'
-      case (5)    ! long dash-short dash-dot
-         linestyle(i) = '(0,(10,3,4,3,1,2))'
-      case (6)    ! dot
-         linestyle(i) = '":"'
-      case default ! Long dash - dot - short dash - dot
-         linestyle(i) = '(0,(10,3,1,2,4,3,1,2))'
-      end select
+      call select_linestyle(i, linestyle(i))      ! below
    enddo
 
-   call Create_python_plot(FN, file_electron_properties, col_nums, col_lables, &
+
+
+   Plot_name = 'OUTPUT_Mulliken_charges'
+   Data_file_name = file_electron_properties
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Mulliken charge (e)', 'Mulliken charge', &
-      "best", 'OUTPUT_Mulliken_charges', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
@@ -398,15 +1215,16 @@ end subroutine Python_plot_Mulliken_charges
 
 
 
-subroutine Python_plot_volume(numpar, file_supercell, t0, t_last, script_name)
+subroutine Python_plot_volume(numpar, file_supercell, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_supercell, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -420,9 +1238,19 @@ subroutine Python_plot_volume(numpar, file_supercell, t0, t_last, script_name)
    col_nums(1) = 1
    col_lables(1) = '"Volume"'
 
-   call Create_python_plot(FN, file_supercell, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_volume'
+   Data_file_name = file_supercell
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_supercell(1:len(trim(adjustl(file_supercell)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Volume (A$^3$)', 'Volume', &
-      "best", 'OUTPUT_volume', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last)     ! below
 
    close(FN)
@@ -432,15 +1260,16 @@ end subroutine Python_plot_volume
 
 
 
-subroutine Python_plot_coupling(numpar, file_electron_properties, t0, t_last, script_name)
+subroutine Python_plot_coupling(numpar, file_electron_properties, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_electron_properties, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -455,9 +1284,20 @@ subroutine Python_plot_coupling(numpar, file_electron_properties, t0, t_last, sc
    col_nums(1) = 5
    col_lables(1) = '"Coupling"'
 
-   call Create_python_plot(FN, file_electron_properties, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_coupling_parameter'
+   Data_file_name = file_electron_properties
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Coupling parameter (W/(m$^3$ K))', 'Electron-ion coupling', &
-      "best", 'OUTPUT_coupling_parameter', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last)     ! below
 
    close(FN)
@@ -469,15 +1309,16 @@ end subroutine Python_plot_coupling
 
 
 
-subroutine Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_part, t0, t_last, script_name)
+subroutine Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_part, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_atomic_temperatures_part, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -510,10 +1351,19 @@ subroutine Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_par
    col_lables(6) = '"Virial: Z"'
    linestyle(6) = '"-"'
 
+   Plot_name = 'OUTPUT_atomic_temperatures_partial'
+   Data_file_name = file_atomic_temperatures_part
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_atomic_temperatures_part(1:len(trim(adjustl(file_atomic_temperatures_part)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
 
-   call Create_python_plot(FN, file_atomic_temperatures_part, col_nums, col_lables, &
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Atomic temperature (K)', 'Partial atomic temperatures', &
-      "best", 'OUTPUT_atomic_temperatures_partial', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
@@ -523,15 +1373,16 @@ end subroutine Python_plot_at_temperatures_part
 
 
 
-subroutine Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_last, script_name)
+subroutine Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_atomic_temperatures, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -557,9 +1408,18 @@ subroutine Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_l
    col_lables(4) = '"Fluctuational"'
    linestyle(4) = '"-."'
 
-   call Create_python_plot(FN, file_atomic_temperatures, col_nums, col_lables, &
+   Plot_name = 'OUTPUT_atomic_temperatures'
+   Data_file_name = file_atomic_temperatures
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_atomic_temperatures(1:len(trim(adjustl(file_atomic_temperatures)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Atomic temperature (K)', 'Atomic temperatures', &
-      "best", 'OUTPUT_atomic_temperatures', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
@@ -570,15 +1430,16 @@ end subroutine Python_plot_at_temperatures
 
 
 
-subroutine Python_plot_entropy_atomic(numpar, file_atomic_entropy, t0, t_last, script_name)
+subroutine Python_plot_entropy_atomic(numpar, file_atomic_entropy, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_atomic_entropy, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -608,10 +1469,18 @@ subroutine Python_plot_entropy_atomic(numpar, file_atomic_entropy, t0, t_last, s
    linestyle(5) = '(0,(5,2,1,2,1,2))'
 
 
+   Plot_name = 'OUTPUT_atomic_entropy'
+   Data_file_name = file_atomic_entropy
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_atomic_entropy(1:len(trim(adjustl(file_atomic_entropy)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
 
-   call Create_python_plot(FN, file_atomic_entropy, col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Atomic entropy (eV/K)', 'Atomic entropy', &
-      "best", 'OUTPUT_atomic_entropy', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
@@ -621,15 +1490,16 @@ end subroutine Python_plot_entropy_atomic
 
 
 
-subroutine Python_plot_chempots(numpar, file_mu, t0, t_last, script_name)
+subroutine Python_plot_chempots(numpar, file_mu, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_mu, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -651,9 +1521,19 @@ subroutine Python_plot_chempots(numpar, file_mu, t0, t_last, script_name)
    col_lables(3) = '"Conduction"'
    linestyle(3) = '"-."'
 
-   call Create_python_plot(FN, file_mu, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_electron_chempotentials'
+   Data_file_name = file_mu
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_mu(1:len(trim(adjustl(file_mu)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Chemical potentials (eV)', 'Electron chemical potentials', &
-      "best", 'OUTPUT_electron_chempotentials', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
@@ -662,15 +1542,16 @@ end subroutine Python_plot_chempots
 
 
 
-subroutine Python_plot_el_temperatures(numpar, file_Te, t0, t_last, script_name)
+subroutine Python_plot_el_temperatures(numpar, file_Te, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_Te, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -692,9 +1573,18 @@ subroutine Python_plot_el_temperatures(numpar, file_Te, t0, t_last, script_name)
    col_lables(3) = '"Conduction"'
    linestyle(3) = '"-."'
 
-   call Create_python_plot(FN, file_Te, col_nums, col_lables, &
+   Plot_name = 'OUTPUT_electron_temperatures'
+   Data_file_name = file_Te
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_Te(1:len(trim(adjustl(file_Te)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Electron tempereature (K)', 'Electron tempereatures', &
-      "best", 'OUTPUT_electron_temperatures', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
@@ -704,15 +1594,16 @@ end subroutine Python_plot_el_temperatures
 
 
 
-subroutine Python_plot_entropy(numpar, file_electron_entropy, t0, t_last, script_name)
+subroutine Python_plot_entropy(numpar, file_electron_entropy, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_electron_entropy, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -750,9 +1641,19 @@ subroutine Python_plot_entropy(numpar, file_electron_entropy, t0, t_last, script
       linestyle(6) = '":"'
    endif
 
-   call Create_python_plot(FN, file_electron_entropy, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_electron_entropy'
+   Data_file_name = file_electron_entropy
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_electron_entropy(1:len(trim(adjustl(file_electron_entropy)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Electron entropy (eV/K)', 'Electron entropy', &
-      "best", 'OUTPUT_electron_entropy', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
@@ -840,16 +1741,16 @@ end subroutine Python_plot_heat_conductivity
 
 
 
-subroutine Python_plot_capacity(numpar, file_electron_properties, t0, t_last, script_name)
+subroutine Python_plot_capacity(numpar, file_electron_properties, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_electron_properties, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
-   character(20) :: chtemp1
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -861,9 +1762,19 @@ subroutine Python_plot_capacity(numpar, file_electron_properties, t0, t_last, sc
    col_nums(1) = 4
    col_lables(1) = '"C$_e$"'
 
-   call Create_python_plot(FN, file_electron_properties, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_electron_Ce'
+   Data_file_name = file_electron_properties
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Heat capacity (J/(m$^3$ K))', 'Electron heat capacity', &
-      "best", 'OUTPUT_electron_Ce', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last)     ! below
 
    close(FN)
@@ -872,16 +1783,17 @@ end subroutine Python_plot_capacity
 
 
 
-subroutine Python_plot_Ebands(numpar, file_electron_properties, t0, t_last, script_name)
+subroutine Python_plot_Ebands(numpar, file_electron_properties, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_electron_properties, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
-   character(20) :: chtemp1
+   character(300) :: File_name, Plot_name, Data_file_name
+
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -905,9 +1817,18 @@ subroutine Python_plot_Ebands(numpar, file_electron_properties, t0, t_last, scri
    linestyle = '"-"'          ! all solid
    linestyle(5) = '"--"'      ! chem.pot dashed
 
-   call Create_python_plot(FN, file_electron_properties, col_nums, col_lables, &
+   Plot_name = 'OUTPUT_bands'
+   Data_file_name = file_electron_properties
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Energy (eV)', 'Band borders', &
-      "best", 'OUTPUT_bands', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
@@ -917,12 +1838,13 @@ end subroutine Python_plot_Ebands
 
 
 
-subroutine Python_plot_mu(numpar, file_electron_properties, t0, t_last, script_name)
+subroutine Python_plot_mu(numpar, file_electron_properties, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_electron_properties, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !-------------
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
    character(30) :: x_min_txt, x_max_txt
    integer :: FN
    !-------------
@@ -935,6 +1857,15 @@ subroutine Python_plot_mu(numpar, file_electron_properties, t0, t_last, script_n
    write(x_max_txt,'(f24.8)') t_last
 
 
+   Plot_name = 'OUTPUT_mu_and_Ne'
+   Data_file_name = file_electron_properties
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
    ! Two Y-axes require special treatement here:
    write(FN, '(a)')  'import numpy as np'
    write(FN, '(a)')  'import pandas as pd'
@@ -942,7 +1873,7 @@ subroutine Python_plot_mu(numpar, file_electron_properties, t0, t_last, script_n
 
    write(FN, '(a)')  '# --- Load data ---'
    write(FN, '(a)')  'df = pd.read_csv('
-   write(FN, '(a)')  '"'//trim(adjustl(file_electron_properties))//'",'
+   write(FN, '(a)')  '"'//trim(adjustl(Data_file_name))//'",'
    write(FN, '(a)')  'sep=r"\s+",'
    write(FN, '(a)')  'header=None,'
    write(FN, '(a)')  'comment="#"'
@@ -1001,7 +1932,7 @@ subroutine Python_plot_mu(numpar, file_electron_properties, t0, t_last, script_n
    write(FN, '(a)') 'plt.title("Chemical potential and electron density", fontsize=14)'
    write(FN, '(a)') 'plt.tight_layout()'
 
-   write(FN, '(a)') 'plt.savefig("OUTPUT_mu_and_Ne.'//trim(adjustl(numpar%fig_extention))//'", dpi=300, bbox_inches="tight")'
+   write(FN, '(a)') 'plt.savefig("'//trim(adjustl(Plot_name))//'.'//trim(adjustl(numpar%fig_extention))//'", dpi=300, bbox_inches="tight")'
    write(FN, '(a)') 'plt.close()'
 
    close(FN)
@@ -1010,15 +1941,16 @@ end subroutine Python_plot_mu
 
 
 
-subroutine Python_plot_Egap(numpar, file_electron_properties, t0, t_last, script_name)
+subroutine Python_plot_Egap(numpar, file_electron_properties, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_electron_properties, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
    character(20) :: chtemp1
 
    ! Py script file:
@@ -1032,9 +1964,18 @@ subroutine Python_plot_Egap(numpar, file_electron_properties, t0, t_last, script
    col_nums(1) = 3
    col_lables(1) = '"Band gap"'
 
-   call Create_python_plot(FN, file_electron_properties, col_nums, col_lables, &
+   Plot_name = 'OUTPUT_Egap'
+   Data_file_name = file_electron_properties
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Band gap (eV)', 'Band gap', &
-      "best", 'OUTPUT_Egap', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0)     ! below
 
    close(FN)
@@ -1044,16 +1985,17 @@ end subroutine Python_plot_Egap
 
 
 
-subroutine Python_plot_holes(matter, numpar, file_deep_holes, t0, t_last, script_name)
+subroutine Python_plot_holes(matter, numpar, file_deep_holes, t0, t_last, script_name, convolved)
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_deep_holes, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, j, Na, N_sh_max, Nshl, N_sh_tot, i_cur
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
    character(20) :: chtemp1, chtemp11
 
    ! Py script file:
@@ -1087,22 +2029,7 @@ subroutine Python_plot_holes(matter, numpar, file_deep_holes, t0, t_last, script
             col_nums(i_cur) = i_cur    ! column number
 
             !set different style for different elements:
-            select case (i)   ! currently, supports 7 different elements (may be added if needed)
-            case (1)    ! solid
-               linestyle(i_cur) = '"-"'
-            case (2)    ! dashed
-               linestyle(i_cur) = '"--"'
-            case (3)    ! dash-dot
-               linestyle(i_cur) = '"-."'
-            case (4)    ! dash-dot-dot
-               linestyle(i_cur) = '(0,(5,2,1,2,1,2))'
-            case (5)    ! long dash-short dash-dot
-               linestyle(i_cur) = '(0,(10,3,4,3,1,2))'
-            case (6)    ! dot
-               linestyle(i_cur) = '":"'
-            case default ! Long dash - dot - short dash - dot
-               linestyle(i_cur) = '(0,(10,3,1,2,4,3,1,2))'
-            end select
+            call select_linestyle(i, linestyle(i_cur))      ! below
 
             i_cur = i_cur + 1    ! next shell
          else ! Valence band
@@ -1111,9 +2038,19 @@ subroutine Python_plot_holes(matter, numpar, file_deep_holes, t0, t_last, script
       enddo SHELLS
    enddo ATOMS
 
-   call Create_python_plot(FN, file_deep_holes, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_deep_shell_holes'
+   Data_file_name = file_deep_holes
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_deep_holes(1:len(trim(adjustl(file_deep_holes)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Number of holes (total)', 'Core holes', &
-      "best", 'OUTPUT_deep_shell_holes', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
 
    close(FN)
@@ -1122,16 +2059,16 @@ end subroutine Python_plot_holes
 
 
 
-subroutine Python_plot_CB_electrons(numpar, file_numbers, t0, t_last, script_name)
+subroutine Python_plot_CB_electrons(numpar, file_numbers, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_numbers, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
-   character(20) :: chtemp1
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -1149,9 +2086,19 @@ subroutine Python_plot_CB_electrons(numpar, file_numbers, t0, t_last, script_nam
    col_lables(2) = '"Photons"'
    linestyle(2) = '"--"'
 
-   call Create_python_plot(FN, file_numbers, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_CB_electrons'
+   Data_file_name = file_numbers
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Electrons (1/atom)', 'Conduction-band electrons', &
-      "best", 'OUTPUT_CB_electrons', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
 
    close(FN)
@@ -1161,17 +2108,18 @@ end subroutine Python_plot_CB_electrons
 
 
 
-subroutine Python_plot_orbital_resolved(Scell, matter, numpar, file_numbers, t0, t_last, script_name)
+subroutine Python_plot_orbital_resolved(Scell, matter, numpar, file_numbers, t0, t_last, script_name, convolved)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_numbers, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
    character(20) :: chtemp1
 
    ! Py script file:
@@ -1224,9 +2172,19 @@ subroutine Python_plot_orbital_resolved(Scell, matter, numpar, file_numbers, t0,
       enddo   ! i_types
    enddo ! i_at
 
-   call Create_python_plot(FN, file_numbers, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_orbital_resolved_Ne'
+   Data_file_name = file_numbers
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Electrons (1/atom)', 'Orbital-resolved electrons', &
-      "best", 'OUTPUT_orbital_resolved_Ne', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
 
    close(FN)
@@ -1236,15 +2194,16 @@ end subroutine Python_plot_orbital_resolved
 
 
 
-subroutine Python_plot_numbers(numpar, file_numbers, t0, t_last, script_name)
+subroutine Python_plot_numbers(numpar, file_numbers, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_numbers, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -1267,9 +2226,19 @@ subroutine Python_plot_numbers(numpar, file_numbers, t0, t_last, script_name)
    col_lables(4) = '"Conservation error"'
    linestyle(4) = '":"'
 
-   call Create_python_plot(FN, file_numbers, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_electrons_and_holes'
+   Data_file_name = file_numbers
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Particles (1/atom)', 'Number of particles', &
-      "best", 'OUTPUT_electrons_and_holes', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
@@ -1278,15 +2247,16 @@ end subroutine Python_plot_numbers
 
 
 
-subroutine Python_plot_stress(numpar, file_pressure, t0, t_last, script_name)
+subroutine Python_plot_stress(numpar, file_pressure, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_pressure, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -1316,9 +2286,18 @@ subroutine Python_plot_stress(numpar, file_pressure, t0, t_last, script_name)
    linestyle(9) = '"-"'
 
 
-   call Create_python_plot(FN, file_pressure, col_nums, col_lables, &
+   Plot_name = 'OUTPUT_pressure_tensor'
+   Data_file_name = file_pressure
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_pressure(1:len(trim(adjustl(file_pressure)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Pressure tensor (GPa)', 'Pressure tensor', &
-      "best", 'OUTPUT_pressure_tensor', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
@@ -1328,15 +2307,16 @@ end subroutine Python_plot_stress
 
 
 
-subroutine Python_plot_pressure(numpar, file_pressure, t0, t_last, script_name)
+subroutine Python_plot_pressure(numpar, file_pressure, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_pressure, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -1348,9 +2328,19 @@ subroutine Python_plot_pressure(numpar, file_pressure, t0, t_last, script_name)
    col_nums(1) = 1
    col_lables(1) = '"Pressure"'
 
-   call Create_python_plot(FN, file_pressure, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_pressure'
+   Data_file_name = file_pressure
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_pressure(1:len(trim(adjustl(file_pressure)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Pressure (GPa)', 'Pressure', &
-      "best", 'OUTPUT_pressure', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last)     ! below
 
    close(FN)
@@ -1417,16 +2407,17 @@ end subroutine Python_plot_powder_diffraction
 
 
 
-subroutine Python_plot_Debye_temperatures(Scell, numpar, file_Debye_temperature, t0, t_last, script_name)
+subroutine Python_plot_Debye_temperatures(Scell, numpar, file_Debye_temperature, t0, t_last, script_name, convolved)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_Debye_temperature, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -1442,9 +2433,18 @@ subroutine Python_plot_Debye_temperatures(Scell, numpar, file_Debye_temperature,
       col_lables(i) = '"'//trim(adjustl(col_lables(i)))//'"'
    enddo
 
-   call Create_python_plot(FN, file_Debye_temperature, col_nums, col_lables, &
+   Plot_name = 'OUTPUT_Debye_temperatures'
+   Data_file_name = file_Debye_temperature
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_Debye_temperature(1:len(trim(adjustl(file_Debye_temperature)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Debye temperature (K)', 'Debye temperatures', &
-      "best", 'OUTPUT_Debye_temperatures', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0)     ! below
 
    close(FN)
@@ -1453,17 +2453,18 @@ end subroutine Python_plot_Debye_temperatures
 
 
 
-subroutine Python_plot_diffraction_peaks(Scell, numpar, file_diffraction, t0, t_last, script_name, plot_name, plot_label, DW)
+subroutine Python_plot_diffraction_peaks(Scell, numpar, file_diffraction, t0, t_last, script_name, plot_name, plot_label, DW, convolved)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_diffraction, script_name, plot_name, plot_label ! file with energy levels, script, plot
    logical, intent(in) :: DW  ! if it's DW, change the axis label
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name, y_axis_label
+   character(300) :: File_name, y_axis_label, Plot_name_used, Data_file_name
    character(10) :: units, temp
 
    ! Py script file:
@@ -1487,9 +2488,19 @@ subroutine Python_plot_diffraction_peaks(Scell, numpar, file_diffraction, t0, t_
       col_lables(i) = '"'//trim(adjustl(col_lables(i)))//'"'
    enddo
 
-   call Create_python_plot(FN, file_diffraction, col_nums, col_lables, &
+
+   Plot_name_used = trim(adjustl(plot_name))
+   Data_file_name = file_diffraction
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name_used = trim(adjustl(Plot_name_used))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_diffraction(1:len(trim(adjustl(file_diffraction)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', trim(adjustl(y_axis_label)), trim(adjustl(plot_label)), &
-      "best", trim(adjustl(plot_name)), trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name_used)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0)     ! below
 
    close(FN)
@@ -1510,18 +2521,19 @@ end function make_diff_peak_name
 
 
 
-subroutine Python_plot_displacements_partial(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power, mask_name)
+subroutine Python_plot_displacements_partial(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power, mask_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    type(Solid), intent(in) :: matter ! parameters of the material
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_MSD, script_name  ! file with energy levels, script
    real(8), intent(in) :: MSD_power ! power of MSD
    character(*), intent(in) :: mask_name
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
    character(10) :: units, temp
 
    ! Py script file:
@@ -1554,9 +2566,20 @@ subroutine Python_plot_displacements_partial(matter, numpar, file_MSD, t0, t_las
       linestyle(2+ (i-1)*4:4+ (i-1)*4) = '"--"'
    enddo
 
-   call Create_python_plot(FN, file_MSD, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_mean_displacement_'//trim(adjustl(mask_name))//'_partial'
+   Data_file_name = file_MSD
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_MSD(1:len(trim(adjustl(file_MSD)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
-      "best", 'OUTPUT_mean_displacement_'//trim(adjustl(mask_name))//'_partial', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
 
    close(FN)
@@ -1565,18 +2588,19 @@ end subroutine Python_plot_displacements_partial
 
 
 
-subroutine Python_plot_displacements(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power, mask_name)
+subroutine Python_plot_displacements(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power, mask_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    type(Solid), intent(in) :: matter ! parameters of the material
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_MSD, script_name  ! file with energy levels, script
    real(8), intent(in) :: MSD_power ! power of MSD
    character(*), intent(in) :: mask_name
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
    character(10) :: units, temp
 
    ! Py script file:
@@ -1605,9 +2629,19 @@ subroutine Python_plot_displacements(matter, numpar, file_MSD, t0, t_last, scrip
    linestyle(1) = '"-"'
    linestyle(2:4) = '"--"'
 
-   call Create_python_plot(FN, file_MSD, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_mean_displacement_'//trim(adjustl(mask_name))
+   Data_file_name = file_MSD
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_MSD(1:len(trim(adjustl(file_MSD)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
-      "best", 'OUTPUT_mean_displacement_'//trim(adjustl(mask_name)), trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
 
    close(FN)
@@ -1616,17 +2650,18 @@ end subroutine Python_plot_displacements
 
 
 
-subroutine Python_plot_MSD(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power)
+subroutine Python_plot_MSD(matter, numpar, file_MSD, t0, t_last, script_name, MSD_power, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    type(Solid), intent(in) :: matter ! parameters of the material
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_MSD, script_name  ! file with energy levels, script
    integer, intent(in) :: MSD_power ! power of MSD
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
    character(10) :: units, temp
 
    ! Py script file:
@@ -1666,9 +2701,19 @@ subroutine Python_plot_MSD(matter, numpar, file_MSD, t0, t_last, script_name, MS
       enddo
    endif
 
-   call Create_python_plot(FN, file_MSD, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_mean_displacement'
+   Data_file_name = file_MSD
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_MSD(1:len(trim(adjustl(file_MSD)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
-      "best", 'OUTPUT_mean_displacement', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
 
    close(FN)
@@ -1678,16 +2723,17 @@ end subroutine Python_plot_MSD
 
 
 
-subroutine Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_last, script_name)
+subroutine Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    type(Solid), intent(in) :: matter ! parameters of the material
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_temperatures, script_name  ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -1723,9 +2769,19 @@ subroutine Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_las
       enddo
    endif
 
-   call Create_python_plot(FN, file_temperatures, col_nums, col_lables, &
+
+   Plot_name = 'OUTPUT_temepratures'
+   Data_file_name = file_temperatures
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_temperatures(1:len(trim(adjustl(file_temperatures)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Temperature (K)', 'Temperatures', &
-      "best", 'OUTPUT_temepratures', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
 
    close(FN)
@@ -1735,15 +2791,16 @@ end subroutine Python_plot_temperatures
 
 
 
-subroutine Python_plot_energies(numpar, file_energies, t0, t_last, script_name)
+subroutine Python_plot_energies(numpar, file_energies, t0, t_last, script_name, convolved)
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
    character(*), intent(in) :: file_Energies, script_name  ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN
    integer, dimension(:), allocatable :: col_nums
    character(30), dimension(:), allocatable :: col_lables, linestyle
-   character(300) :: File_name
+   character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
@@ -1768,9 +2825,18 @@ subroutine Python_plot_energies(numpar, file_energies, t0, t_last, script_name)
    linestyle(4) = '"--"'
 
 
-   call Create_python_plot(FN, file_energies, col_nums, col_lables, &
+   Plot_name = 'OUTPUT_energies'
+   Data_file_name = file_energies
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_energies(1:len(trim(adjustl(file_energies)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Energy (eV/atom)', 'Energies', &
-      "best", 'OUTPUT_energies', trim(adjustl(numpar%fig_extention)), &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
@@ -2030,9 +3096,9 @@ subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
       x_min, x_max, y_min, y_max, t_start, dt, t_end, &
       x_tics, y_tics, &
       set_x_log, set_y_log, &
-      l_style, &
+      l_style, symbols, &
       Data_file2, col_nums2, col_labels2, &
-      colors_inverted &
+      colors_inverted, first_line_in_front &
       )
    integer, intent(in) :: FN  ! file number (must be opened)
    character(*), intent(in) :: Data_file  ! data file to plot data from
@@ -2045,25 +3111,35 @@ subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
    real(8), intent(in), optional :: x_tics, y_tics
    logical, intent(in), optional :: set_x_log, set_y_log
    character(*), dimension(:), allocatable, intent(in), optional :: l_style    ! array of line-styles
+   character(*), dimension(:), allocatable, intent(in), optional :: symbols     ! array of symbols
    character(*), intent(in), optional :: Data_file2   ! data file #2 to plot data from
    integer, dimension(:), intent(in), optional :: col_nums2      ! array of columns to plot #2
    character(*), dimension(:), allocatable, intent(in), optional :: col_labels2    ! array of column labels #2
-   logical, intent(in), optional :: colors_inverted
+   logical, intent(in), optional :: colors_inverted, first_line_in_front
    !------------
    integer :: i
-   character(10) :: i_ch
+   character(10) :: i_ch, i_ch1
    character(40) :: x_min_txt, x_max_txt, y_min_txt, y_max_txt, dt_txt, t_start_txt, t_max_txt, col_txt
+   character(10000) :: linestyle_txt, symbols_txt
+   logical :: first_in_front
+
+
+   if (present(first_line_in_front)) then
+      first_in_front = first_line_in_front
+   else ! default
+      first_in_front = .true.
+   endif
 
    ! Set axes:
    if (present(x_min)) then
       write(x_min_txt,'(f24.8)') x_min
    else
-      write(x_min_txt,'(a)') 'None'
+      write(x_min_txt,'(a)') 'x.min()'
    endif
    if (present(x_max)) then
       write(x_max_txt,'(f24.8)') x_max
    else
-      write(x_max_txt,'(a)') 'None'
+      write(x_max_txt,'(a)') 'x.max()'
    endif
    if (present(y_min)) then
       write(y_min_txt,'(f24.8)') y_min
@@ -2088,6 +3164,55 @@ subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
    endif
    write(t_max_txt,'(f24.1)') max(t_start, abs(t_end))
 
+
+   ! Line styles, if required:
+   if (present(l_style)) then
+      linestyle_txt = '['
+      do i = 1, size(col_nums)
+         ! Line styles:
+         if (i > 1) then   ! add come in between
+            linestyle_txt = trim(adjustl(linestyle_txt))//','
+         endif
+         linestyle_txt = trim(adjustl(linestyle_txt))//' '//trim(adjustl(l_style(i)))
+      enddo
+      linestyle_txt = trim(adjustl(linestyle_txt))//']'
+   else ! use default - solid lines:
+      linestyle_txt = '['
+      do i = 1, size(col_nums)
+         ! Line styles:
+         if (i > 1) then   ! add come in between
+            linestyle_txt = trim(adjustl(linestyle_txt))//','
+         endif
+         linestyle_txt = trim(adjustl(linestyle_txt))//' "-"'
+      enddo
+      linestyle_txt = trim(adjustl(linestyle_txt))//']'
+   endif
+
+   ! Symbols styles, if required:
+   if (present(symbols)) then
+      symbols_txt = '['
+      do i = 1, size(col_nums)
+         ! Line styles:
+         if (i > 1) then   ! add come in between
+            symbols_txt = trim(adjustl(symbols_txt))//','
+         endif
+         symbols_txt = trim(adjustl(symbols_txt))//' '//trim(adjustl(symbols(i)))
+      enddo
+      symbols_txt = trim(adjustl(symbols_txt))//']'
+   else ! use default - no symbol, pure lines:
+      symbols_txt = '['
+      do i = 1, size(col_nums)
+         ! Line styles:
+         if (i > 1) then   ! add come in between
+            symbols_txt = trim(adjustl(symbols_txt))//','
+         endif
+         symbols_txt = trim(adjustl(symbols_txt))//' "None"'
+      enddo
+      symbols_txt = trim(adjustl(symbols_txt))//']'
+   endif
+
+
+   !-----------------------------
    write(FN,'(a)') 'import numpy as np'
    write(FN,'(a)') 'import matplotlib.pyplot as plt'
 
@@ -2126,28 +3251,55 @@ subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
    write(FN,'(a)') '# Find the optimal Y-axis:'
    write(FN,'(a)') 'first_block = blocks[0]'
    write(FN,'(a)') 'x = first_block[:, 0]'
-   write(FN,'(a)') 'mask = (x >= '//trim(adjustl(x_min_txt))//') & (x <= '//trim(adjustl(x_max_txt))//')'
-   write(FN,'(a)') '# Compute y-max only from filtered region'
-   write(FN,'(a)') 'ymax = first_block[mask, 1:].max()'
-   write(FN,'(a)') 'ymin = first_block[mask, 1:].min()'
+   ! Set axes:
+   if (present(x_min) .and. present(x_max)) then
+      write(FN,'(a)') 'mask = (x >= '//trim(adjustl(x_min_txt))//') & (x <= '//trim(adjustl(x_max_txt))//')'
+      write(FN,'(a)') '# Compute y-max only from filtered region'
+      write(FN,'(a)') 'ymax = first_block[mask, 1:].max()'
+      write(FN,'(a)') 'ymin = first_block[mask, 1:].min()'
+   else
+      write(FN,'(a)') 'ymax = first_block[0, 1:].max()'
+      write(FN,'(a)') 'ymin = first_block[0, 1:].min()'
+   endif
    write(FN,'(a)') 'padding = 0.1 * (ymax - ymin)'
-   write(FN,'(a)') 'y_lower = min(ymin - padding, 0)'
-   write(FN,'(a)') 'y_upper = ymax + padding'
+   if (present(y_min)) then
+      write(FN,'(a)') 'y_lower = '//trim(adjustl(y_min_txt))
+   else ! use padding:
+      write(FN,'(a)') 'y_lower = min(ymin - padding, 0)'
+   endif
+   if (present(y_max)) then
+      write(FN,'(a)') 'y_upper = '//trim(adjustl(y_max_txt))
+   else ! use padding
+      write(FN,'(a)') 'y_upper = ymax + padding'
+   endif
 
    !-----------------------------
    write(FN,'(a)') '# 3. Prepare figure ONCE (no jitter)'
 
    write(FN,'(a)') 'fig, ax = plt.subplots(figsize=(8, 6), dpi=150)'
    write(FN,'(a)') '# Create placeholder lines ONCE'
+   write(FN,'(a)') 'linestyles = '//trim(adjustl(linestyle_txt))
+   write(FN,'(a)') 'markers = '//trim(adjustl(symbols_txt))
 
    do i = 1, size(col_nums)   ! for all lines to plot
       write(i_ch, '(i0)') i
+      write(i_ch1, '(i0)') i-1
       write(col_txt, '(i0)') col_nums(i)
       if (i == 1) then ! first line
-         write(FN,'(a)') 'line'//trim(adjustl(i_ch))//', = ax.plot([], [], lw=2, color="black", label="'// &
-                             trim(adjustl(t_max_txt))//' fs '//trim(adjustl(col_lables(i)))//'", zorder=10)'
+         if (first_in_front) then ! enforce the first line to be in front of others:
+            write(FN,'(a)') 'line'//trim(adjustl(i_ch))// &
+               ', = ax.plot([], [], lw=2, color="black", linestyle=linestyles[0], marker=markers[0], label="'// &
+               trim(adjustl(t_max_txt))//' fs '//trim(adjustl(col_lables(i)))//'", zorder=10)'
+         else ! first line last:
+            write(FN,'(a)') 'line'//trim(adjustl(i_ch))// &
+               ', = ax.plot([], [], lw=2, color="black", linestyle=linestyles[0], marker=markers[0], label="'// &
+               trim(adjustl(t_max_txt))//' fs '//trim(adjustl(col_lables(i)))//'")'
+         endif
       else ! the rest
-         write(FN,'(a)') 'line'//trim(adjustl(i_ch))//', = ax.plot([], [], lw=1.5, label="    '//trim(adjustl(col_lables(i)))//'")'
+         write(FN,'(a)') 'line'//trim(adjustl(i_ch))// &
+         ', = ax.plot([], [], lw=1.5, linestyle=linestyles['//trim(adjustl(i_ch1))// &
+         '], marker=markers['//trim(adjustl(i_ch1))//'],  label="    '// &
+         trim(adjustl(col_lables(i)))//'")'
       endif
    enddo
 
@@ -2163,7 +3315,13 @@ subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
 
    write(FN,'(a)') '# Fix axes once:'
    write(FN,'(a)') 'ax.set_xlim('//trim(adjustl(x_min_txt))//', '//trim(adjustl(x_max_txt))//')'
+
    write(FN,'(a)') 'ax.set_ylim(y_lower, y_upper)'
+
+   if (present(set_y_log)) then
+      if (set_y_log) write(FN,'(a)') 'ax.set_yscale("log")'
+   endif
+
    write(FN,'(a)') 'ax.set_xlabel("'//trim(adjustl(x_axis_label))//'", fontsize=14)'
    write(FN,'(a)') 'ax.set_ylabel("'//trim(adjustl(y_axis_label))//'", fontsize=14)'
    ! Set tics:
@@ -2582,6 +3740,79 @@ subroutine count_shells(matter, Tot_shl)
    Tot_shl = count_col
 end subroutine count_shells
 
+
+
+subroutine select_linestyle(i, line_style)
+   integer, intent(in) :: i   ! index
+   character(*), intent(out) :: line_style      ! linestyle for python plotting
+   !------------------------
+   integer :: i_allowed
+
+   ! Currently, there are 7 stiles, so cycle them:
+   i_allowed = MOD(i, 7)
+
+   select case (i_allowed)   ! currently, supports 7 different elements (may be added if needed)
+   case (1)    ! solid
+      line_style = '"-"'
+   case (2)    ! dashed
+      line_style = '"--"'
+   case (3)    ! dash-dot
+      line_style = '"-."'
+   case (4)    ! dash-dot-dot
+      line_style = '(0,(5,2,1,2,1,2))'
+   case (5)    ! long dash-short dash-dot
+      line_style = '(0,(10,3,4,3,1,2))'
+   case (6)    ! dot
+      line_style = '":"'
+   case default ! Long dash - dot - short dash - dot
+      line_style = '(0,(10,3,1,2,4,3,1,2))'
+   end select
+end subroutine select_linestyle
+
+
+
+
+subroutine select_symbols(i, symbol)
+   integer, intent(in) :: i   ! index
+   character(*), intent(out) :: symbol      ! symbol for python plotting
+   !------------------------
+   integer :: i_allowed
+   ! Currently, there are 15 stiles, so cycle them:
+   i_allowed = MOD(i, 15)
+
+   select case (i_allowed)
+   case (1)
+      symbol = '"o"' ! circle
+   case (2)
+      symbol = '"s"'	! square
+   case (3)
+      symbol = '"D"'	! diamond
+   case (4)
+      symbol = '"p"'	! pentagon
+   case (5)
+      symbol = '"h"'	! hexagon 1
+   case (6)
+      symbol = '"H"'	! hexagon 2
+   case (7)
+      symbol = '"X"'	! x-filled (thick)
+   case (8)
+      symbol = '"8"'	! octagon
+   case (9)
+      symbol = '"^"'	! triangle up
+   case (10)
+      symbol = '"v"'	! triangle down
+   case (11)
+      symbol = '">"'	! triangle right
+   case (12)
+      symbol = '"<""'	! triangle left
+   case (13)
+      symbol = '"P"'	! plus‑filled (thick)
+   case (14)
+      symbol = '"d"'	! thin diamond
+   case default
+      symbol = '"*"'	! star
+   end select
+end subroutine select_symbols
 
 
 

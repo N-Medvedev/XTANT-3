@@ -357,20 +357,26 @@ subroutine Count_columns_in_file_OLD(File_num, N, skip_lines)
 end subroutine Count_columns_in_file_OLD
 
 
-subroutine Count_lines_in_file(File_num, N, skip_lines, skip_empty)
+subroutine Count_lines_in_file(File_num, N, skip_lines, skip_empty, skip_comment)
     integer, INTENT(in) :: File_num     ! number of file to be opened
     integer, INTENT(out) :: N           ! number of lines in this file
     integer, intent(in), optional :: skip_lines ! if you want to start not from the first line
     logical, intent(in), optional :: skip_empty ! if you want to skip empty lines
+    character(*), intent(in), optional :: skip_comment
     !-------------------------------
     integer i
     logical :: skip_empty_lines
     character (200) :: read_line
+    character(1) :: comment
 
     if (present(skip_empty)) then
        skip_empty_lines = skip_empty
     else    ! default: count all lines
        skip_empty_lines = .false.
+    endif
+
+    if (present(skip_comment)) then
+       comment = skip_comment(1:1)  ! first character is the comment
     endif
 
     if (present(skip_lines)) then

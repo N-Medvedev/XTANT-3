@@ -529,9 +529,10 @@ end subroutine save_distribution_on_grid
 
 
 
-subroutine convolve_output(Scell, numpar)
+subroutine convolve_output(Scell, numpar, matter)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar ! all numerical parameters
+   type(Solid), intent(in) :: matter
    !------------------
    integer i, FN, j, Nsiz
    logical file_exist, file_opened, file_named
@@ -608,6 +609,77 @@ subroutine convolve_output(Scell, numpar)
                close(FN)
             endif
          endif
+
+
+         File_name = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks.dat'
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         if (file_exist) then
+            open(UNIT=FN, FILE = trim(adjustl(File_name)))
+            call convolution(FN, Scell(i)%eps%tau) ! Debye temperatures
+            close(FN)
+         endif
+
+         if ( abs(numpar%DW_theta) > 1.0d-6 ) then
+            File_name = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_DW.dat'
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            if (file_exist) then
+               open(UNIT=FN, FILE = trim(adjustl(File_name)))
+               call convolution(FN, Scell(i)%eps%tau) ! Debye temperatures
+               close(FN)
+            endif
+
+            File_name = trim(adjustl(file_path))//'OUTPUT_Debye_temperature_from_DW.dat'
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            if (file_exist) then
+               open(UNIT=FN, FILE = trim(adjustl(File_name)))
+               call convolution(FN, Scell(i)%eps%tau) ! Debye temperatures
+               close(FN)
+            endif
+         endif
+
+         ! For element-specific diffraction data:
+         if (size(matter%Atoms) > 1) then
+            do j = 1, size(matter%Atoms)    ! for all elements
+               File_name = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_'//trim(adjustl(matter%Atoms(j)%Name))//'.dat'
+               inquire(file=trim(adjustl(File_name)),exist=file_exist)
+               if (file_exist) then
+                  open(UNIT=FN, FILE = trim(adjustl(File_name)))
+                  call convolution(FN, Scell(i)%eps%tau) ! Debye temperatures
+                  close(FN)
+               endif
+            enddo
+         endif
+
+         ! Atomic partial temperatures:
+         File_name = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         if (file_exist) then
+            open(UNIT=FN, FILE = trim(adjustl(File_name)))
+            call convolution(FN, Scell(i)%eps%tau)      ! numbers of particles
+            close(FN)
+         endif
+
+
+         ! Nearest neighbors:
+         if (numpar%save_NN) then
+            File_name = trim(adjustl(file_path))//'OUTPUT_nearest_neighbors.dat'
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            if (file_exist) then
+               open(UNIT=FN, FILE = trim(adjustl(File_name)))
+               call convolution(FN, Scell(i)%eps%tau) ! Debye temperatures
+               close(FN)
+            endif
+         endif
+
+
+         File_name = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_data.dat'
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+         if (file_exist) then
+            open(UNIT=FN, FILE = trim(adjustl(File_name)))
+            call convolution(FN, Scell(i)%eps%tau)      ! numbers of particles
+            close(FN)
+         endif
+
 
          File_name = trim(adjustl(file_path))//'OUTPUT_electron_hole_numbers.dat'
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
@@ -2458,70 +2530,42 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       endif
    enddo
 
-   ! Prepare gnuplot scripts to plot all the output data:
-   call create_gnuplot_scripts(Scell, matter, numpar, laser, file_path, &
-   'OUTPUT_temperatures.dat', &
-   'OUTPUT_pressure_and_stress.dat', &
-   'OUTPUT_energies.dat', &
-   file_atoms_R, file_atoms_S, &
-   'OUTPUT_supercell.dat', &
-   'OUTPUT_electron_properties.dat', &
-   'OUTPUT_electron_heat_conductivity.dat', &
-   'OUTPUT_electron_heat_conductivity_dyn.dat', &
-   'OUTPUT_electron_hole_numbers.dat', &
-   'OUTPUT_orbital_resolved_data.dat', &
-   'OUTPUT_deep_shell_holes.dat', &
-   'OUTPUT_optical_coefficients.dat', &
-   file_Ei, file_PCF, &
-   'OUTPUT_nearest_neighbors.dat', &
-   file_element_NN_short, &
-   'OUTPUT_electron_entropy.dat', &
-   'OUTPUT_electron_temperatures.dat', &
-   'OUTPUT_electron_chempotentials.dat', &
-   'OUTPUT_atomic_entropy.dat', &
-   'OUTPUT_atomic_temperatures.dat', &
-   'OUTPUT_atomic_temperatures_partial.dat', &
-   file_sect_displ_short, &
-   'OUTPUT_diffraction_peaks.dat', &
-   file_diff_peaks_part, &
-   'OUTPUT_diffraction_powder.dat', &
-   'OUTPUT_diffraction_peaks_DW.dat', &
-   'OUTPUT_Debye_temperature_from_DW.dat', &
-   'OUTPUT_testmode_data.dat')  ! module "Plots_gnuplot"
 
    !=======================================================
       ! Plot the data:
       select case (numpar%plot_engine)    ! which engine to use for plots
       case default ! Gnuplot
-!          call create_gnuplot_scripts(Scell, matter, numpar, laser, file_path, &
-!             'OUTPUT_temperatures.dat', &
-!             'OUTPUT_pressure_and_stress.dat', &
-!             'OUTPUT_energies.dat', &
-!             file_atoms_R, file_atoms_S, &
-!             'OUTPUT_supercell.dat', &
-!             'OUTPUT_electron_properties.dat', &
-!             'OUTPUT_electron_heat_conductivity.dat', &
-!             'OUTPUT_electron_heat_conductivity_dyn.dat', &
-!             'OUTPUT_electron_hole_numbers.dat', &
-!             'OUTPUT_orbital_resolved_data.dat', &
-!             'OUTPUT_deep_shell_holes.dat', &
-!             'OUTPUT_optical_coefficients.dat', &
-!             file_Ei, file_PCF, &
-!             'OUTPUT_nearest_neighbors.dat', &
-!             file_element_NN_short, &
-!             'OUTPUT_electron_entropy.dat', &
-!             'OUTPUT_electron_temperatures.dat', &
-!             'OUTPUT_electron_chempotentials.dat', &
-!             'OUTPUT_atomic_entropy.dat', &
-!             'OUTPUT_atomic_temperatures.dat', &
-!             'OUTPUT_atomic_temperatures_partial.dat', &
-!             file_sect_displ_short, &
-!             'OUTPUT_diffraction_peaks.dat', &
-!             file_diff_peaks_part, &
-!             'OUTPUT_diffraction_powder.dat', &
-!             'OUTPUT_diffraction_peaks_DW.dat', &
-!             'OUTPUT_Debye_temperature_from_DW.dat', &
-!             'OUTPUT_testmode_data.dat')  ! module "Plots_gnuplot"
+         ! Prepare gnuplot scripts to plot all the output data:
+         call create_gnuplot_scripts(Scell, matter, numpar, laser, file_path, &
+               'OUTPUT_temperatures.dat', &
+               'OUTPUT_pressure_and_stress.dat', &
+               'OUTPUT_energies.dat', &
+               file_atoms_R, file_atoms_S, &
+               'OUTPUT_supercell.dat', &
+               'OUTPUT_electron_properties.dat', &
+               'OUTPUT_electron_heat_conductivity.dat', &
+               'OUTPUT_electron_heat_conductivity_dyn.dat', &
+               'OUTPUT_electron_hole_numbers.dat', &
+               'OUTPUT_orbital_resolved_data.dat', &
+               'OUTPUT_deep_shell_holes.dat', &
+               'OUTPUT_optical_coefficients.dat', &
+               file_Ei, file_PCF, &
+               'OUTPUT_nearest_neighbors.dat', &
+               file_element_NN_short, &
+               'OUTPUT_electron_entropy.dat', &
+               'OUTPUT_electron_temperatures.dat', &
+               'OUTPUT_electron_chempotentials.dat', &
+               'OUTPUT_atomic_entropy.dat', &
+               'OUTPUT_atomic_temperatures.dat', &
+               'OUTPUT_atomic_temperatures_partial.dat', &
+               file_sect_displ_short, &
+               'OUTPUT_diffraction_peaks.dat', &
+               file_diff_peaks_part, &
+               'OUTPUT_diffraction_powder.dat', &
+               'OUTPUT_diffraction_peaks_DW.dat', &
+               'OUTPUT_Debye_temperature_from_DW.dat', &
+               'OUTPUT_testmode_data.dat')  ! module "Plots_gnuplot"
+
       case ('py') ! Python
          call create_python_plot_scripts(Scell, matter, numpar, laser, file_path, &
             'OUTPUT_temperatures.dat', &
