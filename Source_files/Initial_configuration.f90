@@ -752,9 +752,11 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                MC(i)%electrons(:)%E = 0.0d0
                MC(i)%electrons(:)%ti = 1d25
                MC(i)%electrons(:)%colls = 0
+               MC(i)%electrons(:)%birthmark = -1      ! uninitialized
                allocate(MC(i)%holes(Scell(Nsc)%Ne))
                MC(i)%holes(:)%E = 0.0d0
                MC(i)%holes(:)%ti = 1d26
+               MC(i)%holes(:)%birthmark = -1      ! uninitialized
             enddo
          endif !(size(MC) > 0)
       endif

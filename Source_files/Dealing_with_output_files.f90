@@ -55,7 +55,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 20.04.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 21.04.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -499,28 +499,37 @@ subroutine electronic_distribution_on_grid(Scell, numpar, tim)
    N_steps = max( 1.0d0, dble(numpar%fe_aver_num) )   ! at least one step, to not change anything if nothing happened
    Scell%fe_on_grid = Scell%fe_on_grid / N_steps
    Scell%fe_norm_on_grid = Scell%fe_norm_on_grid / N_steps
+   Scell%fe_bybirth_on_grid = Scell%fe_bybirth_on_grid / N_steps
 
    ! Now save the distribution in the file:
-   call save_distribution_on_grid(numpar%FN_fe_on_grid, tim, Scell%E_fe_grid, Scell%fe_on_grid, Scell%fe_norm_on_grid)  ! below
+   call save_distribution_on_grid(numpar%FN_fe_on_grid, tim, Scell%E_fe_grid, Scell%fe_on_grid, &
+                  Scell%fe_norm_on_grid, Scell%fe_bybirth_on_grid)  ! below
 
    ! Reset the high-energy electron part for the next step:
    Scell%fe_on_grid = 0.0d0
    Scell%fe_high_on_grid = 0.0d0
    Scell%fe_norm_on_grid = 0.0d0
    Scell%fe_norm_high_on_grid = 0.0d0
+   Scell%fe_bybirth_on_grid = 0.0d0
    numpar%fe_aver_num = 0   ! to restart counting time-steps
 end subroutine electronic_distribution_on_grid
 
 
-subroutine save_distribution_on_grid(FN, tim, wr, fe, fe_norm)
+subroutine save_distribution_on_grid(FN, tim, wr, fe, fe_norm, fe_birth)
    integer, intent(in) :: FN
    real(8), intent(in) :: tim
    real(8), dimension(:), intent(in) :: wr
    real(8), dimension(:), intent(in) :: fe, fe_norm
+   real(8), dimension(:,:), intent(in) :: fe_birth
    integer i
    write(FN,'(a,f25.16)') '#', tim
    do i = 1, size(fe)
-      write(FN,'(f25.16,es25.16E4,es25.16E4)') wr(i), fe(i), fe_norm(i)
+      write(FN,'(f25.16, es25.16E4, es25.16E4, es25.16E4, es25.16E4, es25.16E4)') wr(i), &
+      fe(i), &          ! distribution (spectrum)
+      fe_norm(i), &     ! normalized per DOS distribution
+      fe_birth(1,i), &  ! distribution of photo-electrons
+      fe_birth(2,i), &  ! distribution of impact-ionized electrons
+      fe_birth(3,i)     ! distribution of Auger-electrons
    enddo
    write(FN,*) ''
    write(FN,*) ''

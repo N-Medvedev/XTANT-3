@@ -219,15 +219,19 @@ end subroutine MC_Propagate
 
 subroutine get_high_energy_distribution(Scell, MC, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
-   type(MC_data), dimension(:), intent(in) :: MC   ! all MC arrays for photons, electrons and holes
+   type(MC_data), dimension(:), intent(in), target :: MC   ! all MC arrays for photons, electrons and holes
    type(Numerics_param), intent(inout) :: numpar   ! numerical parameters, including lists of earest neighbors
    !--------------------
-   integer :: stat, i_el, j
+   integer :: stat, i_el, j, Nsiz
    real(8) :: NMC
+   integer, pointer :: i_ind
 
    if (numpar%save_fe_grid) then  ! only user requested
       ! Check if high-energy DOS is set, and set it if not:
       call set_high_DOS(Scell, numpar)  ! module "Electron_tools"
+
+
+      Nsiz = size(Scell%fe_bybirth_on_grid,1)
 
       ! Number of MC iterations to normalize to:
       NMC = 1.0d0/dble(numpar%NMC)
@@ -241,10 +245,20 @@ subroutine get_high_energy_distribution(Scell, MC, numpar)
             ! Add electron to this energy grid point:
             Scell%fe_high_on_grid(j) = Scell%fe_high_on_grid(j) + NMC ! density of electrons per iteration (without DOS)
             Scell%fe_norm_high_on_grid(j) = Scell%fe_norm_high_on_grid(j) + NMC / numpar%high_DOS(j) ! electron per iteration per DOS
+
+            ! Origin-resolved distributions:
+            i_ind => MC(stat)%electrons(i_el)%birthmark     ! index of orgin of electron
+            if ((i_ind < 0) .or. (i_ind > Nsiz)) then
+               print*, 'ERROR: Unidentified electron in get_high_energy_distribution:'
+               print*, stat, i_el, MC(stat)%electrons(i_el)%birthmark
+            else ! within array bounds, add it:
+               Scell%fe_bybirth_on_grid(i_ind,j) = Scell%fe_bybirth_on_grid(i_ind,j) + NMC ! density of electrons per iteration (without DOS)
+            endif
          enddo ! i_el
       enddo ! stat
 
    endif
+   nullify(i_ind)
 end subroutine get_high_energy_distribution
 
 
@@ -343,7 +357,7 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
 
             ! new electron (and may be hole) is created:
             call New_born_electron_n_hole(MC, KOA, shl, numpar, Scell, matter, hw, MC%electrons(j)%ti, &
-                                          Eetot_cur, noeVB_cur, d_fe, min_df, 'Called from MC_for_electron')
+                                          Eetot_cur, noeVB_cur, d_fe, min_df, 2, 'Called from MC_for_electron')
          else  elast_vs_inelast ! it is elastic scattering
             call which_atom(Ekin, matter%Atoms, EMFP, KOA) ! get which kind of atoms we scatter on, module "MC_cross_sections"
             call NRG_transfer_elastic_atomic(matter%Atoms(KOA)%Ma, matter%Atoms(KOA)%Z, Ekin, hw) ! module "MC_cross_sections"
@@ -432,7 +446,8 @@ subroutine electron_disappears(MC, j)
 end subroutine electron_disappears
 
 
-subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur, d_fe, min_df, text_to_print)
+subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur, d_fe, min_df, &
+            birthmark, text_to_print)
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    integer, INTENT(in) ::  KOA, SHL   ! number of atom and its shell that is being ionized
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
@@ -443,6 +458,7 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
    real(8), intent(inout) :: Eetot_cur, noeVB_cur	! [eV] CB electrons energy; and number
    real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
    real(8), intent(in) :: min_df ! minimal allowed change in the distribution function
+   integer, intent(in) :: birthmark ! index of the creation process
    character(*), intent(in), optional :: text_to_print      ! extra text to print with error message
    !--------------------------------------
    REAL(8) Ee ! electron energy after ionization [eV]
@@ -487,6 +503,7 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
       MC%holes(MC%noh_tot)%E = matter%Atoms(KOA)%Ip(shl)	  ! [eV] energy of this hole
       call Hole_decay_time_sampled(matter%Atoms, KOA, shl, t_dec) ! below
       MC%holes(MC%noh_tot)%ti = t_cur + t_dec ! [fs] decay time
+      MC%holes(MC%noh_tot)%birthmark = birthmark      ! save index how this particle was created
       if (Ee < 0.0d0) then
          print*, 'Subroutine New_born_electron_n_hole', hw
          print*, 'Produced negative electron energy:', Ee, IONIZ
@@ -505,7 +522,8 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
          call extend_MC_array(MC%electrons)  ! below
       endif
       MC%electrons(MC%noe)%E = Ee ! [eV] with this energy
-      MC%electrons(MC%noe)%ti = t_cur ! [eV] with this energy
+      MC%electrons(MC%noe)%ti = t_cur ! [fs] at this time
+      MC%electrons(MC%noe)%birthmark = birthmark      ! save index how this particle was created
       ! Get the new electron's next-scattering time:
       call get_electron_MFP(MC, matter%El_MFP_tot, matter%El_EMFP_tot, MC%noe, MC%electrons(MC%noe)%E-Scell%E_bottom) ! below
    else	! Electron joins VB:
@@ -755,7 +773,7 @@ subroutine MC_for_hole(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur, d_f
          call which_shell(hw, matter%Atoms, matter, 0, KOA2, Nsh2) ! module 'MC_cross_sections'
          ! Second (new) electron and hole:
          call New_born_electron_n_hole(MC, KOA2, Nsh2, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur, &
-                                       d_fe, min_df, 'Called from MC_for_hole')  ! below
+                                       d_fe, min_df, 3, 'Called from MC_for_hole')  ! below
          KOA = MC%holes(j)%KOA     ! this atom has a hole here now
          shl = MC%holes(j)%Sh      ! this hole is in this shell now
       enddo	! time
@@ -900,7 +918,7 @@ subroutine MC_for_photon(tim, MC, Nph, numpar, matter, laser, Scell, Eetot_cur, 
          call which_shell(MC%photons(j)%E, matter%Atoms, matter, 0, KOA, SHL) ! module 'MC_cross_sections'
          ! Photon is absorbed, electron-hole pair is created:
          call New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, MC%photons(j)%E, t_cur, &
-                                       Eetot_cur, noeVB_cur, d_fe, min_df, 'Called from MC_for_photon') ! above
+                                       Eetot_cur, noeVB_cur, d_fe, min_df, 1, 'Called from MC_for_photon') ! above
        enddo ! j
    endif
 end subroutine MC_for_photon
@@ -949,22 +967,25 @@ end subroutine sort_out_holes
 subroutine extend_MC_array(array1)
    type(Electron), dimension(:), allocatable, intent(inout) :: array1
    integer N
-   integer, dimension(:), allocatable :: arrayE, arrayti, arrayt
+   !integer, dimension(:), allocatable :: arrayE, arrayti, arrayt
+   real(8), dimension(:), allocatable :: arrayE, arrayti, arrayt
+   integer, dimension(:), allocatable :: arrayBirth
    N = size(array1)
    allocate(arrayE(N))
    allocate(arrayti(N))
    allocate(arrayt(N))
+   allocate(arrayBirth(N))
    arrayE = array1%E
    arrayti = array1%ti
    arrayt = array1%t
+   arrayBirth = array1%birthmark
    deallocate(array1)
    allocate(array1(2*N))
    array1(1:N)%E = arrayE(1:N)
    array1(1:N)%ti = arrayti(1:N)
    array1(1:N)%t = arrayt(1:N)
-   deallocate(arrayE)
-   deallocate(arrayti)
-   deallocate(arrayt)
+   array1(1:N)%birthmark = arrayBirth(1:N)
+   deallocate(arrayE, arrayti, arrayt, arrayBirth)
 end subroutine extend_MC_array
 
 
@@ -1009,6 +1030,8 @@ subroutine choose_photon_energy(numpar, laser, MC, tim) ! see below
             MC%photons(i)%E = laser(coun)%hw ! [eV] photon energy in this pulse #coun
          endif
       endif ! allocated(laser(coun)%Spectrum)
+      ! Mark this as external incoming photon:
+      MC%photons(i)%birthmark = 0
 
       !print*, MC%photons(i)%E
    enddo ! i = 1, N
