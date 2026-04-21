@@ -476,7 +476,7 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
    if ((KOA .EQ. 1) .and. (SHL .EQ. matter%Atoms(KOA)%sh)) then ! VB:
       !call sample_VB_level(Scell%Ne_low, Scell%fe, i, wr=Scell%Ei, Ee=hw, min_df=min_df) ! NEW
       ! Include the influence of dynamically changing distribution:
-      call sample_VB_level(Scell%Ne_low, (Scell%fe+d_fe*min_df), i, wr=Scell%Ei, Ee=hw, min_df=min_df) ! NEW
+      call sample_VB_level(Scell%Ne_low, (Scell%fe+d_fe*min_df), i, wr=Scell%Ei, Ee=hw, min_df=min_df, E_cutoff=numpar%E_cut) ! NEW
       if (i == 0) i = Scell%N_Egap ! very top of VB
       Ee = hw + Scell%Ei(i) ! [eV] electron energy
       IONIZ = i ! from this level
@@ -603,21 +603,27 @@ end subroutine get_electron_MFP
 
 
 
-subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
+subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df, E_cutoff)
    real(8), intent(in) :: Ne_low ! number of low-energy electrons
    real(8), dimension(:), INTENT(in) :: fe  ! electron distribution function [eV, number]
    integer, intent(out) :: i  ! sampled VB level, from where electron is emitted
    REAL(8), DIMENSION(:), INTENT(in), optional ::  wr	! [eV] energy levels
    real(8), intent(in), optional :: Ee ! energy transfer [eV]
    real(8), intent(in), optional :: min_df   ! minimal allowed change in the distribution function
+   real(8), intent(in), optional :: E_cutoff    ! energy cut off for high-energy electrons
    !===================================
-   real(8) :: RN, norm_sum, cur_sum, sampled_sum, min_df_used, eps
+   real(8) :: RN, norm_sum, cur_sum, sampled_sum, min_df_used, eps, E_cut
    real(8), dimension(size(fe)) :: E_weight
    real(8), dimension(size(fe)) :: fe_final ! construct an array of final states populations
    integer j, N_levels, j_fin
    logical :: close_levels
 
    eps = 1.0d0 ! [eV] acceptence interval, an electron can come into in between the levels
+   if (present(E_cutoff)) then
+      E_cut = E_cutoff
+   else
+      E_cut = 10.0d0    ! use default value
+   endif
 
    ! Set the minimal allowed change in the distribution function:
    if (present(min_df)) then
@@ -630,10 +636,15 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
    norm_sum = 0.0d0
    PART_VB:if ((present(Ee)) .and. (present(wr))) then
       N_levels = size(wr) ! total number of electron energy levels
+
+      ! Cut off is at most this large:
+      E_cut = min(E_cut,wr(N_levels))     ! above this value, electrons are free => enough free places for all
+
       ! Construct probabilities of scattering events for all the levels:
       do j = 1, N_levels
          ! find what is the final state number:
-         if (wr(j)+Ee > wr(N_levels)) then ! transferred energy brings electron out of low-energy domain:
+         !if (wr(j)+Ee > wr(N_levels)) then ! transferred energy brings electron out of low-energy domain:
+         if ( (wr(j)+Ee) > E_cut ) then ! transferred energy brings electron out of low-energy domain:
             fe_final(j) = 0.0d0 ! these levels are totally free in our model
          else ! final state is within low-energy domain, find it:
             ! SIDENOTE: it is the closest level existing, but it is not exactly equal to (wr(j)+Ee)!
@@ -641,9 +652,10 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df)
             !print*, 'Test:', wr(j)+Ee, wr(j_fin-1), wr(j_fin)
             j_fin = j_fin - 1 ! one level below
             fe_final(j) = max(fe(j_fin),fe(j_fin+1)) ! that's the transient population on the final level
-            ! Check that levels are not >too far apart:
+            ! Check that levels are not too far apart:
             if ((wr(j_fin+1)-wr(j_fin)) > eps) then
                fe_final(j) = 2.0d0  ! exclude levels that are too far apart
+               !fe_final(j) = 0.0d0   ! assume it's a free state if we are too far from any level
             endif
          endif
          
@@ -765,8 +777,9 @@ subroutine MC_for_hole(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur, d_f
       ! Trace until time of this hole becomes larger than the current timestep (a few decays may be possible):
       do while (MC%holes(j)%ti .LT. tim)
          ! Find to which shell the first hole pops after Auger:
-         call which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw, min_df)   ! below
+         call which_shell_Auger(numpar, matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw, min_df)   ! below
          t_cur = MC%holes(j)%ti	! [fs] time of hole deacy, save for future
+         !print*, 'Auger:', j, t_cur, hw
          ! First (old) hole:
          call update_this_hole(KOA1, Nsh1, N_val1, Scell%Ei, matter, MC, j, Eetot_cur, noeVB_cur, d_fe)   ! below
          ! Second hole -- for simplicity, assume it occurs via virtual photon:
@@ -827,7 +840,8 @@ subroutine hole_disappears(MC, j)
 end subroutine hole_disappears
 
 
-subroutine which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw, min_df)
+subroutine which_shell_Auger(numpar, matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw, min_df)
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    type(solid), intent(in) :: matter	! materil parameters
    type(MC_data), intent(in) :: MC	! all MC arrays for photons, electrons and holes
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
@@ -844,7 +858,7 @@ subroutine which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw
    if (((KOA == 1) .and. (shl == matter%Atoms(1)%sh-1)) .or. (shl == matter%Atoms(KOA)%sh)) then ! Next is VB:
       KOA1 = 1
       Nsh1 = matter%Atoms(1)%sh
-      call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df)  ! above
+      call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df, E_cutoff=numpar%E_cut)  ! above
       if (N_val1 == 0) N_val1 = Scell%N_Egap ! very top of VB
       hw = matter%Atoms(KOA)%Ip(shl) + Scell%Ei(N_val1)
    else ! it can be atomic shell, not only VB:
@@ -856,14 +870,14 @@ subroutine which_shell_Auger(matter, MC, Scell, KOA, shl, KOA1, Nsh1, N_val1, hw
          Nsh1 = Nsh1 + 1 ! try next shell
          if ((KOA1 == 1) .and. (Nsh1 >= size(matter%Atoms(KOA1)%Ip))) then ! it's VB:
             Nsh1 = matter%Atoms(1)%sh
-            call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df)  ! above
+            call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df, E_cutoff=numpar%E_cut)  ! above
             if (N_val1 == 0) N_val1 = Scell%N_Egap ! very top of VB
             hw = matter%Atoms(KOA)%Ip(shl) + Scell%Ei(N_val1)
             exit SHL_CHECK
          elseif (Nsh1 > size(matter%Atoms(KOA1)%Ip)) then ! other atoms don't have VB in this description, so make it:
             KOA1 = 1
             Nsh1 = matter%Atoms(1)%sh
-            call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df)  ! above
+            call sample_VB_level(Scell%Ne_low, Scell%fe, N_val1, wr=Scell%Ei, Ee=100.0d0, min_df=min_df, E_cutoff=numpar%E_cut)  ! above
             if (N_val1 == 0) N_val1 = Scell%N_Egap ! very top of VB
             hw = matter%Atoms(KOA)%Ip(shl) + Scell%Ei(N_val1)
             exit SHL_CHECK
