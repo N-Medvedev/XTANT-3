@@ -58,6 +58,7 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
    integer NSC, stat, i, j, N, Nph
    real(8), dimension(:,:), allocatable :: MChole
    real(8), dimension(size(Scell(1)%fe)) :: d_fe, d_fe_cur
+   real(8), dimension(:), allocatable :: Spectrum_MC  ! spectrum of the FIRST laser pulse
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
    
@@ -65,6 +66,15 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
 
    if (numpar%NMC > 0) then ! if there are MC iterations at all
       call total_photons(laser, numpar, tim, Nphot) ! estimate the total number of absorbed photons
+
+      if (Nphot > 0) then ! check if spectrum is needed
+         if (allocated(laser(1)%Spectrum_MC)) then
+            allocate(Spectrum_MC(size(laser(1)%Spectrum_MC)), source = 0.0d0)    ! to start with
+         else ! nothing to do, set minimal empty array to use with omp-reduction
+            allocate(Spectrum_MC(1), source = 0.0d0)    ! to start with
+         endif
+      endif
+
       !print*, 'MC_Propagate:', tim, Nphot
 
       ! Do MC run only if we have particles to trace (photons, high-energy-electrons, or core-holes):
@@ -104,7 +114,8 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
             d_fe_cur = 0.0d0  ! change of the distribution in each iteration
 
             ! Perform the MC run:
-            call MC_run(tim, MC(stat), Scell(NSC), laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, d_fe_cur, min_df)
+            call MC_run(tim, MC(stat), Scell(NSC), laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, &
+                        d_fe_cur, min_df, Spectrum_MC)
             ! Add up the data from this run to total data:
             Eetot_stat = Eetot_stat + Eetot_cur  ! [eV] VB-electrons
             noeVB_stat = noeVB_stat + noeVB_cur  ! number VB-electrons
@@ -128,12 +139,15 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
          call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{N_ph}', N_ph) ! module "MPI_subroutines"
          call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{E_atoms_heating}', E_atoms_heating) ! module "MPI_subroutines"
          call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{d_fe}', d_fe) ! module "MPI_subroutines"
-
+         if (allocated(laser%Spectrum_MC)) then
+            call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Spectrum_MC}', Spectrum_MC) ! module "MPI_subroutines"
+         endif
 #else ! use OpenMP instead
+
 !$omp parallel &
 !$omp private (stat, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, d_fe_cur, i)
 !$omp do schedule(dynamic) reduction( + : Eetot_stat, noeVB_stat, Ee_HE, Ne_high, Ne_emit, &
-!$omp                                     Eh, Ne_holes, MChole, N_ph, E_atoms_heating, d_fe)
+!$omp                                     Eh, Ne_holes, MChole, N_ph, E_atoms_heating, d_fe, Spectrum_MC)
          DO_STAT:do stat = 1,numpar%NMC ! Statistics in MC, iterate the same thing and average
             ! Set initial data:
             Eetot_cur = Scell(NSC)%nrg%El_low	! [eV] starting total energy of low-energy electrons
@@ -141,7 +155,8 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
             d_fe_cur = 0.0d0  ! change of the distribution in each iteration
 
             ! Perform the MC run:
-            call MC_run(tim, MC(stat), Scell(NSC), laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, d_fe_cur, min_df)
+            call MC_run(tim, MC(stat), Scell(NSC), laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, &
+                        d_fe_cur, min_df, Spectrum_MC)      ! below
             ! Add up the data from this run to total data:
             Eetot_stat = Eetot_stat + Eetot_cur  ! [eV] VB-electrons
             noeVB_stat = noeVB_stat + noeVB_cur  ! number VB-electrons
@@ -179,6 +194,11 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
             call get_high_energy_distribution(Scell(NSC), MC, numpar)  ! below
          endif
 
+         ! Save additions to photon the spectrum of the FIRST laser pulse:
+         if (allocated(laser(1)%Spectrum_MC)) then
+            laser(1)%Spectrum_MC = laser(1)%Spectrum_MC + Spectrum_MC ! sum them all up
+         endif
+
          ! Consistency checks:
          ! Make sure there are no unphysical values (fe<0 or fe>2):
          call patch_distribution(Scell(NSC)%fe, Scell(NSC)%Ei, Scell(NSC), numpar) ! module "Electron_tools"
@@ -206,6 +226,8 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
          ! No changes in the electron distribution function
       endif IF_MC
       Scell(NSC)%Q = Scell(NSC)%Ne_emit/Scell(NSC)%Na ! mean unballanced charge
+
+      if (allocated(Spectrum_MC)) deallocate(Spectrum_MC)
    else ! No MC iteratins, no changes in the system:
       Scell(NSC)%Q = 0.0d0  ! mean unballanced charge
       Scell(NSC)%nrg%E_high_heating = 0.0d0 ! no energy transfer to atoms
@@ -264,7 +286,7 @@ end subroutine get_high_energy_distribution
 
 
 
-subroutine MC_run(tim, MC, Scell, laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, d_fe, min_df)
+subroutine MC_run(tim, MC, Scell, laser, matter, numpar, Eetot_cur, noeVB_cur, Nph, E_atoms_cur, d_fe, min_df, Spectrum_MC)
    real(8), intent(in) :: tim	! [fs] current time
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
@@ -276,6 +298,7 @@ subroutine MC_run(tim, MC, Scell, laser, matter, numpar, Eetot_cur, noeVB_cur, N
    real(8), intent(out) :: E_atoms_cur ! [eV] heating of atoms by electrons via elastic scattering
    real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
    real(8), intent(in) :: min_df ! minimal allowed change in the distribution function
+   real(8), dimension(:), intent(inout) :: Spectrum_MC   ! photon spectrum (if used)
    !========================================================
    real(8) :: RN
    integer :: i
@@ -290,7 +313,7 @@ subroutine MC_run(tim, MC, Scell, laser, matter, numpar, Eetot_cur, noeVB_cur, N
    if ( (Nph .GT. 0) .OR. ((MC%noe-MC%noe_emit) .GT. 0) .OR. (MC%noh_tot .GT. 0) ) then
       allocate(MC%photons(Nph))
       ! If we have more then one pulse, select from which we have this photon:
-      call choose_photon_energy(numpar, laser, MC, tim) ! see below
+      call choose_photon_energy(numpar, laser, MC, tim, Spectrum_MC) ! see below
       ! MC modeling of photoabsorbtion:
       call MC_for_photon(tim, MC, Nph, numpar, matter, laser, Scell, Eetot_cur, noeVB_cur, d_fe, min_df) ! below
 
@@ -1005,12 +1028,14 @@ end subroutine extend_MC_array
 
 !LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL
 ! Laser pulse and photons:
-subroutine choose_photon_energy(numpar, laser, MC, tim) ! see below
+subroutine choose_photon_energy(numpar, laser, MC, tim, Spectrum_MC) ! see below
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    type(Pulse), dimension(:), intent(inout) :: laser	! Laser pulse parameters
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    real(8), intent(in) :: tim  ! current time-step [fs]
    real(8), dimension(:), allocatable :: Nphot_pulses
+   real(8), dimension(:), intent(inout) :: Spectrum_MC   ! photon spectrum (if used)
+   !------------------------
    real(8) RN, Tot, sum_phot
    integer coun, i, N
    N = size(MC%photons) ! total number of photons (in all pulses)
@@ -1035,7 +1060,7 @@ subroutine choose_photon_energy(numpar, laser, MC, tim) ! see below
       ! If photon spectrum is given:
       if (allocated(laser(coun)%Spectrum)) then ! photon spectrum given
 
-         MC%photons(i)%E = sample_from_spectrum(laser(coun))      ! below
+         MC%photons(i)%E = sample_from_spectrum(laser(coun), coun, Spectrum_MC)      ! below
 
       else ! single energy (maybe with a spread):
          if (laser(coun)%FWHM_hw > 0.0d0) then  ! if it is a distribution
@@ -1055,9 +1080,11 @@ end subroutine choose_photon_energy
 
 
 
-function sample_from_spectrum(laser) result(hw)
+function sample_from_spectrum(laser, pulse_ind, Spectrum_MC) result(hw)
    real(8) :: hw  ! [eV] photon energy selected from sample
-   type(Pulse), intent(inout) :: laser ! Laser pulse parameters
+   type(Pulse), intent(inout) :: laser    ! Laser pulse parameters
+   integer, intent(in) :: pulse_ind       ! index of the laser pulse
+   real(8), dimension(*), intent(inout) :: Spectrum_MC      ! MC spectrum of the FIRST pulse only
    !-------------------------
    real(8) :: RN, RN2, Sampled_spectr
    integer :: N
@@ -1072,17 +1099,19 @@ function sample_from_spectrum(laser) result(hw)
 
    ! Photon energy:
    call random_number(RN2)    ! sample it from this interval:
-   if (N < size(laser%Spectrum_abs)) then
+   if (N < 2) then
       hw = laser%Spectrum(1,N) + RN2 * (laser%Spectrum(1,N+1) - laser%Spectrum(1,N))
    else
       hw = laser%Spectrum(1,N-1) + RN2 * (laser%Spectrum(1,N) - laser%Spectrum(1,N-1))
    endif
 
    ! Save sampled photon energy:
-   laser%Spectrum_MC(N) = laser%Spectrum_MC(N) + 1.0d0      ! one more photon with this energy
-
-   !print*, N, laser%Nph, laser%Spectrum_int(size(laser%Spectrum_int))
-   !pause 'sample_from_spectrum'
+   !laser%Spectrum_MC(N) = laser%Spectrum_MC(N) + 1.0d0      ! one more photon with this energy
+   if (pulse_ind == 1) then   ! save for the FIRST pulse only
+      Spectrum_MC(N) = Spectrum_MC(N) + 1.0d0      ! one more photon with this energy
+   endif
+   !print*, 'sample_from_spectrum', laser%Nph, laser%Spectrum_int(size(laser%Spectrum_int)), RN, Sampled_spectr, laser%Spectrum_int(N-1), laser%Spectrum_int(N), hw, laser%Spectrum(1,N), laser%Spectrum(1,N-1)
+   !if (N==20) print*, N, laser%Spectrum_MC(N)
 end function sample_from_spectrum
 
 

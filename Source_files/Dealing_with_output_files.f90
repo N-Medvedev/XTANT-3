@@ -55,7 +55,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 21.04.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 22.04.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -237,8 +237,8 @@ subroutine printout_laser_spectrum(laser, numpar, matter)
    type(Solid), intent(in) :: matter ! parameters of the material
    !type(Super_cell), dimension(:), intent(in):: Scell ! super-cell with all the atoms inside
    !----------------------------
-   real(8) :: coef, t0, t_last, x_tics
-   integer :: i_pulse, N_pulse, FN, i, N_grid
+   real(8) :: coef, t0, t_last, x_tics, dE, coef2
+   integer :: i_pulse, N_pulse, FN, i, N_grid, j
    character(300) :: file_name, text_var, file_spectrum, gnu_photon_spectrum
    character(18) :: temp, ch_temp
    character(11) :: sh_cmd, call_slash
@@ -278,20 +278,42 @@ subroutine printout_laser_spectrum(laser, numpar, matter)
 
          ! Printout Photon spectra:
          ! 1) Create the comment lines:
-         write(FN,'(a)') '#Energy   Incoming   Absorbed    Absorbed_sampled'
-         write(FN,'(a)') '#[eV]     [arb.units] [1/eV]   [1/eV]'
+         write(FN,'(a)') '#Energy   Incoming   Absorbed    Absorbed_sampled   Absorbed_integral'
+         write(FN,'(a)') '#[eV]     [arb.units] [1/eV]   [1/eV]   [1/eV]'
 
          ! 2) Save spectra:
          coef = maxval(laser(i_pulse)%Spectrum_abs(:)) / maxval(laser(i_pulse)%Spectrum(2,:))
          N_grid = size(laser(i_pulse)%Spectrum,2)
 
-         ! Renormalize MC-sampled photon spectrumm:
+         ! Average MC-sampled photon spectrumm:
          laser(i_pulse)%Spectrum_MC = laser(i_pulse)%Spectrum_MC/dble(numpar%NMC)
+
+         ! And take into account that MC-spectrum needs to be divided by the energy intervals for non-equidistant grids:
+         do i = 1, N_grid
+            if (i > 1) then
+               dE = laser(i_pulse)%Spectrum(1,i) - laser(i_pulse)%Spectrum(1,i-1)
+            else
+               dE = laser(i_pulse)%Spectrum(1,i+1) - laser(i_pulse)%Spectrum(1,i)
+            endif
+            if (abs(dE) < 1.0d-10) dE = 1.0d-10 ! make sure there are no zeros to divide by
+            laser(i_pulse)%Spectrum_MC(i) = laser(i_pulse)%Spectrum_MC(i) / dE
+         enddo
+
+         ! And renormalize it to the maximum of the analytical absorbed spectrum:
+         if (maxval(laser(i_pulse)%Spectrum_MC) > 0) then
+            coef2 = maxval(laser(i_pulse)%Spectrum_abs) / maxval(laser(i_pulse)%Spectrum_MC)
+         else ! no need to renormzlise:
+            coef2 = 1.0d0
+         endif
+         laser(i_pulse)%Spectrum_MC = laser(i_pulse)%Spectrum_MC * coef2
+
 
          do i = 1, N_grid
             write(FN,'(f16.4, es24.8, es24.8, es24.8)') laser(i_pulse)%Spectrum(1,i), &
                                     laser(i_pulse)%Spectrum(2,i) * coef, &
-                                    laser(i_pulse)%Spectrum_abs(i), laser(i_pulse)%Spectrum_MC(i)/dble(size(matter%Atoms))
+                                    laser(i_pulse)%Spectrum_abs(i), laser(i_pulse)%Spectrum_MC(i) !, &
+                                    !laser(i_pulse)%Spectrum_int(i)/dble(size(matter%Atoms))
+
          enddo ! k
          call close_file('close', FN=FN)  ! module "Dealing_with_files"
 
