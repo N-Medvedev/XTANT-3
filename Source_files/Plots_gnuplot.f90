@@ -2785,8 +2785,12 @@ subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
          write(FN, '(a)') 'set format y "10^{%L}"'
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
          write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:200] "'//trim(adjustl(file_fe))// &
-                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs",(i-1)'// &
-                  '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ')'
+                  '" index (i-1) u 1:2 pt 7 ps 1 title sprintf("%i fs total",(i-1)'// &
+                  '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ') ,\'
+
+         write(FN, '(a)') '"" index (i-1) u 1:4 pt 6 ps 1 title "Photoelectrons" ,\'
+         write(FN, '(a)') '"" index (i-1) u 1:5 pt 5 ps 1 title "Impact electrons" ,\'
+         write(FN, '(a)') '"" index (i-1) u 1:6 pt 4 ps 1 title "Auger electrons"'
       else  ! Linux
          write(FN, '(a)') 'stats \"'//trim(adjustl(file_fe))//'\" nooutput'
          write(FN, '(a)') 'set logscale y'
@@ -2794,7 +2798,10 @@ subroutine write_distribution_on_grid_gnuplot(FN, Scell, numpar, file_fe)
          write(FN, '(a)') 'do for [i=1:int(STATS_blocks)] {'
          write(FN, '(a)') 'p ['//trim(adjustl(ch_temp4))//':'//trim(adjustl(ch_temp))//'][1e-6:200] \"'//trim(adjustl(file_fe))// &
                   '\" index (i-1) u 1:2 pt 7 ps 1 title sprintf(\"%i fs\",(i-1)'// &
-                  '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ')'
+                  '*' // trim(adjustl(ch_temp3)) // trim(adjustl(ch_temp2))// ') ,\'
+         write(FN, '(a)') '\"\" index (i-1) u 1:4 pt 6 ps 1 title \"Photoelectrons\" ,\'
+         write(FN, '(a)') '\"\" index (i-1) u 1:5 pt 5 ps 1 title \"Impact electrons\" ,\'
+         write(FN, '(a)') '\"\" index (i-1) u 1:6 pt 4 ps 1 title \"Auger electrons\"'
       endif
       write(FN, '(a)') '}'
    enddo

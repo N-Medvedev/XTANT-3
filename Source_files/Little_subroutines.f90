@@ -109,7 +109,7 @@ pure subroutine exclude_doubles(array)
    !-----------
    real(8), dimension(:), allocatable :: array_copy
    integer, dimension(:), allocatable :: ind
-   integer :: i, k, Nsiz, Ndub, coun, coun_ind
+   integer :: i, k, Nsiz, Ndub, coun, coun_ind, ind_cur
 
    Nsiz = size(array)
    allocate(array_copy(Nsiz), source = array)   ! copy array
@@ -120,8 +120,13 @@ pure subroutine exclude_doubles(array)
    do i = 1, Nsiz-1
       do k = i+1, Nsiz
          if (array(i) == array(k)) then ! exclude this point
-            coun_ind = coun_ind + 1
-            ind(coun_ind) = min(i,k) ! this element to be excluded
+            ind_cur = max(i,k) ! this element to be excluded
+            if (.not.(ANY(ind(:) == ind_cur))) then ! add only non-repeating indices
+               coun_ind = coun_ind + 1
+               ind(coun_ind) = ind_cur
+            else ! check if true
+               !print*, i, k, array(i), array(k)
+            endif
          endif
       enddo
    enddo
@@ -1079,7 +1084,8 @@ end subroutine interpolate_data_on_grid
          if (present(x0)) then
             y = (yarray(i) - 0.0d0)/(xarray(i) - x0)*(x - x0)
          else
-            if (abs(xarray(i)) > 1.0d-8) then
+            !if (abs(xarray(i)) > 1.0d-8) then
+            if (abs(xarray(i+1) - xarray(i)) > 1.0d-8) then
                !y = (yarray(i) - 0.0d0)/(xarray(i) - 0.0d0)*(x - 0.0d0)
                !y = yarray(i-1) + (yarray(i) - yarray(i-1))/(xarray(i) - xarray(i-1))*(x - xarray(i-1))
                y = yarray(i) - (yarray(i+1) - yarray(i))/(xarray(i+1) - xarray(i))*(xarray(i) - x)

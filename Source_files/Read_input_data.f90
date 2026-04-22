@@ -5968,13 +5968,14 @@ subroutine interprete_distribution_input(temp_ch, numpar, Scell, read_well)
    if (numpar%save_fe_grid) then
       ! Now we know the grid parameters:
       Nsiz = INT((Emax-Emin)/dE)+1
-      ! Set the default grids:
+      ! Set the default arrays:
       allocate(Scell%E_fe_grid(Nsiz), source=0.0d0)
       allocate(Scell%fe_on_grid(Nsiz), source=0.0d0)
       allocate(Scell%fe_high_on_grid(Nsiz), source=0.0d0)
       allocate(numpar%high_DOS(Nsiz), source=0.0d0)
       allocate(Scell%fe_norm_on_grid(Nsiz), source=0.0d0)
       allocate(Scell%fe_norm_high_on_grid(Nsiz), source=0.0d0)
+      allocate(Scell%fe_bybirth_on_grid(3,Nsiz), source=0.0d0)
       ! Create the grid:
       Scell%E_fe_grid(1) = Emin
       do i = 2, Nsiz

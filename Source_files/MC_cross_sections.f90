@@ -1123,19 +1123,172 @@ subroutine get_grid_4CS(N, Emax_given, grid_array, matter)
    call define_special_points(matter, special_point)  ! below
 
    ! Count how many points, to allocate the grid:
+   call define_grid(Emin, Emax, E_sp_eps, special_point, grid_array)   ! below
+
+   ! Printout the array size:
+   N = size(grid_array)
+
+
+!     do i = 1, size(grid_array)
+!         print*, i, grid_array(i)
+!     enddo
+!     pause 'get_grid_4CS'
+
+   if (allocated(special_point)) deallocate(special_point)
+end subroutine get_grid_4CS
+
+
+subroutine define_grid(Emin, Emax, E_sp_eps, special_point, array)
+   real(8), intent(in) :: Emin, Emax, E_sp_eps   ! grid start and end; precision around a special point
+   real(8), dimension(:), intent(in) :: special_point
+   real(8), dimension(:), allocatable, intent(inout) :: array ! save grid
+   !--------------
+   integer :: SP_count, N, N_siz, N_sp, Ngrid, i
+   real(8) :: E_cur, dE, dE_min
+   logical :: point_is_here
+
+   N = 0
+   N_siz = 0
+   dE_min = 0.1d0   ! to start with
+   E_cur = Emin - dE_min  ! start from min
+   do while (E_cur < Emax)
+      N = N + 1   ! count points
+      dE = set_dE(dE_min, E_cur)    ! function below
+      E_cur = E_cur + dE
+   enddo
+   ! points in the array, without the special points:
+   N_siz = N
+
+   ! Now, add the special points:
+   N_sp = size(special_point)
+
+   Ngrid = N_siz + 2*N_sp ! total number of points: created grid + special points
+
+   ! Now, joint the arrays:
+   allocate(array(Ngrid))
+   dE_min = 0.1d0   ! restart
+   E_cur = Emin - dE_min  ! restart
+   do i = 1, N_siz
+      dE = set_dE(dE_min, E_cur)    ! function below
+      E_cur = E_cur + dE
+      array(i) = E_cur
+   enddo
+   ! here, set append the special points
+   do i = 1, N_sp
+      array(N_siz + 2*i-1) = special_point(i) - E_sp_eps ! set values around the special point
+      array(N_siz + 2*i)   = special_point(i) + E_sp_eps ! set values around the special point
+      if (array(N_siz + 2*i-1) <= Emin) then ! mark it for exclusion:
+         array(N_siz + 2*i-1) = array(1)
+      endif
+      if (array(N_siz + 2*i) <= Emin) then ! mark it for exclusion:
+         array(N_siz + 2*i) = array(1)
+      endif
+   enddo
+
+   ! Sort the array ascending:
+   call sort_array(array)   ! module "Algebra_tools"
+
+   ! Exclude copies of points, if any:
+   call exclude_doubles(array) ! module "Little_subroutines"
+end subroutine define_grid
+
+
+
+function set_dE(dE_min, E_cur) result(dE)
+   real(8) dE
+   real(8), intent(in) :: dE_min, E_cur
+   !------
+   if (E_cur < 1.0d0-dE_min) then
+      dE = dE_min
+   else if (E_cur < 100.0d0) then
+      dE = 1.0d0
+   else
+      dE = 10.0d0**(find_order_of_number(E_cur)-2) ! module "Little_subroutines"
+   endif
+end function set_dE
+
+
+
+subroutine define_special_points(matter, special_point)
+   type(Solid), intent(in) :: matter ! parameters of the material: ionization potentials to set special points
+   real(8), dimension(:), allocatable :: special_point
+   !-----------------------------
+   integer :: Nsiz, i, k, sh, coun
+
+   ! Count how many Ip's are there:
+   Nsiz = 0
+   do i = 1, size(matter%Atoms)  ! for all elements
+      Nsiz = Nsiz + size(matter%Atoms(i)%Ip)
+   enddo
+
+   ! allocate and set special_points:
+   allocate(special_point(Nsiz), source = 0.0d0)
+
+   ! Copy the special points (ionization potentials):
+   coun = 0
+   do i = 1, size(matter%Atoms)  ! for all elements
+      sh = size(matter%Atoms(i)%Ip)
+      do k = 1, sh
+         coun = coun + 1
+         special_point(coun) = matter%Atoms(i)%Ip(k)
+      enddo
+   enddo
+
+   ! Sort the array increasing:
+   call sort_array(special_point)   ! module "Algebra_tools"
+
+   ! Exclude copies of points, if any:
+   call exclude_doubles(special_point) ! module "Little_subroutines"
+
+!    do i = 1, size(special_point)  ! for all elements
+!       print*, i, special_point(i)
+!    enddo
+end subroutine define_special_points
+
+
+
+
+
+subroutine get_grid_4CS_OLD(N, Emax_given, grid_array, matter)
+   integer, intent(out) :: N ! number of grid points
+   real(8), intent(in) :: Emax_given ! [eV] up to which energy we need electron cross-sections
+   real(8), intent(out), dimension(:), allocatable :: grid_array ! array of these grid points
+   type(Solid), intent(in) :: matter ! parameters of the material: ionization potentials to set special points
+   !-----------------------------
+   real(8), dimension(:), allocatable :: special_point
+   real(8) :: Emin, Emax, E_sp_eps
+   integer :: i, NP
+
+   ! Initial definitions:
+   Emin = 0.1d0   ! [eV] we start with this minimum
+   Emax = 50.0d3  ! [eV] defaul value, may be changed below
+   if (Emax_given .GT. Emax) Emax = Emax_given ! [eV] maximum energy for cross section (or mean free path)
+   E_sp_eps = 1.0d-3 ! how close a grid point should be around a special point
+
+   ! Get the special points associated with the ionization potentials of all shells:
+   call define_special_points(matter, special_point)  ! below
+
+
+!    print*, 'Special points:'
+!    do i = 1, size(special_point)
+!       print*, i, special_point(i)
+!    enddo
+!    pause 'Special points done'
+
+   ! Count how many points, to allocate the grid:
    call go_thru_grid(Emin, Emax, E_sp_eps, special_point, Ngrid=N)   ! below
 
    ! Save the grid:
    allocate(grid_array(N), source = 0.0d0)
    call go_thru_grid(Emin, Emax, E_sp_eps, special_point, array=grid_array)   ! below
 
-!    do i = 1, size(grid_array)
-!        print*, i, grid_array(i)
-!    enddo
-!    pause 'get_grid_4CS'
+!     do i = 1, size(grid_array)
+!         print*, i, grid_array(i)
+!     enddo
+!     pause 'get_grid_4CS'
 
    if (allocated(special_point)) deallocate(special_point)
-end subroutine get_grid_4CS
+end subroutine get_grid_4CS_OLD
 
 
 subroutine go_thru_grid(Emin, Emax, E_sp_eps, special_point, Ngrid, array)
@@ -1219,44 +1372,6 @@ subroutine go_thru_grid(Emin, Emax, E_sp_eps, special_point, Ngrid, array)
       call sort_array(array)  ! module "Algebra_tools"
    endif
 end subroutine go_thru_grid
-
-
-
-subroutine define_special_points(matter, special_point)
-   type(Solid), intent(in) :: matter ! parameters of the material: ionization potentials to set special points
-   real(8), dimension(:), allocatable :: special_point
-   !-----------------------------
-   integer :: Nsiz, i, k, sh, coun
-
-   ! Count how many Ip's are there:
-   Nsiz = 0
-   do i = 1, size(matter%Atoms)  ! for all elements
-      Nsiz = Nsiz + size(matter%Atoms(i)%Ip)
-   enddo
-
-   ! allocate and set special_points:
-   allocate(special_point(Nsiz), source = 0.0d0)
-
-   ! Copy the special points (ionization potentials):
-   coun = 0
-   do i = 1, size(matter%Atoms)  ! for all elements
-      sh = size(matter%Atoms(i)%Ip)
-      do k = 1, sh
-         coun = coun + 1
-         special_point(coun) = matter%Atoms(i)%Ip(k)
-      enddo
-   enddo
-
-   ! Sort the array increasing:
-   call sort_array(special_point)   ! module "Algebra_tools"
-
-   ! Exclude copies of points, if any:
-   call exclude_doubles(special_point) ! module "Little_subroutines"
-
-!    do i = 1, size(special_point)  ! for all elements
-!       print*, i, special_point(i)
-!    enddo
-end subroutine define_special_points
 
 
 

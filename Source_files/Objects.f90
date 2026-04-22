@@ -732,6 +732,8 @@ type Super_cell
    ! grid for electron distribution; distribution on this grid; high-energy electrons distribution on grid:
    real(8), dimension(:), allocatable :: E_fe_grid, fe_on_grid, fe_high_on_grid  ! electron spectrum on grid (fe*DOS)
    real(8), dimension(:), allocatable :: fe_norm_on_grid, fe_norm_high_on_grid   ! electron distribution on grid (fe)
+   real(8), dimension(:,:), allocatable :: fe_bybirth_on_grid  ! origin-resolved electron spectrum on grid (fe*DOS)
+
    real(8), dimension(:), allocatable :: I_ij ! electron-ion collision integral [1/s]
    real(8), dimension(:), allocatable :: Norm_WF ! Normalization of wave functions
    real(8) :: Ce  ! electron heat capacity [J/(m^3 K)]
@@ -1091,7 +1093,14 @@ end type Numerics_param
 type :: Particle ! basic class for all particles
    real(8) E ! energy [eV]
    real(8) ti ! time of impact
+   integer :: birthmark ! index of how this particle was created:
+   ! -1 = uninitialized
+   ! 0 = external (incomming) particle
+   ! 1 = photo-electron (hole)
+   ! 2 = impact-ionized electron (hole)
+   ! 3 = Auger-electron (hole)
 end type Particle
+
 
 type, EXTENDS (Particle) :: Photon ! photon as an object, contains the following info:
 end type Photon

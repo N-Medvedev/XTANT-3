@@ -791,16 +791,31 @@ subroutine Python_plot_distribution_on_grid(Scell, numpar, file_distribution, sc
    x_end = Scell%E_fe_grid(size(Scell%E_fe_grid))
 
    ! allocate the arrays:
-   Nsiz = 1
+   Nsiz = 4
    allocate(col_nums(Nsiz), source = 0)
    allocate(col_lables(Nsiz))
    allocate(linestyle(Nsiz))
    allocate(symbols(Nsiz))
 
    col_nums(1) =1
-   col_lables(1) = 'Spectrum'
+   col_lables(1) = 'Total'
    linestyle(1) = '"None"'
    call select_symbols(1, symbols(1))     ! below
+
+   col_nums(2) =3
+   col_lables(2) = 'Photoelectrons'
+   linestyle(2) = '"None"'
+   call select_symbols(2, symbols(2))     ! below
+
+   col_nums(3) =4
+   col_lables(3) = 'Impact electrons'
+   linestyle(3) = '"None"'
+   call select_symbols(3, symbols(3))     ! below
+
+   col_nums(4) =5
+   col_lables(4) = 'Auger electrons'
+   linestyle(4) = '"None"'
+   call select_symbols(4, symbols(4))     ! below
 
    call Create_Python_animation(FN, file_distribution, col_nums, col_lables, &
       'Energy (eV)', 'Electron distribution (1/(V*E))', 'Electron spectrum', &
