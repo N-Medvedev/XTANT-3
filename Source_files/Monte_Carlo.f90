@@ -67,18 +67,16 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
    if (numpar%NMC > 0) then ! if there are MC iterations at all
       call total_photons(laser, numpar, tim, Nphot) ! estimate the total number of absorbed photons
 
-      if (Nphot > 0) then ! check if spectrum is needed
+      !print*, 'MC_Propagate:', tim, Nphot
+
+      ! Do MC run only if we have particles to trace (photons, high-energy-electrons, or core-holes):
+      IF_MC:if ( (Nphot .GT. 1d-10) .OR. ( (Scell(NSC)%Ne_high-Scell(NSC)%Ne_emit) .GT. 1d-10) .OR. (Scell(NSC)%Nh .GT. 1d-10) ) then
+         ! Temporary array to save sampled spectrum into:
          if (allocated(laser(1)%Spectrum_MC)) then
             allocate(Spectrum_MC(size(laser(1)%Spectrum_MC)), source = 0.0d0)    ! to start with
          else ! nothing to do, set minimal empty array to use with omp-reduction
             allocate(Spectrum_MC(1), source = 0.0d0)    ! to start with
          endif
-      endif
-
-      !print*, 'MC_Propagate:', tim, Nphot
-
-      ! Do MC run only if we have particles to trace (photons, high-energy-electrons, or core-holes):
-      IF_MC:if ( (Nphot .GT. 1d-10) .OR. ( (Scell(NSC)%Ne_high-Scell(NSC)%Ne_emit) .GT. 1d-10) .OR. (Scell(NSC)%Nh .GT. 1d-10) ) then
 
          ! Update inelastic scattering cross section depending on Te:
          call update_cross_section(Scell(NSC), matter)  ! module "Electron_tools"
@@ -213,6 +211,8 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
             print*, 'Error in MC_E2:', Scell(NSC)%nrg%El_low, SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:))
          endif
 
+         ! Clean up:
+         if (allocated(Spectrum_MC)) deallocate(Spectrum_MC)
       else IF_MC ! if there is no more particles in MC, don't do MC at all:
          Scell(NSC)%Nph = 0.0d0 ! no photons here
          Scell(NSC)%Ne_high = Scell(NSC)%Ne_emit ! no high-energy electrons
@@ -227,7 +227,6 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
       endif IF_MC
       Scell(NSC)%Q = Scell(NSC)%Ne_emit/Scell(NSC)%Na ! mean unballanced charge
 
-      if (allocated(Spectrum_MC)) deallocate(Spectrum_MC)
    else ! No MC iteratins, no changes in the system:
       Scell(NSC)%Q = 0.0d0  ! mean unballanced charge
       Scell(NSC)%nrg%E_high_heating = 0.0d0 ! no energy transfer to atoms
