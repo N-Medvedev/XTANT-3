@@ -623,7 +623,7 @@ subroutine Python_plot_optical_coefficients(numpar, file_optics, t0, t_last, scr
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Optical coefficients', 'Optical coefficients', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, y_max = 1.0)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, y_max = 1.0d0)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables)
@@ -689,7 +689,7 @@ subroutine Python_plot_DOS(Scell, matter, numpar, file_DOS, script_name, video_f
    call Create_Python_animation(FN, file_DOS, col_nums, col_lables, &
       'Energy (eV)', 'DOS (electrons/eV)', 'Electronic density of states', &
       "best", 'OUTPUT_DOS', trim(adjustl(video_format)), &
-      x_min=x_start, x_max=x_end, y_min=0.0, &
+      x_min=x_start, x_max=x_end, y_min=0.0d0, &
       t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total, &
       l_style=linestyle, &
       first_line_in_front =.false.)     ! below
@@ -897,7 +897,7 @@ subroutine Python_plot_orb_distribution(Scell, matter, numpar, file_distribution
    call Create_Python_animation(FN, file_distribution, col_nums, col_lables, &
       'Energy (eV)', 'Electron distribution (1/eV)', 'Orbital-resolved electron distribution', &
       "best", 'OUTPUT_orbital_resolved_fe', trim(adjustl(video_format)), &
-      x_min=x_start, x_max=x_end, y_min=0.0, &
+      x_min=x_start, x_max=x_end, y_min=0.0d0, &
       t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total, &
       l_style=linestyle, symbols=symbols, &
       first_line_in_front =.false.)     ! below
@@ -970,7 +970,7 @@ subroutine Python_plot_distribution(numpar, file_distribution, script_name, vide
    call Create_Python_animation(FN, file_distribution, col_nums, col_lables, &
       'Energy (eV)', 'Electron distribution (1/eV)', 'Electron distribution', &
       "best", 'OUTPUT_electron_distribution', trim(adjustl(video_format)), &
-      x_min=x_start, x_max=x_end, y_min=0.0, &
+      x_min=x_start, x_max=x_end, y_min=0.0d0, &
       t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total, &
       l_style=linestyle, symbols=symbols, &
       first_line_in_front =.false.)     ! below
@@ -1037,7 +1037,7 @@ subroutine Python_plot_pair_correlation(Scell, matter, numpar, file_pair_correla
    call Create_Python_animation(FN, file_pair_correlation, col_nums, col_lables, &
       'Radius (A)', 'Pair correlation function (a.u.)', 'Pair correlation function', &
       "best", 'OUTPUT_pair_correlation', trim(adjustl(video_format)), &
-      x_min=x_start, x_max=x_end, y_min=0.0, &
+      x_min=x_start, x_max=x_end, y_min=0.0d0, &
       t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total, l_style=linestyle, &
       first_line_in_front =.false.)     ! below
 
@@ -1094,7 +1094,7 @@ subroutine Python_plot_nearest_neighbors_elements(matter, numpar, file_element_N
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Nearest neighbors fraction', 'Nearest neighbors of '//trim(adjustl(element_name)), &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -1166,7 +1166,7 @@ subroutine Python_plot_nearest_neighbors(numpar, file_NN, t0, t_last, script_nam
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Nearest neighbors fraction', 'Number of nearest neighbors', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -1708,7 +1708,7 @@ subroutine Python_plot_heat_conductivity_dyn(numpar, file_heat_conductivity_dyn,
    call Create_python_plot(FN, file_heat_conductivity_dyn, col_nums, col_lables, &
       'Time (fs)', 'Heat conductivity (W/(m K))', 'Electron heat conductivity', &
       "best", 'OUTPUT_electron_heat_conductivity_dyn', trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -1747,7 +1747,7 @@ subroutine Python_plot_heat_conductivity(numpar, file_heat_conductivity, t0, t_l
    call Create_python_plot(FN, file_heat_conductivity, col_nums, col_lables, &
       'Time (fs)', 'Heat conductivity (W/(m K))', 'Electron heat conductivity', &
       "best", 'OUTPUT_electron_heat_conductivity', trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -1991,7 +1991,7 @@ subroutine Python_plot_Egap(numpar, file_electron_properties, t0, t_last, script
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Band gap (eV)', 'Band gap', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables)
@@ -2066,7 +2066,7 @@ subroutine Python_plot_holes(matter, numpar, file_deep_holes, t0, t_last, script
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Number of holes (total)', 'Core holes', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -2114,7 +2114,7 @@ subroutine Python_plot_CB_electrons(numpar, file_numbers, t0, t_last, script_nam
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Electrons (1/atom)', 'Conduction-band electrons', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -2200,7 +2200,7 @@ subroutine Python_plot_orbital_resolved(Scell, matter, numpar, file_numbers, t0,
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Electrons (1/atom)', 'Orbital-resolved electrons', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -2414,7 +2414,7 @@ subroutine Python_plot_powder_diffraction(Scell, matter, numpar, file_powder_dif
    call Create_Python_animation(FN, file_powder_diffraction, col_nums, col_lables, &
       '2theta (deg)', 'Peak Intensity (a.u.)', 'Powder diffraction', &
       "best", 'OUTPUT_diffraction_powder', trim(adjustl(video_format)), &
-      x_min=10.0, x_max=180.0, t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total)     ! below
+      x_min=10.0d0, x_max=180.0d0, t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables)
@@ -2460,7 +2460,7 @@ subroutine Python_plot_Debye_temperatures(Scell, numpar, file_Debye_temperature,
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Debye temperature (K)', 'Debye temperatures', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables)
@@ -2516,7 +2516,7 @@ subroutine Python_plot_diffraction_peaks(Scell, numpar, file_diffraction, t0, t_
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', trim(adjustl(y_axis_label)), trim(adjustl(plot_label)), &
       "best", trim(adjustl(Plot_name_used)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables)
@@ -2595,7 +2595,7 @@ subroutine Python_plot_displacements_partial(matter, numpar, file_MSD, t0, t_las
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -2657,7 +2657,7 @@ subroutine Python_plot_displacements(matter, numpar, file_MSD, t0, t_last, scrip
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -2729,7 +2729,7 @@ subroutine Python_plot_MSD(matter, numpar, file_MSD, t0, t_last, script_name, MS
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -2797,7 +2797,7 @@ subroutine Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_las
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Temperature (K)', 'Temperatures', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -3820,7 +3820,7 @@ subroutine select_symbols(i, symbol)
    case (11)
       symbol = '">"'	! triangle right
    case (12)
-      symbol = '"<""'	! triangle left
+      symbol = '"<"'	! triangle left
    case (13)
       symbol = '"P"'	! plus‑filled (thick)
    case (14)
