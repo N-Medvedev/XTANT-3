@@ -78,16 +78,16 @@ file_testmode)
    character(*), intent(in) :: file_Ei		! energy levels
    character(*), intent(in) :: file_PCF		! pair correlation function
    character(*), intent(in) :: file_NN      ! nearest neighbors
-   character(*), dimension(:), intent(in) :: file_element_NN      ! element-specific nearest neighbors
+   character(*), dimension(:), allocatable, intent(in) :: file_element_NN      ! element-specific nearest neighbors
    character(*), intent(in) :: file_electron_entropy  ! electron entropy
    character(*), intent(in) :: file_Te ! electron temperatures
    character(*), intent(in) :: file_mu ! electron chem.potentials
    character(*), intent(in) :: file_atomic_entropy ! atomic entropy
    character(*), intent(in) :: file_atomic_temperatures ! atomic temperatures (various definitions)
    character(*), intent(in) :: file_atomic_temperatures_part  ! partial atomic temperatures (X, Y, Z)
-   character(*), dimension(:), intent(in) :: file_sect_displ
+   character(*), dimension(:), allocatable, intent(in) :: file_sect_displ
    character(*), intent(in) :: file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW  ! diffraction peaks
-   character(*), dimension(:), intent(in) :: file_diffraction_peaks_part
+   character(*), dimension(:), allocatable, intent(in) :: file_diffraction_peaks_part
    character(*), intent(in) :: file_Debye_temperature ! Debye temperatures
    character(*), intent(in) :: file_testmode    ! testmode data
    !----------------

@@ -3862,7 +3862,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  The following numerical parameters are used:'
-   write(print_to,'(a,i6)') ' Number of iterations in the MC module: ', numpar%NMC
+   write(print_to,'(a,i0)') ' Number of iterations in the MC module: ', numpar%NMC
    if (numpar%do_elastic_MC) then ! allow elastic scattering of electrons on atoms within MC module
       write(print_to,'(a)') ' Elastic high-energy-electron scattering is included in MC via Motts cross section'
    else
@@ -3870,10 +3870,10 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    endif
 
 #ifdef _OPENMP
-   write(print_to,'(a,i6)') ' Number of threads in OPENMP: ', numpar%NOMP
+   write(print_to,'(a,i0)') ' Number of threads in OPENMP: ', numpar%NOMP
 #else
 #ifdef MPI_USED
-      write(print_to,'(a,i6)') ' Number of processes in MPI: ', numpar%MPI_param%size_of_cluster
+      write(print_to,'(a,i0)') ' Number of processes in MPI: ', numpar%MPI_param%size_of_cluster
 #else
       write(print_to,'(a)') ' The code is compiled without pparallelization'
 #endif
