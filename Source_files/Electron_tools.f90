@@ -1277,7 +1277,8 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial, 
          Scell%El_low_VB = get_E_partial(Scell%Ei, Scell%fe, 1, Scell%N_Egap) ! below
 
          ! Get the equivalent temperature and chem.potential of the band:
-         call Electron_Fixed_Etot_partial(Scell%Ei, Scell%Ne_low_VB, Scell%El_low_VB, Scell%mu_VB, Te_VB, i_end_in=Scell%N_Egap) ! below
+         call Electron_Fixed_Etot_partial(Scell%Ei, Scell%Ne_low_VB, Scell%El_low_VB, Scell%mu_VB, &
+                                          Te_VB, Te_start=Scell%TeeV, mu_start=Scell%mu, i_end_in=Scell%N_Egap) ! below
          Scell%Te_VB = Te_VB*g_kb ! save in [K]
 
          ! Construct equivalent Fermi distribution:
@@ -1299,7 +1300,8 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial, 
          Scell%El_low_CB = get_E_partial(Scell%Ei, Scell%fe,  Scell%N_Egap+1, i_fe) ! below
 
          ! Get the equivalent temperature and chem.potential of the band:
-         call Electron_Fixed_Etot_partial(Scell%Ei, Scell%Ne_low_CB, Scell%El_low_CB, Scell%mu_CB, Te_CB, i_start_in=Scell%N_Egap+1) ! below
+         call Electron_Fixed_Etot_partial(Scell%Ei, Scell%Ne_low_CB, Scell%El_low_CB, Scell%mu_CB, &
+                                          Te_CB, Te_start=Scell%TeeV, mu_start=Scell%mu, i_start_in=Scell%N_Egap+1) ! below
          Scell%Te_CB = Te_CB*g_kb ! save in [K]
 
          ! Construct equivalent Fermi distribution:
@@ -2294,17 +2296,18 @@ end function Diff_Fermi_E
 
 
 
-subroutine Electron_Fixed_Etot_partial(Ei, Netot, Eetot, mu, Te, i_start_in, i_end_in)
+subroutine Electron_Fixed_Etot_partial(Ei, Netot, Eetot, mu, Te, mu_start, Te_start, i_start_in, i_end_in)
    real(8), dimension(:), intent(in) ::  Ei  ! eigenvalues of TB-Hamiltonian for electrons
    real(8), intent(in) :: Netot  ! number of electrons/supercell to normalize the distribution function
    real(8), intent(in) :: Eetot  ! energy of electrons/supercell to normalize the distribution function
    real(8), intent(inout) :: Te ! electron temperature [eV]
    real(8), intent(inout) :: mu ! chem.potential to be found [eV]
+   real(8), intent(in), optional :: mu_start, Te_start    ! initial guess for the electron chem.potential and temperature [eV]
    integer, intent(in), optional :: i_start_in, i_end_in
    !-------------------------
-   real(8) :: mu_0, mu_1, Te_0, Te_1, mix_fact, eps, mu_diff, Te_diff
+   real(8) :: mu_0, mu_1, Te_0, Te_1, mix_fact, eps, mu_diff, Te_diff, eps_Te, eps_mu
    integer :: Nsiz, i_start, i_end, coun
-   logical :: cycle_continue
+   logical :: cycle_continue, do_steps
 
    if (present(i_start_in)) then
       i_start = i_start_in
@@ -2318,24 +2321,41 @@ subroutine Electron_Fixed_Etot_partial(Ei, Netot, Eetot, mu, Te, i_start_in, i_e
       i_end = Nsiz
    endif
 
-   mix_fact = 0.35d0   ! empirically chosen mixing parameter for self-consistent cycle
-   eps = 1.0d-7      ! precision
+   mix_fact = 0.35d0          ! empirically chosen mixing parameter for self-consistent cycle
+   eps = 1.0d-7               ! relative precision for chem.potential
+   eps_Te = 10.0d0/g_kb       ! [eV] 10 K, absolite allowed precision for the temperatures
+   eps_mu = 1.0d-3            ! [eV] absolute allowed precision for chem.potential
 
    ! Starting cycle:
-   Te_0 = 1.0d0/g_kb   ! [eV] electron temperature to be calculated
-   ! Get mu:
-   call Electron_Fixed_Te(Ei, Netot, mu_0, Te_0, i_start=i_start, i_end=i_end) ! find partial mu for given Te and Ne
-   mu_1 = mu_0 ! to start with
-   ! Get Te:
-   call Electron_Fixed_mu(Ei, Eetot, mu_1, Te_1, i_start=i_start, i_end=i_end) ! find partial mu for given Te and Ne
+   if (present(Te_start)) then
+      Te_0 = Te_start   ! [eV] electron temperature to be calculated
+   else ! use default starting value
+      Te_0 = 1.0d0/g_kb   ! [eV] electron temperature to be calculated
+   endif
+   if (present(mu_start)) then
+      mu_0 = mu_start   ! [eV] electron temperature to be calculated
+   else ! find it from the given electron temperature
+      call Electron_Fixed_Te(Ei, Netot, mu_0, Te_0, i_start=i_start, i_end=i_end) ! find partial mu for given Te and Ne
+   endif
+
+   ! Get Te for this mu:
+   call Electron_Fixed_mu(Ei, Eetot, mu_0, Te_1, i_start=i_start, i_end=i_end) ! find partial Te for given mu and Ee
 
    coun = 0 ! to start with
-   !cycle_continue = ( (abs(Te_0-Te_1) > eps*(max(Te_0,Te_1))) .or. (abs(mu_0-mu_1) > eps*(max(mu_0,mu_1))) )
+   do_steps =.false. ! to start with
+
+   !mu_1 = mu_0 ! to start with
+   ! Find chem.potential for this temperature:
+   call Electron_Fixed_Te(Ei, Netot, mu_1, Te_1, i_start=i_start, i_end=i_end) ! find partial mu for given Te and Ne
+
+   !print*, 'SC1', coun, Te_0*g_kb, Te_1*g_kb, mu_0, mu_1, cycle_continue, Eetot
+
+   !Te_1 = Te_0 * (1.0d0-mix_fact) + mix_fact * Te_1   ! mixing for the next step
+   Te_1 = min( Te_0*(1.0d0-mix_fact) + mix_fact*Te_1 , 2.0d0*Te_0 )  ! mixing for the next step
    mu_diff = abs(mu_0 - mu_1)
    Te_diff = abs(Te_0 - Te_1)
    cycle_continue = ( (Te_diff > eps*(max(Te_0,Te_1))) .or. (mu_diff > eps*(max(mu_0,mu_1))) )
 
-   !print*, 'SC', coun, Te_0, Te_1, mu_0, mu_1, cycle_continue, Eetot
    do while ( cycle_continue )
       coun = coun + 1
       mu_0 = mu_1
@@ -2344,12 +2364,18 @@ subroutine Electron_Fixed_Etot_partial(Ei, Netot, Eetot, mu, Te, i_start_in, i_e
       ! Get mu:
       call Electron_Fixed_Te(Ei, Netot, mu_1, Te_1, i_start=i_start, i_end=i_end) ! find partial mu for given Te and Ne
       mu_1 = mu_0 * (1.0d0-mix_fact) + mix_fact * mu_1   ! mixing for the next step
+      ! Limit the chem.potential step by 50% of the current value:
+      !mu_1 = min( mu_0 * (1.0d0-mix_fact) + mix_fact * mu_1, 2.0d0*mu_0 )   ! mixing for the next step
+
       ! Get Te:
-      call Electron_Fixed_mu(Ei, Eetot, mu_1, Te_1, i_start=i_start, i_end=i_end) ! find partial mu for given Te and Ne
-      Te_1 = Te_0 * (1.0d0-mix_fact) + mix_fact * Te_1   ! mixing for the next step
+      call Electron_Fixed_mu(Ei, Eetot, mu_1, Te_1, i_start=i_start, i_end=i_end) ! find partial Te for given mu and Ee
+      !Te_1 = Te_0 * (1.0d0-mix_fact) + mix_fact * Te_1   ! mixing for the next step
+      ! Limit the temperature step by 50% of the current temeprature:
+      Te_1 = min( Te_0*(1.0d0-mix_fact) + mix_fact*Te_1 , 2.0d0*Te_0 )  ! mixing for the next step
 
       ! Check if mixing should be reduced:
-      if (abs(Te_0 - Te_1) > Te_diff) then
+      if ( (abs(Te_0 - Te_1) > max(Te_diff, Te_0*0.1d0) ) .or. &
+           (abs(mu_0 - mu_1) > max(mu_diff, mu_0*0.1d0) ) ) then      ! difference not smaller than 10% of the value itself
          if (mix_fact > 0.1d0) mix_fact = mix_fact*0.9d0
          !mu_1 = (mu_0+mu_1)*0.5d0
          !Te_1 = (Te_0+Te_1)*0.5d0
@@ -2358,20 +2384,44 @@ subroutine Electron_Fixed_Etot_partial(Ei, Netot, Eetot, mu, Te, i_start_in, i_e
       ! Check if we need to continue the cycle:
       mu_diff = abs(mu_0 - mu_1)
       Te_diff = abs(Te_0 - Te_1)
+      ! Relative precision:
       cycle_continue = ( (Te_diff > eps*(max(Te_0,Te_1))) .or. (mu_diff > eps*(max(mu_0,mu_1))) )
 
-      !print*, 'SC', coun, Te_0, Te_1, mu_0, mu_1, cycle_continue, mix_fact
-      if (coun > 10000) then
-         if ( Te_diff > 10.0d0 * eps*(max(Te_0,Te_1)) ) then ! printout only if the difference is noticeable
-            write(*,'(a,i0)') 'Too many iterations in Electron_Fixed_Etot_partial: ', coun
-            write(*,'(f,f,f,f)') Te_0, Te_1, mu_0, mu_1
-         endif
+      ! Absolute precision:
+      cycle_continue = ( (Te_diff > eps_Te) .or. (mu_diff > eps_mu) )
+
+      !print*, 'SC2', coun, Te_0*g_kb, Te_1*g_kb, mu_0, mu_1, cycle_continue, mix_fact
+
+      ! It's enough of iterations:
+      if (coun > 100) then
+         !if ( Te_diff > 10.0d0 * eps*(max(Te_0,Te_1)) ) then ! printout only if the difference is noticeable
+         !   write(*,'(a,i0)') 'Too many iterations in Electron_Fixed_Etot_partial: ', coun
+         !   write(*,'(f,f,f,f)') Te_0, Te_1, mu_0, mu_1
+         !endif
+         ! If still didn't find the temperature and chem.potential, do it differently:
+         do_steps = .true.
+         exit
+      endif
+      ! And make sure there is no runaway:
+      if (abs(mu_1) > 1.0d10) then
+         write(*,'(a)') 'Runaway condition reached in Electron_Fixed_Etot_partial: '
+         write(*,'(f,f,f,f)') Te_0, Te_1, mu_0, mu_1
          exit
       endif
    enddo
+
    ! Output:
    Te = (Te_0 + Te_1)*0.5d0
    mu = (mu_0 + mu_1)*0.5d0
+
+   !print*, 'one', mu, Te
+
+   ! Check if another method of finding Te and mu is required:
+   if (do_steps) then
+      call Electron_Fixed_Etot_partial_1(Ei, Netot, Eetot, mu, Te, i_start_in=i_start, i_end_in=i_end) ! below
+   endif
+
+   !print*, 'two', mu, Te
 end subroutine Electron_Fixed_Etot_partial
 
 
@@ -2471,8 +2521,8 @@ subroutine Electron_Fixed_mu(wrD, Eetot, mu, Te, norm_fe, i_start, i_end) ! For 
    real(8), intent(in), optional :: norm_fe ! normalization of distribution: spin resolved or not
    integer, intent(in), optional :: i_start, i_end
    !-----------------------
-   real(8) :: a, b, Ecur, Tcur
-   integer :: Nsiz, i, i_low, i_high
+   real(8) :: a, b, Ecur, Tcur, Elast, Emin, Emax, E_sign, dT
+   integer :: Nsiz, i, i_low, i_high, N_steps
 
    if (present(i_start)) then
       i_low = i_start
@@ -2486,21 +2536,67 @@ subroutine Electron_Fixed_mu(wrD, Eetot, mu, Te, norm_fe, i_start, i_end) ! For 
       i_high = Nsiz
    endif
 
-   a = 1.0d0/g_kb ! [eV]
-   b = 100.0d0 ! [eV}
+   a = 0.1d0/g_kb ! [eV]
+   b = 20.0d0 ! [eV}
    Ecur = 1.0d10   ! to start with
    Te = 0.0d0  ! to start with
+   ! Energy on the borders of the search interval:
+   Emin = get_E_tot(wrD, mu, a, i_start=i_low, i_end=i_high) ! function from below
+   Emax = get_E_tot(wrD, mu, b, i_start=i_low, i_end=i_high) ! function from below
 
+
+   ! Step one: find the interval where the function crosses the Eetot:
+   N_steps = 1000  ! not more than this number of steps for interval search
+   dT = (b - a)/dble(N_steps)   ! step to use for this search
+   do i = 1, N_steps
+      Te = a + dble(i) * dT
+      Emax = get_E_tot(wrD, mu, Te, i_start=i_low, i_end=i_high) ! function from below
+      ! check if both border values are on the same side of the value we search,
+      ! both greater or both smaller. If it is the case, keep searching.
+      ! If on is smaller, the other one is bigger, than this is the interval
+      ! where the function crosses the value we are looking for.
+      E_sign = (Emin-Eetot) * (Emax-Eetot)
+
+      !print*, 's --->', i, Emin, Emax, Eetot, E_sign, mu, Te
+
+      if (E_sign > 0.0d0) then
+         ! both on the same size, keep searching
+      else
+         a = Te - dT
+         b = Te   ! found the upper bound
+         exit
+      endif
+   enddo
+   ! use found boundary of the interval:
+   Emin = get_E_tot(wrD, mu, a, i_start=i_low, i_end=i_high) ! function from below
+   Elast = Emin   ! value from the last step
+
+   ! Second step: bisection method to find the exact value from the defined interval:
    do while (ABS(Ecur-Eetot) .GT. Eetot*1d-12)
       Te = (a+b)/2.0d0
       Ecur = get_E_tot(wrD, mu, Te, i_start=i_low, i_end=i_high) ! function from below
-      if (Ecur .GT. Eetot) then
-         b = Te
-      else
-         a = Te
+
+      !print*, 'p --->', Ecur, Eetot, a, b
+
+      if (Ecur > Emin) then ! increasing function:
+         if (Ecur .GT. Eetot) then
+            b = Te
+         else
+            a = Te
+         endif
+      else ! decareasing function
+         if (Ecur .GT. Eetot) then
+            a = Te
+         else
+            b = Te
+         endif
       endif
-      if (ABS(a-b) .LT. 1d-12) exit ! it's too close anyway...
+
+      !if (ABS(a-b) .LT. 1d-12) exit ! it's too close anyway...
+      if (ABS(a-b) .LT. 1d-10) exit ! it's too close anyway...
    enddo ! while
+
+   !pause 'Electron_Fixed_mu'
 end subroutine Electron_Fixed_mu
 
 
@@ -2531,7 +2627,9 @@ subroutine Electron_Fixed_Te(wrD, Netot, mu, Te, norm_fe, i_start, i_end) ! in c
       i_high = Nsiz
    endif
 
-   a = wrD(i_low) - 100.0d0
+   !a = wrD(i_low) - 100.0d0
+   !b = wrD(i_high) + 50.0d0
+   a = wrD(i_low) - 50.0d0
    b = wrD(i_high) + 50.0d0
    Ncur = 0.0d0
 
@@ -2938,7 +3036,7 @@ subroutine Electron_Fixed_Etot_1(wrD, Netot, Eetot, mu, Te)
       che1 = che2
    enddo ! main while
 
-   if ((ABS((Ecur - Eetot)/MAX(ABS(Ecur),ABS(Eetot),1d-5)) .GT. 1d-5) .AND. (countr .LT. 100))then
+   if ((ABS((Ecur - Eetot)/MAX(ABS(Ecur),ABS(Eetot),1d-5)) .GT. 1d-5) .AND. (countr .LT. 100)) then
       countr = countr + 1
       Te = Te + 2.0d0*dT/g_kb
       goto 437 ! just try it over again if it didn't work well the first time...
