@@ -63,7 +63,7 @@ PRIVATE
 
 ! Modular parameters:
 character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_MINIMUM, m_INPUT_ALL, m_Atomic_parameters, &
-                  m_Hubbard_U, m_Communication, m_COPY_INPUT, m_form_factors, m_Short_range_potentials
+                  m_Hubbard_U, m_Communication, m_COPY_INPUT, m_form_factors, m_Short_range_potentials, m_chemical_file
 
 character(70), parameter :: m_starline = '*************************************************************'
 character(70), parameter :: m_dashline = '-------------------------------------------------------------'
@@ -89,6 +89,7 @@ parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat') ! data-file with Hubbard-U param
 parameter (m_form_factors = 'Atomic_form_factors.dat')      ! file with atomic form factors parameters
 parameter (m_Communication = 'Communication.txt')  ! file for comunication with the user
 parameter (m_Short_range_potentials = '!Short_range_potentials') ! path to short-range potentials stored
+parameter (m_chemical_file = 'Chemical_formula.txt')   ! default name of file with chemical formula
 
 character(25), parameter :: m_short_pot = 'TB_short.txt'  ! filename for short-range potential
 character(25), parameter :: m_wall_pot = 'TB_wall.txt'  ! obsolete filename for short-range potential
@@ -111,6 +112,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    ! Here we set default values, in case some of them are not given by the user:
    matter%Name = '' ! Material name
    numpar%Cell_filename = ''  ! no name given, defaults are hardcoded in nodule "Initial_configuration"
+   numpar%Chemical_file = m_chemical_file ! default file name
    matter%Chem = '' ! chemical formula of the compound
    if (.not.allocated(Scell)) allocate(Scell(1)) ! So far we only use 1 supercell
    numpar%numpar_in_input = .false.    ! assume separate file with the numerical parameters
@@ -387,7 +389,7 @@ subroutine Read_Input_Files(matter, numpar, laser, Scell, Err, Numb)
    
    !-------------------------------
    ! Read input parameters in various formats:
-   NEW_FORMAT:if (new_format_exists) then ! minimum format (deprecated!)
+   NEW_FORMAT:if (new_format_exists) then ! minimum format (Deprecated!)
       call read_input_txt(File_name, Scell, matter, numpar, laser, Err) ! see below
       if (Err%Err) goto 3416
 
@@ -6501,10 +6503,25 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
    if (Err%Err) goto 3417
    !print*, trim(adjustl(matter%Name)), ' : ', trim(adjustl(numpar%Cell_filename))
 
-   ! chemical formula of the compound (used in MC in case of EADL parameters):
-   read(FN,*,IOSTAT=Reason) matter%Chem
+
+   ! chemical formula of the compound (used in MC), or a name of the file with it:
+   read(FN, *, IOSTAT=Reason) read_line
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
    if (Err%Err) goto 3417
+   call get_chemical_formula(numpar, read_line,  matter%Name, matter%Chem, numpar%Chemical_file, numpar%Cell_filename, Err)    ! below
+   if (Err%Err) goto 3417
+   ! In case the filename with coordinates was provided in the Chemical_formula file, check it here again:
+   if (LEN(trim(adjustl(numpar%Cell_filename))) /= 0) then
+      ! Make sure that, if there is a path, the separator is correct:
+      call ensure_correct_path_separator(numpar%Cell_filename, numpar%path_sep) ! module "Dealing_with_files"
+      ! Check if such a file exists:
+      call check_coordinates_filename(numpar%Cell_filename, numpar%verbose) ! see below
+   endif
+!    print*, 'matter%Chem: ', trim(adjustl(matter%Chem))
+!    print*, 'numpar%Chemical_file: ', trim(adjustl(numpar%Chemical_file))
+!    print*, 'numpar%Cell_filename: ', trim(adjustl(numpar%Cell_filename))
+!    pause
+
 
    if (.not.allocated(Scell)) allocate(Scell(1)) ! just for start, 1 supercell
    do i = 1, size(Scell) ! for all supercells
@@ -6716,6 +6733,103 @@ end subroutine read_input_material
 
 
 
+subroutine get_chemical_formula(numpar, read_line, matter_Name, Chem, Chemical_file, Cell_filename, Err)
+   type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
+   character(*), intent(in) :: matter_Name      ! material name directory
+   character(*), intent(in) :: read_line        ! file read from the input file
+   character(*), intent(inout) :: Chem, Chemical_file, Cell_filename ! chemical formula; file with chemical formula; file with cell coords
+   type(Error_handling), intent(inout) :: Err   ! error save
+   !------------------------------
+   character(300) :: Folder_name, Path, File_name, File_name2, Error_descript
+   logical :: file_exist, file_opened
+   integer :: FN, count_lines, Reason
+
+   Chem = ''            ! to start with
+   Chemical_file = ''   ! to start with
+   Error_descript = ''  ! no error to start with
+   Folder_name = trim(adjustl(numpar%input_path))     ! inpit directory
+   Path = trim(adjustl(Folder_name))//trim(adjustl(matter_Name))
+
+#ifndef __GFORTRAN__
+   ! for intel fortran compiler:
+   inquire(DIRECTORY=trim(adjustl(Path)), exist=file_exist)
+#else
+   ! for gfortran compiler:
+   inquire(FILE=trim(adjustl(Path)), exist=file_exist)
+#endif
+
+   if (.not.file_exist) then
+      Error_descript = 'ERROR: Directory with input material does not exist: '//trim(adjustl(Path))
+      call Save_error_details(Err, 1, Error_descript)    ! module "Objects""
+      ! Print main error message on the screen
+      print*, trim(adjustl(Error_descript))
+      return      ! nothing more to do here
+   endif
+
+   read(read_line,*,IOSTAT=Reason) Chemical_file
+
+   ! File with chemical formula:
+   write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(Chemical_file))
+   inquire(file=trim(adjustl(File_name)),exist=file_exist)
+
+   ! Check if may be the default file name shoud be used:
+   if (.not.file_exist) then ! read the chemical formula from this file:
+      select case (Chemical_file(1:1))
+      case ('-', '#')  ! the user set to use the default name:
+         Chemical_file = trim(adjustl(m_chemical_file))
+         write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(Chemical_file))
+         inquire(file=trim(adjustl(File_name)),exist=file_exist)
+      end select
+   endif
+
+
+   ! If the file with chemical formula exists, read from it:
+   if (file_exist) then ! read the chemical formula from this file:
+      open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action = 'read')
+      inquire(file=trim(adjustl(File_name)), opened=file_opened, number=FN)
+      if (.not.file_opened) then
+         print*, 'ERROR: File with chemical formula could not be opened: '//trim(adjustl(File_name))
+         write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+         call Save_error_details(Err, 2, Error_descript)    ! module "Objects""
+         ! Print main error message on the screen
+         print*, trim(adjustl(Error_descript))
+         return   ! nothing more to do here
+      endif
+
+      ! If file opened, read from it:
+      read(FN,*,IOSTAT=Reason) Chem
+      count_lines = 1
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(Chem))) !below
+
+      if (Err%Err) then
+         Error_descript = 'ERROR: Could not read chemical formula from file: '//trim(adjustl(File_name))
+         call Save_error_details(Err, 3, Error_descript)    ! module "Objects""
+         ! Print main error message on the screen
+         print*, trim(adjustl(Error_descript))
+         if (file_opened) close(FN)
+         return
+      endif
+
+      ! Check if the filename with atomic coordinates is also provided here:
+      ! 1) Check if it wasn't already read before:
+      if (LEN(trim(adjustl(Cell_filename))) == 0) then ! no name was given
+         read(FN,*,IOSTAT=Reason) File_name2
+         if (Reason == 0) then  ! read well
+            Cell_filename = trim(adjustl(File_name2))
+         else
+            if (numpar%verbose) print*, 'Chemical formula reading: No filename with coords provided'
+         endif
+      endif
+
+      call close_file('close', FN=FN)  ! module "Dealing_with_files"
+   else ! assume the text is the chemical formula, not the filename:
+      Chem = trim(adjustl(Chemical_file))
+   endif
+end subroutine get_chemical_formula
+
+
+
+
 subroutine define_photon_spectrum_params(laser, numpar)
    type(Pulse), dimension(:), intent(inout) :: laser ! Laser pulse parameters
    type(Numerics_param), intent(in) :: numpar  ! all numerical parameters
@@ -6905,7 +7019,7 @@ subroutine get_photon_parameters(read_line, numpar, laser, i, count_lines, File_
       inquire(file=trim(adjustl(spectrum_file)), opened=file_opened, number=FN)
       if (.not.file_opened) then
          Reason = 5556  ! to mark the error
-         print*, 'ERROR: File with photon spectrum could nto be opened: '//trim(adjustl(spectrum_file))
+         print*, 'ERROR: File with photon spectrum could not be opened: '//trim(adjustl(spectrum_file))
          goto 2121
       endif
 

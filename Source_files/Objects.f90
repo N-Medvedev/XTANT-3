@@ -1073,6 +1073,8 @@ type Numerics_param
    real(8) :: power_b
    ! Initial cell data file:
    character(200) :: Cell_filename
+   ! Chemical formula file:
+   character(200) :: Chemical_file
    ! Figures and plots:
    character(4) :: fig_extention
    character(4) :: vid_extention
