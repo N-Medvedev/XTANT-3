@@ -1,0 +1,4 @@
+DFTB_no_repulsion
+PATH
+DFTB\CdSe-O-H-C-N\S-S.skf					! DFTB parameterization
+7.0d0	0.1d0					! cut-off radius

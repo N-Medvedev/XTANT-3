@@ -1,0 +1,2 @@
+SiC
+mp-7631_SiC.POSCAR

@@ -1,0 +1,5 @@
+LJ
+SE
+1.8995100   2.4677900   ! epsylon[eV], sigma[A]
+2.0000d00   0.0300      ! short-range cutoff radius [A], cutoff width [A]
+5.4000d00   0.1000      ! long-range cutoff radius [A], cutoff width [A]

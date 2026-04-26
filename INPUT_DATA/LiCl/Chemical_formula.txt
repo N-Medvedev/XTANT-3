@@ -1,0 +1,2 @@
+LiCl
+LiCl.poscar

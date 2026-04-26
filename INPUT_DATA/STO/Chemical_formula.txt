@@ -1,0 +1,2 @@
+SrTiO3
+SrTiO3.poscar

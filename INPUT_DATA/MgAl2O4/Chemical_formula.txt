@@ -1,0 +1,2 @@
+MgAl2O4
+MgAl2O4.poscar
