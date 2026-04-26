@@ -42,7 +42,13 @@ Although we endeavour to ensure that the code XTANT and results delivered are co
 ## Tables with calculated electron-phonon coupling
 
 Two-tempreature model parameters: the tables with the calculated electron-ion (electron-phonon) coupling, electronic heat capacity, and electronic heat conductivity, at high electronic temepratures can be found here:
-https://github.com/N-Medvedev/XTANT-3_coupling_data
+[TTM-parameters](https://github.com/N-Medvedev/XTANT-3_coupling_data)
+
+## Tables with calculated electron mean free paths and photon attenuation lengths
+
+The calcualted electron mean free paths and photon attenuation lengths in various materials can be found here:
+[MFPs](https://github.com/N-Medvedev/Electron-mean-free-paths-and-photon-attenuation-lengths)
+
 
 ## How to cite
 
