@@ -1,0 +1,2 @@
+K1Mg3Al1Si3H2O12
+KMg3AlSi3(HO6)2.poscar

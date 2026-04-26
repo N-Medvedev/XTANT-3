@@ -1,0 +1,2 @@
+MoSi2
+Si2Mo.poscar

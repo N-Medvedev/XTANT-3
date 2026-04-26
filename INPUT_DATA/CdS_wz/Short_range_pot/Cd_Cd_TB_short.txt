@@ -1,0 +1,7 @@
+General
+
+Cut-off
+1.8d0	0.1d0		! d0 [A]; dd [A]
+
+Exp
+100.0d0	1.9d0	0.5d0

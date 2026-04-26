@@ -117,14 +117,19 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
       devide = .false.
       coun = 0
       leng = LEN(trim(adjustl(El_Name))) ! how many characters are in the name
-
+      if (i == 1) then ! no name given at all
+         write(error_message,*) 'Chemicalformula was not provided or read correctly (zero length)'
+         INFO = 4
+         goto 911
+      endif
       num = 0 ! how many different elements are in this compound
       El = ' ' ! start a new name
+
       do i = 1,leng ! compare all name character by character
          if (verify(trim(adjustl(El_Name(i:i))),trim(adjustl(numbers))) == 0) then ! it's an integer number
          ! it tells you how many of these atoms are in the compound
             if (i == 1) then ! it's the first symbol, it must be an element!
-               write(error_message,*) 'Symbol ', trim(adjustl(El_Name(i:i))), ' in the compound formula could not be identified'
+               write(error_message,*) 'Symbol "', trim(adjustl(El_Name(i:i))), '" in the compound formula could not be identified'
                INFO = 4
                goto 911
             endif

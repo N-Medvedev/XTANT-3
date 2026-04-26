@@ -1990,18 +1990,18 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
 9900   if (redo) then ! recalculate the MFPs:
             write(0,'(a,f8.1)') ' Obtaining photon IMFP for '//trim(adjustl(matter%Atoms(i)%Name))//', Ip=', matter%Atoms(i)%Ip(j)
             
-            select case (matter%Atoms(i)%TOCSph(j)) ! which inelastic cross section to use (BEB vs CDF):
+            select case (matter%Atoms(i)%TOCSph(j)) ! which inelastic cross section to use (EPICS vs CDF):
             case (1) ! CDF
                ! Printout the calculated attenuations:
                do k = 1, N_grid ! for all grid-points
                  Ele = matter%Atoms(i)%Ph_MFP(j)%E(k)
                  call Tot_Phot_IMFP(Ele, matter, numpar, i, j, L, Err=Err)
                  matter%Atoms(i)%Ph_MFP(j)%L(k) = L ! [A] MFP
-                 write(FN,'(f25.16,es25.16)') Ele, L
+                 write(FN,'(f25.16, es25.16)') Ele, L
                  call print_progress('Progress:',k,N_grid)    ! module "Little_subroutines"
                enddo
                print*, 'Photon IMFPs are saved into file:', trim(adjustl(File_name))
-            case default ! BEB
+            case default ! EPICS
                if (.not.allocated(Phot_abs_CS_VB)) then
                   allocate(Phot_abs_CS_VB(size(matter%Atoms(1)%Ph_MFP(1)%E)))
                endif

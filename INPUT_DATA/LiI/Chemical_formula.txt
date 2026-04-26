@@ -1,0 +1,2 @@
+LiI
+LiI.poscar

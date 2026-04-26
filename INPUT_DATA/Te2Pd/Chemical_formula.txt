@@ -1,0 +1,2 @@
+Te2Pd
+Te2Pd.poscar

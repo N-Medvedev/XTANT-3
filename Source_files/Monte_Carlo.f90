@@ -433,7 +433,7 @@ subroutine update_electron_data(MC, Scell, matter, numpar, j, hw, Eetot_cur, noe
       ! Find where this electron goes: high-energy part or low-energy part:
       if (MC%electrons(j)%E .LT. (Scell%E_bottom + numpar%E_cut)) then ! Electron joins VB:
          ! Corresponding change in the distribution function:
-         call d_distribution_between_levels(d_fe, Scell%Ei, MC%electrons(j)%E, Scell%E_bottom, Scell, min_df)  ! below
+         call d_distribution_between_levels(numpar, d_fe, Scell%Ei, MC%electrons(j)%E, Scell%E_bottom, Scell, min_df)  ! below
          Eetot_cur = Eetot_cur + MC%electrons(j)%E
          noeVB_cur = noeVB_cur + 1
          call electron_disappears(MC, j) ! one electron less
@@ -552,12 +552,13 @@ subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_c
       Eetot_cur = Eetot_cur + Ee
       noeVB_cur = noeVB_cur + 1
 !       print*, 'New_born_electron_n_hole:', Ee, (Scell%E_bottom + numpar%E_cut)
-      call d_distribution_between_levels(d_fe, Scell%Ei, Ee, Scell%E_bottom, Scell, min_df)  ! below
+      call d_distribution_between_levels(numpar, d_fe, Scell%Ei, Ee, Scell%E_bottom, Scell, min_df)  ! below
    endif
 end subroutine New_born_electron_n_hole
 
 
-subroutine d_distribution_between_levels(d_fe, Ei, Ee, E_bottom, Scell, min_df, delta_f)
+subroutine d_distribution_between_levels(numpar, d_fe, Ei, Ee, E_bottom, Scell, min_df, delta_f)
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:), intent(inout) :: d_fe ! change in the electron distribution function
    real(8), dimension(:), intent(in) :: Ei ! energy levels [eV]
    real(8), intent(in) :: Ee  ! [eV] incoming electron's energy
@@ -596,7 +597,7 @@ subroutine d_distribution_between_levels(d_fe, Ei, Ee, E_bottom, Scell, min_df, 
    endif
 
    if ( ((Scell%fe(j)+d_fe(j)*min_df) > 2.0d0) .or. (Scell%fe(j+1)+d_fe(j+1)*min_df) > 2.0d0 ) then
-      print*, 'Possible trouble d_distribution_between_levels:', j, Scell%fe(j), d_fe(j)*min_df, Scell%Ei(j), Scell%fe(j+1), d_fe(j+1)*min_df, Scell%Ei(j+1)
+      if (numpar%verbose) print*, 'Possible trouble d_distribution_between_levels:', j, Scell%fe(j), d_fe(j)*min_df, Scell%Ei(j), Scell%fe(j+1), d_fe(j+1)*min_df, Scell%Ei(j+1)
    endif
 
 end subroutine d_distribution_between_levels
