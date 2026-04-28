@@ -1330,12 +1330,29 @@ subroutine process_laser_parameters(Scell, matter, laser, numpar)
 
             !print*, j, laser(i)%Spectrum_abs(j), Dabsorbed, int_spectrum
          enddo ! j = 2, N_spectrum
+
+         !print*, 'process_laser_parameters:', int_spectrum_E, int_spectrum
+
          ! Average absorbed photon energy:
-         laser(i)%hw = int_spectrum_E/int_spectrum
+         if (int_spectrum > 1.0d-12) then
+            laser(i)%hw = int_spectrum_E/int_spectrum
+         else
+            laser(i)%hw = 0.0d0
+         endif
+
          ! Number of absorbed photons (for average photon energy):
-         laser(i)%Nph = laser(i)%Fabs/laser(i)%hw     ! number of photons absorbed in supercell
+         if (laser(i)%hw > 1.0d-12) then
+            laser(i)%Nph = laser(i)%Fabs/laser(i)%hw     ! number of photons absorbed in supercell
+         else
+            laser(i)%Nph = 0.0d0     ! number of photons absorbed in supercell
+         endif
+
          ! Renormalize integral spectrum:
-         renorm = laser(i)%Nph / int_spectrum
+         if (int_spectrum > 1.0d-12) then
+            renorm = laser(i)%Nph / int_spectrum
+         else
+            renorm = 0.0d0
+         endif
          laser(i)%Spectrum_int(:) = laser(i)%Spectrum_int(:) * renorm
          ! Renormalize the absorbed spectrum to get the correct absorbed dose:
          laser(i)%Spectrum_abs(:) = laser(i)%Spectrum_abs(:) * renorm    ! [1/atom]
