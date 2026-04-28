@@ -3466,7 +3466,286 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_lables, &
    character(*), dimension(:), allocatable, intent(in), optional :: col_labels2    ! array of column labels #2
    logical, intent(in), optional :: colors_inverted
    !------------
-   character(10000) :: col_nums_txt, col_lables_txt, col_nums_txt2, col_lables_txt2, linestyle_txt
+   character(100000) :: col_nums_txt, col_lables_txt, col_nums_txt2, col_lables_txt2, linestyle_txt
+   character(100) :: x_min_txt, x_max_txt, y_min_txt, y_max_txt, x_tics_text, y_tics_text, temp_txt
+   character(25) :: ch_var
+   character(3) :: font_size
+   logical :: tics_present, color_inverse, ls_present
+   integer :: i, N_cols
+   !------------
+
+   if (present(x_tics) .or. present(x_tics)) then
+      tics_present = .true.
+   else
+      tics_present = .false.
+   endif
+
+   if (present(colors_inverted)) then
+      color_inverse = colors_inverted
+   else ! use default
+      color_inverse = .false. ! by default, don't invert
+   endif
+
+   ! Total number of curves to be plotted:
+   N_cols = size(col_nums)
+   if (present(col_nums2)) N_cols = N_cols + size(col_nums2)   ! include the second one, if present
+
+
+   write(FN,'(a)') 'import pandas as pd'
+   write(FN,'(a)') 'import numpy as np'
+   write(FN,'(a)') 'import matplotlib.pyplot as plt'
+   write(FN,'(a)') 'import matplotlib.cm as cm'
+   if (tics_present) then
+      write(FN,'(a)') 'from matplotlib.ticker import MultipleLocator'
+   endif
+
+   write(FN,'(a)') '# Set the format:'
+   write(FN,'(a)') 'plt.xlabel("'// trim(adjustl(x_axis_label)) //'", fontsize=14)'
+   write(FN,'(a)') 'plt.ylabel("'// trim(adjustl(y_axis_label)) //'", fontsize=14)'
+
+   ! Set tics:
+   write(FN,'(a)') 'plt.xticks(fontsize=12)'
+   write(FN,'(a)') 'plt.yticks(fontsize=12)'
+   if (present(x_tics)) then
+      write(x_tics_text,'(f24.8)') x_tics
+      write(FN,'(a)') 'plt.gca().xaxis.set_major_locator(MultipleLocator('//trim(adjustl(x_tics_text))//'))'
+   endif
+   if (present(y_tics)) then
+      write(y_tics_text,'(f24.8)') y_tics
+      write(FN,'(a)') 'plt.gca().yaxis.set_major_locator(MultipleLocator('//trim(adjustl(y_tics_text))//'))'
+   endif
+
+   write(FN,'(a)') 'plt.grid(False)'
+   write(FN,'(a)') '# Set the axes:'
+
+
+   ! Process the data file:
+   write(FN,'(a)') '# Read the output file:'
+   write(FN,'(a)') 'df = pd.read_csv(r"'//trim(adjustl(Data_file))//'", '//"sep=r'\s+', "//'header=None, comment="#", skipinitialspace=True)'
+
+   ! Log-scale, if required:
+   if (present(set_x_log)) then
+      if (set_x_log) write(FN,'(a)') 'plt.xscale("log")'
+   endif
+   if (present(set_y_log)) then
+      if (set_y_log) write(FN,'(a)')'plt.yscale("log")'
+   endif
+
+   ! Prepare the plot:
+   write(FN,'(a)') '# Prepare the plot:'
+   ! Set a list of which columns to plot:
+   write(FN,'(a)', advance='no') 'columns_to_plot = ['
+   do i = 1, size(col_nums)
+      ! Column numbers:
+      if (i > 1) then   ! add come in between
+         write(FN,'(a)', advance='no') ', '
+      endif
+      write(temp_txt,'(i)') col_nums(i)
+      write(FN,'(a)', advance='no') trim(adjustl(temp_txt))
+   enddo
+   write(FN,'(a)') ']'
+
+   ! Column lables, if required:
+   if (allocated(col_lables)) then ! the legend is required
+      write(FN,'(a)', advance='no') 'labels = ['
+      do i = 1, size(col_lables)
+         ! Column titles:
+         if (i > 1) then   ! add come in between
+            write(FN,'(a)', advance='no') ', '
+         endif
+         write(FN,'(a)', advance='no') trim(adjustl(col_lables(i)))
+      enddo
+      write(FN,'(a)') ']'
+   endif
+
+   ! Colormap:
+   write(FN,'(a)') '# Create N distinct colors from a colormap'
+   write(FN,'(a)') 'N = len(columns_to_plot)'
+
+   if (N_cols <=10) then ! use standard pallette
+      if (color_inverse) then
+         write(FN,'(a)') 'colors = plt.cm.tab10(np.linspace(1, 0, 10))'
+      else ! default color range
+         write(FN,'(a)') 'colors = plt.cm.tab10(np.linspace(0, 1, 10))'
+      endif
+   elseif (N_cols <= 20) then ! use extended one
+      if (color_inverse) then
+         write(FN,'(a)') 'colors = plt.cm.tab20(np.linspace(1, 0, 20))'
+      else ! default color range
+         write(FN,'(a)') 'colors = plt.cm.tab20(np.linspace(0, 1, 20))'
+      endif
+   else     ! use combined one
+      if (color_inverse) then
+         write(FN,'(a)') 'colors = np.vstack([plt.cm.tab20(np.linspace(1, 0, 20)), plt.cm.tab20b(np.linspace(1, 0, 20))])'
+      else ! default color range
+         write(FN,'(a)') 'colors = np.vstack([plt.cm.tab20(np.linspace(0, 1, 20)), plt.cm.tab20b(np.linspace(0, 1, 20))])'
+      endif
+   endif
+
+   ! Line-styles:
+   write(FN,'(a)') '# Set line styles:'
+   write(FN,'(a)', advance='no') 'linestyles = '
+      ! Line styles, if required:
+   if (present(l_style)) then
+      write(FN,'(a)', advance='no') '['
+      do i = 1, size(col_nums)
+         ! Line styles:
+         if (i > 1) then   ! add come in between
+            write(FN,'(a)', advance='no') ', '
+         endif
+         write(FN,'(a)', advance='no') trim(adjustl(l_style(i)))
+      enddo
+      write(FN,'(a)') ']'
+   else ! use default - solid lines:
+      write(FN,'(a)', advance='no') '['
+      do i = 1, size(col_nums)
+         ! Line styles:
+         if (i > 1) then   ! add come in between
+            write(FN,'(a)', advance='no') ', '
+         endif
+         write(FN,'(a)', advance='no') '"-"'
+      enddo
+      write(FN,'(a)') ']'
+   endif
+
+   ! Make the plot:
+   write(FN,'(a)') 'for i, col in enumerate(columns_to_plot):'          ! cycle for all curves
+   write(FN,'(a)') '    color = colors[i % len(colors)]'                ! repeat colors
+   write(FN,'(a)') '    ls    = linestyles[i % len(linestyles)]'        ! repeat line styles
+   if (allocated(col_lables)) then
+      write(FN,'(a)') '    label = labels[i % len(labels)]'                ! labels
+   endif
+   write(FN,'(a)') '    plt.plot(df.iloc[:, 0], df.iloc[:, col],'       ! plot columns
+   write(FN,'(a)') '    color=color,'                                   ! set color
+   if (allocated(col_lables)) then                                      ! the legend is required
+      write(FN,'(a)') '    label=label,'
+   endif
+   write(FN,'(a)') '    linestyle=ls)'                                  ! line style
+
+
+   !-----------------------
+   ! If we want to add data from another file on the same plot:
+   if (present(Data_file2) .and. present(col_nums2) .and. present(col_labels2)) then !# Add a curve from the second file
+      write(FN,'(a)') '# Add a curve from the second file'
+      write(FN,'(a)') 'df2 = pd.read_csv(r"'//trim(adjustl(Data_file2))//'", '//"sep=r'\s+', "// &
+                        'header=None, comment="#", skipinitialspace=True)'
+
+      ! Set a list of which columns to plot:
+      write(FN,'(a)', advance='no') 'columns_to_plot2 = ['
+      do i = 1, size(col_nums2)
+         ! Column numbers:
+         if (i > 1) then   ! add come in between
+            write(FN,'(a)', advance='no') ', '
+         endif
+         write(temp_txt,'(i)') col_nums2(i)
+         write(FN,'(a)', advance='no') trim(adjustl(temp_txt))
+      enddo
+      write(FN,'(a)')  ']'
+
+      ! Column lables, if required:
+      if (allocated(col_labels2)) then ! the legend is required:
+         write(FN,'(a)', advance='no') 'labels2 = ['
+         do i = 1, size(col_labels2)
+            ! Column numbers:
+            if (i > 1) then   ! add come in between
+               write(FN,'(a)', advance='no') ', '
+            endif
+            write(FN,'(a)', advance='no') trim(adjustl(col_labels2(i)))
+         enddo
+         write(FN,'(a)') ']'
+      endif
+
+      write(FN,'(a)') '# Create second part of the plot:'
+      if (allocated(col_labels2)) then ! the legend is required:
+         write(FN,'(a)') 'for col, label in zip(columns_to_plot2, labels2):'
+         write(FN,'(a)') '    plt.plot(df2.iloc[:, 0], df2.iloc[:, col], label=label, linestyle="--")'
+      else ! No legend:
+         write(FN,'(a)') 'for col in columns_to_plot2:'
+         write(FN,'(a)') '    plt.plot(df2.iloc[:, 0], df2.iloc[:, col])'
+      endif
+   endif
+   !-----------------------
+
+
+   ! Now add the details to the plot:
+   ! Set axes:
+   if (present(x_min)) then
+      write(x_min_txt,'(f24.8)') x_min
+   else
+      write(x_min_txt,'(a)') 'None'
+   endif
+   if (present(x_max)) then
+      write(x_max_txt,'(f24.8)') x_max
+   else
+      write(x_max_txt,'(a)') 'None'
+   endif
+   if (present(y_min)) then
+      write(y_min_txt,'(f24.8)') y_min
+   else
+      write(y_min_txt,'(a)') 'None'
+   endif
+   if (present(y_max)) then
+      write(y_max_txt,'(f24.8)') y_max
+   else
+      write(y_max_txt,'(a)') 'None'
+   endif
+   write(FN,'(a)') 'plt.xlim('//trim(adjustl(x_min_txt))//','//trim(adjustl(x_max_txt))//')'
+   write(FN,'(a)') 'plt.ylim('//trim(adjustl(y_min_txt))//','//trim(adjustl(y_max_txt))//')'
+
+   write(FN,'(a)') 'plt.title("'//trim(adjustl(title))//'")'
+
+   ! Set the legend:
+   if (allocated(col_lables)) then ! the legend is required
+      ! Make appropriate font size:
+      if (N_cols < 8) then ! normal:
+         write(temp_txt,'(a)') 'fontsize=12'
+      elseif (N_cols < 17) then ! smaller
+         write(temp_txt,'(a)') 'fontsize=10'
+      elseif (N_cols < 21) then
+         write(temp_txt,'(a)') 'fontsize=9'
+      elseif (N_cols < 33) then
+         write(temp_txt,'(a)') 'fontsize=10, ncol=2'
+      elseif (N_cols < 41) then
+         write(temp_txt,'(a)') 'fontsize=9, ncol=2'
+      else
+         write(temp_txt,'(a)') 'fontsize=9, ncol=3'
+      endif
+      write(FN,'(a)') 'plt.legend(loc="'//trim(adjustl(legend_position))//'", '//trim(adjustl(temp_txt))//')'
+   endif
+
+
+   write(FN,'(a)') '# Save the plot in this format:'
+   write(FN,'(a)') 'plt.savefig("'//trim(adjustl(out_name))//'.'//trim(adjustl(out_format))//'", dpi=300, bbox_inches="tight")'
+end subroutine Create_python_plot
+
+
+
+subroutine Create_python_plot_OLD(FN, Data_file, col_nums, col_lables, &
+      x_axis_label, y_axis_label, title, legend_position, out_name, out_format, &
+      x_min, x_max, y_min, y_max, &
+      x_tics, y_tics, &
+      set_x_log, set_y_log, &
+      l_style, &
+      Data_file2, col_nums2, col_labels2, &
+      colors_inverted &
+      )
+   integer, intent(in) :: FN  ! file number (must be opened)
+   character(*), intent(in) :: Data_file  ! data file to plot data from
+   integer, dimension(:), intent(in) :: col_nums      ! array of columns to plot
+   character(*), dimension(:), allocatable, intent(in) :: col_lables    ! array of column labels
+   character(*), intent(in) :: x_axis_label, y_axis_label, title
+   character(*), intent(in) :: out_name, out_format   ! plot file name and extension
+   character(*), intent(in) :: legend_position  ! e.g. 'upper left', 'right bottom' etc.
+   real(8), intent(in), optional :: x_min, x_max, y_min, y_max
+   real(8), intent(in), optional :: x_tics, y_tics
+   logical, intent(in), optional :: set_x_log, set_y_log
+   character(*), dimension(:), allocatable, intent(in), optional :: l_style    ! array of line-styles
+   character(*), intent(in), optional :: Data_file2   ! data file #2 to plot data from
+   integer, dimension(:), intent(in), optional :: col_nums2      ! array of columns to plot #2
+   character(*), dimension(:), allocatable, intent(in), optional :: col_labels2    ! array of column labels #2
+   logical, intent(in), optional :: colors_inverted
+   !------------
+   character(100000) :: col_nums_txt, col_lables_txt, col_nums_txt2, col_lables_txt2, linestyle_txt
    character(100) :: x_min_txt, x_max_txt, y_min_txt, y_max_txt, x_tics_text, y_tics_text, temp_txt
    character(25) :: ch_var
    character(3) :: font_size
@@ -3723,8 +4002,7 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_lables, &
 
    write(FN,'(a)') '# Save the plot in this format:'
    write(FN,'(a)') 'plt.savefig("'//trim(adjustl(out_name))//'.'//trim(adjustl(out_format))//'", dpi=300, bbox_inches="tight")'
-end subroutine Create_python_plot
-
+end subroutine Create_python_plot_OLD
 
 
 
