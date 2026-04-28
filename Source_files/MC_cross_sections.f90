@@ -2058,7 +2058,7 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
                      do k = 1, N_grid ! for all grid-points
                         Ele = matter%Atoms(i)%Ph_MFP(j)%E(k)
                         write(FN,'(f25.16,es25.16)') Ele, matter%Atoms(i)%Ph_MFP(j)%L(k)
-                        write(*,'(f25.16, es25.16)') Ele, matter%Atoms(i)%Ph_MFP(j)%L(k)
+                        !write(*,'(f25.16, es25.16)') Ele, matter%Atoms(i)%Ph_MFP(j)%L(k)
                      enddo
                      print*, 'Photon IMFPs are saved into file:', trim(adjustl(File_name))
                      inquire(file=trim(adjustl(File_name)),opened=file_opened)
