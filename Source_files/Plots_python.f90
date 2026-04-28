@@ -3466,7 +3466,6 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_lables, &
    character(*), dimension(:), allocatable, intent(in), optional :: col_labels2    ! array of column labels #2
    logical, intent(in), optional :: colors_inverted
    !------------
-   character(100000) :: col_nums_txt, col_lables_txt, col_nums_txt2, col_lables_txt2, linestyle_txt
    character(100) :: x_min_txt, x_max_txt, y_min_txt, y_max_txt, x_tics_text, y_tics_text, temp_txt
    character(25) :: ch_var
    character(3) :: font_size

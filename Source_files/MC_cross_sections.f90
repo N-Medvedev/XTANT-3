@@ -1871,12 +1871,11 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
    else
       N_grid = size(matter%Atoms(1)%Ph_MFP(1)%E)
    endif
-   if (.not.allocated(matter%Atoms(1)%Ph_MFP(1)%L)) allocate(matter%Atoms(1)%Ph_MFP(1)%L(N_grid))
+   if (.not.allocated(matter%Atoms(1)%Ph_MFP(1)%L)) allocate(matter%Atoms(1)%Ph_MFP(1)%L(N_grid), source = 0.0d0)
    ! Total mean free paths:
-   if (.not.allocated(matter%Ph_MFP_tot%L)) allocate(matter%Ph_MFP_tot%L(N_grid))
    if (.not.allocated(matter%Ph_MFP_tot%E)) allocate(matter%Ph_MFP_tot%E(N_grid))
    matter%Ph_MFP_tot%E = matter%Atoms(1)%Ph_MFP(1)%E
-   matter%Ph_MFP_tot%L = 0.0d0
+   if (.not.allocated(matter%Ph_MFP_tot%L)) allocate(matter%Ph_MFP_tot%L(N_grid), source = 0.0d0)
 
 !    ATOMS:do i = 1, Nat ! for all atoms
    ATOMS:do i = Nat, 1, -1   ! for all atoms, counting backwards (to reach the VB the last)
@@ -1940,14 +1939,14 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
          !redo = .false.
          redo = numpar%redo_MFP  ! user defined if MFP need to be recalculated
 
-
-         if ((i .NE. 1) .or. (j .NE. 1)) then
-            if (.not.allocated(matter%Atoms(i)%Ph_MFP(j)%E)) allocate(matter%Atoms(i)%Ph_MFP(j)%E(N_grid))
+         if (.not.allocated(matter%Atoms(i)%Ph_MFP(j)%E)) then
+            allocate(matter%Atoms(i)%Ph_MFP(j)%E(N_grid))
+         endif
+         if ((i /= 1) .or. (j /= 1)) then   ! for all but the first shell, it is still undefined
             matter%Atoms(i)%Ph_MFP(j)%E = matter%Atoms(1)%Ph_MFP(1)%E
-            if (.not.allocated(matter%Atoms(i)%Ph_MFP(j)%L)) then
-               allocate(matter%Atoms(i)%Ph_MFP(j)%L(N_grid))
-               matter%Atoms(i)%Ph_MFP(j)%L = 0.0d0  ! just to start
-            endif
+         endif
+         if (.not.allocated(matter%Atoms(i)%Ph_MFP(j)%L)) then
+            allocate(matter%Atoms(i)%Ph_MFP(j)%L(N_grid), source = 0.0d0)   ! just to start
          endif
 
          write(chtemp,'(i6)') INT(matter%Atoms(i)%Ip(j))
@@ -1999,6 +1998,7 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
                  matter%Atoms(i)%Ph_MFP(j)%L(k) = L ! [A] MFP
                  write(FN,'(f25.16, es25.16)') Ele, L
                  call print_progress('Progress:',k,N_grid)    ! module "Little_subroutines"
+                 !write(*,'(f25.16, es25.16)') Ele, L
                enddo
                print*, 'Photon IMFPs are saved into file:', trim(adjustl(File_name))
             case default ! EPICS
@@ -2024,11 +2024,11 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
                            matter%Atoms(i)%Ph_MFP(j)%L(:) = Phot_abs_CS_VB(:) ! IMFP [A]
                         endwhere
                      enddo ! k
-                     
+
                       ! If it is the last shell of last atom, we know all VB now, printout the data:
 !                      if ( (i == Nat) .and. (j == Nshl) ) then
-                        write(chtemp,'(i6)') INT(matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)))
-                        if (j > 1) then    ! check if it's a degenerate level:
+                       write(chtemp,'(i6)') INT(matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)))
+                       if (j > 1) then    ! check if it's a degenerate level:
                            if (INT(matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)-1)) == INT(matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)))) then
                               write(chtemp,'(i6)') INT(matter%Atoms(1)%Ip(size(matter%Atoms(1)%Ip)) - 0.5)    ! artificially shift it a little bit to make it not exactly degenerate
                            endif
@@ -2039,6 +2039,7 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
                        do k = 1, N_grid ! for all grid-points
                           Ele = matter%Atoms(i)%Ph_MFP(j)%E(k)
                           write(FN,'(f25.16,es25.16)') Ele, matter%Atoms(i)%Ph_MFP(j)%L(k)
+                          !write(*,'(f25.16, es25.16)') Ele, matter%Atoms(i)%Ph_MFP(j)%L(k)
                        enddo
                        print*, 'Photon IMFPs are saved into file:', trim(adjustl(File_name))
                        inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -2057,6 +2058,7 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
                      do k = 1, N_grid ! for all grid-points
                         Ele = matter%Atoms(i)%Ph_MFP(j)%E(k)
                         write(FN,'(f25.16,es25.16)') Ele, matter%Atoms(i)%Ph_MFP(j)%L(k)
+                        write(*,'(f25.16, es25.16)') Ele, matter%Atoms(i)%Ph_MFP(j)%L(k)
                      enddo
                      print*, 'Photon IMFPs are saved into file:', trim(adjustl(File_name))
                      inquire(file=trim(adjustl(File_name)),opened=file_opened)

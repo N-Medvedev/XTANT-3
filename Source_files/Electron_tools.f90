@@ -202,8 +202,13 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
 
    Egap_old = Scell%E_gap  ! store old gap to use below for MC cross section
 
-   Scell%E_gap = ABS(wr(i+1) - wr(i))	! bandgap [eV]
-   Scell%E_bottom = wr(i+1)	! bottom of the CB [eV]
+   if (i < size(wr)) then
+      Scell%E_gap = ABS(wr(i+1) - wr(i))	! bandgap [eV]
+      Scell%E_bottom = wr(i+1)	! bottom of the CB [eV]
+   else ! undefined, so set the closest guess
+      Scell%E_gap = 0.0d0
+      Scell%E_bottom = wr(i)
+   endif
    ! If top energy level is excluded (in parameterization, or just too high due to convergence issues)
    j = siz  ! start from the last one
    Scell%E_top = wr(j)		! [eV] current top of the (meaningful) conduction band
@@ -2615,14 +2620,18 @@ subroutine Electron_Fixed_Te(wrD, Netot, mu, Te, norm_fe, i_start, i_end) ! in c
    real(8) :: a, b, Ncur
    integer :: Nsiz, i, i_low, i_high
 
+   Nsiz = size(wrD)
+
    if (present(i_start)) then
       i_low = i_start
+      if (i_low > Nsiz) i_low = Nsiz
    else  ! default, start from 1
       i_low = 1
    endif
-   Nsiz = size(wrD)
+
    if (present(i_end)) then
       i_high = i_end
+      if (i_high > Nsiz) i_high = Nsiz
    else  ! default, end at the end
       i_high = Nsiz
    endif
