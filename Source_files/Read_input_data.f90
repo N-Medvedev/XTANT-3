@@ -5187,6 +5187,9 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
          ! Try reading just the first flag (legacy support: single variable)
          read(read_line,*,IOSTAT=Reason) numpar%fig_extention
          numpar%plot_engine = 'gnu'    ! revert to default
+         if (Reason /= 0) then
+            numpar%fig_extention = 'png'  ! revert to default
+         endif
       endif
    endif
 
@@ -5207,6 +5210,9 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    case ('PDF', 'PDf', 'Pdf', 'pdf')
       numpar%fig_extention = 'pdf'
       numpar%ind_fig_extention = 5
+   case ('NO', 'No', 'no')
+      numpar%fig_extention = 'no'
+      numpar%plot_engine = 'no'
    case default ! eps
       numpar%fig_extention = 'eps'
       numpar%ind_fig_extention = 1
@@ -5215,6 +5221,8 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    select case ( trim(adjustl(numpar%plot_engine)) )
    case ('PYTHON', 'Python', 'python', 'PY', 'Py', 'py')
       numpar%plot_engine = 'py'
+   case ('NO', 'No', 'no')    ! no plotting requested
+      numpar%plot_engine = 'no'
    case default   ! use gnuplot by default to support legacy format:
       numpar%plot_engine = 'gnu'
    end select

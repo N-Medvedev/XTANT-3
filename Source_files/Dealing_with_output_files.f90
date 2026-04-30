@@ -55,7 +55,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 28.04.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 30.04.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -322,10 +322,12 @@ subroutine printout_laser_spectrum(laser, numpar, matter)
          ! Plot the data:
          !call Plot_laser_spectrum_gnuplot(numpar, laser, file_spectrum, i_pulse) ! module "Plots_gnuplot"
          select case (g_numpar%plot_engine)    ! which engine to use for plots
-         case default ! Gnuplot
+         case default   ! Gnuplot
             call Plot_laser_spectrum_gnuplot(numpar, laser, file_spectrum, i_pulse) ! module "Plots_gnuplot"
-         case ('py') ! Python
+         case ('py')    ! Python
             call Plot_laser_spectrum_python(numpar, laser, file_spectrum, i_pulse) ! module "Plots_python"
+         case ('no')    ! no plots required
+            ! no plots required
          end select
       endif ! (allocated(laser(i_pulse)%Spectrum))
    enddo ! i_pulse
@@ -499,6 +501,8 @@ subroutine printout_MFP_file(numpar, matter, Scell)
          call Plot_electron_MFP_python(numpar, matter, file_electron_IMFP, file_electron_EMFP)     ! module "Plots_python"
          ! 2) Photon attenuation lengths gnuplotting:
          call Plot_photon_MFP_python(numpar, matter, file_photon_MFP)     ! module "Plots_python"
+      case ('no') ! no plots required
+         ! no plots required
       end select
    endif
 end subroutine printout_MFP_file
@@ -2630,6 +2634,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             'OUTPUT_diffraction_peaks_DW.dat', &
             'OUTPUT_Debye_temperature_from_DW.dat', &
             'OUTPUT_testmode_data.dat')  ! module "Plots_python"
+      case ('no') ! no plots required
+            ! no plots required
       end select
 
    ! clean up:

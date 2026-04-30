@@ -212,6 +212,8 @@ if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does 
       call collect_gnuplots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)), skip_execution=.true.) ! module "Gnuplotting"
    case ('py') ! Python
       call collect_python_plots(trim(adjustl(g_numpar%path_sep)), trim(adjustl(g_numpar%output_path)), skip_execution=.true.) ! module "Plots_python"
+   case ('no')
+      ! Don't create any plots
    end select
 endif
 
@@ -534,6 +536,9 @@ if (.not.g_Err%Err) then
       case ('py') ! Python
          call execute_all_pyplots(g_numpar, trim(adjustl(g_numpar%output_path))//trim(adjustl(g_numpar%path_sep))) ! module "Plots_python"
          if (g_numpar%verbose) call print_time_step('Python scripts executed', msec=.true., MPI_param=g_numpar%MPI_param)
+      case ('no')
+         ! No plots to be created
+         if (g_numpar%verbose) call print_time_step('No scripts for plotting required', msec=.true., MPI_param=g_numpar%MPI_param)
       end select
 
    endif
