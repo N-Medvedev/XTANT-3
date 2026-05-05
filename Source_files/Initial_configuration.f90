@@ -376,12 +376,18 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             Ta = Ta*2.0d0/(3.0d0*real(Natoms) - 6.0d0) ! [eV] proper normalization
             Ta = Ta*g_kb	! [eV] -> [K]
 
-            if (max(Ta,Scell(i)%Ta)/min(Ta+1d-6,Scell(i)%Ta+1d-6) > 1.5d0) then ! if given temperature is too different from the initial one
-               numpar%vel_from_file = .false. ! velociteis read from file overwritten by set distribution
-               ! Set initial velocities according to the given input temperature:
-               call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
-            endif
-
+            if (Scell(i)%Ta < 0.0d0) then ! use the SAVE-files temperature
+               Scell(i)%Ta = Ta
+               Scell(i)%TaeV = Scell(i)%Ta/g_kb	! [K] -> [eV]
+            else ! there may be the need to reset the tempreature:
+               ! if given temperature is too different from the initial one:
+               if (max(Ta,Scell(i)%Ta)/min(Ta+1d-6,Scell(i)%Ta+1d-6) > 1.5d0) then
+                  if (numpar%verbose) print*, 'The given tempreature is too different from velosities, resampling velosities to match Ta'
+                  numpar%vel_from_file = .false. ! velociteis read from file overwritten by set distribution
+                  ! Set initial velocities according to the given input temperature:
+                  call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
+               endif
+            endif ! (Scell(i)%Ta < 0.0d0)
 
          !----------------------------
          elseif (file_exist) then SAVED_ATOMS    ! read from SAVE file with atomic coordinates:
@@ -406,12 +412,18 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             Ta = Ta*2.0d0/(3.0d0*dble(Natoms) - 6.0d0) ! [eV] proper normalization
             Ta = Ta*g_kb	! [eV] -> [K]
 
-            if (max(Ta,Scell(i)%Ta)/min(Ta+1d-6,Scell(i)%Ta+1d-6) > 1.5d0) then ! if given temperature is too different from the initial one
-               numpar%vel_from_file = .false. ! velociteis read from file overwritten by set distribution
-               ! Set initial velocities according to the given input temperature:
-               call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate)  ! below
-            endif
-
+            if (Scell(i)%Ta < 0.0d0) then ! use the SAVE-files temperature
+               Scell(i)%Ta = Ta
+               Scell(i)%TaeV = Scell(i)%Ta/g_kb	! [K] -> [eV]
+            else ! there may be the need to reset the tempreature:
+               ! if given temperature is too different from the initial one:
+               if (max(Ta,Scell(i)%Ta)/min(Ta+1d-6,Scell(i)%Ta+1d-6) > 1.5d0) then
+                  if (numpar%verbose) print*, 'The given tempreature is too different from velosities, resampling velosities to match Ta'
+                  numpar%vel_from_file = .false. ! velociteis read from file overwritten by set distribution
+                  ! Set initial velocities according to the given input temperature:
+                  call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate)  ! below
+               endif
+            endif ! (Scell(i)%Ta < 0.0d0)
 
          !----------------------------
          elseif (XYZ_file_exists) then SAVED_ATOMS ! XYZ file contains atomic coordinates
@@ -440,6 +452,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             endif
 
             ! 3) Set initial velocities:
+            ! Ensure positive temperature:
+            Scell(i)%Ta = abs(Scell(i)%Ta)
+            Scell(i)%TaeV = abs(Scell(i)%TaeV)
             call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
 
             inquire(file=trim(adjustl(File_name_XYZ)),opened=file_opened)
@@ -473,6 +488,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             endif
 
             ! 3) Set initial velocities:
+            ! Ensure positive temperature:
+            Scell(i)%Ta = abs(Scell(i)%Ta)
+            Scell(i)%TaeV = abs(Scell(i)%TaeV)
             call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
 
             inquire(file=trim(adjustl(File_name_POSCAR)),opened=file_opened)
@@ -505,6 +523,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             endif
 
             ! 3) Set initial velocities:
+            ! Ensure positive temperature:
+            Scell(i)%Ta = abs(Scell(i)%Ta)
+            Scell(i)%TaeV = abs(Scell(i)%TaeV)
             call set_initial_velocities(matter, Scell, i, Scell(i)%MDatoms, numpar, numpar%allow_rotate) ! below
 
             inquire(file=trim(adjustl(File_name_mol2)), opened=file_opened)
@@ -534,6 +555,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
                call get_initial_atomic_coord(FN2, File_name2, Scell, i, 2, matter, numpar, Err) ! below
                ! Set initial velocities:
+               ! Ensure positive temperature:
+               Scell(i)%Ta = abs(Scell(i)%Ta)
+               Scell(i)%TaeV = abs(Scell(i)%TaeV)
                call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
 
             else INPUT_ATOMS

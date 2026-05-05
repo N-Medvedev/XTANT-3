@@ -6561,8 +6561,8 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       read(read_line,*,IOSTAT=Reason) Scell(i)%Ta
       call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
       if (Err%Err) goto 3417
-      ! Consistency check: no negative kinetic temperatures:
-      if (Scell(i)%Ta < 0.0d0) Scell(i)%Ta = 0.0d0
+      ! Consistency check: no negative kinetic temperatures (NOT HERE, IN THE "Initial_configuration"):
+      !if (Scell(i)%Ta < 0.0d0) Scell(i)%Ta = 0.0d0
       Scell(i)%TaeV = Scell(i)%Ta/g_kb ! [eV] atomic temperature
       ! Printout warning if atomic temperature is too high:
       if (Scell(i)%TaeV >= 1.0) then ! Ta > 1 eV
