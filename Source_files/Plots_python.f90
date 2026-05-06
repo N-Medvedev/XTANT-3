@@ -4175,7 +4175,7 @@ subroutine collect_python_plots(path_sep, out_path, skip_execution)
    ! Open the files with gnuplot script names:
    open(NEWUNIT=FN, file=trim(adjustl(File_name)), iostat=open_status)
    if ( open_status /= 0 ) then
-      print *, 'Could not open ',trim(adjustl(File_name)),' for py-plotting.', ' Unit = ', FN
+      print *, 'Could not open ',trim(adjustl(File_name)),' for py-plotting. Unit = ', FN
    endif
 
    ! Find out how many there are:

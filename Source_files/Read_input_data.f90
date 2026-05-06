@@ -125,6 +125,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    Scell(1)%Te = 300.0d0 ! initial electron temperature [K]
    Scell(1)%TeeV = Scell(1)%Te/g_kb ! [eV] electron temperature
    Scell(1)%Ta = 300.0d0 ! initial atomic temperature [K]
+   Scell(1)%Ta_init = 300.0d0 ! Saved initial atomic temperature [K]
    Scell(1)%TaeV = Scell(1)%Ta/g_kb ! [eV] atomic temperature
    Scell(1)%Ta_var(:) = 0.0d0    ! various definitions of temperatures
    Scell(1)%Ta_r_var(:) = 0.0d0  ! projections of temperatures
@@ -168,6 +169,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%print_MFP = .false.    ! no need to printout mean free paths by default
    numpar%print_Ta = .false.  ! no need in various atomic temperature definitions
    numpar%ind_starting_V = 2  ! by default, set Maxwellian starting velocities
+   numpar%ind_exact_Ta = 0    ! by default, use simple sampling of atomic velocities
    numpar%vel_from_file = .false.   ! velosities are not read from file
    numpar%basis_size_ind = 0    ! TB basis set default (0=s, 1=sp3, 2=sp3d5, 3=sp3s*, 4=sp3d5s*)
    numpar%N_basis_size = 0      ! TB basis set size
@@ -6561,9 +6563,10 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       read(read_line,*,IOSTAT=Reason) Scell(i)%Ta
       call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
       if (Err%Err) goto 3417
-      ! Consistency check: no negative kinetic temperatures:
-      if (Scell(i)%Ta < 0.0d0) Scell(i)%Ta = 0.0d0
-      Scell(i)%TaeV = Scell(i)%Ta/g_kb ! [eV] atomic temperature
+      ! Consistency check: no negative kinetic temperatures (NOT HERE, IN THE "Initial_configuration"):
+      !if (Scell(i)%Ta < 0.0d0) Scell(i)%Ta = 0.0d0
+      Scell(i)%TaeV = Scell(i)%Ta/g_kb    ! [eV] atomic temperature
+      Scell(i)%Ta_init = Scell(i)%Ta      ! [K] save the desired atomic temperature for later
       ! Printout warning if atomic temperature is too high:
       if (Scell(i)%TaeV >= 1.0) then ! Ta > 1 eV
          write(text,'(f16.3)',IOSTAT=Reason) Scell(i)%TaeV
@@ -7423,6 +7426,11 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
          numpar%power_b = N
       endif
       !print*, numpar%power_b
+
+   !----------------------------------
+   case ('Exact_Ta', 'exact_Ta', 'exact_ta', 'EXACT_TA')
+      ! recalcaulte mean free paths:
+      numpar%ind_exact_Ta = 1
 
    !----------------------------------
    case ('print_Ta', 'Print_Ta', 'PRINT_TA', 'PRINT_Ta')
