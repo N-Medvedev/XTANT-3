@@ -367,7 +367,6 @@ subroutine Random_RN(T, Mass, Vx, Vy, Vz) ! uniform distribution of atomic velos
    real(8), intent(out) :: Vx, Vy, Vz ! velocities [A/fs]
    real(8) V_temp, xr
    V_temp = sqrt(2.0d0*3.0d0*T*g_e/Mass)*1d10/1d15 ! [A/fs] average velocity corresponding to the given temperature
-   !V_temp = 1.2d0*sqrt(2.0d0*3.0d0*Scell(NSC)%TaeV*g_e/matter%Atoms(Scell(NSC)%MDatoms(i)%KOA)%Ma)*1d10/1d15 ! [A/fs] factor of 1.2 is to account for energy of supercell
    call random_number(xr)
    Vx = V_temp*(-1.0d0 + 2.0d0*xr) ! [A/fs] atomic velocity X
    call random_number(xr)

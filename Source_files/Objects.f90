@@ -689,6 +689,7 @@ type Super_cell
    ! Other data:
    real(8) :: Ne_CB	! current number of electrons in CB only (above the band gap)
    real(8) :: Te, Ta, Tconf, Tconf2   ! [K] temperature of electrons, kinetic temperature of atoms, (configurational Ta)
+   real(8) :: Ta_init   ! desired initial atomic temperature [K] (as defined in the input file)
    real(8) :: Ta_var(8)     ! [K] various definition of temperature: kinetic, configurational, etc.
    real(8) :: Ta_r_var(6)   ! [K] dimension-resolved temperatures along X,Y,Z
    real(8) :: Ta_conf_run_average(10)     ! [K] laset 10 points of Ta_config for running average
@@ -976,6 +977,7 @@ type Numerics_param
    logical :: print_Ta ! flag for various atomic temperature definitions
    integer :: ind_starting_V  ! index to set starting velocity distribution: 1=linear; 2=Maxwellian
    logical :: vel_from_file   ! index to mark whether velocities were read from a file or set
+   integer :: ind_exact_Ta    ! index for the method of setting atomic temperature: 0=simple sampling; 1=sampling+rescaling to exact Ta
    !-----------------
    ! EPICS data: EADL, EPDL, EEDL:
    character(200) :: EADL_file, EPDL_file, EEDL_file
