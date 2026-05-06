@@ -2595,7 +2595,7 @@ subroutine Python_plot_displacements_partial(matter, numpar, file_MSD, t0, t_las
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -2657,7 +2657,7 @@ subroutine Python_plot_displacements(matter, numpar, file_MSD, t0, t_last, scrip
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -2729,7 +2729,7 @@ subroutine Python_plot_MSD(matter, numpar, file_MSD, t0, t_last, script_name, MS
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_lables, linestyle)
@@ -4196,15 +4196,12 @@ subroutine collect_python_plots(path_sep, out_path, skip_execution)
 
    ! Make the master py-script:
    write(FN,'(a)') 'import subprocess'
+   write(FN,'(a)') 'import sys'
 
    ! Collect all the py-names into this file:
    do i = 1,N_f
       if (trim(adjustl(All_files(i))) /= trim(adjustl(Py_plot_all_files))) then ! exclude the file itself
-         if (trim(adjustl(path_sep)) == '\') then	! if it is Windows
-            write(FN,'(a)') 'subprocess.run(["python", "'//trim(adjustl(All_files(i)))//'"])'
-         else ! it is linux
-            write(FN,'(a)') 'subprocess.run(["python3", "'//trim(adjustl(All_files(i)))//'"])'
-         endif
+         write(FN,'(a)') 'subprocess.run([sys.executable, "'//trim(adjustl(All_files(i)))//'"])'
       endif
    enddo
    close (FN)
