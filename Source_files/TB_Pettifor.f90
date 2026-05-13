@@ -200,9 +200,9 @@ subroutine dHij_s(TB_Hamil, atoms, Scell, NSC, numpar, Aij, M_x1, M_xrr) ! attra
    if (.not.allocated(dHijy_s_all)) allocate(dHijy_s_all(nat4,nat4))
    if (.not.allocated(dHijz_s_all)) allocate(dHijz_s_all(nat4,nat4))   
 !$omp do
-   do k = 1,nat ! initial conditions for atoms:
+   do k = 1,nat ! for all atoms:
 !       my_id = OMP_GET_THREAD_NUM() ! identify which thread it is
-!       num_th = OMP_GET_NUM_THREADS() ! get nmber of threads available
+!       num_th = OMP_GET_NUM_THREADS() ! get number of threads available
       
       Scell(NSC)%MDatoms(k)%forces%att(:) = 0.0d0
       call dHamil_tot_s(dHijx_s_all, dHijy_s_all, dHijz_s_all, TB_Hamil, Scell, NSC, numpar, k, M_x1, M_xrr, M_Vs, M_dVs) ! see below

@@ -940,6 +940,50 @@ type Partial_Nearest_Neighbors
 end type Partial_Nearest_Neighbors
 
 
+type Freeze_mask
+   ! Marker: is there anything to freeze:
+   logical :: do_freeze = .false.   ! no by default
+   ! Absolute coordinates, below or above which atoms should be frozen:
+   real(8) :: x_min = -1.0d20   ! by default, no freezing
+   real(8) :: x_max = 1.0d20    ! by default, no freezing
+   real(8) :: y_min = -1.0d20   ! by default, no freezing
+   real(8) :: y_max = 1.0d20    ! by default, no freezing
+   real(8) :: z_min = -1.0d20   ! by default, no freezing
+   real(8) :: z_max = 1.0d20    ! by default, no freezing
+
+   ! Marker: is there anything to freeze by s-coordinate:
+   logical :: do_freeze_s = .false.   ! no by default
+   ! Relative coordinates, below or above which atoms should be frozen:
+   real(8) :: sx_min = -1.0d0   ! by default, no freezing
+   real(8) :: sx_max = 2.0d0    ! by default, no freezing
+   real(8) :: sy_min = -1.0d0   ! by default, no freezing
+   real(8) :: sy_max = 2.0d0    ! by default, no freezing
+   real(8) :: sz_min = -1.0d0   ! by default, no freezing
+   real(8) :: sz_max = 2.0d0    ! by default, no freezing
+
+   ! Types of atoms to be frozen:
+   integer :: KOA = 0    ! index in the chemical formula
+
+   ! Marker: is there anything to freeze by radius:
+   logical :: do_freeze_r = .false.   ! no by default
+   ! Absolute radius, below or above which atoms should be frozen:
+   real(8), dimension(3) :: r_center = 0.0d0  ! by default, counting from the origin
+   real(8) :: r_min = -1.0d0    ! by default, no freezing
+   real(8) :: r_max = 1.0d20    ! by default, no freezing
+end type Freeze_mask
+
+
+type Split_cohesive
+   logical :: do_split = .false. ! by default, don't do split-target cohesive analysis
+   real(8) :: x_split = -1.0d20  ! [A] coordinate of splitting
+   real(8) :: y_split = -1.0d20  ! [A] coordinate of splitting
+   real(8) :: z_split = -1.0d20  ! [A] coordinate of splitting
+   real(8) :: sx_split = -1.0d0  ! [supercell] relative coordinate of splitting
+   real(8) :: sy_split = -1.0d0  ! [supercell] relative coordinate of splitting
+   real(8) :: sz_split = -1.0d0  ! [supercell] relative coordinate of splitting
+end type Split_cohesive
+
+
 type Numerics_param
    ! MPI parameters:
    type(Used_MPI_parameters) :: MPI_param
@@ -1058,6 +1102,9 @@ type Numerics_param
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate
    logical :: save_fe_grid, save_fe_orb, save_fa, save_testmode
    logical :: save_hw_spectrum
+   type(Split_cohesive) :: Split_target ! parameters of split-target analysis
+   ! Masks for partial atoms freezing:
+   type(Freeze_mask), dimension(:), allocatable :: Freeze_filter  ! multiple masks for freezing atoms allowed
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
    logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS, do_kappa_dyn
