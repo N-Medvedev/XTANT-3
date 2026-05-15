@@ -1,0 +1,6 @@
+https://doi.org/10.1016/j.matlet.2026.140498
+
+
+Materials Letters, 413 (2026) 140498
+"Density functional tight binding parametrization of CoSn toward high-throughput transport simulation"
+Takahisa Tanaka
