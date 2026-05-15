@@ -116,9 +116,9 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    matter%Chem = '' ! chemical formula of the compound
    if (.not.allocated(Scell)) allocate(Scell(1)) ! So far we only use 1 supercell
    numpar%numpar_in_input = .false.    ! assume separate file with the numerical parameters
-   numpar%change_size_min = 0.7d0   ! default starting point for vary_size
-   numpar%change_size_max = 2.1d0   ! default ending point for vary_size
-   numpar%change_size_step = 300    ! default number of points for vary_size
+   numpar%change_size_min = 0.75d0   ! default starting point for vary_size
+   numpar%change_size_max = 1.75d0   ! default ending point for vary_size
+   numpar%change_size_step = 200    ! default number of points for vary_size
 
    numpar%lin_scal = 0   ! do not use linear scaling TB (NOT READY)
 
@@ -4830,17 +4830,26 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
 
-   ! Include (1) or exclude (0) atopmic motion:
+   ! Include (1) or exclude (0) atomic motion, or use a mask to partially freeze them:
    read(FN, '(a)', IOSTAT=Reason) read_line
-   read(read_line,*,IOSTAT=Reason) N
-   call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
+   ! If it is a filename:
+   call read_freeze_parameters(read_line, numpar, numpar%Freeze_filter, Err)     ! below
+   ! If it is a parameter:
+   if (.not. allocated(numpar%Freeze_filter)) then ! we didn't read a filename, assume it was a single parameter:
+      read(read_line,*,IOSTAT=Reason) N
+      call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
-   if (Err%Err) goto 3418
-   if (N .EQ. 1) then
-      numpar%do_atoms = .true.	! Atoms move
-   else
-      numpar%do_atoms = .false.	! Frozen atoms
-   endif
+      if (Err%Err) goto 3418
+      if (N .EQ. 1) then
+         numpar%do_atoms = .true.	! Atoms move
+      else
+         numpar%do_atoms = .false.	! Frozen atoms
+      endif
+   else     ! by default:
+      numpar%do_atoms = .true.      ! Atoms move
+   endif ! (.not. allocated(numpar%Freeze_filter))
+   !print*, trim(adjustl(read_line)), numpar%do_atoms
+   !pause '(.not. allocated(numpar%Freeze_filter))'
 
    ! Parinello-Rahman super-vell mass coefficient
    read(FN, '(a)', IOSTAT=Reason) read_line
@@ -5264,6 +5273,134 @@ end subroutine read_numerical_parameters
 
 
 
+subroutine read_freeze_parameters(read_line, numpar, Freeze_filter, Err)
+   character(*), intent(in) :: read_line  ! line we read from the file
+   type(Numerics_param), intent(inout) :: numpar      ! all numerical parameters
+   type(Freeze_mask), dimension(:), allocatable, intent(inout) :: Freeze_filter  ! multiple masks for freezing atoms allowed
+   type(Error_handling), intent(inout) :: Err   ! error save
+   !---------------------------------
+   character(300) :: filename, Error_descript, read_line_inside
+   integer :: FN, Reason, N_masks, i
+   logical :: file_exists, file_opened
+
+   read(read_line,*,IOSTAT=Reason) filename
+   FN=7000
+
+   filename = trim(adjustl(m_INPUT_directory))//numpar%path_sep//trim(adjustl(filename))
+   inquire(file=trim(adjustl(filename)),exist=file_exists)
+   if (.not.file_exists) then
+      Reason = 1
+      if (numpar%verbose) then
+         Error_descript = 'File specified for freezing masks not found: '//trim(adjustl(read_line))//'. Assuming a parameter.'
+         print*, trim(adjustl(Error_descript))
+      endif
+      return   ! nothing else to do
+   endif
+
+   ! if file exists, try to open it:
+   open(UNIT=FN, FILE = trim(adjustl(filename)), status = 'old', action='read')
+   inquire(file=trim(adjustl(filename)),opened=file_opened)
+   if (.not.file_opened) then
+      Reason = 1
+      Error_descript = 'File '//trim(adjustl(filename))//' (specified for freezing masks) could not be opened, the program terminates'
+      call Save_error_details(Err, 2, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      return   ! nothing else to do
+   endif
+
+   ! Read the first line from the file, specifying the number of masks:
+   read(FN, '(a)', IOSTAT=Reason) read_line_inside
+   read(read_line_inside,*,IOSTAT=Reason) N_masks
+   if (Reason /= 0) then      ! read the single number correctly
+      Reason = 1
+      Error_descript = 'Wrong format in first line of file '//trim(adjustl(filename))//', the program terminates'
+      call Save_error_details(Err, 2, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      return   ! nothing else to do
+   endif
+
+   ! Define the masks array:
+   allocate(Freeze_filter(N_masks))
+
+   ! Read parameters of all specified masks:
+   do i = 1, N_masks
+      call read_single_freeze_mask(FN, filename, Freeze_filter(i), Err)  ! below
+      if (Err%Err) then ! something gone wrong, cannot continue
+         deallocate(Freeze_filter)  ! free the array
+         call close_file('close', FN=FN) ! module "Dealing_with_files"
+         return     ! if any error, quit
+      endif
+   enddo
+
+
+   ! Set the logical switches:
+   do i = 1, N_masks
+      ! Cartesian coordinates:
+      if ( (Freeze_filter(i)%x_min > -1.0d19) .or. (Freeze_filter(i)%x_max < 1.0d19) ) then ! use freezing mask
+         Freeze_filter(i)%do_freeze = .true.
+      endif
+
+      if ( (Freeze_filter(i)%y_min > -1.0d19) .or. (Freeze_filter(i)%y_max < 1.0d19) ) then ! use freezing mask
+         Freeze_filter(i)%do_freeze = .true.
+      endif
+
+      if ( (Freeze_filter(i)%z_min > -1.0d19) .or. (Freeze_filter(i)%z_max < 1.0d19) ) then ! use freezing mask
+         Freeze_filter(i)%do_freeze = .true.
+      endif
+
+      if ( (Freeze_filter(i)%x_min > -1.0d19) .or. (Freeze_filter(i)%x_max < 1.0d19) ) then ! use freezing mask
+         Freeze_filter(i)%do_freeze = .true.
+      endif
+
+      ! Same for s-coordinates:
+      if ( (Freeze_filter(i)%sx_min > -0.5d0) .or. (Freeze_filter(i)%sx_max < 1.5d0) ) then ! use freezing mask
+         Freeze_filter(i)%do_freeze_s = .true.
+      endif
+
+      if ( (Freeze_filter(i)%sy_min > -0.5d0) .or. (Freeze_filter(i)%sy_max < 1.5d0) ) then ! use freezing mask
+         Freeze_filter(i)%do_freeze_s = .true.
+      endif
+
+      if ( (Freeze_filter(i)%sz_min > -0.5d0) .or. (Freeze_filter(i)%sz_max < 1.5d0) ) then ! use freezing mask
+         Freeze_filter(i)%do_freeze_s = .true.
+      endif
+
+      ! Same for radial coordinates:
+      if ( (Freeze_filter(i)%r_min > 0.0d0) .or. (Freeze_filter(i)%r_max < 1.0d19) ) then ! use freezing mask
+         Freeze_filter(i)%do_freeze_r = .true.
+      endif
+
+      !print*, i, Freeze_filter(i)%do_freeze, Freeze_filter(i)%x_min, Freeze_filter(i)%x_max, Freeze_filter(i)%z_min, Freeze_filter(i)%do_freeze, Freeze_filter(i)%do_freeze_s, Freeze_filter(i)%do_freeze_r
+   enddo
+
+   ! Clean up:
+   call close_file('close', FN=FN) ! module "Dealing_with_files"
+end subroutine read_freeze_parameters
+
+
+subroutine read_single_freeze_mask(FN, filename, Filter, Err)  ! below
+   integer, intent(in) :: FN  ! file number (must be opened)
+   character(*), intent(in) :: filename
+   type(Freeze_mask), intent(inout):: Filter  ! multiple masks for freezing atoms allowed
+   type(Error_handling), intent(inout) :: Err   ! error save
+   !----------------
+   character(200) :: Error_descript
+   integer :: Reason
+   namelist / Freeze_masks / Filter ! fortran maelist to read variables into
+
+   read(FN, nml = Freeze_masks, IOSTAT=Reason)      ! read according to the structure specified
+
+   if (Reason /= 0) then      ! read the single number correctly
+      Reason = 1
+      Error_descript = 'Wrong format in the file '//trim(adjustl(filename))//', the program terminates'
+      call Save_error_details(Err, 2, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      return   ! nothing else to do
+   endif
+end subroutine read_single_freeze_mask
+
+
+
 subroutine read_nearest_neighbor_radii(File_name, read_line, numpar, Scell, count_lines, Reason, Err)
    character(*), intent(in) :: File_name, read_line   ! File_name, line read from file
    type(Numerics_param), intent(inout) :: numpar      ! all numerical parameters
@@ -5372,6 +5509,9 @@ subroutine read_nearest_neighbor_radii(File_name, read_line, numpar, Scell, coun
 !       print*, allocated(numpar%NN_radii)
 !    endif
    !pause 'read_nearest_neighbor_radii'
+
+   ! Clean up:
+   call close_file('close', FN=FN) ! module "Dealing_with_files"
 end subroutine read_nearest_neighbor_radii
 
 
@@ -7622,6 +7762,13 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       !write(*,'(a)') trim(adjustl(m_starline))
 
    !----------------------------------
+   case ('Split', 'split', 'SPLIT')
+      print*, 'Split-target cohesive energy analysis will be performed'
+      numpar%Split_target%do_split = .true. ! do changing size with splitting material in parts
+      ! Read the coordinate, where to split the material:
+      call read_split_target_parameters(string_in, numpar%Split_target)    ! below
+
+   !----------------------------------
    case default
       ! Check if the user needs any additional info (by setting the flags):
       call interprete_additional_data(string, numpar%path_sep, change_size=numpar%change_size, contin=Err%Stopsignal, &
@@ -7629,6 +7776,64 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
 
    endselect
 end subroutine interpret_user_data_INPUT
+
+
+
+subroutine read_split_target_parameters(string_in, Split_target)    ! below
+   character(*), intent(in) :: string_in  ! string from the file
+   type(Split_cohesive), intent(inout) :: Split_target      ! parameters of the split-target analysis
+   !-----------------------
+   character(300) :: txt_var1, txt_var2
+   integer :: Reason, count_lines, equal_sign_position
+   logical :: read_well
+   real(8) :: coord_read
+
+   count_lines = 0      ! to start with
+
+   txt_var1 = trim(adjustl(string_in(6:)))      ! skip the first keyword "Split"
+   read(txt_var1,'(a)',IOSTAT=Reason) txt_var2
+   call read_file(Reason, count_lines, read_well)     ! module "Dealing_with_files"
+   if (read_well) then ! save and use it later
+      ! Find where is the equal sign:
+      equal_sign_position = INDEX(txt_var2, '=')  ! intrinsic
+
+      ! Read the value provided after that:
+      read(txt_var2(equal_sign_position+1:), *, IOSTAT=Reason) coord_read
+      call read_file(Reason, count_lines, read_well)     ! module "Dealing_with_files"
+      if (.not.read_well) goto 4321
+      !print*, trim(adjustl(txt_var2(1:1))), trim(adjustl(txt_var2(equal_sign_position:equal_sign_position+1))), coord_read
+
+      ! Find which axis we want to split it along:
+      select case(trim(adjustl(txt_var2(1:1))))
+      case ('x', 'X')
+         Split_target%x_split = coord_read ! [A]
+      case ('y', 'Y')
+         Split_target%y_split = coord_read ! [A]
+      case ('z', 'Z')
+         Split_target%z_split = coord_read ! [A]
+      case ('s', 'S')   ! relative coordinates provided:
+         select case(trim(adjustl(txt_var2(1:2))))
+         case ('sx', 'sX', 'Sx', 'SX')
+            Split_target%sx_split = coord_read ! [supercell]
+         case ('sy', 'sY', 'Sy', 'SY')
+            Split_target%sy_split = coord_read ! [supercell]
+         case ('sz', 'sZ', 'Sz', 'SZ')
+            Split_target%sz_split = coord_read ! [supercell]
+         end select
+      end select
+
+      !print*, trim(adjustl(txt_var1))//' : ', trim(adjustl(txt_var2(1:1)))
+      !print*, Split_target%x_split, Split_target%y_split, Split_target%z_split, Split_target%sx_split, Split_target%sy_split, Split_target%sz_split
+   endif
+4321 continue
+
+   if (.not.read_well) then ! didn't read well, cannot perform split-target analysis
+      print*, 'Could not interprete line '//trim(adjustl(string_in))//'. Split-target analysis is impossible.'
+      Split_target%do_split = .false.
+   endif
+
+   !pause 'read_split_target_parameters'
+end subroutine read_split_target_parameters
 
 
 

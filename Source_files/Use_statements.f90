@@ -53,10 +53,11 @@ use MC_cross_sections, only : get_mfps, get_photon_attenuation
 use Monte_carlo, only : MC_Propagate, process_laser_parameters
 use ZBL_potential, only : get_total_ZBL, get_total_NLH
 use TB_complex, only : use_complex_Hamiltonian
+use XTANT_analyses, only : vary_size, coordinate_path
+
 
 use MPI_subroutines, only : initialize_MPI, Initialize_ScaLAPACK, initialize_random_seed, MPI_share_add_data, MPI_error_wrapper, MPI_barrier_wrapper, &
         MPI_share_Read_Input_Files, MPI_share_initial_configuration, MPI_share_electron_MFPs, MPI_share_photon_attenuation
-
 #ifdef MPI_USED
 use mpi
 #endif

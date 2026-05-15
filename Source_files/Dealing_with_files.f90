@@ -229,6 +229,7 @@ subroutine close_file(safe, File_name, FN)
    character(*), intent(in) :: safe ! open with or without permision to overwrite
    character(*), intent(in), optional :: File_name ! path to file named
    integer, intent(in), optional :: FN   ! file number to be referred to
+   !-------------------------------
    logical file_exists, file_opened
    integer FN1
    file_opened = .false.    ! to start with

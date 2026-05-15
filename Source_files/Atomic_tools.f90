@@ -1486,7 +1486,7 @@ subroutine make_time_step_atoms(Scell, matter, numpar, ind)
 end subroutine make_time_step_atoms
 
 
-subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update coordinates and velocities of atoms via intermediate Verlet step
+subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update coordinates and velocities (intermediate Verlet step)
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
    type(solid), intent(in), target :: matter	! material parameters
@@ -1499,6 +1499,7 @@ subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update
    integer :: nat, k
    real(8) Fors_s(3,Scell(NSC)%Na), fctr
    real(8) dsupce(3,3), tempM(3,3), gg2(3,3), tt(3,3), tempV(3), x0(3), temp_acc(3)
+   logical :: atom_frozen
 
    nat = Scell(NSC)%Na	! number of atoms in the supercell
    
@@ -1514,6 +1515,11 @@ subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update
 
 
    do k = 1, nat ! All atoms - calculating new coordinates:
+
+      ! Check is this atom is frozen or moving normally:
+      call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+      if (atom_frozen) cycle  ! skip this atom, its frozen
+
 
       tempV(:) = Scell(NSC)%MDatoms(k)%forces%total(:)
       call Matrix_Vec_Prod(gg2,tempV,x0) ! module "Algebra_tools"
@@ -1543,14 +1549,161 @@ subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update
 !       endif
 
    enddo
-   if (ind .EQ. 2) call check_periodic_boundaries(matter, Scell, NSC) ! and set the absolute coordinates out of the new relative ones
-   call velocities_rel_to_abs(Scell, NSC) ! set the absolute velocities out of the new relative ones
+
+   ! Set the absolute coordinates out of the new relative ones:
+   if (ind .EQ. 2) call check_periodic_boundaries(matter, Scell, NSC)   ! below
+
+   ! Set the absolute velocities out of the new relative ones
+   call velocities_rel_to_abs(Scell, NSC)       ! below
 
 !    print*, 'V3= ', Scell(NSC)%MDatoms(1)%V(:)
 !    print*, '--------------------'
    
    nullify(Mass)
 end subroutine make_time_step_atoms_SC
+
+
+
+subroutine check_frozen(Freeze_filter, MDatoms, atom_frozen)
+   type(Freeze_mask), dimension(:), allocatable, intent(in) :: Freeze_filter  ! multiple masks for freezing atoms allowed
+   type(Atom), intent(in) :: MDAtoms ! an atom in MD
+   logical, intent(inout) :: atom_frozen
+   !-----------------------
+   integer :: N_masks, i
+   real(8) :: R
+
+
+   atom_frozen = .false.      ! by default, it is moving
+
+   if (.not.allocated(Freeze_filter)) return    ! no masks, nothing more to do
+
+   N_masks = size(Freeze_filter)    ! all masks used
+
+   ! Check conditions for all masks
+   do i = 1, N_masks
+      ! Cartesian mask:
+      if (Freeze_filter(i)%do_freeze) then
+         ! X:
+         ! Mask for coordinates below or above
+         if (Freeze_filter(i)%x_min < Freeze_filter(i)%x_max) then
+            if ( ( MDAtoms%R(1) < Freeze_filter(i)%x_min ) .or. &
+                 ( MDAtoms%R(1) > Freeze_filter(i)%x_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         else ! Mask for a slab of atoms within
+            if ( ( MDAtoms%R(1) < Freeze_filter(i)%x_min ) .and. &
+                 ( MDAtoms%R(1) > Freeze_filter(i)%x_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         endif
+
+         ! Y:
+         ! Mask for coordinates below or above
+         if (Freeze_filter(i)%y_min < Freeze_filter(i)%y_max) then
+            if ( ( MDAtoms%R(2) < Freeze_filter(i)%y_min ) .or. &
+                 ( MDAtoms%R(2) > Freeze_filter(i)%y_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         else ! Mask for a slab of atoms within
+            if ( ( MDAtoms%R(2) < Freeze_filter(i)%y_min ) .and. &
+                 ( MDAtoms%R(2) > Freeze_filter(i)%y_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         endif
+
+         ! Z:
+         ! Mask for coordinates below or above
+         if (Freeze_filter(i)%z_min < Freeze_filter(i)%z_max) then
+            if ( ( MDAtoms%R(3) < Freeze_filter(i)%z_min ) .or. &
+                 ( MDAtoms%R(3) > Freeze_filter(i)%z_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         else ! Mask for a slab of atoms within
+            if ( ( MDAtoms%R(3) < Freeze_filter(i)%z_min ) .and. &
+                 ( MDAtoms%R(3) > Freeze_filter(i)%z_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         endif
+      endif
+
+
+      ! Relative coordinates mask:
+      if (Freeze_filter(i)%do_freeze_s) then
+         ! SX:
+         ! Mask for coordinates below or above
+         if (Freeze_filter(i)%sx_min < Freeze_filter(i)%sx_max) then
+            if ( ( MDAtoms%S(1) < Freeze_filter(i)%sx_min ) .or. &
+                 ( MDAtoms%S(1) > Freeze_filter(i)%sx_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         else ! Mask for a slab of atoms within
+            if ( ( MDAtoms%S(1) < Freeze_filter(i)%sx_min ) .and. &
+                 ( MDAtoms%S(1) > Freeze_filter(i)%sx_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         endif
+
+         ! SY:
+         ! Mask for coordinates below or above
+         if (Freeze_filter(i)%sy_min < Freeze_filter(i)%sy_max) then
+            if ( ( MDAtoms%S(2) < Freeze_filter(i)%sy_min ) .or. &
+                 ( MDAtoms%S(2) > Freeze_filter(i)%sy_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         else ! Mask for a slab of atoms within
+            if ( ( MDAtoms%S(2) < Freeze_filter(i)%sy_min ) .and. &
+                 ( MDAtoms%S(2) > Freeze_filter(i)%sy_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         endif
+
+         ! SZ:
+         ! Mask for coordinates below or above
+         if (Freeze_filter(i)%sz_min < Freeze_filter(i)%sz_max) then
+            if ( ( MDAtoms%S(3) < Freeze_filter(i)%sz_min ) .or. &
+                 ( MDAtoms%S(3) > Freeze_filter(i)%sz_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         else ! Mask for a slab of atoms within
+            if ( ( MDAtoms%S(3) < Freeze_filter(i)%sz_min ) .and. &
+                 ( MDAtoms%S(3) > Freeze_filter(i)%sz_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         endif
+
+      endif
+
+      ! Radial mask:
+      if (Freeze_filter(i)%do_freeze_r) then
+         ! Radial coordinate with respect to the given center:
+         R = sqrt( (MDAtoms%R(1) - Freeze_filter(i)%r_center(1))**2 + &
+                   (MDAtoms%R(2) - Freeze_filter(i)%r_center(2))**2 + &
+                   (MDAtoms%R(3) - Freeze_filter(i)%r_center(3))**2 )
+
+         ! Mask for coordinates below or above
+         if (Freeze_filter(i)%r_min < Freeze_filter(i)%r_max) then
+            if ( ( R < Freeze_filter(i)%r_min ) .or. &
+                 ( R > Freeze_filter(i)%r_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         else ! Mask for a spherecal layer of atoms within
+            if ( ( R < Freeze_filter(i)%r_min ) .and. &
+                 ( R > Freeze_filter(i)%r_max ) ) then
+                 atom_frozen = .true.    ! freeze this atom
+            endif
+         endif
+      endif
+
+      ! Element mask:
+      if (Freeze_filter(i)%KOA > 0) then
+         if (MDatoms%KOA == Freeze_filter(i)%KOA) then
+            atom_frozen = .true.    ! freeze this atom
+         endif
+      endif
+   enddo ! i
+end subroutine check_frozen
+
+
 
 
 
@@ -1565,13 +1718,18 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
    integer :: k     ! atoms index
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
+   logical :: atom_frozen
 
    do NSC = 1, size(Scell)
       ! Make MD step:
       select case (ind)
       case (1)  ! coordinate
-         !$omp PARALLEL do private(k)
+         !$omp PARALLEL do private(k, atom_frozen)
          do k = 1,Scell(NSC)%Na ! All atoms - calculating new coordinates:
+            ! Check is this atom is frozen or moving normally:
+            call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+            if (atom_frozen) cycle  ! skip this atom, its frozen
+
             ! Martyna step of coordinates:
             Scell(NSC)%MDatoms(k)%S(:) = Scell(NSC)%MDatoms(k)%S0(:) + numpar%dt*Scell(NSC)%MDatoms(k)%SV0(:) + &
                numpar%dtsqare * 0.25d0*(5.0d0*Scell(NSC)%MDatoms(k)%A(:) - Scell(NSC)%MDatoms(k)%A_tild(:)) + &
@@ -1590,8 +1748,12 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
          call get_accelerations_M(Scell, NSC, matter, numpar)   ! below
 
          ! Update relative velosities:
-         !$omp PARALLEL do private(k)
+         !$omp PARALLEL do private(k, atom_frozen)
          do k = 1,Scell(NSC)%Na ! fro all atoms
+            ! Check is this atom is frozen or moving normally:
+            call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+            if (atom_frozen) cycle  ! skip this atom, its frozen
+
             ! Make a step for relative velocities:
             Scell(NSC)%MDatoms(k)%SV(:) = Scell(NSC)%MDatoms(k)%SV0(:) + &
                (numpar%dt/8.0d0)*(4.0d0*Scell(NSC)%MDatoms(k)%A0(:) + Scell(NSC)%MDatoms(k)%A_tild(:) + 3.0d0*Scell(NSC)%MDatoms(k)%A(:)) +&
@@ -1609,9 +1771,13 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
          enddo
          !$omp end parallel do
       case (3)  ! effective force
-         !$omp PARALLEL do private(k)
+         !$omp PARALLEL do private(k, atom_frozen)
          do k = 1,Scell(NSC)%Na ! fro all atoms
-            ! MAke a step for effective forces:
+            ! Check is this atom is frozen or moving normally:
+            call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+            if (atom_frozen) cycle  ! skip this atom, its frozen
+
+            ! Make a step for effective forces:
             Scell(NSC)%MDatoms(k)%A_tild(:) = 0.5d0*(2.0d0*Scell(NSC)%MDatoms(k)%A0(:) +&
                 Scell(NSC)%MDatoms(k)%A(:) - Scell(NSC)%MDatoms(k)%A_tild0(:)) + numpar%dt*0.5d0*Scell(NSC)%MDatoms(k)%v_F(:)
             ! Update old accelerations:
@@ -1619,16 +1785,24 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
          enddo
          !$omp end parallel do
       case (4)  ! effective force velocity 
-         !$omp PARALLEL do private(k)
+         !$omp PARALLEL do private(k, atom_frozen)
          do k = 1,Scell(NSC)%Na ! fro all atoms
+            ! Check is this atom is frozen or moving normally:
+            call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+            if (atom_frozen) cycle  ! skip this atom, its frozen
+
             ! Make a step for effective force velocities:
             Scell(NSC)%MDatoms(k)%v_F(:) = -0.50d0 * Scell(NSC)%MDatoms(k)%v_F0(:) + &
                1.50d0/numpar%dt * (Scell(NSC)%MDatoms(k)%A(:) - Scell(NSC)%MDatoms(k)%A_tild0(:))
          enddo
          !$omp end parallel do
       case (5)  ! effective force acceleration
-         !$omp PARALLEL do private(k)
+         !$omp PARALLEL do private(k, atom_frozen)
          do k = 1,Scell(NSC)%Na ! fro all atoms
+            ! Check is this atom is frozen or moving normally:
+            call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+            if (atom_frozen) cycle  ! skip this atom, its frozen
+
             ! Make a step for effective force accelerations:
             Scell(NSC)%MDatoms(k)%v_J(:) = -Scell(NSC)%MDatoms(k)%v_J0(:) - 3.0d0/numpar%dt * Scell(NSC)%MDatoms(k)%v_F0(:) +&
                 1.5d0/(numpar%dt*numpar%dt) * (Scell(NSC)%MDatoms(k)%A(:) - Scell(NSC)%MDatoms(k)%A_tild0(:))
@@ -1726,6 +1900,7 @@ subroutine make_time_step_atoms_SC_Y4(Scell, NSC, matter, numpar, ind_step, ind_
    real(8) Fors_s(3,Scell(NSC)%Na), fctr
    real(8) dsupce(3,3), tempM(3,3), gg2(3,3), tt(3,3), tempV(3), x0(3)
    real(8) :: Coef_C, Coef_V
+   logical :: atom_frozen
 
    nat = Scell(NSC)%Na	! number of atoms in the supercell
    call get_GGdot(Scell(NSC)%supce, Scell(NSC)%Vsupce, GinvGdot) ! see above
@@ -1748,6 +1923,11 @@ subroutine make_time_step_atoms_SC_Y4(Scell, NSC, matter, numpar, ind_step, ind_
    
    Fors_s = 0.0d0
    do k = 1,nat ! All atoms - calculating new coordinates:
+
+      ! Check is this atom is frozen or moving normally:
+      call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+      if (atom_frozen) cycle  ! skip this atom, its frozen
+
       if (ind_cv == 1) then ! Yoshida step for coordinates:
          Scell(NSC)%MDatoms(k)%S(:) = Scell(NSC)%MDatoms(k)%S0(:) + Scell(NSC)%MDatoms(k)%SV0(:) * numpar%dt * Coef_C
          Scell(NSC)%MDatoms(k)%S0(:) = Scell(NSC)%MDatoms(k)%S(:)   ! update old coords for the next step
