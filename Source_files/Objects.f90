@@ -1102,7 +1102,7 @@ type Numerics_param
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate
    logical :: save_fe_grid, save_fe_orb, save_fa, save_testmode
    logical :: save_hw_spectrum
-   type(Split_cohesive) :: Split_target ! parameters of split-target analysis
+   !type(Split_cohesive) :: Split_target ! parameters of split-target analysis
    ! Masks for partial atoms freezing:
    type(Freeze_mask), dimension(:), allocatable :: Freeze_filter  ! multiple masks for freezing atoms allowed
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
