@@ -1,0 +1,10 @@
+https://gitlab.mpcdf.mpg.de/fhi-theory/DSKO/-/tree/main?ref_type=heads
+
+
+
+"DSKO: Dancing through DFTB Parametrization"
+Artem Samtsevych, Yihua Song, Tammo van der Heide, 
+J. Chem. Theory Comput. 2026, 22, 9, 4379–4393
+
+
+https://pubs.acs.org/doi/10.1021/acs.jctc.6c00121

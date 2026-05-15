@@ -1,0 +1,6 @@
+https://pubs.acs.org/doi/10.1021/acsomega.1c02411
+
+
+ACS Omega 2021, 6, 31, 20530–20548
+"Development of Density-Functional Tight-Binding Parameters for the Molecular Dynamics Simulation of Zirconia, Yttria, and Yttria-Stabilized Zirconia"
+Aulia Sukma Hutama, Lala Adetia Marlina, Chien-Pin Chou, Stephan Irle, Thomas S. Hofer

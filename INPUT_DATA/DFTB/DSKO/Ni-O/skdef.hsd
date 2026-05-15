@@ -1,0 +1,330 @@
+SkdefVersion = 1
+Globals {
+  XCFunctional {
+    PBE {}
+  }
+  Superposition = density
+}
+AtomParameters {
+  O {
+    AtomConfig {
+      AtomicNumber = 8
+      Mass = 15.9994
+      Occupations {
+        1S = 1 1
+        2S = 1 1
+        2P = 2 2
+      }
+      ValenceShells = 2s 2p
+      Relativistics = None
+    }
+    DftbAtom {
+      ShellResolved = Yes
+      DensityCompression {
+        PowerCompression {
+          Power = 12.4
+          Radius = 15.5
+        }
+      }
+      WaveCompressions {
+        SingleAtomCompressions {
+          S {
+            PowerCompression {
+              Power = 8.27968109022371
+              Radius = 1.113881836142449
+            }
+          }
+          P {
+            PowerCompression {
+              Power = 8.543088968716406
+              Radius = 2.173749700003143
+            }
+          }
+        }
+      }
+    }
+  }
+  Ni {
+    AtomConfig {
+      AtomicNumber = 28
+      Mass = 58.6934
+      Occupations {
+        1S = 1 1
+        2S = 1 1
+        2P = 3 3
+        3S = 1 1
+        3P = 3 3
+        3D = 4 4
+        4S = 1 1
+        4P = 0 0
+      }
+      ValenceShells = 3d 4s 4p
+      Relativistics = None
+    }
+    DftbAtom {
+      ShellResolved = Yes
+      DensityCompression {
+        PowerCompression {
+          Power = 2.2
+          Radius = 18.5
+        }
+      }
+      WaveCompressions {
+        SingleAtomCompressions {
+          S {
+            PowerCompression {
+              Power = 5.739259747028923
+              Radius = 3.490491899600541
+            }
+          }
+          P {
+            PowerCompression {
+              Power = 6.779654800571558
+              Radius = 4.119587679000905
+            }
+          }
+          D {
+            PowerCompression {
+              Power = 6.0359294164722535
+              Radius = 4.092127646359947
+            }
+          }
+        }
+      }
+    }
+  }
+}
+OnecenterParameters {
+  O {
+    DeltaFilling = 0.01
+    Calculator {
+      SlaterAtom {
+        Exponents {
+          S = 0.5 1.26 3.17 8.0
+          P = 0.5 1.26 3.17 8.0
+        }
+        MaxPowers {
+          S = 3
+          P = 3
+        }
+        MaxSCFIterations = 500
+        SCFTolerance = 1e-06
+      }
+    }
+  }
+  Ni {
+    DeltaFilling = 0.01
+    Calculator {
+      SlaterAtom {
+        Exponents {
+          D = 1.0 3.037 9.221 28.0
+          S = 1.0 3.037 9.221 28.0
+          P = 1.0 3.037 9.221 28.0
+        }
+        MaxPowers {
+          D = 3
+          S = 3
+          P = 3
+        }
+        MaxSCFIterations = 500
+        SCFTolerance = 1e-06
+      }
+    }
+  }
+}
+TwoCenterParameters {
+  $EqGrid {
+    EquidistantGrid {
+      GridStart = 0.4
+      GridSeparation = 0.1
+      Tolerance = 5e-05
+      MaxDistance = 10.0
+    }
+  }
+  $EqGridShort {
+    EquidistantGrid {
+      GridStart = 0.4
+      GridSeparation = 0.02
+      Tolerance = 5e-05
+      MaxDistance = 0.5
+    }
+  }
+  $EqGridCutoff10 {
+    EquidistantGrid {
+      GridStart = 0.4
+      GridSeparation = 0.02
+      Tolerance = 5e-05
+      MaxDistance = -10.001
+    }
+  }
+  $EqGridCutoff12 {
+    EquidistantGrid {
+      GridStart = 0.4
+      GridSeparation = 0.02
+      Tolerance = 5e-05
+      MaxDistance = -12.39
+    }
+  }
+  $SkTwocnt_300_150 {
+    Sktwocnt {
+      IntegrationPoints = 300 150
+    }
+  }
+  $SkTwocnt_400_200 {
+    Sktwocnt {
+      IntegrationPoints = 400 200
+    }
+  }
+  H-H {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  H-C {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  H-N {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  H-O {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  H-S {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  H-P {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  H-Ti {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  H-Au {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  C-C {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  C-N {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  C-O {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  C-S {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  C-P {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  C-Ti {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  C-Au {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  N-N {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  N-O {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  N-S {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  N-P {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  N-Ti {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  N-Au {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  O-O {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  O-S {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  O-P {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  O-Ti {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  O-Au {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  S-S {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  S-P {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  S-Ti {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  S-Au {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  P-P {
+    Grid = $EqGridCutoff10
+    Calculator = $SkTwocnt_300_150
+  }
+  P-Ti {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  P-Au {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  Ti-Ti {
+    Grid = $EqGridCutoff12
+    Calculator = $SkTwocnt_400_200
+  }
+  Ti-Au {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  Au-Au {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  Ni-Ni {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+  Ni-O {
+    Grid = $EqGrid
+    Calculator = $SkTwocnt_400_200
+  }
+}
