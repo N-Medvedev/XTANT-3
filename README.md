@@ -26,7 +26,7 @@ The code combines the following methods into one model with feed-backs:
  
 > b) Boltzmann equation for low-energy electrons: relaxation-time approximation (RTA) for electron-electron scattering; Boltzmann collision integrals (BCI) for nonadiabatic electron-ion (electron-phonon) coupling
  
-> c) Transferable tight binding (TB) for tracing electronic structure and interatomic forces
+> c) Transferable tight binding (TB, including DFTB) for tracing electronic structure and interatomic forces
  
 > d) Molecular dynamics (MD) for tracing atomic response to modification of the interatomic potential due to electronic excitation
  
