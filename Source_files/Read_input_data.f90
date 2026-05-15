@@ -7763,10 +7763,11 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
 
    !----------------------------------
    case ('Split', 'split', 'SPLIT')
-      print*, 'Split-target cohesive energy analysis will be performed'
-      numpar%Split_target%do_split = .true. ! do changing size with splitting material in parts
+      print*, 'Split-target cohesive energy analysis is not implemented yet'
+      !print*, 'Split-target cohesive energy analysis will be performed'
+      !numpar%Split_target%do_split = .true. ! do changing size with splitting material in parts
       ! Read the coordinate, where to split the material:
-      call read_split_target_parameters(string_in, numpar%Split_target)    ! below
+      !call read_split_target_parameters(string_in, numpar%Split_target)    ! below
 
    !----------------------------------
    case default
