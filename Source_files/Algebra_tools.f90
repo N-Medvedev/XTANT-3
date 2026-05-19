@@ -48,6 +48,7 @@ PRIVATE
 interface sort_array
    module procedure sort_array_r ! for real arrays
    module procedure sort_array_c ! for complex arrays
+   module procedure sort_array_r_2d ! for real 2d arrays (sorting by first index)
 end interface sort_array
 
 ! this interface finds by itself which of the two subroutine to use depending on the array passed:
@@ -744,6 +745,38 @@ subroutine sort_eigenvalues(Ev, Evec)
       IF (.NOT. swapped) EXIT
    enddo
 end subroutine sort_eigenvalues
+
+
+
+subroutine sort_array_r_2d(array_in)  ! bubble sorting algorithm for real 2d array by first index
+   real(8), dimension(:,:), intent(inout) :: array_in
+   !-------------------------------------
+   real(8) :: temp, temp2
+   integer N,i,j
+   logical :: swapped
+   !-------------------------------------
+   N = size(array_in,2)
+   do j = N-1, 1, -1
+      swapped = .false. ! nothing swapped at the start
+      do i = 1, j
+         if (array_in(1,i) > array_in(1,i+1)) then ! swap elements according to the first index
+            temp = array_in(1,i)    ! first index
+            temp2 = array_in(2,i)   ! second index
+
+            array_in(1,i) = array_in(1,i+1)
+            array_in(2,i) = array_in(2,i+1)
+
+            array_in(1,i+1) = temp
+            array_in(2,i+1) = temp2
+
+            swapped = .true.  ! at least one pair of elements needed swapping
+         end if
+      enddo
+      if (.not. swapped) exit ! sorted, no element is smaller than previous one
+   enddo
+end subroutine sort_array_r_2d
+
+
 
 
 subroutine sort_array_r(array_in)  ! bubble sorting algorithm for real 1d array
