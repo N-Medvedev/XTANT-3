@@ -38,7 +38,7 @@ use Dealing_with_3TB, only : m_3TB_directory, m_3TB_onsite_data, read_3TB_onsite
                             read_3TB_2bdy_file, read_3TB_3bdy_file
 use Dealing_with_xTB, only : m_xTB_directory, read_xTB_parameters, identify_basis_size_xTB, identify_AOs_xTB
 use Periodic_table, only : Decompose_compound
-use Algebra_tools, only : make_cubic_splines, cubic_function
+use Algebra_tools, only : make_cubic_splines, cubic_function, sort_array
 use Dealing_with_CDF, only : read_CDF_file
 use Atomic_tools, only : update_atomic_masks_displ
 use MPI_subroutines, only : MPI_error_wrapper
@@ -7200,6 +7200,9 @@ subroutine get_photon_parameters(read_line, numpar, laser, i, count_lines, File_
             goto 2121
          endif
       enddo
+
+      ! Make sure the spectrum is in the accending order:
+      call sort_array(laser(i)%Spectrum) ! module "Algebra_tools"
 
       if (spectrum_done_well) return ! done well, can exit the subroutine
    endif
