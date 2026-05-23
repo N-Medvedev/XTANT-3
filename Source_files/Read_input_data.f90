@@ -189,6 +189,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%t_Te_Ee = 1.0d-5	! when to start coupling
    numpar%NA_kind = -1	! -1=Landau; 0=no coupling, 1=dynamical coupling (2=Fermi-golden_rule)
    numpar%Nonadiabat = .true.  ! included
+   numpar%V_scaling = 0    ! Method of atomic velosity scaling
    numpar%ind_at_distr = 0 ! 0=Maxwellian; 1=transient nonequilibrium
    numpar%tau_fe = 1.0d0   ! Characteristic electron relaxation time [fs]
    numpar%tau_fe_CB = -1.0d0  ! No separate thermalization of CB and VB by default
@@ -7447,6 +7448,16 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
    read(string_in,*,IOSTAT=Reason) string
 
    select case (trim(adjustl(string)))
+   !--------------------------------
+   case ('Vel_scale', 'VEL_SCALE', 'V_scaling', 'VEL_scaling')
+      ! Model for velosity scaling:
+      read(string_in,*,IOSTAT=Reason) string, N
+      if (Reason == 0) then ! read well, use the variable
+         numpar%V_scaling = N
+      else ! didn't read well, use default
+         write(*, '(a)') 'Line '//trim(adjustl(string_in))//' could not be interpreted'
+         write(*, '(a)') 'Using default atomic velocity scaling'
+      endif
 
    !----------------------------------
    case ('Diffraction', 'diffraction', 'DIFFRACTION', 'Diffract', 'DIFFRACT', 'diffract', 'diffraction_peaks')
