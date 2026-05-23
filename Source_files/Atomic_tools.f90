@@ -51,6 +51,12 @@ interface distance_to_given_cell
 end interface distance_to_given_cell
 
 
+interface Rescale_atomic_velocities
+   module procedure Rescale_atomic_velocities_global  ! for global rescaling
+   module procedure Rescale_atomic_velocities_local   ! for local rescaling
+end interface Rescale_atomic_velocities
+
+
 public :: define_subcells, Maxwell_int_shifted, Coordinates_rel_to_abs, velocities_abs_to_rel, make_time_step_supercell, &
 get_energy_from_temperature, distance_to_given_cell, make_time_step_atoms, Rescale_atomic_velocities, save_last_timestep, &
 get_interplane_indices, get_near_neighbours, get_number_of_image_cells, pair_correlation_function, get_fraction_of_given_sort, &
@@ -1197,9 +1203,113 @@ end subroutine C60_crystal_construction
 
 
 
-subroutine Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, nrg)
-   real(8), intent(in) :: dE_nonadiabat     ! energy gain by atoms [eV]
-   type(solid), intent(in) :: matter    ! material parameters
+subroutine Rescale_atomic_velocities_local(dE_mat, matter, Scell, NSC, nrg)
+   real(8), dimension(:,:), intent(in) :: dE_mat     ! local energy gain by atoms pairwise [eV]
+   type(solid), intent(in), target :: matter    ! material parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(Energies), intent(inout) :: nrg ! all energies
+   !------------------------------
+   real(8) :: Ekin_tot, alpha, b, eps, dE, dE_tot, dE_left
+   real(8) :: Mtot, Vcm, Ecm, Vi2, Vj2
+   real(8) :: Vcm_vec(3), Ptot(3)
+   real(8) :: Vi_vec(3), Vj_vec(3), Vi_vec_new(3), Vj_vec_new(3)
+   integer :: i, j, Nat
+   real(8), pointer :: Mi, Mj
+
+   eps = 1.0d-13   ! acceptable change of energy
+
+   Nat = Scell(NSC)%Na ! number of atoms
+
+   ! Update kinetic energies:
+   call Atomic_kinetic_energies(Scell, NSC, matter)   ! below
+   ! Initial total kinetic energy (to check conservation at the end):
+   Ekin_tot = SUM(Scell(NSC)%MDatoms(:)%Ekin)         ! total atomic kinetic energy
+
+   if ( abs(Ekin_tot) < eps) return ! no velicity => nothing to rescale...
+
+
+   ! Rescaling atomic velocities pairwise:
+   do i = 1, Nat        ! atom #1
+      Mi => matter%Atoms(Scell(NSC)%MDatoms(i)%KOA)%Ma ! atomic mass
+      do j = i, Nat     ! atom #2
+         if (j == i) cycle    ! don't interact with itself
+
+         ! Energy transfer is in two parts:
+         dE = dE_mat(i,j) + dE_mat(j,i)
+
+         Mj => matter%Atoms(Scell(NSC)%MDatoms(j)%KOA)%Ma ! atomic mass
+
+         ! For nonzero transferred energy betweeen these two atoms:
+         if (abs(dE) > Ekin_tot * eps) then
+            ! 1) Get the center-of-mass velocity:
+            Ptot(:) = Scell(NSC)%MDatoms(i)%V(:)*Mi + Scell(NSC)%MDatoms(j)%V(:)*Mj
+            Mtot = Mi + Mj
+            Vcm_vec(:) = Ptot(:)/Mtot
+
+            ! 2) Get atomic velocities in the center-of-mass system:
+            Vi_vec(:) = Scell(NSC)%MDatoms(i)%V(:) - Vcm_vec(:)
+            Vj_vec(:) = Scell(NSC)%MDatoms(j)%V(:) - Vcm_vec(:)
+            ! and their squared absolute values:
+            Vi2 = sum(Vi_vec(:)**2)
+            Vj2 = sum(Vj_vec(:)**2)
+
+            ! 3) Get the atomic energy in the center-of-mass system:
+            Ecm = 0.5d0 * (Mi*Vi2 + Mj*Vj2) * 1d10/g_e ! [eV]
+
+            if (abs(Ecm) < eps ) then
+               print*, i, j, Ecm, Mi, Vi2, Mj, Vj2
+            endif
+
+            ! 4) Get the rescaling coefficient:
+            b = dE/Ecm   ! ratio entering the scaling
+            if (b < -1.0d0) then
+               alpha = 0.0d0
+               write(*,'(a,es16.6,es16.6,es16.6)') 'WARNING: in Rescale_atomic_velocities_local, change too high:', &
+                                                   b, dE, dE_mat(i,j), dE_mat(j,i), Ecm
+               write(*,'(a)') 'Some energy may be lost'
+            else
+               alpha = sqrt(1.0d0 + b)
+            endif
+
+            ! 5) Rescale the velocities in the center-of-mass:
+            Vi_vec_new(:) = alpha * Vi_vec(:)
+            Vj_vec_new(:) = alpha * Vj_vec(:)
+
+            ! 6) Get back to the lab.system (center-of-mass velocity is conserved):
+            Scell(NSC)%MDatoms(i)%V(:) = Vi_vec_new(:) + Vcm_vec(:)
+            Scell(NSC)%MDatoms(j)%V(:) = Vj_vec_new(:) + Vcm_vec(:)
+
+         endif ! (abs(dE)) > Ekin_tot * eps))
+      enddo ! j
+   enddo ! i
+
+   ! Update the relative velocities correspondingly:
+   call velocities_abs_to_rel(Scell, NSC) ! New relative velocities
+
+   ! And updating energies:
+   call Atomic_kinetic_energies(Scell, NSC, matter)   ! below
+
+   ! Now, the "self"-part, comming from the electron transition between the levels of the same atom.
+   ! For those, we assume that the energy is redistributed globally:
+   ! Total transferred energy:
+   dE_tot = SUM(dE_mat)
+   ! Energy remaining undistributed (the self part): [initial+transferred - already-delivered]
+   dE_left = (Ekin_tot + dE_tot) - SUM(Scell(NSC)%MDatoms(:)%Ekin)
+
+   ! This remaining energy goes through global velosity rescaling:
+   call Rescale_atomic_velocities_global(dE_left, matter, Scell, NSC, nrg)    ! below
+
+   ! Test energy conservation:
+   !print*, 'Rescale_atomic_velocities_local:', SUM(Scell(NSC)%MDatoms(:)%Ekin), Ekin_tot + SUM(dE_mat), &
+   !                                            Ekin_tot + sum(dE_mat) - sum([(dE_mat(i,i), i = 1, Nat)])
+   nullify(Mi, Mj)
+end subroutine Rescale_atomic_velocities_local
+
+
+subroutine Rescale_atomic_velocities_global(dE_nonadiabat, matter, Scell, NSC, nrg)
+   real(8), intent(in) :: dE_nonadiabat   ! total energy gain by atoms [eV]
+   type(solid), intent(in) :: matter      ! material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of supercell
    type(Energies), intent(inout) :: nrg ! all energies
@@ -1221,11 +1331,11 @@ subroutine Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, nrg)
 !       print*, 'Rescale_atomic_velocities before', Ekin_tot, dE_nonadiabat, Ekin_tot + dE_nonadiabat
 
       ! Get the scaling coefficient:
-      b = dE_nonadiabat/Ekin_tot   ! ration entering the scaling
+      b = dE_nonadiabat/Ekin_tot   ! ratio entering the scaling
 
       if (b < -1.0d0) then
          alpha = 0.0d0
-         write(*,'(a,es16.6,es16.6,es16.6)') 'WARNING: in Rescale_atomic_velocities, change too high:', b, dE_nonadiabat, Ekin_tot
+         write(*,'(a,es16.6,es16.6,es16.6)') 'WARNING: in Rescale_atomic_velocities_global, change too high:', b, dE_nonadiabat, Ekin_tot
          write(*,'(a)') 'Some energy may be lost'
       else
          alpha = sqrt(1.0d0 + b)
@@ -1253,7 +1363,7 @@ subroutine Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, nrg)
       ! Test if it worked correctly:
 !       print*, 'Rescale_atomic_velocities after', SUM(Scell(NSC)%MDatoms(:)%Ekin), Ekin_tot*(alpha*alpha), alpha
    endif ! (abs(dE_nonadiabat) > Ekin_tot * eps)
-end subroutine Rescale_atomic_velocities
+end subroutine Rescale_atomic_velocities_global
 
 
 
@@ -1272,6 +1382,21 @@ subroutine Atomic_kinetic_energies(Scell, NSC, matter)
    enddo
    nullify(Mass)
 end subroutine Atomic_kinetic_energies
+
+
+subroutine Atomic_kinetic_energies_single(Scell, NSC, matter, i)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(Solid), intent(in), target :: matter
+   integer, intent(in) :: i   ! atomic index
+   !-----------
+   real(8), pointer :: Mass
+
+   Mass => matter%Atoms(Scell(NSC)%MDatoms(i)%KOA)%Ma
+   Scell(NSC)%MDatoms(i)%Ekin = 0.5d0*Mass*SUM(Scell(NSC)%MDatoms(i)%V(:)*Scell(NSC)%MDatoms(i)%V(:))*1d10/g_e	! [eV]
+
+   nullify(Mass)
+end subroutine Atomic_kinetic_energies_single
 
 
 

@@ -257,11 +257,10 @@ subroutine sort_dE_per_atoms(G_ei_per_atom, dE_ij, Scell, numpar)
    character(100) :: error_part
    real(8), dimension(size(Scell%Ha,1)) :: D_m
 
-
    ! Check if user requested local atomic velocity scaling (needs density matrix):
    select case (numpar%V_scaling)
    case default   ! global scaling, no need in the density matrix
-      print*, 'V_scaling=', numpar%V_scaling
+      !print*, 'V_scaling=', numpar%V_scaling
       return    ! nothing more to do here
    case (1) ! local scalingm requires density matrix
       ! continue calculations
@@ -304,15 +303,16 @@ subroutine sort_dE_per_atoms(G_ei_per_atom, dE_ij, Scell, numpar)
       call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{G_ei_per_atom}', G_ei_per_atom) ! module "MPI_subroutines"
 
 #else ! use OpenMP instead
-      !$omp PARALLEL private(i_at, i_orb, i_cur, j_at, j_orb, j_cur)
+      !$omp PARALLEL private(i_cur)
       !$omp do
       do i_cur = 1, Nsiz ! all levels
          ! Density matrix: contribution of all levels into orbital i:
          D_m(i_cur) = SUM(Scell%Dmatrix(i_cur,:))
       enddo ! i_at
       !$omp end do
-      !$omp barrier
+      !$omp end parallel
 
+      !$omp PARALLEL private(i_at, i_orb, i_cur, j_at, j_orb, j_cur)
       !$omp do
       do i_at = 1, N_at ! all atoms #1
          do i_orb = 1, N_orb  ! all orbitals of atom #1
@@ -323,6 +323,7 @@ subroutine sort_dE_per_atoms(G_ei_per_atom, dE_ij, Scell, numpar)
 
                   G_ei_per_atom(i_at, j_at) = G_ei_per_atom(i_at, j_at) + dE_ij(i_cur, j_cur) * D_m(i_cur) * D_m(j_cur)
 
+                  !print*, i_at, j_at, G_ei_per_atom(i_at, j_at)
                enddo   ! j_orb
             enddo ! j_at
          enddo   ! i_orb
@@ -922,16 +923,23 @@ subroutine get_G_ei(Scell, NSC, numpar, dE)
    integer, intent(in) :: NSC ! number of supercell
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), intent(in) :: dE	! [eV] energy transferred from electrons to ions
-   real(8) :: temp
+   real(8) :: temp, eps
+
+   eps = 1.0d-16
+
    temp = g_e/((Scell(NSC)%Te - Scell(NSC)%Ta)*Scell(NSC)%V*1d-30*(numpar%dt*1d-15))	! [W/(m^3 K)]
    !Scell(NSC)%G_ei = dE*g_e/((Scell(NSC)%Te - Scell(NSC)%Ta)*Scell(NSC)%V*1d-30*(numpar%dt*1d-15))	! [W/(m^3 K)]
    Scell(NSC)%G_ei = dE*temp	! [W/(m^3 K)]
+   ! Exclude numbers beyond machine precision:
+   if (abs(Scell(NSC)%G_ei) < eps) Scell(NSC)%G_ei = 0.0d0
+
    if (numpar%DOS_splitting == 1) then ! get partial G
       Scell(NSC)%G_ei_partial = Scell(NSC)%G_ei_partial*temp
+      where(abs(Scell(NSC)%G_ei_partial(:,:)) < eps)
+         Scell(NSC)%G_ei_partial(:,:) = 0.0d0
+      endwhere
    endif
-end subroutine get_G_ei 
-
-
+end subroutine get_G_ei
 
 
 !pppppppppppppppppppppppp

@@ -4007,6 +4007,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a, f10.1, a)') ' switched on at: ', numpar%t_NA, ' [fs]'
       write(print_to,'(a, f7.1, a)') ' with the acceptance window: ', numpar%acc_window, ' [eV]'
       write(print_to,'(a, f8.5, a)') ' degeneracy tolerance: ', numpar%degeneracy_eV, ' [eV]'
+
       write(text,'(f8.5)') numpar%M2_scaling
       if (numpar%M2_scaling == 4.0d0) text = trim(adjustl(text))//' (default)'
       write(print_to,'(a,a)') ' and scaling factor of: ', trim(adjustl(text))
@@ -4015,6 +4016,13 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(print_to,'(a)') ' using transient nonequilibrium atomic distribution'
       case default
          write(print_to,'(a)') ' using equivalent Maxwellian atomic distribution'
+      endselect
+
+      select case (numpar%V_scaling)      ! choose which model for velocity scaling to use
+      case default      ! global scaling
+         write(print_to,'(a)') ' Scheme used for atomic velocity scaling: global'
+      case (1)          ! local scaling
+         write(print_to,'(a)') ' Scheme used for atomic velocity scaling: local'
       endselect
    endif
 

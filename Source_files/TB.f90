@@ -3993,8 +3993,15 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
 
             ! New electron potential energy (Repulsive part is defined inside):
             call get_pot_nrg(Scell, matter, numpar) ! see below
+
             ! Deliver energy to the atoms - set new atomic velosities:
-            call Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
+            select case (numpar%V_scaling)      ! choose which model for velocity scaling to use
+            case default      ! global scaling
+               call Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
+            case (1)          ! local scaling
+               call Rescale_atomic_velocities(Scell(NSC)%G_ei_per_atom, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
+            endselect
+
             call get_kinetic_energy_abs(Scell, NSC, matter, Scell(NSC)%nrg) ! module "Atomic_tools"
 
             ! Test that energy split adds up to the total correctly:
