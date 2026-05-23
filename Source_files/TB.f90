@@ -1574,6 +1574,10 @@ subroutine get_DOS_masks(Scell, matter, numpar, only_coupling, do_cartesian)
    nat = size(Scell(NSC)%MDatoms) ! number of atoms
    Nsiz = size(Scell(NSC)%Ha,1) ! total number of orbitals
 
+   ! Allocate electron-ion energy exchange per pair of atoms:
+   if (.not.allocated(Scell(NSC)%G_ei_per_atom)) allocate( Scell(NSC)%G_ei_per_atom(nat, nat) )
+
+
    BS:if (do_cart) then ! Cartesian basis set (UNUSED FOR NOW):
       ! Find number of different orbital types:
       norb = identify_xTB_orbitals_per_atom(numpar%basis_size_ind) ! module "TB_xTB"
@@ -3945,14 +3949,16 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
                      !sssssssssssssssssssssss
                      ! Project-specific subroutine:
                      ! Test SAKUREI'S EXPRESSION:
-!                     call Landau_vs_Sakurei_test(Mij, Scell(NSC)%Ha, Scell(NSC)%Ha0, Ha_non=Scell(NSC)%H_non, Ha_non0=Scell(NSC)%H_non0, wr=Scell(NSC)%Ei, wr0=Scell(NSC)%Ei0) ! module "Nonadiabatic"
+                     ! call Landau_vs_Sakurei_test(Mij, Scell(NSC)%Ha, Scell(NSC)%Ha0, Ha_non=Scell(NSC)%H_non, &
+                     !   Ha_non0=Scell(NSC)%H_non0, wr=Scell(NSC)%Ei, wr0=Scell(NSC)%Ei0) ! module "Nonadiabatic"
                      !sssssssssssssssssssssss
                     
                      ! Calculate the electron-ion collision integral and energy exchange via it:
                      if (numpar%Nonadiabat) then
                         call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, &
-                                 Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
-                                 dE_nonadiabat, numpar%NA_kind, numpar%DOS_weights, Scell(NSC)%G_ei_partial) ! module "Nonadiabatic"
+                              Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
+                              dE_nonadiabat, numpar%NA_kind, numpar%DOS_weights, &
+                              Scell(NSC)%G_ei_partial, Scell(NSC)%G_ei_per_atom) ! module "Nonadiabatic"
                      endif
 
                      ! Save Mij to calculate the dynamical electornic heat conductivity:
@@ -3970,9 +3976,12 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
 
             ! New electron potential energy (Repulsive part is defined inside):
             call get_pot_nrg(Scell, matter, numpar) ! see below
-            ! New atomic velosities:
+            ! Deliver energy to the atoms - set new atomic velosities:
             call Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
             call get_kinetic_energy_abs(Scell, NSC, matter, Scell(NSC)%nrg) ! module "Atomic_tools"
+
+            ! Test that energy split adds up to the total correctly:
+            !print*, 'Electron_ion_coupling:', dE_nonadiabat, SUM(Scell(NSC)%G_ei_partial), SUM(Scell(NSC)%G_ei_per_atom), sum(numpar%DOS_weights)
 
             ! Update the last time-step data accordingly:
             call save_last_timestep(Scell) ! module "Atomic_tools"
