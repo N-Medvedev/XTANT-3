@@ -55,7 +55,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 13.05.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 23.05.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -3853,7 +3853,26 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(print_to,'(a,a)') ' Boundary condition along Z-axis: ', 'free'
       endif
    endif
-   write(print_to,'(a,a)') ' Electron cross sections used are from: ', trim(adjustl(numpar%At_base))
+
+
+   if (LEN((trim(adjustl(numpar%At_base)))) >= 4) then
+      select case (trim(adjustl(numpar%At_base(4:4))))
+      case ('BEB', 'EADL', 'EPICS', 'beb', 'eadl', 'epics')
+         write(print_to,'(a)') ' Electron cross sections used are : BEB'
+         write(print_to,'(a)') ' Photon absorption cross sections : EPICS'
+      case (':')
+         write(print_to,'(a,a)') ' Electron cross sections used are : ', trim(adjustl(numpar%At_base(1:3)))
+         write(print_to,'(a,a)') ' Photon absorption cross sections : ', trim(adjustl(numpar%At_base(5:)))
+      case default
+         write(print_to,'(a,a)') ' Electron cross sections used are : ', trim(adjustl(numpar%At_base))
+         write(print_to,'(a,a)') ' Photon absorption cross sections : ', trim(adjustl(numpar%At_base))
+      endselect
+   else     ! simple default printing:
+      write(print_to,'(a,a)') ' Electron cross sections used are : ', trim(adjustl(numpar%At_base))
+      write(print_to,'(a,a)') ' Photon absorption cross sections : ', trim(adjustl(numpar%At_base))
+   endif
+
+
    if (matter%dens < 1e6) then   ! real density:
       write(print_to,'(a,f10.3,a)') ' Density of the material: ', matter%dens,' [g/cm^3]'
       write(print_to,'(a,es12.3,a)') ' The used atomic density (used in MC cross sections): ', matter%At_dens, ' [1/cm^3]'

@@ -125,7 +125,7 @@ if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot co
 if (g_Err%Stopsignal) goto 2016     ! if the USER does not want to run the calculations, stop
 
 ! Printout additional info, if requested:
-if (g_numpar%verbose) call print_time_step('Input files read succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Input files read successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! if you set to use OpenMP in compiling: "make"
 #ifdef _OPENMP
@@ -148,7 +148,7 @@ if (g_Err%Err) goto 2012   ! if there was an error in preparing the initial conf
 ! Master thread shares read info with all the other MPI-processes:
 call MPI_share_initial_configuration(g_Scell, g_matter, g_numpar, g_laser, g_MC, g_Err)   ! module "MPI_subroutines"
 !--------------------------------------------------------------
-if (g_numpar%verbose) call print_time_step('Initial configuration set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Initial configuration set successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 
 ! ! Print the title of the program and used parameters on the screen:
@@ -166,7 +166,7 @@ call get_MFPs(g_Scell, 1, g_matter, g_laser, g_numpar, g_Scell(1)%TeeV, g_Err) !
 call MPI_share_electron_MFPs(g_matter, g_numpar, g_Err)   ! module "MPI_subroutines"
 !--------------------------------------------------------------
 if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
-if (g_numpar%verbose) call print_time_step('Electron mean free paths set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Electron mean free paths set successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Read (or create) photonic mean free paths:
 call get_photon_attenuation(g_matter, g_laser, g_numpar, g_Err) ! module "MC_cross_sections"
@@ -175,7 +175,7 @@ call get_photon_attenuation(g_matter, g_laser, g_numpar, g_Err) ! module "MC_cro
 call MPI_share_photon_attenuation(g_matter, g_numpar, g_Err)   ! module "MPI_subroutines"
 !--------------------------------------------------------------
 if (g_Err%Err) goto 2012   ! if there was an error in the input files, cannot continue, go to the end...
-if (g_numpar%verbose) call print_time_step('Photon attenuation lengths set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Photon attenuation lengths set successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 if (.not.g_numpar%do_path_coordinate) then  ! only for real calculations, not for coordinate path
    call save_last_timestep(g_Scell) ! save atomic before making next time-step, module "Atomic_tools"
@@ -183,7 +183,7 @@ endif
 
 ! Process the laser pulse parameters:
 call process_laser_parameters(g_Scell(1), g_matter, g_laser, g_numpar) ! module "Monte_Carlo"
-if (g_numpar%verbose) call print_time_step('Laser pulse parameters converted succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Laser pulse parameters converted successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Print the title of the program and used parameters on the screen:
 call Print_title(6, g_Scell, g_matter, g_laser, g_numpar, -1) ! module "Dealing_with_output_files"
@@ -194,7 +194,7 @@ endif
 ! Create the folder where output files will be stored, and prepare the files:
 call prepare_output_files(g_Scell, g_matter, g_laser, g_numpar, g_Scell(1)%TB_Hamil(1,1), g_Scell(1)%TB_Repuls(1,1), g_Err) ! module "Dealing_with_output_files"
 if (g_Err%Err) goto 2012   ! if there was an error in preparing the output files, cannot continue, go to the end...
-if (g_numpar%verbose) call print_time_step('Output directory prepared succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Output directory prepared successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Create CDF-file with fitted oscillators (Ritchi-Howie), if required:
 call printout_CDF_file(g_numpar, g_matter, g_Scell)   ! module "Dealing_with_output_files"
@@ -244,7 +244,7 @@ endif
 
 ! Contruct TB Hamiltonian, diagonalize to get energy levels, get forces for atoms and supercell:
 call get_Hamilonian_and_E(g_Scell, g_numpar, g_matter, 1, g_Err, g_time) ! module "TB"
-if (g_numpar%verbose) call print_time_step('Initial Hamiltonian prepared succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Initial Hamiltonian prepared successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Thermalization step for low-energy electrons (used only in relaxation-time approximation):
 call Electron_thermalization(g_Scell, g_numpar, skip_thermalization=.true.) ! module "Electron_tools"
@@ -253,34 +253,34 @@ call Electron_thermalization(g_Scell, g_numpar, skip_thermalization=.true.) ! mo
 call get_glob_energy(g_Scell, g_matter) ! module "Electron_tools"
 ! and update the electron distribution:
 call update_fe(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "Electron_tools"
-if (g_numpar%verbose) call print_time_step('Initial energy prepared succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Initial energy prepared successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Get parameters that use complex Hamiltonian: DOS, CDF, kappa:
 if ((abs(g_numpar%optic_model) > 0) .and. (g_numpar%optic_model < 4) ) then ! Trani or similar model, old-style DOS
    call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
-   if (g_numpar%verbose) call print_time_step('Optical parameters prepared succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+   if (g_numpar%verbose) call print_time_step('Optical parameters prepared successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 endif
 !call get_DOS(g_numpar, g_matter, g_Scell, g_Err)   ! module "TB"
-!if (g_numpar%verbose) call print_time_step('DOS calculated succesfully:', msec=.true.)
+!if (g_numpar%verbose) call print_time_step('DOS calculated successfully:', msec=.true.)
 call use_complex_Hamiltonian(g_numpar, g_matter, g_Scell, 1, g_Err)  ! module "TB_complex"
 if (g_numpar%verbose) call print_time_step('Complex-Hamiltonian-dependent parameters (DOS, CDF, k) done:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 
 ! Get current Mulliken charges (average and individual), if required:
 call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)
-if (g_numpar%verbose) call print_time_step('Mulliken charges calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Mulliken charges calculated successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Get the pressure in the atomic system:
 call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
-if (g_numpar%verbose) call print_time_step('Pressure calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Pressure calculated successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Calculate the mean square displacement of all atoms:
 call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD,  g_Scell(1)%MSDP, g_numpar%MSD_power, g_numpar)    ! module "Atomic_tools"
-if (g_numpar%verbose) call print_time_step('Mean displacement calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Mean displacement calculated successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Calculate diffraction peaks:
 call get_diffraction_peaks(g_Scell, g_matter, g_numpar)  ! module "Atomic_tools"
-if (g_numpar%verbose) call print_time_step('Diffraction peaks calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Diffraction peaks calculated successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 ! Calculate electron heat capacity, entropy, and orbital-resolved data:
 call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
@@ -293,7 +293,7 @@ call get_low_energy_distribution(g_Scell(1), g_numpar) ! module "Electron_tools"
 call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_thermodynamics"
 ! Update configurational temperature for running average (needed on each timestep):
 call update_Ta_config_running_average(g_Scell(1), g_matter, g_numpar)   ! module "Atomic_thermodynamics"
-if (g_numpar%verbose) call print_time_step('Atomic distribution calculated succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Atomic distribution calculated successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 
 ! Calculate configurational temperature (implemented only for Pettifor TB):
@@ -301,7 +301,7 @@ call Get_configurational_temperature(g_Scell, g_numpar, g_matter)	! module "TB"
 
 ! Save initial step in output:
 call write_output_files(g_numpar, g_time, g_matter, g_Scell) ! module "Dealing_with_output_files"
-if (g_numpar%verbose) call print_time_step('Initial output files set succesfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Initial output files set successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
 !WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW
 ! Signal possible warning for parameters defined:
@@ -366,7 +366,7 @@ do while (g_time .LT. g_numpar%t_total)
 
    ! Monte-Carlo for photons, high-energy electrons, and core holes:
    call MC_Propagate(g_MC, g_numpar, g_matter, g_Scell, g_laser, g_time, g_Err) ! module "Monte_Carlo"
-   if (g_numpar%verbose) call print_time_step('Monte Carlo model executed succesfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
+   if (g_numpar%verbose) call print_time_step('Monte Carlo model executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
    !write(*,'(a,f,f,f,f)') 'test 1:', g_time, SUM(g_Scell(1)%fe), SUM(g_Scell(1)%fe_eq), g_Scell(1)%Ne_low
 
@@ -460,7 +460,7 @@ do while (g_time .LT. g_numpar%t_total)
       call communicate(g_numpar%FN_communication, g_time, g_numpar, g_matter) ! module "Dealing_with_output_files"
       g_dt_save = 0.0d0
 
-      if (g_numpar%verbose) call print_time_step('Output files written succesfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)   ! module "Little_subroutines"
+      if (g_numpar%verbose) call print_time_step('Output files written successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)   ! module "Little_subroutines"
    endif
    !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
 enddo
@@ -496,7 +496,7 @@ if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does 
    call close_output_files(g_Scell, g_numpar) ! module "Dealing_with_files"
 endif
 
-if (g_numpar%verbose) call print_time_step('Opened files closed succesfully', msec=.true., MPI_param=g_numpar%MPI_param)
+if (g_numpar%verbose) call print_time_step('Opened files closed successfully', msec=.true., MPI_param=g_numpar%MPI_param)
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 ! Convolve output files with finite duration of the probe pulse:

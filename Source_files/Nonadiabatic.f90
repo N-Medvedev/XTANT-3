@@ -40,7 +40,8 @@ public :: Electron_ion_collision_int, get_G_ei, Electron_ion_coupling_Mij, Elect
  contains
 
 
-subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, dE_nonadiabat, kind_M, DOS_weights, G_ei_partial)
+subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, dE_nonadiabat, kind_M, &
+                                      DOS_weights, G_ei_partial, G_ei_per_atom)
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
    type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    type(Energies), intent(inout) :: nrg	! all energies
@@ -50,8 +51,9 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
    real(8), dimension(:), intent(inout) :: distre   ! electron distribution function
    real(8), intent(out) :: dE_nonadiabat ! energy exchanged [eV]
    integer, intent(in) :: kind_M	! index of the model used for the matri element calculation
-   real(8), dimension(:,:,:), intent(in) :: DOS_weights   ! weigths of the particular type of orbital on each energy level
-   real(8), dimension(:,:), intent(inout) :: G_ei_partial ! partial contributions into coupling from shells of atoms
+   real(8), dimension(:,:,:), intent(in) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
+   real(8), dimension(:,:), intent(inout) :: G_ei_partial   ! partial contributions into coupling from shells of atoms
+   real(8), dimension(:,:), intent(inout) :: G_ei_per_atom  ! partial contributions into coupling from pairs of atoms
    !---------------------------------------
    integer :: i, N_orb, N_steps, i_t, i_pc
    real(8) :: coef, coef_inv, dt_small, N_tot_cut, E_tot_cur, alpha, A_pc, B_pc, AB, A2AB, arg, eps, eps_N, Ne
@@ -92,9 +94,14 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
    dE_nonadiabat = 0.0d0
    distre_temp = distre ! to start
    distre_temp2 = distre_temp ! to start
+   G_ei_partial = 0.0d0   ! to start with
+   G_ei_per_atom = 0.0d0  ! to start with
+
+
    !E_tot_cur = Scell%E_tot
    E_tot_cur = nrg%El_low
 
+   !print*, 'N_steps=', N_steps
    TIME_STEPS:do i_t = 1, N_steps
       ! initializing:
       dfdt_e = 0.0d0
@@ -108,13 +115,12 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
 !     inv_t_e_ph = 0.0d0
 
       P_C:do while (pc_iterations)
-         G_ei_partial = 0.0d0 ! to start with
 
          ! Get the collision integral parameters:
          !call get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, distre_temp2, dfdt_e2, dfdt_A2, dfdt_B2, &
          !                        DOS_weights, G_ei_partial) ! below
          call get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, numpar%dt*(1d-15), kind_M, distre_temp2, dfdt_e2, dfdt_A2, dfdt_B2, &
-                                 DOS_weights, G_ei_partial) ! below
+                                 DOS_weights, G_ei_partial, G_ei_per_atom) ! below
 
          ! first step, no iterative data yet, use what we have:
          if (i_pc == 1) then
@@ -184,8 +190,6 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
       ! When we have an acceptable solution:
       distre_temp(:) = distre_temp2(:)
 
-      G_ei_partial = G_ei_partial*dt_small
-
       N_tot_cut = SUM(distre_temp(:))
       !E_tot_cur = SUM(distre_temp(:)*wr(:))
 
@@ -211,6 +215,12 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
       endif
    enddo TIME_STEPS
 
+   ! Take dt into account:
+   G_ei_partial = G_ei_partial*dt_small
+   G_ei_per_atom = G_ei_per_atom*dt_small
+
+   !print*, i_t, N_steps, G_ei_partial(400,401)
+
    ! Update electron energy:
    nrg%El_low = SUM(distre_temp(:)*wr(:)) ! new total electron energy [eV]
    dE_nonadiabat = SUM( (distre(:) - distre_temp(:)) * wr(:) )    ! [eV] transfered energy
@@ -232,7 +242,7 @@ end subroutine Electron_ion_collision_int
 
 
 subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, distre_temp, &
-                              dfdt_e, dfdt_A, dfdt_B, DOS_weights, G_ei_partial)
+                              dfdt_e, dfdt_A, dfdt_B, DOS_weights, G_ei_partial, G_ei_per_atom)
    type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
    type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:), intent(in) :: Mij  ! Matrix element coupling electron energy levels via ion motion
@@ -243,12 +253,15 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
    real(8), dimension(:), intent(inout) :: dfdt_e	! change of the distribution function
    real(8), dimension(:), intent(inout) :: dfdt_A, dfdt_B ! factors for explicit scheme
    real(8), dimension(:,:,:), intent(in) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
-   real(8), dimension(:,:), intent(inout) :: G_ei_partial     ! partial contributions into coupling from different shells of
+   real(8), dimension(:,:), intent(inout) :: G_ei_partial     ! partial contributions into coupling from different shells
+   real(8), dimension(:,:), intent(inout) :: G_ei_per_atom    ! partial contributions into coupling from different pairs of atoms
    !------------------
    real(8) :: dfdt_i, wij, ViVj, Mij2, distr_at_in, distr_at_fin, dtij, dfdt, dfdt_aij, dfdt_bij, coef, coef_inv
    integer :: i, j
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
+   real(8), dimension(size(G_ei_partial,1),size(G_ei_partial,2)) :: G_ei_partial_cur     ! temporary copy
+   !real(8), dimension(size(G_ei_per_atom,1),size(G_ei_per_atom,2)) :: G_ei_per_atom_cur    ! temporary copy
 
    coef = 2.0d0*g_e/g_h
    coef_inv = numpar%M2_scaling*g_h/(g_e)   ! [s] with scaling factor added (e.g. 2 from d|a|^2/dt) OLD
@@ -257,6 +270,7 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
    dfdt_e = 0.0d0
    dfdt_A = 0.0d0
    dfdt_B = 0.0d0
+   G_ei_partial_cur = 0.0d0
 
 #ifdef MPI_USED   ! use the MPI version
    N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
@@ -299,7 +313,7 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
                !if (abs(dfdt * dt_small) < 2.0d0) then
                    dfdt_i = dfdt_i + dfdt
                    ! Get contributions from different shells:
-                   call Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)    ! below
+                   call Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial_cur)    ! below
                !endif ! (abs(dfdt * dt_small) < 2.0d0)
 
 
@@ -309,15 +323,19 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
       dfdt_e(i) = dfdt_i
     enddo ! i
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   G_ei_partial = G_ei_partial + G_ei_partial_cur
+   !G_ei_per_atom = G_ei_per_atom + G_ei_per_atom_cur
+
    error_part = 'Error in get_el_ion_kernel:'
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dfdt_e}', dfdt_e) ! module "MPI_subroutines"
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{G_ei_partial}', G_ei_partial) ! module "MPI_subroutines"
+   !call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{G_ei_per_atom}', G_ei_per_atom) ! module "MPI_subroutines"
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dfdt_A}', dfdt_A) ! module "MPI_subroutines"
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dfdt_B}', dfdt_B) ! module "MPI_subroutines"
 
 #else ! use OpenMP instead
 !$omp PARALLEL private(i,j,dfdt_i,ViVj,Mij2,distr_at_in,distr_at_fin, dtij, wij, dfdt, dfdt_aij, dfdt_bij) ! Implicit scheme
-!$omp do reduction( + : dfdt_e, G_ei_partial, dfdt_A, dfdt_B) ! explicit scheme
+!$omp do reduction( + : dfdt_e, G_ei_partial_cur, dfdt_A, dfdt_B) ! explicit scheme
     do i = 1, size(wr) ! all energy levels
       dfdt_i = 0.0d0  ! implicit
       do j = 1, size(wr) ! all pairs of energy levels
@@ -350,20 +368,25 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
                dfdt_A(i) = dfdt_A(i) + dfdt_aij*distre_temp(j)
                dfdt_B(i) = dfdt_B(i) + dfdt_bij*(2.0d0-distre_temp(j))
 
-               !if (abs(dfdt * dt_small) < 2.0d0) then
-                   dfdt_i = dfdt_i + dfdt
-                   ! Get contributions from different shells:
-                   call Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)    ! below
-               !endif ! (abs(dfdt * dt_small) < 2.0d0)
-
+               dfdt_i = dfdt_i + dfdt
+               ! Get contributions from different shells:
+               call Get_Gei_shells_contrib( i, j, DOS_weights, dfdt, wr, G_ei_partial_cur)    ! below
 
           endif large_jumps
       enddo ! j
       ! Implicit scheme:
       dfdt_e(i) = dfdt_i
+
+      !print*, 'get_el_ion_kernel:', i, -dfdt_e(i) * wr(i), SUM(G_ei_partial_cur) ! tested, correct summation over df(i)/dt*E(i)
+
     enddo ! i
 !$omp end do
 !$omp end parallel
+
+   ! Add it uo to all other levels' contributions:
+   G_ei_partial = G_ei_partial + G_ei_partial_cur
+   !G_ei_per_atom = G_ei_per_atom + G_ei_per_atom_cur
+
 #endif
 end subroutine get_el_ion_kernel
 
@@ -436,33 +459,56 @@ end subroutine get_nonadiabatic_Pij_abs
 
 
 ! Get contributions from different shells analogously to Mulliken charge calculations:
-pure subroutine Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)
-   integer, intent(in) :: i, j
-   real(8), dimension(:,:,:), intent(in) :: DOS_weights
-   real(8), intent(in) :: dfdt
-   real(8), dimension(:), intent(in) :: wr
-   real(8), dimension(:,:), intent(out) :: G_ei_partial
+subroutine Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)
+   integer, intent(in) :: i, j      ! atomic indices
+   real(8), dimension(:,:,:), intent(in) :: DOS_weights ! weights of DOS (contribution of particular shells)
+   real(8), intent(in) :: dfdt      ! df/dt(i,j)
+   real(8), dimension(:), intent(in) :: wr  ! energy levels [eV]
+   real(8), dimension(:,:), intent(inout) :: G_ei_partial ! energy transfer per orbital type
    !-----------------------------
    integer :: i_at, N_at, i_types, N_types, i_at2, i_types2, i_G1, i_G2
-   real(8) :: G_temp
+   real(8) :: G_temp, dE, G_ij
+   real(8), dimension(size(G_ei_partial,1), size(G_ei_partial,2)) :: G_ei_single
+   !real(8), dimension(size(G_per_atom,1), size(G_per_atom,2)) :: G_per_atom_single
+
    
    N_at = size(DOS_weights,1)    ! number of kinds of atoms
    N_types = size(DOS_weights,2) ! number of atomic shells (basis set size)
 !    Nsiz = size(DOS_weights,3)    ! number of energy levels
 
-   do i_at = 1, N_at
-      do i_types = 1, N_types
-         i_G1 = (i_at-1) * N_types + i_types
-         G_temp = dfdt * DOS_weights(i_at, i_types,i) * wr(i)
-         do i_at2 = 1, N_at
-            do i_types2 = 1, N_types
-               i_G2 = (i_at2-1) * N_types + i_types2
-               G_ei_partial(i_G1,i_G2) = G_ei_partial(i_G1,i_G2) - G_temp * DOS_weights(i_at2, i_types2,j)  ! sign defined as energy loss
+   dE = dfdt * wr(i)    ! transferred energy [eV]
+
+   G_ei_single = 0.0d0
+
+   ! Identify contributions from different shells into this transferred energy:
+   do i_at = 1, N_at    ! type of first atom
+      do i_types = 1, N_types   ! shell of first kind of atom
+         i_G1 = (i_at-1) * N_types + i_types    ! type of orbital 1
+
+         G_temp = dE * DOS_weights(i_at, i_types, i)
+
+         do i_at2 = 1, N_at ! type of second atom
+            do i_types2 = 1, N_types    ! shells of second kind of atom
+               i_G2 = (i_at2-1) * N_types + i_types2    ! type of orbital 2
+
+               G_ij = G_temp * DOS_weights(i_at2, i_types2, j)
+
+               !G_ei_partial(i_G1,i_G2) = G_ei_partial(i_G1,i_G2) - G_ij ! sign defined as energy loss
+               !G_per_atom(i_at,i_at2)  = G_per_atom(i_at,i_at2)  - G_ij
+               G_ei_single(i_G1,i_G2) = G_ei_single(i_G1,i_G2) - G_ij ! sign defined as energy loss
+
             enddo   ! i_types2
          enddo ! i_at2
       enddo   ! i_types
    enddo ! i_at
-   
+   ! Sum them up for all levels:
+   G_ei_partial = G_ei_partial + G_ei_single
+
+
+   ! Test if the energy is split correctly (total conserved):
+   if ( abs((-dE) - SUM(G_ei_single)) > 1.0d-6*abs(dE)) then
+      print*, 'Error in Get_Gei_shells_contrib:', -dE, SUM(G_ei_single)
+   endif
 end subroutine Get_Gei_shells_contrib
 
 

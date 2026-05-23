@@ -808,11 +808,12 @@ type Super_cell
    real(8) :: E_VB_bottom	! [eV] current bottom of the valence band
    real(8) :: E_VB_top	! [eV] current bottom of the valence band
    real(8) :: G_ei	! [W/(m^3 K)] electron-ion coupling parameter
-   real(8), dimension(:,:), allocatable :: G_ei_partial	! [W/(m^3 K)] partial electron-ion coupling parameter per all orbitals pairwise
+   real(8), dimension(:,:), allocatable :: G_ei_partial ! [W/(m^3 K)] partial electron-ion coupling parameter per all orbitals pairwise
+   real(8), dimension(:,:), allocatable :: G_ei_per_atom    ! [eV] partial electron-ion energy transfer per atoms pairwise
    real(8), dimension(:,:), allocatable :: DOS	! DOS
    real(8), dimension(:,:,:), allocatable :: partial_DOS	! partial DOS made of different orbitals
    ! Testmode additional data (usually not needed):
-   real(8) :: V_CoM(3)     ! center of mass velosity
+   real(8) :: V_CoM(3)     ! center of mass velocity
    real(8) :: I_tot(3,3)   ! moment of inertia tensor
    real(8) :: F_tot(3)     ! total force in the supercell
 end type Super_cell
@@ -1139,12 +1140,14 @@ end type Numerics_param
 
 
 !==============================================
-! types used in Monte Carlo:
-! One photon as an object, to make an array of them:
+! Types used in Monte Carlo:
+! Basic particle as an object:
 type :: Particle ! basic class for all particles
-   real(8) E ! energy [eV]
-   real(8) ti ! time of impact
-   integer :: birthmark ! index of how this particle was created:
+   real(8) :: E = 0.0d0     ! energy [eV]
+   real(8) :: ti            ! time of impact
+   real(8) :: R(3)          ! its current coordinates [A]
+   real(8) :: V(3)          ! its current velocity [A]
+   integer :: birthmark     ! index of how this particle was created:
    ! -1 = uninitialized
    ! 0 = external (incomming) particle
    ! 1 = photo-electron (hole)
@@ -1157,20 +1160,20 @@ type, EXTENDS (Particle) :: Photon ! photon as an object, contains the following
 end type Photon
 
 type, EXTENDS (Particle) :: Electron ! electron as an object contains the same into as photon + more:
-   real(8) :: t ! current time [fs]
-   integer :: colls ! number of collisions that the electron made
+   real(8) :: t             ! particle's current time [fs]
+   integer :: colls = 0     ! number of collisions that the electron made
 end type Electron
 
 type, EXTENDS (Particle) :: Hole ! hole as an object, contains the same info as electron + more:
-   real(8) :: t ! current time [fs]
-   integer :: KOA ! kind of atom
-   integer :: Sh  ! shell
+   real(8) :: t             ! particle's current time [fs]
+   integer :: KOA           ! kind of atom
+   integer :: Sh            ! shell
 end type Hole
 
 type MC_data	! all MC arrays storred here
-   type(Photon), dimension(:), allocatable :: photons
+   type(Photon), dimension(:), allocatable   :: photons
    type(Electron), dimension(:), allocatable :: electrons
-   type(Hole), dimension(:), allocatable :: holes
+   type(Hole), dimension(:), allocatable     :: holes
    integer :: noe, noh_tot ! numbers of existing electron and holes
    integer :: noe_emit     ! number of emitted electrons
 end type MC_data
