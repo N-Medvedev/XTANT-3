@@ -611,8 +611,10 @@ subroutine Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)
 
 
    ! Test if the energy is split correctly (total conserved):
-   if ( abs((-dE) - SUM(G_ei_single)) > 1.0d-6*abs(dE)) then
-      print*, 'Error in Get_Gei_shells_contrib:', -dE, SUM(G_ei_single)
+   if (abs(dE) > 1.0d-12) then ! makes sense to check
+      if ( abs((-dE) - SUM(G_ei_single)) > 1.0d-6*abs(dE)) then
+         print*, 'Problem in Get_Gei_shells_contrib:', -dE, SUM(G_ei_single)
+      endif
    endif
 end subroutine Get_Gei_shells_contrib
 

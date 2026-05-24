@@ -142,7 +142,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
 
       select case (numpar%DOS_splitting)  ! orbital-resolved data
          case (1) ! with partial DOS
-         call write_coulping(numpar%FN_coupling, time, Scell, NSC, numpar) ! electron-ion coupling
+            call write_coulping(numpar%FN_coupling, time, Scell, NSC, numpar) ! electron-ion coupling
       end select
 
       if (numpar%save_fe) then
@@ -1357,7 +1357,7 @@ subroutine write_coulping_header(FN, Scell, NSC, matter, numpar)
    N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
 
    ! Total coupling:
-   write(FN, '(a)', advance='no') ' #Time   Total   '
+   write(FN, '(a)', advance='no') '#Time   Total   '
    ! Atoms resolved:
    do i = 1, N_at
       do j = 1, N_at
@@ -1399,7 +1399,7 @@ subroutine write_Ce_header(FN, Scell, NSC, matter)
    N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
 
    ! Total Ce:
-   write(FN, '(a)', advance='no') ' #Time   Total   '
+   write(FN, '(a)', advance='no') '#Time   Total   '
    ! All shells resolved:
    do i_at = 1, N_at
       do i_types = 1, N_types
@@ -1513,18 +1513,18 @@ subroutine write_coulping(FN, time, Scell, NSC, numpar)
    N_types = size(numpar%DOS_weights,2) ! number of atomic shells (basis set size)
    Nsiz = size(Scell(NSC)%G_ei_partial, 1)
    ! Total coupling:
-   write(FN, '(es25.16, es25.16)', advance='no') time, Scell(NSC)%G_ei
+   write(FN, '(f18.6, es26.15E4)', advance='no') time, Scell(NSC)%G_ei
    ! Atoms resolved:
    do i = 1, N_at
       do j = 1, N_at
-         write(FN,'(es25.16)', advance='no') SUM(Scell(NSC)%G_ei_partial((i-1)*N_types+1:(i-1)*N_types+N_types, &
+         write(FN,'(es26.15E4)', advance='no') SUM(Scell(NSC)%G_ei_partial((i-1)*N_types+1:(i-1)*N_types+N_types, &
                                                                          (j-1)*N_types+1:(j-1)*N_types+N_types) )
       enddo
    enddo
    ! Partial:
    do i = 1, Nsiz
       do j = 1, Nsiz
-         write(FN,'(es25.16)', advance='no') Scell(NSC)%G_ei_partial(i,j)
+         write(FN,'(es26.15E4)', advance='no') Scell(NSC)%G_ei_partial(i,j)
       enddo
    enddo
    write(FN,'(a)') ''
@@ -2570,42 +2570,43 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
 
    !=======================================================
-      ! Plot the data:
-      select case (numpar%plot_engine)    ! which engine to use for plots
-      case default ! Gnuplot
-         ! Prepare gnuplot scripts to plot all the output data:
-         call create_gnuplot_scripts(Scell, matter, numpar, laser, file_path, &
-               'OUTPUT_temperatures.dat', &
-               'OUTPUT_pressure_and_stress.dat', &
-               'OUTPUT_energies.dat', &
-               file_atoms_R, file_atoms_S, &
-               'OUTPUT_supercell.dat', &
-               'OUTPUT_electron_properties.dat', &
-               'OUTPUT_electron_heat_conductivity.dat', &
-               'OUTPUT_electron_heat_conductivity_dyn.dat', &
-               'OUTPUT_electron_hole_numbers.dat', &
-               'OUTPUT_orbital_resolved_data.dat', &
-               'OUTPUT_deep_shell_holes.dat', &
-               'OUTPUT_optical_coefficients.dat', &
-               file_Ei, file_PCF, &
-               'OUTPUT_nearest_neighbors.dat', &
-               file_element_NN_short, &
-               'OUTPUT_electron_entropy.dat', &
-               'OUTPUT_electron_temperatures.dat', &
-               'OUTPUT_electron_chempotentials.dat', &
-               'OUTPUT_atomic_entropy.dat', &
-               'OUTPUT_atomic_temperatures.dat', &
-               'OUTPUT_atomic_temperatures_partial.dat', &
-               file_sect_displ_short, &
-               'OUTPUT_diffraction_peaks.dat', &
-               file_diff_peaks_part, &
-               'OUTPUT_diffraction_powder.dat', &
-               'OUTPUT_diffraction_peaks_DW.dat', &
-               'OUTPUT_Debye_temperature_from_DW.dat', &
-               'OUTPUT_testmode_data.dat')  ! module "Plots_gnuplot"
+   ! Plot the data:
+   select case (numpar%plot_engine)    ! which engine to use for plots
+   case default ! Gnuplot
+      ! Prepare gnuplot scripts to plot all the output data:
+      call create_gnuplot_scripts(Scell, matter, numpar, laser, file_path, &
+            'OUTPUT_temperatures.dat', &
+            'OUTPUT_pressure_and_stress.dat', &
+            'OUTPUT_energies.dat', &
+            file_atoms_R, file_atoms_S, &
+            'OUTPUT_supercell.dat', &
+            'OUTPUT_electron_properties.dat', &
+            'OUTPUT_electron_heat_conductivity.dat', &
+            'OUTPUT_electron_heat_conductivity_dyn.dat', &
+            'OUTPUT_electron_hole_numbers.dat', &
+            'OUTPUT_orbital_resolved_data.dat', &
+            'OUTPUT_deep_shell_holes.dat', &
+            'OUTPUT_optical_coefficients.dat', &
+            file_Ei, file_PCF, &
+            'OUTPUT_nearest_neighbors.dat', &
+            file_element_NN_short, &
+            'OUTPUT_electron_entropy.dat', &
+            'OUTPUT_electron_temperatures.dat', &
+            'OUTPUT_electron_chempotentials.dat', &
+            'OUTPUT_atomic_entropy.dat', &
+            'OUTPUT_atomic_temperatures.dat', &
+            'OUTPUT_atomic_temperatures_partial.dat', &
+            file_sect_displ_short, &
+            'OUTPUT_diffraction_peaks.dat', &
+            file_diff_peaks_part, &
+            'OUTPUT_diffraction_powder.dat', &
+            'OUTPUT_diffraction_peaks_DW.dat', &
+            'OUTPUT_Debye_temperature_from_DW.dat', &
+            'OUTPUT_testmode_data.dat', &
+            'OUTPUT_coupling.dat' )  ! module "Plots_gnuplot"
 
-      case ('py') ! Python
-         call create_python_plot_scripts(Scell, matter, numpar, laser, file_path, &
+   case ('py') ! Python
+      call create_python_plot_scripts(Scell, matter, numpar, laser, file_path, &
             'OUTPUT_temperatures.dat', &
             'OUTPUT_pressure_and_stress.dat', &
             'OUTPUT_energies.dat', &
@@ -2633,10 +2634,11 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             'OUTPUT_diffraction_powder.dat', &
             'OUTPUT_diffraction_peaks_DW.dat', &
             'OUTPUT_Debye_temperature_from_DW.dat', &
-            'OUTPUT_testmode_data.dat')  ! module "Plots_python"
-      case ('no') ! no plots required
+            'OUTPUT_testmode_data.dat', &
+            'OUTPUT_coupling.dat' )  ! module "Plots_python"
+   case ('no') ! no plots required
             ! no plots required
-      end select
+   end select
 
    ! clean up:
    if (allocated(file_sect_displ)) deallocate(file_sect_displ, file_sect_displ_short)
@@ -2710,7 +2712,7 @@ subroutine output_parameters_file(Scell,matter,laser,numpar,TB_Hamil,TB_Repuls,E
       do i = 1, matter%N_KAO
          write(FN,'(a)') trim(adjustl(m_dashline))
          write(chtemp(1), '(i12)') i
-         write(chtemp(2), '(f6.2)') matter%Atoms(i)%percentage
+         write(chtemp(2), '(f8.2)') matter%Atoms(i)%percentage
          write(FN, '(a,$)') 'Element #'//trim(adjustl(chtemp(1)))//' is '//trim(adjustl(matter%Atoms(i)%Name))// &
             ' contributing to the compound with '//trim(adjustl(chtemp(2)))
          write(FN, '(a)') ''
