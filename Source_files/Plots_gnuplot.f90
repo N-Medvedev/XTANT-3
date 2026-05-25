@@ -56,7 +56,7 @@ file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_element_NN, file_electron_entropy, file_Te, file_mu, &
 file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
 file_diffraction_peaks, file_diffraction_peaks_part, file_diffraction_powder, file_diffraction_peaks_DW, file_Debye_temperature, &
-file_testmode, file_coupling)
+file_testmode, file_coupling, file_high_e)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -91,6 +91,7 @@ file_testmode, file_coupling)
    character(*), intent(in) :: file_Debye_temperature ! Debye temperatures
    character(*), intent(in) :: file_testmode    ! testmode data
    character(*), intent(in) :: file_coupling    ! electron-ion coupling, including partial
+   character(*), intent(in) :: file_high_e      ! high-energy electrons by type
    !----------------
    character(300) :: File_name, File_name2
    real(8) :: t0, t_last, x_tics, E_temp
@@ -216,6 +217,10 @@ file_testmode, file_coupling)
    ! Numbers of particles:
    File_name  = trim(adjustl(file_path))//'OUTPUT_electrons_and_holes_Gnuplot'//trim(adjustl(sh_cmd))
    call gnu_numbers(numpar, File_name, file_numbers, t0, t_last, 'OUTPUT_electrons_holes.'//trim(adjustl(numpar%fig_extention))) ! below
+
+   ! High-energy electrons:
+   File_name  = trim(adjustl(file_path))//'OUTPUT_electrons_high_energy'//trim(adjustl(sh_cmd))
+   call gnu_high_energy_el(numpar, File_name, file_high_e, t0, t_last, 'OUTPUT_electrons_high_energy.'//trim(adjustl(numpar%fig_extention))) ! below
 
    ! Orbital-resolved electron parameters:
    File_name  = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_Gnuplot'//trim(adjustl(sh_cmd))
@@ -522,6 +527,11 @@ file_testmode, file_coupling)
       ! Numbers of particles:
       File_name  = trim(adjustl(file_path))//'OUTPUT_electrons_and_holes_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
       call gnu_numbers(numpar, File_name, trim(adjustl(file_numbers(1:len(trim(adjustl(file_numbers)))-4)))//'_CONVOLVED.dat', t0, t_last, 'OUTPUT_electrons_holes_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+      ! High-energy electrons:
+      File_name  = trim(adjustl(file_path))//'OUTPUT_electrons_high_energy_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
+      call gnu_high_energy_el(numpar, File_name, trim(adjustl(file_high_e(1:len(trim(adjustl(file_high_e)))-4)))//'_CONVOLVED.dat', &
+               t0, t_last, 'OUTPUT_electrons_high_energy_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
       ! Orbital-resolved electron parameters:
       File_name  = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_Gnu_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -1327,7 +1337,7 @@ subroutine gnu_numbers(numpar, File_name, file_numbers, t0, t_last, eps_name)
    call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
 
    call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics, 'Numbers', 'Time (fs)', &
-                        'Particles (1/atom)', trim(adjustl(eps_name)), numpar%path_sep, 1) ! module "Gnuplotting"
+                        'Particles (1/atom)', trim(adjustl(eps_name)), numpar%path_sep, 0) ! module "Gnuplotting"
 
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
       write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_numbers)), ' "u 1:4 w l lw LW title "High-energy electrons" ,\'
@@ -1344,6 +1354,42 @@ subroutine gnu_numbers(numpar, File_name, file_numbers, t0, t_last, eps_name)
    close(FN)
 end subroutine gnu_numbers
 
+
+
+subroutine gnu_high_energy_el(numpar, File_name, file_high_e, t0, t_last, eps_name)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_high_e ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics, 'Numbers', 'Time (fs)', &
+                        'Electrons (1/atom)', trim(adjustl(eps_name)), numpar%path_sep, 0) ! module "Gnuplotting"
+
+   if (numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_high_e)), ' "u 1:2 w l lw LW title "Total" ,\'
+      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_high_e)), ' "u 1:3 w l lw LW title "Photo"  ,\'
+      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_high_e)), ' "u 1:4 w l lw LW title "Auger" ,\'
+      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_high_e)), ' "u 1:5 w l lw LW title "Impact-ionized" ,\'
+      write(FN, '(a,a,a,i12,a)') ' "', trim(adjustl(file_high_e)), ' "u 1:6 w l lw LW title "Error" '
+   else
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_high_e)), '\"u 1:2 w l lw \"$LW\" title \"Total\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_high_e)), '\"u 1:3 w l lw \"$LW\" title \"Photo\"  ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_high_e)), '\"u 1:4 w l lw \"$LW\" title \"Auger\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_high_e)), '\"u 1:5 w l lw \"$LW\" title \"Impact-ionization\" '
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_high_e)), '\"u 1:6 w l lw \"$LW\" title \"Error\" '
+   endif
+   call write_gnuplot_script_ending(numpar, FN, File_name, 1)
+   close(FN)
+end subroutine gnu_high_energy_el
 
 
 ! Orbital-resolved electron parameters:

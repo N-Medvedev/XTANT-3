@@ -104,6 +104,9 @@ subroutine write_output_files(numpar, time, matter, Scell)
       call write_pressure(numpar%FN_pressure, time, Pressure, Stress)   ! pressure tensore
       call write_energies(numpar%FN_energies, time, nrg) ! energies in various subsystems
       call write_numbers(numpar%FN_numbers, time, Scell(NSC))  ! total numbers
+
+      call write_high_energy_electrons(numpar%FN_high_e, time, Scell(NSC))           ! high-energy electrons by type
+
       call write_orb_resolved(numpar%FN_orb_resolved, time, Scell(NSC), matter) ! orbital-resolved electronic data
       call write_holes(numpar%FN_deep_holes, time, matter, Scell(NSC))  ! core holes
       if (numpar%save_raw) call write_atomic_relatives(numpar%FN_atoms_S, Scell(NSC)%MDatoms)   ! atomic coords and velocities
@@ -1563,6 +1566,21 @@ end subroutine write_numbers
 
 
 
+subroutine write_high_energy_electrons(FN, time, Scell)
+   integer, intent(in) :: FN	! file number
+   real(8), intent(in) :: time	! [fs]
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   !----------------
+   write(FN,'(f25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, &  ! time [fs]
+      Scell%Ne_high/dble(Scell%Na), &     ! all high-energy electrons (in MC)
+      Scell%Ne_photo/dble(Scell%Na), &    ! photo-electrons
+      Scell%Ne_Auger/dble(Scell%Na), &    ! Auger-electrons
+      Scell%Ne_impact/dble(Scell%Na), &    ! impact-ionized secondary electrons
+      (Scell%Ne_high - Scell%Ne_photo - Scell%Ne_Auger - Scell%Ne_impact)/dble(Scell%Na)   ! error in high-energy particle conservation
+end subroutine write_high_energy_electrons
+
+
+
 subroutine write_pressure(FN, time, Pressure, Stress)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: time	! [fs]
@@ -2010,6 +2028,7 @@ subroutine close_output_files(Scell, numpar)
    close(numpar%FN_energies)
    close(numpar%FN_supercell)
    close(numpar%FN_numbers)
+   close(numpar%FN_high_e)
    close(numpar%FN_orb_resolved)
    close(numpar%FN_deep_holes)
    if (numpar%do_kappa) close(numpar%FN_kappa)
@@ -2104,6 +2123,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100) :: file_electron_temperatures ! electron temperatures (for band-resolved calculations)
    character(100) :: file_electron_chempot ! electron chemical potentials (for band-resolved calculations)
    character(100) :: file_numbers	! total numbers of electrons and holes
+   character(100) :: file_high_e    ! high-eenrgy electrons by type
    character(100) :: file_orb_resolved ! orbital-resolved electronic data
    character(100) :: file_deep_holes	! number of deep-shell holes in each shell
    character(100) :: file_Ei		! energy levels
@@ -2403,6 +2423,13 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    write(numpar%FN_numbers, '(a)') '#[fs]	[1/atom]	[1/atom]	[1/atom]	[1/atom]	[1/atom]	[1/atom]'
 
 
+   file_high_e = trim(adjustl(file_path))//'OUTPUT_high_energy_electrons.dat'
+   open(NEWUNIT=FN, FILE = trim(adjustl(file_high_e)))
+   numpar%FN_high_e = FN
+   write(numpar%FN_high_e, '(a)') '#Time	All_high_energy	Photoelectrons	Auger	Impact     Error'
+   write(numpar%FN_high_e, '(a)') '#[fs]	[1/atom]	[1/atom]	[1/atom]	[1/atom]	[1/atom]'
+
+
    file_orb_resolved = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_data.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_orb_resolved)))
    numpar%FN_orb_resolved = FN
@@ -2603,7 +2630,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             'OUTPUT_diffraction_peaks_DW.dat', &
             'OUTPUT_Debye_temperature_from_DW.dat', &
             'OUTPUT_testmode_data.dat', &
-            'OUTPUT_coupling.dat' )  ! module "Plots_gnuplot"
+            'OUTPUT_coupling.dat', &
+            'OUTPUT_high_energy_electrons.dat' )  ! module "Plots_gnuplot"
 
    case ('py') ! Python
       call create_python_plot_scripts(Scell, matter, numpar, laser, file_path, &
@@ -2635,7 +2663,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             'OUTPUT_diffraction_peaks_DW.dat', &
             'OUTPUT_Debye_temperature_from_DW.dat', &
             'OUTPUT_testmode_data.dat', &
-            'OUTPUT_coupling.dat' )  ! module "Plots_python"
+            'OUTPUT_coupling.dat', &
+            'OUTPUT_high_energy_electrons.dat' )  ! module "Plots_python"
    case ('no') ! no plots required
             ! no plots required
    end select
