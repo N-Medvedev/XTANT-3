@@ -30,7 +30,7 @@ USE IFLPORT, only : system, chdir   ! library, allowing to operate with director
 use Universal_constants
 use Objects
 use Dealing_with_files, only : Count_lines_in_file
-use Gnuplotting, only : write_gnuplot_script_header_new, write_gnuplot_script_ending_new
+use Gnuplotting, only : write_gnuplot_script_header_new, write_gnuplot_script_ending_new, select_linestyle_gnu
 use Little_subroutines, only : set_starting_time, order_of_time, name_of_orbitals, number_of_types_of_orbitals
 use Dealing_with_EADL, only : define_PQN
 
@@ -302,6 +302,10 @@ file_testmode, file_coupling)
    ! Electron-ion coupling parameter:
    File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
    call gnu_coupling(numpar, File_name, file_electron_properties, t0, t_last, 'OUTPUT_coupling.'//trim(adjustl(numpar%fig_extention))) ! below
+
+   ! Partial electron-ion coupling:
+   call gnu_partial_coupling(Scell(1), matter, numpar, trim(adjustl(file_coupling)), t0, t_last, &
+            'OUTPUT_coupling_by_element', 'OUTPUT_coupling_by_orbital')      ! below
 
    ! Volume:
    File_name  = trim(adjustl(file_path))//'OUTPUT_volume_Gnuplot'//trim(adjustl(sh_cmd))
@@ -614,6 +618,10 @@ file_testmode, file_coupling)
       call gnu_coupling(numpar, File_name, &
             trim(adjustl(file_electron_properties(1:len(trim(adjustl(file_electron_properties)))-4)))//'_CONVOLVED.dat', &
             t0, t_last, 'OUTPUT_coupling_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+      ! Partial coupling:
+      call gnu_partial_coupling(Scell(1), matter, numpar, trim(adjustl(file_coupling)), t0, t_last, &
+            'OUTPUT_coupling_by_element', 'OUTPUT_coupling_by_orbital', convolved=.true.)      ! below
 
       ! Volume:
       File_name  = trim(adjustl(file_path))//'OUTPUT_volume_Gnuplot_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -2079,6 +2087,288 @@ subroutine gnu_coupling(numpar, File_name, file_electron_properties, t0, t_last,
    call write_gnuplot_script_ending(numpar, FN, File_name, 1)
    close(FN)
 end subroutine gnu_coupling
+
+
+
+subroutine gnu_partial_coupling(Scell, matter, numpar, file_coupling, t0, t_last, script_name_element, script_name_shell, convolved)
+   type(Super_cell), intent(in) :: Scell
+   type(Solid), intent(in) :: matter
+   type(Numerics_param), intent(in) :: numpar
+   real(8), intent(in) :: t0, t_last
+   character(*), intent(in) :: file_coupling, script_name_element, script_name_shell
+   logical, intent(in), optional :: convolved
+
+   integer :: FN, i, j, Nat, col1, col2, N_types, norb, i_start, i_orb, j_orb, N_at, N_cols
+   character(300) :: File_name, Plot_name, Data_file_name, temp_txt
+   character(30) :: x_min, x_max, temp_col1, temp_col2, linestyle, orb_name1, orb_name2
+   character(10) :: sh_cmd, call_slash
+
+   ! -----------------------------------------------------------
+   ! OS detection: Windows vs Linux
+   ! -----------------------------------------------------------
+   if (numpar%path_sep .EQ. '\') then
+      sh_cmd = '.cmd'
+      call_slash = 'call '
+   else
+      sh_cmd = '.sh'
+      call_slash = './'
+   endif
+
+   select case (numpar%DOS_splitting)
+
+   case (1)
+      Nat = size(matter%Atoms)
+
+      ! ============================================================
+      ! 1) ELEMENT-RESOLVED PLOT
+      ! ============================================================
+      if (Nat > 1) then
+
+         File_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))// &
+                     trim(adjustl(script_name_element))//trim(adjustl(sh_cmd))
+         open(NEWUNIT=FN, FILE=trim(adjustl(File_name)), action="write", status="replace")
+
+         Plot_name = 'OUTPUT_coupling_by_element'
+         Data_file_name = file_coupling
+
+         if (present(convolved)) then
+            if (convolved) then
+               Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+               Data_file_name = trim(adjustl(file_coupling(1:len(trim(adjustl(file_coupling)))-4)))//'_CONVOLVED.dat'
+            endif
+         endif
+
+         write(x_min,'(f12.3)') t0
+         write(x_max,'(f12.3)') t_last
+
+         ! ============================================================
+         ! LINUX VERSION (.sh)
+         ! ============================================================
+         if (sh_cmd .EQ. '.sh') then
+            write(FN,'(a)') '#!/bin/bash'
+            write(FN,'(a)') 'gnuplot << EOF'
+            write(FN,'(a)') 'set terminal pngcairo enhanced font "Arial,14"'
+            write(FN,'(a)') 'set output "'//trim(adjustl(Plot_name))//'.'//trim(adjustl(numpar%fig_extention))//'"'
+            write(FN,'(a)') 'set xlabel "Time (fs)" font "arial,18"'
+            write(FN,'(a)') 'set ylabel "Coupling parameter (W/(m^3 K))" font "arial,18"'
+            write(FN,'(a)') 'set xrange ['//trim(adjustl(x_min))//':'//trim(adjustl(x_max))//']'
+            write(FN,'(a)') 'set key top left'
+            write(FN,'(a)') 'unset grid'
+            write(FN,'(a)') 'plot \'
+
+         ! ============================================================
+         ! WINDOWS VERSION (.cmd)
+         ! ============================================================
+         else
+            write(FN,'(a)') '@echo off & call gnuplot.exe -e "echo='//"'#'"//';set macros" "%~f0" & goto :eof'
+            !write(FN,'(a)') 'gnuplot -persist -e "'
+            write(FN,'(a)') 'set terminal pngcairo enhanced font ''Arial,14'';'
+            write(FN,'(a)') 'set output '''//trim(adjustl(Plot_name))//'.'//trim(adjustl(numpar%fig_extention))//''';'
+            write(FN,'(a)') 'set xlabel ''Time (fs)'' font "arial,18";'
+            write(FN,'(a)') 'set ylabel ''Coupling parameter (W/(m^3 K))'' font "arial,18";'
+            write(FN,'(a)') 'set xrange ['//trim(adjustl(x_min))//':'//trim(adjustl(x_max))//'];'
+            write(FN,'(a)') 'set key top left;'
+            write(FN,'(a)') 'unset grid;'
+            write(FN,'(a)') 'plot \'
+         endif
+
+         ! ============================================================
+         ! TOTAL COUPLING
+         ! ============================================================
+         if (sh_cmd .EQ. '.sh') then
+            write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:2 with lines lw 3 lt 1 title "Total", \'
+         else
+            write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:2 with lines lw 3 lt 1 title ''Total'', \'
+         endif
+
+         ! ============================================================
+         ! ELEMENT-RESOLVED PAIRS
+         ! ============================================================
+         do i = 1, Nat
+            do j = i, Nat
+
+               col1 = 3 + (i-1)*Nat + (j-1)
+               col2 = 3 + (j-1)*Nat + (i-1)
+
+               write(temp_col1,'(i0)') col1
+               write(temp_col2,'(i0)') col2
+
+               call select_linestyle_gnu(col1, linestyle)   ! module "Gnuplotting"
+
+               if (col1 == col2) then
+                  if (sh_cmd .EQ. '.sh') then
+                     if ((i == Nat) .and. (j==Nat)) then
+                        write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:'//trim(adjustl(temp_col1))// &
+                        ' with lines lw 3 "'//trim(adjustl(linestyle))//'" title "'// &
+                        trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(j)%Name))//'"'
+                     else
+                        write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:'//trim(adjustl(temp_col1))// &
+                        ' with lines lw 3 "'//trim(adjustl(linestyle))//'" title "'// &
+                        trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(j)%Name))//'", \'
+                     endif
+                  else
+                     write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:'//trim(adjustl(temp_col1))// &
+                        ' with lines lw 3 '//trim(adjustl(linestyle))//' title '''// &
+                        trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(j)%Name))//''', \'
+                  endif
+               elseif (col1 < col2) then ! only print the sum once
+                  if (sh_cmd .EQ. '.sh') then
+                     write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:(column('//trim(adjustl(temp_col1))// &
+                        ')+column('//trim(adjustl(temp_col2))//')) with lines lw 3 "'// &
+                        trim(adjustl(linestyle))//'" title "'// &
+                        trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(j)%Name))//'", \'
+                  else
+                     write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:(column('//trim(adjustl(temp_col1))// &
+                        ')+column('//trim(adjustl(temp_col2))//')) with lines lw 3 '// &
+                        trim(adjustl(linestyle))//' title '''// &
+                        trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(j)%Name))//''', \'
+                  endif
+               endif
+
+            enddo
+         enddo
+
+         if (sh_cmd .EQ. '.sh') then
+            write(FN,'(a)') 'EOF'
+         else
+            !write(FN,'(a)') '"'
+         endif
+
+         call write_gnuplot_script_ending(numpar, FN, File_name, 1)
+         close(FN)
+      endif
+
+      ! ============================================================
+      ! 2) ORBITAL-RESOLVED PLOT
+      ! ============================================================
+      N_at = size(Scell%MDatoms)
+      norb = size(Scell%Ha,1) / N_at
+      N_types = number_of_types_of_orbitals(norb)
+
+      if (N_types > 1) then
+
+         File_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))// &
+                     trim(adjustl(script_name_shell))//trim(adjustl(sh_cmd))
+         open(NEWUNIT=FN, FILE=trim(adjustl(File_name)), action="write", status="replace")
+
+         Plot_name = 'OUTPUT_coupling_by_orbital'
+         Data_file_name = file_coupling
+
+         if (present(convolved)) then
+            if (convolved) then
+               Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+               Data_file_name = trim(adjustl(file_coupling(1:len(trim(adjustl(file_coupling)))-4)))//'_CONVOLVED.dat'
+            endif
+         endif
+
+         write(x_min,'(f12.3)') t0
+         write(x_max,'(f12.3)') t_last
+
+         ! Linux or Windows header
+         if (sh_cmd .EQ. '.sh') then
+            write(FN,'(a)') '#!/bin/bash'
+            write(FN,'(a)') 'gnuplot << EOF'
+            write(FN,'(a)') 'set terminal pngcairo enhanced font "Arial,14"'
+            write(FN,'(a)') 'set output "'//trim(adjustl(Plot_name))//'.'//trim(adjustl(numpar%fig_extention))//'"'
+            write(FN,'(a)') 'set xlabel "Time (fs)" font "arial,18"'
+            write(FN,'(a)') 'set ylabel "Coupling parameter (W/(m^3 K))" font "arial,18"'
+            write(FN,'(a)') 'set xrange ['//trim(adjustl(x_min))//':'//trim(adjustl(x_max))//']'
+            write(FN,'(a)') 'set key top left'
+            write(FN,'(a)') 'unset grid'
+            write(FN,'(a)') 'plot \'
+         else
+            write(FN,'(a)') '@echo off & call gnuplot.exe -e "echo='//"'#'"//';set macros" "%~f0" & goto :eof'
+            !write(FN,'(a)') 'gnuplot -persist -e "'
+            write(FN,'(a)') 'set terminal pngcairo enhanced font ''Arial,14'';'
+            write(FN,'(a)') 'set output '''//trim(adjustl(Plot_name))//'.'//trim(adjustl(numpar%fig_extention))//''';'
+            write(FN,'(a)') 'set xlabel ''Time (fs)'' font "arial,18";'
+            write(FN,'(a)') 'set ylabel ''Coupling parameter (W/(m^3 K))'' font "arial,18";'
+            write(FN,'(a)') 'set xrange ['//trim(adjustl(x_min))//':'//trim(adjustl(x_max))//'];'
+            write(FN,'(a)') 'set key top left;'
+            write(FN,'(a)') 'unset grid;'
+            write(FN,'(a)') 'plot \'
+         endif
+
+         ! Total
+         if (sh_cmd .EQ. '.sh') then
+            write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:2 with lines lw 3 lt 1 title "Total", \'
+         else
+            write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:2 with lines lw 3 lt 1 title ''Total'', \'
+         endif
+
+         i_start = Nat**2
+
+         do i = 1, Nat
+            do i_orb = 1, N_types
+               orb_name1 = name_of_orbitals(norb, i_orb)
+
+               do j = i, Nat
+                  do j_orb = 1, N_types
+                     orb_name2 = name_of_orbitals(norb, j_orb)
+
+                     col1 = (3+i_start) + (i-1)*Nat*N_types**2 + (i_orb-1)*Nat*N_types + (j-1)*N_types + (j_orb-1)
+                     col2 = (3+i_start) + (j-1)*Nat*N_types**2 + (j_orb-1)*Nat*N_types + (i-1)*N_types + (i_orb-1)
+
+                     write(temp_col1,'(i0)') col1
+                     write(temp_col2,'(i0)') col2
+
+                     call select_linestyle_gnu(col1-i_start, linestyle) ! module "Gnuplotting"
+
+                     if (col1 == col2) then
+                        if (sh_cmd .EQ. '.sh') then
+                           if ((i == Nat) .and. (j==Nat)) then
+                              write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:'//trim(adjustl(temp_col1))// &
+                              ' with lines lw 3 '//trim(adjustl(linestyle))//' title "'// &
+                              trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(orb_name1))//'-'// &
+                              trim(adjustl(matter%Atoms(j)%Name))//' '//trim(adjustl(orb_name2))//'"'
+                           else
+                              write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:'//trim(adjustl(temp_col1))// &
+                              ' with lines lw 3 '//trim(adjustl(linestyle))//' title "'// &
+                              trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(orb_name1))//'-'// &
+                              trim(adjustl(matter%Atoms(j)%Name))//' '//trim(adjustl(orb_name2))//'", \'
+                           endif
+                        else
+                           write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:'//trim(adjustl(temp_col1))// &
+                              ' with lines lw 3 '//trim(adjustl(linestyle))//' title '''// &
+                              trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(orb_name1))//'-'// &
+                              trim(adjustl(matter%Atoms(j)%Name))//' '//trim(adjustl(orb_name2))//''', \'
+                        endif
+                     elseif (col1 < col2) then ! only print the sum once
+                        if (sh_cmd .EQ. '.sh') then
+                           write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:(column('//trim(adjustl(temp_col1))// &
+                              ')+column('//trim(adjustl(temp_col2))//')) with lines lw 3 '// &
+                              trim(adjustl(linestyle))//' title "'// &
+                              trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(orb_name1))//'-'// &
+                              trim(adjustl(matter%Atoms(j)%Name))//' '//trim(adjustl(orb_name2))//'", \'
+                        else
+                           write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:(column('//trim(adjustl(temp_col1))// &
+                              ')+column('//trim(adjustl(temp_col2))//')) with lines lw 3 '// &
+                              trim(adjustl(linestyle))//' title '''// &
+                              trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(orb_name1))//'-'// &
+                              trim(adjustl(matter%Atoms(j)%Name))//' '//trim(adjustl(orb_name2))//''', \'
+                        endif
+                     endif
+
+                  enddo
+               enddo
+            enddo
+         enddo
+
+         if (sh_cmd .EQ. '.sh') then
+            write(FN,'(a)') 'EOF'
+         else
+            !write(FN,'(a)') '"'
+         endif
+
+         call write_gnuplot_script_ending(numpar, FN, File_name, 1)
+         close(FN)
+      endif
+
+   end select
+end subroutine gnu_partial_coupling
+
+
+
 
 
 subroutine gnu_volume(numpar, File_name, file_supercell, t0, t_last, eps_name)
