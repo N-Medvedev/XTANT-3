@@ -37,7 +37,8 @@ PRIVATE
 character(50), parameter :: m_Gnuplot_all = 'OUTPUT_Gnuplot_all'
 
 
-public :: write_gnu_printout, write_gnuplot_script_header_new, collect_gnuplots, write_gnuplot_script_ending_new, m_Gnuplot_all
+public :: write_gnu_printout, write_gnuplot_script_header_new, collect_gnuplots, write_gnuplot_script_ending_new, &
+            m_Gnuplot_all, select_linestyle_gnu
 
 
  contains
@@ -174,6 +175,36 @@ pure subroutine cmd_vs_sh(path_sep, call_slash, sh_cmd)
       sh_cmd = '.sh'
    endif
 end subroutine cmd_vs_sh
+
+
+
+subroutine select_linestyle_gnu(i, line_style)
+   integer, intent(in) :: i   ! index
+   character(*), intent(out) :: line_style      ! linestyle for python plotting
+   !------------------------
+   integer :: i_allowed
+
+   ! Currently, there are 7 stiles, so cycle them:
+   i_allowed = MOD(i, 7)
+
+   select case (i_allowed)   ! currently, supports 7 different elements (may be added if needed)
+   case (1)    ! solid
+      line_style = 'dashtype 1'
+   case (2)    ! dashed
+      line_style = 'dashtype "-"'
+   case (3)    ! dash-dot
+      line_style = 'dashtype "-."'
+   case (4)    ! dash-dot-dot
+      line_style = 'dashtype "_.."'
+   case (5)    ! long dash-short dash-dot
+      line_style = 'dashtype "_-."'
+   case (6)    ! long dash
+      line_style = 'dashtype "_"'
+   case default ! Long dash - dot - short dash - dot
+      line_style = 'dashtype "_.-."'
+   end select
+end subroutine select_linestyle_gnu
+
 
  
 subroutine write_gnu_printout(FN, first_line, last_line, file_name, x_start, x_end, y_start, y_end, col_x, col_y, lw, title, additional_info, linux_s)
