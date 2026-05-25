@@ -56,7 +56,7 @@ file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_element_NN, file_electron_entropy, file_Te, file_mu, &
 file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
 file_diffraction_peaks, file_diffraction_peaks_part, file_diffraction_powder, file_diffraction_peaks_DW, file_Debye_temperature, &
-file_testmode)
+file_testmode, file_coupling)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -90,6 +90,7 @@ file_testmode)
    character(*), dimension(:), allocatable, intent(in) :: file_diffraction_peaks_part
    character(*), intent(in) :: file_Debye_temperature ! Debye temperatures
    character(*), intent(in) :: file_testmode    ! testmode data
+   character(*), intent(in) :: file_coupling    ! electron-ion coupling, including partial
    !----------------
    character(300) :: File_name, File_name2
    real(8) :: t0, t_last, x_tics, E_temp
@@ -255,8 +256,11 @@ file_testmode)
 
 
    ! Electron-ion coupling parameter:
-   File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
    call Python_plot_coupling(numpar, file_electron_properties, t0, t_last, 'OUTPUT_coupling.py') ! below
+
+   ! Partial electron-ion coupling:
+   call Python_plot_partial_coupling(Scell(1), matter, numpar, file_coupling, t0, t_last, &
+            'OUTPUT_coupling_by_element.py', 'OUTPUT_coupling_by_orbital.py') ! below
 
 
    ! Volume:
@@ -486,8 +490,11 @@ file_testmode)
 
 
       ! Electron-ion coupling parameter:
-      File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter'//trim(adjustl(sh_cmd))
       call Python_plot_coupling(numpar, file_electron_properties, t0, t_last, 'OUTPUT_coupling_CONVOLVED.py', convolved=.true.) ! below
+
+      ! Partial electron-ion coupling:
+      call Python_plot_partial_coupling(Scell(1), matter, numpar, file_coupling, t0, t_last, 'OUTPUT_coupling_by_element.py', &
+            'OUTPUT_coupling_by_orbital.py', convolved=.true.) ! below
 
 
       ! Volume:
@@ -1272,6 +1279,260 @@ subroutine Python_plot_volume(numpar, file_supercell, t0, t_last, script_name, c
    deallocate(col_nums, col_lables)
 end subroutine Python_plot_volume
 
+
+
+subroutine Python_plot_partial_coupling(Scell, matter, numpar, file_coupling, t0, t_last, script_name_element, script_name_shell, convolved)
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Solid), intent(in) :: matter      ! material properties
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_coupling, script_name_element, script_name_shell ! file with energy levels, scripts
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
+   !----------------
+   integer :: FN, i, Nsiz, Nat, j, col1, col2, N_types, norb, i_start, i_orb, j_orb, N_at, N_cols
+   character(30) :: x_min, x_max, temp_col1, temp_col2, linestyle, orb_name1, orb_name2
+   character(300) :: File_name, Plot_name, Data_file_name, temp_txt
+
+   ! Only do it if the data-file exists:
+   select case (numpar%DOS_splitting)  ! orbital-resolved data
+   case (1) ! with partial DOS
+      Nat = size(matter%Atoms)      ! number of different kinds of atoms
+
+      ! 1) Create element-resolved script, only if there are more than one element:
+      if (Nat > 1) then
+         ! Py script file:
+         File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name_element))
+         open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+         Plot_name = 'OUTPUT_coupling_parameter_by_element'
+         Data_file_name = file_coupling
+         if (present(convolved)) then
+            if (convolved) then
+               Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+               Data_file_name  = trim(adjustl(file_coupling(1:len(trim(adjustl(file_coupling)))-4)))//'_CONVOLVED.dat'
+            endif
+         endif
+
+         ! Create the python script:
+         write(FN, '(a)')  'import pandas as pd'
+         write(FN, '(a)')  'import numpy as np'
+         write(FN, '(a)')  'import matplotlib.pyplot as plt'
+         write(FN, '(a)')  'import matplotlib.cm as cm'
+         write(FN, '(a)')  '# Set the format:'
+         write(FN, '(a)')  'plt.xlabel("Time (fs)", fontsize=14)'
+         write(FN, '(a)')  'plt.ylabel("Coupling parameter (W/(m$^3$ K))", fontsize=14)'
+         write(FN, '(a)')  'plt.xticks(fontsize=12)'
+         write(FN, '(a)')  'plt.yticks(fontsize=12)'
+         write(FN, '(a)')  'plt.grid(False)'
+         write(FN, '(a)')  '# Set the axes:'
+         write(FN, '(a)')  '# Read the output file:'
+         write(FN, '(a)')  'df = pd.read_csv(r"'// trim(adjustl(Data_file_name))// &
+                        '", sep=r'//"'\s+',"//'header=None, comment="#", skipinitialspace=True)'
+         write(FN, '(a)')  '# Prepare the plot:'
+         write(FN, '(a)')  '# -----------------------------'
+         write(FN, '(a)')  '# Time axis'
+         write(FN, '(a)')  '# -----------------------------'
+         write(FN, '(a)')  't = df.iloc[:, 0]'
+
+         ! To add up off-diagonal contributions:
+         write(FN, '(a)')  'pairs = ['
+         ! First ,add the total coupling:
+         write(FN,'(a)') '(1,1, "Total", "-"),'
+         ! Now, all element-resolved ones:
+         do i = 1, Nat ! Atoms resolved:
+            do j = i, Nat
+               ! Get the column numberes in the file corresponding to these two elements:
+               col1 = 2+(i-1)*Nat+(j-1)
+               col2 = 2+(j-1)*Nat+(i-1)
+               write(temp_col1,'(i0)') col1
+               write(temp_col2,'(i0)') col2
+               ! Also add the label and the linestyle:
+               call select_linestyle(col1, linestyle) ! below
+
+               if ((i /= Nat) .or. (j/=Nat)) then ! add coma
+                  write(FN,'(a)') '('//trim(adjustl(temp_col1))//','//trim(adjustl(temp_col2))//', "'// &
+                     trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(j)%Name))//'", '// &
+                     trim(adjustl(linestyle))//'),'
+               else ! no coma
+                  write(FN,'(a)') '('//trim(adjustl(temp_col1))// ','//trim(adjustl(temp_col2))//', "'// &
+                     trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(j)%Name))//'", '// &
+                     trim(adjustl(linestyle))//')'
+               endif
+            enddo
+         enddo
+         write(FN, '(a)')  ']'
+
+         write(FN, '(a)')  '# Create N distinct colors from a colormap'
+         write(FN, '(a)')  'colors = plt.cm.tab20(np.linspace(0, 1, 20))'
+         write(FN, '(a)')  'for idx, (c1, c2, label, ls) in enumerate(pairs):'
+         write(FN, '(a)')  '     # Skip reversed duplicates (keep only c1 >= c2)'
+         write(FN, '(a)')  '     if c1 > c2:'
+         write(FN, '(a)')  '           continue'
+         write(FN, '(a)')  '     if c1 == c2:'
+         write(FN, '(a)')  '           # Plot column i alone'
+         write(FN, '(a)')  '           summed = df.iloc[:, c1]'
+         write(FN, '(a)')  '     else:'
+         write(FN, '(a)')  '           # Plot sum of columns i + j'
+         write(FN, '(a)')  '           summed = df.iloc[:, c1] + df.iloc[:, c2]'
+         write(FN, '(a)')  '     plt.plot(t, summed, color=colors[idx], linestyle=ls, label=label)'
+
+         write(x_min, '(f12.3)') t0
+         write(x_max, '(f12.3)') t_last
+
+         write(FN, '(a)')  'plt.xlim('// trim(adjustl(x_min)) //','// trim(adjustl(x_max)) //')'
+         write(FN, '(a)')  'plt.ylim(None,None)'
+         write(FN, '(a)')  'plt.title("Electron-ion coupling by element")'
+         N_cols = 1+Nat*(Nat+1)/2     ! estimate the number of columns in the legend
+         if (N_cols < 8) then ! normal:
+            write(temp_txt,'(a)') 'fontsize=12'
+         elseif (N_cols < 17) then ! smaller
+            write(temp_txt,'(a)') 'fontsize=10'
+         elseif (N_cols < 21) then
+            write(temp_txt,'(a)') 'fontsize=9'
+         elseif (N_cols < 33) then
+            write(temp_txt,'(a)') 'fontsize=10, ncol=2'
+         elseif (N_cols < 41) then
+            write(temp_txt,'(a)') 'fontsize=9, ncol=2'
+         else
+            write(temp_txt,'(a)') 'fontsize=9, ncol=3'
+         endif
+         write(FN, '(a)')  'plt.legend(loc="best", '//trim(adjustl(temp_txt))//')'
+         write(FN, '(a)')  '# Save the plot in this format:'
+         write(FN, '(a)')  'plt.savefig("'//trim(adjustl(Plot_name))//'.'//trim(adjustl(numpar%fig_extention))//'", dpi=300, bbox_inches="tight")'
+         write(FN, '(a)')  'plt.close()'
+
+         close(FN)
+      endif
+
+
+      ! 2) Create orbital-resolved script, only if there are more than one orbital:
+      ! Find number of different orbital types:
+      N_at = size(Scell%MDatoms) ! total number of atoms
+      Nsiz = size(Scell%Ha,1) ! total number of orbitals
+      norb = Nsiz/N_at ! orbitals per atom
+      ! Find number of different orbital types:
+      N_types = number_of_types_of_orbitals(norb)  ! module "Little_subroutines"
+
+      if (N_types > 1) then
+         ! Py script file:
+         File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name_shell))
+         open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+         Plot_name = 'OUTPUT_coupling_parameter_by_orbital'
+         Data_file_name = file_coupling
+         if (present(convolved)) then
+            if (convolved) then
+               Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+               Data_file_name  = trim(adjustl(file_coupling(1:len(trim(adjustl(file_coupling)))-4)))//'_CONVOLVED.dat'
+            endif
+         endif
+
+         ! Create the python script:
+         write(FN, '(a)')  'import pandas as pd'
+         write(FN, '(a)')  'import numpy as np'
+         write(FN, '(a)')  'import matplotlib.pyplot as plt'
+         write(FN, '(a)')  'import matplotlib.cm as cm'
+         write(FN, '(a)')  '# Set the format:'
+         write(FN, '(a)')  'plt.xlabel("Time (fs)", fontsize=14)'
+         write(FN, '(a)')  'plt.ylabel("Coupling parameter (W/(m$^3$ K))", fontsize=14)'
+         write(FN, '(a)')  'plt.xticks(fontsize=12)'
+         write(FN, '(a)')  'plt.yticks(fontsize=12)'
+         write(FN, '(a)')  'plt.grid(False)'
+         write(FN, '(a)')  '# Set the axes:'
+         write(FN, '(a)')  '# Read the output file:'
+         write(FN, '(a)')  'df = pd.read_csv(r"'// trim(adjustl(Data_file_name))// &
+                        '", sep=r'//"'\s+',"//'header=None, comment="#", skipinitialspace=True)'
+         write(FN, '(a)')  '# Prepare the plot:'
+         write(FN, '(a)')  '# -----------------------------'
+         write(FN, '(a)')  '# Time axis'
+         write(FN, '(a)')  '# -----------------------------'
+         write(FN, '(a)')  't = df.iloc[:, 0]'
+
+         ! To add up off-diagonal contributions:
+         write(FN, '(a)')  'pairs = ['
+         ! First ,add the total coupling:
+         write(FN,'(a)') '(1,1, "Total", "-"),'
+         i_start = Nat**2     ! to skip the lines with elements
+         ! Now, all element-resolved ones:
+         do i = 1, Nat        ! for all atoms i
+            do i_orb = 1, N_types      ! and all orbital types of atom i
+               orb_name1 = name_of_orbitals(norb, i_orb) ! module "Little_subroutines"
+
+               do j = i, Nat     ! for all atoms j
+                  do j_orb = 1, N_types   ! and all orbital types of atom j
+                     orb_name2 = name_of_orbitals(norb, j_orb) ! module "Little_subroutines"
+
+                     ! Get the column numberes in the file corresponding to these two elements:
+                     col1 = (2+i_start) + (i-1)*Nat*N_types**2 + (i_orb-1)*Nat*N_types + (j-1)*N_types + (j_orb-1)
+                     col2 = (2+i_start) + (j-1)*Nat*N_types**2 + (j_orb-1)*Nat*N_types + (i-1)*N_types + (i_orb-1)
+                     write(temp_col1,'(i0)') col1
+                     write(temp_col2,'(i0)') col2
+                     ! Also add the label and the linestyle:
+                     call select_linestyle((col1-i_start), linestyle) ! below
+
+                     if ((i /= Nat) .or. (j/=Nat) .or. (i_orb/=N_types) .or. (j_orb/=N_types)) then ! add coma
+                        write(FN,'(a)') '('//trim(adjustl(temp_col1))//','//trim(adjustl(temp_col2))//', "'// &
+                           trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(orb_name1))//'-'// &
+                           trim(adjustl(matter%Atoms(j)%Name))//' '//trim(adjustl(orb_name2))//'", '// &
+                           trim(adjustl(linestyle))//'),'
+                     else ! no coma
+                        write(FN,'(a)') '('//trim(adjustl(temp_col1))// ','//trim(adjustl(temp_col2))//', "'// &
+                           trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(orb_name1))//'-'// &
+                           trim(adjustl(matter%Atoms(j)%Name))//' '//trim(adjustl(orb_name2))//'", '// &
+                           trim(adjustl(linestyle))//')'
+                     endif
+                  enddo
+               enddo
+            enddo
+         enddo
+         write(FN, '(a)')  ']'
+
+         write(FN, '(a)')  '# Create N distinct colors from a colormap'
+         write(FN, '(a)')  'colors = plt.cm.tab20(np.linspace(0, 1, 20))'
+
+         write(FN, '(a)')  'for idx, (c1, c2, label, ls) in enumerate(pairs):'
+         write(FN, '(a)')  '     # Skip reversed duplicates (keep only c1 >= c2)'
+         write(FN, '(a)')  '     if c1 > c2:'
+         write(FN, '(a)')  '           continue'
+         write(FN, '(a)')  '     if c1 == c2:'
+         write(FN, '(a)')  '           # Plot column i alone'
+         write(FN, '(a)')  '           summed = df.iloc[:, c1]'
+         write(FN, '(a)')  '     else:'
+         write(FN, '(a)')  '           # Plot sum of columns i + j'
+         write(FN, '(a)')  '           summed = df.iloc[:, c1] + df.iloc[:, c2]'
+         write(FN, '(a)')  '     plt.plot(t, summed, color=colors[idx % len(colors)], linestyle=ls, label=label)'
+         write(x_min, '(f12.3)') t0
+         write(x_max, '(f12.3)') t_last
+
+         write(FN, '(a)')  'plt.xlim('// trim(adjustl(x_min)) //','// trim(adjustl(x_max)) //')'
+         write(FN, '(a)')  'plt.ylim(None,None)'
+         write(FN, '(a)')  'plt.title("Electron-ion coupling by orbital")'
+
+         ! Make appropriate font size:
+         N_cols = 1+Nat*N_types*(Nat+1)*(N_types+1)/4     ! estimate the number of columns in the legend
+         if (N_cols < 8) then ! normal:
+            write(temp_txt,'(a)') 'fontsize=12'
+         elseif (N_cols < 17) then ! smaller
+            write(temp_txt,'(a)') 'fontsize=10'
+         elseif (N_cols < 21) then
+            write(temp_txt,'(a)') 'fontsize=9'
+         elseif (N_cols < 33) then
+            write(temp_txt,'(a)') 'fontsize=10, ncol=2'
+         elseif (N_cols < 41) then
+            write(temp_txt,'(a)') 'fontsize=9, ncol=2'
+         else
+            write(temp_txt,'(a)') 'fontsize=9, ncol=3'
+         endif
+         write(FN, '(a)')  'plt.legend(loc="best", '//trim(adjustl(temp_txt))//')'
+         write(FN, '(a)')  '# Save the plot in this format:'
+         write(FN, '(a)')  'plt.savefig("'//trim(adjustl(Plot_name))//'.'//trim(adjustl(numpar%fig_extention))//'", dpi=300, bbox_inches="tight")'
+         write(FN, '(a)')  'plt.close()'
+
+         close(FN)
+      endif
+
+   end select
+end subroutine Python_plot_partial_coupling
 
 
 
@@ -3719,291 +3980,6 @@ end subroutine Create_python_plot
 
 
 
-subroutine Create_python_plot_OLD(FN, Data_file, col_nums, col_lables, &
-      x_axis_label, y_axis_label, title, legend_position, out_name, out_format, &
-      x_min, x_max, y_min, y_max, &
-      x_tics, y_tics, &
-      set_x_log, set_y_log, &
-      l_style, &
-      Data_file2, col_nums2, col_labels2, &
-      colors_inverted &
-      )
-   integer, intent(in) :: FN  ! file number (must be opened)
-   character(*), intent(in) :: Data_file  ! data file to plot data from
-   integer, dimension(:), intent(in) :: col_nums      ! array of columns to plot
-   character(*), dimension(:), allocatable, intent(in) :: col_lables    ! array of column labels
-   character(*), intent(in) :: x_axis_label, y_axis_label, title
-   character(*), intent(in) :: out_name, out_format   ! plot file name and extension
-   character(*), intent(in) :: legend_position  ! e.g. 'upper left', 'right bottom' etc.
-   real(8), intent(in), optional :: x_min, x_max, y_min, y_max
-   real(8), intent(in), optional :: x_tics, y_tics
-   logical, intent(in), optional :: set_x_log, set_y_log
-   character(*), dimension(:), allocatable, intent(in), optional :: l_style    ! array of line-styles
-   character(*), intent(in), optional :: Data_file2   ! data file #2 to plot data from
-   integer, dimension(:), intent(in), optional :: col_nums2      ! array of columns to plot #2
-   character(*), dimension(:), allocatable, intent(in), optional :: col_labels2    ! array of column labels #2
-   logical, intent(in), optional :: colors_inverted
-   !------------
-   character(100000) :: col_nums_txt, col_lables_txt, col_nums_txt2, col_lables_txt2, linestyle_txt
-   character(100) :: x_min_txt, x_max_txt, y_min_txt, y_max_txt, x_tics_text, y_tics_text, temp_txt
-   character(25) :: ch_var
-   character(3) :: font_size
-   logical :: tics_present, color_inverse, ls_present
-   integer :: i, N_cols
-   !------------
-
-   if (present(x_tics) .or. present(x_tics)) then
-      tics_present = .true.
-   else
-      tics_present = .false.
-   endif
-
-   if (present(colors_inverted)) then
-      color_inverse = colors_inverted
-   else ! use default
-      color_inverse = .false. ! by default, don't invert
-   endif
-
-   ! Total number of curves to be plotted:
-   N_cols = size(col_nums)
-   if (present(col_nums2)) N_cols = N_cols + size(col_nums2)   ! include the second one, if present
-
-
-   write(FN,'(a)') 'import pandas as pd'
-   write(FN,'(a)') 'import numpy as np'
-   write(FN,'(a)') 'import matplotlib.pyplot as plt'
-   write(FN,'(a)') 'import matplotlib.cm as cm'
-   if (tics_present) then
-      write(FN,'(a)') 'from matplotlib.ticker import MultipleLocator'
-   endif
-
-   write(FN,'(a)') '# Set the format:'
-   write(FN,'(a)') 'plt.xlabel("'// trim(adjustl(x_axis_label)) //'", fontsize=14)'
-   write(FN,'(a)') 'plt.ylabel("'// trim(adjustl(y_axis_label)) //'", fontsize=14)'
-
-   ! Set tics:
-   write(FN,'(a)') 'plt.xticks(fontsize=12)'
-   write(FN,'(a)') 'plt.yticks(fontsize=12)'
-   if (present(x_tics)) then
-      write(x_tics_text,'(f24.8)') x_tics
-      write(FN,'(a)') 'plt.gca().xaxis.set_major_locator(MultipleLocator('//trim(adjustl(x_tics_text))//'))'
-   endif
-   if (present(y_tics)) then
-      write(y_tics_text,'(f24.8)') y_tics
-      write(FN,'(a)') 'plt.gca().yaxis.set_major_locator(MultipleLocator('//trim(adjustl(y_tics_text))//'))'
-   endif
-
-   write(FN,'(a)') 'plt.grid(False)'
-   write(FN,'(a)') '# Set the axes:'
-
-
-   ! Process the data file:
-   write(FN,'(a)') '# Read the output file:'
-   write(FN,'(a)') 'df = pd.read_csv(r"'//trim(adjustl(Data_file))//'", '//"sep=r'\s+', "//'header=None, comment="#", skipinitialspace=True)'
-
-   ! Log-scale, if required:
-   if (present(set_x_log)) then
-      if (set_x_log) write(FN,'(a)') 'plt.xscale("log")'
-   endif
-   if (present(set_y_log)) then
-      if (set_y_log) write(FN,'(a)')'plt.yscale("log")'
-   endif
-
-   ! Set a list of which columns to plot:
-   col_nums_txt = '['
-   do i = 1, size(col_nums)
-      ! Column numbers:
-      if (i > 1) then   ! add come in between
-         col_nums_txt = trim(adjustl(col_nums_txt))//','
-      endif
-      write(temp_txt,'(i)') col_nums(i)
-      col_nums_txt = trim(adjustl(col_nums_txt))//' '//trim(adjustl(temp_txt))
-   enddo
-   col_nums_txt = trim(adjustl(col_nums_txt))//']'
-
-   ! Column lables, if required:
-   if (allocated(col_lables)) then ! the legend is required:
-      col_lables_txt = '['
-      do i = 1, size(col_lables)
-         ! Column titles:
-         if (i > 1) then   ! add come in between
-            col_lables_txt = trim(adjustl(col_lables_txt))//','
-         endif
-         col_lables_txt = trim(adjustl(col_lables_txt))//' '//trim(adjustl(col_lables(i)))
-      enddo
-      col_lables_txt = trim(adjustl(col_lables_txt))//']'
-   endif
-
-   ! Line styles, if required:
-   if (present(l_style)) then
-      linestyle_txt = '['
-      do i = 1, size(col_nums)
-         ! Line styles:
-         if (i > 1) then   ! add come in between
-            linestyle_txt = trim(adjustl(linestyle_txt))//','
-         endif
-         linestyle_txt = trim(adjustl(linestyle_txt))//' '//trim(adjustl(l_style(i)))
-      enddo
-      linestyle_txt = trim(adjustl(linestyle_txt))//']'
-   else ! use default - solid lines:
-      linestyle_txt = '['
-      do i = 1, size(col_nums)
-         ! Line styles:
-         if (i > 1) then   ! add come in between
-            linestyle_txt = trim(adjustl(linestyle_txt))//','
-         endif
-         linestyle_txt = trim(adjustl(linestyle_txt))//' "-"'
-      enddo
-      linestyle_txt = trim(adjustl(linestyle_txt))//']'
-   endif
-
-   ! Prepare the plot:
-   write(FN,'(a)') '# Prepare the plot:'
-   write(FN,'(a)') 'columns_to_plot = '//trim(adjustl(col_nums_txt))
-   if (allocated(col_lables)) then ! the legend is required
-      write(FN,'(a)') 'labels = '//trim(adjustl(col_lables_txt))
-   endif
-
-   ! Colormap:
-   write(FN,'(a)') '# Create N distinct colors from a colormap'
-   write(FN,'(a)') 'N = len(columns_to_plot)'
-
-   if (N_cols <=10) then ! use standard pallette
-      if (color_inverse) then
-         write(FN,'(a)') 'colors = plt.cm.tab10(np.linspace(1, 0, 10))'
-      else ! default color range
-         write(FN,'(a)') 'colors = plt.cm.tab10(np.linspace(0, 1, 10))'
-      endif
-   elseif (N_cols <= 20) then ! use extended one
-      if (color_inverse) then
-         write(FN,'(a)') 'colors = plt.cm.tab20(np.linspace(1, 0, 20))'
-      else ! default color range
-         write(FN,'(a)') 'colors = plt.cm.tab20(np.linspace(0, 1, 20))'
-      endif
-   else     ! use combined one
-      if (color_inverse) then
-         write(FN,'(a)') 'colors = np.vstack([plt.cm.tab20(np.linspace(1, 0, 20)), plt.cm.tab20b(np.linspace(1, 0, 20))])'
-      else ! default color range
-         write(FN,'(a)') 'colors = np.vstack([plt.cm.tab20(np.linspace(0, 1, 20)), plt.cm.tab20b(np.linspace(0, 1, 20))])'
-      endif
-   endif
-
-   ! Line-styles:
-   write(FN,'(a)') '# Set line styles:'
-   write(FN,'(a)') 'linestyles = '//trim(adjustl(linestyle_txt))
-
-   ! Make the plot:
-   write(FN,'(a)') 'for i, col in enumerate(columns_to_plot):'          ! cycle for all curves
-   write(FN,'(a)') '    color = colors[i % len(colors)]'                ! repeat colors
-   write(FN,'(a)') '    ls    = linestyles[i % len(linestyles)]'        ! repeat line styles
-   if (allocated(col_lables)) then
-      write(FN,'(a)') '    label = labels[i % len(labels)]'                ! labels
-   endif
-   write(FN,'(a)') '    plt.plot(df.iloc[:, 0], df.iloc[:, col],'       ! plot columns
-   write(FN,'(a)') '    color=color,'                                   ! set color
-   if (allocated(col_lables)) then                                      ! the legend is required
-      write(FN,'(a)') '    label=label,'
-   endif
-   write(FN,'(a)') '    linestyle=ls)'                                  ! line style
-
-
-   !-----------------------
-   ! If we want to add data from another file on the same plot:
-   if (present(Data_file2) .and. present(col_nums2) .and. present(col_labels2)) then !# Add a curve from the second file
-      write(FN,'(a)') '# Add a curve from the second file'
-      write(FN,'(a)') 'df2 = pd.read_csv(r"'//trim(adjustl(Data_file2))//'", '//"sep=r'\s+', "// &
-                        'header=None, comment="#", skipinitialspace=True)'
-
-      ! Set a list of which columns to plot:
-      col_nums_txt2 = '['
-      do i = 1, size(col_nums2)
-         ! Column numbers:
-         if (i > 1) then   ! add come in between
-            col_nums_txt2 = trim(adjustl(col_nums_txt2))//','
-         endif
-         write(temp_txt,'(i)') col_nums2(i)
-         col_nums_txt2 = trim(adjustl(col_nums_txt2))//' '//trim(adjustl(temp_txt))
-      enddo
-      col_nums_txt2 = trim(adjustl(col_nums_txt2))//']'
-      ! Column lables, if required:
-      if (allocated(col_labels2)) then ! the legend is required:
-         col_lables_txt2 = '['
-         do i = 1, size(col_labels2)
-            ! Column numbers:
-            if (i > 1) then   ! add come in between
-               col_lables_txt2 = trim(adjustl(col_lables_txt2))//','
-            endif
-            col_lables_txt2 = trim(adjustl(col_lables_txt2))//' '//col_labels2(i)
-         enddo
-         col_lables_txt2 = trim(adjustl(col_lables_txt2))//']'
-      endif
-
-      write(FN,'(a)') 'columns_to_plot2 = '//trim(adjustl(col_nums_txt2))
-      write(FN,'(a)') 'labels2 = '//trim(adjustl(col_lables_txt2))
-      write(FN,'(a)') '# Create second part of the plot:'
-      if (allocated(col_labels2)) then ! the legend is required:
-         write(FN,'(a)') 'for col, label in zip(columns_to_plot2, labels2):'
-         write(FN,'(a)') '    plt.plot(df2.iloc[:, 0], df2.iloc[:, col], label=label, linestyle="--")'
-      else ! No legend:
-         write(FN,'(a)') 'for col in columns_to_plot2:'
-         write(FN,'(a)') '    plt.plot(df2.iloc[:, 0], df2.iloc[:, col])'
-      endif
-   endif
-   !-----------------------
-
-
-   ! Now add the details to the plot:
-   ! Set axes:
-   if (present(x_min)) then
-      write(x_min_txt,'(f24.8)') x_min
-   else
-      write(x_min_txt,'(a)') 'None'
-   endif
-   if (present(x_max)) then
-      write(x_max_txt,'(f24.8)') x_max
-   else
-      write(x_max_txt,'(a)') 'None'
-   endif
-   if (present(y_min)) then
-      write(y_min_txt,'(f24.8)') y_min
-   else
-      write(y_min_txt,'(a)') 'None'
-   endif
-   if (present(y_max)) then
-      write(y_max_txt,'(f24.8)') y_max
-   else
-      write(y_max_txt,'(a)') 'None'
-   endif
-   write(FN,'(a)') 'plt.xlim('//trim(adjustl(x_min_txt))//','//trim(adjustl(x_max_txt))//')'
-   write(FN,'(a)') 'plt.ylim('//trim(adjustl(y_min_txt))//','//trim(adjustl(y_max_txt))//')'
-
-   write(FN,'(a)') 'plt.title("'//trim(adjustl(title))//'")'
-
-   ! Set the legend:
-   if (allocated(col_lables)) then ! the legend is required
-      ! Make appropriate font size:
-      if (N_cols < 8) then ! normal:
-         write(temp_txt,'(a)') 'fontsize=12'
-      elseif (N_cols < 17) then ! smaller
-         write(temp_txt,'(a)') 'fontsize=10'
-      elseif (N_cols < 21) then
-         write(temp_txt,'(a)') 'fontsize=9'
-      elseif (N_cols < 33) then
-         write(temp_txt,'(a)') 'fontsize=10, ncol=2'
-      elseif (N_cols < 41) then
-         write(temp_txt,'(a)') 'fontsize=9, ncol=2'
-      else
-         write(temp_txt,'(a)') 'fontsize=9, ncol=3'
-      endif
-      write(FN,'(a)') 'plt.legend(loc="'//trim(adjustl(legend_position))//'", '//trim(adjustl(temp_txt))//')'
-   endif
-
-
-   write(FN,'(a)') '# Save the plot in this format:'
-   write(FN,'(a)') 'plt.savefig("'//trim(adjustl(out_name))//'.'//trim(adjustl(out_format))//'", dpi=300, bbox_inches="tight")'
-end subroutine Create_python_plot_OLD
-
-
 
 subroutine define_python_call(path_sep, py_call)
    character(*), intent(in) :: path_sep
@@ -4212,7 +4188,7 @@ subroutine collect_python_plots(path_sep, out_path, skip_execution)
    idir = chdir(trim(adjustl(output_path))) ! go into the directory with output files
 
    if (trim(adjustl(path_sep)) == '\') then	! if it is Windows
-      iret = system('python '//trim(adjustl(Py_plot_all_files)))   ! create the folder
+      iret = system('python '//trim(adjustl(Py_plot_all_files)))
    else ! linux:
       iret = system('python3 '//trim(adjustl(Py_plot_all_files)))
    endif

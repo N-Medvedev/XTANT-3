@@ -765,6 +765,7 @@ type Super_cell
    real(8), dimension(:), allocatable :: Ei0	! energy levels, eigenvalues of the hamiltonian matrix on the last step
    real(8), dimension(:), allocatable :: Ei_scc_part  ! eigenvalues of the non-SCC part of the hamiltonian
    real(8), dimension(:,:), allocatable :: Aij	! coefficients used for forces in TB
+   real(8), dimension(:,:), allocatable :: Dmatrix  ! density matric without electron occupations
    ! Complex Hamiltonian for multiple k-points:
    complex, dimension(:,:,:,:,:), allocatable :: CHa	! Complex hamiltonian matrix for each (kx, ky, kz) points
    complex, dimension(:,:,:,:,:), allocatable :: CHa0	! Complex hamiltonian matrix on the last step
@@ -1046,6 +1047,7 @@ type Numerics_param
    logical :: p_const	  ! P=const, otherwise V=const for Parinello-Rahman MD simulations
    logical :: Nonadiabat  ! true=included / false=excluded nonadiabatic coupling
    integer :: NA_kind     ! non-adiabatic model kind
+   integer :: V_scaling   ! model for atomic velosity scaling
    integer :: ind_at_distr ! model for atomic distribution in the nonadiabatic coupling
    logical :: scc         ! include self-consistent charge corrections in TB?
    integer :: scc_gam_ind ! index for the model for gamma in scc term

@@ -1945,15 +1945,28 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
    integer :: N_at, i_at, i_orb, j, Nsiz, N_orb, k
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
+   logical :: do_mulliken, do_local_scaling
+
+   ! Check if user requested Mulliken charges:
+   do_mulliken = (numpar%save_XYZ .and. numpar%save_XYZ_extra(2))
+
+   ! Check if user requested local atomic velocity scaling (needs density matrix):
+   select case (numpar%V_scaling)
+   case default   ! global scaling, no need in the density matrix
+      do_local_scaling = .false.
+   case (1) ! local scalingm requires density matrix
+      do_local_scaling = .true.
+   endselect
 
 
-   if (numpar%save_XYZ .and. numpar%save_XYZ_extra(2)) then ! get Mulliken populations and charges
+   if (do_mulliken .or. do_local_scaling) then ! get Mulliken populations and charges
       !print*, 'get_Mulliken_each_atom:', Mulliken_model
       !print*, allocated(Scell%MDAtoms)
       N_at = size(Scell%MDAtoms) ! total number of atoms
       Nsiz = size(Scell%Ha,1) ! total number of orbitals
       N_orb = Nsiz/N_at ! orbitals per atom
       allocate(D(Nsiz,Nsiz), source = 0.0d0)
+      if (.not.allocated(Scell%Dmatrix)) allocate(Scell%Dmatrix(Nsiz,Nsiz), source = 0.0d0)
 
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
       N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
@@ -1999,6 +2012,10 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
       endif
 #endif
 
+      ! Save density matrix (without occupation numbers):
+      Scell%Dmatrix = D
+
+      ! Allocate mulliken charges:
       allocate(mulliken_Ne(N_at), source = 0.0d0)   ! absolute charges
 
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
@@ -3976,8 +3993,15 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
 
             ! New electron potential energy (Repulsive part is defined inside):
             call get_pot_nrg(Scell, matter, numpar) ! see below
+
             ! Deliver energy to the atoms - set new atomic velosities:
-            call Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
+            select case (numpar%V_scaling)      ! choose which model for velocity scaling to use
+            case default      ! global scaling
+               call Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
+            case (1)          ! local scaling
+               call Rescale_atomic_velocities(Scell(NSC)%G_ei_per_atom, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
+            endselect
+
             call get_kinetic_energy_abs(Scell, NSC, matter, Scell(NSC)%nrg) ! module "Atomic_tools"
 
             ! Test that energy split adds up to the total correctly:
