@@ -760,6 +760,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          Scell(Nsc)%Nph = 0.0d0		! number of absorbed photons
          Scell(Nsc)%Ne_high = 0.0d0	! no electrons at the beginning
          Scell(Nsc)%Ne_emit = 0.0d0	! no emitted electrons at the beginning
+         Scell(Nsc)%Ne_photo = 0.0d0 ! no photo electrons at the start
+         Scell(Nsc)%Ne_Auger = 0.0d0 ! no Auger electrons at the start
+         Scell(Nsc)%Ne_impact= 0.0d0 ! no impact-ionized electrons at the start
          Scell(Nsc)%Nh = 0.0d0		! no holes at the beginning
          allocate(Scell(Nsc)%MChole(size(matter%Atoms)))
          do i = 1, size(matter%Atoms) ! for each kind of atoms:
@@ -1505,6 +1508,9 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    Scell(SCN)%Ne_low = Scell(SCN)%Ne ! at the start, all electrons are low-energy
    Scell(SCN)%Ne_high = 0.0d0 ! no high-energy electrons at the start
    Scell(SCN)%Ne_emit = 0.0d0 ! no emitted electrons at the start
+   Scell(SCN)%Ne_photo = 0.0d0 ! no photo electrons at the start
+   Scell(SCN)%Ne_Auger = 0.0d0 ! no Auger electrons at the start
+   Scell(SCN)%Ne_impact= 0.0d0 ! no impact-ionized electrons at the start
 
    if (numpar%verbose) then
       write(*, '(a)', advance='no') 'Number of valence electrons: '
@@ -1571,6 +1577,9 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
             Scell(SCN)%Ne_low = Scell(SCN)%Ne ! at the start, all electrons are low-energy
             Scell(SCN)%Ne_high = 0.0d0 ! no high-energy electrons at the start
             Scell(SCN)%Ne_emit = 0.0d0 ! no emitted electrons at the start
+            Scell(SCN)%Ne_photo = 0.0d0 ! no photo electrons at the start
+            Scell(SCN)%Ne_Auger = 0.0d0 ! no Auger electrons at the start
+            Scell(SCN)%Ne_impact= 0.0d0 ! no impact-ionized electrons at the start
          else ! do not redefine the parameters, but check for consistency
             if (Na /= Scell(SCN)%Na) then
                write(Error_descript,'(a)') 'Inconsistent numbers of atoms in the files PHASE_1_atoms.dat and PHASE_2_atoms.dat, terminating XTANT'
@@ -1586,6 +1595,9 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
          Scell(SCN)%Ne_low = Scell(SCN)%Ne ! at the start, all electrons are low-energy
          Scell(SCN)%Ne_high = 0.0d0 ! no high-energy electrons at the start
          Scell(SCN)%Ne_emit = 0.0d0 ! no emitted electrons at the start
+         Scell(SCN)%Ne_photo = 0.0d0 ! no photo electrons at the start
+         Scell(SCN)%Ne_Auger = 0.0d0 ! no Auger electrons at the start
+         Scell(SCN)%Ne_impact= 0.0d0 ! no impact-ionized electrons at the start
       endif
       
       if (.not.allocated(MDAtoms)) allocate(MDAtoms(Scell(SCN)%Na))
@@ -2507,6 +2519,9 @@ subroutine create_BOP_repulsive(Scell, matter, numpar, TB_Repuls, i, j, Folder_n
    Scell(1)%Ne_low = Scell(1)%Ne ! at the start, all electrons are low-energy
    Scell(1)%Ne_high = 0.0d0 ! no high-energy electrons at the start
    Scell(1)%Ne_emit = 0.0d0 ! no emitted electrons at the start
+   Scell(1)%Ne_photo = 0.0d0 ! no photo electrons at the start
+   Scell(1)%Ne_Auger = 0.0d0 ! no Auger electrons at the start
+   Scell(1)%Ne_impact= 0.0d0 ! no impact-ionized electrons at the start
    ! Allocate arrays for calculation of hamiltonian and related stuff:
    allocate(Scell(1)%Near_neighbor_list(Scell(1)%Na,Scell(1)%Na))  ! nearest neighbors
    allocate(Scell(1)%Near_neighbor_dist(Scell(1)%Na,Scell(1)%Na,4))  ! [A] distances

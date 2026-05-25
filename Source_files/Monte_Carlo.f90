@@ -189,7 +189,11 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
 
          ! And the distribution on the grid:
          if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+            ! Sort distribution of electrons
             call get_high_energy_distribution(Scell(NSC), MC, numpar)  ! below
+
+            ! Sort the numbers of high-eenrgy electrons by type:
+            call sort_electrons_by_type(Scell(NSC), MC, numpar)  ! below
          endif
 
          ! Save additions to photon the spectrum of the FIRST laser pulse:
@@ -238,13 +242,64 @@ end subroutine MC_Propagate
 
 
 
+subroutine sort_electrons_by_type(Scell, MC, numpar)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(MC_data), dimension(:), intent(in), target :: MC   ! all MC arrays for photons, electrons and holes
+   type(Numerics_param), intent(inout) :: numpar   ! numerical parameters, including lists of earest neighbors
+   !--------------------
+   integer :: stat, i_el
+   real(8) :: NMC, Ne_photo, Ne_Auger, Ne_impact, Ne_error
+   integer, pointer :: i_ind
+
+   ! Number of MC iterations to normalize to:
+   NMC = 1.0d0/dble(numpar%NMC)
+   Ne_photo  = 0.0d0    ! to start with
+   Ne_Auger  = 0.0d0    ! to start with
+   Ne_impact = 0.0d0    ! to start with
+
+   ! Sort electrons from each iteration onto the given grid for distribution:
+   do stat = 1,numpar%NMC ! Statistics in MC, iterate the same thing and average
+      do i_el = 1, MC(stat)%noe  ! all active electrons
+         i_ind => MC(stat)%electrons(i_el)%birthmark     ! index of orgin of electron
+         select case (i_ind)  ! type of electron
+         case default ! currently there are only these many types of electrons; anything else is unknokwn
+            print*, 'ERROR: Unidentified electron in sort_electrons_by_type:'
+            print*, stat, i_el, MC(stat)%electrons(i_el)%birthmark
+         case (0) ! external electrons
+            ! we are not counting those
+         case (1) ! photoeelectron
+            Ne_photo = Ne_photo + NMC ! density of electrons per iteration
+         case (2) ! impact-ionized
+            Ne_impact = Ne_impact + NMC
+         case (3) ! Auger
+            Ne_Auger = Ne_Auger + NMC
+         endselect
+      enddo ! i_el
+   enddo ! stat
+   ! Save the data:
+   Scell%Ne_photo  = Ne_photo
+   Scell%Ne_Auger  = Ne_Auger
+   Scell%Ne_impact = Ne_impact
+
+   ! Check consistency:
+   Ne_error = Scell%Ne_high - Scell%Ne_photo - Scell%Ne_Auger - Scell%Ne_impact
+   if ( abs(Ne_error) > 1.0d-8 ) then
+      print*, 'PROBLEM: Inconsistent number of high-energy electrons in sort_electrons_by_type:', Ne_error
+      print*, Scell%Ne_high, Scell%Ne_photo, Scell%Ne_Auger, Scell%Ne_impact
+   endif
+
+   nullify(i_ind)
+end subroutine sort_electrons_by_type
+
+
+
 subroutine get_high_energy_distribution(Scell, MC, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(MC_data), dimension(:), intent(in), target :: MC   ! all MC arrays for photons, electrons and holes
    type(Numerics_param), intent(inout) :: numpar   ! numerical parameters, including lists of earest neighbors
    !--------------------
    integer :: stat, i_el, j, Nsiz
-   real(8) :: NMC
+   real(8) :: NMC, Ne_photo, Ne_Auger, Ne_impact
    integer, pointer :: i_ind
 
    if (numpar%save_fe_grid) then  ! only user requested

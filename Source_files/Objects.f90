@@ -681,6 +681,7 @@ type Super_cell
    real(8) :: Ne_low	! current number of low-energy electrons of VB and CB
    ! Results of MC run:
    real(8) :: Ne_high	! current number of high-energy electrons of CB
+   real(8) :: Ne_photo, Ne_Auger, Ne_impact ! number of photo-, Auger-, and impact-ionized-electrons
    real(8) :: Ne_emit	! current number of emitted electrons (above the work function)
    real(8) :: Nh	! current number of deep-shell holes
    type(MC_atoms), dimension(:), allocatable :: MChole ! number of holes in each shell of each atom
@@ -1088,6 +1089,7 @@ type Numerics_param
    real(8) :: DW_theta, m1, m2, m3, m4
    ! numbers of files:
    integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
+   integer :: FN_high_e
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
    integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot, FN_testmode, FN_diff_peaks, FN_diff_powder

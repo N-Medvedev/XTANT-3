@@ -56,7 +56,7 @@ file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_element_NN, file_electron_entropy, file_Te, file_mu, &
 file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
 file_diffraction_peaks, file_diffraction_peaks_part, file_diffraction_powder, file_diffraction_peaks_DW, file_Debye_temperature, &
-file_testmode, file_coupling)
+file_testmode, file_coupling, file_high_e)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -91,6 +91,7 @@ file_testmode, file_coupling)
    character(*), intent(in) :: file_Debye_temperature ! Debye temperatures
    character(*), intent(in) :: file_testmode    ! testmode data
    character(*), intent(in) :: file_coupling    ! electron-ion coupling, including partial
+   character(*), intent(in) :: file_high_e      ! high-energy electrons by type
    !----------------
    character(300) :: File_name, File_name2
    real(8) :: t0, t_last, x_tics, E_temp
@@ -192,6 +193,9 @@ file_testmode, file_coupling)
 
    ! Numbers of particles:
    call Python_plot_numbers(numpar, file_numbers, t0, t_last, 'OUTPUT_electrons_holes.py') ! below
+
+   ! High-energy electrons_by_type:
+   call Python_plot_high_energy_el(numpar, file_high_e, t0, t_last, 'OUTPUT_electrons_high_energy.py') ! below
 
 
    ! Orbital-resolved electron parameters:
@@ -439,6 +443,10 @@ file_testmode, file_coupling)
       call Python_plot_numbers(numpar, file_numbers, t0, t_last, 'OUTPUT_electrons_holes_CONVOLVED.py', convolved=.true.) ! below
 
 
+      ! High-energy electrons_by_type:
+      call Python_plot_high_energy_el(numpar, file_high_e, t0, t_last, 'OUTPUT_electrons_high_energy_CONVOLVED.py', convolved=.true.) ! below
+
+
       ! Orbital-resolved electron parameters:
       call Python_plot_orbital_resolved(Scell(1), matter, numpar, file_orb, t0, t_last, 'OUTPUT_orbital_resolved_Ne_CONVOLVED.py', convolved=.true.) ! below
 
@@ -545,7 +553,7 @@ subroutine Python_plot_n_and_k(numpar, file_optics, t0, t_last, script_name, con
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -555,14 +563,14 @@ subroutine Python_plot_n_and_k(numpar, file_optics, t0, t_last, script_name, con
    Nsiz = 2
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
    col_nums(1) = 4
-   col_lables(1) = '"n"'
+   col_labels(1) = '"n"'
    call select_linestyle(1,linestyle(1))
    col_nums(2) = 5
-   col_lables(2) = '"k"'
+   col_labels(2) = '"k"'
    call select_linestyle(2,linestyle(2))
 
 
@@ -575,13 +583,13 @@ subroutine Python_plot_n_and_k(numpar, file_optics, t0, t_last, script_name, con
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Optical n and k', 'Complex refractive index', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables)
+   deallocate(col_nums, col_labels)
 end subroutine Python_plot_n_and_k
 
 
@@ -594,7 +602,7 @@ subroutine Python_plot_optical_coefficients(numpar, file_optics, t0, t_last, scr
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -604,17 +612,17 @@ subroutine Python_plot_optical_coefficients(numpar, file_optics, t0, t_last, scr
    Nsiz = 3
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
    col_nums(1) = 1
-   col_lables(1) = '"Reflectivity"'
+   col_labels(1) = '"Reflectivity"'
    call select_linestyle(1,linestyle(1))
    col_nums(2) = 2
-   col_lables(2) = '"Transmission"'
+   col_labels(2) = '"Transmission"'
    call select_linestyle(2,linestyle(2))
    col_nums(3) = 3
-   col_lables(3) = '"Absorption"'
+   col_labels(3) = '"Absorption"'
    call select_linestyle(3,linestyle(3))
 
 
@@ -627,13 +635,13 @@ subroutine Python_plot_optical_coefficients(numpar, file_optics, t0, t_last, scr
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Optical coefficients', 'Optical coefficients', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0, y_max = 1.0d0)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables)
+   deallocate(col_nums, col_labels)
 end subroutine Python_plot_optical_coefficients
 
 
@@ -649,7 +657,7 @@ subroutine Python_plot_DOS(Scell, matter, numpar, file_DOS, script_name, video_f
    !----------------
    integer :: FN, i, i_start, ind, j, k, Nsiz, i_at, N_types, NKOA, N_at, norb, i_col, i_cur, i_types
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle, symbols
+   character(30), dimension(:), allocatable :: col_labels, linestyle, symbols
    character(300) :: File_name
    character(30) :: chtemp1
    real(8) :: x_start, x_end
@@ -673,11 +681,11 @@ subroutine Python_plot_DOS(Scell, matter, numpar, file_DOS, script_name, video_f
    ! allocate the arrays:
    Nsiz = NKOA * N_types + 1     ! assuming basis set is the same for all elements
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
    col_nums(1) = 1
-   col_lables(1) = 'Total'
+   col_labels(1) = 'Total'
    call select_linestyle(1, linestyle(1)) ! below
 
    i_col = 1      ! column number after which orbital-resolved data start
@@ -688,12 +696,12 @@ subroutine Python_plot_DOS(Scell, matter, numpar, file_DOS, script_name, video_f
          ! Set the arrays:
          col_nums(i_cur) = (i_col - 1) + i_cur    ! index for python
          chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
-         col_lables(i_cur) = trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
+         col_labels(i_cur) = trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
          call select_linestyle(i_cur, linestyle(i_cur)) ! below
       enddo ! i_types
    enddo ! i_at
 
-   call Create_Python_animation(FN, file_DOS, col_nums, col_lables, &
+   call Create_Python_animation(FN, file_DOS, col_nums, col_labels, &
       'Energy (eV)', 'DOS (electrons/eV)', 'Electronic density of states', &
       "best", 'OUTPUT_DOS', trim(adjustl(video_format)), &
       x_min=x_start, x_max=x_end, y_min=0.0d0, &
@@ -702,7 +710,7 @@ subroutine Python_plot_DOS(Scell, matter, numpar, file_DOS, script_name, video_f
       first_line_in_front =.false.)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_DOS
 
 
@@ -717,7 +725,7 @@ subroutine Python_plot_atomic_distribution(Scell, numpar, file_distribution, plo
    !----------------
    integer :: FN, i, i_start, ind, j, k, Nsiz, i_at, N_types, NKOA, N_at, norb, i_col, i_cur, i_types
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle, symbols
+   character(30), dimension(:), allocatable :: col_labels, linestyle, symbols
    character(300) :: File_name
    character(30) :: chtemp1
    real(8) :: x_start, x_end
@@ -741,27 +749,27 @@ subroutine Python_plot_atomic_distribution(Scell, numpar, file_distribution, plo
    endif
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
    allocate(symbols(Nsiz))
 
    if (.not.skip_eq_plot) then
       col_nums(1) = 2
-      col_lables(1) = 'Equilibrium'
+      col_labels(1) = 'Equilibrium'
       call select_linestyle(1, linestyle(1)) ! below
       symbols(1) = '"None"'
       col_nums(2) = 1
-      col_lables(2) = 'Nonequilibrium'
+      col_labels(2) = 'Nonequilibrium'
       linestyle(2) = '"None"'
       call select_symbols(1, symbols(2))     ! below
    else
       col_nums(1) = 1
-      col_lables(1) = 'Nonequilibrium'
+      col_labels(1) = 'Nonequilibrium'
       linestyle(1) = '"None"'
       call select_symbols(1, symbols(1))     ! below
    endif
 
-   call Create_Python_animation(FN, file_distribution, col_nums, col_lables, &
+   call Create_Python_animation(FN, file_distribution, col_nums, col_labels, &
       'Energy (eV)', 'Atomic distribution (a.u.)', trim(adjustl(plot_title)), &
       "best", trim(adjustl(plot_name)), trim(adjustl(video_format)), &
       t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total, &
@@ -769,7 +777,7 @@ subroutine Python_plot_atomic_distribution(Scell, numpar, file_distribution, plo
       first_line_in_front =.false.)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle, symbols)
+   deallocate(col_nums, col_labels, linestyle, symbols)
 end subroutine Python_plot_atomic_distribution
 
 
@@ -784,7 +792,7 @@ subroutine Python_plot_distribution_on_grid(Scell, numpar, file_distribution, sc
    !----------------
    integer :: FN, i, i_start, ind, j, k, Nsiz, i_at, N_types, NKOA, N_at, norb, i_col, i_cur, i_types
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle, symbols
+   character(30), dimension(:), allocatable :: col_labels, linestyle, symbols
    character(300) :: File_name
    character(30) :: chtemp1
    real(8) :: x_start, x_end
@@ -800,31 +808,31 @@ subroutine Python_plot_distribution_on_grid(Scell, numpar, file_distribution, sc
    ! allocate the arrays:
    Nsiz = 4
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
    allocate(symbols(Nsiz))
 
    col_nums(1) =1
-   col_lables(1) = 'Total'
+   col_labels(1) = 'Total'
    linestyle(1) = '"None"'
    call select_symbols(1, symbols(1))     ! below
 
    col_nums(2) =3
-   col_lables(2) = 'Photoelectrons'
+   col_labels(2) = 'Photoelectrons'
    linestyle(2) = '"None"'
    call select_symbols(2, symbols(2))     ! below
 
    col_nums(3) =4
-   col_lables(3) = 'Impact electrons'
+   col_labels(3) = 'Impact electrons'
    linestyle(3) = '"None"'
    call select_symbols(3, symbols(3))     ! below
 
    col_nums(4) =5
-   col_lables(4) = 'Auger electrons'
+   col_labels(4) = 'Auger electrons'
    linestyle(4) = '"None"'
    call select_symbols(4, symbols(4))     ! below
 
-   call Create_Python_animation(FN, file_distribution, col_nums, col_lables, &
+   call Create_Python_animation(FN, file_distribution, col_nums, col_labels, &
       'Energy (eV)', 'Electron distribution (1/(V*E))', 'Electron spectrum', &
       "best", 'OUTPUT_electron_distribution_on_grid', trim(adjustl(video_format)), &
       x_min=x_start, x_max=x_end, y_min=1.0d-6, set_y_log=.true., &
@@ -833,7 +841,7 @@ subroutine Python_plot_distribution_on_grid(Scell, numpar, file_distribution, sc
       first_line_in_front =.false.)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle, symbols)
+   deallocate(col_nums, col_labels, linestyle, symbols)
 end subroutine Python_plot_distribution_on_grid
 
 
@@ -849,7 +857,7 @@ subroutine Python_plot_orb_distribution(Scell, matter, numpar, file_distribution
    !----------------
    integer :: FN, i, i_start, ind, j, k, Nsiz, i_at, N_types, NKOA, N_at, norb, i_col, i_cur, i_types
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle, symbols
+   character(30), dimension(:), allocatable :: col_labels, linestyle, symbols
    character(300) :: File_name
    character(30) :: chtemp1
    real(8) :: x_start, x_end
@@ -873,7 +881,7 @@ subroutine Python_plot_orb_distribution(Scell, matter, numpar, file_distribution
    ! allocate the arrays:
    Nsiz = NKOA * N_types      ! assuming basis set is the same for all elements
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
    allocate(symbols(Nsiz))
 
@@ -895,13 +903,13 @@ subroutine Python_plot_orb_distribution(Scell, matter, numpar, file_distribution
          ! Set the arrays:
          col_nums(i_cur) = (i_col - 1) + i_cur    ! index for python
          chtemp1 = name_of_orbitals(norb, i_types) ! module "Little_subroutines"
-         col_lables(i_cur) = trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
+         col_labels(i_cur) = trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))
          linestyle(i_cur) = '"None"'
          call select_symbols(i_cur, symbols(i_cur))     ! below
       enddo ! i_types
    enddo ! i_at
 
-   call Create_Python_animation(FN, file_distribution, col_nums, col_lables, &
+   call Create_Python_animation(FN, file_distribution, col_nums, col_labels, &
       'Energy (eV)', 'Electron distribution (1/eV)', 'Orbital-resolved electron distribution', &
       "best", 'OUTPUT_orbital_resolved_fe', trim(adjustl(video_format)), &
       x_min=x_start, x_max=x_end, y_min=0.0d0, &
@@ -910,7 +918,7 @@ subroutine Python_plot_orb_distribution(Scell, matter, numpar, file_distribution
       first_line_in_front =.false.)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle, symbols)
+   deallocate(col_nums, col_labels, linestyle, symbols)
 end subroutine Python_plot_orb_distribution
 
 
@@ -922,7 +930,7 @@ subroutine Python_plot_distribution(numpar, file_distribution, script_name, vide
    !----------------
    integer :: FN, i, i_start, ind, j, k, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle, symbols
+   character(30), dimension(:), allocatable :: col_labels, linestyle, symbols
    character(300) :: File_name
    real(8) :: x_start, x_end
 
@@ -942,24 +950,24 @@ subroutine Python_plot_distribution(numpar, file_distribution, script_name, vide
 
    ! allocate the arrays:
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
    allocate(symbols(Nsiz))
 
    ! Set the arrays:
    col_nums(1) = 2
-   col_lables(1) = 'Equivalent Fermi'
+   col_labels(1) = 'Equivalent Fermi'
    linestyle(1) = '"-"'
    symbols(1) = '"None"'
 
    if (numpar%do_partial_thermal) then ! with band-resolved equivalent distributions
       col_nums(2) = 3
-      col_lables(2) = 'f$_{eq}$ in valence band'
+      col_labels(2) = 'f$_{eq}$ in valence band'
       call select_linestyle(2, linestyle(2))      ! below
       symbols(2) = '"None"'
 
       col_nums(3) = 4
-      col_lables(3) = 'f$_{eq}$ in conduction band'
+      col_labels(3) = 'f$_{eq}$ in conduction band'
       call select_linestyle(3, linestyle(3))      ! below
       symbols(3) = '"None"'
 
@@ -969,12 +977,12 @@ subroutine Python_plot_distribution(numpar, file_distribution, script_name, vide
    endif
 
    col_nums(ind) = 1
-   col_lables(ind) = 'Nonequilibrium'
+   col_labels(ind) = 'Nonequilibrium'
    linestyle(ind) = '"None"'
    symbols(ind) = '"o"'
 
 
-   call Create_Python_animation(FN, file_distribution, col_nums, col_lables, &
+   call Create_Python_animation(FN, file_distribution, col_nums, col_labels, &
       'Energy (eV)', 'Electron distribution (1/eV)', 'Electron distribution', &
       "best", 'OUTPUT_electron_distribution', trim(adjustl(video_format)), &
       x_min=x_start, x_max=x_end, y_min=0.0d0, &
@@ -983,7 +991,7 @@ subroutine Python_plot_distribution(numpar, file_distribution, script_name, vide
       first_line_in_front =.false.)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle, symbols)
+   deallocate(col_nums, col_labels, linestyle, symbols)
 end subroutine Python_plot_distribution
 
 
@@ -998,7 +1006,7 @@ subroutine Python_plot_pair_correlation(Scell, matter, numpar, file_pair_correla
    !----------------
    integer :: FN, i, i_start, ind, j, k, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name
    real(8) :: x_start, x_end
 
@@ -1022,11 +1030,11 @@ subroutine Python_plot_pair_correlation(Scell, matter, numpar, file_pair_correla
    Nsiz = ind
    ! allocate the arrays:
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
    ! Set the arrays:
    col_nums(1) = 1
-   col_lables(1) = 'Total'
+   col_labels(1) = 'Total'
    linestyle(1) = '"-"'
    ind = 1  ! restart
    if (matter%N_KAO > 1) then ! no need to do for 1 element
@@ -1034,14 +1042,14 @@ subroutine Python_plot_pair_correlation(Scell, matter, numpar, file_pair_correla
          do k = j, matter%N_KAO  ! for all different pairs
             ind = ind + 1
             col_nums(ind) = ind
-            col_lables(ind) = trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))
+            col_labels(ind) = trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))
             call select_linestyle(ind, linestyle(ind))      ! below
          enddo
       enddo
    endif
 
 
-   call Create_Python_animation(FN, file_pair_correlation, col_nums, col_lables, &
+   call Create_Python_animation(FN, file_pair_correlation, col_nums, col_labels, &
       'Radius (A)', 'Pair correlation function (a.u.)', 'Pair correlation function', &
       "best", 'OUTPUT_pair_correlation', trim(adjustl(video_format)), &
       x_min=x_start, x_max=x_end, y_min=0.0d0, &
@@ -1049,7 +1057,7 @@ subroutine Python_plot_pair_correlation(Scell, matter, numpar, file_pair_correla
       first_line_in_front =.false.)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_pair_correlation
 
 
@@ -1065,7 +1073,7 @@ subroutine Python_plot_nearest_neighbors_elements(matter, numpar, file_element_N
    !----------------
    integer :: FN, i, Nsiz, i_cur, i_start
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -1075,16 +1083,16 @@ subroutine Python_plot_nearest_neighbors_elements(matter, numpar, file_element_N
    Nsiz = matter%N_KAO+1
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
    col_nums(1) = 1
-   col_lables(1) = '"Total"'
+   col_labels(1) = '"Total"'
    linestyle(1) = '"-"'
 
    do i = 1, matter%N_KAO
       col_nums(i+1) = 1+i
-      col_lables(i+1) = '"'//trim(adjustl(matter%Atoms(i)%Name))//'"'
+      col_labels(i+1) = '"'//trim(adjustl(matter%Atoms(i)%Name))//'"'
       call select_linestyle(i+1, linestyle(i+1)) ! below
    enddo
 
@@ -1098,13 +1106,13 @@ subroutine Python_plot_nearest_neighbors_elements(matter, numpar, file_element_N
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Nearest neighbors fraction', 'Nearest neighbors of '//trim(adjustl(element_name)), &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_nearest_neighbors_elements
 
 
@@ -1119,7 +1127,7 @@ subroutine Python_plot_nearest_neighbors(numpar, file_NN, t0, t_last, script_nam
    !----------------
    integer :: FN, i, Nsiz, i_cur, i_start
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -1129,35 +1137,35 @@ subroutine Python_plot_nearest_neighbors(numpar, file_NN, t0, t_last, script_nam
    Nsiz = 7
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
    col_nums(1) = 2
-   col_lables(1) = '"Single atom"'
+   col_labels(1) = '"Single atom"'
    linestyle(1) = '"-"'
 
    col_nums(2) = 3
-   col_lables(2) = '"One neighbor"'
+   col_labels(2) = '"One neighbor"'
    linestyle(2) = '"--"'
 
    col_nums(3) = 4
-   col_lables(3) = '"Two neighbors"'
+   col_labels(3) = '"Two neighbors"'
    linestyle(3) = '"-."'
 
    col_nums(4) = 5
-   col_lables(4) = '"Three neighbors"'
+   col_labels(4) = '"Three neighbors"'
    linestyle(4) = '(0,(5,2,1,2,1,2))'
 
    col_nums(5) = 6
-   col_lables(5) = '"Four neighbors"'
+   col_labels(5) = '"Four neighbors"'
    linestyle(5) = '(0,(10,3,4,3,1,2))'
 
    col_nums(6) = 7
-   col_lables(6) = '"Five neighbors"'
+   col_labels(6) = '"Five neighbors"'
    linestyle(6) = '":"'
 
    col_nums(7) = 8
-   col_lables(7) = '"Six neighbors"'
+   col_labels(7) = '"Six neighbors"'
    linestyle(7) = '(0,(10,3,1,2,4,3,1,2))'
 
 
@@ -1170,13 +1178,13 @@ subroutine Python_plot_nearest_neighbors(numpar, file_NN, t0, t_last, script_nam
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Nearest neighbors fraction', 'Number of nearest neighbors', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_nearest_neighbors
 
 
@@ -1190,7 +1198,7 @@ subroutine Python_plot_Mulliken_charges(matter, numpar, file_electron_properties
    !----------------
    integer :: FN, i, Nsiz, i_cur, i_start
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -1200,14 +1208,14 @@ subroutine Python_plot_Mulliken_charges(matter, numpar, file_electron_properties
    Nsiz = size(matter%Atoms)
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
    i_start = 9
    do i = 1, matter%N_KAO   ! intermediate elements
       i_cur = i_start + i
       col_nums(i) = i_cur
-      write(col_lables(i),'(a)') '"'//matter%Atoms(i)%Name//'"'
+      write(col_labels(i),'(a)') '"'//matter%Atoms(i)%Name//'"'
       !set different style for different elements:
       call select_linestyle(i, linestyle(i))      ! below
    enddo
@@ -1224,13 +1232,13 @@ subroutine Python_plot_Mulliken_charges(matter, numpar, file_electron_properties
    endif
 
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Mulliken charge (e)', 'Mulliken charge', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_Mulliken_charges
 
 
@@ -1245,7 +1253,7 @@ subroutine Python_plot_volume(numpar, file_supercell, t0, t_last, script_name, c
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -1255,10 +1263,10 @@ subroutine Python_plot_volume(numpar, file_supercell, t0, t_last, script_name, c
    Nsiz = 1
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
 
    col_nums(1) = 1
-   col_lables(1) = '"Volume"'
+   col_labels(1) = '"Volume"'
 
 
    Plot_name = 'OUTPUT_volume'
@@ -1270,13 +1278,13 @@ subroutine Python_plot_volume(numpar, file_supercell, t0, t_last, script_name, c
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Volume (A$^3$)', 'Volume', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables)
+   deallocate(col_nums, col_labels)
 end subroutine Python_plot_volume
 
 
@@ -1544,7 +1552,7 @@ subroutine Python_plot_coupling(numpar, file_electron_properties, t0, t_last, sc
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -1554,11 +1562,11 @@ subroutine Python_plot_coupling(numpar, file_electron_properties, t0, t_last, sc
    Nsiz = 1
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
 
 
    col_nums(1) = 5
-   col_lables(1) = '"Coupling"'
+   col_labels(1) = '"Coupling"'
 
 
    Plot_name = 'OUTPUT_coupling_parameter'
@@ -1571,13 +1579,13 @@ subroutine Python_plot_coupling(numpar, file_electron_properties, t0, t_last, sc
    endif
 
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Coupling parameter (W/(m$^3$ K))', 'Electron-ion coupling', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables)
+   deallocate(col_nums, col_labels)
 end subroutine Python_plot_coupling
 
 
@@ -1593,7 +1601,7 @@ subroutine Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_par
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -1603,28 +1611,28 @@ subroutine Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_par
    Nsiz = 6
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
 
    col_nums(1) = 1
-   col_lables(1) = '"Kinetic: X"'
+   col_labels(1) = '"Kinetic: X"'
    linestyle(1) = '"--"'
    col_nums(2) = 2
-   col_lables(2) = '"Kinetic: Y"'
+   col_labels(2) = '"Kinetic: Y"'
    linestyle(2) = '(0,(5,2,1,2,1,2))'
    col_nums(3) = 3
-   col_lables(3) = '"Kinetic: Z"'
+   col_labels(3) = '"Kinetic: Z"'
    linestyle(3) = '"-"'
 
    col_nums(4) = 4
-   col_lables(4) = '"Virial: X"'
+   col_labels(4) = '"Virial: X"'
    linestyle(4) = '"--"'
    col_nums(5) = 5
-   col_lables(5) = '"Virial: Y"'
+   col_labels(5) = '"Virial: Y"'
    linestyle(5) = '(0,(5,2,1,2,1,2))'
    col_nums(6) = 6
-   col_lables(6) = '"Virial: Z"'
+   col_labels(6) = '"Virial: Z"'
    linestyle(6) = '"-"'
 
    Plot_name = 'OUTPUT_atomic_temperatures_partial'
@@ -1637,13 +1645,13 @@ subroutine Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_par
    endif
 
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Atomic temperature (K)', 'Partial atomic temperatures', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_at_temperatures_part
 
 
@@ -1657,7 +1665,7 @@ subroutine Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_l
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -1667,21 +1675,21 @@ subroutine Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_l
    Nsiz = 4
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
 
    col_nums(1) = 10
-   col_lables(1) = '"Configurational"'
+   col_labels(1) = '"Configurational"'
    linestyle(1) = '"--"'
    col_nums(2) = 11
-   col_lables(2) = '"Hyperconfig"'
+   col_labels(2) = '"Hyperconfig"'
    linestyle(2) = '(0,(5,2,1,2,1,2))'
    col_nums(3) = 1
-   col_lables(3) = '"Kinetic"'
+   col_labels(3) = '"Kinetic"'
    linestyle(3) = '"-"'
    col_nums(4) = 4
-   col_lables(4) = '"Fluctuational"'
+   col_labels(4) = '"Fluctuational"'
    linestyle(4) = '"-."'
 
    Plot_name = 'OUTPUT_atomic_temperatures'
@@ -1693,13 +1701,13 @@ subroutine Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_l
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Atomic temperature (K)', 'Atomic temperatures', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_at_temperatures
 
 
@@ -1714,7 +1722,7 @@ subroutine Python_plot_entropy_atomic(numpar, file_atomic_entropy, t0, t_last, s
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -1724,24 +1732,24 @@ subroutine Python_plot_entropy_atomic(numpar, file_atomic_entropy, t0, t_last, s
    Nsiz = 5
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
 
    col_nums(1) = 2
-   col_lables(1) = '"Equilibrium"'
+   col_labels(1) = '"Equilibrium"'
    linestyle(1) = '"--"'
    col_nums(2) = 3
-   col_lables(2) = '"Equilibrium (num)"'
+   col_labels(2) = '"Equilibrium (num)"'
    linestyle(2) = '":"'
    col_nums(3) = 4
-   col_lables(3) = '"Configurational"'
+   col_labels(3) = '"Configurational"'
    linestyle(3) = '"-."'
    col_nums(4) = 5
-   col_lables(4) = '"Total"'
+   col_labels(4) = '"Total"'
    linestyle(4) = '"-"'
    col_nums(5) = 1
-   col_lables(5) = '"Nonequilibrium"'
+   col_labels(5) = '"Nonequilibrium"'
    linestyle(5) = '(0,(5,2,1,2,1,2))'
 
 
@@ -1754,13 +1762,13 @@ subroutine Python_plot_entropy_atomic(numpar, file_atomic_entropy, t0, t_last, s
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Atomic entropy (eV/K)', 'Atomic entropy', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_entropy_atomic
 
 
@@ -1774,7 +1782,7 @@ subroutine Python_plot_chempots(numpar, file_mu, t0, t_last, script_name, convol
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -1784,17 +1792,17 @@ subroutine Python_plot_chempots(numpar, file_mu, t0, t_last, script_name, convol
    Nsiz = 3
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
    col_nums(1) = 1
-   col_lables(1) = '"Total"'
+   col_labels(1) = '"Total"'
    linestyle(1) = '"-"'
    col_nums(2) = 2
-   col_lables(2) = '"Valence"'
+   col_labels(2) = '"Valence"'
    linestyle(2) = '"--"'
    col_nums(3) = 3
-   col_lables(3) = '"Conduction"'
+   col_labels(3) = '"Conduction"'
    linestyle(3) = '"-."'
 
 
@@ -1807,13 +1815,13 @@ subroutine Python_plot_chempots(numpar, file_mu, t0, t_last, script_name, convol
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Chemical potentials (eV)', 'Electron chemical potentials', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_chempots
 
 
@@ -1826,7 +1834,7 @@ subroutine Python_plot_el_temperatures(numpar, file_Te, t0, t_last, script_name,
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -1836,17 +1844,17 @@ subroutine Python_plot_el_temperatures(numpar, file_Te, t0, t_last, script_name,
    Nsiz = 3
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
    col_nums(1) = 1
-   col_lables(1) = '"Total (kinetic)"'
+   col_labels(1) = '"Total (kinetic)"'
    linestyle(1) = '"-"'
    col_nums(2) = 2
-   col_lables(2) = '"Valence"'
+   col_labels(2) = '"Valence"'
    linestyle(2) = '"--"'
    col_nums(3) = 3
-   col_lables(3) = '"Conduction"'
+   col_labels(3) = '"Conduction"'
    linestyle(3) = '"-."'
 
    Plot_name = 'OUTPUT_electron_temperatures'
@@ -1858,13 +1866,13 @@ subroutine Python_plot_el_temperatures(numpar, file_Te, t0, t_last, script_name,
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Electron tempereature (K)', 'Electron tempereatures', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_el_temperatures
 
 
@@ -1878,7 +1886,7 @@ subroutine Python_plot_entropy(numpar, file_electron_entropy, t0, t_last, script
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -1892,28 +1900,28 @@ subroutine Python_plot_entropy(numpar, file_electron_entropy, t0, t_last, script
    endif
 
    allocate(col_nums(Nsiz), source = 0)
-   allocate(col_lables(Nsiz))
+   allocate(col_labels(Nsiz))
    allocate(linestyle(Nsiz))
 
 
    col_nums(1) = 2
-   col_lables(1) = '"Equilibrium"'
+   col_labels(1) = '"Equilibrium"'
    linestyle(1) = '"--"'
    col_nums(2) = 1
-   col_lables(2) = '"Nonequilibrium"'
+   col_labels(2) = '"Nonequilibrium"'
    linestyle(2) = '"-"'
    if (numpar%do_partial_thermal) then ! add partial entropies
       col_nums(3) = 4
-      col_lables(3) = '"Equilibrium VB"'
+      col_labels(3) = '"Equilibrium VB"'
       linestyle(3) = '"-."'
       col_nums(4) = 3
-      col_lables(4) = '"Nonequilibrium VB"'
+      col_labels(4) = '"Nonequilibrium VB"'
       linestyle(4) = '"-."'
       col_nums(5) = 6
-      col_lables(5) = '"Equilibrium CB"'
+      col_labels(5) = '"Equilibrium CB"'
       linestyle(5) = '":"'
       col_nums(6) = 5
-      col_lables(6) = '"Nonequilibrium CB"'
+      col_labels(6) = '"Nonequilibrium CB"'
       linestyle(6) = '":"'
    endif
 
@@ -1927,13 +1935,13 @@ subroutine Python_plot_entropy(numpar, file_electron_entropy, t0, t_last, script
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Electron entropy (eV/K)', 'Electron entropy', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_entropy
 
 
@@ -1945,7 +1953,7 @@ subroutine Python_plot_heat_conductivity_dyn(numpar, file_heat_conductivity_dyn,
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name
 
    ! Py script file:
@@ -1953,26 +1961,26 @@ subroutine Python_plot_heat_conductivity_dyn(numpar, file_heat_conductivity_dyn,
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
    allocate(col_nums(3), source = 0)
-   allocate(col_lables(3))
+   allocate(col_labels(3))
    allocate(linestyle(3))
 
    col_nums(1) = 1
-   col_lables(1) = 'r"$\kappa$"'
+   col_labels(1) = 'r"$\kappa$"'
    linestyle(1) = '"-"'
    col_nums(2) = 2
-   col_lables(2) = 'r"$\kappa_{e-ph}$"'
+   col_labels(2) = 'r"$\kappa_{e-ph}$"'
    linestyle(2) = '"--"'
    col_nums(3) = 3
-   col_lables(3) = 'r"$\kappa_{e-e}$"'
+   col_labels(3) = 'r"$\kappa_{e-e}$"'
    linestyle(3) = '"-."'
 
-   call Create_python_plot(FN, file_heat_conductivity_dyn, col_nums, col_lables, &
+   call Create_python_plot(FN, file_heat_conductivity_dyn, col_nums, col_labels, &
       'Time (fs)', 'Heat conductivity (W/(m K))', 'Electron heat conductivity', &
       "best", 'OUTPUT_electron_heat_conductivity_dyn', trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_heat_conductivity_dyn
 
 
@@ -1984,7 +1992,7 @@ subroutine Python_plot_heat_conductivity(numpar, file_heat_conductivity, t0, t_l
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name
 
    ! Py script file:
@@ -1992,26 +2000,26 @@ subroutine Python_plot_heat_conductivity(numpar, file_heat_conductivity, t0, t_l
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
    allocate(col_nums(3), source = 0)
-   allocate(col_lables(3))
+   allocate(col_labels(3))
    allocate(linestyle(3))
 
    col_nums(1) = 1
-   col_lables(1) = 'r"$\kappa$"'
+   col_labels(1) = 'r"$\kappa$"'
    linestyle(1) = '"-"'
    col_nums(2) = 2
-   col_lables(2) = 'r"$\kappa_{e-ph}$"'
+   col_labels(2) = 'r"$\kappa_{e-ph}$"'
    linestyle(2) = '"--"'
    col_nums(3) = 3
-   col_lables(3) = 'r"$\kappa_{e-e}$"'
+   col_labels(3) = 'r"$\kappa_{e-e}$"'
    linestyle(3) = '"-."'
 
-   call Create_python_plot(FN, file_heat_conductivity, col_nums, col_lables, &
+   call Create_python_plot(FN, file_heat_conductivity, col_nums, col_labels, &
       'Time (fs)', 'Heat conductivity (W/(m K))', 'Electron heat conductivity', &
       "best", 'OUTPUT_electron_heat_conductivity', trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_heat_conductivity
 
 
@@ -2025,7 +2033,7 @@ subroutine Python_plot_capacity(numpar, file_electron_properties, t0, t_last, sc
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -2033,10 +2041,10 @@ subroutine Python_plot_capacity(numpar, file_electron_properties, t0, t_last, sc
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
    allocate(col_nums(1), source = 0)
-   allocate(col_lables(1))
+   allocate(col_labels(1))
 
    col_nums(1) = 4
-   col_lables(1) = '"C$_e$"'
+   col_labels(1) = '"C$_e$"'
 
 
    Plot_name = 'OUTPUT_electron_Ce'
@@ -2048,13 +2056,13 @@ subroutine Python_plot_capacity(numpar, file_electron_properties, t0, t_last, sc
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Heat capacity (J/(m$^3$ K))', 'Electron heat capacity', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables)
+   deallocate(col_nums, col_labels)
 end subroutine Python_plot_capacity
 
 
@@ -2067,7 +2075,7 @@ subroutine Python_plot_Ebands(numpar, file_electron_properties, t0, t_last, scri
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
 
@@ -2076,19 +2084,19 @@ subroutine Python_plot_Ebands(numpar, file_electron_properties, t0, t_last, scri
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
    allocate(col_nums(5), source = 0)
-   allocate(col_lables(5))
+   allocate(col_labels(5))
    allocate(linestyle(5))
 
    col_nums(1) = 9
-   col_lables(1) = '"Top of CB"'
+   col_labels(1) = '"Top of CB"'
    col_nums(2) = 8
-   col_lables(2) = '"Bottom of CB"'
+   col_labels(2) = '"Bottom of CB"'
    col_nums(3) = 7
-   col_lables(3) = '"Top of VB"'
+   col_labels(3) = '"Top of VB"'
    col_nums(4) = 6
-   col_lables(4) = '"Bottom of VB"'
+   col_labels(4) = '"Bottom of VB"'
    col_nums(5) = 2
-   col_lables(5) = '"Chemical potential"'
+   col_labels(5) = '"Chemical potential"'
 
    linestyle = '"-"'          ! all solid
    linestyle(5) = '"--"'      ! chem.pot dashed
@@ -2102,13 +2110,13 @@ subroutine Python_plot_Ebands(numpar, file_electron_properties, t0, t_last, scri
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Energy (eV)', 'Band borders', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_Ebands
 
 
@@ -2225,7 +2233,7 @@ subroutine Python_plot_Egap(numpar, file_electron_properties, t0, t_last, script
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
    character(20) :: chtemp1
 
@@ -2234,11 +2242,11 @@ subroutine Python_plot_Egap(numpar, file_electron_properties, t0, t_last, script
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
    allocate(col_nums(1), source = 0)
-   allocate(col_lables(1))
+   allocate(col_labels(1))
 
    ! All shells resolved:
    col_nums(1) = 3
-   col_lables(1) = '"Band gap"'
+   col_labels(1) = '"Band gap"'
 
    Plot_name = 'OUTPUT_Egap'
    Data_file_name = file_electron_properties
@@ -2249,13 +2257,13 @@ subroutine Python_plot_Egap(numpar, file_electron_properties, t0, t_last, script
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Band gap (eV)', 'Band gap', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables)
+   deallocate(col_nums, col_labels)
 end subroutine Python_plot_Egap
 
 
@@ -2270,7 +2278,7 @@ subroutine Python_plot_holes(matter, numpar, file_deep_holes, t0, t_last, script
    !----------------
    integer :: FN, i, j, Na, N_sh_max, Nshl, N_sh_tot, i_cur
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
    character(20) :: chtemp1, chtemp11
 
@@ -2290,7 +2298,7 @@ subroutine Python_plot_holes(matter, numpar, file_deep_holes, t0, t_last, script
    N_sh_tot = i_cur - 1 ! estimate the total amount of core shells (exclude valence band)
 
    allocate(col_nums(N_sh_tot), source = 0)
-   allocate(col_lables(N_sh_tot))
+   allocate(col_labels(N_sh_tot))
    allocate(linestyle(N_sh_tot))
 
    ! All shells:
@@ -2300,7 +2308,7 @@ subroutine Python_plot_holes(matter, numpar, file_deep_holes, t0, t_last, script
       SHELLS:do j = 1, Nshl ! for all shells of this atom
          if ((i .NE. 1) .or. (j .NE. Nshl)) then ! atomic shell:
             call define_PQN(matter%Atoms(i)%Shl_dsgnr(j), chtemp11) ! module "Dealing_with_EADL"
-            write(col_lables(i_cur),'(a)') '"'//trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(chtemp11))//'"'
+            write(col_labels(i_cur),'(a)') '"'//trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(chtemp11))//'"'
 
             col_nums(i_cur) = i_cur    ! column number
 
@@ -2324,13 +2332,13 @@ subroutine Python_plot_holes(matter, numpar, file_deep_holes, t0, t_last, script
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Number of holes (total)', 'Core holes', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_holes
 
 
@@ -2343,7 +2351,7 @@ subroutine Python_plot_CB_electrons(numpar, file_numbers, t0, t_last, script_nam
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -2351,15 +2359,15 @@ subroutine Python_plot_CB_electrons(numpar, file_numbers, t0, t_last, script_nam
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
    allocate(col_nums(2), source = 0)
-   allocate(col_lables(2))
+   allocate(col_labels(2))
    allocate(linestyle(2))
 
    ! All shells resolved:
    col_nums(1) = 2
-   col_lables(1) = '"Electrons"'
+   col_labels(1) = '"Electrons"'
    linestyle(1) = '"-"'
    col_nums(2) = 6
-   col_lables(2) = '"Photons"'
+   col_labels(2) = '"Photons"'
    linestyle(2) = '"--"'
 
 
@@ -2372,13 +2380,13 @@ subroutine Python_plot_CB_electrons(numpar, file_numbers, t0, t_last, script_nam
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Electrons (1/atom)', 'Conduction-band electrons', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_CB_electrons
 
 
@@ -2394,7 +2402,7 @@ subroutine Python_plot_orbital_resolved(Scell, matter, numpar, file_numbers, t0,
    !----------------
    integer :: FN, i, i_col, NKOA, N_at, Nsiz, norb, N_types, N_col, i_at, i_types
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
    character(20) :: chtemp1
 
@@ -2413,12 +2421,12 @@ subroutine Python_plot_orbital_resolved(Scell, matter, numpar, file_numbers, t0,
    N_col = NKOA * N_types
 
    allocate(col_nums(N_col+1), source = 0)
-   allocate(col_lables(N_col+1))
+   allocate(col_labels(N_col+1))
    allocate(linestyle(N_col+1))
 
    ! All shells resolved:
    col_nums(1) = 1
-   col_lables(1) = '"Total"'
+   col_labels(1) = '"Total"'
    linestyle(1) = '"-"'
    i_col = 1   ! to start with
    do i_at = 1, NKOA
@@ -2428,7 +2436,7 @@ subroutine Python_plot_orbital_resolved(Scell, matter, numpar, file_numbers, t0,
          i_col = i_col + 1 ! column number
 
          col_nums(i_col) = i_col
-         col_lables(i_col) = '"'//trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))//'"'
+         col_labels(i_col) = '"'//trim(adjustl(matter%Atoms(i_at)%Name))//' '//trim(adjustl(chtemp1))//'"'
 
          !set different style for different elements:
          select case (i_at)   ! currently, supports 7 different elements (may be added if needed)
@@ -2458,13 +2466,13 @@ subroutine Python_plot_orbital_resolved(Scell, matter, numpar, file_numbers, t0,
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Electrons (1/atom)', 'Orbital-resolved electrons', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_orbital_resolved
 
 
@@ -2478,7 +2486,7 @@ subroutine Python_plot_numbers(numpar, file_numbers, t0, t_last, script_name, co
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -2486,20 +2494,20 @@ subroutine Python_plot_numbers(numpar, file_numbers, t0, t_last, script_name, co
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
    allocate(col_nums(4), source = 0)
-   allocate(col_lables(4))
+   allocate(col_labels(4))
    allocate(linestyle(4))
 
    col_nums(1) = 3
-   col_lables(1) = '"High-energy electrons"'
+   col_labels(1) = '"High-energy electrons"'
    linestyle(1) = '"-"'
    col_nums(2) = 4
-   col_lables(2) = '"All deep-shell holes"'
+   col_labels(2) = '"All deep-shell holes"'
    linestyle(2) = '"-."'
    col_nums(3) = 6
-   col_lables(3) = '"Photons"'
+   col_labels(3) = '"Photons"'
    linestyle(3) = '"--"'
    col_nums(4) = 5
-   col_lables(4) = '"Conservation error"'
+   col_labels(4) = '"Conservation error"'
    linestyle(4) = '":"'
 
 
@@ -2512,14 +2520,66 @@ subroutine Python_plot_numbers(numpar, file_numbers, t0, t_last, script_name, co
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Particles (1/atom)', 'Number of particles', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_numbers
+
+
+
+
+subroutine Python_plot_high_energy_el(numpar, file_high_e, t0, t_last, script_name, convolved)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_high_e, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
+   !----------------
+   integer :: FN, i, i_start
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_labels, linestyle
+   character(300) :: File_name, Plot_name, Data_file_name
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   allocate(col_nums(5), source = 0)
+   allocate(col_labels(5))
+   allocate(linestyle(5))
+
+   ! Set columns description:
+   do i = 1, 5
+      col_nums(i) = i
+      call select_linestyle(i, linestyle(i))    ! below
+   enddo
+   col_labels(1) = '"Total"'
+   col_labels(2) = '"Photo"'
+   col_labels(3) = '"Auger"'
+   col_labels(4) = '"Impact-ionized"'
+   col_labels(5) = '"Error"'
+
+
+   Plot_name = 'OUTPUT_electrons_high_energy'
+   Data_file_name = file_high_e
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_high_e(1:len(trim(adjustl(file_high_e)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
+      'Time (fs)', 'Electrons (1/atom)', 'High-energy electrons', &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last, l_style=linestyle)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_labels, linestyle)
+end subroutine Python_plot_high_energy_el
 
 
 
@@ -2531,7 +2591,7 @@ subroutine Python_plot_stress(numpar, file_pressure, t0, t_last, script_name, co
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -2539,21 +2599,21 @@ subroutine Python_plot_stress(numpar, file_pressure, t0, t_last, script_name, co
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
    allocate(col_nums(9), source = 0)
-   allocate(col_lables(9))
+   allocate(col_labels(9))
    allocate(linestyle(9))
 
    do i = 1, 9
       col_nums(i) = 1+i
    enddo
-   col_lables(1) = '"P$_{xx}$"'
-   col_lables(2) = '"P$_{xy}$"'
-   col_lables(3) = '"P$_{xz}$"'
-   col_lables(4) = '"P$_{yx}$"'
-   col_lables(5) = '"P$_{yy}$"'
-   col_lables(6) = '"P$_{yz}$"'
-   col_lables(7) = '"P$_{zx}$"'
-   col_lables(8) = '"P$_{zy}$"'
-   col_lables(9) = '"P$_{zz}$"'
+   col_labels(1) = '"P$_{xx}$"'
+   col_labels(2) = '"P$_{xy}$"'
+   col_labels(3) = '"P$_{xz}$"'
+   col_labels(4) = '"P$_{yx}$"'
+   col_labels(5) = '"P$_{yy}$"'
+   col_labels(6) = '"P$_{yz}$"'
+   col_labels(7) = '"P$_{zx}$"'
+   col_labels(8) = '"P$_{zy}$"'
+   col_labels(9) = '"P$_{zz}$"'
    ! Dashed lines for off diagonal:
    linestyle = '"--"'
    ! Solid lines for diagonal:
@@ -2571,13 +2631,13 @@ subroutine Python_plot_stress(numpar, file_pressure, t0, t_last, script_name, co
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Pressure tensor (GPa)', 'Pressure tensor', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_stress
 
 
@@ -2591,7 +2651,7 @@ subroutine Python_plot_pressure(numpar, file_pressure, t0, t_last, script_name, 
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -2599,10 +2659,10 @@ subroutine Python_plot_pressure(numpar, file_pressure, t0, t_last, script_name, 
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
    allocate(col_nums(1), source = 0)
-   allocate(col_lables(1))
+   allocate(col_labels(1))
 
    col_nums(1) = 1
-   col_lables(1) = '"Pressure"'
+   col_labels(1) = '"Pressure"'
 
 
    Plot_name = 'OUTPUT_pressure'
@@ -2614,13 +2674,13 @@ subroutine Python_plot_pressure(numpar, file_pressure, t0, t_last, script_name, 
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Pressure (GPa)', 'Pressure', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables)
+   deallocate(col_nums, col_labels)
 end subroutine Python_plot_pressure
 
 
@@ -2636,7 +2696,7 @@ subroutine Python_plot_powder_diffraction(Scell, matter, numpar, file_powder_dif
    !----------------
    integer :: FN, i, i_start, ind, j, k
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name
 
    ! Py script file:
@@ -2656,29 +2716,29 @@ subroutine Python_plot_powder_diffraction(Scell, matter, numpar, file_powder_dif
    endif
    ! allocate the arrays:
    allocate(col_nums(ind), source = 0)
-   allocate(col_lables(ind))
+   allocate(col_labels(ind))
    !allocate(linestyle(size(Scell%diff_peaks%I_diff_peak)))
    ! Set the arrays:
    col_nums(1) = 1
-   col_lables(1) = 'Total'
+   col_labels(1) = 'Total'
    ind = 1  ! restart
    if (matter%N_KAO > 1) then ! no need to do for 1 element
       do j = 1, matter%N_KAO     ! for all elements
          do k = j, matter%N_KAO  ! for all different pairs
             ind = ind + 1
             col_nums(ind) = ind
-            col_lables(ind) = trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))
+            col_labels(ind) = trim(adjustl(matter%Atoms(j)%Name))//'-'//trim(adjustl(matter%Atoms(k)%Name))
          enddo
       enddo
    endif
 
-   call Create_Python_animation(FN, file_powder_diffraction, col_nums, col_lables, &
+   call Create_Python_animation(FN, file_powder_diffraction, col_nums, col_labels, &
       '2theta (deg)', 'Peak Intensity (a.u.)', 'Powder diffraction', &
       "best", 'OUTPUT_diffraction_powder', trim(adjustl(video_format)), &
       x_min=10.0d0, x_max=180.0d0, t_start=numpar%t_start, dt=numpar%dt_save, t_end=numpar%t_total)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables)
+   deallocate(col_nums, col_labels)
 end subroutine Python_plot_powder_diffraction
 
 
@@ -2692,7 +2752,7 @@ subroutine Python_plot_Debye_temperatures(Scell, numpar, file_Debye_temperature,
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -2700,13 +2760,13 @@ subroutine Python_plot_Debye_temperatures(Scell, numpar, file_Debye_temperature,
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
    allocate(col_nums(size(Scell%diff_peaks%I_diff_peak)), source = 0)
-   allocate(col_lables(size(Scell%diff_peaks%I_diff_peak)))
+   allocate(col_labels(size(Scell%diff_peaks%I_diff_peak)))
    !allocate(linestyle(size(Scell%diff_peaks%I_diff_peak)))
 
    do i = 1, size(Scell%diff_peaks%I_diff_peak)
       col_nums(i) = i
-      col_lables(i) = make_diff_peak_name(Scell, i) ! below
-      col_lables(i) = '"'//trim(adjustl(col_lables(i)))//'"'
+      col_labels(i) = make_diff_peak_name(Scell, i) ! below
+      col_labels(i) = '"'//trim(adjustl(col_labels(i)))//'"'
    enddo
 
    Plot_name = 'OUTPUT_Debye_temperatures'
@@ -2718,13 +2778,13 @@ subroutine Python_plot_Debye_temperatures(Scell, numpar, file_Debye_temperature,
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Debye temperature (K)', 'Debye temperatures', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables)
+   deallocate(col_nums, col_labels)
 end subroutine Python_plot_Debye_temperatures
 
 
@@ -2739,7 +2799,7 @@ subroutine Python_plot_diffraction_peaks(Scell, numpar, file_diffraction, t0, t_
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, y_axis_label, Plot_name_used, Data_file_name
    character(10) :: units, temp
 
@@ -2755,13 +2815,13 @@ subroutine Python_plot_diffraction_peaks(Scell, numpar, file_diffraction, t0, t_
    endif
 
    allocate(col_nums(size(Scell%diff_peaks%I_diff_peak)), source = 0)
-   allocate(col_lables(size(Scell%diff_peaks%I_diff_peak)))
+   allocate(col_labels(size(Scell%diff_peaks%I_diff_peak)))
    !allocate(linestyle(size(Scell%diff_peaks%I_diff_peak)))
 
    do i = 1, size(Scell%diff_peaks%I_diff_peak)
       col_nums(i) = i
-      col_lables(i) = make_diff_peak_name(Scell, i) ! below
-      col_lables(i) = '"'//trim(adjustl(col_lables(i)))//'"'
+      col_labels(i) = make_diff_peak_name(Scell, i) ! below
+      col_labels(i) = '"'//trim(adjustl(col_labels(i)))//'"'
    enddo
 
 
@@ -2774,13 +2834,13 @@ subroutine Python_plot_diffraction_peaks(Scell, numpar, file_diffraction, t0, t_
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', trim(adjustl(y_axis_label)), trim(adjustl(plot_label)), &
       "best", trim(adjustl(Plot_name_used)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables)
+   deallocate(col_nums, col_labels)
 end subroutine Python_plot_diffraction_peaks
 
 function make_diff_peak_name(Scell, i) result(peak_name)
@@ -2808,7 +2868,7 @@ subroutine Python_plot_displacements_partial(matter, numpar, file_MSD, t0, t_las
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
    character(10) :: units, temp
 
@@ -2825,19 +2885,19 @@ subroutine Python_plot_displacements_partial(matter, numpar, file_MSD, t0, t_las
    endif
 
    allocate(col_nums(4*matter%N_KAO), source = 0)
-   allocate(col_lables(4*matter%N_KAO))
+   allocate(col_labels(4*matter%N_KAO))
    allocate(linestyle(4*matter%N_KAO))
 
    i_start = 5
    do i = 1, matter%N_KAO
       col_nums(1 + (i-1)*4 ) = i_start + (i-1)*4
-      col_lables(1 + (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//'"'
+      col_labels(1 + (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//'"'
       col_nums(2+ (i-1)*4) = i_start + (i-1)*4 + 1
-      col_lables(2+ (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//':X"'
+      col_labels(2+ (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//':X"'
       col_nums(3+ (i-1)*4) = i_start + (i-1)*4 + 2
-      col_lables(3+ (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//':Y"'
+      col_labels(3+ (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//':Y"'
       col_nums(4+ (i-1)*4) = i_start + (i-1)*4 + 3
-      col_lables(4+ (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//':Z"'
+      col_labels(4+ (i-1)*4) = '"'//trim(adjustl(matter%Atoms(i)%Name))//':Z"'
       linestyle(1+ (i-1)*4) = '"-"'
       linestyle(2+ (i-1)*4:4+ (i-1)*4) = '"--"'
    enddo
@@ -2853,13 +2913,13 @@ subroutine Python_plot_displacements_partial(matter, numpar, file_MSD, t0, t_las
    endif
 
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_displacements_partial
 
 
@@ -2875,7 +2935,7 @@ subroutine Python_plot_displacements(matter, numpar, file_MSD, t0, t_last, scrip
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
    character(10) :: units, temp
 
@@ -2892,16 +2952,16 @@ subroutine Python_plot_displacements(matter, numpar, file_MSD, t0, t_last, scrip
    endif
 
    allocate(col_nums(4), source = 0)
-   allocate(col_lables(4))
+   allocate(col_labels(4))
    allocate(linestyle(4))
    col_nums(1) = 1
-   col_lables(1) = '"Average"'
+   col_labels(1) = '"Average"'
    col_nums(2) = 2
-   col_lables(2) = '"X"'
+   col_labels(2) = '"X"'
    col_nums(3) = 3
-   col_lables(3) = '"Y"'
+   col_labels(3) = '"Y"'
    col_nums(4) = 4
-   col_lables(4) = '"Z"'
+   col_labels(4) = '"Z"'
    linestyle(1) = '"-"'
    linestyle(2:4) = '"--"'
 
@@ -2915,13 +2975,13 @@ subroutine Python_plot_displacements(matter, numpar, file_MSD, t0, t_last, scrip
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_displacements
 
 
@@ -2936,7 +2996,7 @@ subroutine Python_plot_MSD(matter, numpar, file_MSD, t0, t_last, script_name, MS
    !----------------
    integer :: FN, i, i_start
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
    character(10) :: units, temp
 
@@ -2956,23 +3016,23 @@ subroutine Python_plot_MSD(matter, numpar, file_MSD, t0, t_last, script_name, MS
    if (matter%N_KAO == 1) then      ! single spieces
       ! Prepare column indices and names:
       allocate(col_nums(1), source = 0)
-      allocate(col_lables(1))
+      allocate(col_labels(1))
       allocate(linestyle(1))
       col_nums(1) = 4
-      col_lables(1) = '"Displacement"'
+      col_labels(1) = '"Displacement"'
       linestyle(1) = '"-"'
    else ! more than one element:
       allocate(col_nums(matter%N_KAO+1), source = 0)
-      allocate(col_lables(matter%N_KAO+1))
+      allocate(col_labels(matter%N_KAO+1))
       allocate(linestyle(matter%N_KAO+1))
       i_start = 3 + matter%N_KAO
       col_nums(1) = i_start
-      col_lables(1) = '"Average"'
+      col_labels(1) = '"Average"'
       linestyle(1) = '"-"'
       ! All elements:
       do i = 1, matter%N_KAO
          col_nums(1+i) = i_start+i
-         col_lables(1+i) = '"'//trim(adjustl(matter%Atoms(i)%Name))//' atoms"'
+         col_labels(1+i) = '"'//trim(adjustl(matter%Atoms(i)%Name))//' atoms"'
          linestyle(1+i) = '"--"'
       enddo
    endif
@@ -2987,13 +3047,13 @@ subroutine Python_plot_MSD(matter, numpar, file_MSD, t0, t_last, script_name, MS
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Mean displacement '//trim(adjustl(units)), 'Mean displacement', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_MSD
 
 
@@ -3008,7 +3068,7 @@ subroutine Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_las
    !----------------
    integer :: FN, i
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -3019,28 +3079,28 @@ subroutine Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_las
    if (matter%N_KAO == 1) then      ! single spieces
       ! Prepare column indices and names:
       allocate(col_nums(2), source = 0)
-      allocate(col_lables(2))
+      allocate(col_labels(2))
       allocate(linestyle(2))
       col_nums(1) = 1
-      col_lables(1) = '"Electrons"'
+      col_labels(1) = '"Electrons"'
       linestyle(1) = '"--"'
       col_nums(2) = 2
-      col_lables(2) = '"Atoms"'
+      col_labels(2) = '"Atoms"'
       linestyle(2) = '"-"'
    else ! more than one element:
       allocate(col_nums(matter%N_KAO+2), source = 0)
-      allocate(col_lables(matter%N_KAO+2))
+      allocate(col_labels(matter%N_KAO+2))
       allocate(linestyle(matter%N_KAO+2))
       col_nums(1) = 1
-      col_lables(1) = '"Electrons"'
+      col_labels(1) = '"Electrons"'
       linestyle(1) = '"--"'
       col_nums(2) = 2
-      col_lables(2) = '"Average atoms"'
+      col_labels(2) = '"Average atoms"'
       linestyle(2) = '"-"'
       ! All elements:
       do i = 1, matter%N_KAO
          col_nums(i+2) = 2+i
-         col_lables(i+2) = '"'//trim(adjustl(matter%Atoms(i)%Name))//' atoms"'
+         col_labels(i+2) = '"'//trim(adjustl(matter%Atoms(i)%Name))//' atoms"'
          linestyle(i+2) = '"-."'
       enddo
    endif
@@ -3055,13 +3115,13 @@ subroutine Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_las
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Temperature (K)', 'Temperatures', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, y_min=0.0d0, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_temperatures
 
 
@@ -3075,7 +3135,7 @@ subroutine Python_plot_energies(numpar, file_energies, t0, t_last, script_name, 
    !----------------
    integer :: FN
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -3084,20 +3144,20 @@ subroutine Python_plot_energies(numpar, file_energies, t0, t_last, script_name, 
 
    ! Prepare column indices and names:
    allocate(col_nums(4), source = 0)
-   allocate(col_lables(4))
+   allocate(col_labels(4))
    allocate(linestyle(4))
 
    col_nums(1) = 7
-   col_lables(1) = '"Total energy"'
+   col_labels(1) = '"Total energy"'
    linestyle(1) = '"-"'
    col_nums(2) = 6
-   col_lables(2) = '"Atoms and electrons"'
+   col_labels(2) = '"Atoms and electrons"'
    linestyle(2) = '"-."'
    col_nums(3) = 5
-   col_lables(3) = '"Atomic energy"'
+   col_labels(3) = '"Atomic energy"'
    linestyle(3) = '":"'
    col_nums(4) = 3
-   col_lables(4) = '"Potential energy"'
+   col_labels(4) = '"Potential energy"'
    linestyle(4) = '"--"'
 
 
@@ -3110,13 +3170,13 @@ subroutine Python_plot_energies(numpar, file_energies, t0, t_last, script_name, 
       endif
    endif
 
-   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_lables, &
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Energy (eV/atom)', 'Energies', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
       x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_energies
 
 
@@ -3130,7 +3190,7 @@ subroutine Python_plot_energy_levels(numpar, t0, t_last, Scell, file_Ei, script_
    !----------------
    integer i, M, NSC, FN
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables
+   character(30), dimension(:), allocatable :: col_labels
    character(300) :: File_name
 
    do NSC = 1, size(Scell)    ! for all supercells (which is one)
@@ -3148,7 +3208,7 @@ subroutine Python_plot_energy_levels(numpar, t0, t_last, Scell, file_Ei, script_
       enddo ! i
 
       ! Use them to plot the data:
-      call Create_python_plot(FN, file_Ei, col_nums, col_lables, &
+      call Create_python_plot(FN, file_Ei, col_nums, col_labels, &
             'Time (fs)', 'Energy levels (eV)', 'Electron energy levels', &
             "best", 'OUTPUT_energy_levels', trim(adjustl(numpar%fig_extention)), &
             x_min=t0, x_max=t_last, y_max=25.0d0 )     ! below
@@ -3173,7 +3233,7 @@ subroutine Plot_electron_MFP_python(numpar, matter, file_electron_IMFP, file_ele
    integer :: N_grid, FN, count_col, i, Nshl, j_start, j, N_tot_col
    real(8) :: t0, t_last, x_tics, x_min, x_max, y_min, y_max
    integer, dimension(:), allocatable :: col_nums, col_nums2
-   character(30), dimension(:), allocatable :: col_lables, col_labels2
+   character(30), dimension(:), allocatable :: col_labels, col_labels2
    !-------------
 
    N_grid = size(matter%Atoms(1)%Ph_MFP(1)%E)
@@ -3190,7 +3250,7 @@ subroutine Plot_electron_MFP_python(numpar, matter, file_electron_IMFP, file_ele
    ! Prepare column indices and names:
    call count_shells(matter, N_tot_col)     ! below
    allocate(col_nums(N_tot_col+1), source = 0)
-   allocate(col_lables(N_tot_col+1))
+   allocate(col_labels(N_tot_col+1))
    ! Fill the column numbers and labels:
    count_col = 0  ! to start with
    do i = 1, size(matter%Atoms) ! for all atoms
@@ -3203,18 +3263,18 @@ subroutine Plot_electron_MFP_python(numpar, matter, file_electron_IMFP, file_ele
             col_nums(count_col) = count_col
             ! Names of the columns (skipping the "Time"):
             ! core shell
-            col_lables(count_col) = '"'//trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j)))//'"'
+            col_labels(count_col) = '"'//trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j)))//'"'
          endif
       enddo
    enddo
    ! Add the valence band MFP:
    count_col = count_col + 1  ! number of columns
    col_nums(count_col) = count_col
-   col_lables(count_col) = '"Valence"'
+   col_labels(count_col) = '"Valence"'
    ! And the total MFP:
    count_col = count_col + 1  ! number of columns
    col_nums(count_col) = count_col
-   col_lables(count_col) = '"Total inelastic"'
+   col_labels(count_col) = '"Total inelastic"'
 
    ! Add the elastic part:
    allocate(col_nums2(1), source = 0)
@@ -3223,7 +3283,7 @@ subroutine Plot_electron_MFP_python(numpar, matter, file_electron_IMFP, file_ele
    col_labels2(1) = '"Elastic"'
 
    ! Use them to plot the data:
-   call Create_python_plot(FN, file_electron_IMFP, col_nums, col_lables, &
+   call Create_python_plot(FN, file_electron_IMFP, col_nums, col_labels, &
       'Electron energy (eV)', 'Mean free path (A)', 'Electron mean free paths', &
       "best", 'OUTPUT_MFP_electron', trim(adjustl(numpar%fig_extention)), &
       x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max, &
@@ -3232,7 +3292,7 @@ subroutine Plot_electron_MFP_python(numpar, matter, file_electron_IMFP, file_ele
       colors_inverted=.true. )     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, col_nums2, col_labels2)
+   deallocate(col_nums, col_labels, col_nums2, col_labels2)
 end subroutine Plot_electron_MFP_python
 
 
@@ -3249,7 +3309,7 @@ subroutine Plot_photon_MFP_python(numpar, matter, file_photon_MFP)
    integer :: N_grid, FN, count_col, i, Nshl, j_start, j, N_tot_col
    real(8) :: t0, t_last, x_tics, x_min, x_max, y_min, y_max
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_lables
+   character(30), dimension(:), allocatable :: col_labels
    !-------------
 
    N_grid = size(matter%Atoms(1)%Ph_MFP(1)%E)
@@ -3266,7 +3326,7 @@ subroutine Plot_photon_MFP_python(numpar, matter, file_photon_MFP)
    ! Prepare column indices and names:
    call count_shells(matter, N_tot_col)     ! below
    allocate(col_nums(N_tot_col+1), source = 0)
-   allocate(col_lables(N_tot_col+1))
+   allocate(col_labels(N_tot_col+1))
    ! Fill the column numbers and labels:
    count_col = 0  ! to start with
    do i = 1, size(matter%Atoms) ! for all atoms
@@ -3279,28 +3339,28 @@ subroutine Plot_photon_MFP_python(numpar, matter, file_photon_MFP)
             col_nums(count_col) = count_col
             ! Names of the columns (skipping the "Time"):
             ! core shell
-            col_lables(count_col) = '"'//trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j)))//'"'
+            col_labels(count_col) = '"'//trim(adjustl(matter%Atoms(i)%Name))//' '//trim(adjustl(matter%Atoms(i)%Shell_name(j)))//'"'
          endif
       enddo
    enddo
    ! Add the valence band MFP:
    count_col = count_col + 1  ! number of columns
    col_nums(count_col) = count_col
-   col_lables(count_col) = '"Valence"'
+   col_labels(count_col) = '"Valence"'
    ! And the total MFP:
    count_col = count_col + 1  ! number of columns
    col_nums(count_col) = count_col
-   col_lables(count_col) = '"Total"'
+   col_labels(count_col) = '"Total"'
 
    ! Use them to plot the data:
-   call Create_python_plot(FN, file_photon_MFP, col_nums, col_lables, &
+   call Create_python_plot(FN, file_photon_MFP, col_nums, col_labels, &
       'Photon energy (eV)', 'Attenuation length (A)', 'Photon attenuation length', &
       "best", 'OUTPUT_MFP_photon', trim(adjustl(numpar%fig_extention)), &
       x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max, &
       set_x_log=.true., set_y_log=.true., colors_inverted=.true. )     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables)
+   deallocate(col_nums, col_labels)
 end subroutine Plot_photon_MFP_python
 
 
@@ -3317,7 +3377,7 @@ subroutine Plot_laser_spectrum_python(numpar, laser, file_spectrum, i_pulse)
    integer :: N_grid, FN, count_col, i, Nshl, j_start, j, N_tot_col
    real(8) :: t0, t_last, x_tics, x_min, x_max, y_min, y_max
    integer, dimension(:), allocatable :: col_nums, col_nums2
-   character(30), dimension(:), allocatable :: col_lables, linestyle
+   character(30), dimension(:), allocatable :: col_labels, linestyle
    !-------------
 
    x_min = laser(i_pulse)%Spectrum(1,1)   ! starting point
@@ -3331,23 +3391,23 @@ subroutine Plot_laser_spectrum_python(numpar, laser, file_spectrum, i_pulse)
 
    ! Prepare column indices and names:
    allocate(col_nums(3), source = 0)
-   allocate(col_lables(3))
+   allocate(col_labels(3))
    allocate(linestyle(3))
    ! Fill the column numbers and labels:
    col_nums(1) = 1
    col_nums(2) = 2
    col_nums(3) = 3
    ! Names of the columns (skipping the "Energy"):
-   col_lables(1) = '"Incoming"'
-   col_lables(2) = '"Absorbed"'
-   col_lables(3) = '"MC Sampled"'
+   col_labels(1) = '"Incoming"'
+   col_labels(2) = '"Absorbed"'
+   col_labels(3) = '"MC Sampled"'
    ! Style of curves:
    linestyle(1)='"--"'
    linestyle(2)='"-"'
    linestyle(3)='"-."'
 
    ! Use them to plot the data:
-   call Create_python_plot(FN, file_spectrum, col_nums, col_lables, &
+   call Create_python_plot(FN, file_spectrum, col_nums, col_labels, &
       'Photon energy (eV)', 'Photon spectrum (arb. units)', 'Photon spectrum', &
       "best", 'OUTPUT_photon_spectrum', trim(adjustl(numpar%fig_extention)), &
       x_min=x_min, x_max=x_max, y_min=y_min, &
@@ -3355,7 +3415,7 @@ subroutine Plot_laser_spectrum_python(numpar, laser, file_spectrum, i_pulse)
       colors_inverted=.false. )     ! below
 
    close(FN)
-   deallocate(col_nums, col_lables, linestyle)
+   deallocate(col_nums, col_labels, linestyle)
 end subroutine Plot_laser_spectrum_python
 
 
@@ -3367,7 +3427,7 @@ end subroutine Plot_laser_spectrum_python
 !===================================================================
 ! General routines to use python for plotting:
 
-subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
+subroutine Create_Python_animation(FN, Data_file, col_nums, col_labels, &
       x_axis_label, y_axis_label, title, legend_position, out_name, out_format, &
       x_min, x_max, y_min, y_max, t_start, dt, t_end, &
       x_tics, y_tics, &
@@ -3379,7 +3439,7 @@ subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
    integer, intent(in) :: FN  ! file number (must be opened)
    character(*), intent(in) :: Data_file  ! data file to plot data from
    integer, dimension(:), intent(in) :: col_nums      ! array of columns to plot
-   character(*), dimension(:), allocatable, intent(in) :: col_lables    ! array of column labels
+   character(*), dimension(:), allocatable, intent(in) :: col_labels    ! array of column labels
    character(*), intent(in) :: x_axis_label, y_axis_label, title
    character(*), intent(in) :: out_name, out_format   ! plot file name and extension
    character(*), intent(in) :: legend_position  ! e.g. 'upper left', 'right bottom' etc.
@@ -3565,17 +3625,17 @@ subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
          if (first_in_front) then ! enforce the first line to be in front of others:
             write(FN,'(a)') 'line'//trim(adjustl(i_ch))// &
                ', = ax.plot([], [], lw=2, color="black", linestyle=linestyles[0], marker=markers[0], label="'// &
-               trim(adjustl(t_max_txt))//' fs '//trim(adjustl(col_lables(i)))//'", zorder=10)'
+               trim(adjustl(t_max_txt))//' fs '//trim(adjustl(col_labels(i)))//'", zorder=10)'
          else ! first line last:
             write(FN,'(a)') 'line'//trim(adjustl(i_ch))// &
                ', = ax.plot([], [], lw=2, color="black", linestyle=linestyles[0], marker=markers[0], label="'// &
-               trim(adjustl(t_max_txt))//' fs '//trim(adjustl(col_lables(i)))//'")'
+               trim(adjustl(t_max_txt))//' fs '//trim(adjustl(col_labels(i)))//'")'
          endif
       else ! the rest
          write(FN,'(a)') 'line'//trim(adjustl(i_ch))// &
          ', = ax.plot([], [], lw=1.5, linestyle=linestyles['//trim(adjustl(i_ch1))// &
          '], marker=markers['//trim(adjustl(i_ch1))//'],  label="    '// &
-         trim(adjustl(col_lables(i)))//'")'
+         trim(adjustl(col_labels(i)))//'")'
       endif
    enddo
 
@@ -3632,7 +3692,7 @@ subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
 
       write(FN,'(a)') '    # Update legend text (first entry only):'
       write(FN,'(a)') '    time_fs = i*'//trim(adjustl(dt_txt))//' + ('//trim(adjustl(t_start_txt))//')'
-      write(FN,'(a)') '    legend.get_texts()[0].set_text(f"{time_fs:6.1f} fs '//trim(adjustl(col_lables(1)))//'")'
+      write(FN,'(a)') '    legend.get_texts()[0].set_text(f"{time_fs:6.1f} fs '//trim(adjustl(col_labels(1)))//'")'
 
       write(FN,'(a)') '    # Convert figure to image'
       write(FN,'(a)') '    fig.canvas.draw()'
@@ -3690,7 +3750,7 @@ subroutine Create_Python_animation(FN, Data_file, col_nums, col_lables, &
 
    write(FN,'(a)') '        # Update legend text (first entry only):'
    write(FN,'(a)') '        time_fs = i*'//trim(adjustl(dt_txt))//' + ('//trim(adjustl(t_start_txt))//')'
-   write(FN,'(a)') '        legend.get_texts()[0].set_text(f"{time_fs:6.1f} fs '//trim(adjustl(col_lables(1)))//'")'
+   write(FN,'(a)') '        legend.get_texts()[0].set_text(f"{time_fs:6.1f} fs '//trim(adjustl(col_labels(1)))//'")'
 
    write(FN,'(a)') '        # Draw and save frame'
    write(FN,'(a)') '        fig.canvas.draw()'
@@ -3702,7 +3762,7 @@ end subroutine Create_Python_animation
 
 
 
-subroutine Create_python_plot(FN, Data_file, col_nums, col_lables, &
+subroutine Create_python_plot(FN, Data_file, col_nums, col_labels, &
       x_axis_label, y_axis_label, title, legend_position, out_name, out_format, &
       x_min, x_max, y_min, y_max, &
       x_tics, y_tics, &
@@ -3714,7 +3774,7 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_lables, &
    integer, intent(in) :: FN  ! file number (must be opened)
    character(*), intent(in) :: Data_file  ! data file to plot data from
    integer, dimension(:), intent(in) :: col_nums      ! array of columns to plot
-   character(*), dimension(:), allocatable, intent(in) :: col_lables    ! array of column labels
+   character(*), dimension(:), allocatable, intent(in) :: col_labels    ! array of column labels
    character(*), intent(in) :: x_axis_label, y_axis_label, title
    character(*), intent(in) :: out_name, out_format   ! plot file name and extension
    character(*), intent(in) :: legend_position  ! e.g. 'upper left', 'right bottom' etc.
@@ -3805,15 +3865,15 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_lables, &
    enddo
    write(FN,'(a)') ']'
 
-   ! Column lables, if required:
-   if (allocated(col_lables)) then ! the legend is required
+   ! Column labels, if required:
+   if (allocated(col_labels)) then ! the legend is required
       write(FN,'(a)', advance='no') 'labels = ['
-      do i = 1, size(col_lables)
+      do i = 1, size(col_labels)
          ! Column titles:
          if (i > 1) then   ! add come in between
             write(FN,'(a)', advance='no') ', '
          endif
-         write(FN,'(a)', advance='no') trim(adjustl(col_lables(i)))
+         write(FN,'(a)', advance='no') trim(adjustl(col_labels(i)))
       enddo
       write(FN,'(a)') ']'
    endif
@@ -3872,12 +3932,12 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_lables, &
    write(FN,'(a)') 'for i, col in enumerate(columns_to_plot):'          ! cycle for all curves
    write(FN,'(a)') '    color = colors[i % len(colors)]'                ! repeat colors
    write(FN,'(a)') '    ls    = linestyles[i % len(linestyles)]'        ! repeat line styles
-   if (allocated(col_lables)) then
+   if (allocated(col_labels)) then
       write(FN,'(a)') '    label = labels[i % len(labels)]'                ! labels
    endif
    write(FN,'(a)') '    plt.plot(df.iloc[:, 0], df.iloc[:, col],'       ! plot columns
    write(FN,'(a)') '    color=color,'                                   ! set color
-   if (allocated(col_lables)) then                                      ! the legend is required
+   if (allocated(col_labels)) then                                      ! the legend is required
       write(FN,'(a)') '    label=label,'
    endif
    write(FN,'(a)') '    linestyle=ls)'                                  ! line style
@@ -3902,7 +3962,7 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_lables, &
       enddo
       write(FN,'(a)')  ']'
 
-      ! Column lables, if required:
+      ! Column labels, if required:
       if (allocated(col_labels2)) then ! the legend is required:
          write(FN,'(a)', advance='no') 'labels2 = ['
          do i = 1, size(col_labels2)
@@ -3955,7 +4015,7 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_lables, &
    write(FN,'(a)') 'plt.title("'//trim(adjustl(title))//'")'
 
    ! Set the legend:
-   if (allocated(col_lables)) then ! the legend is required
+   if (allocated(col_labels)) then ! the legend is required
       ! Make appropriate font size:
       if (N_cols < 8) then ! normal:
          write(temp_txt,'(a)') 'fontsize=12'
