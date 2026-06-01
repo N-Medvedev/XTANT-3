@@ -118,7 +118,7 @@ file_testmode, file_coupling, file_high_e)
 
 
    ! Temepratures:
-   call Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_last, 'OUTPUT_temepratures.py') ! below
+   call Python_plot_temperatures(numpar, matter, file_temperatures, t0, t_last, 'OUTPUT_temperatures.py') ! below
 
 
    ! Mean displacement:
