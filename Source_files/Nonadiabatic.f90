@@ -925,13 +925,21 @@ subroutine get_G_ei(Scell, NSC, numpar, dE)
    integer, intent(in) :: NSC ! number of supercell
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), intent(in) :: dE	! [eV] energy transferred from electrons to ions
-   real(8) :: temp, eps
+   real(8) :: temp, eps, T_diff
 
    eps = 1.0d-16
 
-   temp = g_e/((Scell(NSC)%Te - Scell(NSC)%Ta)*Scell(NSC)%V*1d-30*(numpar%dt*1d-15))	! [W/(m^3 K)]
+   T_diff = (Scell(NSC)%Te - Scell(NSC)%Ta)
+
+   if (abs(T_diff) < 1.0d-6) then
+      temp = 0.0d0      ! undefined coupling parameter for equal temepartures
+   else
+      !temp = g_e/((Scell(NSC)%Te - Scell(NSC)%Ta)*Scell(NSC)%V*1d-30*(numpar%dt*1d-15))	! [W/(m^3 K)]
+      temp = g_e/(T_diff*Scell(NSC)%V*1d-30*(numpar%dt*1d-15))	! [W/(m^3 K)]
+   endif
    !Scell(NSC)%G_ei = dE*g_e/((Scell(NSC)%Te - Scell(NSC)%Ta)*Scell(NSC)%V*1d-30*(numpar%dt*1d-15))	! [W/(m^3 K)]
    Scell(NSC)%G_ei = dE*temp	! [W/(m^3 K)]
+
    ! Exclude numbers beyond machine precision:
    if (abs(Scell(NSC)%G_ei) < eps) Scell(NSC)%G_ei = 0.0d0
 
