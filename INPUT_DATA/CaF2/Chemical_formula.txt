@@ -1,1 +1,2 @@
 CaF2
+CaF2.poscar

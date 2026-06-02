@@ -103,7 +103,7 @@ real(8), dimension(:), allocatable :: fragment_masses, fragment_m_over_z
 real(8), dimension(:), allocatable :: mass_grid
 real(8), dimension(:,:), allocatable :: output_fragment_array, output_m_over_z_array
 integer :: FN1, FN2, FN3, FN_out, FN_out1, FN_out_mz, FN_out2  ! file number
-integer :: INFO, Reason, i, ii, j, Tsiz, Nat, existing_elem, at_num, cur_j, iret, KOA, Nsiz
+integer :: INFO, Reason, i, ii, j, Tsiz, Nat, existing_elem, at_num, cur_j, iret, KOA, Nsiz, N_at
 logical :: read_well
 
 call Path_separator(path_sep)  ! Objects_and_types
@@ -127,7 +127,8 @@ File_atomic_masks = 'Atomic_masks.txt'          ! default name of the file with 
 ! Default values:
 cut_r = 5.0d0     ! [A] default cut off radius for separation of fragments
 time_dt = 100.0  ! calculate autocorrelators every 200 fs
-time_print = 0.0d0  ! to start with
+time_print = 100.0d0  ! [fs] default
+MSD_power = 1   ! default value
 
 !---------------------------------------
 print*, '******************************************************************************'
@@ -152,7 +153,9 @@ do i = 1, iargc()
        write(*,'(a)') char_var(i)
    endselect
 end do
-print*, cut_r, time_print
+
+print*, "Cut-off redius used in [A] :", cut_r
+print*, "Time step for printout used:", time_print
 
 !-----------------------------------
 ! Get the time grid from the file:
@@ -214,7 +217,7 @@ allocate(fragment_m_over_z( CEILING( SUM( Step(1)%M(:) ) ) ) , source=0.0d0)
 do i = 1, size(mass_grid)
    mass_grid(i) = dble(i)
 enddo
-
+print*, 'Mass grid created to:', size(mass_grid)
 
 !-----------------------------------
 call interprete_displacement_command(File_atomic_masks, Displ, MSD_power, Reason)  ! below
@@ -264,7 +267,7 @@ do i = 1, Tsiz ! time steps
 
    ! Get the number of fragments and their indices:
    call get_fragments_indices(Step, i, cut_r, indices)  ! below
-   print*, 'time:', i, 'fragments:', maxval(indices)
+   print*, 'time:', i, Step(i)%Tim, 'fragments:', maxval(indices)
 
    ! Sort atoms to fragments, and save the fragments parametes:
    do j = 1, maxval(indices)  ! all fragments
@@ -281,10 +284,13 @@ do i = 1, Tsiz ! time steps
    output_fragment_array(i, :) = fragment_masses(:)
    if (allocated(Step(i)%q)) output_m_over_z_array(i, :) = fragment_m_over_z(:)
 
+   !print*, 'Fragments analysed, starting displacement', size(Displ)
 
    ! Calculate the atomic displacements for each mask:
    call get_mean_square_displacement(Step, i, at_num, Displ, MSD, MSDP, MSD_power) ! below
    Nsiz = size(Displ)   ! how many masks
+
+   !print*, Nsiz
    time = Step(i)%Tim
    do ii = 1, Nsiz    ! for all masks
       write(FN_MSD(ii), '(es25.16,$)') time, Displ(ii)%mean_disp, Displ(ii)%mean_disp_r(:)
@@ -295,6 +301,8 @@ do i = 1, Tsiz ! time steps
       enddo
       write(FN_MSD(ii),'(a)') ! make a new line
    enddo ! ii
+
+   !print*, 'Displacement analysed, next step'
 enddo
 
 
@@ -960,6 +968,9 @@ subroutine get_mean_square_displacement(MDdata, i_step, at_num, Displ, MSD, MSDP
    if (.not.allocated(MSDP)) allocate(MSDP(at_num))
    N = size(MDdata(1)%name)   ! number of atoms (assume constant)
 
+   !print*, 'get_mean_square_displacement', 0, at_num
+
+
    ! Check if user defined any atomic masks:
    if (allocated(Displ)) then
       call update_atomic_masks_displ(MDdata, i_step, Displ, at_num) ! below
@@ -973,8 +984,12 @@ subroutine get_mean_square_displacement(MDdata, i_step, at_num, Displ, MSD, MSDP
       enddo
    endif
 
+   !print*, 'get_mean_square_displacement', 1
+
    ! Get equilibrium relative coordinates from given absolute coordinates inside of the current supercell:
    call get_coords_in_new_supce(MDdata, i_step)	! below (S_eq arae updated, R_eq do not change)
+
+   !print*, 'get_mean_square_displacement', 2, N, i_step
 
    MSD = 0.0d0	! to start with
    MSDP = 0.0d0 ! to start with
@@ -982,7 +997,11 @@ subroutine get_mean_square_displacement(MDdata, i_step, at_num, Displ, MSD, MSDP
       KOA => MDdata(1)%KOA(iat)
       S => MDdata(i_step)%S(:,iat)
       S0 => MDdata(1)%S(:,iat)
-      a_r = 1.0d31	! just to start from
+
+      !print*, iat, KOA, S, S0
+      !print*, 'Supce:', MDdata(i_step)%supce(:,1)
+
+      a_r = 1.0d21	! just to start from
       ! For the case of periodical boundaries:
       do i = -1,1 ! if the distance between the atoms is more than a half of supercell, we account for
          ! interaction with the atom not from this, but from the neigbour ("mirrored") supercell:
@@ -1010,8 +1029,13 @@ subroutine get_mean_square_displacement(MDdata, i_step, at_num, Displ, MSD, MSDP
             enddo ! k
          enddo ! j
       enddo ! i
+
+      !print*, "at0", iat, size(Displ), MSD_power
+
       MSD = MSD + a_r**MSD_power ! mean displacement^N
       MSDP(KOA) = MSDP(KOA) + a_r**MSD_power    ! mean displacement^N
+
+      !print*, "at1", iat, size(Displ)
 
       ! Section of atoms according to masks, if any:
       if (allocated(Displ)) then
@@ -1036,6 +1060,8 @@ subroutine get_mean_square_displacement(MDdata, i_step, at_num, Displ, MSD, MSDP
       endif ! (allocated(Displ))
    enddo ! iat
 
+   !print*, 'get_mean_square_displacement', 3
+
 
    MSD = MSD/dble(N)	! averaged over all atoms
    ! Section of atoms according to masks, if any:
@@ -1052,6 +1078,8 @@ subroutine get_mean_square_displacement(MDdata, i_step, at_num, Displ, MSD, MSDP
          endif
       enddo
    endif
+
+   !print*, 'get_mean_square_displacement', 4
 
 
    ! For all elements:
@@ -1079,6 +1107,8 @@ subroutine get_mean_square_displacement(MDdata, i_step, at_num, Displ, MSD, MSDP
          enddo
       endif
    enddo
+
+   !print*, 'get_mean_square_displacement', 5
 
 !    do i_masks = 1, Nsiz ! for all requested masks
 !       print*, trim(adjustl(Displ(i_masks)%mask_name)), i_masks, MSD, Displ(i_masks)%mean_disp
@@ -1200,7 +1230,7 @@ subroutine interprete_displacement_command(read_line, Displ, MSD_power, Reason)
    !type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Displacement_analysis), dimension(:), allocatable, intent(inout) :: Displ ! [A] mean displacements for atoms masked
    !type(Numerics_param), intent(inout) :: numpar ! all numerical parameters
-   integer, intent(out) :: MSD_power
+   integer, intent(inout) :: MSD_power
    integer, intent(inout) :: Reason
    !-------------------------------
    character(200) :: Folder_name, File_name, sting_temp
@@ -1210,9 +1240,13 @@ subroutine interprete_displacement_command(read_line, Displ, MSD_power, Reason)
 
    ! Try to interprete it as a number (power of mean displacement)
    ! to make back-compatible with the legacy format:
+   !print*, 'read_line: ', trim(adjustl(read_line))
    read(read_line,*,IOSTAT=Reason) MSD_power
    if (Reason == 0) then
       print*, 'Atomic displacement analysis is set in legacy format'
+      if (abs(MSD_power) > 5) then ! use default instead
+         MSD_power = 1
+      endif
       return ! it was a number, nothing more to do
    endif
 
@@ -1253,7 +1287,7 @@ subroutine interprete_displacement_command(read_line, Displ, MSD_power, Reason)
       ! if it is not a number, check if it is a command:
       call read_displacement_command(trim(adjustl(read_line)), Displ, Reason, 1) ! below
       if (Reason == 0) then
-         print*, 'Atomic masks for displacements are set by command'
+         print*, 'Atomic masks for displacements are set by command', MSD_power
          return ! it was a number, nothing more to do
       else
          print*, 'Could not interprete command for atomic masks'
@@ -1698,7 +1732,11 @@ subroutine sort_fragment_m_over_z(cur_mass, cur_q, fragment_m_over_z)
    else  ! positive ion:
       floor_q = dble(FLOOR(cur_q))
       ceiling_q = dble(ceiling(cur_q))
-      i2 = dble(ANINT(cur_mass)) / ceiling_q
+      if (abs(ceiling_q) > 1.0d-6) then
+         i2 = dble(ANINT(cur_mass)) / ceiling_q
+      else  ! neutrals
+         i2 = 1
+      endif
       if (floor_q <= 0.5d0) then ! neutrals present:
          i1 = 1
       else  ! only charges:
