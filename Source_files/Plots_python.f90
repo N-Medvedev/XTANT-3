@@ -52,7 +52,7 @@ public :: collect_python_plots, execute_all_pyplots, create_python_plot_scripts,
 
 
 subroutine create_python_plot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, &
-file_atoms_R, file_atoms_S, file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
+file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_element_NN, file_electron_entropy, file_Te, file_mu, &
 file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
 file_diffraction_peaks, file_diffraction_peaks_part, file_diffraction_powder, file_diffraction_peaks_DW, file_Debye_temperature, &
@@ -65,8 +65,6 @@ file_testmode, file_coupling, file_high_e)
    character(*), intent(in) :: file_temperatures	! time [fs], Te [K], Ta [K]
    character(*), intent(in) :: file_pressure	! pressure and stress tensore
    character(*), intent(in) :: file_energies	! energies [eV]
-   character(*), intent(in) :: file_atoms_R	! atomic coordinates and velocities
-   character(*), intent(in) :: file_atoms_S	! atomic coordinates and velocities
    character(*), intent(in) :: file_supercell	! supercell vectors
    character(*), intent(in) :: file_electron_properties	! electron properties
    character(*), intent(in) :: file_heat_capacity  ! electronic heat capacity

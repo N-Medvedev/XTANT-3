@@ -231,9 +231,11 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%save_fe_grid = .false.	! excluded printout distribution function on the grid
    numpar%save_PCF = .false.	! excluded printout pair correlation function
    numpar%save_XYZ = .true.	! included printout atomic coordinates in XYZ format
+   numpar%save_XYZ_vel = .false.	! don't included printout atomic velocities in XYZ format
    numpar%save_XYZ_extra = .false.  ! no additional properties to print in XYZ file
    numpar%save_CIF = .true.	! included printout atomic coordinates in CIF format
    numpar%save_raw = .true.	! included printout of raw data for atomic coordinates, relative coordinates, velocities
+   numpar%type_of_SAVE = 0	! format of SAVE files: 0=internal; 1=XYZ
    numpar%NN_radius = 0.0d0 ! radius of nearest neighbors defined by the user [A]
    numpar%MSD_power = 1     ! by default, print out mean displacement [A^1]
    numpar%save_NN = .false. ! do not print out nearest neighbors numbers
@@ -5130,11 +5132,21 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       ! And no additional input:
       temp_ch2 = ''
    endif
-   if (N .EQ. 1) then
-      numpar%save_XYZ = .true.	! included
-   else
-      numpar%save_XYZ = .false.	! excluded
-   endif
+   select case (N)
+   case (3) ! include XYZ trajectory, XYZ velocities, and also XYZ SAVE files
+      numpar%save_XYZ = .true.
+      numpar%save_XYZ_vel = .true.
+      numpar%type_of_SAVE = 1 ! XYZ SAVE files format
+   case (2) ! include XYZ trajectory, and also XYZ SAVE files
+      numpar%save_XYZ = .true.
+      numpar%type_of_SAVE = 1 ! XYZ SAVE files format
+   case (1) ! include XYZ coordinates
+      numpar%save_XYZ = .true.
+   case (0) ! excluded printout out XYZ coordinates
+      numpar%save_XYZ = .false.
+   case (-1)     !only SAVE-files in XYZ, no XYZ trajectories
+      numpar%type_of_SAVE = 1 ! XYZ SAVE files format
+   endselect
    !print*, 'temp_ch2', temp_ch2
 
    call interpret_additional_XYZ_input(temp_ch2, numpar%save_XYZ_extra) ! below

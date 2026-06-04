@@ -124,6 +124,9 @@ subroutine write_output_files(numpar, time, matter, Scell)
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:), &
                print_mass=numpar%save_XYZ_extra(1), print_charge=numpar%save_XYZ_extra(2), print_Ekin=numpar%save_XYZ_extra(3))   ! below
 
+      if (numpar%save_XYZ_vel) call write_atomic_xyz(numpar%FN_atoms_V, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:), &
+               for_velocities=.true.)   ! below
+
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time) ! CIF format
 
       if (numpar%save_Ei) then
@@ -1086,16 +1089,17 @@ subroutine save_nearest_neighbors_element(FN, numpar, Scell, NSC, tim) ! element
 end subroutine save_nearest_neighbors_element
 
 
-subroutine write_atomic_xyz(FN, atoms, matter, Supce, print_mass, print_charge, print_Ekin)
+subroutine write_atomic_xyz(FN, atoms, matter, Supce, print_mass, print_charge, print_Ekin, for_velocities)
    integer, intent(in) :: FN	! file number
    type(Atom), dimension(:), intent(in) :: atoms	! atomic parameters
    type(Solid), intent(in) :: matter	! Material parameters
    real(8), dimension(3,3), intent(in) :: Supce	! [A]  supercell vectors [a(x,y,z),b(x,y,z),c(x,y,z)]
    logical, intent(in), optional :: print_mass, print_charge, print_Ekin ! flags what to printout
+   logical, intent(in), optional :: for_velocities    ! to printout velocities instead of coordinates
    !-------------------------------------
    integer i
    character(10) :: Numb_out
-   logical :: do_mass, do_charge, do_Ekin
+   logical :: do_mass, do_charge, do_Ekin, do_velocities
 
    ! Check for additional properties provided:
    if (present(print_mass)) then
@@ -1116,13 +1120,26 @@ subroutine write_atomic_xyz(FN, atoms, matter, Supce, print_mass, print_charge, 
       do_Ekin = .false.
    endif
 
+   if (present(for_velocities)) then
+      do_velocities = for_velocities
+   else
+      do_velocities = .false.
+   endif
+
 
    ! Write out the data block:
    write(Numb_out, '(i10)') size(atoms)
    write(FN, '(a)') trim(adjustl(Numb_out))
-   write(FN, '(a,f,f,f,f,f,f,f,f,f,a)', advance='no') 'Lattice="', Supce(1,1), Supce(1,2), Supce(1,3), &
+
+   if (.not.do_velocities) then ! it's coordinates:
+      write(FN, '(a,f,f,f,f,f,f,f,f,f,a)', advance='no') 'Lattice="', Supce(1,1), Supce(1,2), Supce(1,3), &
                                                      Supce(2,1), Supce(2,2), Supce(2,3), &
                                                      Supce(3,1), Supce(3,2), Supce(3,3), '" Properties=species:S:1:pos:R:3'
+   else ! it's velocities:
+      write(FN, '(a,f,f,f,f,f,f,f,f,f,a)', advance='no') 'Lattice="', Supce(1,1), Supce(1,2), Supce(1,3), &
+                                                     Supce(2,1), Supce(2,2), Supce(2,3), &
+                                                     Supce(3,1), Supce(3,2), Supce(3,3), '" Properties=species:S:1:vel:R:3'
+   endif
 
    ! optional additional data:
    if (do_charge) then
@@ -1139,8 +1156,14 @@ subroutine write_atomic_xyz(FN, atoms, matter, Supce, print_mass, print_charge, 
 
    ! Atomic data block:
    do i = 1, size(atoms)
-      write(FN, '(a,es25.16,es25.16,es25.16)' , advance='no') trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), &
+      if (.not.do_velocities) then ! it's coordinates:
+         write(FN, '(a,es25.16,es25.16,es25.16)' , advance='no') trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), &
                                                                atoms(i)%R(1), atoms(i)%R(2), atoms(i)%R(3)
+      else ! it's velocities:
+         write(FN, '(a,es25.16,es25.16,es25.16)' , advance='no') trim(adjustl(matter%Atoms(atoms(i)%KOA)%Name)), &
+                                                               atoms(i)%V(1), atoms(i)%V(2), atoms(i)%V(3)
+      endif
+
       if (do_mass) write(FN, '(es25.16)', advance='no') matter%Atoms(atoms(i)%KOA)%Ma
       !if (do_charge) write(FN, '(es25.16)', advance='no') matter%Atoms(atoms(i)%KOA)%mulliken_q
       if (do_charge) write(FN, '(es25.16)', advance='no') atoms(i)%q
@@ -1954,20 +1977,42 @@ subroutine prepare_output_files(Scell, matter, laser, numpar, TB_Hamil, TB_Repul
 end subroutine prepare_output_files
 
 
-subroutine make_save_files(path)
+subroutine make_save_files(path, type_of_SAVE)
    character(len=*), intent(in) :: path
-   character(200) file_name
+   integer, intent(in) :: type_of_SAVE    ! what type of SAVE files we want to use
+   !-----------------------
+   character(200) file_name_at, file_name_cell, file_name_fe, file_name_coord, file_name_vel
    integer FN, FN2, FN3
-   FN = 700	! number is fixed
-   file_name = trim(adjustl(path))//'SAVE_atoms.dat'
-   open(UNIT=FN, FILE = trim(adjustl(file_name)))
-   FN2 = 701	! number is fixed
-   file_name = trim(adjustl(path))//'SAVE_supercell.dat'
-   open(UNIT=FN2, FILE = trim(adjustl(file_name)))
-   FN3 = 702
-   !file_name = trim(adjustl(path))//'SAVE_parameters.dat'
-   file_name = trim(adjustl(path))//'SAVE_el_distribution.dat'
-   open(UNIT=FN3, FILE = trim(adjustl(file_name)))
+   !-----------------------
+   FN  = 700      ! number is fixed and reused below
+   FN2 = 701      ! number is fixed and reused below
+
+   ! Select type of the SAVE files:
+   select case (type_of_SAVE)
+   case default   ! internat XTANT format:
+      file_name_at = trim(adjustl(path))//'SAVE_atoms.dat'
+      file_name_cell = trim(adjustl(path))//'SAVE_supercell.dat'
+
+      ! Open the file with the atomic coordinates and supercell in the internal format:
+      open(UNIT=FN, FILE = trim(adjustl(file_name_at)))     ! atomic coordinates
+      open(UNIT=FN2, FILE = trim(adjustl(file_name_cell)))  ! supercell
+
+   case (1) ! XYZ format for atomic coordinates and supercell
+      ! No separate supercell file, the data are inside the extended-XYZ;
+      ! instead a separate file with atomic velocities:
+      file_name_coord = trim(adjustl(path))//'SAVE_coordinates.xyz'
+      file_name_vel = trim(adjustl(path))//'SAVE_velocities.xyz'
+
+      ! Open the file with the atomic coordinates and velocities in eXYZ format:
+      open(UNIT=FN, FILE = trim(adjustl(file_name_coord)))  ! atomic coordinates
+      open(UNIT=FN2, FILE = trim(adjustl(file_name_vel)))   ! atomic velocities
+   end select
+
+
+   ! Open the file with the electron distribution function:
+   FN3 = 702      ! number is fixed and reused below
+   file_name_fe = trim(adjustl(path))//'SAVE_el_distribution.dat'
+   open(UNIT=FN3, FILE = trim(adjustl(file_name_fe)))    ! electron distribution
 end subroutine make_save_files
 
 
@@ -1980,26 +2025,40 @@ subroutine update_save_files(time, atoms, matter, numpar, Scell)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    integer i
 
-   ! SAVE_atoms.dat :
-   rewind(700)	! overwrite the old state
-   do i = 1,size(atoms)
-      write(700, '(i3,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') atoms(i)%KOA, atoms(i)%S(:), atoms(i)%S0(:), atoms(i)%SV(:), atoms(i)%SV0(:)
-   enddo
+   ! Select type of the SAVE files:
+   select case (numpar%type_of_SAVE)
+   case default   ! internat XTANT format:
+      ! SAVE_atoms.dat :
+      rewind(700)	! overwrite the old state
+      do i = 1,size(atoms)
+         write(700, '(i3,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16,es25.16)') &
+                  atoms(i)%KOA, atoms(i)%S(:), atoms(i)%S0(:), atoms(i)%SV(:), atoms(i)%SV0(:)
+      enddo
 
-   ! SAVE_supercell.dat :
-   rewind(701)	! overwrite the old state
-   write(701,*) Scell%supce(:,:)
-   write(701,'(a)') ''
-   write(701,*) Scell%supce0(:,:)
-   write(701,'(a)') ''
-   write(701,*) Scell%Vsupce(:,:)
-   write(701,'(a)') ''
-   write(701,*) Scell%Vsupce0(:,:)
-   write(701,'(a)') ''
+      ! SAVE_supercell.dat :
+      rewind(701)	! overwrite the old state
+      write(701,*) Scell%supce(:,:)
+      write(701,'(a)') ''
+      write(701,*) Scell%supce0(:,:)
+      write(701,'(a)') ''
+      write(701,*) Scell%Vsupce(:,:)
+      write(701,'(a)') ''
+      write(701,*) Scell%Vsupce0(:,:)
+      write(701,'(a)') ''
+   case (1) ! XYZ format for atomic coordinates and supercell
+      ! SAVE_coordinates.xyz :
+      rewind(700)	! overwrite the old state
+      call write_atomic_xyz(700, Scell%MDatoms, matter, Scell%supce(:,:), &
+               print_mass=numpar%save_XYZ_extra(1), print_charge=numpar%save_XYZ_extra(2), print_Ekin=numpar%save_XYZ_extra(3))   ! below
+
+      ! SAVE_velocities.xyz :
+      rewind(701)	! overwrite the old state
+      call write_atomic_xyz(701, Scell%MDatoms, matter, Scell%supce(:,:), &
+               for_velocities=.true.)   ! below
+   end select
 
    ! SAVE_el_distribution.dat :
    rewind(702)	! overwrite the old state
-   !write(702,'(es25.16,es25.16,es25.16,es25.16,es25.16)') time, Scell%Te, Scell%mu, Scell%Ne_low, Scell%Ta
    write(702,'(a)') '# Electron distribution'
    do i = 1, size(Scell%fe)
       write(702,'(f25.16, f25.16)') Scell%Ei(i), Scell%fe(i)
@@ -2036,6 +2095,7 @@ subroutine close_output_files(Scell, numpar)
    if (numpar%save_raw) close(numpar%FN_atoms_S)
    if (numpar%do_drude) close(numpar%FN_optics)
    if (numpar%save_XYZ) close(numpar%FN_atoms_R)
+   if (numpar%save_XYZ_vel) close(numpar%FN_atoms_V)
    if (numpar%save_CIF) close(numpar%FN_cif)
    if (numpar%save_Ei)  close(numpar%FN_Ei)
    if (numpar%save_DOS)  close(numpar%FN_DOS)
@@ -2110,8 +2170,9 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100) :: file_temperatures	! time [fs], Te [K], Ta [K]
    character(100) :: file_pressure	! time [fs], stress_tensore(3,3) [GPa], Pressure [GPa]
    character(100) :: file_energies	! energies [eV]
-   character(100) :: file_atoms_R	! atomic coordinates and velocities
-   character(100) :: file_atoms_S	! atomic coordinates and velocities
+   character(100) :: file_atoms_R	! atomic coordinates
+   character(100) :: file_atoms_V	! atomic velocities
+   character(100) :: file_atoms_S	! atomic relative coordinates and velocities
    character(100) :: file_atoms_cif	! atomic coordinates in cif-format (standard for constructing diffraction patterns)
    character(100) :: file_atomic_entropy	! atomic entropy
    character(100) :: file_atomic_temperatures ! atomic temperatures (varioous definitions)
@@ -2148,7 +2209,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(11) :: chtemp11, text1, text2, text3
    !----------------
 
-   call make_save_files(trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep)))
+   call make_save_files(trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep)), numpar%type_of_SAVE)   ! below
 
    file_path = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))
 
@@ -2490,6 +2551,12 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atoms_R)))
       numpar%FN_atoms_R = FN
    endif
+
+   if (numpar%save_XYZ_vel) then
+      file_atoms_V = trim(adjustl(file_path))//'OUTPUT_atomic_velocities.xyz'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_atoms_V)))
+      numpar%FN_atoms_V = FN
+   endif
    
    if (numpar%save_CIF) then
       file_atoms_cif = trim(adjustl(file_path))//'OUTPUT_atomic_coordinates.cif'
@@ -2605,7 +2672,6 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             'OUTPUT_temperatures.dat', &
             'OUTPUT_pressure_and_stress.dat', &
             'OUTPUT_energies.dat', &
-            file_atoms_R, file_atoms_S, &
             'OUTPUT_supercell.dat', &
             'OUTPUT_electron_properties.dat', &
             'OUTPUT_electron_heat_conductivity.dat', &
@@ -2638,7 +2704,6 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             'OUTPUT_temperatures.dat', &
             'OUTPUT_pressure_and_stress.dat', &
             'OUTPUT_energies.dat', &
-            file_atoms_R, file_atoms_S, &
             'OUTPUT_supercell.dat', &
             'OUTPUT_electron_properties.dat', &
             'OUTPUT_electron_heat_conductivity.dat', &
@@ -3967,6 +4032,15 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       write(print_to,'(a)') ' Atoms were FROZEN instead of moving in MD!'
    endif AT_MOVE
 
+
+   ! What format of SAVE files is used:
+   select case (numpar%type_of_SAVE)
+   case default
+      write(print_to,'(a)') ' SAVE files are in internal format: SAVE_atoms.dat, SAVE_supercell.dat'
+   case (1) ! XYZ format for atomic coordinates and supercell
+      write(print_to,'(a)') ' SAVE files are in XYZ format : SAVE_coordinates.xyz, SAVE_velocities.xyz'
+   end select
+
    !ooooooooooooooooooooooooooooooooooooooooooooo
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  The schemes for electron populations used are:'
@@ -4187,6 +4261,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
    if (numpar%save_XYZ) then
       write(print_to,'(a)') ' Atomic coordinates in XYZ-format'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%save_XYZ_vel) then
+      write(print_to,'(a)') ' Atomic velocities in XYZ-format'
       optional_output = .true.   ! there is at least some optional output
    endif
 

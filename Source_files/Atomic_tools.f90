@@ -1891,7 +1891,7 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
          call velocities_rel_to_abs(Scell, NSC) ! set the absolute velocities out of the new relative ones
          ! Update old absolute velocities:
          !$omp PARALLEL do private(k)
-         do k = 1,Scell(NSC)%Na ! fro all atoms
+         do k = 1,Scell(NSC)%Na ! for all atoms
             Scell(NSC)%MDatoms(k)%V0(:) = Scell(NSC)%MDatoms(k)%V(:)
          enddo
          !$omp end parallel do

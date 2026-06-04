@@ -130,31 +130,31 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
          ! Check if the user provided the filename with coordinates and supercell:
          call get_file_extension(trim(adjustl(numpar%Cell_filename)), file_extension)  ! module "Dealing_with_files"
-         XYZ_file_exists = .false.  ! to start with
-         POSCAR_file_exists = .false.  ! to start with
-         mol2_file_exists = .false.  ! to start with
-         Cell_filename = ''   ! default
+         XYZ_file_exists = .false.        ! to start with
+         POSCAR_file_exists = .false.     ! to start with
+         mol2_file_exists = .false.       ! to start with
+         Cell_filename = ''               ! default
          if (LEN(trim(adjustl(file_extension))) > 0) then ! no filename was provided by the user, use defaults
             Cell_filename = trim(adjustl(numpar%Cell_filename))
             select case(trim(adjustl(file_extension)))
             case ('XYZ', 'XYz', 'Xyz', 'xyz')
-               XYZ_file_exists = .true.
+               XYZ_file_exists = .true.         ! this type of file is specified by the user
             case ('POSCAR', 'Poscar', 'poscar', 'PosCar')
-               POSCAR_file_exists = .true.
+               POSCAR_file_exists = .true.      ! this type of file is specified by the user
             case ('mol2', 'MOL2', 'Mol2')
-               mol2_file_exists = .true.
+               mol2_file_exists = .true.        ! this type of file is specified by the user
             case default
                write(*,'(a)') 'Extension of provided file '//trim(adjustl(numpar%Cell_filename))//' not supported; using default instead'
-               XYZ_file_exists = .false.  ! to start with
-               POSCAR_file_exists = .false.  ! to start with
-               mol2_file_exists = .false.  ! to start with
-               Cell_filename = ''   ! default
+               XYZ_file_exists = .false.        ! to start with
+               POSCAR_file_exists = .false.     ! to start with
+               mol2_file_exists = .false.       ! to start with
+               Cell_filename = ''               ! default
             end select
          endif
 
          ! Check if there is extended XYZ-format with the unit/super-cell:
-         if (.not.XYZ_file_exists) then ! there is no name given, use default
-            Cell_filename = 'Cell.xyz'   ! default name
+         if (.not.XYZ_file_exists) then   ! there is no name given, use default
+            Cell_filename = 'Cell.xyz'    ! default name
          else
             Cell_filename = trim(adjustl(numpar%Cell_filename))
          endif
@@ -164,8 +164,8 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
 
          ! Check if there is POSCAR-format with the unit/super-cell:
-         if (.not.POSCAR_file_exists) then ! there is no name given, use default
-            Cell_filename = 'Cell.poscar'   ! default name
+         if (.not.POSCAR_file_exists) then      ! there is no name given, use default
+            Cell_filename = 'Cell.poscar'       ! default name
          else
             Cell_filename = trim(adjustl(numpar%Cell_filename))
          endif
