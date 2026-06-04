@@ -57,6 +57,13 @@ interface Rescale_atomic_velocities
 end interface Rescale_atomic_velocities
 
 
+interface velocities_abs_to_rel
+   module procedure velocities_abs_to_rel_array  ! for supercell array
+   module procedure velocities_abs_to_rel_single  ! for single supercell
+end interface velocities_abs_to_rel
+
+
+
 public :: define_subcells, Maxwell_int_shifted, Coordinates_rel_to_abs, velocities_abs_to_rel, make_time_step_supercell, &
 get_energy_from_temperature, distance_to_given_cell, make_time_step_atoms, Rescale_atomic_velocities, save_last_timestep, &
 get_interplane_indices, get_near_neighbours, get_number_of_image_cells, pair_correlation_function, get_fraction_of_given_sort, &
@@ -1891,7 +1898,7 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
          call velocities_rel_to_abs(Scell, NSC) ! set the absolute velocities out of the new relative ones
          ! Update old absolute velocities:
          !$omp PARALLEL do private(k)
-         do k = 1,Scell(NSC)%Na ! fro all atoms
+         do k = 1,Scell(NSC)%Na ! for all atoms
             Scell(NSC)%MDatoms(k)%V0(:) = Scell(NSC)%MDatoms(k)%V(:)
          enddo
          !$omp end parallel do
@@ -3219,7 +3226,7 @@ subroutine velocities_rel_to_abs(Scell, NSC)
 end subroutine velocities_rel_to_abs
 
 
-subroutine velocities_abs_to_rel(Scell, NSC, if_old)
+subroutine velocities_abs_to_rel_array(Scell, NSC, if_old)
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
    logical, optional :: if_old ! then do it for the previous time-step too
@@ -3247,7 +3254,38 @@ subroutine velocities_abs_to_rel(Scell, NSC, if_old)
          Scell(NSC)%MDatoms(i)%SV0(:) = v(:)
       enddo
    endif
-end subroutine velocities_abs_to_rel
+end subroutine velocities_abs_to_rel_array
+
+
+
+subroutine velocities_abs_to_rel_single(Scell, if_old)
+   type(Super_cell), intent(inout) :: Scell ! super-cell with all the atoms inside
+   logical, optional :: if_old ! then do it for the previous time-step too
+   !------------------------
+   real(8) v(3), dsupce(3,3)
+   integer i, ik, N
+   N = size(Scell%MDatoms)
+   !Relative velocities:
+   call Invers_3x3(Scell%supce, dsupce, 'velocities_abs_to_rel') ! from module "Algebra_tools"
+   do i = 1, N
+      v = 0.0d0
+      do ik = 1,3
+         v(:) = v(:) + Scell%MDatoms(i)%V(ik)*dsupce(ik,:)
+      enddo ! ik
+      Scell%MDatoms(i)%SV(:) = v(:)
+   enddo
+   if (present(if_old)) then
+      call Invers_3x3(Scell%supce0, dsupce, 'velocities_abs_to_rel (2)') ! from module "Algebra_tools"
+      do i = 1, N
+         v = 0.0d0
+         do ik = 1,3
+!             v(:) = v(:) + Scell(NSC)%MDatoms(i)%V0(ik)*dsupce(:,ik)
+            v(:) = v(:) + Scell%MDatoms(i)%V0(ik)*dsupce(ik,:)
+         enddo ! ik
+         Scell%MDatoms(i)%SV0(:) = v(:)
+      enddo
+   endif
+end subroutine velocities_abs_to_rel_single
 
 
 pure subroutine Coordinates_rel_to_abs(Scell, NSC, if_old)

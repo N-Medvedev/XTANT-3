@@ -1088,7 +1088,7 @@ type Numerics_param
    ! Debye-Waller parameters for analysis:
    real(8) :: DW_theta, m1, m2, m3, m4
    ! numbers of files:
-   integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
+   integer :: FN_temperatures, FN_energies, FN_atoms_R, FN_atoms_V, FN_atoms_S, FN_supercell, FN_electron_properties, FN_numbers, FN_all_w
    integer :: FN_high_e
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
@@ -1104,9 +1104,10 @@ type Numerics_param
    real(8), dimension(:,:), allocatable :: k_grid	! for the case of user-provided grid for k-space (for CDF and DOS calculations)
    logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
    ! Different output, what to save:
-   logical :: save_Ei, save_fe, save_PCF, save_XYZ, do_drude, do_cool, do_atoms, change_size, allow_rotate
+   logical :: save_Ei, save_fe, save_PCF, save_XYZ, save_XYZ_vel, do_drude, do_cool, do_atoms, change_size, allow_rotate
    logical :: save_fe_grid, save_fe_orb, save_fa, save_testmode
    logical :: save_hw_spectrum
+   integer :: type_of_SAVE  ! format of save files
    !type(Split_cohesive) :: Split_target ! parameters of split-target analysis
    ! Masks for partial atoms freezing:
    type(Freeze_mask), dimension(:), allocatable :: Freeze_filter  ! multiple masks for freezing atoms allowed
@@ -1126,7 +1127,7 @@ type Numerics_param
    ! Potential DOS power parameter (used for testing):
    real(8) :: power_b
    ! Initial cell data file:
-   character(200) :: Cell_filename
+   character(200) :: Cell_filename, Cell_vel_filename
    ! Chemical formula file:
    character(200) :: Chemical_file
    ! Figures and plots:
