@@ -55,7 +55,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 02.06.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 04.06.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -124,7 +124,7 @@ subroutine write_output_files(numpar, time, matter, Scell)
       if (numpar%save_XYZ) call write_atomic_xyz(numpar%FN_atoms_R, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:), &
                print_mass=numpar%save_XYZ_extra(1), print_charge=numpar%save_XYZ_extra(2), print_Ekin=numpar%save_XYZ_extra(3))   ! below
 
-      if (numpar%save_XYZ_vel) call write_atomic_xyz(numpar%FN_atoms_V, Scell(1)%MDatoms, matter, Scell(1)%supce(:,:), &
+      if (numpar%save_XYZ_vel) call write_atomic_xyz(numpar%FN_atoms_V, Scell(1)%MDatoms, matter, Scell(1)%Vsupce(:,:), &
                for_velocities=.true.)   ! below
 
       if (numpar%save_CIF) call write_atomic_cif(numpar%FN_cif, Scell(1)%supce(:,:), Scell(1)%MDatoms, matter, time) ! CIF format
@@ -2053,7 +2053,7 @@ subroutine update_save_files(time, atoms, matter, numpar, Scell)
 
       ! SAVE_velocities.xyz :
       rewind(701)	! overwrite the old state
-      call write_atomic_xyz(701, Scell%MDatoms, matter, Scell%supce(:,:), &
+      call write_atomic_xyz(701, Scell%MDatoms, matter, Scell%Vsupce(:,:), &
                for_velocities=.true.)   ! below
    end select
 
@@ -3844,7 +3844,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          end select
          write(print_to,'(a,a)') ' Model for gamma-function used: ', trim(adjustl(text1))
          write(text1, '(f6.2)') numpar%scc_mix
-         write(print_to,'(a,a)') ' Mixing factor for SCC : ', trim(adjustl(text1))
+         write(print_to,'(a,a)') ' Mixing factor for SCC: ', trim(adjustl(text1))
       else
          write(print_to,'(a)') ' Zero-order TB: non-self-consistent-charge calculations'
       endif
@@ -4038,7 +4038,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    case default
       write(print_to,'(a)') ' SAVE files are in internal format: SAVE_atoms.dat, SAVE_supercell.dat'
    case (1) ! XYZ format for atomic coordinates and supercell
-      write(print_to,'(a)') ' SAVE files are in XYZ format : SAVE_coordinates.xyz, SAVE_velocities.xyz'
+      write(print_to,'(a)') ' SAVE files are in XYZ format: SAVE_coordinates.xyz, SAVE_velocities.xyz'
    end select
 
    !ooooooooooooooooooooooooooooooooooooooooooooo

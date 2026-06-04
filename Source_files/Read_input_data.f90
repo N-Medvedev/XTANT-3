@@ -112,6 +112,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    ! Here we set default values, in case some of them are not given by the user:
    matter%Name = '' ! Material name
    numpar%Cell_filename = ''  ! no name given, defaults are hardcoded in nodule "Initial_configuration"
+   numpar%Cell_vel_filename = ''  ! no name given, defaults are hardcoded in nodule "Initial_configuration"
    numpar%Chemical_file = m_chemical_file ! default file name
    matter%Chem = '' ! chemical formula of the compound
    if (.not.allocated(Scell)) allocate(Scell(1)) ! So far we only use 1 supercell
@@ -6671,7 +6672,8 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
    read(FN, *, IOSTAT=Reason) read_line
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, add_error_info='Line: '//trim(adjustl(read_line))) !below
    if (Err%Err) goto 3417
-   call get_chemical_formula(numpar, read_line,  matter%Name, matter%Chem, numpar%Chemical_file, numpar%Cell_filename, Err)    ! below
+   call get_chemical_formula(numpar, read_line,  matter%Name, matter%Chem, numpar%Chemical_file, &
+                             numpar%Cell_filename, numpar%Cell_vel_filename, Err)    ! below
    if (Err%Err) goto 3417
    ! In case the filename with coordinates was provided in the Chemical_formula file, check it here again:
    if (LEN(trim(adjustl(numpar%Cell_filename))) /= 0) then
@@ -6679,6 +6681,12 @@ subroutine read_input_material(File_name, Scell, matter, numpar, laser, user_dat
       call ensure_correct_path_separator(numpar%Cell_filename, numpar%path_sep) ! module "Dealing_with_files"
       ! Check if such a file exists:
       call check_coordinates_filename(numpar%Cell_filename, numpar%verbose) ! see below
+   endif
+    if (LEN(trim(adjustl(numpar%Cell_vel_filename))) /= 0) then
+      ! Make sure that, if there is a path, the separator is correct:
+      call ensure_correct_path_separator(numpar%Cell_vel_filename, numpar%path_sep) ! module "Dealing_with_files"
+      ! Check if such a file exists:
+      call check_coordinates_filename(numpar%Cell_vel_filename, numpar%verbose, is_it_vel=.true.) ! see below
    endif
 !    print*, 'matter%Chem: ', trim(adjustl(matter%Chem))
 !    print*, 'numpar%Chemical_file: ', trim(adjustl(numpar%Chemical_file))
@@ -6897,14 +6905,15 @@ end subroutine read_input_material
 
 
 
-subroutine get_chemical_formula(numpar, read_line, matter_Name, Chem, Chemical_file, Cell_filename, Err)
+subroutine get_chemical_formula(numpar, read_line, matter_Name, Chem, Chemical_file, Cell_filename, Cell_vel_filename, Err)
    type(Numerics_param), intent(in) :: numpar   ! all numerical parameters
    character(*), intent(in) :: matter_Name      ! material name directory
    character(*), intent(in) :: read_line        ! file read from the input file
-   character(*), intent(inout) :: Chem, Chemical_file, Cell_filename ! chemical formula; file with chemical formula; file with cell coords
+   character(*), intent(inout) :: Chem, Chemical_file ! chemical formula; file with chemical formula
+   character(*), intent(inout) :: Cell_filename, Cell_vel_filename ! file with atomic coordinates; file with atomic velocities
    type(Error_handling), intent(inout) :: Err   ! error save
    !------------------------------
-   character(300) :: Folder_name, Path, File_name, File_name2, Error_descript
+   character(300) :: Folder_name, Path, File_name, File_name2, File_name3, Error_descript
    logical :: file_exist, file_opened
    integer :: FN, count_lines, Reason
 
@@ -6981,7 +6990,18 @@ subroutine get_chemical_formula(numpar, read_line, matter_Name, Chem, Chemical_f
          if (Reason == 0) then  ! read well
             Cell_filename = trim(adjustl(File_name2))
          else
-            if (numpar%verbose) print*, 'Chemical formula reading: No filename with coords provided'
+            if (numpar%verbose) print*, 'Chemical formula reading: No filename with coordinates provided'
+         endif
+      endif
+
+      ! Check if the filename with atomic coordinates is also provided here:
+      ! 2) Check if it wasn't already read before:
+      if (LEN(trim(adjustl(Cell_vel_filename))) == 0) then ! no name was given
+         read(FN,*,IOSTAT=Reason) File_name3
+         if (Reason == 0) then  ! read well
+            Cell_vel_filename = trim(adjustl(File_name3))
+         else
+            if (numpar%verbose) print*, 'Chemical formula reading: No filename with velocities provided'
          endif
       endif
 
@@ -7419,17 +7439,29 @@ end subroutine check_pulse_specifications
 
 
 
-subroutine check_coordinates_filename(Cell_filename, verbose)  ! check if the name has correct extension
+subroutine check_coordinates_filename(Cell_filename, verbose, is_it_vel)  ! check if the name has correct extension
    character(*), intent(inout) :: Cell_filename
    logical, intent(in) :: verbose
+   logical, intent(in), optional :: is_it_vel
    !------------------
    character(200) :: filename_extension
+   logical :: its_vel
+
+   if (present(is_it_vel)) then
+      its_vel = is_it_vel
+   else     ! be default, it is not velocities
+      its_vel = .false.
+   endif
 
    call get_file_extension(trim(adjustl(Cell_filename)), filename_extension)  ! module "Dealing_with_files"
 
    if (LEN(trim(adjustl(filename_extension))) <= 0) then ! not a valid filename
       Cell_filename = ''
-      if (verbose) write(*,'(a)') 'No valid filename with coordinates provided, using default'
+      if (its_vel) then ! it is velocities
+         if (verbose) write(*,'(a)') 'No valid filename with velocities provided, using default'
+      else ! it is coordinates
+         if (verbose) write(*,'(a)') 'No valid filename with coordinates provided, using default'
+      endif
    endif
 end subroutine check_coordinates_filename
 

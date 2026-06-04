@@ -1127,7 +1127,7 @@ type Numerics_param
    ! Potential DOS power parameter (used for testing):
    real(8) :: power_b
    ! Initial cell data file:
-   character(200) :: Cell_filename
+   character(200) :: Cell_filename, Cell_vel_filename
    ! Chemical formula file:
    character(200) :: Chemical_file
    ! Figures and plots:

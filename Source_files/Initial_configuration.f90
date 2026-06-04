@@ -86,10 +86,12 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
    type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
    integer i, Nsc, Natoms, FN, FN2, Reason, count_lines, N, j, k, n1, FN3, FN4, FN_XYZ, FN_POSCAR, FN_mol2
-   character(200) :: File_name, File_name2, Error_descript, File_name_S1, File_name_S2, File_name_XYZ, File_name_POSCAR, &
-                     File_name_mol2, Cell_filename
+   character(200) :: File_name, File_name2, Error_descript, File_name_S1, File_name_S2, &
+                     File_name_XYZ, File_name_XYZ_vel, File_name_POSCAR, &
+                     File_name_mol2, Cell_filename, Cell_vel_filename
    character(10) :: file_extension
-   logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2, XYZ_file_exists, POSCAR_file_exists, mol2_file_exists
+   logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2, XYZ_file_exists, &
+              XYZ_vel_file_exists, POSCAR_file_exists, mol2_file_exists
    real(8) RN, temp, Mass, V2, Ta
    type(Substitute_data) :: substitution_data
 
@@ -131,6 +133,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          ! Check if the user provided the filename with coordinates and supercell:
          call get_file_extension(trim(adjustl(numpar%Cell_filename)), file_extension)  ! module "Dealing_with_files"
          XYZ_file_exists = .false.        ! to start with
+         XYZ_vel_file_exists = .false.    ! to start with
          POSCAR_file_exists = .false.     ! to start with
          mol2_file_exists = .false.       ! to start with
          Cell_filename = ''               ! default
@@ -154,7 +157,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
          ! Check if there is extended XYZ-format with the unit/super-cell:
          if (.not.XYZ_file_exists) then   ! there is no name given, use default
-            Cell_filename = 'Cell.xyz'    ! default name
+            Cell_filename = 'SAVE_coordinates.xyz'    ! default SAVE name
          else
             Cell_filename = trim(adjustl(numpar%Cell_filename))
          endif
@@ -162,6 +165,14 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                                          trim(adjustl(Cell_filename))
          inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
+
+         if (.not.XYZ_file_exists) then   ! check the default cell name:
+            Cell_filename = 'Cell.xyz'          ! default name
+            write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+                                         trim(adjustl(Cell_filename))
+            inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
+         endif
+
 
          ! Check if there is POSCAR-format with the unit/super-cell:
          if (.not.POSCAR_file_exists) then      ! there is no name given, use default
@@ -445,6 +456,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             if ( trim(adjustl(Err%Err_descript)) /= '' ) then
                goto 3416
             endif
+            ! And close the file once its read:
+            inquire(file=trim(adjustl(File_name_XYZ)),opened=file_opened)
+            if (file_opened) close (FN_XYZ)
 
             ! 2) Make the supercell, if required:
             call get_initial_atomic_coord(FN2, File_name2, Scell, i, 3, matter, numpar, Err, substitution_data=substitution_data) ! below
@@ -453,14 +467,40 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             endif
 
             ! 3) Set initial velocities:
-            ! Ensure positive temperature:
-            Scell(i)%Ta = abs(Scell(i)%Ta)
-            Scell(i)%TaeV = abs(Scell(i)%TaeV)
-            call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
+            ! Check if a file with velocities is provided:
+            if (LEN(trim(adjustl(numpar%Cell_vel_filename))) > 0) then ! there was file name specified
+               Cell_vel_filename = trim(adjustl(numpar%Cell_vel_filename))
+            else ! assume default SAVE file
+               Cell_vel_filename = 'SAVE_velocities.xyz'
+            endif
+            write(File_name_XYZ_vel, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+                                         trim(adjustl(Cell_vel_filename))
+            inquire(file=trim(adjustl(File_name_XYZ_vel)),exist=XYZ_vel_file_exists)
 
-            inquire(file=trim(adjustl(File_name_XYZ)),opened=file_opened)
-            if (file_opened) close (FN_XYZ)
+            if (.not.XYZ_vel_file_exists) then ! check the other default name, constructed from the coordinates-file name
+               Cell_vel_filename = Cell_filename(1:LEN(trim(adjustl(Cell_filename)))-4)//'_vel.xyz'  ! default name
+               write(File_name_XYZ_vel, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+                                         trim(adjustl(Cell_vel_filename))
+               inquire(file=trim(adjustl(File_name_XYZ_vel)),exist=XYZ_vel_file_exists)
+            endif
 
+            if (XYZ_vel_file_exists) then ! read velocities from the file
+               call read_XYZ_velocities(File_name_XYZ_vel, Scell(i), matter, numpar, read_well)    ! below
+            else
+               read_well = .false.  ! there was nothing to read, well or otherwise
+            endif
+
+            if (read_well) then     ! velocities read from file successfully
+               ! Get the atomic temperature and kinetic energy:
+               call get_kinetic_energy_abs(Scell, NSC, matter, Scell(NSC)%nrg) ! module "Atomic_tools"
+               if (numpar%verbose) print*, 'Atomic velocities read from file : '//trim(adjustl(Cell_vel_filename))
+            else ! no file provided or not read well, sample the velocities:
+               ! Ensure positive temperature:
+               Scell(i)%Ta = abs(Scell(i)%Ta)
+               Scell(i)%TaeV = abs(Scell(i)%TaeV)
+               call set_initial_velocities(matter,Scell,i,Scell(i)%MDatoms,numpar,numpar%allow_rotate) ! below
+               if (numpar%verbose) print*, 'Atomic velocities sampled randomly successfully '
+            endif
 
          !----------------------------
          elseif (POSCAR_file_exists) then SAVED_ATOMS ! POSCAR file contains atomic coordinates
@@ -1750,6 +1790,76 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
 !    enddo ! j
 
 end subroutine get_initial_atomic_coord
+
+
+
+subroutine read_XYZ_velocities(File_name_XYZ_vel, Scell, matter, numpar, read_well)
+   character(*), intent(in) :: File_name_XYZ_vel      ! file name with atomic velocities in XYZ format
+   type(Super_cell), intent(inout) :: Scell ! suoer-cell with all the atoms inside
+   type(solid), intent(in) :: matter   ! material parameters
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters
+   logical, intent(inout) :: read_well
+   !------------------------
+   integer :: FN, Nat, Nsiz, i, Reason, count_lines
+   character(3) :: Name
+   character(300) :: line_2
+   integer :: ind_S, ind_R, ind_V, ind_atoms  ! indices: Element; Coordinates; Velocities; Atoms_setting
+   real(8) :: SC_X, SC_Y   ! sepuercell sizes along X and Y [A]
+   logical :: it_is_mixture  ! flag for alloy/mixture
+   type(Substitute_data) :: substitution_data  ! flag for substitution
+   character(200) :: Error_descript   ! error message, if any
+   !----------------------
+
+   read_well = .true.   ! to start with
+   count_lines = 0      ! to start with
+   Nsiz = Scell%Na      ! number of atoms in the simulation box
+
+   ! Open the file with velocities:
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name_XYZ_vel)))
+
+   ! 1) First line is number of atoms in the file
+   read(FN,*,IOSTAT=Reason) Nat     ! number of atoms provided in this file
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      goto 7777
+   endif
+
+   ! 2) comment line:
+   line_2 = ''
+   read(FN,'(a)',IOSTAT=Reason) line_2
+   ! Having read this line, act accordingly:
+   call interpret_XYZ_comment_line(line_2, Scell%VSupce, ind_S, ind_R, ind_V, ind_atoms, SC_X, SC_Y, &
+                                   it_is_mixture, substitution_data, Error_descript)     ! module "Dealing_with_eXYZ"
+   if (trim(adjustl(Error_descript)) /= '') then
+      print*, trim(adjustl(Error_descript))
+      read_well = .false.
+      goto 7777
+   endif
+   Scell%VSupce0 = Scell%VSupce     ! values on previous timestep
+
+   ! 3) For all atomc in the simulation box, set their velocities from the file:
+   do i = 1, Nsiz
+      if (i <= Nat) then ! atom can be read from file
+         read(FN,*,IOSTAT=Reason) Name, Scell%MDatoms(i)%V(:)
+         call read_file(Reason, count_lines, read_well)
+            if (.not. read_well) then
+            goto 7777
+         endif
+      else ! not enough atons in the file, recycle existing ones:
+         Scell%MDatoms(i)%V(:) = Scell%MDatoms(i-Nat)%V(:)
+      endif
+      Scell%MDatoms(i)%V0(:) = Scell%MDatoms(i)%V(:)     ! values on previous timestep
+   enddo
+
+   ! 4) Set corresponding relative velocities:
+   call velocities_abs_to_rel(Scell, if_old=.true.) ! module "Atomic_tools"
+
+7777 continue
+   call close_file('close', FN=FN) ! module "Dealing_with_files"
+end subroutine read_XYZ_velocities
+
+
+
 
 
 
