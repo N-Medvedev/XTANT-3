@@ -3854,7 +3854,7 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
    integer, intent(in) :: NSC ! number of super-cell
    type(Used_MPI_parameters), intent(inout) :: MPI_param
    !---------------------
-   real(8) r, dr, a_r, Norm
+   real(8) r, dr, a_r, Norm, Supce_siz
    integer n, i, m, k, j
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
@@ -3863,10 +3863,15 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
    n = size(atoms)
    if (.not. allocated(matter%PCF)) then
       ! Total PCF:
-      m = INT(Scell(NSC)%supce(1,1)*20)
+      !m = INT(abs(cell(NSC)%supce(1,1))*20)
+      Supce_siz = (Scell(NSC)%V)**(1.0d0/3.0d0) ! use this as a measure of average size
+      m = INT(Supce_siz*20)
+
       allocate(matter%PCF(2,m))
       r = 0.0d0
-      dr = Scell(NSC)%supce(1,1)/dble(m)
+      !dr = abs(Scell(NSC)%supce(1,1))/dble(m)
+      dr = Supce_siz/dble(m)
+
       do i = 1,m
          r = r + dr 
          matter%PCF(1,i) = r

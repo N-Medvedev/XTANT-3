@@ -2243,11 +2243,11 @@ subroutine gnu_partial_coupling(Scell, matter, numpar, file_coupling, t0, t_last
                   if (sh_cmd .EQ. '.sh') then
                      if ((i == Nat) .and. (j==Nat)) then
                         write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:'//trim(adjustl(temp_col1))// &
-                        ' with lines lw 3 "'//trim(adjustl(linestyle))//'" title "'// &
+                        ' with lines lw 3 '//trim(adjustl(linestyle))//' title "'// &
                         trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(j)%Name))//'"'
                      else
                         write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:'//trim(adjustl(temp_col1))// &
-                        ' with lines lw 3 "'//trim(adjustl(linestyle))//'" title "'// &
+                        ' with lines lw 3 '//trim(adjustl(linestyle))//' title "'// &
                         trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(j)%Name))//'", \'
                      endif
                   else
@@ -2258,8 +2258,8 @@ subroutine gnu_partial_coupling(Scell, matter, numpar, file_coupling, t0, t_last
                elseif (col1 < col2) then ! only print the sum once
                   if (sh_cmd .EQ. '.sh') then
                      write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:(column('//trim(adjustl(temp_col1))// &
-                        ')+column('//trim(adjustl(temp_col2))//')) with lines lw 3 "'// &
-                        trim(adjustl(linestyle))//'" title "'// &
+                        ')+column('//trim(adjustl(temp_col2))//')) with lines lw 3 '// &
+                        trim(adjustl(linestyle))//' title "'// &
                         trim(adjustl(matter%Atoms(i)%Name))//'-'//trim(adjustl(matter%Atoms(j)%Name))//'", \'
                   else
                      write(FN,'(a)') '"'//trim(adjustl(Data_file_name))//'" using 1:(column('//trim(adjustl(temp_col1))// &
@@ -2823,7 +2823,7 @@ subroutine write_pair_correlation_gnuplot(FN, Scell, numpar, matter, file_PCF, m
    if (present(max_x)) then
       x_end = max_x
    else ! default
-      x_end = 1+ceiling( 0.5d0* min (Scell(1)%supce(1,1), Scell(1)%supce(2,2), Scell(1)%supce(3,3) ) ) ! half of the supercell
+      x_end = 1+ceiling( 0.5d0* abs(min (Scell(1)%supce(1,1), Scell(1)%supce(2,2), Scell(1)%supce(3,3) ) ) ) ! half of the supercell
    endif
 
    do NSC = 1, size(Scell)
