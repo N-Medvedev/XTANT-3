@@ -1014,7 +1014,7 @@ subroutine Python_plot_pair_correlation(Scell, matter, numpar, file_pair_correla
 
    ! Plot limits:
    x_start = 1.0d0
-   x_end = 1+ceiling( 0.5d0* min (Scell%supce(1,1), Scell%supce(2,2), Scell%supce(3,3) ) ) ! half of the supercell
+   x_end = 1+ceiling( 0.5d0* abs (min (Scell%supce(1,1), Scell%supce(2,2), Scell%supce(3,3) ) ) ) ! half of the supercell
 
    ! Get the number of columns to print:
    ind = 1     ! top start counting columns
