@@ -624,6 +624,8 @@ subroutine IMFP_vs_Te_files(matter, laser, numpar, Te, N_Te)
    inquire(file=trim(adjustl(File_name)),exist=file_exists) ! check if this file already exists
    !write(*,*) FN, trim(adjustl(File_name)), file_exists
 
+   !if (numpar%verbose) print*, ' File with electron IMFP: '//trim(adjustl(File_name))
+
    if (file_exists) then ! IMFPs are already there
       open(UNIT=FN, FILE = trim(adjustl(File_name)), status='old', action='readwrite')
       inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -1534,6 +1536,9 @@ subroutine Elastic_MFP(i_at, numpar, matter) ! elastic mean free path for scatte
    write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(matter%Atoms(i_at)%Name))//'_Mott_Electron_EMFP.txt'
    FN = 9696      
    inquire(file=trim(adjustl(File_name)),exist=file_exists) ! check if this file already exists
+
+   !if (numpar%verbose) print*, ' File with electron EMFP: '//trim(adjustl(File_name))
+
    if (file_exists) then ! EMFPs are already there
       open(UNIT=FN, FILE = trim(adjustl(File_name)))
       inquire(file=trim(adjustl(File_name)),opened=file_opened)
@@ -1963,6 +1968,8 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
             write(File_name,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, trim(adjustl(matter%Atoms(i)%Name))//'_EPDL_Photon_IMFP_Ip='//trim(adjustl(chtemp))//'eV.txt'
          end select
          FN = 112+i*Nshl+j
+
+         !if (numpar%verbose) print*, ' File with photon MFP: '//trim(adjustl(File_name))
 
          inquire(file=trim(adjustl(File_name)),exist=file_exists) ! check if this file already exists
          if (file_exists) then ! IMFPs are already there
