@@ -32,9 +32,11 @@ MODULE Dealing_with_output_files
    USE IFLPORT, only : system, chdir
 #endif
 
+use iso_fortran_env, only: compiler_options, compiler_version
+
 use Universal_constants
 use Objects
-use Atomic_tools, only : pair_correlation_function, get_Miller_indenx_angle, get_Debye_temperature_from_diffraction
+use Atomic_tools, only : pair_correlation_function, get_Miller_index_angle, get_Debye_temperature_from_diffraction
 use Variables, only : g_numpar, g_matter
 use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution, &
                               convert_hw_to_wavelength, convert_wavelength_to_hw, find_order_of_number, print_time
@@ -55,7 +57,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 05.06.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 06.06.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2286,7 +2288,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
          write(text3, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(3,i)
          chtemp2 = trim(adjustl(chtemp2))//'       ('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'
          ! Also, get the corresponding peak angles:
-         call get_Miller_indenx_angle(Scell, matter, i, ijk_theta, qA)     ! module "Atomic_tools"
+         call get_Miller_index_angle(Scell, matter, i, ijk_theta, qA)     ! module "Atomic_tools"
          write(text1, '(f8.3)') ijk_theta   ! angle
 
          !print*, 'qA=', qA
@@ -2346,7 +2348,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             write(text3, '(i0)') Scell(1)%diff_peaks%ijk_diff_peak(3,i)
             chtemp2 = trim(adjustl(chtemp2))//'       ('//trim(adjustl(text1))//trim(adjustl(text2))//trim(adjustl(text3))//')'
             ! Also, get the corresponding peak angles:
-            call get_Miller_indenx_angle(Scell, matter, i, ijk_theta, qA)     ! module "Atomic_tools"
+            call get_Miller_index_angle(Scell, matter, i, ijk_theta, qA)     ! module "Atomic_tools"
             write(text1, '(f8.3)') ijk_theta   ! angle
             write(text2, '(f11.5)') qA   ! q-vector
             chtemp3 = trim(adjustl(chtemp3))//'    ('//trim(adjustl(text1))//')'
@@ -3607,6 +3609,12 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '*  XTANT: X-ray-induced Thermal And Nonthermal Transitions  '
    write(print_to,'(a,a)') '* Current version of the code: ', trim(adjustl(m_XTANT_version))
+
+   if (numpar%verbose) then ! add info about compiler:
+      write(print_to,'(2a)') '* Compiled with: ', compiler_version()     ! intrinsic
+      write(print_to,'(2a)') '* With options : ', compiler_options()     ! intrinsic
+   endif
+
    write(print_to,'(a)') trim(adjustl(m_starline))
    write(print_to,'(a)') '  A hybrid approach consisting of: '
    write(print_to,'(a)') ' (1) Monte Carlo '
@@ -3953,9 +3961,6 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
    if (LEN((trim(adjustl(numpar%At_base)))) >= 4) then
       select case (trim(adjustl(numpar%At_base(4:4))))
-      case ('BEB', 'EADL', 'EPICS', 'beb', 'eadl', 'epics')
-         write(print_to,'(a)') ' Electron cross sections used are : BEB'
-         write(print_to,'(a)') ' Photon absorption cross sections : EPICS'
       case (':')
          write(print_to,'(a,a)') ' Electron cross sections used are : ', trim(adjustl(numpar%At_base(1:3)))
          write(print_to,'(a,a)') ' Photon absorption cross sections : ', trim(adjustl(numpar%At_base(5:)))
