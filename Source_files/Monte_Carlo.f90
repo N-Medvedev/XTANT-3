@@ -422,14 +422,12 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
             !call which_shell(MC%electrons(j)%E, matter%Atoms, matter, 1, KOA, SHL) ! module 'MC_cross_sections'
             call which_shell(Ekin, matter%Atoms, matter, 1, KOA, SHL) ! module 'MC_cross_sections'
 
-!             if (MC%electrons(j)%E .LT. matter%Atoms(KOA)%Ip(SHL)) then
-            if (Ekin .LT. matter%Atoms(KOA)%Ip(SHL)) then
+            if (Ekin .LT. matter%Atoms(KOA)%Ip(SHL)) then ! electron energy is below ionization potential
                write(*,'(a)') ' Attention! In subroutine MC_for_electron:'
                write(*,'(a)') ' Electron energy is lower than the ionization potential!'
-               write(*,'(3f25.16, 3i0)') MC%electrons(j)%E, Ekin, matter%Atoms(KOA)%Ip(SHL), KOA, SHL, j
+               write(*,'(3f25.16, 3i)') MC%electrons(j)%E, Ekin, matter%Atoms(KOA)%Ip(SHL), KOA, SHL, j
                write(*,'(a)') ' No scattering possible, avoiding problem by skipping this event'
                skip_event =.true.  ! no ionizatin potsiible
-
 !                write(*,'(f25.16,$)') matter%Atoms(KOA)%Ip(SHL)
 !                write(*,'(a)') ''
 !                pause 'MC_for_electron'
