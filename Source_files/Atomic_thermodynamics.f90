@@ -31,13 +31,13 @@ MODULE Atomic_thermodynamics
 use Universal_constants
 use Objects
 use Algebra_tools, only : Invers_3x3
-use Atomic_tools, only : Atomic_kinetic_energies, distance_to_given_cell, shortest_distance, distance_to_given_point
+use Atomic_tools, only : Atomic_kinetic_energies, distance_to_given_cell, shortest_distance, distance_to_given_point, get_fragments_indices
 use Little_subroutines, only : Find_in_array_monoton
 
 implicit none
 PRIVATE
 
-public :: get_atomic_distribution, update_Ta_config_running_average
+public :: get_atomic_distribution, update_Ta_config_running_average, get_fragments_data
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
 
@@ -232,7 +232,7 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
       Scell(NSC)%Ta_var(2) = get_temperature_from_entropy(Scell(NSC)%Sa) ! [K] ! module "Atomic_thermodynamics"
       ! 3) kinetic temperature from numerical distribution avereaging:
       Scell(NSC)%Ta_var(3) = get_temperature_from_distribution(Scell(NSC)%Ea_grid, Scell(NSC)%fa) ! [K] ! module "Atomic_thermodynamics"
-      ! 4) kinetic temperature from the method of moments:
+      ! 4) fluctuational temperature from the method of moments:
       call temperature_from_moments(Scell(NSC), Scell(NSC)%Ta_var(4), E_shift) ! module "Atomic_thermodynamics"
       ! 5) "potential" temperature was calculated above
       ! 6) configurational temperature:
@@ -467,6 +467,166 @@ subroutine partial_temperatures(Scell, matter, numpar)
    nullify(Mass)
 end subroutine partial_temperatures
 
+
+
+
+subroutine get_fragments_data(Scell, NSC, numpar, matter)
+   type(Super_cell), dimension(:), intent(inout) :: Scell   ! suoer-cell with all the atoms inside
+   integer, intent(in) :: NSC                   ! number of the super-cell
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   type(solid), intent(inout) :: matter         ! material parameters
+   !-----------------------------------
+   !real(8) :: E_shift
+   integer :: i, Nsiz
+   logical, dimension(size(Scell(NSC)%MDAtoms)) :: fragment_mask
+   logical :: needs_allocation
+
+   ! Find unconnected fragments of which the material is constructed (can be one piece too):
+   call get_fragments_indices(Scell, NSC, numpar, Scell(NSC)%MDatoms, matter, Scell(NSC)%fragments%indices) ! module "Atomic_tools"
+
+   ! Number of different fragments:
+   Nsiz = maxval(Scell(NSC)%fragments%indices)  ! what's the maximal fragment index among all the atoms
+
+   ! Redefine the arrays of parameters for each fragment:
+   needs_allocation = .false. ! to start with
+   ! 1) Array of number of atoms:
+   if (.not.allocated(Scell(NSC)%fragments%N_at)) then
+      needs_allocation = .true.
+   else ! may need reallocation, if the number of fragments changed:
+      if (size(Scell(NSC)%fragments%N_at) /= Nsiz) then
+         deallocate(Scell(NSC)%fragments%N_at)  ! wrong size, reallocate
+         needs_allocation = .true.
+      endif
+   endif
+   if (needs_allocation) then ! make sure it is allocated with the correct size
+      allocate(Scell(NSC)%fragments%N_at(Nsiz))
+   endif
+   ! 2) Array of kinetic temperatures of atoms:
+   if (.not.allocated(Scell(NSC)%fragments%Tkin)) then
+      needs_allocation = .true.
+   else ! may need reallocation, if the number of fragments changed:
+      if (size(Scell(NSC)%fragments%Tkin) /= Nsiz) then
+         deallocate(Scell(NSC)%fragments%Tkin)  ! wrong size, reallocate
+         needs_allocation = .true.
+      endif
+   endif
+   if (needs_allocation) then ! make sure it is allocated with the correct size
+      allocate(Scell(NSC)%fragments%Tkin(Nsiz))
+   endif
+   ! 3) Array of fluctuational temperatures of atoms:
+   if (.not.allocated(Scell(NSC)%fragments%Tfluc)) then
+      needs_allocation = .true.
+   else ! may need reallocation, if the number of fragments changed:
+      if (size(Scell(NSC)%fragments%Tfluc) /= Nsiz) then
+         deallocate(Scell(NSC)%fragments%Tfluc)  ! wrong size, reallocate
+         needs_allocation = .true.
+      endif
+   endif
+   if (needs_allocation) then ! make sure it is allocated with the correct size
+      allocate(Scell(NSC)%fragments%Tfluc(Nsiz))
+   endif
+
+   !print*, 'get_fragments_data 0:', Nsiz, size(Scell(NSC)%fragments%Tkin), size(Scell(NSC)%fragments%Tfluc)
+   !call temperature_from_moments(Scell(NSC), Scell(NSC)%Ta_var(4), E_shift) ! below
+
+   ! Find the number of atoms in each fragment:
+   do i = 1, Nsiz
+      Scell(NSC)%fragments%N_at = count(Scell(NSC)%fragments%indices(:) == i) ! that's how many atoms are in this fragment
+
+      ! Update mask for atoms - which ones belong to this fragment "i":
+      fragment_mask(:) = (Scell(NSC)%fragments%indices(:) == i)
+
+      ! Find the kinetic temperature of atoms in each fragment:
+      call get_kinetic_temperature(Scell(NSC), Scell(NSC)%fragments%Tkin(i), mask=fragment_mask) ! below
+
+      ! Find the fluctuational temperature of atoms in each fragment:
+      call get_fluctuational_temperature(Scell(NSC), Scell(NSC)%fragments%Tfluc(i), mask=fragment_mask) ! below
+
+      !print*, 'get_fragments_data:', i, Nsiz, Scell(NSC)%fragments%Tkin(i), Scell(NSC)%Ta_var(1), Scell(NSC)%fragments%Tfluc(i), Scell(NSC)%Ta_var(4)
+   enddo
+
+end subroutine get_fragments_data
+
+
+subroutine get_kinetic_temperature(Scell, Tkin, mask)
+   type(Super_cell), intent(in) :: Scell   ! super-cell with all the atoms inside
+   real(8), intent(out) :: Tkin               ! [K] kineetic temperature of selected atoms
+   logical, dimension(:), intent(in), optional :: mask  ! selected atoms
+   !---------------------
+   real(8) :: Ekin
+   integer :: Nat, N_at_ensemble
+   logical :: do_mask
+
+   do_mask = .false. ! to start with
+   Nat = size(Scell%MDAtoms)  ! number of atoms
+   ! Check if mask is correctly provided:
+   if (present(mask)) then ! provided
+      if (size(mask) == Nat) then ! correct
+         do_mask = .true.
+      endif
+   endif
+
+   ! Kinetic temperature:
+   if (do_mask) then ! take into account that it is not all atoms but a selected subset
+      N_at_ensemble = COUNT(mask)
+      Ekin = SUM(Scell%MDatoms(:)%Ekin, MASK=mask)  ! [eV]
+   else
+      N_at_ensemble = Nat  ! number of atoms
+      Ekin = SUM(Scell%MDatoms(:)%Ekin)  ! [eV]
+   endif
+
+   Tkin = m_two_third * Ekin / dble(N_at_ensemble) * g_kb ! [K]
+end subroutine get_kinetic_temperature
+
+
+
+
+subroutine get_fluctuational_temperature(Scell, Tfluc, mask)  ! fluctuational temperature
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   real(8), intent(out) :: Tfluc   ! [K] fluctuational temperature
+   logical, dimension(:), intent(in), optional :: mask  ! selected atoms
+   !---------------
+   real(8) :: E1, E2, one_Nat, Ta
+   integer :: Nat, N_at_ensemble
+   logical :: do_mask
+
+   do_mask = .false. ! to start with
+   Nat = size(Scell%MDAtoms)  ! number of atoms
+   ! Check if mask is correctly provided:
+   if (present(mask)) then ! provided
+      if (size(mask) == Nat) then ! correct
+         do_mask = .true.
+      endif
+   endif
+
+   if (do_mask) then ! take into account that it is not all atoms but a selected subset
+      N_at_ensemble = COUNT(mask)
+   else ! all atoms
+      N_at_ensemble = Nat  ! number of atoms
+   endif
+   ! Inverse of atoms:
+   one_Nat = 1.0d0 / dble(N_at_ensemble)
+
+   if (do_mask) then ! take into account that it is not all atoms but a selected subset
+      ! First moment of the distribution:
+      E1 = SUM( Scell%MDAtoms(:)%Ekin, MASK=mask ) * one_Nat
+
+      ! Second moment of the distribution:
+      E2 = SUM( Scell%MDAtoms(:)%Ekin**2, MASK=mask ) * one_Nat
+   else ! all atoms
+      ! First moment of the distribution:
+      E1 = SUM( Scell%MDAtoms(:)%Ekin ) * one_Nat
+
+      ! Second moment of the distribution:
+      E2 = SUM( Scell%MDAtoms(:)%Ekin**2 ) * one_Nat
+   endif
+
+   ! Define temperature assuming Maxwell distribution:
+   Ta = sqrt( m_two_third * (E2 - E1**2) )   ! [eV]
+
+   ! Convert [eV] -> [K]:
+   Tfluc = Ta * g_kb ! [K]
+end subroutine get_fluctuational_temperature
 
 
 
@@ -750,7 +910,7 @@ function position_relative_to_center(Scell, i_at) result(Rrc)
 end function position_relative_to_center
 
 
-subroutine temperature_from_moments(Scell, Ta, E0)
+subroutine temperature_from_moments(Scell, Ta, E0)  ! fluctuational temperature
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    real(8), intent(out) :: Ta, E0   ! [K] and [eV] temperature and shift
    !---------------

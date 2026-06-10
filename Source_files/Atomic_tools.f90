@@ -980,10 +980,11 @@ subroutine get_fragments_indices(Scell, NSC, numpar, atoms, matter, indices)
 !       print*, 'i,j', i, j, maxval(indices(:))
       enddo
    enddo
-   
-!    pause
-   
 end subroutine get_fragments_indices
+
+
+
+
 
 
 subroutine get_interplane_indices(Scell, NSC, numpar, atoms, matter, indices)
@@ -1272,9 +1273,9 @@ subroutine Rescale_atomic_velocities_local(dE_mat, matter, Scell, NSC, nrg)
             b = dE/Ecm   ! ratio entering the scaling
             if (b < -1.0d0) then
                alpha = 0.0d0
-               write(*,'(a,es16.6,es16.6,es16.6)') 'WARNING: in Rescale_atomic_velocities_local, change too high:', &
+               write(*,'(a,5es16.6)') 'WARNING: in Rescale_atomic_velocities_local, change too high:', &
                                                    b, dE, dE_mat(i,j), dE_mat(j,i), Ecm
-               write(*,'(a)') 'Some energy may be lost'
+               write(*,'(a)') 'This energy will be redistributed globally'
             else
                alpha = sqrt(1.0d0 + b)
             endif
@@ -1514,26 +1515,46 @@ function Maxwell_int_shifted(Ta, hw) result(G)
 end function Maxwell_int_shifted
 
 
-function integrated_atomic_distribution(MDAtoms, Ta, hw, ind) result(G)
+function integrated_atomic_distribution_single(MDAtoms, Ta, hw, ind) result(G)
    real(8) :: G      ! normalized to 1
-   type(Atom), dimension(:) :: MDAtoms    ! all atoms in MD
+   type(Atom), dimension(:), intent(in) :: MDAtoms    ! all atoms in MD
    real(8), intent(in) :: Ta     ! temperature [eV]
    real(8), intent(in) :: hw     ! [eV] shift of the Maxwell function
    integer, intent(in) :: ind    ! index of the model to be used
    !---------------------
    integer :: Nat, Nat_high
+   real(8) :: E_min
 
    select case (ind)
-   case default ! Maxwellian
+   case default ! Maxwellian  (equilibrates well)
       G = Maxwell_int_shifted(Ta, hw)  ! above
-   case (1) ! transient nonequilibrium
+   case (1) ! nonequilibrium, kinetic energy only (doesn't exactly equilibrate, probably due to finite number of atoms)
       ! integral mumber of atoms with energies above the given threshold:
       Nat = size(MDAtoms)
       Nat_high = count(MDAtoms(:)%Ekin >= hw)
       G = dble(Nat_high)/dble(Nat)  ! normalized
-   end select
-end function integrated_atomic_distribution
+   case (-1) ! nonequilibrium, (kinetic + potential) energy (WRONG, doesn't equilibrate)
+      ! minimum of the potential energy:
+      E_min = minval(MDAtoms(:)%Epot)
 
+      Nat = size(MDAtoms)
+      Nat_high = count( (MDAtoms(:)%Ekin + MDAtoms(:)%Epot - E_min) >= hw)
+
+      G = dble(Nat_high)/dble(Nat)  ! normalized
+   end select
+end function integrated_atomic_distribution_single
+
+
+function integrated_atomic_distribution(Scell, hw, numpar) result(G)    ! wrapper for the function above
+   real(8) :: G      ! normalized to 1
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   real(8), intent(in) :: hw     ! [eV] shift of the Maxwell function
+   type(Numerics_param), intent(in) :: numpar   ! numerical parameters, including lists of earest neighbors
+   !---------------------
+
+   G = integrated_atomic_distribution_single(Scell%MDAtoms, Scell%TaeV, hw, numpar%ind_at_distr) ! above
+
+end function integrated_atomic_distribution
 
 
 
@@ -2584,12 +2605,6 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
 
       ! Sum contributions from all atoms:
       do j = 1, int(Nat)
-         !-------------------------------
-         ! This part only works for orthagonal supercell (to be improved later!):
-!          q = g_2Pi * sqrt ( &
-!              (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/Scell(1)%Supce(1,1))**2 + &
-!              (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/Scell(1)%Supce(2,2))**2 + &
-!              (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/Scell(1)%Supce(3,3))**2 )      ! [1/A]
 
          ! kind of atom:
          KOA => Scell(1)%MDatoms(j)%KOA
@@ -2746,11 +2761,10 @@ subroutine get_Miller_index_angle(Scell, matter, i, ijk_theta, qA)
    !          (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/(Scell(1)%Supce(1,1)/matter%cell_x))**2 + &
    !          (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/(Scell(1)%Supce(2,2)/matter%cell_y))**2 + &
    !          (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/(Scell(1)%Supce(3,3)/matter%cell_z))**2 )      ! [1/A]
-
-   ! This part is for non-orthogonal supercell:
+   ! This version works for non-orthogonal supercell too:
    q = sqrt( SUM( (Scell(1)%diff_peaks%ijk_diff_peak(1,i) * Scell(1)%k_supce(1,:)*matter%cell_x)**2 + &
-                   (Scell(1)%diff_peaks%ijk_diff_peak(2,i) * Scell(1)%k_supce(2,:)*matter%cell_y)**2 + &
-                   (Scell(1)%diff_peaks%ijk_diff_peak(3,i) * Scell(1)%k_supce(3,:)*matter%cell_y)**2) )      ! [1/A]
+                  (Scell(1)%diff_peaks%ijk_diff_peak(2,i) * Scell(1)%k_supce(2,:)*matter%cell_y)**2 + &
+                  (Scell(1)%diff_peaks%ijk_diff_peak(3,i) * Scell(1)%k_supce(3,:)*matter%cell_y)**2) )      ! [1/A]
 
    !print*, 'q_ijk=', q, qn, 2.0d0*asin(q*1.0d10*g_h/g_h * (Scell(1)%diff_peaks%l) / (4.0d0*g_Pi)) * g_rad2deg
 

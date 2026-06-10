@@ -1296,7 +1296,7 @@ subroutine Python_plot_partial_coupling(Scell, matter, numpar, file_coupling, t0
    logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz, Nat, j, col1, col2, N_types, norb, i_start, i_orb, j_orb, N_at, N_cols
-   character(30) :: x_min, x_max, temp_col1, temp_col2, linestyle, orb_name1, orb_name2
+   character(50) :: x_min, x_max, temp_col1, temp_col2, linestyle, orb_name1, orb_name2
    character(300) :: File_name, Plot_name, Data_file_name, temp_txt
 
    ! Only do it if the data-file exists:
@@ -1384,6 +1384,10 @@ subroutine Python_plot_partial_coupling(Scell, matter, numpar, file_coupling, t0
 
          write(x_min, '(f12.3)') t0
          write(x_max, '(f12.3)') t_last
+         ! Make sure the maximum value is adjusted but not larger than the given one:
+         write(FN,'(a)') 'xmax = df.iloc[:, 0].max()'
+         x_max = 'min(xmax, '//trim(adjustl(x_max))//')'
+
 
          write(FN, '(a)')  'plt.xlim('// trim(adjustl(x_min)) //','// trim(adjustl(x_max)) //')'
          write(FN, '(a)')  'plt.ylim(None,None)'
@@ -1509,6 +1513,10 @@ subroutine Python_plot_partial_coupling(Scell, matter, numpar, file_coupling, t0
          write(FN, '(a)')  '     plt.plot(t, summed, color=colors[idx % len(colors)], linestyle=ls, label=label)'
          write(x_min, '(f12.3)') t0
          write(x_max, '(f12.3)') t_last
+         ! Make sure the maximum value is adjusted but not larger than the given one:
+         write(FN,'(a)') 'xmax = df.iloc[:, 0].max()'
+         x_max = 'min(xmax, '//trim(adjustl(x_max))//')'
+
 
          write(FN, '(a)')  'plt.xlim('// trim(adjustl(x_min)) //','// trim(adjustl(x_max)) //')'
          write(FN, '(a)')  'plt.ylim(None,None)'
@@ -2164,6 +2172,10 @@ subroutine Python_plot_mu(numpar, file_electron_properties, t0, t_last, script_n
    write(FN, '(a)') 'time = df.iloc[:, 0]'
    write(FN, '(a)') 'Ne   = df.iloc[:, 1]   # electron density (y2 axis)'
    write(FN, '(a)') 'mu   = df.iloc[:, 2]   # chemical potential (left axis)'
+
+   ! Make sure the maximum X value is adjusted but not larger than the given one:
+   write(FN,'(a)') 'xmax = df.iloc[:, 0].max()'
+   x_max_txt = 'min(xmax, '//trim(adjustl(x_max_txt))//')'
 
    write(FN, '(a)') '# --- Create figure ---'
    write(FN, '(a)') 'fig, ax1 = plt.subplots(figsize=(8, 6), dpi=150)'
@@ -3994,6 +4006,9 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_labels, &
    endif
    if (present(x_max)) then
       write(x_max_txt,'(f24.8)') x_max
+      ! Make sure the maximum value is adjusted but not larger than the given one:
+      write(FN,'(a)') 'xmax = df.iloc[:, 0].max()'
+      x_max_txt = 'min(xmax, '//trim(adjustl(x_max_txt))//')'
    else
       write(x_max_txt,'(a)') 'None'
    endif

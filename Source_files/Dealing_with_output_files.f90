@@ -4122,8 +4122,10 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       if (numpar%M2_scaling == 4.0d0) text = trim(adjustl(text))//' (default)'
       write(print_to,'(a,a)') ' and scaling factor of: ', trim(adjustl(text))
       select case (numpar%ind_at_distr)
+      case (-1)
+         write(print_to,'(a)') ' using nonequilibrium atomic distribution (kin + pot)'
       case (1)
-         write(print_to,'(a)') ' using transient nonequilibrium atomic distribution'
+         write(print_to,'(a)') ' using nonequilibrium atomic distribution'
       case default
          write(print_to,'(a)') ' using equivalent Maxwellian atomic distribution'
       endselect

@@ -697,12 +697,12 @@ subroutine Electron_energy_transfer_inelastic(matter, TeeV, Ele, Nat, Nshl, mfps
     real(8) :: E_low, E_high
 
     if (Ele .LT. matter%Atoms(Nat)%Ip(Nshl)) then
-       print*, 'Attention! In subroutine Electron_energy_transfer_inelastic:'
-       print*, 'Transferred energy is lower than the ionization potential!'
+       write(*,'(a)') 'Attention! In subroutine Electron_energy_transfer_inelastic:'
+       write(*,'(a)') 'Transferred energy is lower than the ionization potential!'
        write(*,'(f25.16, f25.16, i2, i2)') Ele, matter%Atoms(Nat)%Ip(Nshl), Nat, Nshl
        write(*,'(f25.16,$)') matter%Atoms(Nat)%Ip(:)
-       write(*,'(a)') ''
-       pause 'Electron_energy_transfer_inelastic'
+       !write(*,'(a)') ''
+       !pause 'Electron_energy_transfer_inelastic'
     endif
 
     call Mean_free_path(Ele, mfps, L_tot) ! [A] total mean free path

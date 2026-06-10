@@ -388,13 +388,13 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
 
                ! analytical integration of maxwell function:
                if (i > j) then
-                  !distr_at_fin = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
-                  distr_at_fin = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
+                  !distr_at_fin = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr) ! module "Atomic_tools"
+                  distr_at_fin = integrated_atomic_distribution(Scell, wij, numpar)  ! from module "Atomic_tools"
                   distr_at_in = 1.0d0	! all atoms can absorb this energy
                else
                   distr_at_fin = 1.0d0	! all atoms can absorb this energy
-                  !distr_at_in = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
-                  distr_at_in = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
+                  !distr_at_in = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr) ! module "Atomic_tools"
+                  distr_at_in = integrated_atomic_distribution(Scell, wij, numpar)  ! from module
                endif
                !print*, i, j, integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 0), integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 1)
 
@@ -449,13 +449,13 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
 
                ! analytical integration of maxwell function:
                if (i > j) then
-                  !distr_at_fin = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
-                  distr_at_fin = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
+                  !distr_at_fin = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
+                  distr_at_fin = integrated_atomic_distribution(Scell, wij, numpar)  ! from module "Atomic_tools"
                   distr_at_in = 1.0d0	! all atoms can absorb this energy
                else
                   distr_at_fin = 1.0d0	! all atoms can absorb this energy
-                  !distr_at_in = Maxwell_int_shifted(Scell%TaeV, wij)  ! from module "Atomic_tools"
-                  distr_at_in = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
+                  !distr_at_in = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
+                  distr_at_in = integrated_atomic_distribution(Scell, wij, numpar)  ! from module
                endif
                !print*, i, j, integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 0), integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 1)
 

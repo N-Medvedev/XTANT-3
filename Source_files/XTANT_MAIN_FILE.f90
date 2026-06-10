@@ -291,10 +291,12 @@ call get_low_energy_distribution(g_Scell(1), g_numpar) ! module "Electron_tools"
 
 ! Get atomic distribution:
 call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_thermodynamics"
-! Update configurational temperature for running average (needed on each timestep):
-call update_Ta_config_running_average(g_Scell(1), g_matter, g_numpar)   ! module "Atomic_thermodynamics"
 if (g_numpar%verbose) call print_time_step('Atomic distribution calculated successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
+! Update configurational temperature for running average (needed on each timestep):
+call update_Ta_config_running_average(g_Scell(1), g_matter, g_numpar)   ! module "Atomic_thermodynamics"
+! Update local temperatures of fragments (needed for local coupling):
+call get_fragments_data(g_Scell, 1, g_numpar, g_matter)  ! module "Atomic_thermodynamics"
 
 ! Calculate configurational temperature (implemented only for Pettifor TB):
 call Get_configurational_temperature(g_Scell, g_numpar, g_matter)	! module "TB"
@@ -417,6 +419,8 @@ do while (g_time .LT. g_numpar%t_total)
    g_dt_save = g_dt_save + g_numpar%dt  ! [fs] for tracing when to save the output data
    ! Update configurational temperature for running average (needed on each timestep):
    call update_Ta_config_running_average(g_Scell(1), g_matter, g_numpar)   ! module "Atomic_thermodynamics"
+   ! Update local temperatures of fragments (needed for local coupling):
+   call get_fragments_data(g_Scell, 1, g_numpar, g_matter)  ! module "Atomic_thermodynamics"
 
    ! Write current data into output files:
    if (g_dt_save .GE. g_numpar%dt_save - 1d-6) then

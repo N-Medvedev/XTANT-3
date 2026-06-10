@@ -38,7 +38,7 @@ use Gnuplotting, only : collect_gnuplots
 use Plots_gnuplot, only : execute_all_gnuplots
 use Plots_python, only : collect_python_plots, execute_all_pyplots
 use Initial_configuration, only : set_initial_configuration
-use Atomic_thermodynamics, only : get_atomic_distribution, update_Ta_config_running_average
+use Atomic_thermodynamics, only : get_atomic_distribution, update_Ta_config_running_average, get_fragments_data
 use Atomic_tools, only : get_mean_square_displacement, save_last_timestep, Cooling_atoms, &
         Coordinates_rel_to_abs, velocities_abs_to_rel, shortest_distance, &
         make_time_step_atoms, make_time_step_supercell, numerical_acceleration, Get_testmode_add_data, &

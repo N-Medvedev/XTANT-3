@@ -670,12 +670,26 @@ type :: Elemental_Nearest_Neighbors
 end type Elemental_Nearest_Neighbors
 
 
+
+!==============================================
+type :: Fragment_data   ! atomic data for fragments the material is made of
+   real(8), dimension(:), allocatable :: indices  ! indices of atoms, marking to which fragment they belong
+   integer, dimension(:), allocatable :: N_at     ! number of atoms in this fragment
+   real(8), dimension(:), allocatable :: Tkin     ! [K] kinetic temperature of atoms in this fragment
+   real(8), dimension(:), allocatable :: Tfluc    ! [K] fluctuational temperature of atoms in this fragment
+end type Fragment_data
+
+
+
 !==============================================
 ! Supercell as object:
 type Super_cell
-   ! Sub-cells for linear scaling TB, if used:
+   ! Sub-cells for linear scaling TB, if ever implemented...:
    type(Sub_cell), dimension(:,:,:), allocatable :: Subcell ! Subcells along 3 axes: X, Y, Z (currently unused)
    ! Data for the entire simulation box:
+   ! Fragments:
+   type(Fragment_data) :: fragments ! data for distinct fragments the material is made of (could be just one, single target)
+
    ! How many electrons and atoms in the super-cell:
    integer :: Na, Ne	! number of atoms, electrons, in the super-cell
    real(8) :: Ne_low	! current number of low-energy electrons of VB and CB
