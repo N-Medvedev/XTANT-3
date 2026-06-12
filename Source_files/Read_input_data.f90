@@ -4940,6 +4940,10 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       numpar%Nonadiabat = .true.  ! included
    endif
 
+   if (numpar%V_scaling == 2) then ! only individual-atom energy distribution works with this scaling:
+      numpar%ind_at_distr = 2
+   endif
+
    ! [fs] when to switch on the nonadiabatic coupling:
    read(FN, '(a)', IOSTAT=Reason) read_line
    read(read_line,*,IOSTAT=Reason) numpar%t_NA, numpar%M2_scaling ! [fs] start of the nonadiabatic coupling; scaling factor
@@ -7501,6 +7505,10 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       else ! didn't read well, use default
          write(*, '(a)') 'Line '//trim(adjustl(string_in))//' could not be interpreted'
          write(*, '(a)') 'Using default atomic velocity scaling'
+      endif
+
+      if (N == 2) then ! only individual-atom energy distribution works with this scaling:
+         numpar%ind_at_distr = 2
       endif
 
    !----------------------------------

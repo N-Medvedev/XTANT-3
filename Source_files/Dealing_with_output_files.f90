@@ -57,7 +57,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 06.06.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 12.06.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2867,6 +2867,8 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
    type(Solid), intent(in) :: matter
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   !--------------------
+   real(8) :: Ta
    integer i, iret
    character(200) :: File_name, File_name2, command, matter_name
    character(100) :: ch1, ch2, ch3, ch4
@@ -2929,10 +2931,17 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
          endif
       endif 
     else LAS ! no pulse
-      if (numpar%path_sep .EQ. '\') then	! if it is Windows
+
+      if (numpar%path_sep .EQ. '\') then        ! if it is Windows
          do i = 1,size(Scell)
-            write(ch1,'(f8.1)') Scell(i)%Te ! electron temperature [K]
-            write(ch2,'(f8.1)') Scell(i)%Ta ! atomic temperature [K]
+            write(ch1,'(f8.1)') Scell(i)%Te     ! electron temperature [K]
+            select case (numpar%ind_exact_Ta)
+            case default
+               Ta = Scell(i)%Ta ! atomic temperature [K]
+            case (1) ! additional rescaling was used, the temperature is doubled (kin+config)
+               Ta = 0.5d0 * Scell(i)%Ta ! atomic temperature [K], halved to get kinetic one
+            endselect
+            write(ch2,'(f8.1)') Ta              ! atomic temperature [K]
          enddo
          if (numpar%Nonadiabat) then
             write(ch3,'(a)') 'with_coupling'
@@ -2943,8 +2952,14 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
             trim(adjustl(ch2)), '_', trim(adjustl(ch3))
       else ! it is linux
          do i = 1,size(Scell)
-            write(ch1,'(f8.1)') Scell(i)%Te ! electron temperature [K]
-            write(ch2,'(f8.1)') Scell(i)%Ta ! atomic temperature [K]
+            write(ch1,'(f8.1)') Scell(i)%Te     ! electron temperature [K]
+            select case (numpar%ind_exact_Ta)
+            case default
+               Ta = Scell(i)%Ta ! atomic temperature [K]
+            case (1) ! additional rescaling was used, the temperature is doubled (kin+config)
+               Ta = 0.5d0 * Scell(i)%Ta ! atomic temperature [K], halved to get kinetic one
+            endselect
+            write(ch2,'(f8.1)') Ta              ! atomic temperature [K]
          enddo
          if (numpar%Nonadiabat) then
             write(ch3,'(a)') 'with_coupling'
@@ -4126,6 +4141,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(print_to,'(a)') ' using nonequilibrium atomic distribution (kin + pot)'
       case (1)
          write(print_to,'(a)') ' using nonequilibrium atomic distribution'
+      case (2)
+         write(print_to,'(a)') ' using individual-atom (delta-functions) atomic distribution'
       case default
          write(print_to,'(a)') ' using equivalent Maxwellian atomic distribution'
       endselect
@@ -4135,6 +4152,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(print_to,'(a)') ' Scheme used for atomic velocity scaling: global'
       case (1)          ! local scaling
          write(print_to,'(a)') ' Scheme used for atomic velocity scaling: local'
+      case (2)          ! individual atom scaling
+         write(print_to,'(a)') ' Scheme used for atomic velocity scaling: individual atom'
       endselect
    endif
 

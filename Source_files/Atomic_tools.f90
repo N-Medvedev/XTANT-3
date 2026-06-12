@@ -52,8 +52,9 @@ end interface distance_to_given_cell
 
 
 interface Rescale_atomic_velocities
-   module procedure Rescale_atomic_velocities_global  ! for global rescaling
-   module procedure Rescale_atomic_velocities_local   ! for local rescaling
+   module procedure Rescale_atomic_velocities_global        ! for global rescaling
+   module procedure Rescale_atomic_velocities_local         ! for local rescaling
+   module procedure Rescale_atomic_velocities_individual    ! for individual-atom rescaling
 end interface Rescale_atomic_velocities
 
 
@@ -74,7 +75,7 @@ remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
 Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
 update_atomic_masks_displ, numerical_acceleration, Get_testmode_add_data, integrated_atomic_distribution, &
-get_diffraction_peaks, get_Miller_index_angle, get_Debye_temperature_from_diffraction
+get_diffraction_peaks, get_Miller_index_angle, get_Debye_temperature_from_diffraction, get_kinetic_temperature
 
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
@@ -564,7 +565,7 @@ subroutine remove_momentum(Scell, NSC, matter, atoms, indices, print_out)
    integer, intent(in) :: NSC ! number of the super-cell
    type(solid), intent(inout), target :: matter	! materil parameters
    type(Atom), dimension(:), intent(inout) :: atoms	! array of atoms in the supercell
-   real(8), dimension(:), intent(in), optional :: indices ! working array of indices
+   integer, dimension(:), intent(in), optional :: indices ! working array of indices
    logical, optional, intent(in) :: print_out ! print our c-o-m momemntum
    real(8), pointer :: Mass
    real(8) :: vx, vy, vz, Masstot
@@ -598,7 +599,7 @@ subroutine remove_plane_momenta(Scell, NSC, matter, atoms, indices, print_out)
    integer, intent(in) :: NSC ! number of the super-cell
    type(solid), intent(inout) :: matter	! materil parameters
    type(Atom), dimension(:), intent(inout) :: atoms	! array of atoms in the supercell
-   real(8), dimension(:), intent(in) :: indices ! working array of indices
+   integer, dimension(:), intent(in) :: indices ! working array of indices
    logical, intent(in), optional :: print_out ! just in case user want to print out c-of-m-momenta
    real(8) :: vx, vy, vz, Mass_sum
    integer i, j, N(1), Nplane
@@ -638,7 +639,7 @@ subroutine remove_angular_momentum(NSC, Scell, matter, atoms, indices, print_out
    type(Super_cell), dimension(:), intent(inout), target :: Scell ! suoer-cell with all the atoms inside
    type(solid), intent(inout), target :: matter	! materil parameters
    type(Atom), dimension(:), intent(inout) :: atoms	! array of atoms in the supercell
-   real(8), dimension(:), intent(in), optional :: indices ! working array of indices
+   integer, dimension(:), intent(in), optional :: indices ! working array of indices
    logical, optional, intent(in) :: print_out ! print our c-o-m momemntum
    !AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
    real(8), pointer :: Mass
@@ -836,7 +837,7 @@ subroutine remove_plane_angular_momenta(Scell, NSC, matter, atoms, indices, prin
    type(Super_cell), dimension(:), intent(inout), target :: Scell ! suoer-cell with all the atoms inside
    type(solid), intent(inout), target :: matter	! materil parameters
    type(Atom), dimension(:), intent(inout) :: atoms	! array of atoms in the supercell
-   real(8), dimension(:), intent(in) :: indices ! working array of indices
+   integer, dimension(:), intent(in) :: indices ! working array of indices
    logical, optional, intent(in) :: print_out ! print our c-o-m momemntum
    !AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
    real(8), pointer :: Mass
@@ -932,13 +933,13 @@ subroutine get_fragments_indices(Scell, NSC, numpar, atoms, matter, indices)
    type(Numerics_param), intent(in) :: numpar	! numerical parameters
    type(solid), intent(in) :: matter	! materil parameters
    type(Atom), dimension(:), intent(in) :: atoms   ! array of atoms in the supercell
-   real(8), dimension(:), intent(inout), allocatable :: indices ! working array of indices
+   integer, dimension(:), intent(inout), allocatable :: indices ! working array of indices
    real(8) a_r, dm
    integer i, j, coun, ind_i, ind_same, Na
    Na = size(atoms) ! corresponding to number of atoms
    if (.not.allocated(indices)) then 
       allocate(indices(Na))
-      indices = 0.0d0
+      indices = 0
    endif
    coun = 0
    call get_near_neighbours(Scell, numpar, dm = dm) ! get cut-off radius
@@ -1208,6 +1209,82 @@ subroutine C60_crystal_construction(Scell, matter, N_start, N_end)
     close(6543)
     pause 'C60_crystal_construction completed'
 end subroutine C60_crystal_construction
+
+
+
+subroutine Rescale_atomic_velocities_individual(dE_at, matter, Scell, NSC, nrg)
+   real(8), dimension(:), intent(in) :: dE_at   ! total energy gain by atoms [eV]
+   type(solid), intent(in) :: matter      ! material parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(Energies), intent(inout) :: nrg ! all energies
+   !------------------------------
+   real(8) :: Ekin_tot, alpha, b, eps, Ekin, Epot
+   integer :: i, Nat
+
+   eps = 1.0d-13   ! acceptable change of energy
+   Nat = Scell(NSC)%Na ! number of atoms
+
+   ! Initial total kinetic energy (to check conservation at the end):
+   Ekin_tot = SUM(Scell(NSC)%MDatoms(:)%Ekin)         ! total atomic kinetic energy
+
+   ! Rescale atomic velocities:
+   do i = 1, Nat
+      if ((ABS(Scell(NSC)%MDatoms(i)%Ekin) > eps)) then ! makes sense to scale it
+         alpha = sqrt( (Scell(NSC)%MDatoms(i)%Ekin + dE_at(i)) / Scell(NSC)%MDatoms(i)%Ekin )
+         Scell(NSC)%MDatoms(i)%V(:) = Scell(NSC)%MDatoms(i)%V(:) * alpha
+      else ! starting from zero energy - set velocity randomly
+         call get_velocity_from_energy(dE_at(i), matter%Atoms(Scell(NSC)%MDatoms(i)%KOA)%Ma, &
+                                          Scell(NSC)%MDatoms(i)%V(1), &
+                                          Scell(NSC)%MDatoms(i)%V(2), &
+                                          Scell(NSC)%MDatoms(i)%V(3) ) ! below
+      endif
+   enddo
+
+   ! Rescaling the relative velocities:
+   call velocities_abs_to_rel(Scell, NSC) ! New relative velocities
+   ! And updating energies:
+   call Atomic_kinetic_energies(Scell, NSC, matter)   ! below
+
+   ! Test energy conservation: (tested, works)
+   !print*, 'Rescale_atomic_velocities_individual:', SUM(Scell(NSC)%MDatoms(:)%Ekin), Ekin_tot + SUM(dE_at), SUM(dE_at)
+end subroutine Rescale_atomic_velocities_individual
+
+
+subroutine get_velocity_from_energy(E, Mass, Vx, Vy, Vz)
+   real(8), intent(in) :: E ! [eV] energy to set the velocity accordingly
+   real(8), intent(in) :: Mass ! [kg] mass of the atom
+   real(8), intent(out) :: Vx, Vy, Vz ! velocities [A/fs]
+   real(8) :: RN(6) ! random numbers
+   real(8) :: V, Pi2, theta, phi, cos_phi
+   integer :: i
+
+   ! Absolute value:
+   V = sqrt(2.0d0*E*g_e/Mass)*1d10/1d15 ! [A/fs] absolute velocity corresponding to the given energy
+
+   ! Set its direction uniformly:
+   do i = 1,size(RN)
+      call random_number(RN(i))
+   enddo
+
+   Pi2 = g_Pi/2.0d0
+   theta = 2.0d0*g_Pi*RN(4) ! angle
+   phi = -Pi2 + g_Pi*RN(5)  ! second angle
+   cos_phi = cos(phi)
+   if (RN(6) <= 0.33) then
+      Vx = V*cos_phi*cos(theta)
+      Vy = V*cos_phi*sin(theta)
+      Vz = V*sin(phi)
+   elseif(RN(6) <=0.67) then
+      Vz = V*cos_phi*cos(theta)
+      Vx = V*cos_phi*sin(theta)
+      Vy = V*sin(phi)
+   else
+      Vy = V*cos_phi*cos(theta)
+      Vz = V*cos_phi*sin(theta)
+      Vx = V*sin(phi)
+   endif
+end subroutine get_velocity_from_energy
 
 
 
@@ -1545,9 +1622,10 @@ function integrated_atomic_distribution_single(MDAtoms, Ta, hw, ind) result(G)
 end function integrated_atomic_distribution_single
 
 
-function integrated_atomic_distribution(Scell, hw, numpar) result(G)    ! wrapper for the function above
+function integrated_atomic_distribution(Scell, matter, hw, numpar) result(G)    ! wrapper for the function above
    real(8) :: G      ! normalized to 1
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(solid), intent(in), target :: matter ! materil parameters
    real(8), intent(in) :: hw     ! [eV] shift of the Maxwell function
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters, including lists of earest neighbors
    !---------------------
@@ -1555,6 +1633,38 @@ function integrated_atomic_distribution(Scell, hw, numpar) result(G)    ! wrappe
    G = integrated_atomic_distribution_single(Scell%MDAtoms, Scell%TaeV, hw, numpar%ind_at_distr) ! above
 
 end function integrated_atomic_distribution
+
+
+
+subroutine get_kinetic_temperature(Scell, Tkin, mask)
+   type(Super_cell), intent(in) :: Scell   ! super-cell with all the atoms inside
+   real(8), intent(out) :: Tkin               ! [K] kineetic temperature of selected atoms
+   logical, dimension(:), intent(in), optional :: mask  ! selected atoms
+   !---------------------
+   real(8) :: Ekin
+   integer :: Nat, N_at_ensemble
+   logical :: do_mask
+
+   do_mask = .false. ! to start with
+   Nat = size(Scell%MDAtoms)  ! number of atoms
+   ! Check if mask is correctly provided:
+   if (present(mask)) then ! provided
+      if (size(mask) == Nat) then ! correct
+         do_mask = .true.
+      endif
+   endif
+
+   ! Kinetic temperature:
+   if (do_mask) then ! take into account that it is not all atoms but a selected subset
+      N_at_ensemble = COUNT(mask)
+      Ekin = SUM(Scell%MDatoms(:)%Ekin, MASK=mask)  ! [eV]
+   else
+      N_at_ensemble = Nat  ! number of atoms
+      Ekin = SUM(Scell%MDatoms(:)%Ekin)  ! [eV]
+   endif
+
+   Tkin = m_two_third * Ekin / dble(N_at_ensemble) * g_kb ! [K]
+end subroutine get_kinetic_temperature
 
 
 

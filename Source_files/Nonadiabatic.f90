@@ -40,9 +40,10 @@ public :: Electron_ion_collision_int, get_G_ei, Electron_ion_coupling_Mij, Elect
  contains
 
 
-subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, dE_nonadiabat, kind_M, &
-                                      DOS_weights, G_ei_partial, G_ei_per_atom)
+subroutine Electron_ion_collision_int(Scell, matter, numpar, nrg, Mij, wr, wr0, distre, dE_nonadiabat, kind_M, &
+                                      DOS_weights, G_ei_partial, G_ei_per_atom, dE_at)
    type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
+   type(Solid), intent(in) :: matter      ! material parameters
    type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    type(Energies), intent(inout) :: nrg	! all energies
    real(8), dimension(:,:), intent(in) :: Mij  ! Matrix element coupling electron energy levels via ion motion
@@ -54,6 +55,7 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
    real(8), dimension(:,:,:), intent(in) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
    real(8), dimension(:,:), intent(inout) :: G_ei_partial   ! partial contributions into coupling from shells of atoms [eV]
    real(8), dimension(:,:), intent(inout) :: G_ei_per_atom  ! partial contributions into coupling from pairs of atoms [eV]
+   real(8), dimension(:), intent(inout) :: dE_at    ! energy transfer to each individual atom [eV]
    !---------------------------------------
    integer :: i, N_orb, N_steps, i_t, i_pc
    real(8) :: coef, coef_inv, dt_small, N_tot_cut, E_tot_cur, alpha, A_pc, B_pc, AB, A2AB, arg, eps, eps_N, Ne
@@ -99,6 +101,7 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
    G_ei_partial = 0.0d0   ! to start with
    G_ei_per_atom = 0.0d0  ! to start with
    dE_ij = 0.0d0  ! to start with
+   dE_at = 0.0d0  ! to start with
 
 
    !E_tot_cur = Scell%E_tot
@@ -122,8 +125,8 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
          ! Get the collision integral parameters:
          !call get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, distre_temp2, dfdt_e2, dfdt_A2, dfdt_B2, &
          !                        DOS_weights, G_ei_partial) ! below
-         call get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, numpar%dt*(1d-15), kind_M, distre_temp2, dfdt_e2, dfdt_A2, dfdt_B2, &
-                                 DOS_weights, G_ei_partial, dE_ij) ! below
+         call get_el_ion_kernel(Scell, matter, numpar, Mij, wr, wr0, numpar%dt*(1d-15), kind_M, distre_temp2, dfdt_e2, dfdt_A2, dfdt_B2, &
+                                 DOS_weights, G_ei_partial, dE_ij, dE_at) ! below
 
          ! first step, no iterative data yet, use what we have:
          if (i_pc == 1) then
@@ -221,6 +224,9 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
    ! Take dt into account:
    G_ei_partial = G_ei_partial*dt_small ! energy for partial electron-phonon coupling [eV]
    dE_ij = -dE_ij*dt_small   ! energy transfer per pairs of atoms [eV] (sign convention according to G_ei)
+   ! Energy transfer to individual atoms:
+   dE_at = dE_at*dt_small   ! energy transfer to each individual atom
+   dE_at = dE_at*0.5d0      ! to exclude double-counting (since energy is counted by the difference and not the absolute wr)
 
    ! Update electron energy:
    nrg%El_low = SUM(distre_temp(:)*wr(:)) ! new total electron energy [eV]
@@ -230,7 +236,7 @@ subroutine Electron_ion_collision_int(Scell, numpar, nrg, Mij, wr, wr0, distre, 
    call sort_dE_per_atoms(G_ei_per_atom, dE_ij, Scell, numpar)   ! below
 
    ! testing (all consistent):
-   !print*, 'dE:', dE_nonadiabat, SUM(G_ei_partial), SUM(dE_ij), SUM(G_ei_per_atom)
+   !print*, 'dE:', dE_nonadiabat, SUM(G_ei_partial), SUM(dE_ij), SUM(G_ei_per_atom), sum(dE_at)
 
    ! Save the collision integral, if needed:
    if (numpar%do_kappa) then
@@ -336,9 +342,10 @@ end subroutine sort_dE_per_atoms
 
 
 
-subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, distre_temp, &
-                              dfdt_e, dfdt_A, dfdt_B, DOS_weights, G_ei_partial, dE_ij)
-   type(Super_cell), intent(in) :: Scell ! supercell with all the atoms as one object
+subroutine get_el_ion_kernel(Scell, matter, numpar, Mij, wr, wr0, dt_small, kind_M, distre_temp, &
+                              dfdt_e, dfdt_A, dfdt_B, DOS_weights, G_ei_partial, dE_ij, dE_at)
+   type(Super_cell), intent(in) :: Scell  ! supercell with all the atoms as one object
+   type(Solid), intent(in) :: matter      ! material parameters
    type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), dimension(:,:), intent(in) :: Mij  ! Matrix element coupling electron energy levels via ion motion
    real(8), dimension(:), intent(in) :: wr, wr0  ! electron energy levels [eV], on current and last timesteps
@@ -350,6 +357,7 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
    real(8), dimension(:,:,:), intent(in) :: DOS_weights     ! weigths of the particular type of orbital on each energy level
    real(8), dimension(:,:), intent(inout) :: G_ei_partial   ! partial contributions into coupling from different shells [eV]
    real(8), dimension(:,:), intent(inout) :: dE_ij   ! partial contributions into coupling from different pairs of levels [eV]
+   real(8), dimension(:), intent(inout) :: dE_at    ! energy transfer to each individual atom [eV]
    !------------------
    real(8) :: dfdt_i, wij, ViVj, Mij2, distr_at_in, distr_at_fin, dtij, dfdt, dfdt_aij, dfdt_bij, coef, coef_inv
    integer :: i, j
@@ -357,6 +365,7 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
    character(100) :: error_part
    real(8), dimension(size(G_ei_partial,1),size(G_ei_partial,2)) :: G_ei_partial_cur     ! temporary copy
    real(8), dimension(size(dE_ij,1),size(dE_ij,2)) :: dE_ij_cur    ! temporary copy
+   real(8), dimension(size(dE_at)) :: dE_at_cur    ! temporary copy
 
    coef = 2.0d0*g_e/g_h
    coef_inv = numpar%M2_scaling*g_h/(g_e)   ! [s] with scaling factor added (e.g. 2 from d|a|^2/dt) OLD
@@ -368,6 +377,7 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
    dfdt_B = 0.0d0
    G_ei_partial_cur = 0.0d0
    dE_ij_cur = 0.0d0
+   dE_at_cur = 0.0d0
 
 #ifdef MPI_USED   ! use the MPI version
    N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
@@ -386,27 +396,8 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
                ! Select which scheme for the matrix element to use:
                call get_Mij2(i, j, kind_M, Mij, dt_small, wr, wr0, coef, coef_inv, Mij2)   ! below
 
-               ! analytical integration of maxwell function:
-               if (i > j) then
-                  !distr_at_fin = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr) ! module "Atomic_tools"
-                  distr_at_fin = integrated_atomic_distribution(Scell, wij, numpar)  ! from module "Atomic_tools"
-                  distr_at_in = 1.0d0	! all atoms can absorb this energy
-               else
-                  distr_at_fin = 1.0d0	! all atoms can absorb this energy
-                  !distr_at_in = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr) ! module "Atomic_tools"
-                  distr_at_in = integrated_atomic_distribution(Scell, wij, numpar)  ! from module
-               endif
-               !print*, i, j, integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 0), integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 1)
-
-               ! Explicit scheme (reqiures small timestep):
-               dfdt = Mij2*( distre_temp(j)*distr_at_fin*(2.0d0-distre_temp(i)) - distre_temp(i)*distr_at_in*(2.0d0-distre_temp(j)) )
-
-               ! Implicit scheme (unconditionally stable, but does not conserve number of electrons!):
-               dfdt_aij = Mij2*distr_at_fin
-               dfdt_bij = Mij2*distr_at_in
-               ! Sum the contributions up:
-               dfdt_A(i) = dfdt_A(i) + dfdt_aij*distre_temp(j)
-               dfdt_B(i) = dfdt_B(i) + dfdt_bij*(2.0d0-distre_temp(j))
+               ! Calculate df/dt and energy transfer to each individual atom (for fragments):
+               call get_dfdt(i, j, Scell, matter, wij, numpar, distre_temp, Mij2, dfdt, dE_at_cur)   ! below
 
                ! Save it as a matrix:
                dE_ij_cur(i,j) = dfdt * wr(i)
@@ -425,18 +416,21 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
    G_ei_partial = G_ei_partial + G_ei_partial_cur
    dE_ij = dE_ij + dE_ij_cur
+   dE_at = dE_at + dE_at_cur
 
 
    error_part = 'Error in get_el_ion_kernel:'
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dfdt_e}', dfdt_e) ! module "MPI_subroutines"
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{G_ei_partial}', G_ei_partial) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dE_ij}', dE_ij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dE_at}', dE_at) ! module "MPI_subroutines"
    !call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{G_ei_per_atom}', G_ei_per_atom) ! module "MPI_subroutines"
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dfdt_A}', dfdt_A) ! module "MPI_subroutines"
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dfdt_B}', dfdt_B) ! module "MPI_subroutines"
+   !call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dfdt_A}', dfdt_A) ! module "MPI_subroutines"
+   !call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dfdt_B}', dfdt_B) ! module "MPI_subroutines"
 
 #else ! use OpenMP instead
 !$omp PARALLEL private(i,j,dfdt_i,ViVj,Mij2,distr_at_in,distr_at_fin, dtij, wij, dfdt, dfdt_aij, dfdt_bij) ! Implicit scheme
-!$omp do reduction( + : dfdt_e, G_ei_partial_cur, dfdt_A, dfdt_B) ! explicit scheme
+!$omp do reduction( + : dfdt_e, G_ei_partial_cur, dE_at_cur) ! explicit scheme
     do i = 1, size(wr) ! all energy levels
       dfdt_i = 0.0d0  ! implicit
       do j = 1, size(wr) ! all pairs of energy levels
@@ -447,27 +441,8 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
                ! Select which scheme for the matrix element to use:
                call get_Mij2(i, j, kind_M, Mij, dt_small, wr, wr0, coef, coef_inv, Mij2)   ! below
 
-               ! analytical integration of maxwell function:
-               if (i > j) then
-                  !distr_at_fin = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
-                  distr_at_fin = integrated_atomic_distribution(Scell, wij, numpar)  ! from module "Atomic_tools"
-                  distr_at_in = 1.0d0	! all atoms can absorb this energy
-               else
-                  distr_at_fin = 1.0d0	! all atoms can absorb this energy
-                  !distr_at_in = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr)  ! from module "Atomic_tools"
-                  distr_at_in = integrated_atomic_distribution(Scell, wij, numpar)  ! from module
-               endif
-               !print*, i, j, integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 0), integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 1)
-
-               ! Explicit scheme (reqiures small timestep):
-               dfdt = Mij2*( distre_temp(j)*distr_at_fin*(2.0d0-distre_temp(i)) - distre_temp(i)*distr_at_in*(2.0d0-distre_temp(j)) )
-
-               ! Implicit scheme (unconditionally stable, but does not conserve number of electrons!):
-               dfdt_aij = Mij2*distr_at_fin
-               dfdt_bij = Mij2*distr_at_in
-               ! Sum the contributions up:
-               dfdt_A(i) = dfdt_A(i) + dfdt_aij*distre_temp(j)
-               dfdt_B(i) = dfdt_B(i) + dfdt_bij*(2.0d0-distre_temp(j))
+               ! Calculate df/dt and energy transfer to each individual atom (for fragments):
+               call get_dfdt(i, j, Scell, matter, wij, numpar, distre_temp, Mij2, dfdt, dE_at_cur)   ! below
 
                ! Save it as a matrix:
                dE_ij_cur(i,j) = dfdt * wr(i)
@@ -488,12 +463,158 @@ subroutine get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, dist
 !$omp end do
 !$omp end parallel
 
-   ! Add it uo to all other levels' contributions:
+   ! Add it up to all other levels' contributions:
    G_ei_partial = G_ei_partial + G_ei_partial_cur
    dE_ij = dE_ij + dE_ij_cur
+   dE_at = dE_at + dE_at_cur
 
 #endif
 end subroutine get_el_ion_kernel
+
+
+
+subroutine get_dfdt(i, j, Scell, matter, wij, numpar, distre_temp, Mij2, dfdt, dE_at_cur)   ! below
+   integer, intent(in) :: i, j    ! indices of the levels participating in the electron transition
+   type(Super_cell), intent(in) :: Scell  ! supercell with all the atoms as one object
+   type(Solid), intent(in), target :: matter      ! material parameters
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
+   real(8), intent(in) :: Mij2      ! Matrix element coupling electron energy levels via ion motion
+   real(8), intent(in) :: wij       ! electron energy levels difference [eV]
+   real(8), dimension(:), intent(in) :: distre_temp	! electron distribution
+   real(8), intent(inout) :: dfdt         ! df/dt - distribution function change
+   real(8), dimension(:), intent(inout) :: dE_at_cur  ! energy transfer to each atom ([eV/fs], to be multiplied by timestep)
+   !-----------------------------------
+   real(8) :: Max_D_i, Max_D_j, A, B, dfdt_cur, distr_at_fin, distr_at_in, Nfr, dfdt_test, dfdt_test2
+   integer :: i_max, j_max, i_cur, Nat, Nlev, Norb, coun
+   character(:), pointer :: Name_i, Name_j
+
+
+   select case (numpar%ind_at_distr) ! scheme of atomic energy distribution to use
+   case default ! total distribution: Maxwellian or nonequilibrium
+      ! analytical integration of maxwell function:
+      if (i > j) then
+         !distr_at_fin = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr) ! module "Atomic_tools"
+         distr_at_fin = integrated_atomic_distribution(Scell, matter, wij, numpar)  ! module "Atomic_tools"
+         distr_at_in  = 1.0d0	! all atoms can absorb this energy
+      else
+         distr_at_fin = 1.0d0	! all atoms can absorb this energy
+         !distr_at_in = integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, numpar%ind_at_distr) ! module "Atomic_tools"
+         distr_at_in  = integrated_atomic_distribution(Scell, matter, wij, numpar)  ! module "Atomic_tools"
+      endif
+      !print*, i, j, integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 0), integrated_atomic_distribution(Scell%MDAtoms, Scell%TaeV, wij, 1)
+
+      ! Explicit scheme (reqiures small timestep):
+      dfdt = Mij2*( distre_temp(j)*distr_at_fin*(2.0d0-distre_temp(i)) - distre_temp(i)*distr_at_in*(2.0d0-distre_temp(j)) )
+
+      ! Implicit scheme (unconditionally stable, but does not conserve number of electrons!):
+      !dfdt_aij = Mij2*distr_at_fin
+      !dfdt_bij = Mij2*distr_at_in
+      ! Sum the contributions up:
+      !dfdt_A(i) = dfdt_A(i) + dfdt_aij*distre_temp(j)
+      !dfdt_B(i) = dfdt_B(i) + dfdt_bij*(2.0d0-distre_temp(j))
+
+   case (2) ! local distribution: energy transfer to individual atoms
+      Nat = size(Scell%MDAtoms)     ! number of atoms
+      Nlev = size(Scell%Ei)         ! number of energy levels
+      Norb = Nlev / Nat             ! number of orbitals per atom
+
+      ! Which atom contributes to this orbital the most:
+      Max_D_i = maxval(Scell%Dmatrix(i,:))      ! atomic orbital with maximal contribution to this level
+      Max_D_j = maxval(Scell%Dmatrix(j,:))      ! atomic orbital with maximal contribution to this level
+      i_max = (transfer( maxloc(Scell%Dmatrix(i,:)), i_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
+      j_max = (transfer( maxloc(Scell%Dmatrix(j,:)), j_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
+
+      Name_i => matter%Atoms(Scell%MDatoms(i_max)%KOA)%Name ! atomic name
+      Name_j => matter%Atoms(Scell%MDatoms(j_max)%KOA)%Name ! atomic name
+      !print*, i, j, i_max, j_max, Max_D_i, Max_D_j, trim(adjustl(Name_i))//' '//trim(adjustl(Name_j))
+
+      ! Factors in the df/dt without the atomic distribution fuction:
+      A = Mij2*( distre_temp(j)*(2.0d0-distre_temp(i)) )
+      B = Mij2*( distre_temp(i)*(2.0d0-distre_temp(j)) )
+
+      dfdt = 0.0d0      ! restart integrating over f_at
+      !coun = 0    ! to start with
+
+      do i_cur = 1, Nat ! check all atoms
+         !print*, 'a', i_cur, Scell%fragments%indices(i_cur), Scell%fragments%indices(i_max), Scell%fragments%indices(j_max)
+         ! include only the atoms from the same fragment:
+         if ( (Scell%fragments%indices(i_cur) == Scell%fragments%indices(i_max)) .or. &
+              (Scell%fragments%indices(i_cur) == Scell%fragments%indices(j_max)) ) then   ! include this atom
+
+            ! analytical integration of maxwell function:
+            Nfr = 1.0d0/dble(Scell%fragments%N_at(Scell%fragments%indices(i_cur)))
+            if (i > j) then
+               if (Scell%MDAtoms(i_cur)%Ekin >= wij) then ! this atom can participate in energy exchange
+                  distr_at_fin = Nfr      ! fraction of atoms in this fragment
+                  !coun = coun + 1         ! count how many atoms satisfy this condition
+               else
+                  distr_at_fin = 0.0d0
+               endif ! (Scell%MDAtoms(i_cur)%Ekin >= wij)
+               distr_at_in  = Nfr         ! all atoms (added one by one) can absorb this energy
+            else
+               distr_at_fin = Nfr         ! all atoms (added one by one) can absorb this energy
+               if (Scell%MDAtoms(i_cur)%Ekin >= wij) then ! this atom can participate in energy exchange
+                  distr_at_in  = Nfr      ! fraction of atoms in this fragment
+                  !coun = coun + 1         ! count how many atoms satisfy this condition
+               else
+                  distr_at_in = 0.0d0
+               endif ! (Scell%MDAtoms(i_cur)%Ekin >= wij)
+            endif
+            !print*, i_cur, distr_at_fin, distr_at_in, dble(Scell%fragments%N_at(Scell%fragments%indices(i_cur)))
+
+            ! Explicit scheme (reqiures small timestep):
+            !dfdt = dfdt + Mij2*( distre_temp(j)*distr_at_fin*(2.0d0-distre_temp(i)) - distre_temp(i)*distr_at_in*(2.0d0-distre_temp(j)) )
+            ! Current atom contribution into this transition:
+            dfdt_cur = A*distr_at_fin - B*distr_at_in
+            dfdt = dfdt + dfdt_cur     ! add contribution of this atom into df/dt
+            ! Energy transfer to this atom:
+            if (i > j) then ! transfer from atoms
+               dE_at_cur(i_cur) = dE_at_cur(i_cur) + dfdt_cur * (-wij)     ! [eV/fs]
+            else     ! transfer to atoms
+               dE_at_cur(i_cur) = dE_at_cur(i_cur) + dfdt_cur * wij     ! [eV/fs]
+            endif
+         else
+            ! Test: in case of single-fragment, there should be no more than single fragment...
+            !print*, 'Unknown fragment found:', i_cur, Scell%fragments%indices(i_cur), Scell%fragments%indices(i_max), Scell%fragments%indices(j_max)
+            !pause 'get_dfdt'
+         endif ! (Scell%fragments%indices(i_cur) == Scell%fragments%indices(i_max))
+
+      enddo ! i_cur
+
+
+!       !=======================
+!       ! Test: (tested, correctly reproduces single-fragment regime)
+!       numpar%ind_at_distr = 1
+!       ! analytical integration of maxwell function:
+!       if (i > j) then
+!          distr_at_fin = integrated_atomic_distribution(Scell, matter, wij, numpar)  ! module "Atomic_tools"
+!          distr_at_in  = 1.0d0	! all atoms can absorb this energy
+!       else
+!          distr_at_fin = 1.0d0	! all atoms can absorb this energy
+!          distr_at_in  = integrated_atomic_distribution(Scell, matter, wij, numpar)  ! module "Atomic_tools"
+!       endif
+!       ! Explicit scheme (reqiures small timestep):
+!       dfdt_test = Mij2*( distre_temp(j)*distr_at_fin*(2.0d0-distre_temp(i)) - distre_temp(i)*distr_at_in*(2.0d0-distre_temp(j)) )
+!       ! Restore the original one:
+!       numpar%ind_at_distr = 2
+!
+!       !A = Mij2*( distre_temp(j)*(2.0d0-distre_temp(i)) )
+!       !B = Mij2*( distre_temp(i)*(2.0d0-distre_temp(j)) )
+!       if (i > j) then
+!          distr_at_fin = dble(coun)/dble(Scell%fragments%N_at(Scell%fragments%indices(1)))
+!          distr_at_in  = 1.0d0	! all atoms can absorb this energy
+!       else
+!          distr_at_fin = 1.0d0	! all atoms can absorb this energy
+!          distr_at_in  = dble(coun)/dble(Scell%fragments%N_at(Scell%fragments%indices(1)))
+!       endif
+!       dfdt_test2 = A*distr_at_fin - B*distr_at_in
+!       print*, i, j, dfdt, dfdt_test, dfdt_test2, coun, count(Scell%MDAtoms(:)%Ekin >= wij)
+!       !=======================
+
+   end select
+
+   nullify(Name_i, Name_j)
+end subroutine get_dfdt
 
 
 

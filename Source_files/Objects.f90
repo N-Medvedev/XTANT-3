@@ -673,7 +673,7 @@ end type Elemental_Nearest_Neighbors
 
 !==============================================
 type :: Fragment_data   ! atomic data for fragments the material is made of
-   real(8), dimension(:), allocatable :: indices  ! indices of atoms, marking to which fragment they belong
+   integer, dimension(:), allocatable :: indices  ! indices of atoms, marking to which fragment they belong
    integer, dimension(:), allocatable :: N_at     ! number of atoms in this fragment
    real(8), dimension(:), allocatable :: Tkin     ! [K] kinetic temperature of atoms in this fragment
    real(8), dimension(:), allocatable :: Tfluc    ! [K] fluctuational temperature of atoms in this fragment
@@ -826,6 +826,7 @@ type Super_cell
    real(8) :: G_ei	! [W/(m^3 K)] electron-ion coupling parameter
    real(8), dimension(:,:), allocatable :: G_ei_partial ! [W/(m^3 K)] partial electron-ion coupling parameter per all orbitals pairwise
    real(8), dimension(:,:), allocatable :: G_ei_per_atom    ! [eV] partial electron-ion energy transfer per atoms pairwise
+   real(8), dimension(:), allocatable :: dE_at    ! [eV] electron-ion energy transfer to individual atoms
    real(8), dimension(:,:), allocatable :: DOS	! DOS
    real(8), dimension(:,:,:), allocatable :: partial_DOS	! partial DOS made of different orbitals
    ! Testmode additional data (usually not needed):

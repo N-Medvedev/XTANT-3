@@ -31,7 +31,8 @@ MODULE Atomic_thermodynamics
 use Universal_constants
 use Objects
 use Algebra_tools, only : Invers_3x3
-use Atomic_tools, only : Atomic_kinetic_energies, distance_to_given_cell, shortest_distance, distance_to_given_point, get_fragments_indices
+use Atomic_tools, only : Atomic_kinetic_energies, distance_to_given_cell, shortest_distance, distance_to_given_point, &
+                        get_fragments_indices, get_kinetic_temperature
 use Little_subroutines, only : Find_in_array_monoton
 
 implicit none
@@ -530,14 +531,14 @@ subroutine get_fragments_data(Scell, NSC, numpar, matter)
    !call temperature_from_moments(Scell(NSC), Scell(NSC)%Ta_var(4), E_shift) ! below
 
    ! Find the number of atoms in each fragment:
-   do i = 1, Nsiz
-      Scell(NSC)%fragments%N_at = count(Scell(NSC)%fragments%indices(:) == i) ! that's how many atoms are in this fragment
+   do i = 1, Nsiz ! index of gragment
+      Scell(NSC)%fragments%N_at(i) = count(Scell(NSC)%fragments%indices(:) == i) ! that's how many atoms are in this fragment
 
       ! Update mask for atoms - which ones belong to this fragment "i":
       fragment_mask(:) = (Scell(NSC)%fragments%indices(:) == i)
 
       ! Find the kinetic temperature of atoms in each fragment:
-      call get_kinetic_temperature(Scell(NSC), Scell(NSC)%fragments%Tkin(i), mask=fragment_mask) ! below
+      call get_kinetic_temperature(Scell(NSC), Scell(NSC)%fragments%Tkin(i), mask=fragment_mask) ! module "Atomic_tools"
 
       ! Find the fluctuational temperature of atoms in each fragment:
       call get_fluctuational_temperature(Scell(NSC), Scell(NSC)%fragments%Tfluc(i), mask=fragment_mask) ! below
@@ -546,37 +547,6 @@ subroutine get_fragments_data(Scell, NSC, numpar, matter)
    enddo
 
 end subroutine get_fragments_data
-
-
-subroutine get_kinetic_temperature(Scell, Tkin, mask)
-   type(Super_cell), intent(in) :: Scell   ! super-cell with all the atoms inside
-   real(8), intent(out) :: Tkin               ! [K] kineetic temperature of selected atoms
-   logical, dimension(:), intent(in), optional :: mask  ! selected atoms
-   !---------------------
-   real(8) :: Ekin
-   integer :: Nat, N_at_ensemble
-   logical :: do_mask
-
-   do_mask = .false. ! to start with
-   Nat = size(Scell%MDAtoms)  ! number of atoms
-   ! Check if mask is correctly provided:
-   if (present(mask)) then ! provided
-      if (size(mask) == Nat) then ! correct
-         do_mask = .true.
-      endif
-   endif
-
-   ! Kinetic temperature:
-   if (do_mask) then ! take into account that it is not all atoms but a selected subset
-      N_at_ensemble = COUNT(mask)
-      Ekin = SUM(Scell%MDatoms(:)%Ekin, MASK=mask)  ! [eV]
-   else
-      N_at_ensemble = Nat  ! number of atoms
-      Ekin = SUM(Scell%MDatoms(:)%Ekin)  ! [eV]
-   endif
-
-   Tkin = m_two_third * Ekin / dble(N_at_ensemble) * g_kb ! [K]
-end subroutine get_kinetic_temperature
 
 
 

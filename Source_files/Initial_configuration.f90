@@ -2307,7 +2307,7 @@ subroutine set_initial_velocities(matter, Scell, NSC, atoms, numpar, allow_rotat
    !-------------------------------------------------------
    real(8) :: xr, SCVol, Xcm, Ycm, Zcm, vx, vy, vz, BigL(3), BigI(3,3), BigIinv(3,3)
    real(8) :: x0(3),r1, v0(3), rxv(3), omeg(3), Na, V_temp, Mass, Ekin, dE, Ta_init, Ekin_init
-   real(8), dimension(:), allocatable :: indices ! working array of indices
+   integer, dimension(:), allocatable :: indices ! working array of indices
    integer :: i, j
 
    ! Set random velocities for all atoms:
