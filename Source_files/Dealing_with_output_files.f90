@@ -4435,7 +4435,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       optional_output = .true.   ! there is at least some optional output
    endif
 
-   if (numpar%print_fragments) return
+   if (numpar%print_fragments) then
       write(print_to,'(a)') ' Individual fragments data'
       optional_output = .true.   ! there is at least some optional output
    endif

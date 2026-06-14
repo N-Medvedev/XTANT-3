@@ -4756,16 +4756,45 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    if (matter%cell_y < 0) matter%cell_y = 1     ! minimum
    if (matter%cell_z < 0) matter%cell_z = 1     ! minimum
 
+
    ! periodicity along X,Y,Z directions:
    read(FN, '(a)', IOSTAT=Reason) read_line
    read(read_line,*,IOSTAT=Reason) temp1, temp2, temp3
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
-   numpar%r_periodic(:) = .true.	! periodic by default
+   numpar%r_periodic(:) = .true.    ! periodic by default
    if (temp1 == 0) numpar%r_periodic(1) = .false.	! along X
    if (temp2 == 0) numpar%r_periodic(2) = .false.	! along Y   
    if (temp3 == 0) numpar%r_periodic(3) = .false.	! along Z
+   ! boundary along X:
+   select case (temp1)
+   case (:1)      ! periodic
+      numpar%boundary_scheme(1) = 1
+   case (2:4)     ! reflecting, absorbing, white
+      numpar%boundary_scheme(1) = temp1
+   case default   ! undefined, assume periodic
+      numpar%boundary_scheme(1) = 1
+   end select
+   ! boundary along Y:
+   select case (temp2)
+   case (:1)      ! periodic
+      numpar%boundary_scheme(2) = 1
+   case (2:4)     ! reflecting, absorbing, white
+      numpar%boundary_scheme(2) = temp1
+   case default   ! undefined, assume periodic
+      numpar%boundary_scheme(2) = 1
+   end select
+   ! boundary along Z:
+   select case (temp3)
+   case (:1)      ! periodic
+      numpar%boundary_scheme(3) = 1
+   case (2:4)     ! reflecting, absorbing, white
+      numpar%boundary_scheme(3) = temp1
+   case default   ! undefined, assume periodic
+      numpar%boundary_scheme(3) = 1
+   end select
+
 
    ! where to take atomic data from (EADL, CDF):
    numpar%user_defined_E_gap = -1.0d0 ! default
@@ -5406,7 +5435,7 @@ subroutine read_single_freeze_mask(FN, filename, Filter, Err)  ! below
    !----------------
    character(200) :: Error_descript
    integer :: Reason
-   namelist / Freeze_masks / Filter ! fortran maelist to read variables into
+   namelist / Freeze_masks / Filter ! fortran namelist to read variables into
 
    read(FN, nml = Freeze_masks, IOSTAT=Reason)      ! read according to the structure specified
 

@@ -992,6 +992,18 @@ type Freeze_mask
 end type Freeze_mask
 
 
+type Freeze_atoms
+   ! Atoms to be frozen:
+   logical, dimension(:), allocatable :: At_ind     ! index of the atom in the array of all atoms
+
+   contains
+      procedure :: init     ! to allocate the At_int array with the default values (.false.), see below
+      procedure :: reinit   ! to force reallocation of the At_int array with the default values (.false.), see below
+      final ::     destroy  ! to deallocate the At_int array, see below
+end type Freeze_atoms
+
+
+
 type Split_cohesive
    logical :: do_split = .false. ! by default, don't do split-target cohesive analysis
    real(8) :: x_split = -1.0d20  ! [A] coordinate of splitting
@@ -1121,7 +1133,8 @@ type Numerics_param
    integer :: el_ion_scheme
    integer :: ixm, iym, izm	! number of k-points in each direction for eps-calculations
    real(8), dimension(:,:), allocatable :: k_grid	! for the case of user-provided grid for k-space (for CDF and DOS calculations)
-   logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
+   logical :: r_periodic(3)         ! periodic boundaries in each of the three spatial dimensions
+   integer :: boundary_scheme(3)    ! what boundaries to use: (1=periodic, 2=reflecting, 3=absorbing, 4=white)
    ! Different output, what to save:
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, save_XYZ_vel, do_drude, do_cool, do_atoms, change_size, allow_rotate
    logical :: save_fe_grid, save_fe_orb, save_fa, save_testmode
@@ -1218,6 +1231,39 @@ end type
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
  contains
+
+
+! Allocation of the freeze-masks as internal type procidure:
+subroutine init(this, n)
+    class(Freeze_atoms), intent(inout) :: this
+    integer, intent(in) :: n
+
+    if (.not.allocated(this%At_ind)) then
+       allocate(this%At_ind(n))
+       this%At_ind = .false.
+    endif
+end subroutine init
+! Enforced (re)allocation of the freeze-masks as internal type procidure:
+subroutine reinit(this, n)
+    class(Freeze_atoms), intent(inout) :: this
+    integer, intent(in) :: n
+
+    if (allocated(this%At_ind)) deallocate(this%At_ind)
+    allocate(this%At_ind(n))
+    this%At_ind = .false.
+end subroutine reinit
+! Deallocation:
+subroutine destroy(this)
+    type(Freeze_atoms), intent(inout) :: this
+
+    if (allocated(this%At_ind)) then
+        deallocate(this%At_ind)
+    endif
+end subroutine destroy
+
+
+
+
 ! How to write the log about an error:
 subroutine Save_error_details(Err_name, Err_num, Err_data, Err_data2, empty, Warn)
    class(Error_handling) :: Err_name
