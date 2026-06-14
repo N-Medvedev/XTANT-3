@@ -1115,6 +1115,7 @@ type Numerics_param
    integer, dimension(:), allocatable :: FN_element_NN
    integer, dimension(:), allocatable :: FN_displacements
    integer, dimension(:), allocatable :: FN_fragments
+   integer :: FN_fragments_data ! file number with the data
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
    integer :: el_ion_scheme

@@ -1374,9 +1374,9 @@ subroutine write_fragments_properties(time, Scell, NSC, matter, numpar)
    type(Solid), intent(in) :: matter	! Material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    !------------------------------
-   integer :: FN, FN1, i, Nsiz
+   integer :: FN, FN1, i, Nsiz, N_at, j, N_kind
    character(300) :: file_path, file_fragment
-   character(25) :: FN_char
+   character(25) :: FN_char, ch_temp
    logical :: file_exists, file_opened
    !------------------------------
 
@@ -1386,10 +1386,44 @@ subroutine write_fragments_properties(time, Scell, NSC, matter, numpar)
    ! Number of different fragments:
    Nsiz = maxval(Scell(NSC)%fragments%indices)  ! what's the maximal fragment index among all the atoms
 
-   if (Nsiz <= 1) return ! no fragments, a single piece target doesn't require separate printout
-
    ! Output directory:
    file_path = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))
+   ! Data of the fragments (to store):
+   FN = numpar%FN_fragments_data
+   ! Once the file is opened, write into it:
+   write(FN, '(a)') trim(adjustl(m_starline))
+   write(ch_temp,'(f24.8)') time
+   write(FN, '(a)') '# '//trim(adjustl(ch_temp))//' fs'
+   write(ch_temp, '(i)') Nsiz
+   write(FN, '(a)') trim(adjustl(ch_temp))//' fragments'
+
+   ! Check for consistency:
+   if ( size(Scell(NSC)%fragments%indices) /= size(Scell(NSC)%MDatoms) ) then
+      print*, 'Proglem noticed in write_fragments_properties: array of atoms /= fragment indices'
+   endif
+
+   do i = 1, Nsiz ! for all fragments
+      write(ch_temp, '(i)') i
+      write(FN, '(a)', advance='no') '#'//trim(adjustl(ch_temp))//': '
+      write(ch_temp, '(i)') Scell(NSC)%fragments%N_at(i)
+      write(FN, '(a)') trim(adjustl(ch_temp))//' atoms:'
+
+      N_at = matter%N_KAO    ! number of kinds of atoms
+      do j = 1, N_at    ! for different elements
+         ! Number of atoms of this kind in this fragment:
+         N_kind = count( (Scell(NSC)%fragments%indices(:) == i) .and. (Scell(NSC)%MDatoms(:)%KOA == j) )
+         if (N_kind /= 0) then
+            write(ch_temp,'(i)') N_kind
+            write(FN,'(a)') '    '//trim(adjustl(ch_temp))//' of '//trim(adjustl(matter%Atoms(j)%Name))
+         endif
+      enddo ! j
+   enddo ! i
+   write(FN, '(a)') ''  ! skip line between blocks of timesteps
+
+
+   !----------------------------------
+   ! Data for each fragment (to plot):
+   if (Nsiz <= 1) return ! no fragments, a single piece target doesn't require separate printout
 
    do i = 1, Nsiz ! for all fragments
       file_exists = .false.   ! to start with
@@ -2189,9 +2223,12 @@ subroutine close_output_files(Scell, numpar)
 
 
    ! Number of different fragments, up to maximum registered in the simulation:
-   do i = 1, Scell(1)%fragments%N_frag_max
-      call close_file('close', FN=numpar%FN_fragments(i))    ! module "Dealing_with_files"
-   enddo
+   if (numpar%print_fragments) then
+      do i = 1, Scell(1)%fragments%N_frag_max
+         call close_file('close', FN=numpar%FN_fragments(i))    ! module "Dealing_with_files"
+      enddo
+      call close_file('close', FN=numpar%FN_fragments_data) ! module "Dealing_with_files"
+   endif
 
 
    if ( (allocated(Scell(1)%Displ)) .and. (allocated(numpar%FN_displacements)) ) then
@@ -2271,6 +2308,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100) :: file_diff_peaks_DW   ! Debye-Waller diffraction intensities
    character(100) :: file_testmode        ! testmode file
    character(100) :: file_fragments       ! fragments of the target
+   character(100) :: file_fragments_data  ! data on all fragments
    character(100) :: chtemp
    character(200) :: chtemp2, chtemp3, chtemp4
    character(11) :: chtemp11, text1, text2, text3
@@ -2501,6 +2539,16 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       call create_file_header(numpar%FN_Ta_part, '#Time kin:X   kin:Y  kin:Z vir:X   vir:Y   vir:Z')
       call create_file_header(numpar%FN_Ta_part, '#[fs]  [K]   [K]  [K]   [K]   [K]   [K]')
    endif
+
+
+   if (numpar%print_fragments) then ! fragments
+      file_fragments_data = trim(adjustl(file_path))//'OUTPUT_fragments_data.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_fragments_data)))
+      numpar%FN_fragments_data = FN
+      call create_file_header(numpar%FN_fragments_data, 'Data on the transient fragments constituency')
+   endif
+
+
 
    if (numpar%do_partial_thermal) then
       file_electron_temperatures = trim(adjustl(file_path))//'OUTPUT_electron_temperatures.dat'

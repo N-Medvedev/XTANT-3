@@ -1708,7 +1708,7 @@ subroutine Python_plot_fragments_data(Scell, numpar, file_fragments, t0, t_last,
 
    ! Make appropriate font size:
    hide_legend = .false.      ! to start with
-   N_cols = Scell%fragments%N_frag_max/2
+   N_cols = Scell%fragments%N_frag_max*2
    if (N_cols < 8) then ! normal:
       write(temp_txt,'(a)') 'fontsize=12'
    elseif (N_cols < 17) then ! smaller
