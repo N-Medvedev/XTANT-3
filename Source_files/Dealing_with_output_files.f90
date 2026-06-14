@@ -4200,7 +4200,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(text1, '(es16.6)') numpar%tau_fe
       endif
       write(print_to,'(a)') ' Relaxation-time approximation for electron thermalization'
-      write(print_to,'(a)') ' with the total characteristic time '//trim(adjustl(text1))//' [fs]'
+      write(print_to,'(a)') '  with the total characteristic time '//trim(adjustl(text1))//' [fs]'
 
       !if ((numpar%tau_fe_CB > -1.0e-7) .and. (numpar%tau_fe_VB > -1.0e-7)) then ! Partial thermalization is on:
       if (numpar%do_partial_thermal) then ! Partial thermalization is on:
@@ -4213,7 +4213,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          else
             write(text1, '(es16.6)') numpar%tau_fe_VB
          endif
-         write(print_to,'(a)') ' VB: Valence band relaxation time: '//trim(adjustl(text1))//' [fs]'
+         write(print_to,'(a)') '  VB: Valence band relaxation time: '//trim(adjustl(text1))//' [fs]'
 
          if (numpar%tau_fe_CB < numpar%dt/30.0d0) then ! it's basically instantaneous
             write(text1, '(f13.6)') 0.0e0
@@ -4222,9 +4222,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          else
             write(text1, '(es16.6)') numpar%tau_fe_CB
          endif
-         write(print_to,'(a)') ' CB: Conduction band relaxation time: '//trim(adjustl(text1))//' [fs]'
+         write(print_to,'(a)') '  CB: Conduction band relaxation time: '//trim(adjustl(text1))//' [fs]'
       else
-         write(print_to,'(a)') ' No band-resolved relaxation is used'
+         write(print_to,'(a)') '  No band-resolved relaxation is used'
       endif
 
    case (5)
@@ -4245,22 +4245,22 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       case default
          write(print_to,'(a)') ' Dynamical nonadiabatic coupling'
       end select
-      write(print_to,'(a, f10.1, a)') ' switched on at: ', numpar%t_NA, ' [fs]'
-      write(print_to,'(a, f7.1, a)') ' with the acceptance window: ', numpar%acc_window, ' [eV]'
-      write(print_to,'(a, f8.5, a)') ' degeneracy tolerance: ', numpar%degeneracy_eV, ' [eV]'
+      write(print_to,'(a, f10.1, a)') '  switched on at: ', numpar%t_NA, ' [fs]'
+      write(print_to,'(a, f7.1, a)') '  with the acceptance window: ', numpar%acc_window, ' [eV]'
+      write(print_to,'(a, f8.5, a)') '  degeneracy tolerance: ', numpar%degeneracy_eV, ' [eV]'
 
       write(text,'(f8.5)') numpar%M2_scaling
       if (numpar%M2_scaling == 4.0d0) text = trim(adjustl(text))//' (default)'
-      write(print_to,'(a,a)') ' and scaling factor of: ', trim(adjustl(text))
+      write(print_to,'(a,a)') '  and scaling factor of: ', trim(adjustl(text))
       select case (numpar%ind_at_distr)
       case (-1)
-         write(print_to,'(a)') ' using nonequilibrium atomic distribution (kin + pot)'
+         write(print_to,'(a)') '  using nonequilibrium atomic distribution (kin + pot)'
       case (1)
-         write(print_to,'(a)') ' using nonequilibrium atomic distribution'
+         write(print_to,'(a)') '  using nonequilibrium atomic distribution'
       case (2)
-         write(print_to,'(a)') ' using individual-atom (delta-functions) atomic distribution'
+         write(print_to,'(a)') '  using individual-atom (delta-functions) atomic distribution'
       case default
-         write(print_to,'(a)') ' using equivalent Maxwellian atomic distribution'
+         write(print_to,'(a)') '  using equivalent Maxwellian atomic distribution'
       endselect
 
       select case (numpar%V_scaling)      ! choose which model for velocity scaling to use
@@ -4391,7 +4391,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       optional_output = .true.   ! there is at least some optional output
    endif
 
-    if (numpar%print_Ta) then
+   if (numpar%print_Ta) then
       write(print_to,'(a)') ' Various definitions of atomic temperatures'
       optional_output = .true.   ! there is at least some optional output
    endif
@@ -4432,6 +4432,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(text1, '(f6.2)') numpar%NN_radii(i)%r_cut
          write(print_to,'(a,a)') ' '//numpar%NN_radii(i)%Name//' : ', trim(adjustl(text1))//' [A]'
       enddo
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%print_fragments) return
+      write(print_to,'(a)') ' Individual fragments data'
       optional_output = .true.   ! there is at least some optional output
    endif
 
