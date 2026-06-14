@@ -672,7 +672,8 @@ end type Elemental_Nearest_Neighbors
 
 
 !==============================================
-type :: Fragment_data   ! atomic data for fragments the material is made of
+type :: Fragment_data       ! atomic data for fragments the material is made of
+   integer :: N_frag_max    ! save maximum number of fragments in the simulation run
    integer, dimension(:), allocatable :: indices  ! indices of atoms, marking to which fragment they belong
    integer, dimension(:), allocatable :: N_at     ! number of atoms in this fragment
    real(8), dimension(:), allocatable :: Tkin     ! [K] kinetic temperature of atoms in this fragment
@@ -1037,6 +1038,7 @@ type Numerics_param
    character(100) :: MD_step_grid_file   ! filename with MD time step grid
    !logical, dimension(:), allocatable :: Atomic_masks ! user-defined masks for atomic analysis
    logical :: print_Ta ! flag for various atomic temperature definitions
+   logical :: print_fragments ! flag for analyzing fragments of material (if disintegrating or fragmented into pieces)
    integer :: ind_starting_V  ! index to set starting velocity distribution: 1=linear; 2=Maxwellian
    logical :: vel_from_file   ! index to mark whether velocities were read from a file or set
    integer :: ind_exact_Ta    ! index for the method of setting atomic temperature: 0=simple sampling; 1=sampling+rescaling to exact Ta
@@ -1112,6 +1114,7 @@ type Numerics_param
    integer, dimension(:), allocatable :: FN_diff_peaks_part
    integer, dimension(:), allocatable :: FN_element_NN
    integer, dimension(:), allocatable :: FN_displacements
+   integer, dimension(:), allocatable :: FN_fragments
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
    integer :: el_ion_scheme

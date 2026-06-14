@@ -934,14 +934,17 @@ subroutine get_fragments_indices(Scell, NSC, numpar, atoms, matter, indices)
    type(solid), intent(in) :: matter	! materil parameters
    type(Atom), dimension(:), intent(in) :: atoms   ! array of atoms in the supercell
    integer, dimension(:), intent(inout), allocatable :: indices ! working array of indices
+   !---------------
    real(8) a_r, dm
    integer i, j, coun, ind_i, ind_same, Na
+   !---------------
    Na = size(atoms) ! corresponding to number of atoms
    if (.not.allocated(indices)) then 
       allocate(indices(Na))
-      indices = 0
    endif
-   coun = 0
+   indices = 0    ! reset indices
+   coun = 0       ! start the counter
+
    call get_near_neighbours(Scell, numpar, dm = dm) ! get cut-off radius
    
 !    print*, 'dm', dm

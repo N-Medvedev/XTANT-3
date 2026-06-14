@@ -33,7 +33,7 @@ use Objects
 use Algebra_tools, only : Invers_3x3
 use Atomic_tools, only : Atomic_kinetic_energies, distance_to_given_cell, shortest_distance, distance_to_given_point, &
                         get_fragments_indices, get_kinetic_temperature
-use Little_subroutines, only : Find_in_array_monoton
+use Little_subroutines, only : Find_in_array_monoton, extend_array_size
 
 implicit none
 PRIVATE
@@ -474,7 +474,7 @@ end subroutine partial_temperatures
 subroutine get_fragments_data(Scell, NSC, numpar, matter)
    type(Super_cell), dimension(:), intent(inout) :: Scell   ! suoer-cell with all the atoms inside
    integer, intent(in) :: NSC                   ! number of the super-cell
-   type(Numerics_param), intent(in) :: numpar   ! numerical parameters
+   type(Numerics_param), intent(inout) :: numpar   ! numerical parameters
    type(solid), intent(inout) :: matter         ! material parameters
    !-----------------------------------
    !real(8) :: E_shift
@@ -487,6 +487,17 @@ subroutine get_fragments_data(Scell, NSC, numpar, matter)
 
    ! Number of different fragments:
    Nsiz = maxval(Scell(NSC)%fragments%indices)  ! what's the maximal fragment index among all the atoms
+
+   ! Update maximal number of fragments during the simulation time:
+   if (Nsiz > Scell(NSC)%fragments%N_frag_max) then
+      Scell(NSC)%fragments%N_frag_max = Nsiz
+      ! And update the fragments-files array:
+      if (allocated(numpar%FN_fragments)) then ! make sure its size is ok
+         call extend_array_size(numpar%FN_fragments)  ! module "Little_subroutines"
+      else
+         allocate(numpar%FN_fragments(Nsiz))  ! allocate it to the given size
+      endif
+   endif
 
    ! Redefine the arrays of parameters for each fragment:
    needs_allocation = .false. ! to start with

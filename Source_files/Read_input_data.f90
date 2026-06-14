@@ -131,6 +131,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    Scell(1)%Ta_var(:) = 0.0d0    ! various definitions of temperatures
    Scell(1)%Ta_r_var(:) = 0.0d0  ! projections of temperatures
    Scell(1)%Ta_conf_run_average(:) = 0.0d0   ! last values of Ta_config
+   Scell(1)%fragments%N_frag_max = 1         ! target as one fragment to start with
 
    numpar%t_total = 1000.0d0 ! total duration of simulation [fs]
    call initialize_default_laser(laser, 1) ! initialize 1 pulse by default
@@ -169,6 +170,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%redo_MFP = .false.     ! no need to recalculate mean free paths by default
    numpar%print_MFP = .false.    ! no need to printout mean free paths by default
    numpar%print_Ta = .false.  ! no need in various atomic temperature definitions
+   numpar%print_fragments = .false. ! no need to analyze separate fragments of material
    numpar%ind_starting_V = 2  ! by default, set Maxwellian starting velocities
    numpar%ind_exact_Ta = 0    ! by default, use simple sampling of atomic velocities
    numpar%vel_from_file = .false.   ! velosities are not read from file
@@ -7563,6 +7565,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       numpar%save_fe = .true.
       numpar%save_fa = .true.
       numpar%save_PCF = .true.
+      numpar%print_fragments = .true.
       !numpar%save_hw_spectrum = .true.
 
    !----------------------------------
@@ -7642,6 +7645,11 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
    case ('print_Ta', 'Print_Ta', 'PRINT_TA', 'PRINT_Ta')
       ! Printout various definitions of atomic temperature:
       numpar%print_Ta = .true.
+
+   !----------------------------------
+   case ('print_fragments', 'Print_Fragments', 'PRINT_FRAGMENTS', 'PRINT_fragments')
+      ! Printout data for various fragments of disintegrating or fragmented material
+      numpar%print_fragments = .true.
 
    !----------------------------------
    case ('print_spectrum', 'Print_Spectrum', 'Print_spectrum', 'print_hw', 'Print_hw')

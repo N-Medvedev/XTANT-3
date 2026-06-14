@@ -545,7 +545,7 @@ subroutine get_dfdt(i, j, Scell, matter, wij, numpar, distre_temp, Mij2, dfdt, d
             Nfr = 1.0d0/dble(Scell%fragments%N_at(Scell%fragments%indices(i_cur)))
             if (i > j) then
                if (Scell%MDAtoms(i_cur)%Ekin >= wij) then ! this atom can participate in energy exchange
-                  distr_at_fin = Nfr      ! fraction of atoms in this fragment
+                  distr_at_fin = Nfr       ! fraction of atoms in this fragment
                   !coun = coun + 1         ! count how many atoms satisfy this condition
                else
                   distr_at_fin = 0.0d0
@@ -555,7 +555,7 @@ subroutine get_dfdt(i, j, Scell, matter, wij, numpar, distre_temp, Mij2, dfdt, d
                distr_at_fin = Nfr         ! all atoms (added one by one) can absorb this energy
                if (Scell%MDAtoms(i_cur)%Ekin >= wij) then ! this atom can participate in energy exchange
                   distr_at_in  = Nfr      ! fraction of atoms in this fragment
-                  !coun = coun + 1         ! count how many atoms satisfy this condition
+                  !coun = coun + 1        ! count how many atoms satisfy this condition
                else
                   distr_at_in = 0.0d0
                endif ! (Scell%MDAtoms(i_cur)%Ekin >= wij)

@@ -57,7 +57,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 12.06.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 14.06.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -117,6 +117,8 @@ subroutine write_output_files(numpar, time, matter, Scell)
                numpar%FN_Ce, numpar%FN_kappa, numpar%FN_kappa_dyn, numpar%FN_Se, numpar%FN_Te, numpar%FN_mu) ! TB electron parameters
 
       call write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic parameters
+
+      call write_fragments_properties(time, Scell, NSC, matter, numpar) ! fragments parameters
 
       ! Section of atoms according to masks, if any:
       if (allocated(Scell(1)%Displ)) then
@@ -1365,6 +1367,61 @@ subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic pa
 end subroutine write_atomic_properties
 
 
+subroutine write_fragments_properties(time, Scell, NSC, matter, numpar)
+   real(8), intent(in) :: time	! [fs]
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(Solid), intent(in) :: matter	! Material parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   !------------------------------
+   integer :: FN, FN1, i, Nsiz
+   character(300) :: file_path, file_fragment
+   character(25) :: FN_char
+   logical :: file_exists, file_opened
+   !------------------------------
+
+   ! If fragments printout was not requested, no need to continue
+   if (.not.numpar%print_fragments) return
+
+   ! Number of different fragments:
+   Nsiz = maxval(Scell(NSC)%fragments%indices)  ! what's the maximal fragment index among all the atoms
+
+   if (Nsiz <= 1) return ! no fragments, a single piece target doesn't require separate printout
+
+   ! Output directory:
+   file_path = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))
+
+   do i = 1, Nsiz ! for all fragments
+      file_exists = .false.   ! to start with
+      file_opened = .false.   ! to start with
+
+      write(FN_char, '(i10)') i
+      file_fragment = trim(adjustl(file_path))//'OUTPUT_fragment_'//trim(adjustl(FN_char))//'.dat'
+
+      ! Check if such a file already exists and is opened:
+      inquire(file=trim(adjustl(file_fragment)),exist=file_exists)
+      if (file_exists) then ! check if it is opened:
+         inquire(file=trim(adjustl(file_fragment)),opened=file_opened, number=FN1)
+      endif
+
+      if (.not.file_opened) then ! open file
+         open(NEWUNIT=FN, FILE = trim(adjustl(file_fragment)))
+         numpar%FN_fragments(i) = FN
+         call create_file_header(FN, '#Time Na  Ta_kin   Ta_fluc')
+         call create_file_header(FN, '#[fs] [-]   [K]  [K]')
+      else ! file exists and opened, use it
+         FN = numpar%FN_fragments(i)   ! file number
+      endif
+
+      ! Once the file is opened, write into it:
+      write(FN, '(f24.8, i10, 2es25.16)') time, Scell(NSC)%fragments%N_at(i), &
+                               Scell(NSC)%fragments%Tkin(i), Scell(NSC)%fragments%Tfluc(i)
+
+   enddo ! i
+end subroutine write_fragments_properties
+
+
+
 subroutine write_coulping_header(FN, Scell, NSC, matter, numpar)
    integer, intent(in) :: FN	! file number
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
@@ -2130,6 +2187,13 @@ subroutine close_output_files(Scell, numpar)
       close(numpar%FN_Ta_part)
    endif
 
+
+   ! Number of different fragments, up to maximum registered in the simulation:
+   do i = 1, Scell(1)%fragments%N_frag_max
+      call close_file('close', FN=numpar%FN_fragments(i))    ! module "Dealing_with_files"
+   enddo
+
+
    if ( (allocated(Scell(1)%Displ)) .and. (allocated(numpar%FN_displacements)) ) then
       Nsiz = size(Scell(1)%Displ)   ! how many masks
       do i = 1, Nsiz ! for all atomic masks
@@ -2205,11 +2269,13 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100) :: file_diff_peaks, file_diff_powder      ! selected diffraction peaks, powder diffraction
    character(100), dimension(:), allocatable :: file_diff_peaks_part    ! element-specific diffraction peaks
    character(100) :: file_diff_peaks_DW   ! Debye-Waller diffraction intensities
-   character(100) :: file_testmode		! testmode file
+   character(100) :: file_testmode        ! testmode file
+   character(100) :: file_fragments       ! fragments of the target
    character(100) :: chtemp
    character(200) :: chtemp2, chtemp3, chtemp4
    character(11) :: chtemp11, text1, text2, text3
    !----------------
+
 
    call make_save_files(trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep)), numpar%type_of_SAVE)   ! below
 
@@ -2699,7 +2765,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             'OUTPUT_Debye_temperature_from_DW.dat', &
             'OUTPUT_testmode_data.dat', &
             'OUTPUT_coupling.dat', &
-            'OUTPUT_high_energy_electrons.dat' )  ! module "Plots_gnuplot"
+            'OUTPUT_high_energy_electrons.dat', &
+            'OUTPUT_fragment_' )  ! module "Plots_gnuplot"
 
    case ('py') ! Python
       call create_python_plot_scripts(Scell, matter, numpar, laser, file_path, &
@@ -2731,7 +2798,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             'OUTPUT_Debye_temperature_from_DW.dat', &
             'OUTPUT_testmode_data.dat', &
             'OUTPUT_coupling.dat', &
-            'OUTPUT_high_energy_electrons.dat' )  ! module "Plots_python"
+            'OUTPUT_high_energy_electrons.dat', &
+            'OUTPUT_fragment_' )  ! module "Plots_python"
    case ('no') ! no plots required
             ! no plots required
    end select
