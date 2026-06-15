@@ -244,6 +244,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%save_NN = .false. ! do not print out nearest neighbors numbers
    numpar%do_elastic_MC = .true. ! allow elastic scattering of electrons on atoms within MC module
    numpar%r_periodic(:) = .true. ! use periodic boundaries along each direction of the simulation box
+   numpar%boundary_scheme(:) = 1    ! use periodic boundaries by default
    numpar%save_diff_peaks = .false. ! no diffraction peaks calculation required
    numpar%DW_theta = 0.0d0    ! Debye-temperature [K]
    numpar%m1 = -1.0d0          ! harmonic contribution coefficient (from Debye temperature)
@@ -4771,7 +4772,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    select case (temp1)
    case (:1)      ! periodic
       numpar%boundary_scheme(1) = 1
-   case (2:4)     ! reflecting, absorbing, white
+   case (2:4)     ! absorbing, reflecting, white
       numpar%boundary_scheme(1) = temp1
    case default   ! undefined, assume periodic
       numpar%boundary_scheme(1) = 1
@@ -4780,7 +4781,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    select case (temp2)
    case (:1)      ! periodic
       numpar%boundary_scheme(2) = 1
-   case (2:4)     ! reflecting, absorbing, white
+   case (2:4)     ! absorbing, reflecting, white
       numpar%boundary_scheme(2) = temp1
    case default   ! undefined, assume periodic
       numpar%boundary_scheme(2) = 1
@@ -4789,7 +4790,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    select case (temp3)
    case (:1)      ! periodic
       numpar%boundary_scheme(3) = 1
-   case (2:4)     ! reflecting, absorbing, white
+   case (2:4)     ! absorbing, reflecting, white
       numpar%boundary_scheme(3) = temp1
    case default   ! undefined, assume periodic
       numpar%boundary_scheme(3) = 1

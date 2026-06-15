@@ -1731,7 +1731,7 @@ end subroutine PR_sc_at
 subroutine make_time_step_atoms(Scell, matter, numpar, ind)
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in) :: matter	! material parameters
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    !type(Forces), dimension(:,:), intent(inout) :: forces1	! all interatomic forces
    integer, intent(in) :: ind	! =1, or =2, first or second half of the velocity Verlet algorithm
    !=========================
@@ -1756,7 +1756,7 @@ subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
    type(solid), intent(in), target :: matter	! material parameters
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    !type(Forces), dimension(:,:), intent(inout) :: forces1	! all interatomic forces
    integer, intent(in) :: ind	! =1, or =2, first or second half of the velocity Verlet algorithm
    !----------------------------------
@@ -1783,7 +1783,7 @@ subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update
    do k = 1, nat ! All atoms - calculating new coordinates:
 
       ! Check is this atom is frozen or moving normally:
-      call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+      call check_frozen(numpar%Freeze_filter, numpar%Frozen_atoms, Scell(NSC)%MDatoms(k), k, atom_frozen)     ! below
       if (atom_frozen) cycle  ! skip this atom, its frozen
 
 
@@ -1816,8 +1816,11 @@ subroutine make_time_step_atoms_SC(Scell, NSC, matter, numpar, ind)     ! update
 
    enddo
 
-   ! Set the absolute coordinates out of the new relative ones:
-   if (ind .EQ. 2) call check_periodic_boundaries(matter, Scell, NSC)   ! below
+   ! Check if atom crossed a boundary, and set the absolute coordinates out of the new relative ones:
+   if (ind .EQ. 2) then
+      !call check_periodic_boundaries(matter, Scell, NSC)   ! below
+      call check_boundaries(numpar, matter, Scell, NSC)     ! below
+   endif
 
    ! Set the absolute velocities out of the new relative ones
    call velocities_rel_to_abs(Scell, NSC)       ! below
@@ -1830,17 +1833,26 @@ end subroutine make_time_step_atoms_SC
 
 
 
-subroutine check_frozen(Freeze_filter, MDatoms, atom_frozen)
+subroutine check_frozen(Freeze_filter, Frozen_atoms, MDatoms, i_cur, atom_frozen)
    type(Freeze_mask), dimension(:), allocatable, intent(in) :: Freeze_filter  ! multiple masks for freezing atoms allowed
-   type(Atom), intent(in) :: MDAtoms ! an atom in MD
-   logical, intent(inout) :: atom_frozen
+   type(Freeze_atoms), intent(in) :: Frozen_atoms   ! array of all atoms to mask if any of them is frozen
+   type(Atom), intent(in) :: MDAtoms      ! an atom in MD
+   integer, intent(in) :: i_cur           ! index of the current atom to check
+   logical, intent(inout) :: atom_frozen  ! is this atom frozen or not?
    !-----------------------
    integer :: N_masks, i
    real(8) :: R
 
+   atom_frozen = .false.      ! by default, assume it is moving
 
-   atom_frozen = .false.      ! by default, it is moving
+   !-----------------------
+   ! 1) Check if there are atoms indexed as frozen:
+   if (Frozen_atoms%anything_to_do) then ! there are, freeze them:
+      if (Frozen_atoms%At_ind(i_cur)) atom_frozen = .true.    ! freeze this atom
+   endif
 
+   !-----------------------
+   ! 2) Check if there are conditions for freezing atoms:
    if (.not.allocated(Freeze_filter)) return    ! no masks, nothing more to do
 
    N_masks = size(Freeze_filter)    ! all masks used
@@ -1993,7 +2005,9 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
          !$omp PARALLEL do private(k, atom_frozen)
          do k = 1,Scell(NSC)%Na ! All atoms - calculating new coordinates:
             ! Check is this atom is frozen or moving normally:
-            call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+            call check_frozen(numpar%Freeze_filter, numpar%Frozen_atoms, Scell(NSC)%MDatoms(k), k, atom_frozen)     ! below
+            !print*, k, atom_frozen
+
             if (atom_frozen) cycle  ! skip this atom, its frozen
 
             ! Martyna step of coordinates:
@@ -2004,10 +2018,13 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
             Scell(NSC)%MDatoms(k)%S0(:) = Scell(NSC)%MDatoms(k)%S(:)
          enddo
          !$omp end parallel do
-         call check_periodic_boundaries(matter, Scell, NSC) ! and set the absolute coordinates out of the new relative ones
+
+         ! Check if the atom crossed a boundary:
+         !call check_periodic_boundaries(matter, Scell, NSC) ! and set the absolute coordinates out of the new relative ones
+         call check_boundaries(numpar, matter, Scell, NSC)  ! below
          
          ! Update absolute coordinates:
-         call Coordinates_rel_to_abs(Scell, NSC)
+         call Coordinates_rel_to_abs(Scell, NSC)      ! below
       
       case (2)  ! velocity
          ! Update accelerations from the new potential:
@@ -2017,7 +2034,7 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
          !$omp PARALLEL do private(k, atom_frozen)
          do k = 1,Scell(NSC)%Na ! fro all atoms
             ! Check is this atom is frozen or moving normally:
-            call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+            call check_frozen(numpar%Freeze_filter, numpar%Frozen_atoms, Scell(NSC)%MDatoms(k), k, atom_frozen)     ! below
             if (atom_frozen) cycle  ! skip this atom, its frozen
 
             ! Make a step for relative velocities:
@@ -2039,8 +2056,8 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
       case (3)  ! effective force
          !$omp PARALLEL do private(k, atom_frozen)
          do k = 1,Scell(NSC)%Na ! fro all atoms
-            ! Check is this atom is frozen or moving normally:
-            call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+            ! Check if this atom is frozen or moving normally:
+            call check_frozen(numpar%Freeze_filter, numpar%Frozen_atoms, Scell(NSC)%MDatoms(k), k, atom_frozen)     ! below
             if (atom_frozen) cycle  ! skip this atom, its frozen
 
             ! Make a step for effective forces:
@@ -2054,7 +2071,7 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
          !$omp PARALLEL do private(k, atom_frozen)
          do k = 1,Scell(NSC)%Na ! fro all atoms
             ! Check is this atom is frozen or moving normally:
-            call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+            call check_frozen(numpar%Freeze_filter, numpar%Frozen_atoms, Scell(NSC)%MDatoms(k), k, atom_frozen)     ! below
             if (atom_frozen) cycle  ! skip this atom, its frozen
 
             ! Make a step for effective force velocities:
@@ -2066,7 +2083,7 @@ subroutine make_time_step_atoms_M(Scell, matter, numpar, ind)   ! Martyna algori
          !$omp PARALLEL do private(k, atom_frozen)
          do k = 1,Scell(NSC)%Na ! fro all atoms
             ! Check is this atom is frozen or moving normally:
-            call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+            call check_frozen(numpar%Freeze_filter, numpar%Frozen_atoms, Scell(NSC)%MDatoms(k), k, atom_frozen)     ! below
             if (atom_frozen) cycle  ! skip this atom, its frozen
 
             ! Make a step for effective force accelerations:
@@ -2135,7 +2152,7 @@ end subroutine get_accelerations_M
 subroutine make_time_step_atoms_Y4(Scell, matter, numpar, ind_step, ind_cv) ! Yoshida MD algorithm, 4th order
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    type(solid), intent(in) :: matter	! material parameters
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    integer, intent(in) :: ind_step  ! steps of Yoshida algorithm 1 to 4
    integer, intent(in) :: ind_cv    ! is this steps of Yoshida algorithm for coordinates or velocities
    !=========================
@@ -2156,7 +2173,7 @@ subroutine make_time_step_atoms_SC_Y4(Scell, NSC, matter, numpar, ind_step, ind_
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
    type(solid), intent(in), target :: matter	! material parameters
-   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
    integer, intent(in) :: ind_step  ! steps of Yoshida algorithm 1 to 4
    integer, intent(in) :: ind_cv    ! is this steps of Yoshida algorithm for coordinates or velocities
    !----------------------------------
@@ -2191,7 +2208,7 @@ subroutine make_time_step_atoms_SC_Y4(Scell, NSC, matter, numpar, ind_step, ind_
    do k = 1,nat ! All atoms - calculating new coordinates:
 
       ! Check is this atom is frozen or moving normally:
-      call check_frozen(numpar%Freeze_filter, Scell(NSC)%MDatoms(k), atom_frozen)     ! below
+      call check_frozen(numpar%Freeze_filter, numpar%Frozen_atoms, Scell(NSC)%MDatoms(k), k, atom_frozen)     ! below
       if (atom_frozen) cycle  ! skip this atom, its frozen
 
       if (ind_cv == 1) then ! Yoshida step for coordinates:
@@ -2217,7 +2234,9 @@ subroutine make_time_step_atoms_SC_Y4(Scell, NSC, matter, numpar, ind_step, ind_
          endif
       endif
    enddo
-   call check_periodic_boundaries(matter, Scell, NSC) ! and set the absolute coordinates out of the new relative ones
+   ! Check if the atom crossed a boundary:
+   !call check_periodic_boundaries(matter, Scell, NSC) ! and set the absolute coordinates out of the new relative ones
+   call check_boundaries(numpar, matter, Scell, NSC)  ! below
    call velocities_rel_to_abs(Scell, NSC) ! set the absolute velocities out of the new relative ones
    
    nullify(Mass)
@@ -2470,7 +2489,173 @@ end subroutine super_cell_forces
 
 
 
+
+subroutine check_boundaries(numpar, matter, Scell, NSC)
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(solid), intent(in) :: matter	! material parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of super-cell
+   !-------------
+   integer :: k, nat
+   !-------------
+
+   nat = size(Scell(NSC)%MDatoms) ! number of atoms in the supercell
+
+   ! Check crossing a boundary for all atoms:
+   do k = 1,nat
+
+      ! Along X:
+      if ( (Scell(NSC)%MDatoms(k)%S(1) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(1) .LT. -0.0d0) ) then
+         ! Check what boundary conditions scheme is used:
+         call update_atom_crossing_boundary(numpar, matter, Scell, NSC, k, 1)      ! below
+      endif
+
+      ! Along Y:
+      if ( (Scell(NSC)%MDatoms(k)%S(2) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(2) .LT. -0.0d0) ) then
+         ! Check what boundary conditions scheme is used:
+         call update_atom_crossing_boundary(numpar, matter, Scell, NSC, k, 2)      ! below
+      endif
+
+      ! Along Z:
+      if ( (Scell(NSC)%MDatoms(k)%S(3) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(3) .LT. -0.0d0) ) then
+         ! Check what boundary conditions scheme is used:
+         call update_atom_crossing_boundary(numpar, matter, Scell, NSC, k, 3)      ! below
+      endif
+
+      ! Convert also the relative coordinates into the absolute ones:
+      call Coordinates_rel_to_abs_single(Scell, NSC, k, .true.)
+   enddo ! k
+end subroutine check_boundaries
+
+
+
+subroutine update_atom_crossing_boundary(numpar, matter, Scell, NSC, k, axis_ind)
+   type(Numerics_param), intent(inout) :: numpar	! numerical parameters, including lists of earest neighbors
+   type(solid), intent(in) :: matter	! material parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of super-cell
+   integer, intent(in) :: k   ! index of the atom
+   integer, intent(in) :: axis_ind  ! which boundary: 1=X, 2=Y, 3=Z
+   !-------------
+   integer :: axis_ind2, axis_ind3, nat
+   real(8) :: S, dS, dS0, V_tot, V_left, V_tot0, V_left0, RN
+
+   select case (numpar%boundary_scheme(axis_ind)) ! X
+   case default   ! periodic boundaries:
+      ! put the atom back into the box from the other side:
+      Scell(NSC)%MDatoms(k)%S(axis_ind) = Scell(NSC)%MDatoms(k)%S(axis_ind) - FLOOR(Scell(NSC)%MDatoms(k)%S(axis_ind))
+      Scell(NSC)%MDatoms(k)%S0(axis_ind) = Scell(NSC)%MDatoms(k)%S0(axis_ind) - FLOOR(Scell(NSC)%MDatoms(k)%S(axis_ind))
+
+   case (2) ! absorbing/sticky boundaries
+      ! put the atom back into the box from the same side:
+      S = dble(FLOOR(abs(Scell(NSC)%MDatoms(k)%S(axis_ind))))
+      dS = Scell(NSC)%MDatoms(k)%S(axis_ind) - S
+      Scell(NSC)%MDatoms(k)%S(axis_ind) = S - dS
+      dS0 = Scell(NSC)%MDatoms(k)%S0(axis_ind) - S
+      Scell(NSC)%MDatoms(k)%S0(axis_ind) = S - dS0
+      ! And freeze this atom:
+      nat = size(Scell(NSC)%MDatoms)      ! number of atoms
+      call numpar%Frozen_atoms%init(nat)  ! initialize the array, if it wasn't
+      call numpar%Frozen_atoms%freeze_atom(k) ! mark this atom as frozen (no further propagation of trajectory)
+      !print*, k, axis_ind, Scell(NSC)%MDatoms(k)%S(axis_ind), numpar%Frozen_atoms%At_ind(k)
+
+   case (3) ! reflecting boundaries
+      ! Change its velosity to the opposite (reflect back):
+      Scell(NSC)%MDatoms(k)%SV(axis_ind)  = -Scell(NSC)%MDatoms(k)%SV(axis_ind)
+      Scell(NSC)%MDatoms(k)%SV0(axis_ind) = -Scell(NSC)%MDatoms(k)%SV0(axis_ind)
+      ! And effective terms for Martyna-Tuckerman algorithm:
+      Scell(NSC)%MDatoms(k)%A(axis_ind)  = -Scell(NSC)%MDatoms(k)%A(axis_ind)
+      Scell(NSC)%MDatoms(k)%A0(axis_ind) = -Scell(NSC)%MDatoms(k)%A0(axis_ind)
+      Scell(NSC)%MDatoms(k)%A_tild(axis_ind)  = -Scell(NSC)%MDatoms(k)%A_tild(axis_ind)
+      Scell(NSC)%MDatoms(k)%A_tild0(axis_ind) = -Scell(NSC)%MDatoms(k)%A_tild0(axis_ind)
+      Scell(NSC)%MDatoms(k)%v_F(axis_ind)  = -Scell(NSC)%MDatoms(k)%v_F(axis_ind)
+      Scell(NSC)%MDatoms(k)%v_F0(axis_ind) = -Scell(NSC)%MDatoms(k)%v_F0(axis_ind)
+      Scell(NSC)%MDatoms(k)%v_J(axis_ind)  = -Scell(NSC)%MDatoms(k)%v_J(axis_ind)
+      Scell(NSC)%MDatoms(k)%v_J0(axis_ind) = -Scell(NSC)%MDatoms(k)%v_J0(axis_ind)
+
+      ! Update the absolute velocity accordingly:
+      call velocities_rel_to_abs(Scell, NSC)    ! below
+
+   case (4) ! white boundary, roughness of the surfaces (reflecting but with randomized direction)
+      ! Change its velosity to the opposite and randomize its direction:
+      V_tot = sqrt(SUM(Scell(NSC)%MDatoms(k)%SV(:)**2))     ! absolute value of the relative velocity
+      V_tot0 = sqrt(SUM(Scell(NSC)%MDatoms(k)%SV0(:)**2))     ! absolute value of the relative velocity on last timestep
+
+      ! Identify axes:
+      select case (axis_ind)
+      case (1)    ! X
+         axis_ind2 = 2    ! Y
+         axis_ind3 = 3    ! Z
+      case (2)    ! Y
+         axis_ind2 = 3    ! Z
+         axis_ind3 = 1    ! X
+      case (3)    ! Z
+         axis_ind2 = 1    ! X
+         axis_ind3 = 2    ! Y
+      end select
+
+      ! define new velocity along second axis:
+      call random_number(RN)
+      Scell(NSC)%MDatoms(k)%SV(axis_ind2) = -V_tot + RN*2.0d0*V_tot
+      Scell(NSC)%MDatoms(k)%SV0(axis_ind2) = -V_tot0 + RN*2.0d0*V_tot0
+      ! Third axis:
+      call random_number(RN)
+      V_left = sqrt(V_tot**2 - Scell(NSC)%MDatoms(k)%SV(axis_ind2)**2)   ! what's left to distribute after the second axis is used
+      Scell(NSC)%MDatoms(k)%SV(axis_ind3) = -V_left + RN*2.0d0*V_left
+      V_left0 = sqrt(V_tot0**2 - Scell(NSC)%MDatoms(k)%SV0(axis_ind2)**2)   ! what's left to distribute after the second axis is used
+      Scell(NSC)%MDatoms(k)%SV0(axis_ind3) = -V_left0 + RN*2.0d0*V_left0
+      ! Back to the first axis:
+      ! what's left to distribute after the second and third axes are used:
+      V_left = sqrt(V_tot**2 - (Scell(NSC)%MDatoms(k)%SV(axis_ind2)**2+Scell(NSC)%MDatoms(k)%SV(axis_ind3)**2))
+      Scell(NSC)%MDatoms(k)%SV(axis_ind) = SIGN(V_left, -Scell(NSC)%MDatoms(k)%SV(axis_ind))    ! in the opposit direction of the original
+      V_left0 = sqrt(V_tot0**2 - (Scell(NSC)%MDatoms(k)%SV0(axis_ind2)**2+Scell(NSC)%MDatoms(k)%SV0(axis_ind3)**2))
+      Scell(NSC)%MDatoms(k)%SV0(axis_ind) = SIGN(V_left0, -Scell(NSC)%MDatoms(k)%SV0(axis_ind))    ! in the opposit direction of the original
+      !print*, k, V_tot, sqrt(SUM(Scell(NSC)%MDatoms(k)%SV(:)**2))     ! absolute value of the relative velocity
+
+      ! Update the absolute velocity accordingly:
+      call velocities_rel_to_abs(Scell, NSC)    ! below
+   end select
+end subroutine update_atom_crossing_boundary
+
+
+
 pure subroutine check_periodic_boundaries(matter, Scell, NSC)
+   type(solid), intent(in) :: matter	! material parameters
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of super-cell
+   !-------------
+   integer k, nat
+   !-------------
+   nat = size(Scell(NSC)%MDatoms)
+   do k = 1,nat ! periodic boundary conditions:
+      call check_periodic_boundaries_single(matter, Scell, NSC, k)      ! below
+   enddo ! k
+end subroutine check_periodic_boundaries
+
+
+pure subroutine check_periodic_boundaries_single(matter, Scell, NSC, k)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of super-cell
+   type(solid), intent(in) :: matter	! material parameters
+   integer, intent(in) :: k
+   if ( (Scell(NSC)%MDatoms(k)%S(1) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(1) .LT. -0.0d0) ) then
+      Scell(NSC)%MDatoms(k)%S(1) = Scell(NSC)%MDatoms(k)%S(1) - FLOOR(Scell(NSC)%MDatoms(k)%S(1))
+      Scell(NSC)%MDatoms(k)%S0(1) = Scell(NSC)%MDatoms(k)%S0(1) - FLOOR(Scell(NSC)%MDatoms(k)%S(1))
+   endif
+   if ( (Scell(NSC)%MDatoms(k)%S(2) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(2) .LT. -0.0d0) ) then
+      Scell(NSC)%MDatoms(k)%S(2) = Scell(NSC)%MDatoms(k)%S(2) - FLOOR(Scell(NSC)%MDatoms(k)%S(2))
+      Scell(NSC)%MDatoms(k)%S0(2) = Scell(NSC)%MDatoms(k)%S0(2) - FLOOR(Scell(NSC)%MDatoms(k)%S(2))
+   endif
+   if ( (Scell(NSC)%MDatoms(k)%S(3) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(3) .LT. -0.0d0) ) then
+      Scell(NSC)%MDatoms(k)%S(3) = Scell(NSC)%MDatoms(k)%S(3) - FLOOR(Scell(NSC)%MDatoms(k)%S(3))
+      Scell(NSC)%MDatoms(k)%S0(3) = Scell(NSC)%MDatoms(k)%S0(3) - FLOOR(Scell(NSC)%MDatoms(k)%S(3))
+   endif
+   call Coordinates_rel_to_abs_single(Scell, NSC, k, .true.)
+end subroutine check_periodic_boundaries_single
+
+
+
+pure subroutine check_periodic_boundaries_OLD(matter, Scell, NSC)
    type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
    integer, intent(in) :: NSC ! number of super-cell
    type(solid), intent(in) :: matter	! material parameters
@@ -2494,28 +2679,9 @@ pure subroutine check_periodic_boundaries(matter, Scell, NSC)
       endif
    enddo ! k
    call Coordinates_rel_to_abs(Scell, NSC)
-end subroutine check_periodic_boundaries
+end subroutine check_periodic_boundaries_OLD
 
 
-pure subroutine check_periodic_boundaries_single(matter, Scell, NSC, k)
-   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
-   integer, intent(in) :: NSC ! number of super-cell
-   type(solid), intent(in) :: matter	! material parameters
-   integer, intent(in) :: k
-   if ( (Scell(NSC)%MDatoms(k)%S(1) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(1) .LT. -0.0d0) ) then
-      Scell(NSC)%MDatoms(k)%S(1) = Scell(NSC)%MDatoms(k)%S(1) - FLOOR(Scell(NSC)%MDatoms(k)%S(1))
-      Scell(NSC)%MDatoms(k)%S0(1) = Scell(NSC)%MDatoms(k)%S0(1) - FLOOR(Scell(NSC)%MDatoms(k)%S(1))
-   endif
-   if ( (Scell(NSC)%MDatoms(k)%S(2) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(2) .LT. -0.0d0) ) then
-      Scell(NSC)%MDatoms(k)%S(2) = Scell(NSC)%MDatoms(k)%S(2) - FLOOR(Scell(NSC)%MDatoms(k)%S(2))
-      Scell(NSC)%MDatoms(k)%S0(2) = Scell(NSC)%MDatoms(k)%S0(2) - FLOOR(Scell(NSC)%MDatoms(k)%S(2))
-   endif
-   if ( (Scell(NSC)%MDatoms(k)%S(3) .GT. 1.0d0) .or. (Scell(NSC)%MDatoms(k)%S(3) .LT. -0.0d0) ) then
-      Scell(NSC)%MDatoms(k)%S(3) = Scell(NSC)%MDatoms(k)%S(3) - FLOOR(Scell(NSC)%MDatoms(k)%S(3))
-      Scell(NSC)%MDatoms(k)%S0(3) = Scell(NSC)%MDatoms(k)%S0(3) - FLOOR(Scell(NSC)%MDatoms(k)%S(3))
-   endif
-   call Coordinates_rel_to_abs_single(Scell, NSC, k, .true.)
-end subroutine check_periodic_boundaries_single
 
 
 

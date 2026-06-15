@@ -87,6 +87,7 @@ subroutine deallocate_all()
    if (allocated(g_numpar%FN_displacements)) deallocate(g_numpar%FN_displacements)
    if (allocated(g_numpar%FN_diff_peaks_part)) deallocate(g_numpar%FN_diff_peaks_part)
    if (allocated(g_numpar%Freeze_filter)) deallocate(g_numpar%Freeze_filter)
+   call g_numpar%Frozen_atoms%free()   ! procedural function from module "Objects"
 end subroutine deallocate_all
 
 
