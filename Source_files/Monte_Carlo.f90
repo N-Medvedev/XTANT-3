@@ -402,9 +402,13 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
    real(8) kind_of_coll ! elasctic vs inelastic
    real(8) RN, Ekin, IMFP, EMFP
    integer j, shl, KOA, i
+   logical :: skip_event
+
    j = 1
    do while ((MC%noe - j) .GE. 0)  ! all electrons
       do while (MC%electrons(j)%ti .LT. tim) ! until time of this electron becomes larger than the current timestep
+         skip_event =.false.  ! to start with
+
          Ekin = MC%electrons(j)%E - Scell%E_bottom ! [eV] kinetic energy of an electron is counted from the bottom of CB
          call random_number(RN)
          ! Get MFPs for inelastic and elastic scattering to compare:
@@ -418,23 +422,26 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
             !call which_shell(MC%electrons(j)%E, matter%Atoms, matter, 1, KOA, SHL) ! module 'MC_cross_sections'
             call which_shell(Ekin, matter%Atoms, matter, 1, KOA, SHL) ! module 'MC_cross_sections'
 
-!             if (MC%electrons(j)%E .LT. matter%Atoms(KOA)%Ip(SHL)) then
-            if (Ekin .LT. matter%Atoms(KOA)%Ip(SHL)) then
-               print*, 'Attention! In subroutine MC_for_electron:'
-               print*, 'Electron energy is lower than the ionization potential!'
-               write(*,'(f25.16, f25.16, i2, i2)') MC%electrons(j)%E, matter%Atoms(KOA)%Ip(SHL), KOA, SHL
+            if (Ekin .LT. matter%Atoms(KOA)%Ip(SHL)) then ! electron energy is below ionization potential
+               write(*,'(a)') ' Attention! In subroutine MC_for_electron:'
+               write(*,'(a)') ' Electron energy is lower than the ionization potential!'
+               write(*,'(3f25.16, 3i)') MC%electrons(j)%E, Ekin, matter%Atoms(KOA)%Ip(SHL), KOA, SHL, j
+               write(*,'(a)') ' No scattering possible, avoiding problem by skipping this event'
+               skip_event =.true.  ! no ionizatin potsiible
 !                write(*,'(f25.16,$)') matter%Atoms(KOA)%Ip(SHL)
 !                write(*,'(a)') ''
 !                pause 'MC_for_electron'
             endif
 
-            ! how much energy it loses:
-            !call Electron_energy_transfer_inelastic(matter, MC%electrons(j)%E, KOA, SHL, matter%Atoms(KOA)%El_MFP(shl), hw) ! module "Cross_sections"
-            call Electron_energy_transfer_inelastic(matter, Scell%TeeV, Ekin, KOA, SHL, matter%Atoms(KOA)%El_MFP(shl), hw) ! module "Cross_sections"
+            ! how much energy it loses, if possible:
+            if (.not.skip_event) then
+               !call Electron_energy_transfer_inelastic(matter, MC%electrons(j)%E, KOA, SHL, matter%Atoms(KOA)%El_MFP(shl), hw) ! module "Cross_sections"
+               call Electron_energy_transfer_inelastic(matter, Scell%TeeV, Ekin, KOA, SHL, matter%Atoms(KOA)%El_MFP(shl), hw) ! module "Cross_sections"
 
-            ! new electron (and may be hole) is created:
-            call New_born_electron_n_hole(MC, KOA, shl, numpar, Scell, matter, hw, MC%electrons(j)%ti, &
+               ! new electron (and may be hole) is created:
+               call New_born_electron_n_hole(MC, KOA, shl, numpar, Scell, matter, hw, MC%electrons(j)%ti, &
                                           Eetot_cur, noeVB_cur, d_fe, min_df, 2, 'Called from MC_for_electron')
+            endif ! (.not.skip_event)
          else  elast_vs_inelast ! it is elastic scattering
             call which_atom(Ekin, matter%Atoms, EMFP, KOA) ! get which kind of atoms we scatter on, module "MC_cross_sections"
             call NRG_transfer_elastic_atomic(matter%Atoms(KOA)%Ma, matter%Atoms(KOA)%Z, Ekin, hw) ! module "MC_cross_sections"
@@ -728,12 +735,18 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df, E_cutoff)
             ! SIDENOTE: it is the closest level existing, but it is not exactly equal to (wr(j)+Ee)!
             call Find_in_array_monoton(wr, wr(j)+Ee, j_fin) ! module "Little_subroutine"
             !print*, 'Test:', wr(j)+Ee, wr(j_fin-1), wr(j_fin)
-            j_fin = j_fin - 1 ! one level below
-            fe_final(j) = max(fe(j_fin),fe(j_fin+1)) ! that's the transient population on the final level
-            ! Check that levels are not too far apart:
-            if ((wr(j_fin+1)-wr(j_fin)) > eps) then
-               fe_final(j) = 2.0d0  ! exclude levels that are too far apart
-               !fe_final(j) = 0.0d0   ! assume it's a free state if we are too far from any level
+            if (j_fin > 1) then  ! we found the top boundary, need level below it, only if possible
+               j_fin = j_fin - 1 ! one level below
+            endif
+            if (j_fin < size(fe)) then  ! we found the top boundary, need level below it, only if possible
+               fe_final(j) = max(fe(j_fin),fe(j_fin+1)) ! that's the transient population on the final level
+               ! Check that levels are not too far apart:
+               if ((wr(j_fin+1)-wr(j_fin)) > eps) then
+                  fe_final(j) = 2.0d0  ! exclude levels that are too far apart
+                  !fe_final(j) = 0.0d0   ! assume it's a free state if we are too far from any level
+               endif
+            else  ! there is no choice, only one level possible
+               fe_final(j) = 2.0d0  ! exclude the very last level
             endif
          endif
          

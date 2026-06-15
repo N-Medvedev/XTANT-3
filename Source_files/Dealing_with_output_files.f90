@@ -57,7 +57,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 06.06.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 15.06.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -117,6 +117,8 @@ subroutine write_output_files(numpar, time, matter, Scell)
                numpar%FN_Ce, numpar%FN_kappa, numpar%FN_kappa_dyn, numpar%FN_Se, numpar%FN_Te, numpar%FN_mu) ! TB electron parameters
 
       call write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic parameters
+
+      call write_fragments_properties(time, Scell, NSC, matter, numpar) ! fragments parameters
 
       ! Section of atoms according to masks, if any:
       if (allocated(Scell(1)%Displ)) then
@@ -1365,6 +1367,95 @@ subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic pa
 end subroutine write_atomic_properties
 
 
+subroutine write_fragments_properties(time, Scell, NSC, matter, numpar)
+   real(8), intent(in) :: time	! [fs]
+   type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: NSC ! number of supercell
+   type(Solid), intent(in) :: matter	! Material parameters
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   !------------------------------
+   integer :: FN, FN1, i, Nsiz, N_at, j, N_kind
+   character(300) :: file_path, file_fragment
+   character(25) :: FN_char, ch_temp
+   logical :: file_exists, file_opened
+   !------------------------------
+
+   ! If fragments printout was not requested, no need to continue
+   if (.not.numpar%print_fragments) return
+
+   ! Number of different fragments:
+   Nsiz = maxval(Scell(NSC)%fragments%indices)  ! what's the maximal fragment index among all the atoms
+
+   ! Output directory:
+   file_path = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))
+   ! Data of the fragments (to store):
+   FN = numpar%FN_fragments_data
+   ! Once the file is opened, write into it:
+   write(FN, '(a)') trim(adjustl(m_starline))
+   write(ch_temp,'(f24.8)') time
+   write(FN, '(a)') '# '//trim(adjustl(ch_temp))//' fs'
+   write(ch_temp, '(i)') Nsiz
+   write(FN, '(a)') trim(adjustl(ch_temp))//' fragments'
+
+   ! Check for consistency:
+   if ( size(Scell(NSC)%fragments%indices) /= size(Scell(NSC)%MDatoms) ) then
+      print*, 'Proglem noticed in write_fragments_properties: array of atoms /= fragment indices'
+   endif
+
+   do i = 1, Nsiz ! for all fragments
+      write(ch_temp, '(i)') i
+      write(FN, '(a)', advance='no') '#'//trim(adjustl(ch_temp))//': '
+      write(ch_temp, '(i)') Scell(NSC)%fragments%N_at(i)
+      write(FN, '(a)') trim(adjustl(ch_temp))//' atoms:'
+
+      N_at = matter%N_KAO    ! number of kinds of atoms
+      do j = 1, N_at    ! for different elements
+         ! Number of atoms of this kind in this fragment:
+         N_kind = count( (Scell(NSC)%fragments%indices(:) == i) .and. (Scell(NSC)%MDatoms(:)%KOA == j) )
+         if (N_kind /= 0) then
+            write(ch_temp,'(i)') N_kind
+            write(FN,'(a)') '    '//trim(adjustl(ch_temp))//' of '//trim(adjustl(matter%Atoms(j)%Name))
+         endif
+      enddo ! j
+   enddo ! i
+   write(FN, '(a)') ''  ! skip line between blocks of timesteps
+
+
+   !----------------------------------
+   ! Data for each fragment (to plot):
+   if (Nsiz <= 1) return ! no fragments, a single piece target doesn't require separate printout
+
+   do i = 1, Nsiz ! for all fragments
+      file_exists = .false.   ! to start with
+      file_opened = .false.   ! to start with
+
+      write(FN_char, '(i10)') i
+      file_fragment = trim(adjustl(file_path))//'OUTPUT_fragment_'//trim(adjustl(FN_char))//'.dat'
+
+      ! Check if such a file already exists and is opened:
+      inquire(file=trim(adjustl(file_fragment)),exist=file_exists)
+      if (file_exists) then ! check if it is opened:
+         inquire(file=trim(adjustl(file_fragment)),opened=file_opened, number=FN1)
+      endif
+
+      if (.not.file_opened) then ! open file
+         open(NEWUNIT=FN, FILE = trim(adjustl(file_fragment)))
+         numpar%FN_fragments(i) = FN
+         call create_file_header(FN, '#Time Na  Ta_kin   Ta_fluc')
+         call create_file_header(FN, '#[fs] [-]   [K]  [K]')
+      else ! file exists and opened, use it
+         FN = numpar%FN_fragments(i)   ! file number
+      endif
+
+      ! Once the file is opened, write into it:
+      write(FN, '(f24.8, i10, 2es25.16)') time, Scell(NSC)%fragments%N_at(i), &
+                               Scell(NSC)%fragments%Tkin(i), Scell(NSC)%fragments%Tfluc(i)
+
+   enddo ! i
+end subroutine write_fragments_properties
+
+
+
 subroutine write_coulping_header(FN, Scell, NSC, matter, numpar)
    integer, intent(in) :: FN	! file number
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
@@ -2130,6 +2221,16 @@ subroutine close_output_files(Scell, numpar)
       close(numpar%FN_Ta_part)
    endif
 
+
+   ! Number of different fragments, up to maximum registered in the simulation:
+   if (numpar%print_fragments) then
+      do i = 1, Scell(1)%fragments%N_frag_max
+         call close_file('close', FN=numpar%FN_fragments(i))    ! module "Dealing_with_files"
+      enddo
+      call close_file('close', FN=numpar%FN_fragments_data) ! module "Dealing_with_files"
+   endif
+
+
    if ( (allocated(Scell(1)%Displ)) .and. (allocated(numpar%FN_displacements)) ) then
       Nsiz = size(Scell(1)%Displ)   ! how many masks
       do i = 1, Nsiz ! for all atomic masks
@@ -2205,11 +2306,14 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    character(100) :: file_diff_peaks, file_diff_powder      ! selected diffraction peaks, powder diffraction
    character(100), dimension(:), allocatable :: file_diff_peaks_part    ! element-specific diffraction peaks
    character(100) :: file_diff_peaks_DW   ! Debye-Waller diffraction intensities
-   character(100) :: file_testmode		! testmode file
+   character(100) :: file_testmode        ! testmode file
+   character(100) :: file_fragments       ! fragments of the target
+   character(100) :: file_fragments_data  ! data on all fragments
    character(100) :: chtemp
    character(200) :: chtemp2, chtemp3, chtemp4
    character(11) :: chtemp11, text1, text2, text3
    !----------------
+
 
    call make_save_files(trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep)), numpar%type_of_SAVE)   ! below
 
@@ -2435,6 +2539,16 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       call create_file_header(numpar%FN_Ta_part, '#Time kin:X   kin:Y  kin:Z vir:X   vir:Y   vir:Z')
       call create_file_header(numpar%FN_Ta_part, '#[fs]  [K]   [K]  [K]   [K]   [K]   [K]')
    endif
+
+
+   if (numpar%print_fragments) then ! fragments
+      file_fragments_data = trim(adjustl(file_path))//'OUTPUT_fragments_data.dat'
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_fragments_data)))
+      numpar%FN_fragments_data = FN
+      call create_file_header(numpar%FN_fragments_data, 'Data on the transient fragments constituency')
+   endif
+
+
 
    if (numpar%do_partial_thermal) then
       file_electron_temperatures = trim(adjustl(file_path))//'OUTPUT_electron_temperatures.dat'
@@ -2699,7 +2813,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             'OUTPUT_Debye_temperature_from_DW.dat', &
             'OUTPUT_testmode_data.dat', &
             'OUTPUT_coupling.dat', &
-            'OUTPUT_high_energy_electrons.dat' )  ! module "Plots_gnuplot"
+            'OUTPUT_high_energy_electrons.dat', &
+            'OUTPUT_fragment_' )  ! module "Plots_gnuplot"
 
    case ('py') ! Python
       call create_python_plot_scripts(Scell, matter, numpar, laser, file_path, &
@@ -2731,7 +2846,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
             'OUTPUT_Debye_temperature_from_DW.dat', &
             'OUTPUT_testmode_data.dat', &
             'OUTPUT_coupling.dat', &
-            'OUTPUT_high_energy_electrons.dat' )  ! module "Plots_python"
+            'OUTPUT_high_energy_electrons.dat', &
+            'OUTPUT_fragment_' )  ! module "Plots_python"
    case ('no') ! no plots required
             ! no plots required
    end select
@@ -2867,6 +2983,8 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
    type(Solid), intent(in) :: matter
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   !--------------------
+   real(8) :: Ta
    integer i, iret
    character(200) :: File_name, File_name2, command, matter_name
    character(100) :: ch1, ch2, ch3, ch4
@@ -2929,10 +3047,17 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
          endif
       endif 
     else LAS ! no pulse
-      if (numpar%path_sep .EQ. '\') then	! if it is Windows
+
+      if (numpar%path_sep .EQ. '\') then        ! if it is Windows
          do i = 1,size(Scell)
-            write(ch1,'(f8.1)') Scell(i)%Te ! electron temperature [K]
-            write(ch2,'(f8.1)') Scell(i)%Ta ! atomic temperature [K]
+            write(ch1,'(f8.1)') Scell(i)%Te     ! electron temperature [K]
+            select case (numpar%ind_exact_Ta)
+            case default
+               Ta = Scell(i)%Ta ! atomic temperature [K]
+            case (1) ! additional rescaling was used, the temperature is doubled (kin+config)
+               Ta = 0.5d0 * Scell(i)%Ta ! atomic temperature [K], halved to get kinetic one
+            endselect
+            write(ch2,'(f8.1)') Ta              ! atomic temperature [K]
          enddo
          if (numpar%Nonadiabat) then
             write(ch3,'(a)') 'with_coupling'
@@ -2943,8 +3068,14 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
             trim(adjustl(ch2)), '_', trim(adjustl(ch3))
       else ! it is linux
          do i = 1,size(Scell)
-            write(ch1,'(f8.1)') Scell(i)%Te ! electron temperature [K]
-            write(ch2,'(f8.1)') Scell(i)%Ta ! atomic temperature [K]
+            write(ch1,'(f8.1)') Scell(i)%Te     ! electron temperature [K]
+            select case (numpar%ind_exact_Ta)
+            case default
+               Ta = Scell(i)%Ta ! atomic temperature [K]
+            case (1) ! additional rescaling was used, the temperature is doubled (kin+config)
+               Ta = 0.5d0 * Scell(i)%Ta ! atomic temperature [K], halved to get kinetic one
+            endselect
+            write(ch2,'(f8.1)') Ta              ! atomic temperature [K]
          enddo
          if (numpar%Nonadiabat) then
             write(ch3,'(a)') 'with_coupling'
@@ -4069,7 +4200,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(text1, '(es16.6)') numpar%tau_fe
       endif
       write(print_to,'(a)') ' Relaxation-time approximation for electron thermalization'
-      write(print_to,'(a)') ' with the total characteristic time '//trim(adjustl(text1))//' [fs]'
+      write(print_to,'(a)') '  with the total characteristic time '//trim(adjustl(text1))//' [fs]'
 
       !if ((numpar%tau_fe_CB > -1.0e-7) .and. (numpar%tau_fe_VB > -1.0e-7)) then ! Partial thermalization is on:
       if (numpar%do_partial_thermal) then ! Partial thermalization is on:
@@ -4082,7 +4213,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          else
             write(text1, '(es16.6)') numpar%tau_fe_VB
          endif
-         write(print_to,'(a)') ' VB: Valence band relaxation time: '//trim(adjustl(text1))//' [fs]'
+         write(print_to,'(a)') '  VB: Valence band relaxation time: '//trim(adjustl(text1))//' [fs]'
 
          if (numpar%tau_fe_CB < numpar%dt/30.0d0) then ! it's basically instantaneous
             write(text1, '(f13.6)') 0.0e0
@@ -4091,9 +4222,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          else
             write(text1, '(es16.6)') numpar%tau_fe_CB
          endif
-         write(print_to,'(a)') ' CB: Conduction band relaxation time: '//trim(adjustl(text1))//' [fs]'
+         write(print_to,'(a)') '  CB: Conduction band relaxation time: '//trim(adjustl(text1))//' [fs]'
       else
-         write(print_to,'(a)') ' No band-resolved relaxation is used'
+         write(print_to,'(a)') '  No band-resolved relaxation is used'
       endif
 
    case (5)
@@ -4114,18 +4245,22 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       case default
          write(print_to,'(a)') ' Dynamical nonadiabatic coupling'
       end select
-      write(print_to,'(a, f10.1, a)') ' switched on at: ', numpar%t_NA, ' [fs]'
-      write(print_to,'(a, f7.1, a)') ' with the acceptance window: ', numpar%acc_window, ' [eV]'
-      write(print_to,'(a, f8.5, a)') ' degeneracy tolerance: ', numpar%degeneracy_eV, ' [eV]'
+      write(print_to,'(a, f10.1, a)') '  switched on at: ', numpar%t_NA, ' [fs]'
+      write(print_to,'(a, f7.1, a)') '  with the acceptance window: ', numpar%acc_window, ' [eV]'
+      write(print_to,'(a, f8.5, a)') '  degeneracy tolerance: ', numpar%degeneracy_eV, ' [eV]'
 
       write(text,'(f8.5)') numpar%M2_scaling
       if (numpar%M2_scaling == 4.0d0) text = trim(adjustl(text))//' (default)'
-      write(print_to,'(a,a)') ' and scaling factor of: ', trim(adjustl(text))
+      write(print_to,'(a,a)') '  and scaling factor of: ', trim(adjustl(text))
       select case (numpar%ind_at_distr)
+      case (-1)
+         write(print_to,'(a)') '  using nonequilibrium atomic distribution (kin + pot)'
       case (1)
-         write(print_to,'(a)') ' using transient nonequilibrium atomic distribution'
+         write(print_to,'(a)') '  using nonequilibrium atomic distribution'
+      case (2)
+         write(print_to,'(a)') '  using individual-atom (delta-functions) atomic distribution'
       case default
-         write(print_to,'(a)') ' using equivalent Maxwellian atomic distribution'
+         write(print_to,'(a)') '  using equivalent Maxwellian atomic distribution'
       endselect
 
       select case (numpar%V_scaling)      ! choose which model for velocity scaling to use
@@ -4133,6 +4268,8 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(print_to,'(a)') ' Scheme used for atomic velocity scaling: global'
       case (1)          ! local scaling
          write(print_to,'(a)') ' Scheme used for atomic velocity scaling: local'
+      case (2)          ! individual atom scaling
+         write(print_to,'(a)') ' Scheme used for atomic velocity scaling: individual atom'
       endselect
    endif
 
@@ -4254,7 +4391,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
       optional_output = .true.   ! there is at least some optional output
    endif
 
-    if (numpar%print_Ta) then
+   if (numpar%print_Ta) then
       write(print_to,'(a)') ' Various definitions of atomic temperatures'
       optional_output = .true.   ! there is at least some optional output
    endif
@@ -4295,6 +4432,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          write(text1, '(f6.2)') numpar%NN_radii(i)%r_cut
          write(print_to,'(a,a)') ' '//numpar%NN_radii(i)%Name//' : ', trim(adjustl(text1))//' [A]'
       enddo
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%print_fragments) then
+      write(print_to,'(a)') ' Individual fragments data'
       optional_output = .true.   ! there is at least some optional output
    endif
 

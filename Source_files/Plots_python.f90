@@ -56,7 +56,7 @@ file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_element_NN, file_electron_entropy, file_Te, file_mu, &
 file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
 file_diffraction_peaks, file_diffraction_peaks_part, file_diffraction_powder, file_diffraction_peaks_DW, file_Debye_temperature, &
-file_testmode, file_coupling, file_high_e)
+file_testmode, file_coupling, file_high_e, file_fragments)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -90,7 +90,9 @@ file_testmode, file_coupling, file_high_e)
    character(*), intent(in) :: file_testmode    ! testmode data
    character(*), intent(in) :: file_coupling    ! electron-ion coupling, including partial
    character(*), intent(in) :: file_high_e      ! high-energy electrons by type
+   character(*), intent(in) :: file_fragments       ! fragments of the target
    !----------------
+
    character(300) :: File_name, File_name2
    real(8) :: t0, t_last, x_tics, E_temp
    integer FN, i, j, Nshl, counter, iret, Nsiz
@@ -254,6 +256,12 @@ file_testmode, file_coupling, file_high_e)
       call Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_last, 'OUTPUT_atomic_temperatures.py') ! below
 
       call Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_part, t0, t_last, 'OUTPUT_atomic_temperatures_partial.py') ! below
+   endif
+
+
+   ! Data for fragments (if required):
+   if (numpar%print_fragments) then
+      call Python_plot_fragments_data(Scell(1), numpar, file_fragments, t0, t_last, 'OUTPUT_fragments_Nat.py', 'OUTPUT_fragments_Ta.py') ! below
    endif
 
 
@@ -1296,7 +1304,7 @@ subroutine Python_plot_partial_coupling(Scell, matter, numpar, file_coupling, t0
    logical, intent(in), optional :: convolved   ! is it a convolved copy of files
    !----------------
    integer :: FN, i, Nsiz, Nat, j, col1, col2, N_types, norb, i_start, i_orb, j_orb, N_at, N_cols
-   character(30) :: x_min, x_max, temp_col1, temp_col2, linestyle, orb_name1, orb_name2
+   character(50) :: x_min, x_max, temp_col1, temp_col2, linestyle, orb_name1, orb_name2
    character(300) :: File_name, Plot_name, Data_file_name, temp_txt
 
    ! Only do it if the data-file exists:
@@ -1384,6 +1392,10 @@ subroutine Python_plot_partial_coupling(Scell, matter, numpar, file_coupling, t0
 
          write(x_min, '(f12.3)') t0
          write(x_max, '(f12.3)') t_last
+         ! Make sure the maximum value is adjusted but not larger than the given one:
+         write(FN,'(a)') 'xmax = df.iloc[:, 0].max()'
+         x_max = 'min(xmax, '//trim(adjustl(x_max))//')'
+
 
          write(FN, '(a)')  'plt.xlim('// trim(adjustl(x_min)) //','// trim(adjustl(x_max)) //')'
          write(FN, '(a)')  'plt.ylim(None,None)'
@@ -1509,6 +1521,10 @@ subroutine Python_plot_partial_coupling(Scell, matter, numpar, file_coupling, t0
          write(FN, '(a)')  '     plt.plot(t, summed, color=colors[idx % len(colors)], linestyle=ls, label=label)'
          write(x_min, '(f12.3)') t0
          write(x_max, '(f12.3)') t_last
+         ! Make sure the maximum value is adjusted but not larger than the given one:
+         write(FN,'(a)') 'xmax = df.iloc[:, 0].max()'
+         x_max = 'min(xmax, '//trim(adjustl(x_max))//')'
+
 
          write(FN, '(a)')  'plt.xlim('// trim(adjustl(x_min)) //','// trim(adjustl(x_max)) //')'
          write(FN, '(a)')  'plt.ylim(None,None)'
@@ -1539,6 +1555,187 @@ subroutine Python_plot_partial_coupling(Scell, matter, numpar, file_coupling, t0
 
    end select
 end subroutine Python_plot_partial_coupling
+
+
+
+subroutine Python_plot_fragments_data(Scell, numpar, file_fragments, t0, t_last, script_name_Nat, script_name_Ta) ! below
+   type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_fragments, script_name_Nat, script_name_Ta ! file with atomic numberes and temperatures
+   !logical, intent(in), optional :: convolved   ! is it a convolved copy of files (not implemented)
+   !----------------
+   character(300) :: File_name, Plot_name, Data_file_name, temp_txt
+   integer :: FN, N_cols
+   logical :: hide_legend
+
+   !----------------
+   ! 1) Number of atoms in each fragment:
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name_Nat))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   Plot_name = 'OUTPUT_fragments_Nat'
+   Data_file_name = trim(adjustl(file_fragments))
+
+
+   write(FN, '(a)') 'import glob'
+   write(FN, '(a)') 'import re'
+   write(FN, '(a)') 'import matplotlib.pyplot as plt'
+
+   write(FN, '(a)') 'def numeric_key(filename):'
+   write(FN, '(a)') '    m = re.search(r"'// trim(adjustl(Data_file_name))//'(\d+)\.dat", filename)'
+   write(FN, '(a)') '    return int(m.group(1)) if m else 0'
+   write(FN, '(a)') 'files = sorted(glob.glob("'//trim(adjustl(Data_file_name))//'*.dat"), key=numeric_key)'
+
+   write(FN, '(a)') 'for i, fname in enumerate(files, start=1):'
+   write(FN, '(a)') '    times = []'
+   write(FN, '(a)') '    natoms = []'
+
+   write(FN, '(a)') '    with open(fname, "r") as f:'
+   write(FN, '(a)') '        for line in f:'
+   write(FN, '(a)') '            if line.lstrip().startswith("#"):'
+   write(FN, '(a)') '                continue'
+   write(FN, '(a)') '            if not line.strip():'
+   write(FN, '(a)') '                continue'
+
+   write(FN, '(a)') '            cols = line.split()'
+
+   write(FN, '(a)') '            # col1 = time, col2 = natoms'
+   write(FN, '(a)') '            t = float(cols[0])'
+   write(FN, '(a)') '            n = float(cols[1])'
+
+   write(FN, '(a)') '            times.append(t)'
+   write(FN, '(a)') '            natoms.append(n)'
+
+   write(FN, '(a)') '    plt.plot(times, natoms, label=f"Fragment #{i}")'
+
+   write(FN, '(a)') 'plt.xlabel("Time (fs)", fontsize=14)'
+   write(FN, '(a)') 'plt.ylabel("Number of atoms", fontsize=14)'
+   write(FN, '(a)') 'plt.title("Fragment evolution", fontsize=14)'
+
+   write(FN, '(a)') 'plt.xticks(fontsize=12)'
+   write(FN, '(a)') 'plt.yticks(fontsize=12)'
+
+   ! Make appropriate font size:
+   hide_legend = .false.      ! to start with
+   N_cols = Scell%fragments%N_frag_max
+   if (N_cols < 8) then ! normal:
+      write(temp_txt,'(a)') 'fontsize=12'
+   elseif (N_cols < 17) then ! smaller
+      write(temp_txt,'(a)') 'fontsize=10'
+   elseif (N_cols < 21) then
+      write(temp_txt,'(a)') 'fontsize=9'
+   elseif (N_cols < 33) then
+      write(temp_txt,'(a)') 'fontsize=10, ncol=2'
+   elseif (N_cols < 41) then
+      write(temp_txt,'(a)') 'fontsize=9, ncol=2'
+   elseif (N_cols < 65) then
+      write(temp_txt,'(a)') 'fontsize=9, ncol=3'
+   else ! too many curves, no need for a legend at all
+      hide_legend = .true.
+   endif
+
+   if (.not.hide_legend) then
+      write(FN, '(a)') 'plt.legend(loc="best", '//trim(adjustl(temp_txt))//')'
+   else ! hide the legend
+      write(FN, '(a)') 'plt.legend().set_visible(False)'
+   endif
+   write(FN, '(a)') 'plt.tight_layout()'
+
+   write(FN, '(a)') 'plt.savefig("'//trim(adjustl(Plot_name))//'.'//trim(adjustl(numpar%fig_extention))//'", dpi=300, bbox_inches="tight")'
+   close(FN)
+
+   !----------------
+   ! 2) Temperatures of atoms in each fragment:
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name_Ta))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   Plot_name = 'OUTPUT_fragments_Ta'
+   Data_file_name = trim(adjustl(file_fragments))
+
+   write(FN, '(a)') 'import glob'
+   write(FN, '(a)') 'import re'
+   write(FN, '(a)') 'import matplotlib.pyplot as plt'
+
+   write(FN, '(a)') 'def numeric_key(filename):'
+   write(FN, '(a)') '    m = re.search(r"'// trim(adjustl(Data_file_name))//'(\d+)\.dat", filename)'
+   write(FN, '(a)') '    return int(m.group(1)) if m else 0'
+   write(FN, '(a)') 'files = sorted(glob.glob("'//trim(adjustl(Data_file_name))//'*.dat"), key=numeric_key)'
+
+   write(FN, '(a)') '# Define a set of linestyles to cycle through'
+   write(FN, '(a)') 'linestyles = ['
+   write(FN, '(a)') '    "-",'
+   write(FN, '(a)') '    "--"'
+   write(FN, '(a)') ']'
+
+   write(FN, '(a)') 'for i, fname in enumerate(files, start=1):'
+   write(FN, '(a)') '    times = []'
+   write(FN, '(a)') '    Tkin = []'
+   write(FN, '(a)') '    Tfluc = []'
+
+   write(FN, '(a)') '    with open(fname, "r") as f:'
+   write(FN, '(a)') '        for line in f:'
+   write(FN, '(a)') '            if line.lstrip().startswith("#"):'
+   write(FN, '(a)') '                continue'
+   write(FN, '(a)') '            if not line.strip():'
+   write(FN, '(a)') '                continue'
+
+   write(FN, '(a)') '            cols = line.split()'
+
+   write(FN, '(a)') '            t = float(cols[0])'
+   write(FN, '(a)') '            n = float(cols[2])'
+   write(FN, '(a)') '            m = float(cols[3])'
+
+   write(FN, '(a)') '            times.append(t)'
+   write(FN, '(a)') '            Tkin.append(n)'
+   write(FN, '(a)') '            Tfluc.append(m)'
+
+   write(FN, '(a)') '    # Assign two different linestyles per fragment'
+   write(FN, '(a)') '    ls1 = linestyles[(2*(i-1)) % len(linestyles)]'
+   write(FN, '(a)') '    ls2 = linestyles[(2*(i-1)+1) % len(linestyles)]'
+
+   write(FN, '(a)') '    plt.plot(times, Tkin,  linestyle=ls1,  label=f"Fragment #{i} T$_{{kin}}$")'
+   write(FN, '(a)') '    plt.plot(times, Tfluc, linestyle=ls2, label=f"Fragment #{i} T$_{{fluc}}$")'
+
+   write(FN, '(a)') 'plt.xlabel("Time (fs)", fontsize=14)'
+   write(FN, '(a)') 'plt.ylabel("Temperature (K)", fontsize=14)'
+   write(FN, '(a)') 'plt.title("Fragment temperatures", fontsize=14)'
+
+   write(FN, '(a)') 'plt.xticks(fontsize=12)'
+   write(FN, '(a)') 'plt.yticks(fontsize=12)'
+
+   ! Make appropriate font size:
+   hide_legend = .false.      ! to start with
+   N_cols = Scell%fragments%N_frag_max*2
+   if (N_cols < 8) then ! normal:
+      write(temp_txt,'(a)') 'fontsize=12'
+   elseif (N_cols < 17) then ! smaller
+      write(temp_txt,'(a)') 'fontsize=10'
+   elseif (N_cols < 21) then
+      write(temp_txt,'(a)') 'fontsize=9'
+   elseif (N_cols < 33) then
+      write(temp_txt,'(a)') 'fontsize=10, ncol=2'
+   elseif (N_cols < 41) then
+      write(temp_txt,'(a)') 'fontsize=9, ncol=2'
+   elseif (N_cols < 65) then
+      write(temp_txt,'(a)') 'fontsize=9, ncol=3'
+   else ! too many curves, no need for a legend at all
+      hide_legend = .true.
+   endif
+
+   if (.not.hide_legend) then
+      write(FN, '(a)') 'plt.legend(loc="best", '//trim(adjustl(temp_txt))//')'
+   else ! hide the legend
+      write(FN, '(a)') 'plt.legend().set_visible(False)'
+   endif
+   write(FN, '(a)') 'plt.tight_layout()'
+
+   write(FN, '(a)') 'plt.savefig("'//trim(adjustl(Plot_name))//'.'//trim(adjustl(numpar%fig_extention))//'", dpi=300, bbox_inches="tight")'
+
+   close(FN)
+end subroutine Python_plot_fragments_data
 
 
 
@@ -2164,6 +2361,10 @@ subroutine Python_plot_mu(numpar, file_electron_properties, t0, t_last, script_n
    write(FN, '(a)') 'time = df.iloc[:, 0]'
    write(FN, '(a)') 'Ne   = df.iloc[:, 1]   # electron density (y2 axis)'
    write(FN, '(a)') 'mu   = df.iloc[:, 2]   # chemical potential (left axis)'
+
+   ! Make sure the maximum X value is adjusted but not larger than the given one:
+   write(FN,'(a)') 'xmax = df.iloc[:, 0].max()'
+   x_max_txt = 'min(xmax, '//trim(adjustl(x_max_txt))//')'
 
    write(FN, '(a)') '# --- Create figure ---'
    write(FN, '(a)') 'fig, ax1 = plt.subplots(figsize=(8, 6), dpi=150)'
@@ -3994,6 +4195,9 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_labels, &
    endif
    if (present(x_max)) then
       write(x_max_txt,'(f24.8)') x_max
+      ! Make sure the maximum value is adjusted but not larger than the given one:
+      write(FN,'(a)') 'xmax = df.iloc[:, 0].max()'
+      x_max_txt = 'min(xmax, '//trim(adjustl(x_max_txt))//')'
    else
       write(x_max_txt,'(a)') 'None'
    endif

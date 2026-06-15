@@ -670,12 +670,27 @@ type :: Elemental_Nearest_Neighbors
 end type Elemental_Nearest_Neighbors
 
 
+
+!==============================================
+type :: Fragment_data       ! atomic data for fragments the material is made of
+   integer :: N_frag_max    ! save maximum number of fragments in the simulation run
+   integer, dimension(:), allocatable :: indices  ! indices of atoms, marking to which fragment they belong
+   integer, dimension(:), allocatable :: N_at     ! number of atoms in this fragment
+   real(8), dimension(:), allocatable :: Tkin     ! [K] kinetic temperature of atoms in this fragment
+   real(8), dimension(:), allocatable :: Tfluc    ! [K] fluctuational temperature of atoms in this fragment
+end type Fragment_data
+
+
+
 !==============================================
 ! Supercell as object:
 type Super_cell
-   ! Sub-cells for linear scaling TB, if used:
+   ! Sub-cells for linear scaling TB, if ever implemented...:
    type(Sub_cell), dimension(:,:,:), allocatable :: Subcell ! Subcells along 3 axes: X, Y, Z (currently unused)
    ! Data for the entire simulation box:
+   ! Fragments:
+   type(Fragment_data) :: fragments ! data for distinct fragments the material is made of (could be just one, single target)
+
    ! How many electrons and atoms in the super-cell:
    integer :: Na, Ne	! number of atoms, electrons, in the super-cell
    real(8) :: Ne_low	! current number of low-energy electrons of VB and CB
@@ -812,6 +827,7 @@ type Super_cell
    real(8) :: G_ei	! [W/(m^3 K)] electron-ion coupling parameter
    real(8), dimension(:,:), allocatable :: G_ei_partial ! [W/(m^3 K)] partial electron-ion coupling parameter per all orbitals pairwise
    real(8), dimension(:,:), allocatable :: G_ei_per_atom    ! [eV] partial electron-ion energy transfer per atoms pairwise
+   real(8), dimension(:), allocatable :: dE_at    ! [eV] electron-ion energy transfer to individual atoms
    real(8), dimension(:,:), allocatable :: DOS	! DOS
    real(8), dimension(:,:,:), allocatable :: partial_DOS	! partial DOS made of different orbitals
    ! Testmode additional data (usually not needed):
@@ -976,6 +992,22 @@ type Freeze_mask
 end type Freeze_mask
 
 
+type Freeze_atoms
+   ! Anything to do:
+   logical :: anything_to_do = .false.  ! by default, no
+   ! Atoms to be frozen:
+   logical, dimension(:), allocatable :: At_ind     ! index of the atom in the array of all atoms
+
+   contains
+      procedure :: init     ! to allocate the At_int array with the default values (.false.), see below
+      procedure :: reinit   ! to force reallocation of the At_int array with the default values (.false.), see below
+      procedure :: freeze_atom      ! to freeze particular atom, see below
+      procedure :: defreeze_atom    ! to defreeze particular atom, see below
+      procedure :: free     ! to manually deallocate the At_int array, see below
+      final ::     destroy  ! to automatically deallocate the At_int array, see below
+end type Freeze_atoms
+
+
 type Split_cohesive
    logical :: do_split = .false. ! by default, don't do split-target cohesive analysis
    real(8) :: x_split = -1.0d20  ! [A] coordinate of splitting
@@ -1022,6 +1054,7 @@ type Numerics_param
    character(100) :: MD_step_grid_file   ! filename with MD time step grid
    !logical, dimension(:), allocatable :: Atomic_masks ! user-defined masks for atomic analysis
    logical :: print_Ta ! flag for various atomic temperature definitions
+   logical :: print_fragments ! flag for analyzing fragments of material (if disintegrating or fragmented into pieces)
    integer :: ind_starting_V  ! index to set starting velocity distribution: 1=linear; 2=Maxwellian
    logical :: vel_from_file   ! index to mark whether velocities were read from a file or set
    integer :: ind_exact_Ta    ! index for the method of setting atomic temperature: 0=simple sampling; 1=sampling+rescaling to exact Ta
@@ -1097,12 +1130,15 @@ type Numerics_param
    integer, dimension(:), allocatable :: FN_diff_peaks_part
    integer, dimension(:), allocatable :: FN_element_NN
    integer, dimension(:), allocatable :: FN_displacements
+   integer, dimension(:), allocatable :: FN_fragments
+   integer :: FN_fragments_data ! file number with the data
    integer :: MOD_TIME ! time when the communication.txt file was last modified
    integer :: drude_ray, optic_model
    integer :: el_ion_scheme
    integer :: ixm, iym, izm	! number of k-points in each direction for eps-calculations
    real(8), dimension(:,:), allocatable :: k_grid	! for the case of user-provided grid for k-space (for CDF and DOS calculations)
-   logical :: r_periodic(3)	! periodic boundaries in each of the three spatial dimensions
+   logical :: r_periodic(3)         ! periodic boundaries in each of the three spatial dimensions
+   integer :: boundary_scheme(3)    ! what boundaries to use: (1=periodic, 2=absorbing, 3=reflecting, 4=white)
    ! Different output, what to save:
    logical :: save_Ei, save_fe, save_PCF, save_XYZ, save_XYZ_vel, do_drude, do_cool, do_atoms, change_size, allow_rotate
    logical :: save_fe_grid, save_fe_orb, save_fa, save_testmode
@@ -1111,6 +1147,7 @@ type Numerics_param
    !type(Split_cohesive) :: Split_target ! parameters of split-target analysis
    ! Masks for partial atoms freezing:
    type(Freeze_mask), dimension(:), allocatable :: Freeze_filter  ! multiple masks for freezing atoms allowed
+   type(Freeze_atoms) :: Frozen_atoms   ! array of all atoms to mask if any of them is frozen
    ! Reminder: codes of save_XYZ_extra indices: (1) atomic mass; (2) atomic charge; (3) kinetic energy
    logical :: save_XYZ_extra(3)  ! additional properties of atoms to print (or not)
    logical :: do_elastic_MC, do_path_coordinate, do_kappa, do_DOS, do_kappa_dyn
@@ -1199,6 +1236,67 @@ end type
 
 !CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
  contains
+
+
+! Allocation of the freeze-masks as internal type procedure:
+subroutine init(this, n)
+    class(Freeze_atoms), intent(inout) :: this
+    integer, intent(in) :: n
+
+    if (.not.allocated(this%At_ind)) then
+       allocate(this%At_ind(n))
+       this%At_ind = .false.
+    endif
+end subroutine init
+! Enforced (re)allocation of the freeze-masks as internal type procedure:
+subroutine reinit(this, n)
+    class(Freeze_atoms), intent(inout) :: this
+    integer, intent(in) :: n
+
+    if (allocated(this%At_ind)) deallocate(this%At_ind)
+    allocate(this%At_ind(n))
+    this%At_ind = .false.
+end subroutine reinit
+! Freezing particulat atoms:
+subroutine freeze_atom(this, n)  ! to freeze particular atom
+    class(Freeze_atoms), intent(inout) :: this
+    integer, intent(in) :: n
+
+    this%At_ind(n) = .true.
+    this%anything_to_do = .true.
+end subroutine freeze_atom
+! Defreezing particulat atoms:
+subroutine defreeze_atom(this, n)  ! to freeze particular atom
+    class(Freeze_atoms), intent(inout) :: this
+    integer, intent(in) :: n
+
+    this%At_ind(n) = .false.
+    if (.not.all(this%At_ind)) then ! no more frozen atoms, nothing to do
+       this%anything_to_do = .false.
+    endif
+end subroutine defreeze_atom
+! Manual deallocation:
+subroutine free(this)
+    class(Freeze_atoms), intent(inout) :: this
+
+    this%anything_to_do = .false.
+    if (allocated(this%At_ind)) then
+        deallocate(this%At_ind)
+    endif
+end subroutine free
+! For automatic deallocation:
+subroutine destroy(this)
+    type(Freeze_atoms), intent(inout) :: this
+
+    this%anything_to_do = .false.
+    if (allocated(this%At_ind)) then
+        deallocate(this%At_ind)
+    endif
+end subroutine destroy
+
+
+
+
 ! How to write the log about an error:
 subroutine Save_error_details(Err_name, Err_num, Err_data, Err_data2, empty, Warn)
    class(Error_handling) :: Err_name

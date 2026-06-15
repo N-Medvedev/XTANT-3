@@ -131,6 +131,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    Scell(1)%Ta_var(:) = 0.0d0    ! various definitions of temperatures
    Scell(1)%Ta_r_var(:) = 0.0d0  ! projections of temperatures
    Scell(1)%Ta_conf_run_average(:) = 0.0d0   ! last values of Ta_config
+   Scell(1)%fragments%N_frag_max = 1         ! target as one fragment to start with
 
    numpar%t_total = 1000.0d0 ! total duration of simulation [fs]
    call initialize_default_laser(laser, 1) ! initialize 1 pulse by default
@@ -169,6 +170,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%redo_MFP = .false.     ! no need to recalculate mean free paths by default
    numpar%print_MFP = .false.    ! no need to printout mean free paths by default
    numpar%print_Ta = .false.  ! no need in various atomic temperature definitions
+   numpar%print_fragments = .false. ! no need to analyze separate fragments of material
    numpar%ind_starting_V = 2  ! by default, set Maxwellian starting velocities
    numpar%ind_exact_Ta = 0    ! by default, use simple sampling of atomic velocities
    numpar%vel_from_file = .false.   ! velosities are not read from file
@@ -242,6 +244,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%save_NN = .false. ! do not print out nearest neighbors numbers
    numpar%do_elastic_MC = .true. ! allow elastic scattering of electrons on atoms within MC module
    numpar%r_periodic(:) = .true. ! use periodic boundaries along each direction of the simulation box
+   numpar%boundary_scheme(:) = 1    ! use periodic boundaries by default
    numpar%save_diff_peaks = .false. ! no diffraction peaks calculation required
    numpar%DW_theta = 0.0d0    ! Debye-temperature [K]
    numpar%m1 = -1.0d0          ! harmonic contribution coefficient (from Debye temperature)
@@ -4754,16 +4757,45 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    if (matter%cell_y < 0) matter%cell_y = 1     ! minimum
    if (matter%cell_z < 0) matter%cell_z = 1     ! minimum
 
+
    ! periodicity along X,Y,Z directions:
    read(FN, '(a)', IOSTAT=Reason) read_line
    read(read_line,*,IOSTAT=Reason) temp1, temp2, temp3
    call check_if_read_well(Reason, count_lines, trim(adjustl(File_name)), Err, &
                               add_error_info='Line: '//trim(adjustl(read_line)))  ! below
    if (Err%Err) goto 3418
-   numpar%r_periodic(:) = .true.	! periodic by default
+   numpar%r_periodic(:) = .true.    ! periodic by default
    if (temp1 == 0) numpar%r_periodic(1) = .false.	! along X
    if (temp2 == 0) numpar%r_periodic(2) = .false.	! along Y   
    if (temp3 == 0) numpar%r_periodic(3) = .false.	! along Z
+   ! boundary along X:
+   select case (temp1)
+   case (:1)      ! periodic
+      numpar%boundary_scheme(1) = 1
+   case (2:4)     ! absorbing, reflecting, white
+      numpar%boundary_scheme(1) = temp1
+   case default   ! undefined, assume periodic
+      numpar%boundary_scheme(1) = 1
+   end select
+   ! boundary along Y:
+   select case (temp2)
+   case (:1)      ! periodic
+      numpar%boundary_scheme(2) = 1
+   case (2:4)     ! absorbing, reflecting, white
+      numpar%boundary_scheme(2) = temp1
+   case default   ! undefined, assume periodic
+      numpar%boundary_scheme(2) = 1
+   end select
+   ! boundary along Z:
+   select case (temp3)
+   case (:1)      ! periodic
+      numpar%boundary_scheme(3) = 1
+   case (2:4)     ! absorbing, reflecting, white
+      numpar%boundary_scheme(3) = temp1
+   case default   ! undefined, assume periodic
+      numpar%boundary_scheme(3) = 1
+   end select
+
 
    ! where to take atomic data from (EADL, CDF):
    numpar%user_defined_E_gap = -1.0d0 ! default
@@ -4938,6 +4970,10 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
       numpar%Nonadiabat = .false. ! excluded
    else
       numpar%Nonadiabat = .true.  ! included
+   endif
+
+   if (numpar%V_scaling == 2) then ! only individual-atom energy distribution works with this scaling:
+      numpar%ind_at_distr = 2
    endif
 
    ! [fs] when to switch on the nonadiabatic coupling:
@@ -5400,7 +5436,7 @@ subroutine read_single_freeze_mask(FN, filename, Filter, Err)  ! below
    !----------------
    character(200) :: Error_descript
    integer :: Reason
-   namelist / Freeze_masks / Filter ! fortran maelist to read variables into
+   namelist / Freeze_masks / Filter ! fortran namelist to read variables into
 
    read(FN, nml = Freeze_masks, IOSTAT=Reason)      ! read according to the structure specified
 
@@ -7503,6 +7539,10 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
          write(*, '(a)') 'Using default atomic velocity scaling'
       endif
 
+      if (N == 2) then ! only individual-atom energy distribution works with this scaling:
+         numpar%ind_at_distr = 2
+      endif
+
    !----------------------------------
    case ('Diffraction', 'diffraction', 'DIFFRACTION', 'Diffract', 'DIFFRACT', 'diffract', 'diffraction_peaks')
       ! Calculate evolution of the following diffraction peaks:
@@ -7555,6 +7595,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       numpar%save_fe = .true.
       numpar%save_fa = .true.
       numpar%save_PCF = .true.
+      numpar%print_fragments = .true.
       !numpar%save_hw_spectrum = .true.
 
    !----------------------------------
@@ -7634,6 +7675,11 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
    case ('print_Ta', 'Print_Ta', 'PRINT_TA', 'PRINT_Ta')
       ! Printout various definitions of atomic temperature:
       numpar%print_Ta = .true.
+
+   !----------------------------------
+   case ('print_fragments', 'Print_Fragments', 'PRINT_FRAGMENTS', 'PRINT_fragments')
+      ! Printout data for various fragments of disintegrating or fragmented material
+      numpar%print_fragments = .true.
 
    !----------------------------------
    case ('print_spectrum', 'Print_Spectrum', 'Print_spectrum', 'print_hw', 'Print_hw')

@@ -1576,6 +1576,8 @@ subroutine get_DOS_masks(Scell, matter, numpar, only_coupling, do_cartesian)
 
    ! Allocate electron-ion energy exchange per pair of atoms:
    if (.not.allocated(Scell(NSC)%G_ei_per_atom)) allocate( Scell(NSC)%G_ei_per_atom(nat, nat) )
+   ! and the version for energy transfer to individual atoms:
+   if (.not.allocated(Scell(NSC)%dE_at)) allocate( Scell(NSC)%dE_at(nat) )
 
 
    BS:if (do_cart) then ! Cartesian basis set (UNUSED FOR NOW):
@@ -3972,10 +3974,10 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
                     
                      ! Calculate the electron-ion collision integral and energy exchange via it:
                      if (numpar%Nonadiabat) then
-                        call Electron_ion_collision_int(Scell(NSC), numpar, Scell(NSC)%nrg, Mij, &
+                        call Electron_ion_collision_int(Scell(NSC), matter, numpar, Scell(NSC)%nrg, Mij, &
                               Scell(NSC)%Ei, Scell(NSC)%Ei0, Scell(NSC)%fe, &
                               dE_nonadiabat, numpar%NA_kind, numpar%DOS_weights, &
-                              Scell(NSC)%G_ei_partial, Scell(NSC)%G_ei_per_atom) ! module "Nonadiabatic"
+                              Scell(NSC)%G_ei_partial, Scell(NSC)%G_ei_per_atom, Scell(NSC)%dE_at) ! module "Nonadiabatic"
                      endif
 
                      ! Save Mij to calculate the dynamical electornic heat conductivity:
@@ -3998,8 +4000,10 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
             select case (numpar%V_scaling)      ! choose which model for velocity scaling to use
             case default      ! global scaling
                call Rescale_atomic_velocities(dE_nonadiabat, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
-            case (1)          ! local scaling
+            case (1)          ! local scaling (pairwise, recoil)
                call Rescale_atomic_velocities(Scell(NSC)%G_ei_per_atom, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
+            case (2)          ! each-atom scaling
+               call Rescale_atomic_velocities(Scell(NSC)%dE_at, matter, Scell, NSC, Scell(NSC)%nrg) ! module "Atomic_tools"
             endselect
 
             call get_kinetic_energy_abs(Scell, NSC, matter, Scell(NSC)%nrg) ! module "Atomic_tools"

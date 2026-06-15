@@ -56,7 +56,7 @@ file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_element_NN, file_electron_entropy, file_Te, file_mu, &
 file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
 file_diffraction_peaks, file_diffraction_peaks_part, file_diffraction_powder, file_diffraction_peaks_DW, file_Debye_temperature, &
-file_testmode, file_coupling, file_high_e)
+file_testmode, file_coupling, file_high_e, file_fragments)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
@@ -90,7 +90,9 @@ file_testmode, file_coupling, file_high_e)
    character(*), intent(in) :: file_testmode    ! testmode data
    character(*), intent(in) :: file_coupling    ! electron-ion coupling, including partial
    character(*), intent(in) :: file_high_e      ! high-energy electrons by type
+   character(*), intent(in) :: file_fragments       ! fragments of the target
    !----------------
+
    character(300) :: File_name, File_name2
    real(8) :: t0, t_last, x_tics, E_temp
    integer FN, i, j, Nshl, counter, iret, Nsiz
