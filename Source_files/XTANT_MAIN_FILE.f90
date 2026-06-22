@@ -295,8 +295,9 @@ if (g_numpar%verbose) call print_time_step('Atomic distribution calculated succe
 
 ! Update configurational temperature for running average (needed on each timestep):
 call update_Ta_config_running_average(g_Scell(1), g_matter, g_numpar)   ! module "Atomic_thermodynamics"
-! Update local temperatures of fragments (needed for local coupling):
+! Update local parameters of fragments (needed for local coupling):
 call get_fragments_data(g_Scell, 1, g_numpar, g_matter)  ! module "Atomic_thermodynamics"
+call get_fragments_data_for_electrons(g_Scell, 1, g_numpar, g_matter)  ! module "Electron_tools"
 
 ! Calculate configurational temperature (implemented only for Pettifor TB):
 call Get_configurational_temperature(g_Scell, g_numpar, g_matter)	! module "TB"
@@ -347,6 +348,7 @@ do while (g_time .LT. g_numpar%t_total)
 
       ! Quenching of atoms (zero-temperature MD):
       call Cooling_atoms(g_numpar, g_matter, g_Scell, g_time, g_numpar%at_cool_dt, g_numpar%at_cool_start, g_numpar%do_cool) ! module "Atomic_tools"
+      if (g_numpar%verbose) call print_time_step('Cooling of atoms done successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
 
       ! Berendsen thermostat (mimicing energy transport; only if included):
       if (g_numpar%Transport_e) then ! for electrons
@@ -419,8 +421,9 @@ do while (g_time .LT. g_numpar%t_total)
    g_dt_save = g_dt_save + g_numpar%dt  ! [fs] for tracing when to save the output data
    ! Update configurational temperature for running average (needed on each timestep):
    call update_Ta_config_running_average(g_Scell(1), g_matter, g_numpar)   ! module "Atomic_thermodynamics"
-   ! Update local temperatures of fragments (needed for local coupling):
+   ! Update local parameters of fragments (needed for local coupling):
    call get_fragments_data(g_Scell, 1, g_numpar, g_matter)  ! module "Atomic_thermodynamics"
+   call get_fragments_data_for_electrons(g_Scell, 1, g_numpar, g_matter)  ! module "Electron_tools"
 
    ! Write current data into output files:
    if (g_dt_save .GE. g_numpar%dt_save - 1d-6) then

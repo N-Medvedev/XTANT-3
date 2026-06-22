@@ -125,8 +125,14 @@ subroutine Electron_ion_collision_int(Scell, matter, numpar, nrg, Mij, wr, wr0, 
          ! Get the collision integral parameters:
          !call get_el_ion_kernel(Scell, numpar, Mij, wr, wr0, dt_small, kind_M, distre_temp2, dfdt_e2, dfdt_A2, dfdt_B2, &
          !                        DOS_weights, G_ei_partial) ! below
+
+         !print*, 'Electron_ion_collision_int test 0'
+
          call get_el_ion_kernel(Scell, matter, numpar, Mij, wr, wr0, numpar%dt*(1d-15), kind_M, distre_temp2, dfdt_e2, dfdt_A2, dfdt_B2, &
                                  DOS_weights, G_ei_partial, dE_ij, dE_at) ! below
+
+         !print*, 'Electron_ion_collision_int test 1'
+
 
          ! first step, no iterative data yet, use what we have:
          if (i_pc == 1) then
@@ -221,6 +227,8 @@ subroutine Electron_ion_collision_int(Scell, matter, numpar, nrg, Mij, wr, wr0, 
       endif
    enddo TIME_STEPS
 
+   !print*, 'Electron_ion_collision_int test 2'
+
    ! Take dt into account:
    G_ei_partial = G_ei_partial*dt_small ! energy for partial electron-phonon coupling [eV]
    dE_ij = -dE_ij*dt_small   ! energy transfer per pairs of atoms [eV] (sign convention according to G_ei)
@@ -245,6 +253,8 @@ subroutine Electron_ion_collision_int(Scell, matter, numpar, nrg, Mij, wr, wr0, 
 
    distre = distre_temp ! update electron distribution function after energy exchange with the atomic system
    
+   !print*, 'Electron_ion_collision_int test 3'
+
    deallocate(dfdt_e, dfdt_A, dfdt_B, distre_temp)
    deallocate(dfdt_e2, dfdt_A2, dfdt_B2, distre_temp2)
 !    deallocate(inv_t_e_ph)
@@ -514,19 +524,26 @@ subroutine get_dfdt(i, j, Scell, matter, wij, numpar, distre_temp, Mij2, dfdt, d
       !dfdt_B(i) = dfdt_B(i) + dfdt_bij*(2.0d0-distre_temp(j))
 
    case (2) ! local distribution: energy transfer to individual atoms
-      Nat = size(Scell%MDAtoms)     ! number of atoms
-      Nlev = size(Scell%Ei)         ! number of energy levels
-      Norb = Nlev / Nat             ! number of orbitals per atom
-
       ! Which atom contributes to this orbital the most:
-      Max_D_i = maxval(Scell%Dmatrix(i,:))      ! atomic orbital with maximal contribution to this level
-      Max_D_j = maxval(Scell%Dmatrix(j,:))      ! atomic orbital with maximal contribution to this level
-      i_max = (transfer( maxloc(Scell%Dmatrix(i,:)), i_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
-      j_max = (transfer( maxloc(Scell%Dmatrix(j,:)), j_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
+      Nat = size(Scell%MDAtoms)     ! number of atoms
 
-      Name_i => matter%Atoms(Scell%MDatoms(i_max)%KOA)%Name ! atomic name
-      Name_j => matter%Atoms(Scell%MDatoms(j_max)%KOA)%Name ! atomic name
-      !print*, i, j, i_max, j_max, Max_D_i, Max_D_j, trim(adjustl(Name_i))//' '//trim(adjustl(Name_j))
+      !Nlev = size(Scell%Ei)         ! number of energy levels
+      !Norb = Nlev / Nat             ! number of orbitals per atom
+      !Max_D_i = maxval(Scell%Dmatrix(i,:))      ! atomic orbital with maximal contribution to this level
+      !Max_D_j = maxval(Scell%Dmatrix(j,:))      ! atomic orbital with maximal contribution to this level
+      !i_max = (transfer( maxloc(Scell%Dmatrix(i,:)), i_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
+      !j_max = (transfer( maxloc(Scell%Dmatrix(j,:)), j_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
+      !print*, i, j, i_max, j_max, Scell%orb_in_atom(i), Scell%orb_in_atom(j)
+      !Name_i => matter%Atoms(Scell%MDatoms(i_max)%KOA)%Name ! atomic name
+      !Name_j => matter%Atoms(Scell%MDatoms(j_max)%KOA)%Name ! atomic name
+      !print*, i, j, i_max, j_max, Max_D_i, Max_D_j, trim(adjustl(Name_i))//' '//trim(adjustl(Name_j)), Scell%orb_in_atom(i), Scell%orb_in_atom(j)
+
+      ! Which atom contributes to this orbital the most (precalculated):
+      i_max = Scell%orb_in_atom(i)
+      j_max = Scell%orb_in_atom(j)
+
+      !print*, i_max, (transfer( maxloc(Scell%Dmatrix(i,:)), i_max) - 1)/ Norb + 1, j_max, (transfer( maxloc(Scell%Dmatrix(j,:)), j_max) - 1)/ Norb + 1
+
 
       ! Factors in the df/dt without the atomic distribution fuction:
       A = Mij2*( distre_temp(j)*(2.0d0-distre_temp(i)) )

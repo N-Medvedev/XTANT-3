@@ -1441,15 +1441,16 @@ subroutine write_fragments_properties(time, Scell, NSC, matter, numpar)
       if (.not.file_opened) then ! open file
          open(NEWUNIT=FN, FILE = trim(adjustl(file_fragment)))
          numpar%FN_fragments(i) = FN
-         call create_file_header(FN, '#Time Na  Ta_kin   Ta_fluc')
-         call create_file_header(FN, '#[fs] [-]   [K]  [K]')
+         call create_file_header(FN, '#Time Na  Ta_kin   Ta_fluc  Ne    Ee')
+         call create_file_header(FN, '#[fs] [-]   [K]  [K]  [-]    [eV/atom]')
       else ! file exists and opened, use it
          FN = numpar%FN_fragments(i)   ! file number
       endif
 
       ! Once the file is opened, write into it:
-      write(FN, '(f24.8, i10, 2es25.16)') time, Scell(NSC)%fragments%N_at(i), &
-                               Scell(NSC)%fragments%Tkin(i), Scell(NSC)%fragments%Tfluc(i)
+      write(FN, '(f24.8, i10, 4es25.16)') time, Scell(NSC)%fragments%N_at(i), &
+                               Scell(NSC)%fragments%Tkin(i), Scell(NSC)%fragments%Tfluc(i), &
+                               Scell(NSC)%fragments%N_e(i), Scell(NSC)%fragments%E_e(i)
 
    enddo ! i
 end subroutine write_fragments_properties

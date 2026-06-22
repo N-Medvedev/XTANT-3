@@ -47,7 +47,7 @@ public :: set_Erf_distribution, update_fe, Electron_thermalization, get_glob_ene
 public :: Do_relaxation_time, set_initial_fe, find_mu_from_N_T, set_total_el_energy, Electron_Fixed_Etot
 public :: get_new_global_energy, get_electronic_heat_capacity, get_total_el_energy, electronic_entropy
 public :: get_low_energy_distribution, set_high_DOS, get_Ce_and_mu, Diff_Fermi_Te, get_orbital_resolved_data
-public :: patch_distribution
+public :: patch_distribution, identify_fragment_for_orbital, get_fragments_data_for_electrons
 
  contains
 
@@ -349,7 +349,7 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
          ! Which scheme to use:
          ! 0=decoupled electrons; 1=enforced energy conservation; 2=T=const; 3=BO
          select case (numpar%el_ion_scheme)
-         case (1) ! Enforced energy conservation (Etot = Ee + Eat = const):
+         case (1) ! Enforced energy conservation (Etot = Ee + Eat = const; OUTDATED, NOT NEEDED):
             if (t .GT. numpar%t_Te_Ee) then ! Total energy is fixed:
                !call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! (SLOW) below
                call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! (FAST) below
@@ -360,7 +360,7 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
             Scell(NSC)%fe_eq = Scell(NSC)%fe ! instanteneous thermalization means both functions are the same
 
-         case (2) ! Fixed temperature (Te=const):
+         case (2) ! Fixed temperature (Te=const; EXTERNALLY ENFORCED):
 !             if (numpar%scc) then ! SCC, so the total energy is defined by the part H_0 without charge energy:
 !                call Electron_Fixed_Te(Scell(NSC)%Ei_scc_part, Scell(NSC)%Ne_low, Scell(NSC)%mu, Scell(NSC)%TeeV) ! below
 !             else
@@ -370,7 +370,7 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
             Scell(NSC)%fe_eq = Scell(NSC)%fe ! instanteneous thermalization means both functions are the same
 
-         case (3) ! Born-Oppenheimer:
+         case (3) ! Born-Oppenheimer (constant populations):
             ! Do nothing with fe!
             ! Only get the kinetic temperature of electrons (out-of-equilibrium):
             call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
@@ -403,7 +403,6 @@ subroutine update_fe(Scell, matter, numpar, t, Err, do_E_tot)
                call Electron_Fixed_Etot(Scell(NSC)%Ei, Scell(NSC)%Ne_low, Scell(NSC)%nrg%El_low, &
                                           Scell(NSC)%mu, Scell(NSC)%TeeV, .true.) ! below (FAST)
 !             endif
-!
 
             Scell(NSC)%Te = Scell(NSC)%TeeV*g_kb ! save also in [K]
             call set_initial_fe(Scell, matter, Err) ! recalculate new electron distribution
@@ -1273,7 +1272,6 @@ subroutine Do_relaxation_time(Scell, numpar, skip_thermalization, skip_partial, 
    if (.not.skip_step) then ! do the thermalization step:
       !--------------------------
       ! I. Check partial-band thermalization (separate for VB and CB)
-      !BNDS:if ((numpar%tau_fe_CB > eps) .and. (numpar%tau_fe_VB > eps) .and. (.not.skip_part)) then ! Partial thermalization is on:
       BNDS:if (numpar%do_partial_thermal .and. (.not.skip_part)) then ! Partial thermalization is on:
          ! Get the Fermi function for VB and CB separately:
          ! VB:
@@ -1415,6 +1413,165 @@ subroutine smoothening_step(Scell, numpar, eps_precision)
    endif ! (extra_cycle)
 end subroutine smoothening_step
 
+
+
+subroutine identify_fragment_for_orbital(Scell)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   !--------------
+   integer :: Nat, Nlev, Norb, i, i_max
+   real(8) :: Max_D_i
+
+   Nat = size(Scell%MDAtoms)     ! number of atoms
+   Nlev = size(Scell%Ei)         ! number of energy levels
+   Norb = Nlev / Nat             ! number of orbitals per atom
+
+   if (.not.allocated(Scell%orb_in_atom)) then
+      allocate(Scell%orb_in_atom(Nlev), source = 0)
+   endif
+
+   ! For all energy levels, identify which fragment they belong by the maximal contribution of the atomic orbitals into this level:
+   do i = 1, Nlev
+      ! Which atom contributes to this orbital the most:
+      !Max_D_i = maxval(Scell%Dmatrix(i,:))      ! atomic orbital with maximal contribution to this level
+      i_max = (transfer( maxloc(Scell%Dmatrix(i,:)), i_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
+
+      ! Which atom it belongs to:
+      Scell%orb_in_atom(i) = i_max
+
+      ! reminder:
+      !Scell%fragments%indices(i_max)     ! this identifies the fragment
+   enddo
+end subroutine identify_fragment_for_orbital
+
+
+
+subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
+   type(Super_cell), dimension(:), intent(inout) :: Scell   ! suoer-cell with all the atoms inside
+   integer, intent(in) :: NSC                   ! number of the super-cell
+   type(Numerics_param), intent(inout) :: numpar   ! numerical parameters
+   type(solid), intent(inout) :: matter         ! material parameters
+   !-----------------------------------
+   real(8) :: Te_frag, mu_frag
+   integer :: i, Nsiz, j, Nlev
+   logical :: needs_allocation
+   logical, dimension(:), allocatable :: orbital_fragments
+   !real(8), dimension(:), allocatable :: fe_eq_frag
+
+   !return ! test skip this subroutine
+   !print*, 'test 0 get_fragments_data_for_electrons'
+
+
+   ! Number of different fragments:
+   Nsiz = maxval(Scell(NSC)%fragments%indices)  ! what's the maximal fragment index among all the atoms
+
+   if (.not.allocated(Scell(NSC)%orb_in_atom)) then ! it's a first call
+      call identify_fragment_for_orbital(Scell(NSC))  ! above
+   endif
+
+   !-----------------------------------
+   ! Redefine the arrays of electronic parameters for each fragment:
+   needs_allocation = .false. ! to start with
+   ! 1) Array of number of electrons:
+   if (.not.allocated(Scell(NSC)%fragments%N_e)) then
+      needs_allocation = .true.
+   else ! may need reallocation, if the number of fragments changed:
+      if (size(Scell(NSC)%fragments%N_e) /= Nsiz) then
+         deallocate(Scell(NSC)%fragments%N_e)  ! wrong size, reallocate
+         needs_allocation = .true.
+      endif
+   endif
+   if (needs_allocation) then ! make sure it is allocated with the correct size
+      allocate(Scell(NSC)%fragments%N_e(Nsiz))
+   endif
+   ! 2) Array of electron energy:
+   if (.not.allocated(Scell(NSC)%fragments%E_e)) then
+      needs_allocation = .true.
+   else ! may need reallocation, if the number of fragments changed:
+      if (size(Scell(NSC)%fragments%E_e) /= Nsiz) then
+         deallocate(Scell(NSC)%fragments%E_e)  ! wrong size, reallocate
+         needs_allocation = .true.
+      endif
+   endif
+   if (needs_allocation) then ! make sure it is allocated with the correct size
+      allocate(Scell(NSC)%fragments%E_e(Nsiz))
+   endif
+   ! 3) Array of electronic chemical potential:
+   if (.not.allocated(Scell(NSC)%fragments%mu)) then
+      needs_allocation = .true.
+   else ! may need reallocation, if the number of fragments changed:
+      if (size(Scell(NSC)%fragments%mu) /= Nsiz) then
+         deallocate(Scell(NSC)%fragments%mu)  ! wrong size, reallocate
+         needs_allocation = .true.
+      endif
+   endif
+   if (needs_allocation) then ! make sure it is allocated with the correct size
+      allocate(Scell(NSC)%fragments%mu(Nsiz))
+   endif
+   ! 4) Array of electronic temperatures:
+   if (.not.allocated(Scell(NSC)%fragments%T_e)) then
+      needs_allocation = .true.
+   else ! may need reallocation, if the number of fragments changed:
+      if (size(Scell(NSC)%fragments%T_e) /= Nsiz) then
+         deallocate(Scell(NSC)%fragments%T_e)  ! wrong size, reallocate
+         needs_allocation = .true.
+      endif
+   endif
+   if (needs_allocation) then ! make sure it is allocated with the correct size
+      allocate(Scell(NSC)%fragments%T_e(Nsiz))
+   endif
+
+   !-----------------------------------
+   ! Identify the electronic parameters for each fragment:
+   Nlev = size(Scell(NSC)%Ei)
+   allocate(orbital_fragments(Nlev), source = .false.)
+
+   !print*, 'test 1 get_fragments_data_for_electrons'
+
+   do i = 1, Nsiz
+      ! Get the mask of orbitals belonging to this fragment:
+      do j = 1, Nlev
+         orbital_fragments(j) = (Scell(NSC)%fragments%indices(Scell(NSC)%orb_in_atom(j)) == i)
+      enddo ! j
+
+      ! 1) Number of electrons in the fragment "i"
+      Scell(NSC)%fragments%N_e(i) = SUM( Scell(NSC)%fe(:), MASK = orbital_fragments(:) )
+
+      ! 2) Electrons energy in the fragment "i"
+      Scell(NSC)%fragments%E_e(i) = SUM( Scell(NSC)%fe(:)*Scell(NSC)%Ei(:), MASK = orbital_fragments(:) )
+      ! Normalizatin per atom in the fragment:
+      Scell(NSC)%fragments%E_e(i) = Scell(NSC)%fragments%E_e(i) / dble(Scell(NSC)%fragments%N_at(i))  ! [eV/atom]
+
+
+      ! 3) Electronic chemical potential and temperature in the fragment "i"
+      ! Get the equivalent temperature and chem.potential of electrons in this fragment:
+      !call Electron_Fixed_Etot_partial(Scell(NSC)%Ei, Scell(NSC)%fragments%N_e(i), Scell(NSC)%fragments%E_e(i), mu_frag, &
+      !      Te_frag, Te_start=Scell(NSC)%TeeV, mu_start=Scell(NSC)%mu, orbital_fragments=orbital_fragments) ! below
+      Scell(NSC)%fragments%T_e(i) = Te_frag*g_kb      ! save in [K]
+      Scell(NSC)%fragments%mu(i) = mu_frag            ! [eV]
+
+      print*, i, Scell(NSC)%fragments%N_at(i), Scell(NSC)%fragments%N_e(i), Scell(NSC)%fragments%E_e(i), Scell(NSC)%fragments%T_e(i), Scell(NSC)%fragments%mu(i)
+
+   enddo ! i
+
+   print*, 'Total:', SUM(Scell(NSC)%fragments%N_e(:))
+
+   if (allocated(orbital_fragments)) deallocate(orbital_fragments)
+end subroutine get_fragments_data_for_electrons
+
+
+!    allocate(fe_eq_frag(size(Scell(NSC)%Ei)), source = 0.0d0)
+!       ! Construct equivalent Fermi distribution:
+!       call set_Fermi(Scell%Ei, Te_frag, mu_frag, fe_eq_frag, orbital_fragments=orbital_fragments)  ! below
+!
+!       ! Make the thermalization for this band:
+!       if (numpar%tau_fe_VB < numpar%dt/30.0d0) then ! it's basically instantaneous
+!          exp_dttau = 0.0d0
+!       else  ! finite time relaxation
+!          exp_dttau = dexp(-numpar%dt / numpar%tau_fe_VB)
+!       endif
+!       do i = 1, Scell%N_Egap  ! for VB grid points (MO energy levels)
+!          Scell%fe(i) = Scell%fe_eq_VB(i) + (Scell%fe(i) - Scell%fe_eq_VB(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
+!       enddo
 
 
 !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
@@ -2301,7 +2458,7 @@ end function Diff_Fermi_E
 
 
 
-subroutine Electron_Fixed_Etot_partial(Ei, Netot, Eetot, mu, Te, mu_start, Te_start, i_start_in, i_end_in)
+subroutine Electron_Fixed_Etot_partial(Ei, Netot, Eetot, mu, Te, mu_start, Te_start, i_start_in, i_end_in, orbital_fragments)
    real(8), dimension(:), intent(in) ::  Ei  ! eigenvalues of TB-Hamiltonian for electrons
    real(8), intent(in) :: Netot  ! number of electrons/supercell to normalize the distribution function
    real(8), intent(in) :: Eetot  ! energy of electrons/supercell to normalize the distribution function
@@ -2309,6 +2466,7 @@ subroutine Electron_Fixed_Etot_partial(Ei, Netot, Eetot, mu, Te, mu_start, Te_st
    real(8), intent(inout) :: mu ! chem.potential to be found [eV]
    real(8), intent(in), optional :: mu_start, Te_start    ! initial guess for the electron chem.potential and temperature [eV]
    integer, intent(in), optional :: i_start_in, i_end_in
+   logical, dimension(:), intent(in), optional :: orbital_fragments
    !-------------------------
    real(8) :: mu_0, mu_1, Te_0, Te_1, mix_fact, eps, mu_diff, Te_diff, eps_Te, eps_mu
    integer :: Nsiz, i_start, i_end, coun

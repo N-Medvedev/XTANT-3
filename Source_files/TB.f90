@@ -36,7 +36,7 @@ use Atomic_tools, only : get_near_neighbours, total_forces, Potential_super_cell
                         make_time_step_atoms_M, distance_to_given_cell, shortest_distance
 use Electron_tools, only : set_initial_fe, update_fe, get_new_global_energy, find_band_gap, get_DOS_sort, &
                      get_electronic_heat_capacity, electronic_entropy, Diff_Fermi_E, get_low_e_energy, get_total_el_energy, &
-                     get_orbital_resolved_data
+                     get_orbital_resolved_data, identify_fragment_for_orbital
 use Nonadiabatic, only : Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, Electron_ion_collision_int, get_G_ei
 use TB_Koster_Slater, only: drij_drka, ddija_drkb, d2dija_drkb2, KS_Cmnj_orbital, d_KS_Cmnj_orbital, d2_KS_Cmnj_orbital
 use TB_Fu, only : dHij_s_F, Attract_TB_Forces_Press_F, dErdr_s_F, dErdr_Pressure_s_F, construct_TB_H_Fu, &
@@ -3946,6 +3946,14 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
       SC:do NSC = 1, size(Scell) ! for all supercells
          dE_nonadiabat = 0.0d0
+
+         !print*, 'Electron_ion_coupling test 0'
+
+         ! Make a map of fragments: each orbital belonging to which fragment of the material:
+         call identify_fragment_for_orbital(Scell(1))    ! module "Electron_tools"
+         !print*, 'Electron_ion_coupling test 1'
+
+         ! Get the electron-ion counpling:
          if ( ( (numpar%Nonadiabat) .or. (numpar%do_kappa_dyn)) .AND. (t .GT. numpar%t_NA)) then ! electron-coupling included
             ! Ensure Fermi distribution (unless nonequilibrium simulation is used):
             call update_fe(Scell, matter, numpar, t, Err) ! module "Electron_tools"
@@ -3962,8 +3970,13 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
                do iy = 1, iym
                   do iz = 1, izm
            
+                     !print*, 'Electron_ion_coupling test 2'
+
                      ! Calculate nonadiabatic-coupling matrix element:
                      call get_coupling_matrix_elements(numpar%NA_kind, Scell, NSC, ix, iy, iz, ixm, iym, izm, Mij)  ! below
+
+                     !print*, 'Electron_ion_coupling test 3'
+
                      
                      !sssssssssssssssssssssss
                      ! Project-specific subroutine:
@@ -3979,6 +3992,9 @@ subroutine Electron_ion_coupling(t, matter, numpar, Scell, Err)
                               dE_nonadiabat, numpar%NA_kind, numpar%DOS_weights, &
                               Scell(NSC)%G_ei_partial, Scell(NSC)%G_ei_per_atom, Scell(NSC)%dE_at) ! module "Nonadiabatic"
                      endif
+
+                     !print*, 'Electron_ion_coupling test 4'
+
 
                      ! Save Mij to calculate the dynamical electornic heat conductivity:
 !                      if (numpar%do_kappa_dyn) then
