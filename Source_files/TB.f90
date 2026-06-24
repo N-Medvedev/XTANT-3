@@ -5587,9 +5587,9 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
    endif ! (do_partial)
 
    ! Testing:
-   call get_Mulliken_each_atom(numpar%Mulliken_model, Scell, matter, numpar, forced_mulliken=.true.)      ! above
-   print*, 'get_DOS_sort test 1', D(1,2:15), ':', Scell%Dmatrix(1,2:15)
-   pause
+   !call get_Mulliken_each_atom(numpar%Mulliken_model, Scell, matter, numpar, forced_mulliken=.true.)      ! above
+   !print*, 'get_DOS_sort test 1', D(1,2:15), ':', Scell%Dmatrix(1,2:15)
+   !pause
 
 
 #ifdef MPI_USED   ! use the MPI version
@@ -5777,7 +5777,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
       if (ANY(partial_DOS_sum(:, :, i) < 0.0d0)) then ! unphysical, negative pDOS
          print*, 'NEGATIVE pDOS in get_DOS_sort:', i, partial_DOS_sum(:, :, i)
       endif
-      if ( (SUM(partial_DOS_sum(:, :, i) - DOS_sum(i)) < 1.0e-8)) then  ! does not sum up to total DOS
+      if ( abs(SUM(partial_DOS_sum(:, :, i) - DOS_sum(i)) > 1.0d-8)) then  ! does not sum up to total DOS
          print*, 'pDOS does not equals total DOS in get_DOS_sort:', i, partial_DOS_sum(:, :, i), DOS_sum(i)
       endif
 
