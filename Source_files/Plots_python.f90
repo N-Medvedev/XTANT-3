@@ -262,7 +262,7 @@ file_testmode, file_coupling, file_high_e, file_fragments)
    ! Data for fragments (if required):
    if (numpar%print_fragments) then
       call Python_plot_fragments_data(Scell(1), numpar, file_fragments, t0, t_last, &
-            'OUTPUT_fragments_Nat.py', 'OUTPUT_fragments_Ta.py', 'OUTPUT_fragments_Ne.py') ! below
+            'OUTPUT_fragments_Nat.py', 'OUTPUT_fragments_q.py', 'OUTPUT_fragments_Ta.py', 'OUTPUT_fragments_Ne.py') ! below
    endif
 
 
@@ -1559,13 +1559,15 @@ end subroutine Python_plot_partial_coupling
 
 
 
-subroutine Python_plot_fragments_data(Scell, numpar, file_fragments, t0, t_last, script_name_Nat, script_name_Ta, script_name_Ne) ! below
+subroutine Python_plot_fragments_data(Scell, numpar, file_fragments, t0, t_last, &
+                  script_name_Nat, script_name_q, script_name_Ta, script_name_Ne) ! below
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
    real(8), intent(in) :: t0, t_last      ! starting and ending time
-   character(*), intent(in) :: file_fragments, script_name_Nat, script_name_Ta ! file with atomic numbers and temperatures
-   character(*), intent(in) :: script_name_Ne   ! file with electronic numbers
-   !logical, intent(in), optional :: convolved   ! is it a convolved copy of files (not implemented)
+   character(*), intent(in) :: file_fragments   ! file with fragments parameters
+   character(*), intent(in) :: script_name_Nat, script_name_q, script_name_Ta ! atomic numbers, charges, and temperatures
+   character(*), intent(in) :: script_name_Ne   ! electron numbers
+   !logical, intent(in), optional :: convolved  ! is it a convolved copy of files (not implemented)
    !----------------
    character(300) :: File_name, Plot_name, Data_file_name, temp_txt
    integer :: FN, N_cols
@@ -1652,6 +1654,7 @@ subroutine Python_plot_fragments_data(Scell, numpar, file_fragments, t0, t_last,
    write(FN, '(a)') 'plt.savefig("'//trim(adjustl(Plot_name))//'.'//trim(adjustl(numpar%fig_extention))//'", dpi=300, bbox_inches="tight")'
    close(FN)
 
+
    !----------------
    ! 2) Temperatures of atoms in each fragment:
    ! Py script file:
@@ -1693,8 +1696,8 @@ subroutine Python_plot_fragments_data(Scell, numpar, file_fragments, t0, t_last,
    write(FN, '(a)') '            cols = line.split()'
 
    write(FN, '(a)') '            t = float(cols[0])'
-   write(FN, '(a)') '            n = float(cols[2])'
-   write(FN, '(a)') '            m = float(cols[3])'
+   write(FN, '(a)') '            n = float(cols[3])'
+   write(FN, '(a)') '            m = float(cols[4])'
 
    write(FN, '(a)') '            times.append(t)'
    write(FN, '(a)') '            Tkin.append(n)'
@@ -1753,9 +1756,90 @@ subroutine Python_plot_fragments_data(Scell, numpar, file_fragments, t0, t_last,
    close(FN)
 
 
+   !----------------
+   ! 3) Mulliken charge in each fragment:
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name_q))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   Plot_name = 'OUTPUT_fragments_q'
+   Data_file_name = trim(adjustl(file_fragments))
+
+
+   write(FN, '(a)') 'import glob'
+   write(FN, '(a)') 'import re'
+   write(FN, '(a)') 'import matplotlib.pyplot as plt'
+
+   write(FN, '(a)') 'def numeric_key(filename):'
+   write(FN, '(a)') '    m = re.search(r"'// trim(adjustl(Data_file_name))//'(\d+)\.dat", filename)'
+   write(FN, '(a)') '    return int(m.group(1)) if m else 0'
+   write(FN, '(a)') 'files = sorted(glob.glob("'//trim(adjustl(Data_file_name))//'*.dat"), key=numeric_key)'
+
+   write(FN, '(a)') 'for i, fname in enumerate(files, start=1):'
+   write(FN, '(a)') '    times = []'
+   write(FN, '(a)') '    natoms = []'
+
+   write(FN, '(a)') '    with open(fname, "r") as f:'
+   write(FN, '(a)') '        for line in f:'
+   write(FN, '(a)') '            if line.lstrip().startswith("#"):'
+   write(FN, '(a)') '                continue'
+   write(FN, '(a)') '            if not line.strip():'
+   write(FN, '(a)') '                continue'
+
+   write(FN, '(a)') '            cols = line.split()'
+
+   write(FN, '(a)') '            # col1 = time, col2 = natoms'
+   write(FN, '(a)') '            t = float(cols[0])'
+   write(FN, '(a)') '            n = float(cols[2])'
+
+   write(FN, '(a)') '            times.append(t)'
+   write(FN, '(a)') '            natoms.append(n)'
+
+   write(FN, '(a)') '    plt.plot(times, natoms, label=f"Fragment #{i}")'
+
+   write(FN, '(a)') 'plt.xlabel("Time (fs)", fontsize=14)'
+   write(FN, '(a)') 'plt.ylabel("Charge (e)", fontsize=14)'
+
+   write(FN, '(a)') 'plt.xlim(None,None)'
+   write(FN, '(a)') 'plt.ylim(None,None)'
+
+   write(FN, '(a)') 'plt.title("Mulliken charge of fragments", fontsize=14)'
+
+   write(FN, '(a)') 'plt.xticks(fontsize=12)'
+   write(FN, '(a)') 'plt.yticks(fontsize=12)'
+
+   ! Make appropriate font size:
+   hide_legend = .false.      ! to start with
+   N_cols = Scell%fragments%N_frag_max
+   if (N_cols < 8) then ! normal:
+      write(temp_txt,'(a)') 'fontsize=12'
+   elseif (N_cols < 17) then ! smaller
+      write(temp_txt,'(a)') 'fontsize=10'
+   elseif (N_cols < 21) then
+      write(temp_txt,'(a)') 'fontsize=9'
+   elseif (N_cols < 33) then
+      write(temp_txt,'(a)') 'fontsize=10, ncol=2'
+   elseif (N_cols < 41) then
+      write(temp_txt,'(a)') 'fontsize=9, ncol=2'
+   elseif (N_cols < 65) then
+      write(temp_txt,'(a)') 'fontsize=9, ncol=3'
+   else ! too many curves, no need for a legend at all
+      hide_legend = .true.
+   endif
+
+   if (.not.hide_legend) then
+      write(FN, '(a)') 'plt.legend(loc="best", '//trim(adjustl(temp_txt))//')'
+   else ! hide the legend
+      write(FN, '(a)') 'plt.legend().set_visible(False)'
+   endif
+   write(FN, '(a)') 'plt.tight_layout()'
+
+   write(FN, '(a)') 'plt.savefig("'//trim(adjustl(Plot_name))//'.'//trim(adjustl(numpar%fig_extention))//'", dpi=300, bbox_inches="tight")'
+   close(FN)
+
 
    !----------------
-   ! 3) Number of electrons in each fragment:
+   ! 4) Number of electrons in each fragment:
    ! Py script file:
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name_Ne))
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
@@ -1788,7 +1872,7 @@ subroutine Python_plot_fragments_data(Scell, numpar, file_fragments, t0, t_last,
 
    write(FN, '(a)') '            # col1 = time, col2 = natoms'
    write(FN, '(a)') '            t = float(cols[0])'
-   write(FN, '(a)') '            n = float(cols[4])'
+   write(FN, '(a)') '            n = float(cols[5])'
 
    write(FN, '(a)') '            times.append(t)'
    write(FN, '(a)') '            natoms.append(n)'

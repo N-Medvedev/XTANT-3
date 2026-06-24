@@ -678,6 +678,7 @@ type :: Fragment_data       ! atomic data for fragments the material is made of
    integer, dimension(:), allocatable :: N_at     ! number of atoms in this fragment
    real(8), dimension(:), allocatable :: Tkin     ! [K] kinetic temperature of atoms in this fragment
    real(8), dimension(:), allocatable :: Tfluc    ! [K] fluctuational temperature of atoms in this fragment
+   real(8), dimension(:), allocatable :: q        ! [e] Mulliken charge of the fragment
    real(8), dimension(:), allocatable :: N_e      ! number of electrons in this fragment (identified by atoms with major contribution)
    real(8), dimension(:), allocatable :: E_e      ! [eV] energy of electrons in this fragment
    real(8), dimension(:), allocatable :: mu       ! [eV] electronic chemical potential in this fragment

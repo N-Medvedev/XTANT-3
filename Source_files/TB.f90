@@ -28,13 +28,14 @@ use Universal_constants
 use Objects
 use Algebra_tools, only : Det_3x3, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points, sym_diagonalize, Reciproc, &
                         mkl_matrix_mult, Invers_3x3, mkl_matrix_mult_c8, c8_diagonalize, Kronecker_delta
-use Little_subroutines, only : number_of_types_of_orbitals, count_3d, deallocate_array, basis_set_size, number_of_radial_functions
+use Little_subroutines, only : number_of_types_of_orbitals, count_3d, deallocate_array, basis_set_size, number_of_radial_functions, &
+                              Find_in_monotonous_1D_array, Gaussian
 use Atomic_tools, only : get_near_neighbours, total_forces, Potential_super_cell_forces, super_cell_forces, &
                         Convert_reciproc_rel_to_abs, Rescale_atomic_velocities, get_kinetic_energy_abs, &
                         get_Ekin, save_last_timestep, Potential_super_cell_forces, &
                         make_time_step_atoms, make_time_step_supercell, make_time_step_atoms_Y4, make_time_step_supercell_Y4, &
                         make_time_step_atoms_M, distance_to_given_cell, shortest_distance
-use Electron_tools, only : set_initial_fe, update_fe, get_new_global_energy, find_band_gap, get_DOS_sort, &
+use Electron_tools, only : set_initial_fe, update_fe, get_new_global_energy, find_band_gap, &
                      get_electronic_heat_capacity, electronic_entropy, Diff_Fermi_E, get_low_e_energy, get_total_el_energy, &
                      get_orbital_resolved_data, identify_fragment_for_orbital
 use Nonadiabatic, only : Electron_ion_coupling_Mij, Electron_ion_coupling_Mij_complex, Electron_ion_collision_int, get_G_ei
@@ -76,7 +77,7 @@ PRIVATE
 public :: get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_parameters, &
          vdW_interplane, Electron_ion_coupling, update_nrg_after_change, get_DOS_masks, k_point_choice, &
          construct_complex_Hamiltonian, get_Hamilonian_and_E, MD_step, get_Mullikens_all, get_coupling_matrix_elements, &
-         Get_configurational_temperature
+         Get_configurational_temperature, get_DOS_sort
 
  contains
 
@@ -1936,18 +1937,26 @@ end subroutine get_Mulliken
 
 
 
-subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
+subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_mulliken)
    integer, intent(in) :: Mulliken_model   ! which model to use
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Solid), intent(in) :: matter     ! material parameters
    type (Numerics_param), intent(inout) :: numpar    ! numerical parameters, including drude-function
+   logical, intent(in), optional :: forced_mulliken   ! force calcuulation, even if user didn't require it
    !-------------------------------
    real(8), dimension(:,:), allocatable :: D
    real(8), dimension(:), allocatable :: mulliken_Ne
    integer :: N_at, i_at, i_orb, j, Nsiz, N_orb, k
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
-   logical :: do_mulliken, do_local_scaling
+   logical :: do_mulliken, do_local_scaling, do_calculation
+
+   ! Check if the calculation is forced:
+   if (present(forced_mulliken)) then
+      do_calculation = forced_mulliken
+   else
+      do_calculation = .false.      ! by default, do not force calculations
+   endif
 
    ! Check if user requested Mulliken charges:
    do_mulliken = (numpar%save_XYZ .and. numpar%save_XYZ_extra(2))
@@ -1961,7 +1970,7 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar)
    endselect
 
 
-   if (do_mulliken .or. do_local_scaling) then ! get Mulliken populations and charges
+   if (do_mulliken .or. do_local_scaling .or. do_calculation) then ! get Mulliken populations and charges
       !print*, 'get_Mulliken_each_atom:', Mulliken_model
       !print*, allocated(Scell%MDAtoms)
       N_at = size(Scell%MDAtoms) ! total number of atoms
@@ -2479,6 +2488,7 @@ subroutine get_complex_Hamiltonian(numpar, Scell, NSC,  CHij, CSij, Ei, kx, ky, 
    ! Construct complex Hamiltonian from the real one for the given k-point:
    if ((abs(kx) < 1.0d-14) .AND. (abs(ky) < 1.0d-14) .AND. (abs(kz) < 1.0d-14)) then ! Gamma point:
       Ei = Scell(NSC)%Ei    !already known
+      CHij = cmplx(Scell(NSC)%Ha,0.0d0)
    else ! any other point:
       ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
          select type(ARRAY)
@@ -2571,9 +2581,14 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    if (present(Sij)) then   ! it is nonorthogonal case:
       if (.not.allocated(CSij)) allocate(CSij(Nsiz,Nsiz))
       CSij = cmplx(0.0d0,0.0d0)	! to start with
-      if (present(CSij_out)) then
-         if (.not.allocated(CSij_out)) allocate(CSij_out(Nsiz,Nsiz), source=cmplx(0.0d0,0.0d0))
-      endif
+   endif
+   if (present(CSij_out)) then
+      if (.not.allocated(CSij_out)) allocate(CSij_out(Nsiz,Nsiz))
+      CSij_out = cmplx(0.0d0,0.0d0)	! to start with
+      ! Diagonals are 1:
+      do i = 1, size(CSij_out,1)
+         CSij_out(i,i) = cmplx(1.0d0,0.0d0)
+      enddo
    endif
    
    ! Get reciprocal vectors:
@@ -2663,6 +2678,11 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 !    !$omp end do
 !    !$omp end parallel
 
+   if (present(CSij_out)) then ! overlap matrix
+      if (present(Sij)) then ! this matrix was used to constrcut complex overlap
+         CSij_out = CSij ! output
+      endif
+   endif
 
    ! Temporarily save nonorthogonal Hamiltonian and overlap matrix:
    CHij_non = CHij_temp
@@ -2704,9 +2724,6 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       end if
    endif
    CHij = CHij_temp ! save for output
-   if (present(CSij_out)) then ! diagonalized Hamiltonian (eigenfunctions)
-      CSij_out = CHij ! output
-   endif
 
    !---------------------------------------
    ! Effective momentum operators:
@@ -5483,6 +5500,302 @@ end subroutine Get_pressure
 
 
 
+subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, masks_DOS, CHij, CSij)
+   type(Numerics_param), intent(inout) :: numpar      ! all numerical parameters
+   type(Super_cell), intent(inout) :: Scell     ! suoer-cell with all the atoms inside
+   type(solid), intent(in) :: matter ! material parameters
+   real(8), dimension(:), intent(in) :: Ei      ! [eV] energy levels
+   real(8), dimension(:,:), intent(inout) :: DOS      ! [eV] grid; [a.u.] DOS
+   real(8), intent(in) :: smearing  ! [eV] smearing used for DOS calculations
+   real(8), dimension(:,:,:), intent(inout), optional :: partial_DOS    ! partial DOS made of each orbital type, if required to be constructed
+   logical, dimension(:,:,:), intent(in), optional :: masks_DOS   ! partial DOS made of each orbital type, if required to be constructed
+   !real(8), dimension(:,:), intent(in), optional :: Hij      ! real eigenvectors
+   complex, dimension(:,:), intent(in), optional :: CHij    ! complex eigenvectors
+   complex, dimension(:,:), intent(in), optional :: CSij    ! overlap matrix
+   !-----------------------------------------
+   integer :: i, Nsiz, Ngridsiz, j_center, j, N_at, N_types, i_at, i_types, k
+   real(8) :: Gaus, epsylon, sigma, temp
+   real(8), dimension(:), allocatable :: DOS_sum
+   real(8), dimension(:,:,:), allocatable :: partial_DOS_sum
+   real(8), dimension(size(Scell%Ha,1),size(Scell%Ha,2)) :: D      ! density matrix, if required (for complex case)
+   logical :: do_partial
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+!    print*, 'get_DOS_sort test 0'
+
+   epsylon = 1.0d-12	! precision
+   sigma = smearing	! [eV] gaussian smearing
+   Ngridsiz = size(DOS,2)	! number of grid points
+   Nsiz = size(Ei)	! number of energy levels
+   DOS(2,:) = 0.0d0	! to start from
+   allocate(DOS_sum(Ngridsiz))
+   DOS_sum = 0.0d0	! to start from
+   do_partial = (present(partial_DOS) .and. present(masks_DOS))
+   if (do_partial) then
+      N_at = size(partial_DOS,1)
+      N_types = size(partial_DOS,2)
+      allocate(partial_DOS_sum(N_at, N_types, Ngridsiz))
+      partial_DOS_sum = 0.0d0
+
+      ! Make sure the density matrix is precalculatied:
+      if (present(CHij)) then ! construct the density matrix from this Hamiltonian:
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+         N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+         Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+         Nend = Nsiz
+         if (present(CSij) then  ! nonorthogonal
+            ! Do the cycle (parallel) calculations:
+            do j = Nstart, Nend, N_incr  ! each process does its own part
+               do k = 1, Nsiz ! for all energy levels
+                  D(k,j) = conjg(CHij(k,j)) * SUM(CHij(:,j) * CSij(k,:))   ! the density matrix without occupations
+               enddo
+            enddo
+         else ! orthogonal
+            ! Do the cycle (parallel) calculations:
+            do j = Nstart, Nend, N_incr  ! each process does its own part
+               D(:,j) = conjg(CHij(:,j)) * CHij(:,j)
+            enddo
+         endif
+         ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+         error_part = 'Error #1 in get_DOS_sort:'
+         call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{D}', D) ! module "MPI_subroutines"
+#else ! use OpenMP instead
+         if (present(CSij)) then  ! nonorthogonal
+            !$omp PARALLEL private(j, k)
+            !$omp do
+            do j = 1, Nsiz ! for all energy levels
+               do k = 1, Nsiz ! for all energy levels
+                  D(k,j) = conjg(CHij(k,j)) * SUM(CHij(:,j) * CSij(k,:))   ! the density matrix without occupations
+               enddo
+            enddo
+            !$omp end do
+            !$omp end parallel
+         else ! orthogonal
+            !$omp PARALLEL private(j)
+            !$omp do
+            do j = 1, Nsiz ! for all energy levels
+               D(:,j) = conjg(CHij(:,j)) * CHij(:,j)
+            enddo
+            !$omp end do
+            !$omp end parallel
+         endif
+#endif
+      else ! real Hamiltonian
+         call get_Mulliken_each_atom(numpar%Mulliken_model, Scell, matter, numpar, forced_mulliken=.true.)      ! above
+      endif
+   endif ! (do_partial)
+
+   ! Testing:
+   call get_Mulliken_each_atom(numpar%Mulliken_model, Scell, matter, numpar, forced_mulliken=.true.)      ! above
+   print*, 'get_DOS_sort test 1', D(1,2:15), ':', Scell%Dmatrix(1,2:15)
+   pause
+
+
+#ifdef MPI_USED   ! use the MPI version
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = Ngridsiz
+   ! Do the cycle (parallel) calculations:
+   do i = Nstart, Nend, N_incr  ! each process does its own part
+   !do i = 1, Ngridsiz	! for all grid points
+      ! Do the summation in two parts:
+      call Find_in_monotonous_1D_array(Ei, DOS(1,i), j_center)	! module "Little_subroutines"
+      ! 1) Contribution from the levels above the chosen point:
+      if (j_center <= Nsiz) then
+         EL:do j = j_center, Nsiz	! for all energy levels above, up to the last one
+            call Gaussian(Ei(j), sigma, DOS(1,i), Gaus)	! module "Little_subroutines"
+            if (Gaus < epsylon) exit EL	! no need to continue, the contribution from higher levels is negligible
+            DOS_sum(i) = DOS_sum(i) + Gaus
+            if (do_partial) then
+               !if (present(Hij)) then
+               if (.not.present(CHij)) then
+                  !temp = SUM( Hij(:,j) * Hij(:,j) )
+                  temp = 1.0d0
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, :))
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :))     ! Negative DOS present
+                        enddo
+                     enddo
+                  endif
+               else
+                  !temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
+                  !temp = sqrt(SUM( conjg(CHij(:,j)) * CHij(:,j) ))      ! ensure WF normalization to 1
+                  temp = 1.0d0
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Negative DOS present
+                        enddo
+                     enddo
+                  endif
+               endif
+            endif
+         enddo EL
+      endif ! (j_center <= Nsiz)
+      ! 2) Contribution from the levels below the given point:
+      if (j_center > 1) then
+         EL2:do j = (j_center-1), 1, -1	! for all energy levels below, down to the first one
+            call Gaussian(Ei(j), sigma, DOS(1,i), Gaus)	! module "Little_subroutines"
+            if (Gaus < epsylon) exit EL2	! no need to continue, the contribution from higher levels is negligible
+            DOS_sum(i) = DOS_sum(i) + Gaus
+            if (do_partial) then
+               !if (present(Hij)) then
+               if (.not.present(CHij)) then
+                  !temp = SUM( Hij(:,j) * Hij(:,j) )
+                  temp = 1.0d0
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, j))/temp
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, j))/temp      ! Negative DOS present
+                        enddo
+                     enddo
+                  endif
+               else !if (present(CHij)) then
+                  !temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
+                  !temp = sqrt(SUM( conjg(CHij(:,j)) * CHij(:,j) ))      ! ensure WF normalization to 1
+                  temp = 1.0d0
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Negative DOS present
+                        enddo
+                     enddo
+                  endif
+               endif
+            endif
+         enddo EL2
+      endif ! (j_center > 1)
+   enddo !  i = 1, Ngridsiz
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error #2 in get_DOS_sort:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{DOS_sum}', DOS_sum) ! module "MPI_subroutines"
+   if (do_partial) then
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{partial_DOS_sum}', partial_DOS_sum) ! module "MPI_subroutines"
+   endif
+   call MPI_barrier_wrapper(numpar%MPI_param)  ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
+   !$omp PARALLEL private(i, j_center, j, Gaus, i_at, i_types, temp)
+   !$omp do schedule(dynamic) reduction( + : DOS_sum, partial_DOS_sum)
+   do i = 1, Ngridsiz	! for all grid points
+      ! Do the summation in two parts:
+!        print*, 'get_DOS_sort test 1.5'
+
+      call Find_in_monotonous_1D_array(Ei, DOS(1,i), j_center)	! module "Little_subroutines"
+
+!        print*, 'get_DOS_sort test 2'
+
+      ! 1) Contribution from the levels above the chosen point:
+      if (j_center <= Nsiz) then
+         EL:do j = j_center, Nsiz	! for all energy levels above, up to the last one
+            call Gaussian(Ei(j), sigma, DOS(1,i), Gaus)	! module "Little_subroutines"
+            if (Gaus < epsylon) exit EL	! no need to continue, the contribution from higher levels is negligible
+            DOS_sum(i) = DOS_sum(i) + Gaus
+            if (do_partial) then
+               !if (present(Hij)) then
+               if (.not.present(CHij)) then
+                  !temp = SUM( Scell%Ha(:,j) * Scell%Ha(:,j) )
+                  temp = 1.0d0
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+                           !print*, 'get_DOS_sort test 3a'
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, :))/temp
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :))/temp     ! Can produce negative pDOS
+
+                           !print*, 'get_DOS_sort test 4a'
+                        enddo
+                     enddo
+                  endif
+               else !if (present(CHij)) then
+                  !temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
+                  !temp = sqrt(SUM( conjg(CHij(:,j)) * CHij(:,j) ))      ! ensure WF normalization to 1
+                  temp = 1.0d0
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Negative DOS present
+                        enddo
+                     enddo
+                  endif
+               endif
+            endif
+         enddo EL
+      endif ! (j_center <= Nsiz)
+      ! 2) Contribution from the levels below the given point:
+      if (j_center > 1) then
+         EL2:do j = (j_center-1), 1, -1	! for all energy levels below, down to the first one
+            call Gaussian(Ei(j), sigma, DOS(1,i), Gaus)	! module "Little_subroutines"
+            if (Gaus < epsylon) exit EL2	! no need to continue, the contribution from higher levels is negligible
+            DOS_sum(i) = DOS_sum(i) + Gaus
+            if (do_partial) then
+               !if (present(Hij)) then
+               if (.not.present(CHij)) then
+                  !temp = SUM( Hij(:,j) * Hij(:,j) )
+                  !temp = SUM( Scell%Ha(:,j) * Scell%Ha(:,j) )
+                  temp = 1.0d0
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+!                            print*, 'get_DOS_sort test 3c'
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, j))/temp
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, j))/temp     ! Can produce negative pDOS
+                        enddo
+                     enddo
+                  endif
+               else !if (present(CHij)) then
+                  !temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
+                  !temp = sqrt(SUM( conjg(CHij(:,j)) * CHij(:,j) ))      ! ensure WF normalization to 1
+                  temp = 1.0d0
+                  if (abs(temp) > 1.0d-12) then
+                     do i_at = 1, N_at
+                        do i_types = 1, N_types
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp
+                        enddo
+                     enddo
+                  endif
+               endif
+            endif
+         enddo EL2
+      endif ! (j_center > 1)
+
+      ! Consistency checks:
+      if (ANY(partial_DOS_sum(:, :, i) < 0.0d0)) then ! unphysical, negative pDOS
+         print*, 'NEGATIVE pDOS in get_DOS_sort:', i, partial_DOS_sum(:, :, i)
+      endif
+      if ( (SUM(partial_DOS_sum(:, :, i) - DOS_sum(i)) < 1.0e-8)) then  ! does not sum up to total DOS
+         print*, 'pDOS does not equals total DOS in get_DOS_sort:', i, partial_DOS_sum(:, :, i), DOS_sum(i)
+      endif
+
+   enddo !  i = 1, Ngridsiz
+   !$omp end do
+   !$omp end parallel
+#endif
+
+   DOS(2,:) = DOS_sum(:)
+   if (do_partial) partial_DOS(:,:,:) = partial_DOS_sum(:,:,:)
+
+   deallocate(DOS_sum)
+   if (allocated(partial_DOS_sum)) deallocate(partial_DOS_sum)
+end subroutine get_DOS_sort
+
+
+
+
 !IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
 ! Project-specific analysis of C60:
 
@@ -5744,20 +6057,27 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! Obsolete subroutine
          select case (ABS(numpar%optic_model))	! use multiple k-points, or only gamma!
          case (2,4,5)   ! multiple k points
 
+            !print*, 'Multiple k for DOS'
+            !pause
+
             ! Partial DOS if needed:
             select case (numpar%DOS_splitting)
             case (1)
-               call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err, Scell(NSC)%partial_DOS, numpar%mask_DOS)	! see below
+               call get_DOS_sort_complex(numpar, Scell, NSC, matter, Scell(NSC)%DOS, numpar%Smear_DOS, Err, Scell(NSC)%partial_DOS, numpar%mask_DOS)	! see below
             case default    ! No need to sort DOS per orbitals
-               call get_DOS_sort_complex(numpar, Scell, NSC, Scell(NSC)%DOS, numpar%Smear_DOS, Err)	! see below
+               call get_DOS_sort_complex(numpar, Scell, NSC, matter, Scell(NSC)%DOS, numpar%Smear_DOS, Err)	! see below
             endselect
          case default	! gamma point
+
+            !print*, 'Gamma for DOS'
+            !pause
+
             ! Partial DOS if needed:
             select case (numpar%DOS_splitting)
             case (1)
-               call get_DOS_sort(numpar, Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS, Scell(NSC)%partial_DOS, numpar%mask_DOS, Hij = Scell(NSC)%Ha)	! module "Electron_tools"
+               call get_DOS_sort(numpar, Scell(NSC), matter, Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS, Scell(NSC)%partial_DOS, numpar%mask_DOS)	! module "Electron_tools"
             case default    ! No need to sort DOS per orbitals
-               call get_DOS_sort(numpar, Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS)	! module "Electron_tools"
+               call get_DOS_sort(numpar, Scell(NSC), matter, Scell(NSC)%Ei, Scell(NSC)%DOS, numpar%Smear_DOS)	! module "Electron_tools"
             endselect
          end select
 !           call print_time_step('After DOS:', 1.0, msec=.true.)   ! module "Little_subroutines"
@@ -5768,11 +6088,14 @@ subroutine get_DOS(numpar, matter, Scell, Err) ! Obsolete subroutine
 end subroutine get_DOS
 
 
+
+
 ! This subroutine is superceeded by the module "TB_complex"
-subroutine get_DOS_sort_complex(numpar, Scell, NSC, DOS, smearing, Err, partial_DOS, masks_DOS) ! Obsolete subroutine
+subroutine get_DOS_sort_complex(numpar, Scell, NSC, matter, DOS, smearing, Err, partial_DOS, masks_DOS) ! Obsolete subroutine
    type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
+   type(solid), intent(in) :: matter ! material parameters
    real(8), dimension(:,:), intent(inout) :: DOS	! [eV] grid; [a.u.] DOS
    real(8), intent(in) :: smearing	! [eV] smearing used for DOS calculations
    type(Error_handling), intent(inout) :: Err	! error save
@@ -5807,7 +6130,7 @@ subroutine get_DOS_sort_complex(numpar, Scell, NSC, DOS, smearing, Err, partial_
 ! !$omp PARALLEL private(ix, iy, iz, kx, ky, kz, CHij, CSij, Ei, DOS_cur)
    allocate(Ei(Ne))
    allocate(CHij(Ne,Ne))
-   allocate(CSij(Ne,Ne))
+   allocate(CSij(Ne,Ne), source=cmplx(1.0d0,0.0d0))
    allocate(DOS_cur(2,size(DOS,2)))
    DOS_cur = 0.0d0
    DOS_cur(1,:) = DOS(1,:)
@@ -5823,6 +6146,10 @@ subroutine get_DOS_sort_complex(numpar, Scell, NSC, DOS, smearing, Err, partial_
             Ngp = (ix-1)*iym*ixm + (iy-1)*ixm + iz	! number of grid point for user defined grid
             if (Ngp <= Nsiz) then
                call k_point_choice(schem, ix, iy, iz, ixm, iym, izm, kx, ky, kz, numpar%k_grid)	! below
+
+               ! Reset the overlap matrix:
+               CSij=cmplx(1.0d0,0.0d0)
+
                write(*,'(i3,i3,i3,f,f,f,a)') ix, iy, iz, kx, ky, kz, ' DOS'
 
                ! Construct complex Hamiltonian from the real one for the given k-point:
@@ -5830,10 +6157,10 @@ subroutine get_DOS_sort_complex(numpar, Scell, NSC, DOS, smearing, Err, partial_
 
                ! And get the DOS for this k point:
                if (do_partial) then
-                  call get_DOS_sort(numpar, Ei, DOS_cur, smearing, part_DOS_cur, masks_DOS, CHij = CHij)	! module "Electron_tools"
+                  call get_DOS_sort(numpar, Scell(NSC), matter, Ei, DOS_cur, smearing, part_DOS_cur, masks_DOS, CHij=CHij, CSij=CSij) !above
                   partial_DOS(:,:,:) = partial_DOS(:,:,:) + part_DOS_cur(:,:,:)  ! save contributions of partial DOS
                else
-                  call get_DOS_sort(numpar, Ei, DOS_cur, smearing)	! module "Electron_tools"
+                  call get_DOS_sort(numpar, Scell(NSC), matter, Ei, DOS_cur, smearing, CHij=CHij, CSij=CSij) ! above
                endif
                DOS(2,:) = DOS(2,:) + DOS_cur(2,:)	! save contributions from all k points
             endif

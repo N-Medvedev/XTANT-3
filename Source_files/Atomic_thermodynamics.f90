@@ -271,7 +271,7 @@ end subroutine get_atomic_distribution
 
 subroutine update_Ta_config_running_average(Scell, matter, numpar)
    type(Super_cell), intent(inout) :: Scell     ! super-cell with all the atoms inside
-   type(solid), intent(in) :: matter            ! materil parameters
+   type(solid), intent(in) :: matter            ! material parameters
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    !---------------------------
    if (numpar%print_Ta) then
@@ -289,7 +289,7 @@ end subroutine update_Ta_config_running_average
 function Get_configurational_temperature_numeric(Scell, matter, numpar) result(Ta) ! Unsuable, too large fluctuations
    real(8) :: Ta  ! [K] configurational temperature defined for B = r^n * sin(Pi*l*s)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
-   type(solid), intent(in), target :: matter ! materil parameters
+   type(solid), intent(in), target :: matter ! material parameters
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    !-------------------
    integer :: Nat, i
@@ -434,7 +434,7 @@ end subroutine update_atomic_distribution_grid
 
 subroutine partial_temperatures(Scell, matter, numpar)
    type(Super_cell), intent(inout) :: Scell ! super-cell with all the atoms inside
-   type(solid), intent(in), target :: matter	! materil parameters
+   type(solid), intent(in), target :: matter	! material parameters
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    !--------------------
    integer :: Nat, i
@@ -511,7 +511,7 @@ subroutine get_fragments_data(Scell, NSC, numpar, matter)
       endif
    endif
    if (needs_allocation) then ! make sure it is allocated with the correct size
-      allocate(Scell(NSC)%fragments%N_at(Nsiz))
+      allocate(Scell(NSC)%fragments%N_at(Nsiz), source = 0)
    endif
    ! 2) Array of kinetic temperatures of atoms:
    if (.not.allocated(Scell(NSC)%fragments%Tkin)) then
@@ -523,7 +523,7 @@ subroutine get_fragments_data(Scell, NSC, numpar, matter)
       endif
    endif
    if (needs_allocation) then ! make sure it is allocated with the correct size
-      allocate(Scell(NSC)%fragments%Tkin(Nsiz))
+      allocate(Scell(NSC)%fragments%Tkin(Nsiz), source = 0.0d0)
    endif
    ! 3) Array of fluctuational temperatures of atoms:
    if (.not.allocated(Scell(NSC)%fragments%Tfluc)) then
@@ -535,7 +535,19 @@ subroutine get_fragments_data(Scell, NSC, numpar, matter)
       endif
    endif
    if (needs_allocation) then ! make sure it is allocated with the correct size
-      allocate(Scell(NSC)%fragments%Tfluc(Nsiz))
+      allocate(Scell(NSC)%fragments%Tfluc(Nsiz), source = 0.0d0)
+   endif
+   ! 4) Array of mulliken charges of the fragments:
+   if (.not.allocated(Scell(NSC)%fragments%q)) then
+      needs_allocation = .true.
+   else ! may need reallocation, if the number of fragments changed:
+      if (size(Scell(NSC)%fragments%q) /= Nsiz) then
+         deallocate(Scell(NSC)%fragments%q)  ! wrong size, reallocate
+         needs_allocation = .true.
+      endif
+   endif
+   if (needs_allocation) then ! make sure it is allocated with the correct size
+      allocate(Scell(NSC)%fragments%q(Nsiz), source = 0.0d0)
    endif
 
    !print*, 'get_fragments_data 0:', Nsiz, size(Scell(NSC)%fragments%Tkin), size(Scell(NSC)%fragments%Tfluc)
@@ -553,6 +565,9 @@ subroutine get_fragments_data(Scell, NSC, numpar, matter)
 
       ! Find the fluctuational temperature of atoms in each fragment:
       call get_fluctuational_temperature(Scell(NSC), Scell(NSC)%fragments%Tfluc(i), mask=fragment_mask) ! below
+
+      ! Get total Mulliken charge of the fragment:
+      Scell(NSC)%fragments%q(i) = SUM(Scell(NSC)%MDAtoms(:)%q, mask=fragment_mask)
 
       !print*, 'get_fragments_data:', i, Nsiz, Scell(NSC)%fragments%Tkin(i), Scell(NSC)%Ta_var(1), Scell(NSC)%fragments%Tfluc(i), Scell(NSC)%Ta_var(4)
    enddo
@@ -614,7 +629,7 @@ end subroutine get_fluctuational_temperature
 function force_velocity_correlator(Scell, matter) result(Fv)
    real(8) :: Fv  ! [eV/fs] <F*v>
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
-   type(solid), intent(in), target :: matter ! materil parameters
+   type(solid), intent(in), target :: matter ! material parameters
    !type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    !-------------------
    integer :: i, Nat
@@ -650,7 +665,7 @@ end function force_velocity_correlator
 function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
    real(8) :: Ta  ! [K] configurational temperature defined for B = r^n * sin(Pi*l*s)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
-   type(solid), intent(in), target :: matter	! materil parameters
+   type(solid), intent(in), target :: matter	! material parameters
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    integer, intent(in) :: n, l   ! power and degree
    logical, intent(in), optional :: nonper
@@ -769,7 +784,7 @@ end function get_Tconfig_n_l
 function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic) result(Ta)  ! Sec.III in [1]
    real(8) :: Ta  ! [K] virial temperature
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
-   type(solid), intent(in), target :: matter	! materil parameters
+   type(solid), intent(in), target :: matter	! material parameters
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    logical, intent(in), optional :: non_periodic   ! if we want to use nonperiodic expression
    !------------------------------

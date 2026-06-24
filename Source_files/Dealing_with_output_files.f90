@@ -57,7 +57,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 15.06.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 24.06.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1441,14 +1441,14 @@ subroutine write_fragments_properties(time, Scell, NSC, matter, numpar)
       if (.not.file_opened) then ! open file
          open(NEWUNIT=FN, FILE = trim(adjustl(file_fragment)))
          numpar%FN_fragments(i) = FN
-         call create_file_header(FN, '#Time Na  Ta_kin   Ta_fluc  Ne    Ee')
-         call create_file_header(FN, '#[fs] [-]   [K]  [K]  [-]    [eV/atom]')
+         call create_file_header(FN, '#Time Na  q  Ta_kin   Ta_fluc  Ne    Ee')
+         call create_file_header(FN, '#[fs] [-] [e]   [K]  [K]  [-]    [eV/atom]')
       else ! file exists and opened, use it
          FN = numpar%FN_fragments(i)   ! file number
       endif
 
       ! Once the file is opened, write into it:
-      write(FN, '(f24.8, i10, 4es25.16)') time, Scell(NSC)%fragments%N_at(i), &
+      write(FN, '(f24.8, i10, 5es25.16)') time, Scell(NSC)%fragments%N_at(i), Scell(NSC)%fragments%q(i), &
                                Scell(NSC)%fragments%Tkin(i), Scell(NSC)%fragments%Tfluc(i), &
                                Scell(NSC)%fragments%N_e(i), Scell(NSC)%fragments%E_e(i)
 

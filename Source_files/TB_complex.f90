@@ -26,9 +26,8 @@
 MODULE TB_complex
 use Universal_constants
 use Objects
-use TB, only : k_point_choice, construct_complex_Hamiltonian
+use TB, only : k_point_choice, construct_complex_Hamiltonian, get_DOS_sort
 use Optical_parameters, only : allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF, get_kappa_e_e, get_Onsager_dynamic
-use Electron_tools, only : get_DOS_sort
 use Little_subroutines, only : Find_in_array_monoton, linear_interpolation, print_time_step
 
 #ifdef _OPENMP
@@ -60,7 +59,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    !complex(8), dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    !complex(8), dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
    complex, dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
-   complex, dimension(:,:), allocatable :: CHij	! eigenvectors of the hamiltonian
+   complex, dimension(:,:), allocatable :: CHij, CSij	! eigenvectors of the hamiltonian, overlap matrix
    real(8) :: w, kx, ky, kz
    real(8), dimension(:), allocatable :: w_grid
    integer :: i, j, N, FN, ix, iy, iz, ixm, iym, izm, schem, Ngp, Nsiz, N_wgrid
@@ -151,12 +150,16 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
 
       !-------------------------------
       ! Get the parameters of the complex Hamiltonian:
-      call associate_wrapper(numpar, Scell, NSC, CHij, Ei, kx, ky, kz, cPRRx, cPRRy, cPRRz)  ! below
+      call associate_wrapper(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, cPRRx, cPRRy, cPRRz)  ! below
 
       !-------------------------------
       ! Get DOS:
       if (numpar%save_DOS) then ! if required
-         call get_DOS_on_k_points(numpar, Ei, CHij, DOS_temp, DOS_partial_temp) ! below
+         if ( (kx==0.0) .and. (ky == 0.0) .and. (kz == 0.0) ) then
+            call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp) ! below
+         else ! complex
+            call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp, CHij, CSij) ! below
+         endif
       else  ! skip DOS calculations
          DOS_temp = 0.0d0
          DOS_partial_temp = 0.0d0
@@ -258,12 +261,16 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
 
       !-------------------------------
       ! Get the parameters of the complex Hamiltonian:
-      call associate_wrapper(numpar, Scell, NSC, CHij, Ei, kx, ky, kz, cPRRx, cPRRy, cPRRz)  ! below
+      call associate_wrapper(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, cPRRx, cPRRy, cPRRz)  ! below
 
       !-------------------------------
       ! Get DOS:
       if (numpar%save_DOS) then ! if required
-         call get_DOS_on_k_points(numpar, Ei, CHij, DOS_temp, DOS_partial_temp) ! below
+         if ( (kx==0.0) .and. (ky == 0.0) .and. (kz == 0.0) ) then
+            call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp) ! below
+         else ! complex
+            call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp, CHij, CSij) ! below
+         endif
       else  ! skip DOS calculations
          DOS_temp = 0.0d0
          DOS_partial_temp = 0.0d0
@@ -420,13 +427,13 @@ end subroutine use_complex_Hamiltonian
 
 
 
-subroutine associate_wrapper(numpar, Scell, NSC, CHij, Ei, kx, ky, kz, cPRRx, cPRRy, cPRRz)
+subroutine associate_wrapper(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, cPRRx, cPRRy, cPRRz)
    ! Associate statement cannot be used inside OMP-parallelized region, since it uses the same ARRAY
    ! so, it needs to be put inside a subroutine-wrapper.
    type (Numerics_param), intent(inout) :: numpar  ! numerical parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell   ! supercell with all the atoms as one object
    integer, intent(in) :: NSC    ! number of supercell
-   complex, dimension(:,:), allocatable, intent(inout) :: CHij	! eigenvectors of the hamiltonian
+   complex, dimension(:,:), allocatable, intent(inout) :: CHij, CSij	! eigenvectors of the hamiltonian, overlap matrix
    real(8), dimension(:), allocatable, intent(inout) :: Ei	! energy levels [eV]
    real(8), intent(in) :: kx, ky, kz
    complex, dimension(:,:), allocatable, intent(inout) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
@@ -435,40 +442,49 @@ subroutine associate_wrapper(numpar, Scell, NSC, CHij, Ei, kx, ky, kz, cPRRx, cP
       select type(ARRAY)
       type is (TB_H_Pettifor)    ! orthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, CSij_out=CSij)  ! module "TB"
       type is (TB_H_Molteni)     ! orthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, CSij_out=CSij)  ! module "TB"
       type is (TB_H_Fu)          ! orthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz)  ! module "TB"
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, CSij_out=CSij)  ! module "TB"
       type is (TB_H_NRL)   ! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij) ! module "TB"
       type is (TB_H_DFTB)  ! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij) ! module "TB"
       type is (TB_H_3TB)   ! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij) ! module "TB"
       type is (TB_H_xTB)   ! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij) ! module "TB"
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij) ! module "TB"
       end select
    END ASSOCIATE
 end subroutine associate_wrapper
 
 
 
-subroutine get_DOS_on_k_points(numpar, Ei, CHij, DOS_temp, DOS_partial_temp)
+subroutine get_DOS_on_k_points(numpar, Scell, matter, Ei, DOS_temp, DOS_partial_temp, CHij, CSij)
    type (Numerics_param), intent(inout) :: numpar  ! numerical parameters
+   type (Super_cell), intent(inout) :: Scell   ! supercell with all the atoms as one object
+   type(Solid), intent(in) :: matter     ! material parameters
    real(8), dimension(:), intent(in) :: Ei  ! [eV] energy levels
-   complex, dimension(:,:), intent(in) :: CHij ! eigenvectors of the hamiltonian
    real(8), dimension(:,:), intent(inout) :: DOS_temp  ! [eV] grid; [a.u.] DOS
    real(8), dimension(:,:,:), intent(inout) :: DOS_partial_temp ! partial DOS made of each orbital type
+   complex, dimension(:,:), intent(in), optional :: CHij, CSij ! eigenvectors of the hamiltonian, overlap matrix
    !-------------------------
 
-   call get_DOS_sort(numpar, Ei, DOS_temp, numpar%Smear_DOS, DOS_partial_temp, numpar%mask_DOS, CHij = CHij)  ! module "Electron_tools"
+   DOS_temp(2,:) = 0.0d0      ! reset
+   DOS_partial_temp = 0.0d0   ! reset
+
+   if (present(CHij) .and. present(CSij)) then
+      call get_DOS_sort(numpar, Scell, matter, Ei, DOS_temp, numpar%Smear_DOS, DOS_partial_temp, numpar%mask_DOS, CHij=CHij, CSij=CSij)  ! module "TB"
+   else
+      call get_DOS_sort(numpar, Scell, matter, Ei, DOS_temp, numpar%Smear_DOS, DOS_partial_temp, numpar%mask_DOS)  ! module "TB"
+   endif
 end subroutine get_DOS_on_k_points
 
 
