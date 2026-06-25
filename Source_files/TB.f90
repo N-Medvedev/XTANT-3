@@ -2023,7 +2023,7 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
       endif
 #endif
 
-      ! Save density matrix (without occupation numbers):
+      ! Save density matrix (or population matrix, since it includes Sij, but without occupation numbers):
       Scell%Dmatrix = D
 
       ! Allocate mulliken charges:
@@ -2035,7 +2035,8 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
       !do i_at = 1, N_at ! all atoms
          do i_orb = 1, N_orb  ! all orbitals of each atom
             j = (i_at-1)*N_orb + i_orb ! current orbital among all
-            mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(j,:))
+            !mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(j,:))
+            mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(:,j)) ! test
          enddo   ! i_orb
       enddo ! i_at
       ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
@@ -2052,7 +2053,8 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
       do i_at = 1, N_at ! all atoms
          do i_orb = 1, N_orb  ! all orbitals of each atom
             j = (i_at-1)*N_orb + i_orb ! current orbital among all
-            mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(j,:))
+            !mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(j,:))
+            mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(:,j)) ! test
          enddo   ! i_orb
 
          ! Mulliken charge as a deviation from the normal electron population:
@@ -2518,12 +2520,12 @@ end subroutine get_complex_Hamiltonian
 
 
 subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ksx, ksy, ksz, &
-            Err, cPRRx, cPRRy, cPRRz, Sij, CSij_out, cTnn)
+            Err, cPRRx, cPRRy, cPRRz, Sij, CSij_out, cTnn, CH_non)
    type (Numerics_param), intent(inout) :: numpar ! numerical parameters, including drude-function
    type(Super_cell), dimension(:), intent(in), target :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:,:), intent(in) :: H_non	! Non-diagonalized real hamiltonian, must be provided
-   complex, dimension(:,:), intent(out), allocatable :: CHij	! complex the hamiltonian, to be constructed
+   complex, dimension(:,:), intent(out), allocatable :: CHij	! complex hamiltonian, to be constructed
    real(8), dimension(:), intent(inout), allocatable :: Ei	! [eV] current energy levels at the selected k point
    real(8), intent(in) ::  ksx, ksy, ksz	! k point [relative coordinates]
    type(Error_handling), intent(inout), optional :: Err	! error save
@@ -2531,6 +2533,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    real(8), dimension(:,:), intent(in), optional :: Sij	   ! real overlap matrix of the nonorthogonal hamiltonian, must be provided for nonorthogonal case
    complex, dimension(:,:), intent(out), allocatable, optional :: CSij_out  ! complex overlap matrix of the nonorthogonal hamiltonian, to be created
    real(8), dimension(:,:,:,:), intent(out), allocatable, optional :: cTnn ! kinetic energy-related operators
+   complex, dimension(:,:), intent(out), allocatable, optional :: CH_non    ! nondiagonalized complex Hamiltonian
    !-------------------------------------------------------------------------------
    !complex(8), dimension(:,:), allocatable :: CHij_temp, CHij_non, CSij_save, CHij_orth, CWF_orth, cPPRx_0, cPPRy_0, cPPRz_0, CSij
    !complex(8), dimension(:,:,:,:), allocatable :: cTnn_0, cTnn_c
@@ -2655,20 +2658,40 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                k = (i-1)*norb+i1
 
                CHij_temp(k,l) = CMPLX(H_non(k,l),0.0d0)*expfac
+               ! Consistency checks:
                if ((isnan(real(CHij_temp(k,l)))) .OR. isnan(aimag(CHij_temp(k,l)))) then
                   Error_descript = 'CHij_temp ISNAN in construct_complex_Hamiltonian'
                   if (present(Err)) call Save_error_details(Err, 6, Error_descript)
                   print*, trim(adjustl(Error_descript))
                   print*, i, j, k, l, CHij_temp(k,l)
                endif
+               if (k < l) then ! check if it's Hermitian via conjugate transpose:
+                     if ( ( abs(dble(CHij_temp(k,l)) - dble(CHij_temp(l,k))) > 1.0d-10 ) .or. &
+                          ( abs(aimag(CHij_temp(k,l)) - aimag(conjg(CHij_temp(l,k)))) > 1.0d-10 ) ) then
+                           Error_descript = 'CHij_temp is non-Hermitian in construct_complex_Hamiltonian'
+                           if (present(Err)) call Save_error_details(Err, 6, Error_descript)
+                           print*, trim(adjustl(Error_descript))
+                           print*, i, j, k, l, CHij_temp(k,l), CHij_temp(l,k)
+                     endif
+                  endif
                
                if (present(Sij)) then
                   CSij(k,l) = CMPLX(Sij(k,l),0.0d0)*expfac
+                  ! Consistency checks:
                   if ((isnan(real(CSij(k,l)))) .OR. isnan(aimag(CSij(k,l)))) then
-                     Error_descript = 'CHij_temp ISNAN in construct_complex_Hamiltonian'
+                     Error_descript = 'CSij ISNAN in construct_complex_Hamiltonian'
                      if (present(Err)) call Save_error_details(Err, 6, Error_descript)
                      print*, trim(adjustl(Error_descript))
                      print*, i, j, k, l, CSij(k,l)
+                  endif
+                  if (k < l) then ! check if it's Hermitian via conjugate transpose:
+                     if ( ( abs(dble(CSij(k,l)) - dble(CSij(l,k))) > 1.0d-10 ) .or. &
+                          ( abs(aimag(CSij(k,l)) - aimag(conjg(CSij(l,k)))) > 1.0d-10 ) ) then
+                           Error_descript = 'CSij is non-Hermitian in construct_complex_Hamiltonian'
+                           if (present(Err)) call Save_error_details(Err, 6, Error_descript)
+                           print*, trim(adjustl(Error_descript))
+                           print*, i, j, k, l, CSij(k,l), CSij(l,k)
+                     endif
                   endif
                endif
             enddo ! i1
@@ -2679,13 +2702,19 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
 !    !$omp end parallel
 
    if (present(CSij_out)) then ! overlap matrix
-      if (present(Sij)) then ! this matrix was used to constrcut complex overlap
+      if (present(Sij)) then ! this matrix was used to construct complex overlap
          CSij_out = CSij ! output
       endif
    endif
 
    ! Temporarily save nonorthogonal Hamiltonian and overlap matrix:
    CHij_non = CHij_temp
+
+   if (present(CH_non)) then
+      allocate(CH_non(size(CHij_non,1), size(CHij_non,2)))
+      CH_non = CHij_non
+   endif
+
    if (present(Sij)) then  ! nonorthogonal
       CSij_save = CSij
       !select case (abs(numpar%optic_model))
@@ -5518,11 +5547,12 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
    real(8), dimension(:), allocatable :: DOS_sum
    real(8), dimension(:,:,:), allocatable :: partial_DOS_sum
    real(8), dimension(size(Scell%Ha,1),size(Scell%Ha,2)) :: D      ! density matrix, if required (for complex case)
+   real(8), dimension(size(Scell%Ha,1)) :: Norm1      ! normalization for WF
    logical :: do_partial
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
-
-!    print*, 'get_DOS_sort test 0'
+   complex :: temp_c
+   complex, dimension(size(Scell%Ha,1)) :: vec1
 
    epsylon = 1.0d-12	! precision
    sigma = smearing	! [eV] gaussian smearing
@@ -5545,6 +5575,11 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
          Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
          Nend = Nsiz
          if (present(CSij) then  ! nonorthogonal
+            ! Normalize eigenvectors to | <n|n> |^2 = 1, if required:
+            !do i = 1, N
+            !   Norm1(i) = SQRT(SUM( conjg(CHij(:,i)) * CHij(:,i) ))
+            !enddo
+
             ! Do the cycle (parallel) calculations:
             do j = Nstart, Nend, N_incr  ! each process does its own part
                do k = 1, Nsiz ! for all energy levels
@@ -5562,21 +5597,41 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
          call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{D}', D) ! module "MPI_subroutines"
 #else ! use OpenMP instead
          if (present(CSij)) then  ! nonorthogonal
-            !$omp PARALLEL private(j, k)
+
+            ! Normalize eigenvectors to | <n|n> |^2 = 1, if required:
+            !do i = 1, Nsiz
+            !   Norm1(i) = sqrt(SUM( conjg(CHij(:,i)) * CHij(:,i) ))
+            !enddo
+
+            !$omp PARALLEL private(j, k, vec1, temp_c)
             !$omp do
             do j = 1, Nsiz ! for all energy levels
+               ! Make an eigenvector a vector:
+               vec1(:) = CHij(:,j)  ! correct, tested
+               temp_c = cmplx(0.0d0,0.0d0)      ! reset
+
                do k = 1, Nsiz ! for all energy levels
-                  D(k,j) = conjg(CHij(k,j)) * SUM(CHij(:,j) * CSij(k,:))   ! the density matrix without occupations
+
+                  ! the density matrix without occupations:
+                  !D(k,j) = ( conjg(CHij(k,j)) * SUM(CHij(:,j) * CSij(k,:)) )    ! (works for temp = 1.0d0, k=0)
+                  temp_c = conjg(vec1(k)) * SUM(vec1(:) * CSij(k,:))  ! (works for temp = 1.0d0, k=0) with D(k,j) = real(temp_c)
+                  D(k,j) = real(temp_c)
                enddo
             enddo
             !$omp end do
             !$omp end parallel
+
+            !print*, 'TEST SUM D=', sum(D), Nsiz
+            !pause 'TEST SUM D'
+
          else ! orthogonal
-            !$omp PARALLEL private(j)
+            !$omp PARALLEL private(j, k)
             !$omp do
             do j = 1, Nsiz ! for all energy levels
-               D(:,j) = conjg(CHij(:,j)) * CHij(:,j)
-            enddo
+               do k = 1, Nsiz
+                  D(k,j) = conjg(CHij(k,j)) * CHij(k,j)
+               enddo ! k
+            enddo ! j
             !$omp end do
             !$omp end parallel
          endif
@@ -5589,8 +5644,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
    ! Testing:
    !call get_Mulliken_each_atom(numpar%Mulliken_model, Scell, matter, numpar, forced_mulliken=.true.)      ! above
    !print*, 'get_DOS_sort test 1', D(1,2:15), ':', Scell%Dmatrix(1,2:15)
-   !pause
-
+   !pause 'conjg(CHij(k,j)) * SUM(CHij(:,j) * CSij(k,:))'
 
 #ifdef MPI_USED   ! use the MPI version
    N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
@@ -5611,20 +5665,19 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                !if (present(Hij)) then
                if (.not.present(CHij)) then
                   !temp = SUM( Hij(:,j) * Hij(:,j) )
-                  temp = 1.0d0
+                  temp = 1.0d0      ! no need, it's normalized
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, :))
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :))     ! Negative DOS present
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, :))
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :))
                         enddo
                      enddo
                   endif
                else
-                  !temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
                   !temp = sqrt(SUM( conjg(CHij(:,j)) * CHij(:,j) ))      ! ensure WF normalization to 1
-                  temp = 1.0d0
+                  temp = 1.0d0      ! no need, it's normalized
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
@@ -5647,25 +5700,25 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                !if (present(Hij)) then
                if (.not.present(CHij)) then
                   !temp = SUM( Hij(:,j) * Hij(:,j) )
-                  temp = 1.0d0
+                  temp = 1.0d0      ! no need, it's normalized
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, j))/temp
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, j))/temp      ! Negative DOS present
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, j))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
                         enddo
                      enddo
                   endif
                else !if (present(CHij)) then
                   !temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
                   !temp = sqrt(SUM( conjg(CHij(:,j)) * CHij(:,j) ))      ! ensure WF normalization to 1
-                  temp = 1.0d0
+                  temp = 1.0d0      ! no need, it's normalized
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Negative DOS present
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Negative DOS present
                         enddo
                      enddo
                   endif
@@ -5687,11 +5740,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
    !$omp do schedule(dynamic) reduction( + : DOS_sum, partial_DOS_sum)
    do i = 1, Ngridsiz	! for all grid points
       ! Do the summation in two parts:
-!        print*, 'get_DOS_sort test 1.5'
-
       call Find_in_monotonous_1D_array(Ei, DOS(1,i), j_center)	! module "Little_subroutines"
-
-!        print*, 'get_DOS_sort test 2'
 
       ! 1) Contribution from the levels above the chosen point:
       if (j_center <= Nsiz) then
@@ -5703,29 +5752,25 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                !if (present(Hij)) then
                if (.not.present(CHij)) then
                   !temp = SUM( Scell%Ha(:,j) * Scell%Ha(:,j) )
-                  temp = 1.0d0
+                  temp = 1.0d0      ! no need, it's normalized
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
-                           !print*, 'get_DOS_sort test 3a'
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, :))/temp
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :))/temp     ! Can produce negative pDOS
-
-                           !print*, 'get_DOS_sort test 4a'
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, :))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
                         enddo
                      enddo
                   endif
                else !if (present(CHij)) then
-                  !temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
                   !temp = sqrt(SUM( conjg(CHij(:,j)) * CHij(:,j) ))      ! ensure WF normalization to 1
-                  temp = 1.0d0
+                  temp = 1.0d0      ! no need, it's normalized
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Negative DOS present
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp     ! Works for k=0
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Works, tested
                         enddo
                      enddo
                   endif
@@ -5742,29 +5787,26 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
             if (do_partial) then
                !if (present(Hij)) then
                if (.not.present(CHij)) then
-                  !temp = SUM( Hij(:,j) * Hij(:,j) )
                   !temp = SUM( Scell%Ha(:,j) * Scell%Ha(:,j) )
-                  temp = 1.0d0
+                  temp = 1.0d0      ! no need, it's normalized
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
 !                            print*, 'get_DOS_sort test 3c'
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, j))/temp
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, j))/temp     ! Can produce negative pDOS
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, j))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, j))/temp     ! Can produce negative pDOS
                         enddo
                      enddo
                   endif
                else !if (present(CHij)) then
-                  !temp = SUM( conjg(CHij(:,j)) * CHij(:,j) )
                   !temp = sqrt(SUM( conjg(CHij(:,j)) * CHij(:,j) ))      ! ensure WF normalization to 1
-                  temp = 1.0d0
+                  temp = 1.0d0      ! no need, it's normalized
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Works, tested
                         enddo
                      enddo
                   endif
@@ -5774,11 +5816,9 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
       endif ! (j_center > 1)
 
       ! Consistency checks:
-      if (ANY(partial_DOS_sum(:, :, i) < 0.0d0)) then ! unphysical, negative pDOS
-         print*, 'NEGATIVE pDOS in get_DOS_sort:', i, partial_DOS_sum(:, :, i)
-      endif
-      if ( abs(SUM(partial_DOS_sum(:, :, i) - DOS_sum(i)) > 1.0d-8)) then  ! does not sum up to total DOS
-         print*, 'pDOS does not equals total DOS in get_DOS_sort:', i, partial_DOS_sum(:, :, i), DOS_sum(i)
+      if ( abs(SUM(partial_DOS_sum(:, :, i)) - DOS_sum(i)) > 1.0d-8) then  ! does not sum up to total DOS
+         print*, 'PROBLEM in get_DOS_sort: pDOS does not equal total DOS:', i, SUM(partial_DOS_sum(:, :, i)) - DOS_sum(i), &
+                        partial_DOS_sum(:, :, i), DOS_sum(i)
       endif
 
    enddo !  i = 1, Ngridsiz

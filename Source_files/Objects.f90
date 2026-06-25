@@ -786,7 +786,7 @@ type Super_cell
    real(8), dimension(:), allocatable :: Ei0	! energy levels, eigenvalues of the hamiltonian matrix on the last step
    real(8), dimension(:), allocatable :: Ei_scc_part  ! eigenvalues of the non-SCC part of the hamiltonian
    real(8), dimension(:,:), allocatable :: Aij	! coefficients used for forces in TB
-   real(8), dimension(:,:), allocatable :: Dmatrix  ! density matric without electron occupations
+   real(8), dimension(:,:), allocatable :: Dmatrix  ! density (or population) matrix (without electron occupations)
    integer, dimension(:), allocatable :: orb_in_atom    ! index, which atom contributes most to this orbital
    ! Complex Hamiltonian for multiple k-points:
    complex, dimension(:,:,:,:,:), allocatable :: CHa	! Complex hamiltonian matrix for each (kx, ky, kz) points

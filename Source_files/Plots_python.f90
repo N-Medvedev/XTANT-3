@@ -1620,7 +1620,7 @@ subroutine Python_plot_fragments_data(Scell, numpar, file_fragments, t0, t_last,
    write(FN, '(a)') 'plt.xlim(None,None)'
    write(FN, '(a)') 'plt.ylim(0,None)'
 
-   write(FN, '(a)') 'plt.title("Fragment evolution", fontsize=14)'
+   write(FN, '(a)') 'plt.title("Fragment atoms", fontsize=14)'
 
    write(FN, '(a)') 'plt.xticks(fontsize=12)'
    write(FN, '(a)') 'plt.yticks(fontsize=12)'

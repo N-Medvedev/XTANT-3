@@ -61,7 +61,8 @@ parameter (m_four_third = 2.0d0*m_two_third)
 !public :: test_orthogonalization
 public :: construct_TB_H_NRL, get_dHij_drij_NRL, dErdr_s_NRL, Construct_Vij_NRL, Complex_Hamil_NRL, get_Erep_s_NRL, &
          dErdr_Pressure_s_NRL, Loewdin_Orthogonalization, Loewdin_Orthogonalization_c, Attract_TB_Forces_Press_NRL, &
-         test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization_c8
+         test_nonorthogonal_solution, test_orthogonalization_r, test_orthogonalization_c, Loewdin_Orthogonalization_c8, &
+         test_nonorthogonal_solution_c
 public :: m_one_third, m_two_third, m_four_third
 
  contains
@@ -164,6 +165,62 @@ subroutine test_nonorthogonal_solution(Scell)
    
 !    PAUSE 'test_nonorthogonal_solution'
 end subroutine test_nonorthogonal_solution
+
+
+
+subroutine test_nonorthogonal_solution_c(Ei, CH_non, CHa, CSij)
+! The subroutine tests if solution of the complex linear eigenproblem (Schoedinger eq. with overlap matrix) was correct.
+! Note that the subroutine is very slow, so use it only for testing, not for actual calculations.
+   !type(Super_cell), intent(inout), target :: Scell  ! supercell with all the atoms as one object
+   real(8), dimension(:), intent(in) :: Ei            ! eigenvalues of complex hamiltonian
+   complex, dimension(:,:), intent(in) :: CH_non      ! complex hamiltonian
+   complex, dimension(:,:), intent(in) :: CHa         ! eigenvectors of complex hamiltonian
+   complex, dimension(:,:), intent(in) :: CSij         ! complex overlap matrix
+   !------------------------
+   real(8) :: Ev, Sv, epsylon, temp, Sv0
+   real(8) :: Evec(size(Ei)), Svec(size(Ei)), SM(size(Ei),size(Ei)), EvM(size(Ei),size(Ei)), OvM(size(Ei),size(Ei))
+   integer :: i, j, k, M
+
+   epsylon = 1.0d-11
+
+!    call print_time_step('test_nonorthogonal_solution_c', 0.0d0, msec=.true.)
+
+
+   M = size(Evec)
+   Ev = 0.0d0
+   do i = 1,M
+      ! Normalize eigenvectors to | <n|n> |^2 = 1, if required:
+      temp = SQRT(SUM( conjg(CHa(:,i)) * CHa(:,i) ))
+
+      do k = 1,M
+         Evec(k) = SUM(CH_non(k,:)*CHa(:,i)) ! correct
+         Svec(k) = SUM(CSij(k,:)*CHa(:,i)) ! correct
+      enddo
+
+      Ev = SUM(Evec(:)*conjg(CHa(:,i)))
+      Sv = SUM(Svec(:)*conjg(CHa(:,i)))
+      !if (ABS(Sv-1.0d0) > epsylon) then ! the normalization broke down:
+      !   write(*,'(a,i5,f,f,f)') 'Sv: ', i, Sv, Ev, Ei(i)
+      !endif
+
+      Sv0 = Sv
+      Sv = Sv*Ei(i)
+
+      ! Solution of the linear eigenproblem must be zero:
+      if (ABS(Ev - Sv) > epsylon*min(ABS(Ev),ABS(Sv))) then ! if it's not, something went wrong:
+         print*, 'Ev1:', i, Ei(i), Ev, Sv !, CHa(:,i)
+      endif
+      ! Or written this way:
+      if (abs(Sv0)>epsylon) then
+         if (ABS(Ei(i) - Ev/Sv0) > epsylon) then ! if it's not, something went wrong:
+            print*, 'Ev2:', i, Ei(i), Ev/Sv0
+         endif
+      endif
+   enddo
+
+!    call print_time_step('test_nonorthogonal_solution_c', 1.0d0, msec=.true.)
+!    PAUSE 'test_nonorthogonal_solution_c'
+end subroutine test_nonorthogonal_solution_c
 
 
 subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err)
@@ -1567,6 +1624,9 @@ subroutine test_orthogonalization_c(Sij_undiag, OBX) ! Check if it is orthogonal
 !$omp END PARALLEL
 ! PAUSE 'test_orthogonalization DONE'
 end subroutine test_orthogonalization_c
+
+
+
 
 
 

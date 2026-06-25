@@ -1432,7 +1432,8 @@ subroutine identify_fragment_for_orbital(Scell)
    do i = 1, Nlev
       ! Which atom contributes to this orbital the most:
       !Max_D_i = maxval(Scell%Dmatrix(i,:))      ! atomic orbital with maximal contribution to this level
-      i_max = (transfer( maxloc(Scell%Dmatrix(i,:)), i_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
+      !i_max = (transfer( maxloc(Scell%Dmatrix(i,:)), i_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
+      i_max = (transfer( maxloc(Scell%Dmatrix(:,i)), i_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
 
       ! Which atom it belongs to:
       Scell%orb_in_atom(i) = i_max
@@ -1542,10 +1543,12 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
 
             if (fragment_mask(i_at)) then ! this atom belongs to this fragment
                ! 1) Number of electrons in the fragment "i":
-               Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(j,:))
+               !Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(j,:))     ! incorrect
+               Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(:,j))      ! correct, tested
 
                ! 2) Electrons energy in the fragment "i"
-               Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(j,:))
+               !Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(j,:))    ! incorrect
+               Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(:,j))     ! correct, tested
             endif
          enddo   ! i_orb
       enddo ! i_at
@@ -1567,7 +1570,11 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
    enddo ! i
 
 
-   !print*, 'Total:', SUM(Scell(NSC)%fragments%N_e(:))
+   ! Consistency check:
+   if ( abs(sum(Scell(NSC)%fragments%N_e(:)) - Scell(NSC)%Ne) > 1.0d-4*Scell(NSC)%Ne ) then
+      print*, 'PROBLEM in get_fragments_data_for_electrons:'
+      print*, 'electrons in fragments do not add up to total Ne:', sum(Scell(NSC)%fragments%N_e(:)), Scell(NSC)%Ne
+   endif
 
    if (allocated(orbital_fragments)) deallocate(orbital_fragments)
 end subroutine get_fragments_data_for_electrons

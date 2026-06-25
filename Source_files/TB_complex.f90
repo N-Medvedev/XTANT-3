@@ -27,6 +27,7 @@ MODULE TB_complex
 use Universal_constants
 use Objects
 use TB, only : k_point_choice, construct_complex_Hamiltonian, get_DOS_sort
+use TB_NRL, only : test_nonorthogonal_solution_c
 use Optical_parameters, only : allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF, get_kappa_e_e, get_Onsager_dynamic
 use Little_subroutines, only : Find_in_array_monoton, linear_interpolation, print_time_step
 
@@ -155,11 +156,8 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       !-------------------------------
       ! Get DOS:
       if (numpar%save_DOS) then ! if required
-         if ( (kx==0.0) .and. (ky == 0.0) .and. (kz == 0.0) ) then
-            call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp) ! below
-         else ! complex
-            call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp, CHij, CSij) ! below
-         endif
+         ! complex
+         call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp, CHij, CSij) ! below
       else  ! skip DOS calculations
          DOS_temp = 0.0d0
          DOS_partial_temp = 0.0d0
@@ -230,7 +228,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
 
 #else    ! OpenMP to use instead
    !$omp PARALLEL private(Thread_num, ix, iy, iz, Ngp, kx, ky, kz, cPRRx, cPRRy, cPRRz, CHij, Ei, Eps_hw_temp, &
-   !$omp                  kappa_temp, kappa_ee_temp, kappa_mu_grid_temp, kappa_Ce_grid_temp, DOS_temp, DOS_partial_temp)
+   !$omp                  kappa_temp, kappa_ee_temp, kappa_mu_grid_temp, kappa_Ce_grid_temp, DOS_temp, DOS_partial_temp, CSij)
    if (.not.allocated(Eps_hw_temp)) allocate(Eps_hw_temp(16,N_wgrid), source = 0.0d0) ! all are there
    if (.not.allocated(kappa_temp)) allocate(kappa_temp(Nsiz_Te), source = 0.0d0)
    if (.not.allocated(kappa_ee_temp)) allocate(kappa_ee_temp(Nsiz_Te), source = 0.0d0)
@@ -266,11 +264,8 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       !-------------------------------
       ! Get DOS:
       if (numpar%save_DOS) then ! if required
-         if ( (kx==0.0) .and. (ky == 0.0) .and. (kz == 0.0) ) then
-            call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp) ! below
-         else ! complex
-            call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp, CHij, CSij) ! below
-         endif
+         ! complex
+         call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp, CHij, CSij) ! below
       else  ! skip DOS calculations
          DOS_temp = 0.0d0
          DOS_partial_temp = 0.0d0
@@ -438,6 +433,8 @@ subroutine associate_wrapper(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, cPR
    real(8), intent(in) :: kx, ky, kz
    complex, dimension(:,:), allocatable, intent(inout) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    !---------------------
+   complex, dimension(:,:), allocatable :: CH_non
+
    ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
       select type(ARRAY)
       type is (TB_H_Pettifor)    ! orthogonal
@@ -451,18 +448,23 @@ subroutine associate_wrapper(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, cPR
             cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, CSij_out=CSij)  ! module "TB"
       type is (TB_H_NRL)   ! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij) ! module "TB"
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij, CH_non=CH_non) ! module "TB"
       type is (TB_H_DFTB)  ! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij) ! module "TB"
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij, CH_non=CH_non) ! module "TB"
       type is (TB_H_3TB)   ! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij) ! module "TB"
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij, CH_non=CH_non) ! module "TB"
       type is (TB_H_xTB)   ! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
-            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij) ! module "TB"
+            cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij, CH_non=CH_non) ! module "TB"
       end select
    END ASSOCIATE
+
+   ! Testing solution of the secular equation (comment out for release):
+   !call test_nonorthogonal_solution_c(Ei, CH_non, CHij, CSij) ! module "TB_NRL"
+   if (allocated(CH_non)) deallocate(CH_non)
+   !pause 'associate_wrapper'
 end subroutine associate_wrapper
 
 
