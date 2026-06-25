@@ -678,6 +678,11 @@ type :: Fragment_data       ! atomic data for fragments the material is made of
    integer, dimension(:), allocatable :: N_at     ! number of atoms in this fragment
    real(8), dimension(:), allocatable :: Tkin     ! [K] kinetic temperature of atoms in this fragment
    real(8), dimension(:), allocatable :: Tfluc    ! [K] fluctuational temperature of atoms in this fragment
+   real(8), dimension(:), allocatable :: q        ! [e] Mulliken charge of the fragment
+   real(8), dimension(:), allocatable :: N_e      ! number of electrons in this fragment (identified by atoms with major contribution)
+   real(8), dimension(:), allocatable :: E_e      ! [eV] energy of electrons in this fragment
+   real(8), dimension(:), allocatable :: mu       ! [eV] electronic chemical potential in this fragment
+   real(8), dimension(:), allocatable :: T_e      ! [K] kinetic temperature of electrons in this fragment
 end type Fragment_data
 
 
@@ -781,7 +786,8 @@ type Super_cell
    real(8), dimension(:), allocatable :: Ei0	! energy levels, eigenvalues of the hamiltonian matrix on the last step
    real(8), dimension(:), allocatable :: Ei_scc_part  ! eigenvalues of the non-SCC part of the hamiltonian
    real(8), dimension(:,:), allocatable :: Aij	! coefficients used for forces in TB
-   real(8), dimension(:,:), allocatable :: Dmatrix  ! density matric without electron occupations
+   real(8), dimension(:,:), allocatable :: Dmatrix  ! density (or population) matrix (without electron occupations)
+   integer, dimension(:), allocatable :: orb_in_atom    ! index, which atom contributes most to this orbital
    ! Complex Hamiltonian for multiple k-points:
    complex, dimension(:,:,:,:,:), allocatable :: CHa	! Complex hamiltonian matrix for each (kx, ky, kz) points
    complex, dimension(:,:,:,:,:), allocatable :: CHa0	! Complex hamiltonian matrix on the last step

@@ -43,7 +43,7 @@ use Atomic_tools, only : get_mean_square_displacement, save_last_timestep, Cooli
         Coordinates_rel_to_abs, velocities_abs_to_rel, shortest_distance, &
         make_time_step_atoms, make_time_step_supercell, numerical_acceleration, Get_testmode_add_data, &
         get_diffraction_peaks
-use Electron_tools, only : Electron_thermalization, get_glob_energy, get_low_energy_distribution, update_fe
+use Electron_tools, only : Electron_thermalization, get_glob_energy, get_low_energy_distribution, update_fe, get_fragments_data_for_electrons
 use Transport, only : Electron_transport, Atomic_heat_transport, Change_affected_layer
 use TB, only : get_new_energies, get_DOS, Get_pressure, get_electronic_thermal_parameters, &
         vdW_interplane, Electron_ion_coupling, update_nrg_after_change,  get_Hamilonian_and_E, MD_step, get_Mullikens_all, &
