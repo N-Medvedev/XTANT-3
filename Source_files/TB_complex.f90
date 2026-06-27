@@ -434,6 +434,7 @@ subroutine associate_wrapper(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, cPR
    complex, dimension(:,:), allocatable, intent(inout) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    !---------------------
    complex, dimension(:,:), allocatable :: CH_non
+   integer :: Thread_num
 
    ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
       select type(ARRAY)
@@ -450,8 +451,13 @@ subroutine associate_wrapper(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, cPR
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
             cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij, CH_non=CH_non) ! module "TB"
       type is (TB_H_DFTB)  ! nonorthogonal
+
+         !Thread_num = OMP_GET_THREAD_NUM()
+         !print*, 'Test 0 [associate_wrapper] #', Thread_num
+
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
             cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij, CH_non=CH_non) ! module "TB"
+
       type is (TB_H_3TB)   ! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
             cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij, CH_non=CH_non) ! module "TB"

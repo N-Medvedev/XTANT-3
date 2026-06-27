@@ -3851,30 +3851,34 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
             write(print_to,'(a)') ' Calculations are performed for Gamma-point'
          endif
       case (4:5) ! Graf-Vogl model
-         if (numpar%optic_model < 0) then
-            write(print_to,'(a)') '  Probe-pulse is calculated with Graf-Vogl approach'
-         else if (numpar%optic_model == 5) then
-            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood non-orthogonal'
+         if (numpar%optic_model == -5) then
+            write(print_to,'(a)') '  No probe-pulse is calculated (only pDOS)'
          else
-            write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood orthogonalized'
-         endif
-         write(print_to,'(a)') ' with the following parameters of the probe:'
-         write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', &
-            Scell(i)%eps%teta/g_Pi*(180.0d0), '    [degrees]'
-         write(print_to,'(a, f7.1, a)') ' Thickness of the sample: ', Scell(i)%eps%dd, ' [nm]'
-         if (numpar%ixm*numpar%iym*numpar%izm .EQ. 1) then
-            write(print_to,'(a)') ' Calculations are performed for Gamma-point'
-         else
-            write(text1, '(i10)') numpar%ixm
-            write(text2, '(i10)') numpar%iym
-            write(text3, '(i10)') numpar%izm
-            if (allocated(numpar%k_grid)) then
-               write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on user-defined grid): ', &
-                  trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+            if (numpar%optic_model < 0) then
+               write(print_to,'(a)') '  Probe-pulse is calculated with Graf-Vogl approach'
+            else if (numpar%optic_model == 5) then
+               write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood non-orthogonal'
             else
-               write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on Monkhorst-Pack grid): ', &
-                  trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+               write(print_to,'(a)') '  Probe-pulse is calculated with Kubo-Greenwood orthogonalized'
             endif
+            write(print_to,'(a)') ' with the following parameters of the probe:'
+            write(print_to,'(a, f7.1, a, f5.1, a)') ' Wavelength: ', Scell(i)%eps%l, ' [nm]; Angle:', &
+               Scell(i)%eps%teta/g_Pi*(180.0d0), '    [degrees]'
+            write(print_to,'(a, f7.1, a)') ' Thickness of the sample: ', Scell(i)%eps%dd, ' [nm]'
+            if (numpar%ixm*numpar%iym*numpar%izm .EQ. 1) then
+               write(print_to,'(a)') ' Calculations are performed for Gamma-point'
+            else
+               write(text1, '(i10)') numpar%ixm
+               write(text2, '(i10)') numpar%iym
+               write(text3, '(i10)') numpar%izm
+               if (allocated(numpar%k_grid)) then
+                  write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on user-defined grid): ', &
+                     trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+               else
+                  write(print_to,'(a,a,a,a,a,a)') ' Number of k-points (on Monkhorst-Pack grid): ', &
+                     trim(adjustl(text1)),'x',trim(adjustl(text2)),'x',trim(adjustl(text3))
+               endif
+            endif ! (numpar%optic_model == -5)
          endif
       case default ! no optical coefficients needed
          write(print_to,'(a)') '  No probe-pulse is calculated'

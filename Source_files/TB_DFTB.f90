@@ -329,7 +329,7 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
    !-------------------------------------------
    real(8), dimension(:,:), allocatable :: Hij	 ! Hamiltonian
    real(8), dimension(:,:), allocatable :: Sij  ! Overlap
-   real(8), dimension(size(Scell(NSC)%Ha,1)) :: Evec, EvecS
+   !real(8), dimension(size(Scell(NSC)%Ha,1)) :: Evec, EvecS
    real(8), dimension(:,:), allocatable :: Hij1, Sij1
    integer :: nat, Nsiz, n_orb, do_scc
    integer, target :: j
@@ -1611,7 +1611,7 @@ subroutine Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz,
    ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
    call Loewdin_Orthogonalization_c(numpar, Nsiz, CSij, CHij_temp, Err)	! module "TB_NRL"
    ! 2) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
-   call sym_diagonalize(CHij_temp, Ei, Error_descript, numpar%MPI_param)
+   call sym_diagonalize(CHij_temp, Ei, Error_descript, numpar%MPI_param, text_called_from='Complex_Hamil_DFTB')
    if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
       Error_descript = 'Complex_Hamil_DFTB: '//trim(adjustl(Error_descript))
       if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it

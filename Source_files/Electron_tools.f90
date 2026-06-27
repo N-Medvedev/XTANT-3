@@ -453,13 +453,16 @@ subroutine Do_e_e_collision(Scell, numpar, skip_thermalization)
    !----------------------
    logical :: skip_step
    integer :: i_fe
-   real(8), dimension(size(Scell%fe),size(Scell%fe)) :: M_ee ! electron-electron scattering matrix elements
+   !real(8), dimension(size(Scell%fe),size(Scell%fe)) :: M_ee ! electron-electron scattering matrix elements
+   real(8), dimension(:,:), allocatable :: M_ee ! electron-electron scattering matrix elements
 
    if (present(skip_thermalization)) then
       skip_step = skip_thermalization
    else
       skip_step = .false.
    endif
+
+   allocate(M_ee(size(Scell%fe),size(Scell%fe)))
 
    ! Get the equivalent (kinetic) temperature and chemical potential:
    call Electron_Fixed_Etot(Scell%Ei, Scell%Ne_low, Scell%nrg%El_low, Scell%mu, Scell%TeeV, .true.) ! below (FAST)
@@ -486,6 +489,8 @@ subroutine Do_e_e_collision(Scell, numpar, skip_thermalization)
    ! Extra check for smoothening unphysical artefacts that may be present after MC:
    call smoothening_step(Scell, numpar, eps_precision=1.0d-3) ! below
 
+   ! clean up:
+   deallocate(M_ee)
 end subroutine Do_e_e_collision
 
 
@@ -503,10 +508,14 @@ subroutine Boltzmann_e_e_IN(Scell, numpar, Ev, fe, dt, Npoints) ! calculates cha
    integer, intent(in), optional :: Npoints     ! number of additional time-points (substeps)
    !-----------------------------------------
    real(8) :: Ei, Ef, Ei2, Ef2 ! energies of initial and final states for #1 and #2 electron
-   real(8), dimension(size(fe)) :: fe_temp, f_cur, f_cur0 ! temporary distribution to work with
-   real(8), dimension(size(fe),size(fe)) :: alpha_ij, beta_ij     ! coefficients in Boltzmann collision integral
-   real(8), dimension(size(fe),size(fe)) :: alpha_ij0, beta_ij0     ! coefficients in Boltzmann collision integral
-   real(8), dimension(size(fe),size(fe)) :: M_ee ! electron-electron scattering matrix elements
+   !real(8), dimension(size(fe)) :: fe_temp, f_cur, f_cur0 ! temporary distribution to work with
+   !real(8), dimension(size(fe),size(fe)) :: alpha_ij, beta_ij     ! coefficients in Boltzmann collision integral
+   !real(8), dimension(size(fe),size(fe)) :: alpha_ij0, beta_ij0     ! coefficients in Boltzmann collision integral
+   !real(8), dimension(size(fe),size(fe)) :: M_ee ! electron-electron scattering matrix elements
+   real(8), dimension(:), allocatable :: fe_temp, f_cur, f_cur0 ! temporary distribution to work with
+   real(8), dimension(:,:), allocatable :: alpha_ij, beta_ij     ! coefficients in Boltzmann collision integral
+   real(8), dimension(:,:), allocatable :: alpha_ij0, beta_ij0     ! coefficients in Boltzmann collision integral
+   real(8), dimension(:,:), allocatable :: M_ee ! electron-electron scattering matrix elements
    real(8) :: dt_small, split_coef
    real(8) :: fe_f ! average final state
    real(8) :: E_tot, E_tot2 ! total energy used for testing [eV]
@@ -515,6 +524,15 @@ subroutine Boltzmann_e_e_IN(Scell, numpar, Ev, fe, dt, Npoints) ! calculates cha
    logical :: within_range ! check if final energy level is within possible range
 
    N = size(fe)   ! total number of energy levels available
+
+   allocate(fe_temp(N))
+   allocate(f_cur(N))
+   allocate(f_cur0(N))
+   allocate(alpha_ij(N,N))
+   allocate(beta_ij(N,N))
+   allocate(alpha_ij0(N,N))
+   allocate(beta_ij0(N,N))
+
    fe_temp = fe   ! just to start
    f_cur(:) = fe_temp(:)   ! to start with
    f_cur0(:) = fe_temp(:)   ! to start with
@@ -522,6 +540,7 @@ subroutine Boltzmann_e_e_IN(Scell, numpar, Ev, fe, dt, Npoints) ! calculates cha
    beta_ij = 0.0d0      ! to start with
    alpha_ij0 = 0.0d0    ! to start with
    beta_ij0 = 0.0d0     ! to start with
+
 
    ! Test the energy conservation:
    call set_total_el_energy(Ev,fe_temp,E_tot)
@@ -664,6 +683,9 @@ subroutine Boltzmann_e_e_IN(Scell, numpar, Ev, fe, dt, Npoints) ! calculates cha
    !print*, 'Boltzmann_e_e E1:', E_tot, E_tot2, ABS(E_tot2 - E_tot)/ABS(E_tot)*100.0d0
 
    fe = fe_temp ! output: updated distribution function
+
+   ! clean up:
+   deallocate(fe_temp, f_cur, f_cur0, alpha_ij, beta_ij, alpha_ij0, beta_ij0)
 end subroutine Boltzmann_e_e_IN
 
 
@@ -712,11 +734,17 @@ subroutine correction_distribution(fe, Ei, f_cur)
    !-------------------------------------
    integer :: i, j, Nsiz, i1, i2, Npart, coun, i_low, i_high, cou1, cou2
    real(8) :: E_in, E_fin, N_in, N_fin, dE, dN, RN, N_cur, N_rand, df1, df2, temp, df1_min, df2_min
-   logical, dimension(size(fe)) :: fe_mask
-   real(8), dimension(size(fe)) :: f_temp
+   !logical, dimension(size(fe)) :: fe_mask
+   !real(8), dimension(size(fe)) :: f_temp
+   logical, dimension(:), allocatable :: fe_mask
+   real(8), dimension(:), allocatable :: f_temp
    logical :: found_yet
 
    Nsiz = size(fe)
+
+   allocate(fe_mask(Nsiz))
+   allocate(f_temp(Nsiz))
+
    fe_mask = .false.    ! to start with
    f_temp = f_cur       ! to start with
 
@@ -785,6 +813,9 @@ subroutine correction_distribution(fe, Ei, f_cur)
    dN = -(N_fin - N_in)
    !write(*,'(a, f, f, f, a)') 'Boltzmann_e_e N2:', N_in, N_fin, ABS(dN)/N_in*100.0d0, '%'
    !rite(*,'(a, f, f, f, a)') 'Boltzmann_e_e E2:', E_in, E_fin, ABS(dE)/ABS(E_in)*100.0d0, '%'
+
+   ! clean up:
+   deallocate(fe_mask, f_temp)
 end subroutine correction_distribution
 
 
@@ -796,11 +827,17 @@ subroutine correction_distribution_first(fe, Ei, f_cur)
    !-------------------------------------
    integer :: i, j, Nsiz, i1, i2, Npart, coun, i_low, i_high, cou1, cou2
    real(8) :: E_in, E_fin, N_in, N_fin, dE, dN, RN, N_cur, N_rand, df1, df2, temp
-   logical, dimension(size(fe)) :: fe_mask
-   real(8), dimension(size(fe)) :: f_temp
+   !logical, dimension(size(fe)) :: fe_mask
+   !real(8), dimension(size(fe)) :: f_temp
+   logical, dimension(:), allocatable :: fe_mask
+   real(8), dimension(:), allocatable :: f_temp
    logical :: found_yet
 
    Nsiz = size(fe)
+
+   allocate(fe_mask(Nsiz))
+   allocate(f_temp(Nsiz))
+
    fe_mask = .false.    ! to start with
    f_temp = f_cur       ! to start with
 
@@ -879,6 +916,10 @@ subroutine correction_distribution_first(fe, Ei, f_cur)
    dN = -(N_fin - N_in)
    !write(*,'(a, f, f, f, a)') 'Boltzmann_e_e N2:', N_in, N_fin, ABS(dN)/N_in*100.0d0, '%'
    !rite(*,'(a, f, f, f, a)') 'Boltzmann_e_e E2:', E_in, E_fin, ABS(dE)/ABS(E_in)*100.0d0, '%'
+
+
+   ! clean up:
+   deallocate(fe_mask, f_temp)
 end subroutine correction_distribution_first
 
 
@@ -892,10 +933,16 @@ subroutine lilnear_correction_distribution(fe, Ei, f_cur)
    integer :: i, Nsiz, Npart
    real(8) :: E_in, E_fin, N_in, N_fin, dE, dN, E2, Epart, temp
    real(8) :: Alpha, Beta     ! linear coefficients for distribution rescaling
-   logical, dimension(size(fe)) :: fe_mask
-   real(8), dimension(size(fe)) :: df ! distribution to be corrected (after e-e scattering)
+   !logical, dimension(size(fe)) :: fe_mask
+   !real(8), dimension(size(fe)) :: df ! distribution to be corrected (after e-e scattering)
+   logical, dimension(:), allocatable :: fe_mask
+   real(8), dimension(:), allocatable :: df ! distribution to be corrected (after e-e scattering)
 
    Nsiz = size(fe)
+
+   allocate(fe_mask(Nsiz))
+   allocate(df(Nsiz))
+
    fe_mask = .false.    ! to start with
 
    ! Define initial number of particles and energy:
@@ -974,6 +1021,9 @@ subroutine lilnear_correction_distribution(fe, Ei, f_cur)
    !write(*,'(a, f, f, f, a)') 'Boltzmann_e_e E2:', E_in, E_fin, ABS(dE)/ABS(E_in)*100.0d0, '%'
 
    !pause 'correction_distribution'
+
+   ! clean up:
+   deallocate(fe_mask, df)
 end subroutine lilnear_correction_distribution
 
 
@@ -1455,7 +1505,9 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
    integer :: i, Nsiz, j, Nlev, i_at, i_orb, N_at, N_orb, N_orb_tot
    logical :: needs_allocation
    logical, dimension(:), allocatable :: orbital_fragments
-   logical, dimension(size(Scell(NSC)%MDAtoms)) :: fragment_mask
+   !logical, dimension(size(Scell(NSC)%MDAtoms)) :: fragment_mask
+   logical, dimension(:), allocatable :: fragment_mask
+
    !real(8), dimension(:), allocatable :: fe_eq_frag
 
    ! Number of different fragments:
@@ -1463,6 +1515,8 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
    N_at = size(Scell(NSC)%MDAtoms)       ! total number of atoms
    N_orb_tot = size(Scell(NSC)%Ha,1)     ! total number of orbitals
    N_orb = N_orb_tot/N_at           ! orbitals per atom
+
+   allocate(fragment_mask(N_at))
 
    if (.not.allocated(Scell(NSC)%orb_in_atom)) then ! it's a first call
       call identify_fragment_for_orbital(Scell(NSC))  ! above
@@ -1577,6 +1631,7 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
    endif
 
    if (allocated(orbital_fragments)) deallocate(orbital_fragments)
+   if (allocated(fragment_mask)) deallocate(fragment_mask)
 end subroutine get_fragments_data_for_electrons
 
 
@@ -1606,7 +1661,8 @@ subroutine electronic_entropy(fe, Se, norm_fe, i_start, i_end)
    ! Se = -kB * int [ DOS*( f * ln(f) + (1-f) * ln(1-f) ) ]
    ! E.G. [https://doi.org/10.1103/PhysRevB.50.14686]
    !----------------------------
-   real(8), dimension(size(fe)) :: f_lnf
+   !real(8), dimension(size(fe)) :: f_lnf
+   real(8), dimension(:), allocatable :: f_lnf
    real(8) :: f_norm, eps
    integer :: i, Nsiz, i_low, i_high
    !============================
@@ -1632,6 +1688,7 @@ subroutine electronic_entropy(fe, Se, norm_fe, i_start, i_end)
    endif
 
    ! To start with:
+   allocate(f_lnf(Nsiz))
    Se = 0.0d0
    f_lnf = 0.0d0
 
@@ -1648,6 +1705,9 @@ subroutine electronic_entropy(fe, Se, norm_fe, i_start, i_end)
 
    ! Make proper units:
    Se = -g_kb_EV*Se  ! [eV/K]
+
+   ! clean up:
+   deallocate(f_lnf)
 end subroutine  electronic_entropy
 
 
@@ -2023,14 +2083,17 @@ subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, C
    real(8) :: coef   ! conversion coefficients with units
    real(8) :: C1, C2
    logical :: do_partial
-   real(8), dimension(size(Scell(NSC)%Ei)) :: Ce_i
+   !real(8), dimension(size(Scell(NSC)%Ei)) :: Ce_i
+   real(8), dimension(:), allocatable :: Ce_i
 
-    if (present(DOS_weights) .and. present(Ce_partial)) then ! partial contributions required:
-       do_partial = .true.
-       if (.not.allocated(Ce_partial)) allocate(Ce_partial(size(Scell(NSC)%G_ei_partial,1)))
-    else
-       do_partial = .false.
-    endif
+   if (present(DOS_weights) .and. present(Ce_partial)) then ! partial contributions required:
+      do_partial = .true.
+      if (.not.allocated(Ce_partial)) allocate(Ce_partial(size(Scell(NSC)%G_ei_partial,1)))
+   else
+      do_partial = .false.
+   endif
+
+   allocate(Ce_i(size(Scell(NSC)%Ei)))
 
    dTe = 10.0d0/g_kb    ! [eV] -> [K]
    Ntot = dble(Scell(NSC)%Ne)
@@ -2094,6 +2157,8 @@ subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, C
 
    if (isnan(Ce) .or. abs(Ce) >= 1d30) Ce = 0.0d0 ! if undefined or infinite
 
+   ! clean up:
+   deallocate(Ce_i)
 end subroutine get_electronic_heat_capacity
 
 
@@ -2890,7 +2955,13 @@ pure subroutine get_dN_dE_dmu(wrD, mu, Te, dN_dmu, dE_dmu)
    REAL(8), DIMENSION(:), INTENT(in) ::  wrD  ! eigenvalues of TB-Hamiltonian for electrons
    REAL(8), INTENT(inout) :: Te ! electron temperature [eV]
    REAL(8), INTENT(inout) :: mu ! chem.potential to be found [eV]
-   real(8), dimension(size(wrD)) :: exp_Fermi, exp_func
+   !---------------------
+   !real(8), dimension(size(wrD)) :: exp_Fermi, exp_func
+   real(8), dimension(:), allocatable :: exp_Fermi, exp_func
+
+   allocate(exp_Fermi(size(wrD)))
+   allocate(exp_func(size(wrD)))
+
    if (Te .GT. 1.0d-12) then    ! nonzero temperature
       where ((wrD(:) - mu) < Te*log(HUGE(mu)))
          exp_Fermi(:) = exp((wrD(:) - mu)/Te)
@@ -2907,7 +2978,10 @@ pure subroutine get_dN_dE_dmu(wrD, mu, Te, dN_dmu, dE_dmu)
    else     ! zero temperature
       dN_dmu = 0.0d0    ! analytical limit dN/dmu at Te->0
       dE_dmu = 0.0d0
-   endif   
+   endif
+
+   ! clean up:
+   deallocate(exp_Fermi, exp_func)
 end subroutine get_dN_dE_dmu
 
 
@@ -2917,8 +2991,14 @@ pure subroutine get_dN_dE_dTe(wrD, mu, Te, dN_dTe, dE_dTe)
    REAL(8), DIMENSION(:), INTENT(in) ::  wrD  ! eigenvalues of TB-Hamiltonian for electrons
    REAL(8), INTENT(inout) :: Te ! electron temperature [eV]
    REAL(8), INTENT(inout) :: mu ! chem.potential to be found [eV]
-   real(8), dimension(size(wrD)) :: exp_Fermi, exp_func
+   !---------------------
+   !real(8), dimension(size(wrD)) :: exp_Fermi, exp_func
+   real(8), dimension(:), allocatable :: exp_Fermi, exp_func
    real(8) :: Te2
+
+   allocate(exp_Fermi(size(wrD)))
+   allocate(exp_func(size(wrD)))
+
    if (Te .GT. 1.0d-10) then    ! nonzero temperature
       where ((wrD(:) - mu) < Te*log(HUGE(mu)))
          exp_Fermi(:) = exp((wrD(:) - mu)/Te)
@@ -2937,6 +3017,9 @@ pure subroutine get_dN_dE_dTe(wrD, mu, Te, dN_dTe, dE_dTe)
       dN_dTe = 0.0d0    ! analytical limit dN/dTe at Te->0
       dE_dTe = 0.0d0
    endif
+
+   ! clean up:
+   deallocate(exp_Fermi, exp_func)
 end subroutine get_dN_dE_dTe
 
 

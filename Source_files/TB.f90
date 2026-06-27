@@ -2543,7 +2543,7 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    complex :: expfac, SH_1
    real(8), dimension(:), allocatable :: Norm1
    real(8), dimension(3,3,3,3), target :: distances_to_image_cells
-   integer :: Nsiz, j, nat, m, atom_2, i, j1, l, i1, k, norb, n, nn, cell_x, cell_y, cell_z
+   integer :: Nsiz, j, nat, m, atom_2, i, j1, l, i1, k, norb, n, nn, cell_x, cell_y, cell_z, Thread_num
    real(8), dimension(3,3) :: k_supce   ! reciprocal supercell vectors
    real(8) :: temp, kx, ky, kz, zb(3), R, x, y, z
    real(8), target :: nol, dx, dy, dz
@@ -2556,6 +2556,10 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    Nsiz = size(Scell(NSC)%Ha,1) ! total number of orbitals
    norb =  Nsiz/nat ! orbitals per atom
    
+   !Thread_num = OMP_GET_THREAD_NUM()
+   !print*, 'Test 0 [construct_complex_Hamiltonian] #', Thread_num
+
+
    ! Allocate complex parameters:
    if (.not.allocated(CHij)) allocate(CHij(Nsiz,Nsiz))
    CHij = cmplx(0.0d0,0.0d0)	! to start with
@@ -2579,17 +2583,20 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       endif
    end if
 
-
    if (.not.allocated(CSij_save)) allocate(CSij_save(Nsiz,Nsiz), source=cmplx(0.0d0,0.0d0))
    if (present(Sij)) then   ! it is nonorthogonal case:
       if (.not.allocated(CSij)) allocate(CSij(Nsiz,Nsiz))
       CSij = cmplx(0.0d0,0.0d0)	! to start with
+      ! Diagonals are 1:
+      do i = 1, Nsiz
+         CSij(i,i) = cmplx(1.0d0,0.0d0)
+      enddo
    endif
    if (present(CSij_out)) then
       if (.not.allocated(CSij_out)) allocate(CSij_out(Nsiz,Nsiz))
       CSij_out = cmplx(0.0d0,0.0d0)	! to start with
       ! Diagonals are 1:
-      do i = 1, size(CSij_out,1)
+      do i = 1, Nsiz
          CSij_out(i,i) = cmplx(1.0d0,0.0d0)
       enddo
    endif
@@ -2657,7 +2664,12 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
             do i1 = 1,norb ! all orbitals
                k = (i-1)*norb+i1
 
-               CHij_temp(k,l) = CMPLX(H_non(k,l),0.0d0)*expfac
+               !if ( abs(H_non(k,l)) < 1.0d-16 ) then ! too small, nullify it
+               !   CHij_temp(k,l) = CMPLX(0.0d0,0.0d0)
+               !else ! normal
+                  CHij_temp(k,l) = CMPLX(H_non(k,l),0.0d0)*expfac
+               !endif
+
                ! Consistency checks:
                if ((isnan(real(CHij_temp(k,l)))) .OR. isnan(aimag(CHij_temp(k,l)))) then
                   Error_descript = 'CHij_temp ISNAN in construct_complex_Hamiltonian'
@@ -2666,17 +2678,24 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                   print*, i, j, k, l, CHij_temp(k,l)
                endif
                if (k < l) then ! check if it's Hermitian via conjugate transpose:
-                     if ( ( abs(dble(CHij_temp(k,l)) - dble(CHij_temp(l,k))) > 1.0d-10 ) .or. &
-                          ( abs(aimag(CHij_temp(k,l)) - aimag(conjg(CHij_temp(l,k)))) > 1.0d-10 ) ) then
-                           Error_descript = 'CHij_temp is non-Hermitian in construct_complex_Hamiltonian'
-                           if (present(Err)) call Save_error_details(Err, 6, Error_descript)
-                           print*, trim(adjustl(Error_descript))
-                           print*, i, j, k, l, CHij_temp(k,l), CHij_temp(l,k)
-                     endif
+                  if ( ( abs(real(CHij_temp(k,l)) - real(CHij_temp(l,k))) > 1.0d-10 ) .or. &
+                       ( abs(aimag(CHij_temp(k,l)) - aimag(conjg(CHij_temp(l,k)))) > 1.0d-10 ) ) then
+                     Error_descript = 'CHij_temp is non-Hermitian in construct_complex_Hamiltonian'
+                     if (present(Err)) call Save_error_details(Err, 6, Error_descript)
+                     print*, trim(adjustl(Error_descript))
+                     print*, i, j, k, l, CHij_temp(k,l), CHij_temp(l,k)
                   endif
+               endif
                
                if (present(Sij)) then
                   CSij(k,l) = CMPLX(Sij(k,l),0.0d0)*expfac
+                  if ( abs(real(CSij(k,l))) < 1.0d-15 ) then ! too small, nullify it
+                     CSij(k,l) = CMPLX( 0.0d0, aimag(CSij(k,l)) )
+                  endif
+                  if ( abs(aimag(CSij(k,l))) < 1.0d-15 ) then ! too small, nullify it
+                     CSij(k,l) = CMPLX( real(CSij(k,l)), 0.0d0 )
+                  endif
+
                   ! Consistency checks:
                   if ((isnan(real(CSij(k,l)))) .OR. isnan(aimag(CSij(k,l)))) then
                      Error_descript = 'CSij ISNAN in construct_complex_Hamiltonian'
@@ -2685,15 +2704,15 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                      print*, i, j, k, l, CSij(k,l)
                   endif
                   if (k < l) then ! check if it's Hermitian via conjugate transpose:
-                     if ( ( abs(dble(CSij(k,l)) - dble(CSij(l,k))) > 1.0d-10 ) .or. &
+                     if ( ( abs(real(CSij(k,l)) - real(CSij(l,k))) > 1.0d-10 ) .or. &
                           ( abs(aimag(CSij(k,l)) - aimag(conjg(CSij(l,k)))) > 1.0d-10 ) ) then
-                           Error_descript = 'CSij is non-Hermitian in construct_complex_Hamiltonian'
-                           if (present(Err)) call Save_error_details(Err, 6, Error_descript)
-                           print*, trim(adjustl(Error_descript))
-                           print*, i, j, k, l, CSij(k,l), CSij(l,k)
+                        Error_descript = 'CSij is non-Hermitian in construct_complex_Hamiltonian'
+                        if (present(Err)) call Save_error_details(Err, 6, Error_descript)
+                        print*, trim(adjustl(Error_descript))
+                        print*, i, j, k, l, CSij(k,l), CSij(l,k)
                      endif
-                  endif
-               endif
+                  endif ! (k < l)
+               endif ! (present(Sij))
             enddo ! i1
          enddo ! j1
       enddo ! atom_2
@@ -2704,6 +2723,12 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    if (present(CSij_out)) then ! overlap matrix
       if (present(Sij)) then ! this matrix was used to construct complex overlap
          CSij_out = CSij ! output
+
+         ! testing:
+         !do i = 1, Nsiz
+         !   print*, 'S', i, CSij_out(i,i), Sij(i,i)
+         !enddo ! i
+         !pause 'CSij_out 1'
       endif
    endif
 
@@ -2753,6 +2778,24 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       end if
    endif
    CHij = CHij_temp ! save for output
+
+   ! Check the CWF:
+   do i = 1, size(CHij,1)
+      do j = 1, size(CHij,2)
+         if ( isnan(real(CHij(i,j))) ) then
+            print*, 'Problem in construct_complex_Hamiltonian: CHij=', CHij(i,j), i, j
+         endif
+         if ( isnan(aimag(CHij(i,j))) ) then
+            print*, 'Problem in construct_complex_Hamiltonian: CHij=', CHij(i,j), i, j
+         endif
+         if ( abs(real(CHij(i,j))) > 1.0d16 ) then
+            print*, 'Problem in construct_complex_Hamiltonian: CHij=', CHij(i,j), i, j
+         endif
+         if ( abs(aimag(CHij(i,j))) > 1.0d16 ) then
+            print*, 'Problem in construct_complex_Hamiltonian: CHij=', CHij(i,j), i, j
+         endif
+      enddo ! j
+   enddo ! i
 
    !---------------------------------------
    ! Effective momentum operators:
@@ -2937,9 +2980,9 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
                         endif
                      endif
 
-                     if (dble(cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(k), x1
-                     if (dble(cPRRy(k,l)) .GT. 1d10) print*, i, j, cPRRy(k,l)
-                     if (dble(cPRRz(k,l)) .GT. 1d10) print*, i, j, cPRRz(k,l)
+                     if (real(cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(k), x1
+                     if (real(cPRRy(k,l)) .GT. 1d10) print*, i, j, cPRRy(k,l)
+                     if (real(cPRRz(k,l)) .GT. 1d10) print*, i, j, cPRRz(k,l)
                   enddo ! i1
                enddo ! j1
             endif ! (i > 0)
@@ -2953,6 +2996,25 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       endif
 
 !       !$omp do
+
+!       ! Check the CWF:
+!       do i = 1, size(CWF_orth,1)
+!          do j = 1, size(CWF_orth,2)
+!             if ( isnan(real(CWF_orth(i,j))) ) then
+!                print*, 'Problem in construct_complex_Hamiltonian: CWF_orth=', CWF_orth(i,j), i, j
+!             endif
+!             if ( isnan(aimag(CWF_orth(i,j))) ) then
+!                print*, 'Problem in construct_complex_Hamiltonian: CWF_orth=', CWF_orth(i,j), i, j
+!             endif
+!             if ( abs(real(CWF_orth(i,j))) > 1.0d16 ) then
+!                print*, 'Problem in construct_complex_Hamiltonian: CWF_orth=', CWF_orth(i,j), i, j
+!             endif
+!             if ( abs(aimag(CWF_orth(i,j))) > 1.0d16 ) then
+!                print*, 'Problem in construct_complex_Hamiltonian: CWF_orth=', CWF_orth(i,j), i, j
+!             endif
+!          enddo ! j
+!       enddo ! i
+
       do i = 1, Nsiz ! ensure WF normalization to 1
          Norm1(i) = SQRT( SUM( conjg(CWF_orth(:,i)) * CWF_orth(:,i) ) )
          !print*, i, Norm1(i)  ! not 1 for non-orthogonal Hamiltonians
@@ -3090,9 +3152,12 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
    !----------------------------
    !complex, dimension(size(CHij,1), size(CHij,2)) :: CHij_temp
    complex, dimension(:,:), allocatable :: CHij_temp
-   integer :: Nsiz, j
+   integer :: Nsiz, j, i, Thread_num
    character(200) :: Error_descript
 
+
+   !Thread_num = OMP_GET_THREAD_NUM()
+   !print*, 'Test 0 [diagonalize_complex_Hamiltonian] #', Thread_num
 
    Error_descript = ''  ! to start with, no error
    Nsiz = size(CHij,1)
@@ -3104,6 +3169,7 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
       endif
 
       ! Direct diagonalization:
+      !call sym_diagonalize(CHij, Ei, Error_descript, numpar%MPI_param, text_called_from='diagonalize_complex_Hamiltonian(CHij)') ! modeule "Algebra_tools"
       call sym_diagonalize(CHij, Ei, Error_descript, numpar%MPI_param) ! modeule "Algebra_tools"
 
       if (present(CWF_orth)) then   ! Save WF of orthogonal Hamiltonian
@@ -3118,13 +3184,46 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
       allocate(CHij_temp(Nsiz,Nsiz))
 
       CHij_temp = CHij
-      call Loewdin_Orthogonalization_c(numpar, Nsiz, CSij, CHij_temp)	! module "TB_NRL"
+      call Loewdin_Orthogonalization_c(numpar, Nsiz, CSij, CHij_temp, called_from='diagonalize_complex_Hamiltonian(CHij)') ! module "TB_NRL"
+
+!       ! Check the obtained values:
+!       do i = 1, size(CHij_temp,1)
+!          do j = 1, size(CHij_temp,2)
+!             if ( isnan(real(CSij(i,j)) ) ) then
+!                print*, 'Problem #1 in diagonalize_complex_Hamiltonian: CSij=', CSij(i,j), i, j
+!             endif
+!             if ( isnan(aimag(CSij(i,j)) ) ) then
+!                print*, 'Problem #1 in diagonalize_complex_Hamiltonian: CSij=', CSij(i,j), i, j
+!             endif
+!             if ( isnan(real(CHij_temp(i,j)) ) ) then
+!                print*, 'Problem #1 in diagonalize_complex_Hamiltonian: CHij_temp=', CHij_temp(i,j), i, j
+!             endif
+!             if ( isnan(aimag(CHij_temp(i,j)) ) ) then
+!                print*, 'Problem #1 in diagonalize_complex_Hamiltonian: CHij_temp=', CHij_temp(i,j), i, j
+!             endif
+!             ! Also check huge:
+!             if ( abs(real(CSij(i,j))) > 1.0d20 ) then
+!                print*, 'Problem #1 in diagonalize_complex_Hamiltonian: CSij=', CSij(i,j), i, j
+!             endif
+!             if ( abs(aimag(CSij(i,j))) > 1.0d20 ) then
+!                print*, 'Problem #1 in diagonalize_complex_Hamiltonian: CSij=', CSij(i,j), i, j
+!             endif
+!             if ( abs(real(CHij_temp(i,j))) > 1.0d20 ) then
+!                print*, 'Problem #1 in diagonalize_complex_Hamiltonian: CHij_temp=', CHij_temp(i,j), i, j
+!             endif
+!             if ( abs(aimag(CHij_temp(i,j))) > 1.0d20 ) then
+!                print*, 'Problem #1 in diagonalize_complex_Hamiltonian: CHij_temp=', CHij_temp(i,j), i, j
+!             endif
+!          enddo ! j
+!       enddo ! i
+
 
       if (present(CHij_orth)) then  ! Save orthogonalized Hamiltonian (for optical coefficients below)
          CHij_orth = CHij_temp
       endif
 
       ! 2) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
+      !call sym_diagonalize(CHij_temp, Ei, Error_descript, numpar%MPI_param, text_called_from='diagonalize_complex_Hamiltonian')   ! module "Algebra_tools"
       call sym_diagonalize(CHij_temp, Ei, Error_descript, numpar%MPI_param)   ! module "Algebra_tools"
       if (LEN(trim(adjustl(Error_descript))) .GT. 0) then
          Error_descript = 'diagonalize_complex_Hamiltonian: '//trim(adjustl(Error_descript))
@@ -3135,9 +3234,53 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
          CWF_orth = CHij_temp
       endif
 
+      ! Check the obtained values:
+!       do i = 1, size(CHij_temp,1)
+!          do j = 1, size(CHij_temp,2)
+!             if ( isnan(real(CHij_temp(i,j)) ) ) then
+!                print*, 'Problem #2 in diagonalize_complex_Hamiltonian: CHij_temp=', CHij_temp(i,j), i, j
+!             endif
+!             if ( isnan(aimag(CHij_temp(i,j)) ) ) then
+!                print*, 'Problem #2 in diagonalize_complex_Hamiltonian: CHij_temp=', CHij_temp(i,j), i, j
+!             endif
+!             if ( abs(real(CHij_temp(i,j))) > 1.0d20 ) then
+!                print*, 'Problem #2 in diagonalize_complex_Hamiltonian: CHij_temp=', CHij_temp(i,j), i, j
+!             endif
+!             if ( abs(aimag(CHij_temp(i,j))) > 1.0d20 ) then
+!                print*, 'Problem #2 in diagonalize_complex_Hamiltonian: CHij_temp=', CHij_temp(i,j), i, j
+!             endif
+!          enddo ! j
+!       enddo ! i
+
+
       ! 3) Convert the eigenvectors back into the non-orthogonal basis:
       call mkl_matrix_mult('N', 'N', CSij, CHij_temp, CHij)	! module "Algebra_tools"
-      
+
+      ! Check the obtained values:
+      do i = 1, size(CHij,1)
+         do j = 1, size(CHij,2)
+
+            if ( isnan(real(CSij(i,j)) ) ) then
+               print*, 'Problem #3 in diagonalize_complex_Hamiltonian: CSij=', CSij(i,j), i, j
+            endif
+            if ( isnan(aimag(CSij(i,j)) ) ) then
+               print*, 'Problem #3 in diagonalize_complex_Hamiltonian: CSij=', CSij(i,j), i, j
+            endif
+            if ( isnan(real(CHij(i,j)) ) ) then
+               print*, 'Problem #3 in diagonalize_complex_Hamiltonian: CHij=', CHij(i,j), i, j
+            endif
+            if ( isnan(aimag(CHij(i,j)) ) ) then
+               print*, 'Problem #3 in diagonalize_complex_Hamiltonian: CHij=', CHij(i,j), i, j
+            endif
+            if ( abs(real(CHij(i,j))) > 1.0d20 ) then
+               print*, 'Problem #3 in diagonalize_complex_Hamiltonian: CHij=', CHij(i,j), i, j
+            endif
+            if ( abs(aimag(CHij(i,j))) > 1.0d20 ) then
+               print*, 'Problem #3 in diagonalize_complex_Hamiltonian: CHij=', CHij(i,j), i, j
+            endif
+         enddo ! j
+      enddo ! i
+
 !       ! 4) If we need to renormalize the wave functions (in case they are not normalized to 1 after this procedure):
 !       do j = 1, Nsiz
 !         CHij(:,j) = CHij(:,j) / SQRT(SUM( dconjg(CHij(:,j)) * CHij(:,j) ))
@@ -3188,7 +3331,7 @@ subroutine diagonalize_complex8_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, C
 #endif
 
       ! Direct diagonalization:
-      call sym_diagonalize(CHij, Ei, Error_descript, numpar%MPI_param) ! modeule "Algebra_tools"
+      call sym_diagonalize(CHij, Ei, Error_descript, numpar%MPI_param, text_called_from='diagonalize_complex8_Hamiltonian') ! modeule "Algebra_tools"
    else ORTH ! nonorthogonal
       ! Solve linear eigenproblem:
       ! 1) Orthogonalize the Hamiltonian using Loewdin procedure:
@@ -5546,13 +5689,16 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
    real(8) :: Gaus, epsylon, sigma, temp
    real(8), dimension(:), allocatable :: DOS_sum
    real(8), dimension(:,:,:), allocatable :: partial_DOS_sum
-   real(8), dimension(size(Scell%Ha,1),size(Scell%Ha,2)) :: D      ! density matrix, if required (for complex case)
-   real(8), dimension(size(Scell%Ha,1)) :: Norm1      ! normalization for WF
+   !real(8), dimension(size(Scell%Ha,1),size(Scell%Ha,2)) :: D      ! density matrix, if required (for complex case)
+   real(8), dimension(:,:), allocatable :: D      ! density matrix, if required (for complex case)
+   !real(8), dimension(size(Scell%Ha,1)) :: Norm1      ! normalization for WF
+   real(8), dimension(:), allocatable :: Norm1      ! normalization for WF
    logical :: do_partial
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
    complex :: temp_c
-   complex, dimension(size(Scell%Ha,1)) :: vec1
+   !complex, dimension(size(Scell%Ha,1)) :: vec1
+   complex, dimension(:), allocatable :: vec1
 
    epsylon = 1.0d-12	! precision
    sigma = smearing	! [eV] gaussian smearing
@@ -5562,6 +5708,11 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
    allocate(DOS_sum(Ngridsiz))
    DOS_sum = 0.0d0	! to start from
    do_partial = (present(partial_DOS) .and. present(masks_DOS))
+
+   allocate(D(size(Scell%Ha,1),size(Scell%Ha,2)))
+   allocate(Norm1(size(Scell%Ha,1)))
+   allocate(vec1(size(Scell%Ha,1)))
+
    if (do_partial) then
       N_at = size(partial_DOS,1)
       N_types = size(partial_DOS,2)
@@ -5816,7 +5967,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
       endif ! (j_center > 1)
 
       ! Consistency checks:
-      if ( abs(SUM(partial_DOS_sum(:, :, i)) - DOS_sum(i)) > 1.0d-8) then  ! does not sum up to total DOS
+      if ( abs(SUM(partial_DOS_sum(:, :, i)) - DOS_sum(i)) > 1.0d-5) then  ! does not sum up to total DOS
          print*, 'PROBLEM in get_DOS_sort: pDOS does not equal total DOS:', i, SUM(partial_DOS_sum(:, :, i)) - DOS_sum(i), &
                         partial_DOS_sum(:, :, i), DOS_sum(i)
       endif
@@ -5829,7 +5980,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
    DOS(2,:) = DOS_sum(:)
    if (do_partial) partial_DOS(:,:,:) = partial_DOS_sum(:,:,:)
 
-   deallocate(DOS_sum)
+   deallocate(DOS_sum, D, Norm1, vec1)
    if (allocated(partial_DOS_sum)) deallocate(partial_DOS_sum)
 end subroutine get_DOS_sort
 

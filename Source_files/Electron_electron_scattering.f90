@@ -371,12 +371,15 @@ subroutine Electron_electron_scattering_Kij(Scell, Ha, Mij, Sij) ! calculates fa
    real(8), dimension(:,:), intent(in), optional :: Sij ! overlap matrix, in case of non-orthogonal basis set
    !----------------------------
    integer :: N_basis_set, i, j, N, k, atom_2, j_at, i_alpha, i_sh, i_alpha_orb, j_gamma_orb, j_sh
-   real(8), dimension(size(Ha,1))  :: Norm1   ! normalization factors
+   !real(8), dimension(size(Ha,1))  :: Norm1   ! normalization factors
+   real(8), dimension(:), allocatable :: Norm1   ! normalization factors
    real(8) :: Mij_cur, Mij_temp
    real(8) :: eps, rij
    integer, pointer :: m
 
    N = size(Ha,1)
+
+   allocate(Norm1(N))
 
    Mij = 0.0d0 ! to start with
    eps = 1.0d-13    ! acceptable error
@@ -456,7 +459,9 @@ subroutine Electron_electron_scattering_Kij(Scell, Ha, Mij, Sij) ! calculates fa
    !$omp end do
    !$omp end parallel
 
+   ! clean up:
    nullify(m)
+   deallocate(Norm1)
    !pause 'Electron_electron_scattering_Kij'
 end subroutine Electron_electron_scattering_Kij
 
@@ -612,8 +617,10 @@ subroutine Electron_electron_scattering_Kij_TEST(Ha, Mij, Sij) ! calculates fact
    !----------------------------
    integer i, j, N, k
    real(8), dimension(:), allocatable :: psi0 ! WF_0
-   real(8), dimension(size(Ha,1))  :: Norm1   ! normalization factors
-   real(8), dimension(size(Ha,1),size(Ha,2)) :: tij
+   !real(8), dimension(size(Ha,1))  :: Norm1   ! normalization factors
+   real(8), dimension(:), allocatable  :: Norm1   ! normalization factors
+   !real(8), dimension(size(Ha,1),size(Ha,2)) :: tij
+   real(8), dimension(:,:), allocatable :: tij
    real(8) :: eps, Norm_val0, Norm_val1
 
    N = size(Ha,1)
@@ -623,6 +630,8 @@ subroutine Electron_electron_scattering_Kij_TEST(Ha, Mij, Sij) ! calculates fact
 
 !$omp PARALLEL private(i, j, k, psi0, Norm_val1) shared(Norm1, tij)
    allocate(psi0(N))
+   allocate(Norm1(N))
+   allocate(tij(N,N))
 
    ! Ensure WF normalization to 1:
 !$omp do
@@ -686,7 +695,7 @@ subroutine Electron_electron_scattering_Kij_TEST(Ha, Mij, Sij) ! calculates fact
    enddo
 !$omp end do !!end PARALLEL do
 
-   deallocate(psi0)
+   deallocate(psi0, Norm1, tij)
 !$omp end parallel
 
    !pause 'Electron_electron_scattering_Kij'

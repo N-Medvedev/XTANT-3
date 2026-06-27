@@ -120,7 +120,13 @@ subroutine make_cubic_splines(x_array, y_array, a, b, c, d)
    real(8), dimension(:), allocatable, intent(inout) :: a, b, c, d  ! spline coefficients for the given array
    !-----------------------------
    integer :: Nsiz, i
-   real(8), dimension(size(x_array)) :: h, h_inv, f_prime, f_prime2
+   !real(8), dimension(size(x_array)) :: h, h_inv, f_prime, f_prime2
+   real(8), dimension(:), allocatable :: h, h_inv, f_prime, f_prime2
+
+   allocate(h(size(x_array)))
+   allocate(h_inv(size(x_array)))
+   allocate(f_prime(size(x_array)))
+   allocate(f_prime2(size(x_array)))
 
    Nsiz = size(x_array)
    if (Nsiz > 1) then ! it makes sense to cobic-spline the array:
@@ -178,6 +184,9 @@ subroutine make_cubic_splines(x_array, y_array, a, b, c, d)
       if (allocated(c)) deallocate(c)
       if (allocated(d)) deallocate(d)
    endif
+
+   ! clean up
+   deallocate(h, h_inv, f_prime, f_prime2)
 end subroutine make_cubic_splines
 
 
@@ -1097,7 +1106,7 @@ subroutine check_Ha_r(Mat, Eigenvec, Eigenval) ! real matrix real eigenstates
    real(8), dimension(:,:), intent(in) :: Mat	! matrix
    real(8), dimension(:,:), intent(in) :: Eigenvec	! eigenvectors of this matrix
    real(8), dimension(:), intent(in) :: Eigenval	! eigenvalues of this matrix
-   real(8), dimension(size(Mat,1), size(Mat,2)) :: M_temp
+   !real(8), dimension(size(Mat,1), size(Mat,2)) :: M_temp
    real(8) Ev, Evec(size(Eigenval))
    integer i, j, k, M
 
@@ -1140,7 +1149,7 @@ end subroutine get_eigenvalues_from_eigenvectors
 
 
 
-subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, no_MPI)
+subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, no_MPI, text_called_from)
    complex, dimension(:,:), intent(inout) :: M	! matrix
    real(8), dimension(:), intent(out) :: Ev	! eigenvalues
    character(*), intent(inout) :: Error_descript	! error description
@@ -1148,16 +1157,19 @@ subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, no
    logical, intent(in), optional :: print_Ei ! print out eigenvalues or not
    logical, intent(in), optional :: check_M  ! chech diagonalization
    logical, intent(in), optional :: no_MPI   ! specify not to use MPI
+   character(*), intent(in), optional :: text_called_from   ! subroutine is called from
    !-------------------------
    integer :: LIWORK, LWORK, N, INFO, LRWORK
 !    complex(16), dimension(:), allocatable :: LAPWORK
-   complex, dimension(:), allocatable :: LAPWORK
+   complex(8), dimension(:), allocatable :: LAPWORK
    integer, dimension(:), allocatable :: IWORK
    real(8), dimension(:), allocatable ::  RWORK
-   complex, dimension(:,:), allocatable :: M_save, M_work   ! matrix
-   real, dimension(size(Ev)) ::  Ev_test
+   complex(8), dimension(:,:), allocatable :: M_save, M_work   ! matrix
+   !real(8), dimension(size(Ev)) ::  Ev_test
+   real(8), dimension(:), allocatable ::  Ev_test
    integer :: i_countin, FN, i, j
    logical :: dont_use_MPI
+   character(500) :: var_ch, Error_descript_local
 !    complex, dimension(size(M,1),size(M,2)) :: M_save	! matrix
 !    complex, dimension(size(M,1),size(M,2)) :: M_work	! matrix in 16 bit format
 !    complex(16), dimension(size(M,1),size(M,2)) :: M_work	! matrix in 16 bit format :: WRONG!
@@ -1168,25 +1180,57 @@ subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, no
       dont_use_MPI = .false.  ! by default, let the system decide
    endif
 
+   allocate(Ev_test(size(Ev)))
+
    N = size(M,1)
    allocate(M_save(N,N))
    allocate(M_work(N,N))
-   LIWORK = 3 + 5*N  ! 3 + 5*N
-   LRWORK = 1 + 5*N + 2*N*N !  1 + 5*N + 2*N**2
-   LWORK = 2*N + N*N ! 2*N + N**2
+   M_save = M ! to make sure it's fine
+   M_work = M ! convert it into complex
+   Ev = 0.0d0     ! to start with
+   Ev_test = Ev   ! to start with
+
+
+   !LIWORK = 3 + 5*N             ! min: 3 + 5*N
+   !LRWORK = 1 + 5*N + 2*N*N     ! min: 1 + 5*N + 2*N**2
+   !LWORK  = 2*N + N*N           ! min: 2*N + N**2
+   ! Identify the optimal size of spaces required by LAPACK:
+   call find_optimal_sizes_for_ZHEEVD(M_work, Ev, N, LWORK, LRWORK, LIWORK, INFO) ! below
+
+   ! Just in case, ensure it is not smaller than the minimum required by LAPACK:
+   LWORK = max(LWORK, 2*N + N*N)          ! not smaller than the minimum
+   LRWORK = max(LRWORK, 1 + 5*N + 2*N*N)  ! not smaller than the minimum
+   LIWORK = max(LIWORK, 3 + 5*N)          ! not smaller than the minimum
+
    allocate(LAPWORK(MAX(1,LWORK))) ! (MAX(1,LWORK))
    allocate(IWORK(LIWORK)) ! (MAX(1,LIWORK))
    allocate(RWORK(LRWORK)) ! LRWORK
-
-   M_save = M ! to make sure it's fine
-   M_work = M ! convert it into complex*16
    
    ! Test it before the start:
-   CH1:do i = 1, size(M,1) 
-      do j = 1, size(M,2) 
-         if (isnan(dble(M_work(i,j))) .or. isnan(AIMAG(M_work(i,j)))) then
-            Error_descript = 'Module Algebra_tools: complex matrix diagonalization: M is NaN before'
+   CH1:do i = 1, size(M,1)
+      if (present(text_called_from)) then ! check for tiny diagonal values:
+         if ( abs(real(M_work(i,i))) < tiny(1.0e0) ) then
+            write(var_ch,'(i8,2es25.16)') i, M_work(i,i)
+            write(Error_descript,'(a)') 'Module Algebra_tools: complex matrix diagonalization: M(i,i) is tiny '//trim(adjustl(var_ch))
             print*, trim(adjustl(Error_descript))
+            print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+         endif
+      endif
+
+      do j = 1, size(M,2)
+         if (isnan(real(M_work(i,j))) .or. isnan(AIMAG(M_work(i,j)))) then
+            write(var_ch,'(i8,i8,2es25.16)') i, j, M_work(i,j)
+            write(Error_descript,'(a)') 'Module Algebra_tools: complex matrix diagonalization: M is NaN before '//trim(adjustl(var_ch))
+            print*, trim(adjustl(Error_descript))
+            if (present(text_called_from)) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+            exit CH1
+         endif
+
+         if ( abs(real(M_work(i,j))) > 1.0e16 ) then
+            write(var_ch,'(i8,i8,2es25.16)') i, j, M_work(i,j)
+            write(Error_descript,'(a)') 'Module Algebra_tools: complex matrix diagonalization: M(i,j) is huge '//trim(adjustl(var_ch))
+            print*, trim(adjustl(Error_descript))
+            if (present(text_called_from)) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
             exit CH1
          endif
       enddo ! j
@@ -1216,51 +1260,103 @@ subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, no
 
 #else ! use OpenMP instead:
    !call ZHEEVD('V','U', N, M, N, Ev, LAPWORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, INFO )
-   call ZHEEVD('V','U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, INFO )
+   call ZHEEVD('V','U', N, M_work, N, Ev_test, LAPWORK, LWORK, RWORK, LRWORK, IWORK, LIWORK, INFO )   ! LAPACK
+   Ev = Ev_test   ! eigenvalues after diagonalization
    !print*, OMP_GET_THREAD_NUM(), 'After ZHEEVD'
 #endif
 
 
 
    if (INFO .NE. 0) then ! if divide-n-conquare LAPACK diagonalization procidure failed, try regular one:
-      print*, 'ZHEEVD did not work, INFO=', INFO
+      print*, 'ZHEEVD did not work #1, INFO=', INFO
       M = M_save ! to make sure it's fine
       M_work = M_save
       !call ZHEEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, RWORK,INFO)
       call ZHEEV('V', 'U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK,INFO)
       if (INFO .NE. 0) then ! if LAPACK diagonalization procidure failed:
-         Error_descript = 'Module Algebra_tools: complex matrix diagonalization failed!'
+         Error_descript = 'Module Algebra_tools: complex matrix diagonalization failed #1!'
          print*, trim(adjustl(Error_descript))
+         if (present(text_called_from)) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
       endif
    endif
-   deallocate(LAPWORK, IWORK, RWORK)
    
    M = M_work ! save processed matrix back into the output matrix
    
    if (present(check_M)) then
       if (check_M) then
-         call check_Ha(M_save, M_work, Ev)   ! to make sure diagonalization went well
+         !call check_Ha(M_save, M_work, Ev)   ! to make sure diagonalization went well
+         call check_Ha_c8(M_save, M_work, Ev)   ! to make sure diagonalization went well
 !          pause 'check_M'
       endif
    endif
-   deallocate(M_save, M_work) ! clean up
    
+
+   !---------------------------------------------
    ! test the resulting diagonalized Hamiltonian:
-   CH2:do i = 1, size(M,1)
-      if (isnan(Ev(i))) then
-         Error_descript = 'Module Algebra_tools: complex matrix diagonalization: Ev is NaN after'
-         print*, trim(adjustl(Error_descript)), INFO   
-         exit CH2
-      endif
-      do j = 1, size(M,2) 
-         if (isnan(dble(M(i,j))) .or. isnan(AIMAG(M(i,j)))) then
-            Error_descript = 'Module Algebra_tools: complex matrix diagonalization: M is NaN after'
-            print*, trim(adjustl(Error_descript))
-            exit CH2
+   if (present(text_called_from)) then
+      !call test_diagonalization_c(Ev, M, M_save, INFO, text_called_from=text_called_from, add_text='#1')
+      call test_diagonalization_c8(Ev, M, M_save, INFO, text_called_from=text_called_from, add_text='#1')
+   else
+      !call test_diagonalization_c(Ev, M, M_save, INFO, add_text='#1')
+      call test_diagonalization_c8(Ev, M, M_save, INFO, add_text='#1')
+   endif
+
+   if (INFO .NE. 0) then ! if divide-n-conquare LAPACK diagonalization procidure produced NaNs, try a regular one:
+      print*, 'ZHEEVD did not work #2, trying ZHEEV...'
+      M = M_save ! to make sure it's fine
+      M_work = M_save
+
+      ! Test the input matrix:
+      CH2:do i = 1, size(M_work,1)
+         if (present(text_called_from)) then ! check for tiny diagonal values:
+            if ( real(M_work(i,i)) < tiny(1.0e0) ) then
+               write(var_ch,'(i8,i8,4es25.16)') i, i, M_work(i,i), M(i,i)
+               write(Error_descript,'(a)') 'Module Algebra_tools: complex matrix diagonalization: M_work(i,i) is tiny '//trim(adjustl(var_ch))
+               print*, trim(adjustl(Error_descript))
+               print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+            endif
          endif
-      enddo ! j
-   enddo CH2 ! i
+
+         do j = 1, size(M_work,2)
+            if (isnan(real(M_work(i,j))) .or. isnan(AIMAG(M_work(i,j)))) then
+               write(var_ch,'(i8,i8,4es25.16)') i, j, M_work(i,j), M(i,j)
+               write(Error_descript,'(a)') 'Module Algebra_tools: complex matrix diagonalization: M_work is NaN before '//trim(adjustl(var_ch))
+               print*, trim(adjustl(Error_descript))
+               if (present(text_called_from)) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+               exit CH2
+            endif
+
+            if ( abs(real(M_work(i,j))) > 1.0e16 ) then
+               write(var_ch,'(i8,i8,4es25.16)') i, j, real(M_work(i,j)), aimag(M_work(i,j)), real(M(i,j)), aimag(M(i,j))
+               write(Error_descript_local,'(a)') 'Module Algebra_tools: complex matrix diagonalization: M_work(i,j) is huge '//trim(adjustl(var_ch))
+               print*, trim(adjustl(Error_descript_local))
+               write(Error_descript, '(a)') trim(adjustl(Error_descript_local))
+               if (present(text_called_from)) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+               exit CH2
+            endif
+         enddo ! j
+      enddo CH2 ! i
+
+      call ZHEEV('V', 'U', N, M_work, N, Ev, LAPWORK, LWORK, RWORK, INFO)
+      if (INFO .NE. 0) then ! if LAPACK diagonalization procidure failed:
+         Error_descript = 'Module Algebra_tools: complex matrix diagonalization failed #2!'
+         print*, trim(adjustl(Error_descript))
+         if (present(text_called_from)) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+      endif
+      M = M_work ! save processed matrix back into the output matrix
+
+      ! test the ZHEEV diagonalized Hamiltonian:
+      if (present(text_called_from)) then
+         !call test_diagonalization_c(Ev, M, M_save, INFO, text_called_from=text_called_from, add_text='#2')
+         call test_diagonalization_c8(Ev, M, M_save, INFO, text_called_from=text_called_from, add_text='#2')
+      else
+         !call test_diagonalization_c(Ev, M, M_save, INFO, add_text='#2')
+         call test_diagonalization_c8(Ev, M, M_save, INFO, add_text='#2')
+      endif
+   endif ! (INFO .NE. 0)
    
+
+   !---------------------------------------------
    if (present(print_Ei)) then
       if (print_Ei) then
          do i_countin = 1, size(Ev)
@@ -1269,10 +1365,137 @@ subroutine c_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, no
       endif
    endif
 
+
+   !---------------------------------------------
+   deallocate(M_save, M_work, Ev_test) ! clean up
+   deallocate(LAPWORK, IWORK, RWORK)
    !print*, OMP_GET_THREAD_NUM(), 'c_diagonalize done'
 end subroutine c_diagonalize
 
 
+subroutine test_diagonalization_c(Ev, M, M_save, INFO, text_called_from, add_text)
+   real(8), dimension(:), intent(in) :: Ev      ! eigenvalues
+   complex, dimension(:,:), intent(in) :: M     ! matrix to check
+   complex, dimension(:,:), intent(in) :: M_save     ! matrix before diagonalization
+   integer, intent(inout) :: INFO   ! marker of execution
+   character(*), intent(in), optional :: text_called_from ! extra text to print
+   character(*), intent(in), optional :: add_text ! extra text to print
+   !------------------
+   integer :: i, j
+   character(200) :: Error_descript, extra_text
+
+   if (present(add_text)) then
+      extra_text = trim(adjustl(add_text))
+   else
+      extra_text = ''
+   endif
+
+   INFO = 0 ! no error to start with
+
+   ! test the resulting diagonalized Hamiltonian:
+   CH2:do i = 1, size(M,1)
+      if (isnan(Ev(i))) then
+         Error_descript = 'Module Algebra_tools: complex matrix diagonalization: Ev is NaN after '//trim(adjustl(add_text))
+         print*, trim(adjustl(Error_descript)), INFO
+         if (present(text_called_from)) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+         INFO = -1 ! error
+         exit CH2
+      endif
+      do j = 1, size(M,2)
+         if (isnan(real(M(i,j))) .or. isnan(aimag(M(i,j)))) then
+            Error_descript = 'Module Algebra_tools: complex matrix diagonalization: M is NaN after '//trim(adjustl(add_text))
+            print*, trim(adjustl(Error_descript)), i, j, M(i,j), M_save(i,j)
+            if (present(text_called_from)) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+            INFO = -2   ! error
+            exit CH2
+         endif
+      enddo ! j
+   enddo CH2 ! i
+end subroutine test_diagonalization_c
+
+
+
+subroutine test_diagonalization_c8(Ev, M, M_save, INFO, text_called_from, add_text)
+   real(8), dimension(:), intent(in) :: Ev      ! eigenvalues
+   complex, dimension(:,:), intent(in) :: M     ! matrix to check
+   complex(8), dimension(:,:), intent(in) :: M_save     ! matrix before diagonalization
+   integer, intent(inout) :: INFO   ! marker of execution
+   character(*), intent(in), optional :: text_called_from ! extra text to print
+   character(*), intent(in), optional :: add_text ! extra text to print
+   !------------------
+   integer :: i, j
+   character(200) :: Error_descript, extra_text
+
+   if (present(add_text)) then
+      extra_text = trim(adjustl(add_text))
+   else
+      extra_text = ''
+   endif
+
+   INFO = 0 ! no error to start with
+
+   ! test the resulting diagonalized Hamiltonian:
+   CH2:do i = 1, size(M,1)
+      if (isnan(Ev(i))) then
+         Error_descript = 'Module Algebra_tools: complex matrix diagonalization: Ev is NaN after '//trim(adjustl(add_text))
+         print*, trim(adjustl(Error_descript)), INFO
+         if (present(text_called_from)) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+         INFO = -1 ! error
+         exit CH2
+      endif
+      do j = 1, size(M,2)
+         if (isnan(real(M(i,j))) .or. isnan(aimag(M(i,j)))) then
+            Error_descript = 'Module Algebra_tools: complex matrix diagonalization: M is NaN after '//trim(adjustl(add_text))
+            print*, trim(adjustl(Error_descript)), i, j, M(i,j), M_save(i,j)
+            if (present(text_called_from)) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+            INFO = -2   ! error
+            exit CH2
+         endif
+      enddo ! j
+   enddo CH2 ! i
+end subroutine test_diagonalization_c8
+
+
+subroutine find_optimal_sizes_for_ZHEEVD(M, Ev, N, LWORK, LRWORK, LIWORK, INFO)
+   complex(8), dimension(:,:), intent(in) :: M
+   real(8), dimension(:), intent(in) :: Ev
+   integer, intent(in) :: N
+   integer, intent(inout) :: LWORK, LRWORK, LIWORK, INFO
+   !------------------------
+   !real(8), dimension(size(Ev)) :: Ev_test           ! <- this definition is on stack, may run out of stack memory
+   real(8), dimension(:), allocatable :: Ev_test      ! <- this definition is on heat, safer
+   !complex(8), dimension(size(M,1),size(M,2)) :: M_test
+   complex(8), dimension(:,:), allocatable :: M_test
+   complex(8), dimension(:), allocatable :: WORK_QUERY
+   real(8), dimension(:), allocatable :: RWORK_QUERY
+   integer, dimension(:), allocatable :: IWORK_QUERY
+
+   allocate(Ev_test(size(Ev)))
+   allocate(M_test(size(M,1),size(M,2)))
+
+   Ev_test = Ev   ! to start with
+   M_test = M
+
+   ! Query optimal sizes
+   LWORK = -1
+   LRWORK = -1
+   LIWORK = -1
+   allocate(WORK_QUERY(2*N + N**2))
+   allocate(RWORK_QUERY(1 + 5*N + 2*N**2))
+   allocate(IWORK_QUERY(3 + 5*N))
+
+   call ZHEEVD('V','U', N, M_test, N, Ev_test, WORK_QUERY, LWORK, RWORK_QUERY, LRWORK, IWORK_QUERY, LIWORK, INFO)      ! LAPACK
+
+   if (INFO /= 0) then
+      print*, 'Problem in find_optimal_sizes_for_ZHEEVD, INFO=', INFO
+   endif
+   ! Allocate with optimal sizes
+   LWORK  = int(real(WORK_QUERY(1)))
+   LRWORK = int(RWORK_QUERY(1))
+   LIWORK = IWORK_QUERY(1)
+
+   deallocate(WORK_QUERY, RWORK_QUERY, IWORK_QUERY, Ev_test, M_test)
+end subroutine find_optimal_sizes_for_ZHEEVD
 
 
 subroutine ScaLAPACK_diagonalize_c(M, Ev, Error_descript, MPI_param)
@@ -1443,7 +1666,7 @@ subroutine c8_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M) !
    CH1:do i = 1, N
       do j = 1, N
          if (isnan(dble(M_work(i,j))) .or. isnan(AIMAG(M_work(i,j)))) then
-            Error_descript = 'Module Algebra_tools: complex matrix diagonalization: M is NaN before'
+            Error_descript = 'Module Algebra_tools: complex matrix diagonalization (c8_diagonalize): M is NaN before'
             print*, trim(adjustl(Error_descript))
             exit CH1
          endif
@@ -1519,7 +1742,8 @@ subroutine check_Ha_c(Mat, Eigenvec, Eigenval) ! real matrix, complex eigenstate
    complex, dimension(:,:), intent(in) :: Mat	! matrix
    complex, dimension(:,:), intent(in) :: Eigenvec	! eigenvectors of this matrix
    real(8), dimension(:), intent(in) :: Eigenval	! eigenvalues of this matrix
-   real(8), dimension(size(Mat,1), size(Mat,2)) :: M_temp
+   !--------------------------------
+   !real(8), dimension(size(Mat,1), size(Mat,2)) :: M_temp
    complex Evec(size(Eigenval))
    real(8) :: Ev
    integer i, j, k, M
@@ -1546,7 +1770,8 @@ subroutine check_Ha_c8(Mat, Eigenvec, Eigenval) ! real matrix, complex eigenstat
    complex(8), dimension(:,:), intent(in) :: Mat	! matrix
    complex(8), dimension(:,:), intent(in) :: Eigenvec	! eigenvectors of this matrix
    real(8), dimension(:), intent(in) :: Eigenval	! eigenvalues of this matrix
-   real(8), dimension(size(Mat,1), size(Mat,2)) :: M_temp
+   !--------------------------------
+   !real(8), dimension(size(Mat,1), size(Mat,2)) :: M_temp
    complex(8) :: Evec(size(Eigenval))
    real(8) :: Ev
    integer :: i, j, k, M
@@ -1561,8 +1786,9 @@ subroutine check_Ha_c8(Mat, Eigenvec, Eigenval) ! real matrix, complex eigenstat
       enddo
 !       Ev = dble(SUM(DCONJG(Eigenvec(:,i))*Evec(:)))
       Ev = dble(SUM(CONJG(Eigenvec(:,i))*Evec(:)))
-      if (ABS(Ev - Eigenval(i))/min(ABS(Ev),ABS(Eigenval(i))) .GT. 1.0d-6) then ! diagonalization went wrong:
-         print*, 'Ev_c:', i, Ev, Eigenval(i) !, SUM(CONJG(Eigenvec(:,i))*Eigenvec(:,i))
+      !if (ABS(Ev - Eigenval(i))/min(ABS(Ev),ABS(Eigenval(i))) .GT. 1.0d-6) then ! diagonalization went wrong:
+      if (ABS(Ev - Eigenval(i)) .GT. min(ABS(Ev),ABS(Eigenval(i)))*1.0d-6) then ! diagonalization went wrong:
+         print*, 'Ev_c8:', i, Ev, Eigenval(i) !, SUM(CONJG(Eigenvec(:,i))*Eigenvec(:,i))
       endif
    enddo
 end subroutine check_Ha_c8
@@ -1573,7 +1799,7 @@ subroutine check_Ha_cc(Mat, Eigenvec, Eigenval) ! complex matrix, complex eigens
    complex, dimension(:,:), intent(in) :: Mat	! matrix
    complex, dimension(:,:), intent(in) :: Eigenvec	! eigenvectors of this matrix
    complex, dimension(:), intent(in) :: Eigenval	! eigenvalues of this matrix
-   complex, dimension(size(Mat,1), size(Mat,2)) :: M_temp
+   !complex, dimension(size(Mat,1), size(Mat,2)) :: M_temp
    complex Ev, Evec(size(Eigenval))
    integer i, j, k, M
 
@@ -1751,14 +1977,34 @@ subroutine mkl_matrix_mult_c(TRANSA, TRANSB, A, B, ResultM)
    complex, dimension(:,:), intent(in) :: A, B
    complex, dimension(:,:), intent(inout) :: ResultM
    character(1), intent(in) :: TRANSA, TRANSB
-   complex :: ALPHA, BETA
+   !---------------------
+   complex(8) :: ALPHA, BETA
+   complex(8), dimension(:,:), allocatable :: A8
+   complex(8), dimension(:,:), allocatable :: B8
+   complex(8), dimension(:,:), allocatable :: ResultM8
    integer :: M, N, K, ka, kb
    integer :: LDA, LDB, LDC
+   integer :: Thread_num
    !DDDDDDDDDDDDDDDDDDDDDDDDD
    !print*, 'mkl_matrix_mult_c start'
 
+
+   !Thread_num = OMP_GET_THREAD_NUM()
+   !print*, 'Test 0 [mkl_matrix_mult_c] #', Thread_num, kind(A), kind(B), kind(ResultM)
+
+
+   allocate(A8(size(A,1),size(A,2)))
+   allocate(B8(size(B,1),size(B,2)))
+   allocate(ResultM8(size(ResultM,1),size(ResultM,2)))
+
    ALPHA = dcmplx(1.0d0,0.0d0)
    BETA = dcmplx(0.0d0,0.0d0)
+
+   ! Convert into complex(8) for consistency with LAPACK subroutines:
+   A8 = A
+   B8 = B
+   ResultM8 = ResultM
+
 
    M = size(A,1)
    N = size(B,2)
@@ -1781,9 +2027,13 @@ subroutine mkl_matrix_mult_c(TRANSA, TRANSB, A, B, ResultM)
 
    !print*, 'calling zgemm '
    !CALL cgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)  ! LAPACK, single precision
-   CALL zgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC) ! LAPACK, double precision
+   CALL zgemm (TRANSA, TRANSB, M, N, K, ALPHA, A8, LDA, B8, LDB, BETA, ResultM8, LDC) ! LAPACK, double precision
 
-   !print*, 'mkl_matrix_mult_c done'
+   ! Output:
+   ResultM = ResultM8
+
+   ! Clean up:
+   deallocate(A8, B8, ResultM8)
 end subroutine mkl_matrix_mult_c
 
 

@@ -323,7 +323,7 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    !-------------------------------------------
    real(8), dimension(:,:), allocatable :: Hij	 ! Hamiltonian
    real(8), dimension(:,:), allocatable :: Sij  ! Overlap
-   real(8), dimension(size(Scell(NSC)%Ha,1)) :: Evec, EvecS
+   !real(8), dimension(:), allocatable :: Evec, EvecS
    real(8), dimension(:,:), allocatable :: Hij1, Sij1
    integer :: nat, Nsiz, n_orb, do_scc
    integer, target :: j
@@ -347,6 +347,9 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
    if (.not.allocated(Hij)) allocate(Hij(Nsiz,Nsiz))
    Sij = 0.0d0
    Hij = 0.0d0
+
+   !allocate(Evec(Nsiz))
+   !allocate(EvecS(Nsiz))
 
    ! Identify flag for scc calcilations:
    if (present(scc) .and. present(H_scc_0) .and. present(H_scc_1)) then
@@ -652,6 +655,7 @@ subroutine Hamil_tot_3TB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_Lag_exp,
 
    nullify(KOA1, KOA2, m, x, y, z)
    deallocate(Hij, Sij)
+   !deallocate(Evec, EvecS)
 end subroutine Hamil_tot_3TB
 
 

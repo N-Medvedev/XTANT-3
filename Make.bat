@@ -64,7 +64,7 @@ cd Source_files
       echo %Starline%
 
       :: List compiler options
-      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check"
+      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /check:uninit /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check"
       SET "Linking_options=/Qmkl=parallel"
 
       :: Set name of the executable:
@@ -79,7 +79,7 @@ cd Source_files
 
       :: List compiler options
       ::SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /Qmkl=parallel /Qopenmp /real-size:64 /debug:all /O1 /Qipo /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics"
-      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /real-size:64 /debug:all /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check"
+      SET "Compile_options=/F9999999999 /QxHost /QaxAVX2 /fpp /real-size:64 /debug:all /debug:full /Od /check:all /traceback /gen-interfaces /warn:interfaces /check:bounds /check:uninit /fpe:0 /fp:precise /standard-semantics /Qfp-stack-check"
       SET "Linking_options=/Qopenmp /Qmkl=parallel"
 
       :: Set name of the executable:

@@ -2271,9 +2271,10 @@ subroutine get_trani_all(numpar, Scell, NSC, Ei, Ha, fe, all_w) ! Ref. [2]
    real(8), dimension(:,:), intent(in) :: Ha	! eigenvectors of the hamiltonian
    real(8), dimension(:), intent(in) :: fe	! electron distribution function
    logical, intent(in) :: all_w	! get all spectrum of hv, or only for given probe wavelength
-   real(8), dimension(size(Ei),size(Ei)) :: Fnnx, Fnny, Fnnz
-!    real(8), allocatable, dimension(:,:) :: Fnnx, Fnny, Fnnz
-   real(8), dimension(size(Ei),size(Ei)) :: Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz
+   !real(8), dimension(size(Ei),size(Ei)) :: Fnnx, Fnny, Fnnz
+   real(8), dimension(:,:), allocatable :: Fnnx, Fnny, Fnnz
+   !real(8), dimension(size(Ei),size(Ei)) :: Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz
+   real(8), dimension(:,:), allocatable :: Fnnxx, Fnnxy, Fnnxz, Fnnyx, Fnnyy, Fnnyz, Fnnzx, Fnnzy, Fnnzz
    real(8), dimension(:,:), allocatable :: Eps
    real(8), dimension(:), allocatable :: Re_CDF
    real(8) Re_eps, Im_eps, dc_cond, loss_f
@@ -2282,9 +2283,18 @@ subroutine get_trani_all(numpar, Scell, NSC, Ei, Ha, fe, all_w) ! Ref. [2]
    integer*4 today(3), now(3)
 
    SEi = size(Ei)
-!    allocate(Fnnx(SEi,SEi))
-!    allocate(Fnny(SEi,SEi))
-!    allocate(Fnnz(SEi,SEi))
+   allocate(Fnnx(SEi,SEi))
+   allocate(Fnny(SEi,SEi))
+   allocate(Fnnz(SEi,SEi))
+   allocate(Fnnxx(SEi,SEi))
+   allocate(Fnnxy(SEi,SEi))
+   allocate(Fnnxz(SEi,SEi))
+   allocate(Fnnyx(SEi,SEi))
+   allocate(Fnnyy(SEi,SEi))
+   allocate(Fnnyz(SEi,SEi))
+   allocate(Fnnzx(SEi,SEi))
+   allocate(Fnnzy(SEi,SEi))
+   allocate(Fnnzz(SEi,SEi))
 
 !    call print_time_step('Start opt time:', g_time, msec=.true.)   ! module "Little_subroutines"call print_
    
@@ -2335,9 +2345,9 @@ subroutine get_trani_all(numpar, Scell, NSC, Ei, Ha, fe, all_w) ! Ref. [2]
 !       call get_trani(numpar, Scell, NSC, Fnnxx, Fnnyy, Fnnzz, Ei, w, Re_eps, Im_eps, dc_cond=dc_cond, Fnnxy=Fnnxy, Fnnxz=Fnnxz, Fnnyx=Fnnyx, Fnnyz=Fnnyz, Fnnzx=Fnnzx, Fnnzy=Fnnzy)
    endif
    
-!    deallocate(Fnnx, Fnny, Fnnz)
-!    deallocate(Fnnxx, Fnnyy, Fnnzz, Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy)
-   
+   ! clean up:
+   deallocate(Fnnx, Fnny, Fnnz)
+   deallocate(Fnnxx, Fnnyy, Fnnzz, Fnnxy, Fnnxz, Fnnyx, Fnnyz, Fnnzx, Fnnzy)
 !    call print_time_step('get_trani_all:', g_time, msec=.true.)   ! module "Little_subroutines"call print_
 end subroutine get_trani_all
 

@@ -65,7 +65,8 @@ subroutine Electron_ion_collision_int(Scell, matter, numpar, nrg, Mij, wr, wr0, 
    real(8), dimension(:), allocatable :: distre_temp2  ! predictor electron distribution
    real(8), dimension(:), allocatable :: dfdt_A, dfdt_B  ! factors for explicit scheme
    real(8), dimension(:), allocatable :: dfdt_A2, dfdt_B2  ! predictor factors for explicit scheme
-   real(8), dimension(size(wr),size(wr)) :: dE_ij   ! [eV] energy transfer per each pairs of levels
+   !real(8), dimension(size(wr),size(wr)) :: dE_ij   ! [eV] energy transfer per each pairs of levels
+   real(8), dimension(:,:), allocatable :: dE_ij   ! [eV] energy transfer per each pairs of levels
 
 !    real(8), dimension(:), allocatable :: inv_t_e_ph ! inverse electron-phonon scattering time [1/fs]
    logical :: pc_iterations, print_error
@@ -76,6 +77,7 @@ subroutine Electron_ion_collision_int(Scell, matter, numpar, nrg, Mij, wr, wr0, 
    Ne = SUM(distre(:))  ! initial number of electrons
    
    N_orb = size(wr) ! how many energy levels
+   allocate(dE_ij(N_orb,N_orb), source = 0.0d0)
    allocate(dfdt_e(N_orb), source = 0.0d0)
    allocate(dfdt_e2(N_orb), source = 0.0d0)
    allocate(dfdt_A(N_orb), source = 0.0d0)
@@ -255,8 +257,10 @@ subroutine Electron_ion_collision_int(Scell, matter, numpar, nrg, Mij, wr, wr0, 
    
    !print*, 'Electron_ion_collision_int test 3'
 
+   ! clean up:
    deallocate(dfdt_e, dfdt_A, dfdt_B, distre_temp)
    deallocate(dfdt_e2, dfdt_A2, dfdt_B2, distre_temp2)
+   deallocate(dE_ij)
 !    deallocate(inv_t_e_ph)
 end subroutine Electron_ion_collision_int
 
@@ -271,7 +275,8 @@ subroutine sort_dE_per_atoms(G_ei_per_atom, dE_ij, Scell, numpar)
    integer :: Nsiz, N_at, N_orb, Nstart, Nend, N_incr
    integer :: i_orb, i_at, i_cur, j_at, j_orb, j_cur
    character(100) :: error_part
-   real(8), dimension(size(Scell%Ha,1)) :: D_m
+   !real(8), dimension(size(Scell%Ha,1)) :: D_m
+   real(8), dimension(:), allocatable :: D_m
 
    ! Check if user requested local atomic velocity scaling (needs density matrix):
    select case (numpar%V_scaling)
@@ -285,6 +290,8 @@ subroutine sort_dE_per_atoms(G_ei_per_atom, dE_ij, Scell, numpar)
    N_at = size(Scell%MDAtoms)   ! total number of atoms
    Nsiz = size(Scell%Ha,1)      ! total number of orbitals
    N_orb = Nsiz/N_at            ! orbitals per atom
+
+   allocate(D_m(Nsiz))
 
    G_ei_per_atom = 0.0d0        ! to start with
 
@@ -348,6 +355,8 @@ subroutine sort_dE_per_atoms(G_ei_per_atom, dE_ij, Scell, numpar)
       !$omp end parallel
 #endif
 
+   ! clean up:
+   deallocate(D_m)
 end subroutine sort_dE_per_atoms
 
 
@@ -373,9 +382,12 @@ subroutine get_el_ion_kernel(Scell, matter, numpar, Mij, wr, wr0, dt_small, kind
    integer :: i, j
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
-   real(8), dimension(size(G_ei_partial,1),size(G_ei_partial,2)) :: G_ei_partial_cur     ! temporary copy
-   real(8), dimension(size(dE_ij,1),size(dE_ij,2)) :: dE_ij_cur    ! temporary copy
-   real(8), dimension(size(dE_at)) :: dE_at_cur    ! temporary copy
+   !real(8), dimension(size(G_ei_partial,1),size(G_ei_partial,2)) :: G_ei_partial_cur     ! temporary copy
+   !real(8), dimension(size(dE_ij,1),size(dE_ij,2)) :: dE_ij_cur    ! temporary copy
+   !real(8), dimension(size(dE_at)) :: dE_at_cur    ! temporary copy
+   real(8), dimension(:,:), allocatable :: G_ei_partial_cur     ! temporary copy
+   real(8), dimension(:,:), allocatable :: dE_ij_cur    ! temporary copy
+   real(8), dimension(:), allocatable  :: dE_at_cur    ! temporary copy
 
    coef = 2.0d0*g_e/g_h
    coef_inv = numpar%M2_scaling*g_h/(g_e)   ! [s] with scaling factor added (e.g. 2 from d|a|^2/dt) OLD
@@ -385,6 +397,9 @@ subroutine get_el_ion_kernel(Scell, matter, numpar, Mij, wr, wr0, dt_small, kind
    dfdt_e = 0.0d0
    dfdt_A = 0.0d0
    dfdt_B = 0.0d0
+   allocate(G_ei_partial_cur(size(G_ei_partial,1),size(G_ei_partial,2)))
+   allocate(dE_ij_cur(size(dE_ij,1),size(dE_ij,2)))
+   allocate(dE_at_cur(size(dE_at)))
    G_ei_partial_cur = 0.0d0
    dE_ij_cur = 0.0d0
    dE_at_cur = 0.0d0
@@ -477,8 +492,10 @@ subroutine get_el_ion_kernel(Scell, matter, numpar, Mij, wr, wr0, dt_small, kind
    G_ei_partial = G_ei_partial + G_ei_partial_cur
    dE_ij = dE_ij + dE_ij_cur
    dE_at = dE_at + dE_at_cur
-
 #endif
+
+   ! clean up:
+   deallocate(G_ei_partial_cur, dE_ij_cur, dE_at_cur)
 end subroutine get_el_ion_kernel
 
 
@@ -711,7 +728,8 @@ subroutine Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)
    !-----------------------------
    integer :: i_at, N_at, i_types, N_types, i_at2, i_types2, i_G1, i_G2
    real(8) :: G_temp, dE, G_ij
-   real(8), dimension(size(G_ei_partial,1), size(G_ei_partial,2)) :: G_ei_single
+   !real(8), dimension(size(G_ei_partial,1), size(G_ei_partial,2)) :: G_ei_single
+   real(8), dimension(:,:), allocatable :: G_ei_single
    !real(8), dimension(size(G_per_atom,1), size(G_per_atom,2)) :: G_per_atom_single
 
    
@@ -721,6 +739,7 @@ subroutine Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)
 
    dE = dfdt * wr(i)    ! transferred energy [eV]
 
+   allocate(G_ei_single(size(G_ei_partial,1), size(G_ei_partial,2)))
    G_ei_single = 0.0d0
 
    ! Identify contributions from different shells into this transferred energy:
@@ -754,6 +773,9 @@ subroutine Get_Gei_shells_contrib(i, j, DOS_weights, dfdt, wr, G_ei_partial)
          print*, 'Problem in Get_Gei_shells_contrib:', -dE, SUM(G_ei_single)
       endif
    endif
+
+   ! clean up:
+   deallocate(G_ei_single)
 end subroutine Get_Gei_shells_contrib
 
 
@@ -770,11 +792,18 @@ subroutine Electron_ion_coupling_Mij(wr, Ha, Ha0, Mij, kind_M, Sij) ! calculates
    integer i, j, N, k
    real(8), dimension(:), allocatable :: psi0 ! WF_0
    real(8), dimension(:), allocatable :: psi_back ! WF
-   real(8), dimension(size(wr))  :: Norm0, Norm1   ! normalization factors
-   real(8), dimension(size(wr),size(wr)) :: tij
+   !real(8), dimension(size(wr))  :: Norm0, Norm1   ! normalization factors
+   real(8), dimension(:), allocatable :: Norm0, Norm1   ! normalization factors
+   !real(8), dimension(size(wr),size(wr)) :: tij
+   real(8), dimension(:,:), allocatable :: tij
    real(8) :: eps, Norm_val0, Norm_val1
    
    N = size(wr)
+
+   allocate(Norm0(N))
+   allocate(Norm1(N))
+   allocate(tij(N,N))
+
    !print*, 'Electron_ion_coupling_Mij:', N
    !print*, 'size:', size(wr)
 
@@ -917,6 +946,8 @@ subroutine Electron_ion_coupling_Mij(wr, Ha, Ha0, Mij, kind_M, Sij) ! calculates
 !       Norm_WF = Norm1   ! save normalization coefficient
    endif ! present(kind_M)
 
+   ! clean up:
+   deallocate(Norm0, Norm1, tij)
 end subroutine Electron_ion_coupling_Mij
 
 
@@ -934,13 +965,17 @@ subroutine Electron_ion_coupling_Mij_OLD(wr, Ha, Ha0, Mij, kind_M, Sij) ! calcul
    integer i, j, N
    real(8), dimension(:), allocatable :: psi0 ! WF_0
    real(8), dimension(:), allocatable :: psi_back ! WF
-   real(8), dimension(size(wr))  :: Norm0, Norm1   ! normalization factors
+   !real(8), dimension(size(wr))  :: Norm0, Norm1   ! normalization factors
+   real(8), dimension(:), allocatable  :: Norm0, Norm1   ! normalization factors
    real(8), dimension(:), allocatable :: tij, til
    real(8) :: eps, Norm_val0, Norm_val1
+   !-----------
    N = size(wr)
    if (.not. allocated(Mij)) allocate(Mij(N,N))
    Mij = 0.0d0
    eps = 1.0d-13    ! acceptable error
+   allocate(Norm0(N))
+   allocate(Norm1(N))
    
    if (present (kind_M)) then
       select case (kind_M)
@@ -1018,6 +1053,8 @@ subroutine Electron_ion_coupling_Mij_OLD(wr, Ha, Ha0, Mij, kind_M, Sij) ! calcul
       end select
    endif ! present(kind_M)
 
+   ! clean up:
+   deallocate(Norm0, Norm1)
 end subroutine Electron_ion_coupling_Mij_OLD
 
 
@@ -1101,13 +1138,23 @@ subroutine Landau_vs_Sakurei_test(Mij, Ha, Ha0, Ha_non, Ha_non0, wr, wr0)
    REAL(8), DIMENSION(:), INTENT(in) ::  wr ! electron energy levels [eV], after diagonalization of Ha
    REAL(8), DIMENSION(:), INTENT(in) ::  wr0 ! electron energy levels [eV], after diagonalization of Ha, last time step
    real(8) :: diff, Ev
-   real(8), dimension(size(Ha,1), size(Ha,2)) :: Ha_1, Ha_new, Ha_non1, Vmn
-   real(8), dimension(size(Ha,1)) :: Evec, E_2
+   !real(8), dimension(size(Ha,1), size(Ha,2)) :: Ha_1, Ha_new, Ha_non1, Vmn
+   !real(8), dimension(size(Ha,1)) :: Evec, E_2
+   real(8), dimension(:,:), allocatable :: Ha_1, Ha_new, Ha_non1, Vmn
+   real(8), dimension(:), allocatable :: Evec, E_2
    character(200) :: Error_descript, File_name
    integer :: N_lev, n, m, i, k, FN
    logical :: file_opened
+   !----------
    Ha_1 = 0.0d0
    N_lev = size(Ha,1)
+
+   allocate(Ha_1(size(Ha,1), size(Ha,2)))
+   allocate(Ha_new(size(Ha,1), size(Ha,2)))
+   allocate(Ha_non1(size(Ha,1), size(Ha,2)))
+   allocate(Vmn(size(Ha,1), size(Ha,2)))
+   allocate(Evec(size(Ha,1)))
+   allocate(E_2(size(Ha,1)))
    
    if (present(Ha_non0)) then
 !       Ha_non1 = Ha_non0
@@ -1207,6 +1254,9 @@ subroutine Landau_vs_Sakurei_test(Mij, Ha, Ha0, Ha_non, Ha_non0, wr, wr0)
    
       PAUSE 'Landau_vs_Sakurei_test'
    endif
+
+   ! clean up:
+   deallocate(Ha_1, Ha_new, Ha_non1, Vmn, Evec, E_2)
 end subroutine Landau_vs_Sakurei_test
 
 

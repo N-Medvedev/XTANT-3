@@ -57,7 +57,8 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
    real(8) :: E_atoms_heating, E_atoms_cur, min_df
    integer NSC, stat, i, j, N, Nph
    real(8), dimension(:,:), allocatable :: MChole
-   real(8), dimension(size(Scell(1)%fe)) :: d_fe, d_fe_cur
+   !real(8), dimension(size(Scell(1)%fe)) :: d_fe, d_fe_cur
+   real(8), dimension(:), allocatable :: d_fe, d_fe_cur
    real(8), dimension(:), allocatable :: Spectrum_MC  ! spectrum of the FIRST laser pulse
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
@@ -66,6 +67,9 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
 
    if (numpar%NMC > 0) then ! if there are MC iterations at all
       call total_photons(laser, numpar, tim, Nphot) ! estimate the total number of absorbed photons
+
+      allocate(d_fe(size(Scell(1)%fe)))
+      allocate(d_fe_cur(size(Scell(1)%fe)))
 
       !print*, 'MC_Propagate:', tim, Nphot
 
@@ -238,6 +242,10 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
    endif
 
 !    print*, 'Charge:', Scell(NSC)%Q
+
+   ! clean up:
+   if (allocated(d_fe)) deallocate(d_fe)
+   if (allocated(d_fe_cur)) deallocate(d_fe_cur)
 end subroutine MC_Propagate
 
 
@@ -698,8 +706,10 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df, E_cutoff)
    real(8), intent(in), optional :: E_cutoff    ! energy cut off for high-energy electrons
    !===================================
    real(8) :: RN, norm_sum, cur_sum, sampled_sum, min_df_used, eps, E_cut
-   real(8), dimension(size(fe)) :: E_weight
-   real(8), dimension(size(fe)) :: fe_final ! construct an array of final states populations
+   !real(8), dimension(size(fe)) :: E_weight
+   real(8), dimension(:), allocatable :: E_weight
+   !real(8), dimension(size(fe)) :: fe_final ! construct an array of final states populations
+   real(8), dimension(:), allocatable :: fe_final ! construct an array of final states populations
    integer j, N_levels, j_fin
    logical :: close_levels
 
@@ -721,6 +731,9 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df, E_cutoff)
    norm_sum = 0.0d0
    PART_VB:if ((present(Ee)) .and. (present(wr))) then
       N_levels = size(wr) ! total number of electron energy levels
+
+      allocate(E_weight(size(fe)))
+      allocate(fe_final(size(fe)))
 
       ! Cut off is at most this large:
       E_cut = min(E_cut,wr(N_levels))     ! above this value, electrons are free => enough free places for all
@@ -801,6 +814,9 @@ subroutine sample_VB_level(Ne_low, fe, i, wr, Ee, min_df, E_cutoff)
       enddo ! while
       if (i == 0) print*, 'Error sample_VB_level #3:', i, norm_sum, sampled_sum
    endif PART_VB
+
+   if (allocated(E_weight)) deallocate(E_weight)
+   if (allocated(fe_final)) deallocate(fe_final)
 end subroutine sample_VB_level
 
 
