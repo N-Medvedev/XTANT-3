@@ -2556,8 +2556,8 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    Nsiz = size(Scell(NSC)%Ha,1) ! total number of orbitals
    norb =  Nsiz/nat ! orbitals per atom
    
-   Thread_num = OMP_GET_THREAD_NUM()
-   print*, 'Test 0 [construct_complex_Hamiltonian] #', Thread_num
+   !Thread_num = OMP_GET_THREAD_NUM()
+   !print*, 'Test 0 [construct_complex_Hamiltonian] #', Thread_num
 
 
    ! Allocate complex parameters:
@@ -2582,8 +2582,6 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
          if (.not.allocated(cTnn_c)) allocate(cTnn_c(Nsiz,Nsiz,3,3), source = cmplx(0.0d0,0.0d0))  ! temporary
       endif
    end if
-
-   print*, 'Test 1 [construct_complex_Hamiltonian] #', Thread_num
 
    if (.not.allocated(CSij_save)) allocate(CSij_save(Nsiz,Nsiz), source=cmplx(0.0d0,0.0d0))
    if (present(Sij)) then   ! it is nonorthogonal case:
@@ -2623,9 +2621,6 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
          enddo ! k
       enddo ! j
    enddo ! i
-
-
-   print*, 'Test 2 [construct_complex_Hamiltonian] #', Thread_num
 
 
    ! 1) Construct complex Hamiltonian and overlap:
@@ -2737,10 +2732,6 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       endif
    endif
 
-
-   print*, 'Test 3 [construct_complex_Hamiltonian] #', Thread_num, allocated(CHij_temp), allocated(CSij), allocated(CHij_orth), allocated(CWF_orth)
-
-
    ! Temporarily save nonorthogonal Hamiltonian and overlap matrix:
    CHij_non = CHij_temp
 
@@ -2788,10 +2779,6 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
    endif
    CHij = CHij_temp ! save for output
 
-
-   print*, 'Test 3.5 [construct_complex_Hamiltonian] #', Thread_num
-
-
    ! Check the CWF:
    do i = 1, size(CHij,1)
       do j = 1, size(CHij,2)
@@ -2809,9 +2796,6 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
          endif
       enddo ! j
    enddo ! i
-
-
-   print*, 'Test 4 [construct_complex_Hamiltonian] #', Thread_num
 
    !---------------------------------------
    ! Effective momentum operators:
@@ -3139,10 +3123,6 @@ subroutine construct_complex_Hamiltonian(numpar, Scell, NSC, H_non, CHij, Ei, ks
       endif
    end if
 
-
-   print*, 'Test 5 [construct_complex_Hamiltonian] #', Thread_num
-
-
    deallocate(CHij_temp, CHij_non)
    if (allocated(CSij_save)) deallocate(CSij_save)
    if (allocated(CHij_orth)) deallocate(CHij_orth)
@@ -3176,10 +3156,8 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
    character(200) :: Error_descript
 
 
-   Thread_num = OMP_GET_THREAD_NUM()
-   print*, 'Test 0 [diagonalize_complex_Hamiltonian] #', Thread_num
-
-
+   !Thread_num = OMP_GET_THREAD_NUM()
+   !print*, 'Test 0 [diagonalize_complex_Hamiltonian] #', Thread_num
 
    Error_descript = ''  ! to start with, no error
    Nsiz = size(CHij,1)
@@ -3190,13 +3168,9 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
          CHij_orth = CHij
       endif
 
-      print*, 'Test 1* [diagonalize_complex_Hamiltonian] #', Thread_num
-
       ! Direct diagonalization:
       !call sym_diagonalize(CHij, Ei, Error_descript, numpar%MPI_param, text_called_from='diagonalize_complex_Hamiltonian(CHij)') ! modeule "Algebra_tools"
       call sym_diagonalize(CHij, Ei, Error_descript, numpar%MPI_param) ! modeule "Algebra_tools"
-
-      print*, 'Test 2* [diagonalize_complex_Hamiltonian] #', Thread_num
 
       if (present(CWF_orth)) then   ! Save WF of orthogonal Hamiltonian
          CWF_orth = CHij
@@ -3207,16 +3181,10 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
       ! 1) Orthogonalize the Hamiltonian using Loewdin procedure:
       ! according to [Szabo "Modern Quantum Chemistry" 1986, pp. 142-144]:
 
-      print*, 'Test 1 [diagonalize_complex_Hamiltonian] #', Thread_num
-
       allocate(CHij_temp(Nsiz,Nsiz))
-
-      print*, 'Test 2 [diagonalize_complex_Hamiltonian] #', Thread_num
 
       CHij_temp = CHij
       call Loewdin_Orthogonalization_c(numpar, Nsiz, CSij, CHij_temp, called_from='diagonalize_complex_Hamiltonian(CHij)') ! module "TB_NRL"
-
-      print*, 'Test 3 [diagonalize_complex_Hamiltonian] #', Thread_num
 
 !       ! Check the obtained values:
 !       do i = 1, size(CHij_temp,1)
@@ -3254,8 +3222,6 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
          CHij_orth = CHij_temp
       endif
 
-      print*, 'Test 4 [diagonalize_complex_Hamiltonian] #', Thread_num, allocated(CHij_temp)
-
       ! 2) Diagonalize the orthogonalized Hamiltonian to get electron energy levels (eigenvalues of H):
       !call sym_diagonalize(CHij_temp, Ei, Error_descript, numpar%MPI_param, text_called_from='diagonalize_complex_Hamiltonian')   ! module "Algebra_tools"
       call sym_diagonalize(CHij_temp, Ei, Error_descript, numpar%MPI_param)   ! module "Algebra_tools"
@@ -3267,8 +3233,6 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
       if (present(CWF_orth)) then   ! Save WF of orthogonalized Hamiltonian
          CWF_orth = CHij_temp
       endif
-
-      print*, 'Test 5 [diagonalize_complex_Hamiltonian] #', Thread_num, allocated(CHij_temp), size(CSij,1), size(CHij,1), kind(CHij_temp), kind(CSij), kind(CHij)
 
       ! Check the obtained values:
 !       do i = 1, size(CHij_temp,1)
@@ -3292,8 +3256,6 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
       ! 3) Convert the eigenvectors back into the non-orthogonal basis:
       call mkl_matrix_mult('N', 'N', CSij, CHij_temp, CHij)	! module "Algebra_tools"
 
-      print*, 'Test 6 [diagonalize_complex_Hamiltonian] #', Thread_num
-      
       ! Check the obtained values:
       do i = 1, size(CHij,1)
          do j = 1, size(CHij,2)
@@ -3318,8 +3280,6 @@ subroutine diagonalize_complex_Hamiltonian(numpar, CHij, Ei, CSij, CHij_orth, CW
             endif
          enddo ! j
       enddo ! i
-
-      print*, 'Test 7 [diagonalize_complex_Hamiltonian] #', Thread_num
 
 !       ! 4) If we need to renormalize the wave functions (in case they are not normalized to 1 after this procedure):
 !       do j = 1, Nsiz

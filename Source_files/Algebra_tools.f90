@@ -1989,8 +1989,8 @@ subroutine mkl_matrix_mult_c(TRANSA, TRANSB, A, B, ResultM)
    !print*, 'mkl_matrix_mult_c start'
 
 
-   Thread_num = OMP_GET_THREAD_NUM()
-   print*, 'Test 0 [mkl_matrix_mult_c] #', Thread_num, kind(A), kind(B), kind(ResultM)
+   !Thread_num = OMP_GET_THREAD_NUM()
+   !print*, 'Test 0 [mkl_matrix_mult_c] #', Thread_num, kind(A), kind(B), kind(ResultM)
 
 
    allocate(A8(size(A,1),size(A,2)))
@@ -2004,8 +2004,6 @@ subroutine mkl_matrix_mult_c(TRANSA, TRANSB, A, B, ResultM)
    A8 = A
    B8 = B
    ResultM8 = ResultM
-
-   print*, 'Test 0.5 [mkl_matrix_mult_c] #', Thread_num, kind(A8), kind(B8), kind(ResultM8)
 
 
    M = size(A,1)
@@ -2027,18 +2025,12 @@ subroutine mkl_matrix_mult_c(TRANSA, TRANSB, A, B, ResultM)
    endselect
    LDC = max(1,M)
 
-   print*, 'Test 1 [mkl_matrix_mult_c] #', Thread_num
-
    !print*, 'calling zgemm '
    !CALL cgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)  ! LAPACK, single precision
    CALL zgemm (TRANSA, TRANSB, M, N, K, ALPHA, A8, LDA, B8, LDB, BETA, ResultM8, LDC) ! LAPACK, double precision
 
-   print*, 'Test 2 [mkl_matrix_mult_c] #', Thread_num
-
    ! Output:
    ResultM = ResultM8
-
-   print*, 'Test 3 [mkl_matrix_mult_c] #', Thread_num
 
    ! Clean up:
    deallocate(A8, B8, ResultM8)
