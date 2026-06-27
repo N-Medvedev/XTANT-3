@@ -257,9 +257,14 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       if (numpar%verbose) write(*,'(a,i7,i3,i3,i3,f9.4,f9.4,f9.4,a)') ' point #', Ngp, ix, iy, iz, kx, ky, kz, ' k-points'
 #endif
 
+      print*, 'Test 0, #', Thread_num, 'before associate_wrapper'
+
       !-------------------------------
       ! Get the parameters of the complex Hamiltonian:
       call associate_wrapper(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, cPRRx, cPRRy, cPRRz)  ! below
+
+
+      print*, 'Test 1, #', Thread_num, 'before get_DOS_on_k_points'
 
       !-------------------------------
       ! Get DOS:
@@ -273,6 +278,8 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       ! Save DOS data:
       DOS(2,:) = DOS(2,:) + DOS_temp(2,:)
       DOS_partial = DOS_partial + DOS_partial_temp
+
+      print*, 'Test 2, #', Thread_num, 'before get_Kubo_Greenwood_CDF'
 
       !-------------------------------
       ! Get the parameters of the CDF:
@@ -434,6 +441,7 @@ subroutine associate_wrapper(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, cPR
    complex, dimension(:,:), allocatable, intent(inout) :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    !---------------------
    complex, dimension(:,:), allocatable :: CH_non
+   integer :: Thread_num
 
    ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
       select type(ARRAY)
@@ -450,8 +458,15 @@ subroutine associate_wrapper(numpar, Scell, NSC, CHij, CSij, Ei, kx, ky, kz, cPR
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
             cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij, CH_non=CH_non) ! module "TB"
       type is (TB_H_DFTB)  ! nonorthogonal
+
+         Thread_num = OMP_GET_THREAD_NUM()
+         print*, 'Test 0 [associate_wrapper] #', Thread_num
+
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
             cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij, CH_non=CH_non) ! module "TB"
+
+         print*, 'Test 1 [associate_wrapper] #', Thread_num
+
       type is (TB_H_3TB)   ! nonorthogonal
          call construct_complex_Hamiltonian(numpar, Scell, NSC, Scell(NSC)%H_non, CHij, Ei, kx, ky, kz, &
             cPRRx=cPRRx, cPRRy=cPRRy, cPRRz=cPRRz, Sij=Scell(NSC)%Sij, CSij_out=CSij, CH_non=CH_non) ! module "TB"

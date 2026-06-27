@@ -479,8 +479,11 @@ subroutine get_fragments_data(Scell, NSC, numpar, matter)
    !-----------------------------------
    !real(8) :: E_shift
    integer :: i, Nsiz
-   logical, dimension(size(Scell(NSC)%MDAtoms)) :: fragment_mask
+   !logical, dimension(size(Scell(NSC)%MDAtoms)) :: fragment_mask
+   logical, dimension(:), allocatable :: fragment_mask
    logical :: needs_allocation
+
+   allocate(fragment_mask(size(Scell(NSC)%MDAtoms)))
 
    ! Find unconnected fragments of which the material is constructed (can be one piece too):
    call get_fragments_indices(Scell, NSC, numpar, Scell(NSC)%MDatoms, matter, Scell(NSC)%fragments%indices) ! module "Atomic_tools"
@@ -572,6 +575,8 @@ subroutine get_fragments_data(Scell, NSC, numpar, matter)
       !print*, 'get_fragments_data:', i, Nsiz, Scell(NSC)%fragments%Tkin(i), Scell(NSC)%Ta_var(1), Scell(NSC)%fragments%Tfluc(i), Scell(NSC)%Ta_var(4)
    enddo
 
+   ! clean up:
+   deallocate(fragment_mask)
 end subroutine get_fragments_data
 
 
@@ -984,7 +989,8 @@ subroutine temperature_from_moments_pot(Scell, Ta, E0)
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
    real(8), intent(out) :: Ta, E0   ! [K] and [eV] potential temperature and shift
    !---------------
-   real(8), dimension(size(Scell%MDAtoms)) :: E_pot
+   !real(8), dimension(size(Scell%MDAtoms)) :: E_pot
+   real(8), dimension(:), allocatable :: E_pot
    real(8) :: E1, E2, one_Nat, arg
    integer :: Nat
 
@@ -993,6 +999,7 @@ subroutine temperature_from_moments_pot(Scell, Ta, E0)
    one_Nat = 1.0d0 / dble(Nat)
 
    ! Set the potential energy for each atom:
+   allocate(E_pot(Nat))
    E_pot(:) = Scell%MDAtoms(:)%Epot !*0.5d0
 
    ! First moment of the distribution:
@@ -1014,6 +1021,9 @@ subroutine temperature_from_moments_pot(Scell, Ta, E0)
 
    ! Convert [eV] -> [K]:
    Ta = Ta * g_kb ! [K]
+
+   ! clean up:
+   deallocate(E_pot)
 end subroutine temperature_from_moments_pot
 
 
@@ -1023,7 +1033,8 @@ subroutine atomic_entropy(E_grid, fa, Sa, i_start, i_end)
    real(8), intent(out) :: Sa ! atomic entropy
    integer, intent(in), optional :: i_start, i_end  ! starting and ending levels to include
    !----------------------------
-   real(8), dimension(size(fa)) :: f_lnf, dE
+   !real(8), dimension(size(fa)) :: f_lnf, dE
+   real(8), dimension(:), allocatable :: f_lnf, dE
    real(8) :: eps, E0
    integer :: i, Nsiz, i_low, i_high, j
    !============================
@@ -1043,6 +1054,9 @@ subroutine atomic_entropy(E_grid, fa, Sa, i_start, i_end)
    endif
 
    ! To start with:
+   allocate(f_lnf(size(fa)))
+   allocate(dE(size(fa)))
+
    Sa = 0.0d0
    f_lnf = 0.0d0
 
@@ -1066,6 +1080,9 @@ subroutine atomic_entropy(E_grid, fa, Sa, i_start, i_end)
 
    ! Make proper units:
    Sa = -g_kb_EV*Sa  ! [eV/K]
+
+   ! clean up:
+   deallocate(f_lnf, dE)
 end subroutine atomic_entropy
 
 
@@ -1096,9 +1113,12 @@ pure function get_temperature_from_distribution(E_grid, fa) result(Ta)
    real(8) Ta  ! [K]
    real(8), dimension(:), intent(in) :: E_grid, fa
    !--------------------
-   real(8), dimension(size(fa)) :: dE
+   !real(8), dimension(size(fa)) :: dE
+   real(8), dimension(:), allocatable :: dE
    real(8) :: Ekin
    integer :: i, j, Nsiz
+
+   allocate(dE(size(fa)))
 
    Nsiz = size(E_grid)
    Ekin = 0.0d0   ! to start with
@@ -1112,6 +1132,9 @@ pure function get_temperature_from_distribution(E_grid, fa) result(Ta)
    enddo
 
    Ta = 2.0d0/3.0d0 * Ekin * g_kb ! [K]
+
+   ! clean up:
+   deallocate(dE)
 end function get_temperature_from_distribution
 
 

@@ -3852,7 +3852,7 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
          endif
       case (4:5) ! Graf-Vogl model
          if (numpar%optic_model == -5) then
-            !write(print_to,'(a)') '  No probe-pulse is calculated (only pDOS)'
+            write(print_to,'(a)') '  No probe-pulse is calculated (only pDOS)'
          else
             if (numpar%optic_model < 0) then
                write(print_to,'(a)') '  Probe-pulse is calculated with Graf-Vogl approach'
