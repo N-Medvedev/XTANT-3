@@ -32,7 +32,8 @@ use Atomic_tools, only : Coordinates_abs_to_rel, remove_angular_momentum, get_fr
                   Get_random_velocity, check_periodic_boundaries, Make_free_surfaces, Coordinates_abs_to_rel_single, &
                   shortest_distance, velocities_rel_to_abs, velocities_abs_to_rel, Coordinates_rel_to_abs, &
                   check_periodic_boundaries_single, Coordinates_rel_to_abs_single, deflect_velosity, &
-                  get_kinetic_energy_abs, Rescale_atomic_velocities, save_last_timestep, get_energy_from_temperature
+                  get_kinetic_energy_abs, Rescale_atomic_velocities, save_last_timestep, get_energy_from_temperature, &
+                  find_sample_size
 use TB, only : get_DOS_masks, get_Hamilonian_and_E
 use Electron_tools, only : get_glob_energy
 use Dealing_with_BOP, only : m_repulsive, m_N_BOP_rep_grid
@@ -581,7 +582,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             write(File_name2,'(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                                        'Unit_cell_atom_relative_coordinates.txt'
 
-            if (numpar%verbose) print*, 'Atomic coordinates from file (unitc cell): ', trim(adjustl(File_name2))
+            if (numpar%verbose) print*, 'Atomic coordinates from file (unit cell): ', trim(adjustl(File_name2))
 
             inquire(file=trim(adjustl(File_name2)),exist=file_exist)
             INPUT_ATOMS:if (file_exist) then
@@ -641,7 +642,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             if (.not.allocated(Scell(i)%Near_neighbors_user)) allocate(Scell(i)%Near_neighbors_user(Scell(i)%Na)) ! user-defined nearest neighbours
          endif
 
-         ! Allocate Hamiltonan matrices:
+         ! Allocate Hamiltonian matrices:
          !if (.not.allocated(Scell(i)%Ha)) allocate(Scell(i)%Ha(Scell(i)%Ne,Scell(i)%Ne))   ! hamiltonian size
          ASSOCIATE (ARRAY => Scell(i)%TB_Hamil(:,:))
             select type(ARRAY)
@@ -837,6 +838,9 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
    else
       matter%At_dens = matter%dens/(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3)   ! atomic density [1/cm^3]
    endif
+
+   ! Identify the sample size (may be different from the supercell size:
+   call find_sample_size(Scell(1))      ! module "Atomic_tools"
 
 3416 continue
 !     do i = 1, Scell(1)%Na

@@ -34,7 +34,7 @@ use Atomic_tools, only : get_near_neighbours, total_forces, Potential_super_cell
                         Convert_reciproc_rel_to_abs, Rescale_atomic_velocities, get_kinetic_energy_abs, &
                         get_Ekin, save_last_timestep, Potential_super_cell_forces, &
                         make_time_step_atoms, make_time_step_supercell, make_time_step_atoms_Y4, make_time_step_supercell_Y4, &
-                        make_time_step_atoms_M, distance_to_given_cell, shortest_distance
+                        make_time_step_atoms_M, distance_to_given_cell, shortest_distance, find_sample_size
 use Electron_tools, only : set_initial_fe, update_fe, get_new_global_energy, find_band_gap, &
                      get_electronic_heat_capacity, electronic_entropy, Diff_Fermi_E, get_low_e_energy, get_total_el_energy, &
                      get_orbital_resolved_data, identify_fragment_for_orbital
@@ -187,6 +187,8 @@ subroutine MD_step(Scell, matter, numpar, time, Err)
 !       enddo
    endselect
 
+   ! Update volume of the sample:
+   call find_sample_size(Scell(1), use_NN=.true.)   ! modlue "Atomic_tools"
 end subroutine MD_step
 
 
@@ -218,7 +220,7 @@ subroutine get_Hamilonian_and_E(Scell, numpar, matter, which_fe, Err, t)
    real(8), dimension(:,:), allocatable :: HperS   ! H_1/S for SCC calculations
 
    DO_TB:if (matter%cell_x*matter%cell_y*matter%cell_z .GT. 0) then
-      ! Create and diaganalize Hamiltonain (in Pettifor form):
+      ! Create and diaganalize Hamiltonain:
       SC:do NSC = 1, size(Scell) ! for all supercells
 
          ! Get lists of nearest neighbors:
