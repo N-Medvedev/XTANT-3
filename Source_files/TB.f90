@@ -2235,7 +2235,7 @@ subroutine get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err)
    real(8), dimension(:,:,:), allocatable :: kappa_e_part, L_EE_part, L_ET_part, L_TT_part
    real(8), dimension(:,:), allocatable :: v_e
    real(8), dimension(:), allocatable :: dfdE
-   real(8) :: coef, temp(3,3), tau, eps, Emu, Etemp(3,3), E2temp(3,3)
+   real(8) :: coef, temp(3,3), tau, eps, Emu, Etemp(3,3), E2temp(3,3), V
    integer :: Nsiz, i, j, k, N_at, N_types, i_at, i_types, i_G1
 
    if (numpar%do_kappa) then ! only if requested
@@ -2327,8 +2327,14 @@ subroutine get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err)
 !             kappa_e_part = 1.0d0/(Scell(NSC)%V * Scell(NSC)%Te) * L_EE_part ! [eV*m^2/(A^3*K)]
 !          endwhere
          ! [O 2]:
-         kappa_ei = L_TT/Scell(NSC)%V           ! [eV*m^2/(A^3*K*s)]
-         kappa_e_part = L_TT_part/Scell(NSC)%V  ! [eV*m^2/(A^3*K*s)]
+
+         ! Volume (choose between the supercell and sample volume):
+         V = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
+
+         !kappa_ei = L_TT/Scell(NSC)%V           ! [eV*m^2/(A^3*K*s)]
+         kappa_ei = L_TT/V           ! [eV*m^2/(A^3*K*s)]
+         !kappa_e_part = L_TT_part/Scell(NSC)%V  ! [eV*m^2/(A^3*K*s)]
+         kappa_e_part = L_TT_part/V  ! [eV*m^2/(A^3*K*s)]
 
          ! Convert into SI units:
          coef = 1.0d30*g_e ! [eV/A^3] -> [J/m^3]

@@ -2081,7 +2081,7 @@ subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, C
    real(8) :: dmu, dTe, mu0	! electron differential chemical potential [eV], temperature [eV]
    real(8) :: Dens	 ! atomic density
    real(8) :: coef   ! conversion coefficients with units
-   real(8) :: C1, C2
+   real(8) :: C1, C2, V
    logical :: do_partial
    !real(8), dimension(size(Scell(NSC)%Ei)) :: Ce_i
    real(8), dimension(:), allocatable :: Ce_i
@@ -2136,7 +2136,13 @@ subroutine get_electronic_heat_capacity(Scell, NSC, Ce, do_kappa, DOS_weights, C
    !Ce = Ce/Scell(NSC)%Ne_low * Dens*g_e/g_kb	! [J/(m^3 K)]
 
    coef = 1.0d30*g_e/g_kb  ! [eV/A^3] -> [J/m^3/K]
-   Dens = 1.0d0/(Scell(NSC)%V) ! [1/A^3]
+
+   ! Volume (choose between the supercell and sample volume):
+   V = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
+
+   !Dens = 1.0d0/(Scell(NSC)%V) ! [1/A^3]
+   Dens = 1.0d0/V ! [1/A^3]
+
    Ce = Ce * Dens*coef  ! [J/(m^3 K)]
    if (do_partial) then
       Ce_partial = Ce_partial * Dens*coef  ! [J/(m^3 K)]
@@ -2179,6 +2185,7 @@ subroutine get_Ce_and_mu(Scell, NSC, Te_in, Ei, Ce, mu, mu_on_gamma)
    real(8) :: dmu, dTe, mu0   ! electron differential chemical potential [eV], temperature [eV]
    real(8) :: Dens   ! atomic density
    real(8) :: coef   ! conversion coefficients with units
+   real(8) :: V      ! Volume
    logical :: mu_gamma
 
    if (present(mu_on_gamma)) then
@@ -2214,7 +2221,13 @@ subroutine get_Ce_and_mu(Scell, NSC, Te_in, Ei, Ce, mu, mu_on_gamma)
    call Get_Ce(Ei, Te+dTe/2.0d0, mu, dmu, Ce) ! below
 
    coef = 1.0d30*g_e/g_kb  ! [eV/A^3] -> [J/m^3/K]
-   Dens = 1.0d0/(Scell(NSC)%V) ! [1/A^3]
+
+   ! Volume (choose between the supercell and sample volume):
+   V = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
+
+   !Dens = 1.0d0/(Scell(NSC)%V) ! [1/A^3]
+   Dens = 1.0d0/V ! [1/A^3]
+
    Ce = Ce * Dens*coef  ! [J/(m^3 K)]
 
    ! If undefined or infinite:
