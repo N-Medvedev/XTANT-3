@@ -57,7 +57,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 25.06.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 28.06.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -1711,9 +1711,7 @@ subroutine write_super_cell(FN, time, Scell)
    integer, intent(in) :: FN	! file number
    real(8), intent(in) :: time	! [fs]
    type(Super_cell), intent(in) :: Scell ! super-cell with all the atoms inside
-   write(FN,'(es25.16, f18.6, es18.6, es18.6, es18.6, es18.6, es18.6, es18.6, es18.6, &
-        es18.6, es18.6, es18.6, es18.6, es18.6, es18.6, es18.6, es18.6, es18.6, es18.6, es18.6)') &
-        time, Scell%V, Scell%supce(:,:), Scell%Vsupce(:,:)
+   write(FN,'(es25.16, 20f24.6)') time, Scell%V, Scell%supce(:,:), Scell%Vsupce(:,:), Scell%V_sample
 end subroutine write_super_cell
 
 
@@ -2652,8 +2650,8 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    file_supercell = trim(adjustl(file_path))//'OUTPUT_supercell.dat'
    open(NEWUNIT=FN, FILE = trim(adjustl(file_supercell)))
    numpar%FN_supercell = FN
-   write(numpar%FN_supercell,'(a)') '#Time	Volume	h11	h12	h13	h21	h22	h23	h31	h32	h33	Vh11	Vh12	Vh13	Vh21	Vh22	Vh23	Vh31	Vh32	Vh33'
-   write(numpar%FN_supercell,'(a)') '#[fs]	[A^3]	[A]	[A]	[A]	[A]	[A]	[A]	[A]	[A]	[A]	[A/fs]	[A/fs]	[A/fs]	[A/fs]	[A/fs]	[A/fs]	[A/fs]	[A/fs]	[A/fs]'
+   write(numpar%FN_supercell,'(a)') '#Time	Volume	h11	h12	h13	h21	h22	h23	h31	h32	h33	Vh11	Vh12	Vh13	Vh21	Vh22	Vh23	Vh31	Vh32	Vh33  Sample_volume'
+   write(numpar%FN_supercell,'(a)') '#[fs]	[A^3]	[A]	[A]	[A]	[A]	[A]	[A]	[A]	[A]	[A]	[A/fs]	[A/fs]	[A/fs]	[A/fs]	[A/fs]	[A/fs]	[A/fs]	[A/fs]	[A/fs]   [A^3]'
 
 
    if (numpar%do_drude) then

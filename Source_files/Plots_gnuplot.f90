@@ -2436,9 +2436,11 @@ subroutine gnu_volume(numpar, File_name, file_supercell, t0, t_last, eps_name)
       trim(adjustl(eps_name)), numpar%path_sep, 1)	! module "Gnuplotting"
 
    if (numpar%path_sep .EQ. '\') then	! if it is Windows
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_supercell)), ' "u 1:2 w l lw LW title "Supercell volume" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "' , trim(adjustl(file_supercell)), ' "u 1:2 w l lw LW title "Supercell volume" ,\'
+      write(FN, '(a)') '"" u 1:21 w l lw LW title "Sample volume" '
    else ! It is linux
-      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"', trim(adjustl(file_supercell)), '\"u 1:2 w l lw \"$LW\" title \"Supercell volume\" '
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"', trim(adjustl(file_supercell)), '\"u 1:2 w l lw \"$LW\" title \"Supercell volume\" ,\'
+      write(FN, '(a)') '\"\" u 1:21 w l lw \"$LW\" title \"Sample volume\" '
    endif
    call write_gnuplot_script_ending(numpar, FN, File_name, 1)
    close(FN)

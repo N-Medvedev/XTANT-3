@@ -203,12 +203,18 @@ subroutine find_sample_size(Scell, use_NN)
    real(8) :: s_rescale(3), dist_max, Supce_max, Supce_min, x_short, y_short, z_short
    logical :: do_NN
 
+   ! Projections of the relative distance between bordering atoms on each side:
    Sx_min = transfer(MINVAL(Scell%MDAtoms(:)%S(1)), 1.0d0)
    Sx_max = transfer(MAXVAL(Scell%MDAtoms(:)%S(1)), 1.0d0)
    Sy_min = transfer(MINVAL(Scell%MDAtoms(:)%S(2)), 1.0d0)
    Sy_max = transfer(MAXVAL(Scell%MDAtoms(:)%S(2)), 1.0d0)
    Sz_min = transfer(MINVAL(Scell%MDAtoms(:)%S(3)), 1.0d0)
    Sz_max = transfer(MAXVAL(Scell%MDAtoms(:)%S(3)), 1.0d0)
+
+   ! Identify what to add where (basic):
+   s_rescale(1) = (Sx_max - Sx_min)
+   s_rescale(2) = (Sy_max - Sy_min)
+   s_rescale(3) = (Sz_max - Sz_min)
 
    ! Identify the padding associated with the interatomic distance:
    r_short = 1.0d10 ! to start with
@@ -277,19 +283,15 @@ subroutine find_sample_size(Scell, use_NN)
       !print*, 'two:', i_shortest, j_shortest
    endif
 
-
-   ! Identify what to add where (basic):
-   s_rescale(1) = (Sx_max - Sx_min)
-   s_rescale(2) = (Sy_max - Sy_min)
-   s_rescale(3) = (Sz_max - Sz_min)
-
-   print*, 'o', s_rescale
+   !print*, 'o', s_rescale
 
    ! If it's a 2d material, add interatomic distance to define layer thinckness:
    !dist_max = sqrt(x_short**2 + y_short**2 + z_short**2)
-   dist_max = max(x_short, y_short, z_short)
+   !dist_max = max(x_short, y_short, z_short)
+   ! Assume equal projections of the shortest distance on the axes:
+   dist_max = r_short/sqrt(3.0d0)
 
-   print*, 'a', x_short, y_short, z_short, dist_max
+   !print*, 'a', x_short, y_short, z_short, dist_max
 
    !Relative coordinates:
    call Invers_3x3(Scell%supce, dsupce, 'find_sample_size') ! from module "Algebra_tools"
@@ -310,20 +312,20 @@ subroutine find_sample_size(Scell, use_NN)
    ! Make sure it's not larger than the supercell:
    where(s_rescale(:) > 1.0d0) s_rescale(:) = 1.0d0
 
-   print*, 'u', s_rescale
+   !print*, 'u', s_rescale
 
    ! Rescale the super-cell vectors to find the size of the sample inside it:
    vec_dist(1,:) = Scell%supce(1,:) * s_rescale(1)
    vec_dist(2,:) = Scell%supce(2,:) * s_rescale(2)
    vec_dist(3,:) = Scell%supce(3,:) * s_rescale(3)
 
-   print*, 'v', vec_dist
+   !print*, 'v', vec_dist
 
    ! Get the volume of the sample, assuming the distance-vectors define its shape:
    !call Det_3x3(Scell(SCN)%supce,Scell(SCN)%V) ! module "Algebra_tools"
    call Det_3x3(vec_dist, Scell%V_sample) ! [A^3]; module "Algebra_tools"
 
-   print*, 'V:', Scell%V, Scell%V_sample
+   !print*, 'V:', Scell%V, Scell%V_sample
 end subroutine find_sample_size
 
 
