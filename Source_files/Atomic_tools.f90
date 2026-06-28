@@ -75,7 +75,8 @@ remove_angular_momentum, get_fragments_indices, remove_momentum, make_time_step_
 Make_free_surfaces, Coordinates_abs_to_rel_single, velocities_rel_to_abs, check_periodic_boundaries_single, &
 Coordinates_rel_to_abs_single, deflect_velosity, Get_random_velocity, shortest_distance, cell_vectors_defined_by_angles, &
 update_atomic_masks_displ, numerical_acceleration, Get_testmode_add_data, integrated_atomic_distribution, &
-get_diffraction_peaks, get_Miller_index_angle, get_Debye_temperature_from_diffraction, get_kinetic_temperature
+get_diffraction_peaks, get_Miller_index_angle, get_Debye_temperature_from_diffraction, get_kinetic_temperature, &
+find_sample_size
 
 
 real(8), parameter :: m_two_third = 2.0d0 / 3.0d0
@@ -187,7 +188,148 @@ subroutine define_subcells(Scell, numpar)
    end select
 end subroutine define_subcells
  
- 
+
+
+subroutine find_sample_size(Scell, use_NN)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   logical, intent(in), optional :: use_NN   ! use nearest-neighbours list or not
+   !---------------------------
+   real(8) :: Sx_min, Sx_max  ! relative coordinates of the atoms on the X-borders of the sample
+   real(8) :: Sy_min, Sy_max  ! relative coordinates of the atoms on the Y-borders of the sample
+   real(8) :: Sz_min, Sz_max  ! relative coordinates of the atoms on the Z-borders of the sample
+   real(8) :: vec_dist(3,3), dsupce(3,3), S(3)
+   integer :: i, j, Nat, m, atom_2, ik, i_shortest, j_shortest
+   real(8) :: r_short, sx_short, sy_short, sz_short, a_r, x, y, z, sx, sy, sz
+   real(8) :: s_rescale(3), dist_max, Supce_max, Supce_min, x_short, y_short, z_short
+   logical :: do_NN
+
+   ! Projections of the relative distance between bordering atoms on each side:
+   Sx_min = transfer(MINVAL(Scell%MDAtoms(:)%S(1)), 1.0d0)
+   Sx_max = transfer(MAXVAL(Scell%MDAtoms(:)%S(1)), 1.0d0)
+   Sy_min = transfer(MINVAL(Scell%MDAtoms(:)%S(2)), 1.0d0)
+   Sy_max = transfer(MAXVAL(Scell%MDAtoms(:)%S(2)), 1.0d0)
+   Sz_min = transfer(MINVAL(Scell%MDAtoms(:)%S(3)), 1.0d0)
+   Sz_max = transfer(MAXVAL(Scell%MDAtoms(:)%S(3)), 1.0d0)
+
+   ! Identify what to add where (basic):
+   s_rescale(1) = (Sx_max - Sx_min)
+   s_rescale(2) = (Sy_max - Sy_min)
+   s_rescale(3) = (Sz_max - Sz_min)
+
+   ! Identify the padding associated with the interatomic distance:
+   r_short = 1.0d10 ! to start with
+   sx_short = 0.0d0 ! to start with
+   sy_short = 0.0d0 ! to start with
+   sz_short = 0.0d0 ! to start with
+   x_short = 0.0d0 ! to start with
+   y_short = 0.0d0 ! to start with
+   z_short = 0.0d0 ! to start with
+   i_shortest = 0  ! to start with
+   j_shortest = 0  ! to start with
+   Nat = Scell%Na ! number of atoms
+
+   ! Two options to find the nearest neighbour distances:
+   do_NN = .false.
+   if (present(use_NN)) then
+      do_NN = use_NN
+   endif
+
+   if (do_NN) then ! use lists of nearest neighbours
+      do i = 1, Nat
+         m = Scell%Near_neighbor_size(i)     ! use the list of nearest neighbours
+         if (m > Nat) then
+            print*, 'Problem in find_sample_size: Near_neighbor_size is undefined!'
+            exit ! prevent the run if it wasn't defined yet
+         endif
+         do atom_2 = 1, m ! do only for atoms close to that one
+            j = Scell%Near_neighbor_list(i, atom_2) ! this is the list of such close atoms
+
+            if ((j == i) .or. (j==0)) cycle    ! no self-distance
+            call shortest_distance(Scell, i, j, a_r, x1=x, y1=y, z1=z, sx1=sx, sy1=sy, sz1=sz)  ! below
+            if (r_short >= a_r) then
+               r_short = a_r ! update the shortest distance
+               sx_short = abs(sx)
+               sy_short = abs(sy)
+               sz_short = abs(sz)
+               i_shortest = i
+               j_shortest = j
+               ! Largest projection among the shortest distances:
+               if (x_short < x) x_short = x
+               if (y_short < y) y_short = y
+               if (z_short < z) z_short = z
+            endif ! r_short >= a_r)
+         enddo ! j
+      enddo ! i
+      !print*, 'one:', i_shortest, j_shortest
+   else ! use all atoms
+      do i = 1, Nat
+         do j = 1, Nat
+            if (j == i) cycle    ! no self-distance
+            call shortest_distance(Scell, i, j, a_r, x1=x, y1=y, z1=z, sx1=sx, sy1=sy, sz1=sz)  ! below
+            if (r_short >= a_r) then
+               r_short = a_r ! update the shortest distance
+               sx_short = abs(sx)
+               sy_short = abs(sy)
+               sz_short = abs(sz)
+               i_shortest = i
+               j_shortest = j
+               ! Largest projection among the shortest distances:
+               if (x_short < x) x_short = x
+               if (y_short < y) y_short = y
+               if (z_short < z) z_short = z
+            endif ! r_short >= a_r)
+         enddo ! j
+      enddo ! i
+      !print*, 'two:', i_shortest, j_shortest
+   endif
+
+   !print*, 'o', s_rescale
+
+   ! If it's a 2d material, add interatomic distance to define layer thinckness:
+   !dist_max = sqrt(x_short**2 + y_short**2 + z_short**2)
+   !dist_max = max(x_short, y_short, z_short)
+   ! Assume equal projections of the shortest distance on the axes:
+   dist_max = r_short/sqrt(3.0d0)
+
+   !print*, 'a', x_short, y_short, z_short, dist_max
+
+   !Relative coordinates:
+   call Invers_3x3(Scell%supce, dsupce, 'find_sample_size') ! from module "Algebra_tools"
+   S = 0.0d0
+   do ik = 1,3
+      S(1) = S(1) + dist_max*dsupce(ik,1)
+      S(2) = S(2) + dist_max*dsupce(ik,2)
+      S(3) = S(3) + dist_max*dsupce(ik,3)
+   enddo ! ik
+
+   !print*, 'b', S(:)
+
+   ! Make sure it's larger than the smallest interatomic distance:
+   !where(s_rescale(:) < S(:)) s_rescale(:) = S(:)
+   ! Add one interatomic distance to account for padding:
+   s_rescale(:) = s_rescale(:) + S(:)
+
+   ! Make sure it's not larger than the supercell:
+   where(s_rescale(:) > 1.0d0) s_rescale(:) = 1.0d0
+
+   !print*, 'u', s_rescale
+
+   ! Rescale the super-cell vectors to find the size of the sample inside it:
+   vec_dist(1,:) = Scell%supce(1,:) * s_rescale(1)
+   vec_dist(2,:) = Scell%supce(2,:) * s_rescale(2)
+   vec_dist(3,:) = Scell%supce(3,:) * s_rescale(3)
+
+   !print*, 'v', vec_dist
+
+   ! Get the volume of the sample, assuming the distance-vectors define its shape:
+   !call Det_3x3(Scell(SCN)%supce,Scell(SCN)%V) ! module "Algebra_tools"
+   call Det_3x3(vec_dist, Scell%V_sample) ! [A^3]; module "Algebra_tools"
+
+   !print*, 'V:', Scell%V, Scell%V_sample
+end subroutine find_sample_size
+
+
+
  
 pure subroutine Find_outermost_atom(Scell, axis_ind, which_surf, N_ind)
    type(Super_cell), dimension(:), intent(in) :: Scell  ! supercell with all the atoms as one object
@@ -2438,8 +2580,12 @@ subroutine super_cell_forces(numpar, Scell, NSC, matter, supce_forces, Sigma_ten
       enddo ! k
       KPRES_VV = KPRES_VV/Scell(NSC)%V ! kinetic part, to be multiplied by sigma below
 
+      !print*, '1:', Scell(NSC)%V
+
       ! Pressure calculation finishing:
       call Det_3x3(Scell(NSC)%supce,Scell(NSC)%V) ! determinant of the super-cell is the volume, module "Algebra_tools"
+
+      !print*, '2:', Scell(NSC)%V
       
       ! Construct full Sigma tensor:
       Sigma_tens = 0.0d0
@@ -3709,7 +3855,7 @@ subroutine Coordinates_abs_to_rel_single(Scell, NSC, i_in, if_old)
    logical, optional :: if_old ! then do it for the previous time-step too
    real(8) S(3), dsupce(3,3)
    integer ik
-   !Relative velocities:
+   !Relative coordinates:
    call Invers_3x3(Scell(NSC)%supce, dsupce, 'Coordinates_abs_to_rel_single') ! from module "Algebra_tools"
    S = 0.0d0
    do ik = 1,3

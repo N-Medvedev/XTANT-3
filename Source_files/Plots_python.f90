@@ -1267,13 +1267,18 @@ subroutine Python_plot_volume(numpar, file_supercell, t0, t_last, script_name, c
    File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
    open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
 
-   Nsiz = 1
+   Nsiz = 2
 
    allocate(col_nums(Nsiz), source = 0)
    allocate(col_labels(Nsiz))
+   allocate(linestyle(Nsiz))
 
    col_nums(1) = 1
-   col_labels(1) = '"Volume"'
+   col_labels(1) = '"Supercell volume"'
+   call select_linestyle(1, linestyle(1))      ! below
+   col_nums(2) = 20
+   col_labels(2) = '"Sample volume"'
+   call select_linestyle(2, linestyle(2))      ! below
 
 
    Plot_name = 'OUTPUT_volume'
@@ -1288,7 +1293,7 @@ subroutine Python_plot_volume(numpar, file_supercell, t0, t_last, script_name, c
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Volume (A$^3$)', 'Volume', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last)     ! below
+      x_min=t0, x_max=t_last, l_style=linestyle)     ! below
 
    close(FN)
    deallocate(col_nums, col_labels)

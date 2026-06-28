@@ -809,6 +809,8 @@ type Super_cell
    real(8), dimension(3,3) :: k_supce 	! [1/A] length of the reciprocal super-cell
    real(8), dimension(3,3) :: supce_eq 	! [A] equilibrium lengths of super-cell
    real(8) :: V      ! super-cell volume [A^3]
+   !real(8), dimension(3,3) :: Sample_size   ! [A] length of the sample inside the supercell
+   real(8) :: V_sample      ! Sample volume [A^3]
    ! For atmoic calculations, lists of nearest neighbors:
    integer, dimension(:,:), allocatable :: Near_neighbor_list  	! list of nearest neighbors for all atoms
    real(8), dimension(:,:,:), allocatable :: Near_neighbor_dist	! distances to this atoms [A]

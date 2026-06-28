@@ -1100,17 +1100,22 @@ subroutine get_G_ei(Scell, NSC, numpar, dE)
    integer, intent(in) :: NSC ! number of supercell
    type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
    real(8), intent(in) :: dE	! [eV] energy transferred from electrons to ions
-   real(8) :: temp, eps, T_diff
+   !---------------------------
+   real(8) :: temp, eps, T_diff, V
 
    eps = 1.0d-16
 
-   T_diff = (Scell(NSC)%Te - Scell(NSC)%Ta)
+   ! Temperature difference:
+   T_diff = (Scell(NSC)%Te - Scell(NSC)%Ta)     ! [K]
+
+   ! Volume (choose between the supercell and sample volume):
+   V = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
 
    if (abs(T_diff) < 1.0d-6) then
       temp = 0.0d0      ! undefined coupling parameter for equal temepartures
    else
-      !temp = g_e/((Scell(NSC)%Te - Scell(NSC)%Ta)*Scell(NSC)%V*1d-30*(numpar%dt*1d-15))	! [W/(m^3 K)]
-      temp = g_e/(T_diff*Scell(NSC)%V*1d-30*(numpar%dt*1d-15))	! [W/(m^3 K)]
+      !temp = g_e/(T_diff*Scell(NSC)%V*1d-30*(numpar%dt*1d-15))	! [W/(m^3 K)]
+      temp = g_e/(T_diff*V*1d-30*(numpar%dt*1d-15))	! [W/(m^3 K)]
    endif
    !Scell(NSC)%G_ei = dE*g_e/((Scell(NSC)%Te - Scell(NSC)%Ta)*Scell(NSC)%V*1d-30*(numpar%dt*1d-15))	! [W/(m^3 K)]
    Scell(NSC)%G_ei = dE*temp	! [W/(m^3 K)]
