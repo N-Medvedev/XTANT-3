@@ -473,7 +473,7 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
    !----------------------------
    real(8), dimension(:,:), allocatable :: dfe_dT_grid
    real(8), dimension(:), allocatable :: dmu, v, A, B, C
-   real(8) :: Vol, Ele, L, prefact, temp
+   real(8) :: Vol, Vol1, Ele, L, prefact, temp
    integer :: i, n, Nsiz, N_Te_grid
 
    if (numpar%do_kappa .or. numpar%do_kappa_dyn) then ! only if requested
@@ -495,8 +495,10 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
       allocate(C(N_Te_grid), source = 0.0d0)
 
 
-      ! Supercell volume:
-      Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+      ! Volume (choose between the supercell and sample volume):
+      Vol1 = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
+      !Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+      Vol = Vol1*1.0d-30 ! [m^3]
 
       ! Get dmu:
       dmu(1) = (mu(2) - mu(1)) / ((Te_grid(2)-Te_grid(1))*g_kb_EV)
@@ -591,7 +593,7 @@ subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, E
    !----------------------------
    real(8), dimension(:,:), allocatable :: fe_on_Te_grid, dfe_dE_grid
    real(8) :: prec, Vol, pref, prefact, delta, Eij, eta, P2, A_cur, B_cur, C_cur, E_mu, f_nm, f_delt
-   real(8) :: kappa_e, n_s, v_F, pref_ke, ne
+   real(8) :: kappa_e, n_s, v_F, pref_ke, ne, V
    real(8), dimension(:), allocatable :: A, B, C, mu, Ce
    integer :: Nsiz, n, m, N_Te_grid, i
 
@@ -641,8 +643,10 @@ subroutine get_Onsager_coeffs(numpar, matter, Scell, NSC, cPRRx, cPRRy, cPRRz, E
 
    prec = 1.0d-10 ! [eV] acceptance for degenerate levels
    eta = m_gamm * m_e_h ! finite width of delta function [eV]
-   ! Supercell volume:
-   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+   ! Volume (choose between the supercell and sample volume):
+   V = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
+   !Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+   Vol = V*1.0d-30 ! [m^3]
 
    ! Calculate only if requested:
    if (numpar%do_kappa) then ! only if requested
@@ -900,15 +904,17 @@ subroutine get_Onsager_dynamic(numpar, matter, Scell, NSC, kappa)
    integer, intent(in) :: NSC ! number of supercell
    real(8), dimension(:), intent(out) :: kappa ! electron heat conductivity tensor [W/(K*m)] vs Te
    !----------------------------
-   real(8) :: Vol, prefact, eta
+   real(8) :: Vol, prefact, eta, V
    real(8) :: A, B, C
    integer :: i
 
    kappa(:) = 0.0d0  ! to start with
 
    eta = m_gamm * m_e_h ! finite width of delta function [eV]
-   ! Supercell volume:
-   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+   ! Volume (choose between the supercell and sample volume):
+   V = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
+   !Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+   Vol = V*1.0d-30 ! [m^3]
 
    ! Calculate only if requested:
    if (numpar%do_kappa_dyn) then ! only if requested
@@ -1069,7 +1075,7 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
    !complex(8) :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
    complex, dimension(:,:), allocatable :: cPRRx, cPRRy, cPRRz  ! effective momentum operators
    complex :: Eps_xx, Eps_yy, Eps_zz   ! diagonal components of the complex dielectric tensor
-   real(8) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, temp_1, temp_2, temp_3
+   real(8) :: Re_eps, Im_eps, R, T, A, opt_n, opt_k, dc_cond, temp_1, temp_2, temp_3, V
    real(8) :: w, Vol, prefact, w_mn, g_sigma, w_sigma, denom, prec
    real(8) :: pxpx, pxpy, pxpz, pypx, pypy, pypz, pzpx, pzpy, pzpz
    integer :: i, j, Nsiz, m, n, N_w
@@ -1084,8 +1090,10 @@ subroutine get_Kubo_Greenwood_CDF(numpar, Scell, NSC, w_grid, cPRRx_in, cPRRy_in
    allocate(cPRRy(Nsiz,Nsiz))
    allocate(cPRRz(Nsiz,Nsiz))
 
-   ! Supercell volume:
-   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+   ! Volume (choose between the supercell and sample volume):
+   V = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
+   !Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+   Vol = V*1.0d-30 ! [m^3]
    prefact = m_prefac*g_ke/Vol  ! prefactor of sigma
 
    cPRRx = sqrt(prefact)*cPRRx_in
@@ -1618,7 +1626,7 @@ subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, m_eff,
    !----------------------------
    real(8), dimension(3,3) :: Re_eps_ij, Im_eps_ij, Re_eps_ij_term1
    real(8) :: delt, eta, Vol, w_mn, prefact, Re_prefact, temp, term_1_SI, term_2_SI, Im_term_SI, f_P_term, ww, prec
-   real(8) :: pxpx, pxpy, pxpz, pypx, pypy, pypz, pzpx, pzpy, pzpz
+   real(8) :: pxpx, pxpy, pxpz, pypx, pypy, pypz, pzpx, pzpy, pzpz, V
    integer :: i, j, Nsiz, m, n
 
    Nsiz = size(Ev)   ! number of energy levels
@@ -1630,8 +1638,10 @@ subroutine get_Graf_Vogl_CDF(numpar, Scell, NSC, cPRRx, cPRRy, cPRRz, Ev, m_eff,
    !eta = 0.3d0 ! [eV]
    eta = 3.0d0 * m_gamm*m_e_h  ! [eV] gamma parameter ~0.3 eV
 
-   ! Supercell volume:
-   Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+   ! Volume (choose between the supercell and sample volume):
+   V = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
+   !Vol = Scell(NSC)%V*1.0d-30 ! [m^3]
+   Vol = V*1.0d-30 ! [m^3]
    temp = g_e**2/Vol ! prefactor in Re(Eps)
    Im_term_SI = g_ke             ! to convert Im(Eps) into SI units (Coulomb-law)
    term_1_SI = Im_term_SI/g_me   ! to convert first term in Re(Eps) into SI units
@@ -2396,7 +2406,10 @@ subroutine get_trani(numpar, Scell, NSC, Fnnx, Fnny, Fnnz, Ei, w, Re_eps, Im_eps
    g = m_gamm  ! [1/s] gamma parameter
 
 !    V = Scell(NSC)%V*1d-30
-   V = Scell(NSC)%V*1d-10	! power of 20 cancels with the same power in Fnn'
+   ! Volume (choose between the supercell and sample volume):
+   V = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
+   !V = Scell(NSC)%V*1d-10	! power of 20 cancels with the same power in Fnn'
+   V = V*1d-10	! power of 20 cancels with the same power in Fnn'
    
 !    he = g_h/g_e
    e2 = g_e*g_e
@@ -2930,7 +2943,7 @@ subroutine get_drude(numpar, Scell, NSC)
    type(Super_cell), dimension(:), intent(inout) :: Scell  ! supercell with all the atoms as one object
    integer, intent(in) :: NSC ! number of supercell
    !===============================================
-   real(8) :: wp, wph, me_eff, mh_eff, wl, vv, tth
+   real(8) :: wp, wph, me_eff, mh_eff, wl, vv, tth, V
 
    if (numpar%do_drude) then
       if (Scell(NSC)%eps%ReEps0 .LE. 0.0d0) call get_Re_and_Im(Scell(NSC)%eps%ReEps0, Scell(NSC)%eps%ImEps0, Scell(NSC)%eps%n, Scell(NSC)%eps%k)
@@ -2945,8 +2958,14 @@ subroutine get_drude(numpar, Scell, NSC)
       else
          tth = vv/mh_eff*me_eff    ! [1/sec] collisional frequency for holes
       endif
-      wp = w_plasma(Scell(NSC)%Ne_CB, Scell(NSC)%V, me_eff) ! plasma frequency, function below
-      wph = w_plasma(Scell(NSC)%Ne_CB, Scell(NSC)%V, mh_eff) ! plasma frequency for holes, function below
+
+      ! Volume (choose between the supercell and sample volume):
+      V = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
+
+      !wp = w_plasma(Scell(NSC)%Ne_CB, Scell(NSC)%V, me_eff) ! plasma frequency, function below
+      !wph = w_plasma(Scell(NSC)%Ne_CB, Scell(NSC)%V, mh_eff) ! plasma frequency for holes, function below
+      wp = w_plasma(Scell(NSC)%Ne_CB, V, me_eff) ! plasma frequency, function below
+      wph = w_plasma(Scell(NSC)%Ne_CB, V, mh_eff) ! plasma frequency for holes, function below
 
       ! real part of the dielectric constant:
       Scell(NSC)%eps%ReEps = Scell(NSC)%eps%ReEps0 - (wp/wl)*(wp/wl)/(1.0d0+vv*vv/(wl*wl)) - (wph/wl)*(wph/wl)/(1.0d0+tth*tth/(wl*wl)) 
@@ -3077,7 +3096,7 @@ end subroutine get_RTA_from_CDF
 
 
 function w_plasma(Ne, V, me_eff)   ! plasma frequency [1/s]
-   real(8), intent(in) :: Ne, V ! number of electrons in the supercell; volume of the supercell [anstroms]
+   real(8), intent(in) :: Ne, V ! number of electrons in the supercell; volume of the supercell or sample [anstroms^3]
    real(8), intent(in), optional :: me_eff	! effective electron mass [kg]
    real(8) :: w_plasma
    if (present(me_eff)) then

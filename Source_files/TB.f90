@@ -2235,7 +2235,7 @@ subroutine get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err)
    real(8), dimension(:,:,:), allocatable :: kappa_e_part, L_EE_part, L_ET_part, L_TT_part
    real(8), dimension(:,:), allocatable :: v_e
    real(8), dimension(:), allocatable :: dfdE
-   real(8) :: coef, temp(3,3), tau, eps, Emu, Etemp(3,3), E2temp(3,3)
+   real(8) :: coef, temp(3,3), tau, eps, Emu, Etemp(3,3), E2temp(3,3), V
    integer :: Nsiz, i, j, k, N_at, N_types, i_at, i_types, i_G1
 
    if (numpar%do_kappa) then ! only if requested
@@ -2327,8 +2327,14 @@ subroutine get_electron_heat_conductivity(Scell, NSC, matter, numpar, Err)
 !             kappa_e_part = 1.0d0/(Scell(NSC)%V * Scell(NSC)%Te) * L_EE_part ! [eV*m^2/(A^3*K)]
 !          endwhere
          ! [O 2]:
-         kappa_ei = L_TT/Scell(NSC)%V           ! [eV*m^2/(A^3*K*s)]
-         kappa_e_part = L_TT_part/Scell(NSC)%V  ! [eV*m^2/(A^3*K*s)]
+
+         ! Volume (choose between the supercell and sample volume):
+         V = min(Scell(NSC)%V, Scell(NSC)%V_sample)   ! [A^3]
+
+         !kappa_ei = L_TT/Scell(NSC)%V           ! [eV*m^2/(A^3*K*s)]
+         kappa_ei = L_TT/V           ! [eV*m^2/(A^3*K*s)]
+         !kappa_e_part = L_TT_part/Scell(NSC)%V  ! [eV*m^2/(A^3*K*s)]
+         kappa_e_part = L_TT_part/V  ! [eV*m^2/(A^3*K*s)]
 
          ! Convert into SI units:
          coef = 1.0d30*g_e ! [eV/A^3] -> [J/m^3]
@@ -5795,7 +5801,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
    endif ! (do_partial)
 
    ! Testing:
-   !call get_Mulliken_each_atom(numpar%Mulliken_model, Scell, matter, numpar, forced_mulliken=.true.)      ! above
+   call get_Mulliken_each_atom(numpar%Mulliken_model, Scell, matter, numpar, forced_mulliken=.true.)      ! above
    !print*, 'get_DOS_sort test 1', D(1,2:15), ':', Scell%Dmatrix(1,2:15)
    !pause 'conjg(CHij(k,j)) * SUM(CHij(:,j) * CSij(k,:))'
 
@@ -5834,8 +5840,8 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Negative DOS present
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Negative DOS present
                         enddo
                      enddo
                   endif
@@ -5859,7 +5865,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                         do i_types = 1, N_types
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, j))/temp
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
                         enddo
                      enddo
                   endif
@@ -5924,6 +5930,8 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp     ! Works for k=0
                            partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Works, tested
+
+                           !print*, i_at, SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :)), SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :)), SUM(Scell%Dmatrix(j, :), MASK = masks_DOS(i_at, i_types, :))
                         enddo
                      enddo
                   endif
@@ -5946,9 +5954,9 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                      do i_at = 1, N_at
                         do i_types = 1, N_types
 !                            print*, 'get_DOS_sort test 3c'
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, j))/temp
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, j))/temp     ! Can produce negative pDOS
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, :))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :))/temp     ! Can produce negative pDOS
                         enddo
                      enddo
                   endif

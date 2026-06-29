@@ -293,7 +293,7 @@ function Get_configurational_temperature_numeric(Scell, matter, numpar) result(T
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    !-------------------
    integer :: Nat, i
-   real(8) :: F(3), F0(3), F2(3), dF(3), Pot_tot, acc(3), acc0(3), V(3), Pot_den, Pot_num, V_ave
+   real(8) :: F(3), F0(3), F2(3), dF(3), Pot_tot, acc(3), acc0(3), V(3), Pot_den, Pot_num, V_ave, Vol
    real(8), pointer :: Mass
 
    Nat = size(Scell%MDAtoms)  ! number of atoms
@@ -339,8 +339,12 @@ function Get_configurational_temperature_numeric(Scell, matter, numpar) result(T
       Pot_tot = 0.0d0
    endif
 
+   ! Volume (choose between the supercell and sample volume):
+   Vol = min(Scell%V, Scell%V_sample)   ! [A^3]
+
    ! Exclude external pressure:
-   Pot_tot = -Pot_tot - matter%p_ext*(Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+   !Pot_tot = -Pot_tot - matter%p_ext*(Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+   Pot_tot = -Pot_tot - matter%p_ext*(Vol * 1e-30) / dble(Nat) / g_e   ! [eV]
 
    ! Define tempreature:
    Ta = Pot_tot  ! [eV]
@@ -438,7 +442,7 @@ subroutine partial_temperatures(Scell, matter, numpar)
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    !--------------------
    integer :: Nat, i
-   real(8) :: prefac, Ekin(3), P_ext
+   real(8) :: prefac, Ekin(3), P_ext, V
    real(8), pointer :: Mass
 
    Nat = size(Scell%MDAtoms)  ! number of atoms
@@ -453,8 +457,12 @@ subroutine partial_temperatures(Scell, matter, numpar)
    Ekin(:) = Ekin(:) * prefac / dble(Nat)    ! [eV]
    Scell%Ta_r_var(1:3) = 2.0d0 * Ekin(1:3) * g_kb     ! [K]
 
+   ! Volume (choose between the supercell and sample volume):
+   V = min(Scell%V, Scell%V_sample)   ! [A^3]
+
    ! Configurational temperatures:
-   prefac = (Scell%V * 1e-30) / dble(Nat) / g_e * g_kb  ! to get temperature in [K]
+   !prefac = (Scell%V * 1e-30) / dble(Nat) / g_e * g_kb  ! to get temperature in [K]
+   prefac = (V * 1e-30) / dble(Nat) / g_e * g_kb  ! to get temperature in [K]
    Scell%Ta_r_var(4) = Scell%Pot_Stress(1,1) * prefac   ! X
    Scell%Ta_r_var(5) = Scell%Pot_Stress(2,2) * prefac   ! Y
    Scell%Ta_r_var(6) = Scell%Pot_Stress(3,3) * prefac   ! Z
@@ -676,7 +684,7 @@ function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
    logical, intent(in), optional :: nonper
    !------------------------------
    integer :: Nat, i, ik
-   real(8) :: F(3), acc(3), r(3), r_n_1(3), r_n(3), Pot, Pot_tot, abs_s, s(3), s_4tr(3)
+   real(8) :: F(3), acc(3), r(3), r_n_1(3), r_n(3), Pot, Pot_tot, abs_s, s(3), s_4tr(3), V
    real(8) :: Tr_r, Tr_s, diff_sin, arg, den, dsupce(3,3), a_r
    real(8) :: r_sin(3), sine_s(3), sin2(3), Pot_num, Pot_den, Rmin(3), Smin(3)
    real(8), pointer :: Mass
@@ -770,8 +778,12 @@ function get_Tconfig_n_l(Scell, matter, numpar, n, l, nonper) result(Ta)  ! [1]
       Pot_tot = 0.0d0
    endif
 
+   ! Volume (choose between the supercell and sample volume):
+   V = min(Scell%V, Scell%V_sample)   ! [A^3]
+
    ! Subtract external pressure:
-   Pot_tot = Pot_tot - matter%p_ext*(Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+   !Pot_tot = Pot_tot - matter%p_ext*(Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+   Pot_tot = Pot_tot - matter%p_ext*(V * 1e-30) / dble(Nat) / g_e   ! [eV]
 
    Ta = -Pot_tot  ! [eV]
 
@@ -794,7 +806,7 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
    logical, intent(in), optional :: non_periodic   ! if we want to use nonperiodic expression
    !------------------------------
    integer :: Nat, i, j, zb(3)
-   real(8) :: F(3), acc(3), r(3), Pot, Pot_r(3), Pot_tot, a_r, zbr(3), zero_vec(3)
+   real(8) :: F(3), acc(3), r(3), Pot, Pot_r(3), Pot_tot, a_r, zbr(3), zero_vec(3), V
    logical, dimension(:), allocatable :: atoms_group_ind
    real(8), pointer :: Mass
    logical :: do_nonper
@@ -811,7 +823,10 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
      ! Get it from the pressure, calculated for the periodic boundaries:
      Pot_tot = (Scell%Pot_Pressure + matter%p_ext)
 
-     Ta = -Pot_tot * (Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+     ! Volume (choose between the supercell and sample volume):
+     V = min(Scell%V, Scell%V_sample)   ! [A^3]
+     !Ta = -Pot_tot * (Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
+     Ta = -Pot_tot * (V * 1e-30) / dble(Nat) / g_e   ! [eV]
 
    else ! nonperiodic boundaries (Eq.(22) [2], unfinished, only works for non-periodic!)
       Pot_tot = 0.0d0   ! to start with
