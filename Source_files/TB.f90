@@ -5801,7 +5801,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
    endif ! (do_partial)
 
    ! Testing:
-   !call get_Mulliken_each_atom(numpar%Mulliken_model, Scell, matter, numpar, forced_mulliken=.true.)      ! above
+   call get_Mulliken_each_atom(numpar%Mulliken_model, Scell, matter, numpar, forced_mulliken=.true.)      ! above
    !print*, 'get_DOS_sort test 1', D(1,2:15), ':', Scell%Dmatrix(1,2:15)
    !pause 'conjg(CHij(k,j)) * SUM(CHij(:,j) * CSij(k,:))'
 
@@ -5840,8 +5840,8 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Negative DOS present
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Negative DOS present
                         enddo
                      enddo
                   endif
@@ -5930,6 +5930,8 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(j,:)), MASK = masks_DOS(i_at, i_types, :))/temp     ! Works for k=0
                            partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Works, tested
+
+                           !print*, i_at, SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :)), SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :)), SUM(Scell%Dmatrix(j, :), MASK = masks_DOS(i_at, i_types, :))
                         enddo
                      enddo
                   endif

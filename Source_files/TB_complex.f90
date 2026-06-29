@@ -264,8 +264,11 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       !-------------------------------
       ! Get DOS:
       if (numpar%save_DOS) then ! if required
-         ! complex
-         call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp, CHij, CSij) ! below
+         if ( ( abs(kx) < 1.0d-10) .and. (abs(ky)<1.0d-10) .and. (abs(kz)<1.0d-10) ) then ! real Hamiltonian
+            call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp) ! below
+         else ! complex
+            call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp, CHij, CSij) ! below
+         endif
       else  ! skip DOS calculations
          DOS_temp = 0.0d0
          DOS_partial_temp = 0.0d0
