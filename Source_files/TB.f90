@@ -5865,7 +5865,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                         do i_types = 1, N_types
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
                            !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, j))/temp
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
                         enddo
                      enddo
                   endif
@@ -5954,9 +5954,9 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                      do i_at = 1, N_at
                         do i_types = 1, N_types
 !                            print*, 'get_DOS_sort test 3c'
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, j))/temp
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, j))/temp
-                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, j))/temp     ! Can produce negative pDOS
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Hij(:,j)*Hij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(j,:), MASK = masks_DOS(i_at, i_types, :))/temp
+                           partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(Scell%Dmatrix(:,j), MASK = masks_DOS(i_at, i_types, :))/temp     ! Can produce negative pDOS
                         enddo
                      enddo
                   endif
