@@ -1947,11 +1947,12 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
    logical, intent(in), optional :: forced_mulliken   ! force calcuulation, even if user didn't require it
    !-------------------------------
    real(8), dimension(:,:), allocatable :: D
-   real(8), dimension(:), allocatable :: mulliken_Ne
+   real(8), dimension(:), allocatable :: mulliken_Ne, mulliken_Ne_test
    integer :: N_at, i_at, i_orb, j, Nsiz, N_orb, k
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
    logical :: do_mulliken, do_local_scaling, do_calculation
+   real(8) :: Q_tot
 
    ! Check if the calculation is forced:
    if (present(forced_mulliken)) then
@@ -2030,6 +2031,7 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
 
       ! Allocate mulliken charges:
       allocate(mulliken_Ne(N_at), source = 0.0d0)   ! absolute charges
+      allocate(mulliken_Ne_test(N_at), source = 0.0d0)   ! absolute charges
 
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
       Nend = N_at
@@ -2038,7 +2040,7 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
          do i_orb = 1, N_orb  ! all orbitals of each atom
             j = (i_at-1)*N_orb + i_orb ! current orbital among all
             !mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(j,:))
-            mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(:,j)) ! test
+            mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(:,j)) ! tested, correct
          enddo   ! i_orb
       enddo ! i_at
       ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
@@ -2055,8 +2057,8 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
       do i_at = 1, N_at ! all atoms
          do i_orb = 1, N_orb  ! all orbitals of each atom
             j = (i_at-1)*N_orb + i_orb ! current orbital among all
-            !mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(j,:))
-            mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(:,j)) ! test
+            !mulliken_Ne_test(i_at) = mulliken_Ne_test(i_at) + SUM(Scell%fe(:) * D(j,:))  ! (same as below for gamma-point)
+            mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(:,j)) ! tested, correct
          enddo   ! i_orb
 
          ! Mulliken charge as a deviation from the normal electron population:
@@ -2066,6 +2068,12 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
       !$omp end do
       !$omp end parallel
 #endif
+
+      ! Test unballanced charge:
+      Q_tot = SUM(Scell%MDAtoms(:)%q)
+      if ( abs(Q_tot) > abs(Scell%Q*Scell%Na)+1.0d-10 ) then ! sample charged
+         print*, 'PROBLEM in get_Mulliken_each_atom: charge not conserved:', Q_tot, abs(Scell%Q*Scell%Na)
+      endif
 
       ! Testing:
       if (numpar%MPI_param%process_rank == 0) then ! only master process does it
@@ -2079,11 +2087,17 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
             enddo
          endif
       endif
-      deallocate(mulliken_Ne, D)
+
    else  ! just atomic electrons
       ! Mulliken charges:
       Scell%MDAtoms(:)%q = 0.0d0
    endif ! (Mulliken_model >= 1)
+
+   ! Test of different expressions
+   !print*, 'get_Mulliken_each_atom:', SUM(Scell%MDAtoms(:)%q), SUM(mulliken_Ne), SUM(mulliken_Ne_test), Scell%Ne
+
+   if (allocated(mulliken_Ne)) deallocate(mulliken_Ne)
+   if (allocated(D)) deallocate(D)
 end subroutine get_Mulliken_each_atom
 
 

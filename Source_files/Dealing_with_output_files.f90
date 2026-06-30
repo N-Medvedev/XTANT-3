@@ -57,7 +57,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 28.06.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 30.06.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -229,7 +229,7 @@ subroutine printout_CDF_file(numpar, matter, Scell)
    if (numpar%save_CDF) then ! printout CDF file
       file_name = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//'OUTPUT_Ritchie_CDF_'// &
                   trim(adjustl(matter%Name))//'.cdf'
-      FN = 9998
+      FN = 9996
       open(UNIT=FN, FILE = trim(adjustl(file_name)), status = 'new')
       ! Printout CDF-oscillators coefficients:
       call write_CDF_file(FN, trim(adjustl(matter%Name)), trim(adjustl(matter%Chem)), matter%dens, &
@@ -2224,7 +2224,9 @@ subroutine close_output_files(Scell, numpar)
    ! Number of different fragments, up to maximum registered in the simulation:
    if (numpar%print_fragments) then
       do i = 1, Scell(1)%fragments%N_frag_max
-         call close_file('close', FN=numpar%FN_fragments(i))    ! module "Dealing_with_files"
+         if (allocated(numpar%FN_fragments)) then ! and only then
+            call close_file('close', FN=numpar%FN_fragments(i))    ! module "Dealing_with_files"
+         endif
       enddo
       call close_file('close', FN=numpar%FN_fragments_data) ! module "Dealing_with_files"
    endif
