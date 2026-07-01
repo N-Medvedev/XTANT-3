@@ -1482,8 +1482,9 @@ subroutine identify_fragment_for_orbital(Scell)
    do i = 1, Nlev
       ! Which atom contributes to this orbital the most:
       !Max_D_i = maxval(Scell%Dmatrix(i,:))      ! atomic orbital with maximal contribution to this level
-      !i_max = (transfer( maxloc(Scell%Dmatrix(i,:)), i_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
-      i_max = (transfer( maxloc(Scell%Dmatrix(:,i)), i_max) - 1)/ Norb + 1 ! find which atom this orbital belongs to
+      ! find which atom this orbital belongs to:
+      i_max = (transfer( maxloc(Scell%Dmatrix(i,:)), i_max) - 1)/ Norb + 1 ! same as in Mulliken
+      !i_max = (transfer( maxloc(Scell%Dmatrix(:,i)), i_max) - 1)/ Norb + 1 ! test
 
       ! Which atom it belongs to:
       Scell%orb_in_atom(i) = i_max
@@ -1597,12 +1598,13 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
 
             if (fragment_mask(i_at)) then ! this atom belongs to this fragment
                ! 1) Number of electrons in the fragment "i":
-               !Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(j,:))     ! incorrect
-               Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(:,j))      ! correct, tested
+               Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(j,:))     ! same as in Mulliken charges
+               !Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(:,j))      ! test
+               !mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(j,:))  ! tested, correct distribution of charges
 
                ! 2) Electrons energy in the fragment "i"
-               !Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(j,:))    ! incorrect
-               Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(:,j))     ! correct, tested
+               Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(j,:))    ! same as in Mulliken
+               !Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(:,j))     ! test
             endif
          enddo   ! i_orb
       enddo ! i_at
@@ -1612,6 +1614,11 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
       Scell(NSC)%fragments%N_e(i) = Ne
       ! Normalizatin per atom in the fragment:
       Scell(NSC)%fragments%E_e(i) = Ee / dble(Scell(NSC)%fragments%N_at(i))  ! [eV/atom]
+
+      ! Test against Mulliken charges:
+      !print*, 'Frag:', i, SUM(matter%Atoms( Scell(NSC)%MDAtoms(:)%KOA )%NVB - Scell(NSC)%MDAtoms(:)%q, MASK=fragment_mask(:)), Scell(NSC)%fragments%N_e(i) ! tested, correct
+
+
 
       ! 3) Electronic chemical potential and temperature in the fragment "i"
       ! Get the equivalent temperature and chem.potential of electrons in this fragment:
