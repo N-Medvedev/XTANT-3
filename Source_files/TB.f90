@@ -2072,7 +2072,7 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
 
       ! Test unballanced charge:
       Q_tot = SUM(Scell%MDAtoms(:)%q)     ! Total
-      if ( abs(Q_tot) > abs(Scell%Q*Scell%Na)+1.0d-8 ) then ! sample charged
+      if ( abs(Q_tot) > abs(Scell%Q*Scell%Na)+1.0d-6 ) then ! sample charged
          print*, 'PROBLEM #1 in get_Mulliken_each_atom: total charge not conserved:', Q_tot, abs(Scell%Q*Scell%Na)
       endif
       ! and element resolved:
@@ -2080,8 +2080,11 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
          if (matter%Atoms(i)%mulliken_q /= 0.0d0) then ! mulliken is precalculated
             Q_tot = SUM(Scell%MDAtoms(:)%q, MASK = (Scell%MDatoms(:)%KOA == i) ) ! element "i"
             n_ak = real(count(Scell%MDatoms(:)%KOA == i))      ! number of atoms of this kind
-            if ( abs((Q_tot/n_ak) - matter%Atoms(i)%mulliken_q) > 1.0d-4*max(abs(Q_tot/n_ak), abs(matter%Atoms(i)%mulliken_q)) ) then
-               print*, 'PROBLEM #2 in get_Mulliken_each_atom: element charge not conserved:', i, Q_tot/n_ak, matter%Atoms(i)%mulliken_q, n_ak
+            Q_tot = Q_tot / n_ak    ! per atom
+            if ( (abs(Q_tot) > 1.0d-8) .and. (abs(matter%Atoms(i)%mulliken_q) > 1.0d-8) ) then ! only for non-zero charge
+               if ( abs(Q_tot - matter%Atoms(i)%mulliken_q) > 1.0d-4*max(abs(Q_tot), abs(matter%Atoms(i)%mulliken_q)) ) then
+                  print*, 'PROBLEM #2 in get_Mulliken_each_atom: element charge not conserved:', i, Q_tot, matter%Atoms(i)%mulliken_q, n_ak
+               endif
             endif
          endif
       enddo
@@ -5991,7 +5994,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
                   if (abs(temp) > 1.0d-12) then
                      do i_at = 1, N_at
                         do i_types = 1, N_types
-                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp
+                           !partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(conjg(CHij(:,j))*CHij(:,j), MASK = masks_DOS(i_at, i_types, :))/temp   ! produces wrong pDOS (e.g. d-states in C where shouldn't be any)
                            partial_DOS_sum(i_at, i_types, i) = partial_DOS_sum(i_at, i_types, i) + Gaus*SUM(dble(D(:,j)), MASK = masks_DOS(i_at, i_types, :))/temp      ! Works, tested
                         enddo
                      enddo
