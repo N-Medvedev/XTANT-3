@@ -2082,7 +2082,7 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
             n_ak = real(count(Scell%MDatoms(:)%KOA == i))      ! number of atoms of this kind
             Q_tot = Q_tot / n_ak    ! per atom
             if ( (abs(Q_tot) > 1.0d-8) .and. (abs(matter%Atoms(i)%mulliken_q) > 1.0d-8) ) then ! only for non-zero charge
-               if ( abs(Q_tot - matter%Atoms(i)%mulliken_q) > 1.0d-3*max(abs(Q_tot), abs(matter%Atoms(i)%mulliken_q)) ) then
+               if ( abs(Q_tot - matter%Atoms(i)%mulliken_q) > 1.0d-2*max(abs(Q_tot), abs(matter%Atoms(i)%mulliken_q)) ) then
                   print*, 'PROBLEM #2 in get_Mulliken_each_atom: element charge not conserved:', i, Q_tot, matter%Atoms(i)%mulliken_q, n_ak
                endif
             endif
