@@ -2529,6 +2529,7 @@ subroutine write_gnuplot_script_ending(numpar, FN, File_name, ind)
          !call system('chmod +x '//trim(adjustl(File_name))) ! make the output-script executable
          command = 'chmod +x '//trim(adjustl(File_name))
          iret = system(command)
+         !call execute_command_line(command)
 
          !call system(trim(adjustl(File_name))) ! execute the prepared script
       case (2:)
@@ -2538,6 +2539,7 @@ subroutine write_gnuplot_script_ending(numpar, FN, File_name, ind)
          command = 'chmod +x '//trim(adjustl(File_name))
          iret = system(command)
          !call system(trim(adjustl(File_name))) ! execute the prepared script
+         !call execute_command_line(command)
       endselect
    endif
 end subroutine write_gnuplot_script_ending

@@ -158,6 +158,32 @@ def read_powder_file(path):
 POWDER_COLUMNS = ["Angle", "Total", "In-In", "In-O", "O-O"]
 
 
+def compute_grid_shape(n):
+    """
+    Choose a (nrows, ncols) subplot grid for n panels, balancing two things:
+    leftover empty slots (bad - wasted space) and how far from square/wide
+    the grid is (bad - a 1x11 or 11x1 strip is hard to read even though it
+    has zero empty slots). Composite counts (especially even ones, e.g.
+    6 -> 2x3, 8 -> 2x4, 10 -> 2x5, 12 -> 3x4) naturally land on an exact,
+    tidy fit; prime/awkward counts (5, 7, 11, 13, ...) get a small amount
+    of empty space instead of an elongated strip.
+    """
+    n = max(1, int(n))
+    max_cols = min(n, max(5, int(np.ceil(np.sqrt(n))) + 2))
+
+    best = None
+    for cols in range(1, max_cols + 1):
+        rows = int(np.ceil(n / cols))
+        empty = rows * cols - n
+        squareness = abs(rows - cols)
+        cost = empty + 0.5 * squareness
+        key = (cost, -cols)  # minimize cost, then prefer more columns (wider layout) on ties
+        if best is None or key < best[0]:
+            best = (key, rows, cols)
+
+    return best[1], best[2]
+
+
 def find_peak_in_window(block, angle_nominal, window_deg, col_index):
     """
     Within angle_nominal +/- window_deg, find the local maximum of the
@@ -221,8 +247,7 @@ def main():
     peaks_intensities_matched = peak_inten[matched_peak_idx, :]
 
     # ---------------- Plot 1: intensity comparison ----------------
-    ncols = 3
-    nrows = int(np.ceil(npeaks / ncols))
+    nrows, ncols = compute_grid_shape(npeaks)
     fig1, axes1 = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows), squeeze=False)
     for p in range(npeaks):
         ax = axes1[p // ncols][p % ncols]
@@ -246,7 +271,7 @@ def main():
     fig1.savefig(OUTPUT_PNG_INTENSITY, dpi=200)
     print(f"Saved: {OUTPUT_PNG_INTENSITY}")
 
-    # ---------------- Plot 2: peak position comparison ----------------
+    # ---------------- Plot 2: peak position comparison (same grid shape as Plot 1) ----------------
     fig2, axes2 = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows), squeeze=False)
     for p in range(npeaks):
         ax = axes2[p // ncols][p % ncols]

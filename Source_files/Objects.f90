@@ -641,6 +641,7 @@ end type Displacement_analysis
 type :: diffraction_peaks
    real(8) :: hw    ! photon energy of the diffraction probe [eV]
    real(8) :: l     ! lambda, photon wavelength [A]
+   real(8) :: d_theta   ! [deg] step in the powder diffraction data
    ! Diffraction peaks for given Miller indices::
    real(8), dimension(:), allocatable :: I_diff_peak, I_diff_peak_first ! peak intensities
    integer, dimension(:,:), allocatable :: ijk_diff_peak    ! Miller indices

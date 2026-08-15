@@ -581,8 +581,11 @@ subroutine set_powder_diffraction_grid(numpar, Scell)
 
    if (numpar%save_diff_peaks) then ! only if diffraction is required
       ! Choose the number of points:
-      d_theta = 1.0d0   ! [deg]
+      !d_theta = 1.0d0   ! [deg]
+      d_theta = Scell%diff_peaks%d_theta   ! [deg]
+
       Nsiz = int(180.0d0 / d_theta)  ! points in theta grid [deg]
+
       allocate(Scell%diff_peaks%two_theta(Nsiz))
       allocate(Scell%diff_peaks%I_powder(Nsiz))
       ! Set the 2-theta grid:
@@ -7548,30 +7551,44 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
    !----------------------------------
    case ('Diffraction', 'diffraction', 'DIFFRACTION', 'Diffract', 'DIFFRACT', 'diffract', 'diffraction_peaks')
       ! Calculate evolution of the following diffraction peaks:
-      read(string_in,*,IOSTAT=Reason) string, N, Scell(1)%diff_peaks%hw ! number of peaks; photon enegry [eV]
-      ! Get the photon wavelength:
-      Scell(1)%diff_peaks%l = g_2Pi * g_h * g_cvel / (Scell(1)%diff_peaks%hw*g_e)     ! [m]
-
-      if (N >= 0) then   ! allocate number of peaks:
-         numpar%save_diff_peaks = .true.
-         allocate(Scell(1)%diff_peaks%I_diff_peak(N), source = 0.0d0)
-         allocate(Scell(1)%diff_peaks%ijk_diff_peak(3,N), source = 0)
+      ! number of peaks; photon enegry [eV]; d_theta [deg]
+      read(string_in,*,IOSTAT=Reason) string, N, Scell(1)%diff_peaks%hw, Scell(1)%diff_peaks%d_theta
+      if (Reason /= 0) then ! assume legacy format: without the grid resolution
+         read(string_in,*,IOSTAT=Reason) string, N, Scell(1)%diff_peaks%hw
+         Scell(1)%diff_peaks%d_theta = 1.0d0    ! default: 1 [deg]
       endif
-      ! read all the peaks:
-      do i = 1, N
-         read(FN,*,IOSTAT=Reason) Scell(1)%diff_peaks%ijk_diff_peak(1,i), &
-                                  Scell(1)%diff_peaks%ijk_diff_peak(2,i), Scell(1)%diff_peaks%ijk_diff_peak(3,i)
-         if (Reason /= 0) then ! did not read well, cannot do diffraction peaks:
-            write(temp_ch1, '(i0)') i
-            write(*,'(a)') 'Incorrect format in diffraction peak provided, #'//trim(adjustl(temp_ch1))
-            write(*,'(a)') 'Diffraction peaks will not be calculated'
-            deallocate(Scell(1)%diff_peaks%I_diff_peak)
-            deallocate(Scell(1)%diff_peaks%ijk_diff_peak)
-            numpar%save_diff_peaks = .false.
-            exit
-         endif
-      enddo
+      if (Reason /= 0) then ! assume legacy format: without the grid resolution
+         write(temp_ch1, '(i0)') i
+         write(*,'(a)') 'Incorrect format in diffraction definition, #'//trim(adjustl(string_in))
+         write(*,'(a)') 'Diffraction will not be calculated'
+         deallocate(Scell(1)%diff_peaks%I_diff_peak)
+         deallocate(Scell(1)%diff_peaks%ijk_diff_peak)
+         numpar%save_diff_peaks = .false.
+      else ! read well
 
+         ! Get the photon wavelength:
+         Scell(1)%diff_peaks%l = g_2Pi * g_h * g_cvel / (Scell(1)%diff_peaks%hw*g_e)     ! [m]
+
+         if (N >= 0) then   ! allocate number of peaks:
+            numpar%save_diff_peaks = .true.
+            allocate(Scell(1)%diff_peaks%I_diff_peak(N), source = 0.0d0)
+            allocate(Scell(1)%diff_peaks%ijk_diff_peak(3,N), source = 0)
+         endif
+         ! read all the peaks:
+         do i = 1, N
+            read(FN,*,IOSTAT=Reason) Scell(1)%diff_peaks%ijk_diff_peak(1,i), &
+                                  Scell(1)%diff_peaks%ijk_diff_peak(2,i), Scell(1)%diff_peaks%ijk_diff_peak(3,i)
+            if (Reason /= 0) then ! did not read well, cannot do diffraction peaks:
+               write(temp_ch1, '(i0)') i
+               write(*,'(a)') 'Incorrect format in diffraction peak provided, #'//trim(adjustl(temp_ch1))
+               write(*,'(a)') 'Diffraction peaks will not be calculated'
+               deallocate(Scell(1)%diff_peaks%I_diff_peak)
+               deallocate(Scell(1)%diff_peaks%ijk_diff_peak)
+               numpar%save_diff_peaks = .false.
+               exit
+            endif
+         enddo
+      endif ! (Reason /= 0)
    !----------------------------------
    case ('DW', 'dw', 'DebyeWaller', 'Debye-Waller', 'Debye_Waller')
       ! Calculate Debye-Waller diffraction peaks with the following parameters:

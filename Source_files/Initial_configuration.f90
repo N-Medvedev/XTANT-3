@@ -833,14 +833,20 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
 
    ! If we didn't set the density for MC, use it from the MD part:
    if (matter%dens <= 0.0d0) then
-      matter%At_dens = dble(Scell(1)%Na)/(Scell(1)%V*1.0d-24)
-      matter%dens = matter%At_dens*(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3) ! just in case there was no better given density (no cdf file was used)
+      matter%At_dens = dble(Scell(1)%Na)/(Scell(1)%V*1.0d-24)     ! [atom/cm^3]
+      matter%dens = matter%At_dens*(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3) ! [g/cm^3]
    else
       matter%At_dens = matter%dens/(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3)   ! atomic density [1/cm^3]
    endif
 
+   print*, 'Atomic density: ', matter%dens
+
+
    ! Identify the sample size (may be different from the supercell size:
    call find_sample_size(Scell(1))      ! module "Atomic_tools"
+
+   print*, "V size: ", Scell(1)%V, Scell(1)%V_sample
+
 
 3416 continue
 !     do i = 1, Scell(1)%Na

@@ -1,33 +1,37 @@
-Diamond            ! material name directory; file with supercell and atomic coordinates
+Diamond             ! material name directory; file with supercell and atomic coordinates
 -                   ! chemical formula (or a file with it; "-" means file with the default name, "material".txt)
 300.0               ! initial electron temperature [K]
 300.0               ! initial atomic temperature [K]
--10.0                 ! start of simulation [fs]
+-50.0               ! start of simulation [fs]
 1000.0              ! end of simulation [fs]
 1                   ! number of laser pulses
-d   0.0e0   !5.0d0  1.0e0   ! "d" absorbed dose [eV/atom] / "f" fluence [J/cm^2] ; (min, max, step)
-92.0		10.0    ! hw, mean photon energy [eV], FWHM of the distribution of hw [eV]
-5.0e0              ! pulse FWHM-duration [fs]
-1                   ! type of pulse to be analysed: 0=rectangular, 1=Gaussian, 2=SASE
+d   1.0e0   !5.0d0  1.0e0   ! "d" absorbed dose [eV/atom] / "f" fluence [J/cm^2] ; (min, max, step)
+92.0		5.0    	! hw, mean photon energy [eV] (or file with photon spectrum), FWHM of the distribution of hw [eV]
+5.0e0              	! pulse FWHM-duration [fs]
+1                   ! type of pulse to be used: 0=rectangular, 1=Gaussian, 2=SASE
 0.0e0               ! position of the maximum of the laser pulse [fs]
-!verbose
-!print_CDF
-!print_Ta
-!redo_MFP
-!print_MFP
-!print_fragments
-exact_Ta
+! OPTIONAL PARAMETERS:
+exact_Ta			! set atomic temperature exactly (skews distribution a little; alternatively, comment out for exact distribution but not precise temperature)
+!verbose			! print out a lot of extra info on screen
+!print_CDF			! print out evaluated CDF for MC simulations
+!print_Ta			! printout various definitions of atomic temperature (config. works only for Pettifor TB)
+!redo_MFP			! recalculate electronic mean free paths
+print_MFP  			! print out all mean free paths
+!print_fragments	! print out analysis of fragments (for ablation etc.)
 !Output_name test
-output_add	boundary_test
-!V_scaling   2       ! velocity scaling: 0=global; 1=local electron-recoil; 2=individual atom
-!size           ! cohesive energy analysis
-!Diffraction 5   8050.0d0    ! do diffraction peaks, N, for given hw
+output_add	test_run
+!V_scaling   2      ! velocity scaling: 0=global; 1=local electron-recoil; 2=individual atom
+!size				! to do cohesive energy analysis vs. size of the supercell
+0.7 2.0 100
+!coupling			! evaluate electron-phonon coupling over number of simulations specified
+!10
+Diffraction 5   8050.0e0	0.1e0    ! model diffraction peaks; number of peaks; chosen photon energy [eV]; angular step for powder diffraction [deg]
 1 1 1
 2 2 0
 3 1 1
 4 0 0
 3 3 1
-DW
+DW					! do Debye-Waller analysis too
 NUMERICAL_PARAMETERS
 2   2   2       ! number of unit-cells in X,Y,Z
 1   1   1       ! periodicity along X,Y,Z directions (0=free, 1=periodic, 2=absorbing, 3=reflecting, 4=white)
@@ -57,7 +61,7 @@ F   0   0.35    ! include SCC (True, False), model of gamma (default 0); mixing 
 0               ! printout Mulliken charges for types of atoms
 0   0.5	50.0  !fa!  0.02  1.0  ! fe: N, dE, Emax: N = 0=no, 1=fe on Ei(TB), -1 orb., 2=fe, -2=fs on grid only, 3=incl.orb. (opt: dEa, Eamax)
 0           ! printout atomic pair correlation function (1) or not (0)
-2   qe      ! printout atomic R in XYZ (1), no (0), +SAVE_[].xyz (2), vel.(3), only SAVE[].xyz (-1); col#2: q=charge, e=E_kin, m=mass
+3   qe      ! printout atomic R in XYZ (1), no (0), +SAVE_[].xyz (2), +vel.(3), only SAVE[].xyz (-1); col#2: q=charge, e=E_kin, m=mass
 0           ! printout atomic R in CIF (1), no (0)
 0           ! printout raw data file OUTPUT_coordinates_and_velosities.dat (1) or not (0)
 name:all	power:1          ! power of mean displacement to print out (set integer N: <[R(t)-R(t=0)]^N>)
@@ -68,5 +72,5 @@ png	py	mp4         ! format of figures (eps, jpeg, gif, png, pdf); gnu or py; vi
 4   1   1.0d-1  40.0d0  1.0d-1  ! optic coefs: 0=no, 1=Drude, 2=Trani-k, 3=Gamma, 4=KG; spectr (1) w/ KK (2), or no (0); min, max, d_hw (eV)
 2   800.0   -10.0   ! how many rays (0=exclude, 1=1st ray, (>1)=sum all); probe-pulse wavelength [nm]; FWHM probe pulse [fs]
 0.0    50.0d0      ! angle of prob-pulse with respect to normal [degrees]; material thickness [nm]
-!AUGER
-1	1	10.0d0
+!AUGER				! Replace characteristic Auger decay times [fs] for:
+1	1	10.0d0		! given element in the compound; given shell; time to use [fs]
