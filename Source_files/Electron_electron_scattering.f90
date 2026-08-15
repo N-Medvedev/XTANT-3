@@ -32,7 +32,7 @@ use Atomic_tools, only : shortest_distance
 implicit none
 PRIVATE
 
-public :: get_Boltzmann_alpha_beta, Boltzmann_solution, test_change_of_fe, Electron_electron_scattering_Kij
+public :: get_Boltzmann_alpha_beta, Boltzmann_solution, Boltzmann_solution2, test_change_of_fe, Electron_electron_scattering_Kij
 
 
  contains
@@ -118,6 +118,121 @@ subroutine get_Boltzmann_alpha_beta(Scell, i, Ev, K_ij, fe, dt, alpha_ij, beta_i
 
    !pause 'get_Boltzmann_alpha_beta'
 end subroutine get_Boltzmann_alpha_beta
+
+
+
+
+
+! Electron-electron scatterign integral:
+subroutine Boltzmann_solution2(Ev, i, fe, dt, I_ik)
+   ! The scattering between two electrons:
+   ! i -> j (and incoming j -> i)
+   ! k -> l (and incoming l -> k)
+   real(8), dimension(:), intent(in) :: Ev            ! energy levels [eV]
+   integer, intent(in) :: i   ! current energy level
+   !real(8), dimension(:), intent(inout) :: fe_temp    ! electron distribution function on the curent time-step
+   real(8), dimension(:), intent(in) :: fe            ! electron distribution function on the last time-step
+   real(8), intent(in) :: dt        ! time step [fs]
+   real(8), dimension(:,:), intent(inout) :: I_ik     ! collision integral between levels i and k
+   !--------------------------
+   real(8), dimension(:,:), allocatable :: M_ee    ! e-e scattering matrix element |M_ij|^2
+   real(8), dimension(:), allocatable :: fe_add
+   integer :: j, k, N, j_g
+   real(8) :: A, B, prefac, eps, Ei, Ej, Ek, El, fe_l, sum_fe_temp_i, sum_fe_temp_k, df
+   logical :: within_range ! check if final energy level is within possible range
+
+   eps = 1.0d-20  ! scattering allowed window [1/fs]
+
+   N = size(fe)   ! Number of electrons (normalization of fe)
+
+   prefac = 2.0d0 * g_e * 1.0d-15 / (g_h)  ! [1/fs] prefactor
+
+   Ei = Ev(i) ! [eV] initial level of 1st electron
+
+   allocate(M_ee(N,N), source = 1.0d-6)   ! test
+   allocate(fe_add(N), source = 0.0d0)    ! to start with
+
+   sum_fe_temp_i = 0.0d0      ! to start with
+   sum_fe_temp_k = 0.0d0      ! to start with
+
+
+   ! And all initial state of the second electron:
+   do k = i, N
+      if (k == i) cycle ! no self-interaction
+
+      Ek = Ev(k) ! [eV] initial level of 2d electron
+
+      ! Sum over all final states of the electron "i"
+      do j = 1, N
+
+         Ej = Ev(j) ! [eV] final level of 1st electron
+
+         El = Ek + (Ei - Ej) ! [eV] final energy of 2d electron
+
+         ! Check if such a transition is possible:
+         within_range = .true. ! to start with
+         ! Same for the second electron:
+         if (El < Ev(1) .or. El > Ev(N)) then
+            within_range = .false.
+         endif
+
+         ! Zero contributions:
+         if (fe(i) < 1.0d-12 .and. fe(j) < 1.0d-12) then
+            within_range = .false.
+         endif
+
+         !print*, i, j, k, within_range, El, Ev(1), Ev(N)
+
+         ! If such scattering is possible:
+         if (within_range) then
+            ! Find the value of distribution in-between the energy levels (final state of 2d electron):
+            call mean_distribution(Ev, fe, El, fe_l, i_f1=j_g, method=6) ! see below
+            if (j_g > 0) then ! scattering is possible
+
+               df = M_ee(i,k) * ( fe(j) * fe_l  * (2.0d0 - fe(i)) * (2.0d0 - fe(k)) - &
+                                  fe(i) * fe(k) * (2.0d0 - fe(j)) * (2.0d0 - fe_l ) )
+
+               ! Upper triangle:
+               !sum_fe_temp_i = sum_fe_temp_i + df
+               I_ik(i,k) = I_ik(i,k) + prefac * df
+
+               ! Lower triangle:
+               !fe_add(k) = fe_add(k) + M_ee(i,j) * ( fe(j) * fe_l  * (2.0d0 - fe(k)) * (2.0d0 - fe(i)) - &
+               !                                      fe(k) * fe(i) * (2.0d0 - fe(j)) * (2.0d0 - fe_l ) )
+               !fe_add(k) = fe_add(k) + df
+
+               !print*, i, j, k, sum_fe_temp_i, df
+               !if ((i == N) .or. (k == N)) then
+               !   print*, 'df:', i, j, k, df
+               !   print*, 'f :', fe(i), fe(j), fe(k), fe_l
+               !   print*, 'E :', Ei, Ej, Ek, El
+               !endif
+            endif
+         endif ! (within_range)
+      enddo ! j = 1, N
+
+      ! Lower triangle:
+
+      I_ik(k,i) = I_ik(i,k)
+   enddo ! k = 1, N
+
+
+   !do j = 1, N
+   !   print*, i, j, sum_fe_temp_i, fe_add(j)
+   !enddo
+
+
+   ! Given point:
+   !fe_temp(i) = fe(i) + prefac * sum_fe_temp_i * dt
+
+   ! Lower triangle:
+   !fe_temp(:) = fe(:) + prefac * fe_add(:) * dt
+
+   ! clean up:
+   if (allocated(M_ee)) deallocate(M_ee)
+   if (allocated(fe_add)) deallocate(fe_add)
+end subroutine Boltzmann_solution2
+
 
 
 ! Electron-electron scatterign integral:
@@ -228,7 +343,7 @@ subroutine mean_distribution(Ev, fe, Ef, fe_f, i_f1, method)
    integer i_f, i_cur, N, i_start, i_end
    
    N = size(eV) ! number of energy levels
-   sigma = 0.1d0 ! [eV] width of each energy level assigned
+   sigma = 1.0d0 ! [eV] width of each energy level assigned
    three_sigma = 3.0d0*sigma
    
    ! Find the closest energy level (from above) of the second scattering electron
@@ -285,6 +400,8 @@ subroutine mean_distribution(Ev, fe, Ef, fe_f, i_f1, method)
             call Fermi_interpolation(Ev, fe, Ef, fe_f, i_f) ! module "Little_subroutines"
 
          endif ! ((Ev(i_f) - Ev(i_f-1)) < three_sigma)
+      else
+         fe_f = fe(1)
       endif ! i_f
 
    case (7) ! Try just the average of the two :: POOR CONSERVATION

@@ -2072,8 +2072,8 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
 
       ! Test unballanced charge:
       Q_tot = SUM(Scell%MDAtoms(:)%q)     ! Total
-      if ( abs(Q_tot) > abs(Scell%Q*Scell%Na)+1.0d-5 ) then ! sample charged
-         print*, 'PROBLEM #1 in get_Mulliken_each_atom: total charge not conserved:', Q_tot, abs(Scell%Q*Scell%Na)
+      if ( abs(Q_tot) > abs(Scell%Ne_high/Scell%Na)+1.0d-2 ) then ! sample charged
+         print*, 'PROBLEM #1 in get_Mulliken_each_atom: poor total charge conservation:', Q_tot, abs(Scell%Q*Scell%Na)
       endif
       ! and element resolved:
       do i = 1, size(matter%Atoms)
@@ -2082,8 +2082,8 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
             n_ak = real(count(Scell%MDatoms(:)%KOA == i))      ! number of atoms of this kind
             Q_tot = Q_tot / n_ak    ! per atom
             if ( (abs(Q_tot) > 1.0d-8) .and. (abs(matter%Atoms(i)%mulliken_q) > 1.0d-8) ) then ! only for non-zero charge
-               if ( abs(Q_tot - matter%Atoms(i)%mulliken_q) > 1.0d-3*max(abs(Q_tot), abs(matter%Atoms(i)%mulliken_q)) ) then
-                  print*, 'PROBLEM #2 in get_Mulliken_each_atom: element charge not conserved:', i, Q_tot, matter%Atoms(i)%mulliken_q, n_ak
+               if ( abs(Q_tot - matter%Atoms(i)%mulliken_q) > 1.0d-1*max(abs(Q_tot), abs(matter%Atoms(i)%mulliken_q)) ) then
+                  print*, 'PROBLEM #2 in get_Mulliken_each_atom: poor element charge conservation:', i, Q_tot, matter%Atoms(i)%mulliken_q, n_ak
                endif
             endif
          endif

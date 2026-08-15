@@ -24,11 +24,11 @@
 MODULE Electron_tools
 use Universal_constants
 use Objects
-use Algebra_tools, only : Two_Vect_Matr
+use Algebra_tools, only : Two_Vect_Matr, sort_array
 use Little_subroutines, only : Find_in_array_monoton, Fermi_interpolation, linear_interpolation, print_progress
 use MC_cross_sections, only : TotIMFP, Mean_free_path
-use Electron_electron_scattering, only: get_Boltzmann_alpha_beta, Boltzmann_solution, test_change_of_fe, &
-                                        Electron_electron_scattering_Kij
+use Electron_electron_scattering, only: get_Boltzmann_alpha_beta, Boltzmann_solution, Boltzmann_solution2, &
+                                        test_change_of_fe, Electron_electron_scattering_Kij
 
 
 #ifdef MPI_USED
@@ -468,7 +468,7 @@ subroutine Do_e_e_collision(Scell, numpar, skip_thermalization)
    call Electron_Fixed_Etot(Scell%Ei, Scell%Ne_low, Scell%nrg%El_low, Scell%mu, Scell%TeeV, .true.) ! below (FAST)
    Scell%Te = Scell%TeeV*g_kb ! save also in [K]
 
-   ! Construct Fermi function with the given transient parameters:
+   ! Construct equivalent Fermi function with the given transient parameters:
    i_fe = size(Scell%fe)   ! number of grid points in distribution function
    if (.not.allocated(Scell%fe_eq)) allocate(Scell%fe_eq(i_fe), source = 0.0d0)
    call set_Fermi(Scell%Ei, Scell%TeeV, Scell%mu, Scell%fe_eq)   ! below
@@ -478,10 +478,12 @@ subroutine Do_e_e_collision(Scell, numpar, skip_thermalization)
    ! Solve Boltzmann collision integral:
    if (.not.skip_step) then ! do the e-e collisions step:
       ! If we don't use substeps:s
-      !call Boltzmann_e_e_IN(Scell, numpar, Scell%Ei, Scell%fe, numpar%dt) ! below
-
+      !call Boltzmann_e_e_IN(Scell, numpar, Scell%Ei, Scell%fe, numpar%dt) ! below; DOESN'T CONSERVE PARTICLES
       ! If we want to use substeps:
-      call Boltzmann_e_e_IN(Scell, numpar, Scell%Ei, Scell%fe, numpar%dt, Npoints=int(numpar%tau_fe)) ! below
+      !call Boltzmann_e_e_IN(Scell, numpar, Scell%Ei, Scell%fe, numpar%dt, Npoints=int(numpar%tau_fe)) ! below; DOESN'T CONSERVE PARTICLES
+
+      ! Let's try splitting upper and lower triangles in collision matrix:
+      call Boltzmann_e_e_IN2(Scell, numpar, Scell%Ei, Scell%fe, numpar%dt, Npoints=int(numpar%tau_fe)) ! below
    endif ! (.not.skip_step)
 
 
@@ -492,6 +494,103 @@ subroutine Do_e_e_collision(Scell, numpar, skip_thermalization)
    ! clean up:
    deallocate(M_ee)
 end subroutine Do_e_e_collision
+
+
+
+
+! Electron-electron collision integral, version with splitting upper and lower triangles
+subroutine Boltzmann_e_e_IN2(Scell, numpar, Ev, fe, dt, Npoints) ! calculates change of distribution function via Boltzmann collision integral
+! See examples of Boltzmann equation in energy space e.g. in
+! [B. Rethfeld, A. Kaiser, M. Vicanek and G. Simon, Phys.Rev.B 65, 214303, (2002)]
+! (although we use here only electron-electron integral, and with very different matrix element)
+   type(Super_cell), intent(inout) :: Scell ! supercell with all the atoms as one object
+   type(Numerics_param), intent(in) :: numpar	! numerical parameters, including lists of earest neighbors
+   real(8), dimension(:), intent(in) :: Ev     ! [eV] electron energy levels
+   real(8), dimension(:), intent(inout) :: fe  ! electron distribution function (ocupation numbers of the energy levels Ei)
+   real(8), intent(in) :: dt ! [fs] time-step
+   integer, intent(in), optional :: Npoints     ! number of additional time-points (substeps)
+   !-----------------------------------------
+   real(8), dimension(:), allocatable :: fe_temp, f_cur      ! temporary distribution function
+   real(8), dimension(:,:), allocatable :: M_ee ! electron-electron scattering matrix elements
+   real(8), dimension(:,:), allocatable :: I_ik ! electron-electron collision integral between i and k
+   real(8) :: dt_small, E_tot, E_tot2, N_tot, N_tot2
+   integer :: N_steps_default, N_steps, N, i_step, i
+
+   N = size(fe)   ! total number of energy levels available
+
+   allocate(fe_temp(N), source = fe)
+   allocate(f_cur(N), source = fe)
+   !allocate(M_ee(N,N), source = 0.0d0)
+   allocate(I_ik(N,N), source = 0.0d0)
+
+
+   ! Test the energy conservation:
+   call set_total_el_energy(Ev,fe_temp,E_tot)
+
+
+   ! Precalculate the overlap-matrix coefficients:
+   !call get_electron_electron_overlap(Scell, M_ee)    ! below
+   !M_ee = 0.01d0  ! just to test
+
+
+
+   ! Do with a number of smaller time-steps:
+   N_steps_default = 10
+   if (present(Npoints)) then
+      if (Npoints > 0) then
+         N_steps = Npoints
+      else
+         N_steps = N_steps_default   ! number of time-substeps
+      endif
+   else
+      N_steps = N_steps_default   ! number of time-substeps
+   endif
+
+   dt_small = dt / dble(N_steps)    ! [fs] size of the substep
+   do i_step = 1, N_steps    ! time substeps
+
+      ! For all levels i and k:
+      do i = 1, N ! all energy levels on which we're looking for changes (left-hand side of the equation)
+         call Boltzmann_solution2(Ev, i, fe_temp, dt_small, I_ik) ! module "Electron_electron_scattering"
+      enddo ! i
+
+      ! Get the change of the distribution function:
+      do i = 1, N ! all energy levels on which we're looking for changes (left-hand side of the equation)
+         f_cur(i) = fe_temp(i) + SUM( I_ik(i,:) ) * dt
+      enddo ! i
+
+      ! Time-propagation:
+      fe_temp(:) = f_cur(:)   ! update for the next substep
+
+   enddo ! i_step = 1, N_steps
+
+
+   ! Test the particle and energy conservation:
+   call set_total_el_energy(Ev, fe_temp, E_tot2)      ! below
+   N_tot = SUM(fe)
+   N_tot2 = SUM(fe_temp)
+   if (ABS(N_tot2-N_tot) > 1.0d-6*N_tot) then
+      print*, 'PROBLEM #1 in Boltzmann_e_e_IN2:', N_tot, N_tot2, ABS(N_tot2-N_tot)/N_tot*100.0d0
+   endif
+   if (ABS(E_tot-E_tot2) > 1.0d-6*abs(E_tot)) then
+      print*, 'PROBLEM #2 in Boltzmann_e_e_IN2:', E_tot, E_tot2, ABS(E_tot2 - E_tot)/ABS(E_tot)*100.0d0
+   endif
+
+   ! Test the changes in the distribution function:
+   !do i = 1, N
+   !   print*, i, fe(i), fe_temp(i)
+   !enddo
+   !pause 'Boltzmann_e_e_IN2'
+
+   ! Output: updated distribution function:
+   fe = fe_temp
+
+   ! clean up:
+   if (allocated(fe_temp)) deallocate(fe_temp)
+   if (allocated(f_cur)) deallocate(f_cur)
+   if (allocated(M_ee)) deallocate(M_ee)
+   if (allocated(I_ik)) deallocate(I_ik)
+end subroutine Boltzmann_e_e_IN2
 
 
 
@@ -637,7 +736,7 @@ subroutine Boltzmann_e_e_IN(Scell, numpar, Ev, fe, dt, Npoints) ! calculates cha
          endif
 
 !$omp do schedule(dynamic) private(i)
-         do i = 1, N ! all energy levels on which we looking for changes (left-hand side of the equation)
+         do i = 1, N ! all energy levels on which we're looking for changes (left-hand side of the equation)
             ! Without substeps:
             !call Boltzmann_solution(i, fe_temp, fe, dt, 0) ! module "Electron_electron_scattering"
             ! With substeps:
@@ -1503,11 +1602,12 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
    type(solid), intent(inout) :: matter         ! material parameters
    !-----------------------------------
    real(8) :: Te_frag, mu_frag, Ne, Ee
-   integer :: i, Nsiz, j, Nlev, i_at, i_orb, N_at, N_orb, N_orb_tot
+   integer :: i, Nsiz, j, Nlev, i_at, i_orb, N_at, N_orb, N_orb_tot, N_incr, Nstart, Nend
    logical :: needs_allocation
    logical, dimension(:), allocatable :: orbital_fragments
    !logical, dimension(size(Scell(NSC)%MDAtoms)) :: fragment_mask
    logical, dimension(:), allocatable :: fragment_mask
+   real(8), dimension(:), allocatable :: e_spectrum, E_e_spectrum
 
    !real(8), dimension(:), allocatable :: fe_eq_frag
 
@@ -1582,6 +1682,15 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
    Scell(NSC)%fragments%N_e(:) = 0.0d0 ! restart counting
    Scell(NSC)%fragments%E_e(:) = 0.0d0 ! restart counting
 
+   N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
+   Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
+   Nend = N_at
+
+   ! Electron spectrum on all orbitals:
+   allocate(e_spectrum(size(Scell(NSC)%fe)), source = 0.0d0)
+   !allocate(E_e_spectrum(size(Scell(NSC)%fe)), source = 0.0d0)   ! not needed currently
+
+
    do i = 1, Nsiz
       !Scell(NSC)%fragments%N_e(i) = SUM( Scell(NSC)%fe(:), MASK = orbital_fragments(:) ) ! TOO CRUDE, DESON'T WORK WELL
 
@@ -1590,26 +1699,57 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
       Ne = 0.0d0  ! to start with
       Ee = 0.0d0  ! to start with
 
-      !$omp PARALLEL private(i_at, i_orb, j)
-      !$omp do reduction(+ : Ne, Ee)
-      do i_at = 1, N_at ! all atoms
-         do i_orb = 1, N_orb  ! all orbitals of each atom
+#ifdef MPI_USED   ! only does anything if the code is compiled with MPI
+      do do i_at = Nstart, Nend, N_incr  ! each process does its own part
+         do i_orb = 1, N_orb  ! all orbitals of this atom i_at
             j = (i_at-1)*N_orb + i_orb ! current orbital among all
 
             if (fragment_mask(i_at)) then ! this atom belongs to this fragment
                ! 1) Number of electrons in the fragment "i":
-               Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(j,:))     ! same as in Mulliken charges
                !Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(:,j))      ! test
-               !mulliken_Ne(i_at) = mulliken_Ne(i_at) + SUM(Scell%fe(:) * D(j,:))  ! tested, correct distribution of charges
+               !Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(j,:))     ! same as in Mulliken charges
+               e_spectrum(j) = SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(j,:))     ! same as in Mulliken charges
+               Ne = Ne + e_spectrum(j)     ! add to the number of electronis in this fragment
 
                ! 2) Electrons energy in the fragment "i"
-               Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(j,:))    ! same as in Mulliken
                !Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(:,j))     ! test
+               Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(j,:))    ! same as in Mulliken
+            endif
+         enddo   ! i_orb
+      enddo ! i_at
+
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in get_fragments_data_for_electrons:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{e_spectrum}', e_spectrum) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Ne}', Ne) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{Ee}', Ee) ! module "MPI_subroutines"
+
+#else ! use OpenMP instead
+      !$omp PARALLEL private(i_at, i_orb, j)
+      !$omp do reduction(+ : Ne, Ee)
+      do i_at = 1, N_at ! all atoms
+         do i_orb = 1, N_orb  ! all orbitals of this atom i_at
+            j = (i_at-1)*N_orb + i_orb ! current orbital among all
+
+            if (fragment_mask(i_at)) then ! this atom belongs to this fragment
+               ! 1) Number of electrons in the fragment "i":
+               !Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(:,j))      ! test
+               !Ne = Ne + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(j,:))     ! same as in Mulliken charges
+               e_spectrum(j) = SUM(Scell(NSC)%fe(:) * Scell(NSC)%Dmatrix(j,:))     ! same as in Mulliken charges
+               Ne = Ne + e_spectrum(j)     ! add to the number of electronis in this fragment
+
+               ! 2) Electrons energy in the fragment "i"
+               !Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(:,j))     ! test
+               Ee = Ee + SUM(Scell(NSC)%fe(:) * Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(j,:))    ! same as in Mulliken
+               ! Electron spectrum level for each atom (not very useful?):
+               !E_e_spectrum(j) = SUM(Scell(NSC)%Ei(:) * Scell(NSC)%Dmatrix(j,:))    ! same as in Mulliken
             endif
          enddo   ! i_orb
       enddo ! i_at
       !$omp end do
       !$omp end parallel
+#endif
+
 
       Scell(NSC)%fragments%N_e(i) = Ne
       ! Normalizatin per atom in the fragment:
@@ -1622,39 +1762,54 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
 
       ! 3) Electronic chemical potential and temperature in the fragment "i"
       ! Get the equivalent temperature and chem.potential of electrons in this fragment:
-      !call Electron_Fixed_Etot_partial(Scell(NSC)%Ei, Scell(NSC)%fragments%N_e(i), Scell(NSC)%fragments%E_e(i), mu_frag, &
-      !      Te_frag, Te_start=Scell(NSC)%TeeV, mu_start=Scell(NSC)%mu, orbital_fragments=orbital_fragments) ! below
-      !Scell(NSC)%fragments%T_e(i) = Te_frag*g_kb      ! save in [K]
-      !Scell(NSC)%fragments%mu(i) = mu_frag            ! [eV]
-
-      !print*, i, Scell(NSC)%fragments%N_at(i), Scell(NSC)%fragments%N_e(i), Scell(NSC)%fragments%E_e(i), SUM(matter%Atoms(Scell(NSC)%MDAtoms(:)%KOA )%NVB - Scell(NSC)%MDAtoms(:)%q, MASK=fragment_mask(:))
+      ! that requires weighted integration; something to implement, if needed...
    enddo ! i
 
 
+   ! Test energy levels:
+!    call sort_array(E_e_spectrum)    ! module "Algebra_tools"
+!    do i = 1, size(e_spectrum)
+!       print*, i, Scell(NSC)%Ei(i), E_e_spectrum(i)
+!    enddo
+
+
    ! Consistency check:
-   if ( abs(sum(Scell(NSC)%fragments%N_e(:)) - Scell(NSC)%Ne) > 1.0d-4*Scell(NSC)%Ne ) then
-      print*, 'PROBLEM in get_fragments_data_for_electrons:'
-      print*, 'electrons in fragments do not add up to total Ne:', sum(Scell(NSC)%fragments%N_e(:)), Scell(NSC)%Ne
+   if (numpar%MPI_param%process_rank == 0) then ! only master process does it
+      ! Number of electrons:
+      if ( abs(sum(Scell(NSC)%fragments%N_e(:)) - Scell(NSC)%Ne) > 1.0d-4*Scell(NSC)%Ne ) then
+         print*, 'PROBLEM #1 in get_fragments_data_for_electrons:'
+         print*, 'electrons in fragments do not add up to total Ne:', sum(Scell(NSC)%fragments%N_e(:)), Scell(NSC)%Ne
+      endif
+
+      ! Distribution of electrons:
+      do i = 1, size(e_spectrum)
+         if (e_spectrum(i) < -1.0d-12) then
+            if (abs(e_spectrum(i)) < -1.0d-10) then ! numerical precision, no problem
+               e_spectrum(i) = 0.0d0      ! enforce it to be within the boundary
+            else ! outside of boundary, a problem
+               print*, 'PROBLEM #2 in get_fragments_data_for_electrons:'
+               print*, 'electron spectrum has negative value:', i, e_spectrum(i)
+            endif
+         endif ! (e_spectrum(i) < -1.0d-12)
+
+         if (e_spectrum(i) > 2.0d0) then ! out of bound, can't be above 2
+            if (e_spectrum(i) < 2.000000001d0) then ! numerical precision, no problem
+               e_spectrum(i) = 2.0d0      ! enforce it to be within the boundary
+            else ! outside of boundary, a problem
+               print*, 'PROBLEM #3 in get_fragments_data_for_electrons:'
+               print*, 'electron spectrum out of bound:', i, e_spectrum(i)
+            endif
+         endif ! (e_spectrum(i) > 2.0d0)
+      enddo
    endif
 
    if (allocated(orbital_fragments)) deallocate(orbital_fragments)
    if (allocated(fragment_mask)) deallocate(fragment_mask)
+   if (allocated(e_spectrum)) deallocate(e_spectrum)
+   if (allocated(E_e_spectrum)) deallocate(E_e_spectrum)
 end subroutine get_fragments_data_for_electrons
 
 
-!    allocate(fe_eq_frag(size(Scell(NSC)%Ei)), source = 0.0d0)
-!       ! Construct equivalent Fermi distribution:
-!       call set_Fermi(Scell%Ei, Te_frag, mu_frag, fe_eq_frag, orbital_fragments=orbital_fragments)  ! below
-!
-!       ! Make the thermalization for this band:
-!       if (numpar%tau_fe_VB < numpar%dt/30.0d0) then ! it's basically instantaneous
-!          exp_dttau = 0.0d0
-!       else  ! finite time relaxation
-!          exp_dttau = dexp(-numpar%dt / numpar%tau_fe_VB)
-!       endif
-!       do i = 1, Scell%N_Egap  ! for VB grid points (MO energy levels)
-!          Scell%fe(i) = Scell%fe_eq_VB(i) + (Scell%fe(i) - Scell%fe_eq_VB(i))*exp_dttau   ! exact solution of df/dt=-(f-f0)/tau
-!       enddo
 
 
 !FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
