@@ -92,7 +92,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                      File_name_mol2, Cell_filename, Cell_vel_filename
    character(10) :: file_extension
    logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2, XYZ_file_exists, &
-              XYZ_vel_file_exists, POSCAR_file_exists, mol2_file_exists
+              XYZ_vel_file_exists, POSCAR_file_exists, mol2_file_exists, XYZ_SAVE_file
    real(8) RN, temp, Mass, V2, Ta
    type(Substitute_data) :: substitution_data
 
@@ -162,12 +162,19 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          else
             Cell_filename = trim(adjustl(numpar%Cell_filename))
          endif
+
+         if (Cell_filename == 'SAVE_coordinates.xyz') then   ! SAVE file
+            XYZ_SAVE_file = .true.  ! mark that it is an exception
+         endif
+
          FN_XYZ = 9004
          write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                                          trim(adjustl(Cell_filename))
          inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
-
-         if (.not.XYZ_file_exists) then   ! check the default cell name:
+         if (XYZ_file_exists) then
+            XYZ_SAVE_file = .true.  ! mark it, this file is an exception from supercell builder from unit cells
+         else !if (.not.XYZ_file_exists) then   ! check the default cell name:
+            XYZ_SAVE_file = .false.  ! mark it, this file is an exception from supercell builder from unit cells
             Cell_filename = 'Cell.xyz'          ! default name
             write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                                          trim(adjustl(Cell_filename))
@@ -462,7 +469,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             if (file_opened) close (FN_XYZ)
 
             ! 2) Make the supercell, if required:
-            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 3, matter, numpar, Err, substitution_data=substitution_data) ! below
+            call get_initial_atomic_coord(FN2, File_name2, Scell, i, 3, matter, numpar, Err, substitution_data=substitution_data, XYZ_SAVE_file=XYZ_SAVE_file) ! below
             if ( trim(adjustl(Err%Err_descript)) /= '' ) then
                goto 3416
             endif
@@ -618,6 +625,12 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          if (numpar%embed_water) then
             call embed_molecule_in_water(Scell, matter, numpar)  ! below
          endif
+
+         ! INFO FOR DEBUG:
+         if (numpar%verbose) then
+            print*, "NUMBER OF ATOMS:", Scell(i)%Na, XYZ_SAVE_file
+         endif
+         !Cell_filename = 'SAVE_coordinates.xyz'    ! default SAVE name
 
 
          !---------------------------
@@ -1597,7 +1610,7 @@ end subroutine embed_molecule_in_water
 
 
 
-subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter, numpar, Err, ind, substitution_data)
+subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter, numpar, Err, ind, substitution_data, XYZ_SAVE_file)
    integer, intent(in) :: FN, which_one, SCN ! file number; type of file to read from (2=unit-cell, 1=super-cell); number of supercell
    character(*), intent(in) :: File_name ! file with the super-cell parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
@@ -1606,11 +1619,12 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
    type(Error_handling), intent(inout) :: Err	! error save
    integer, intent(in), optional :: ind ! read files for phase path tracing
    type(Substitute_data), intent(in), optional :: substitution_data     ! flags for atomic substitution
+   logical, intent(in), optional :: XYZ_SAVE_file     ! flag for XYZ file exceptions
    !=====================================
    integer :: INFO, Na, i, j
    integer Reason, count_lines
    character(200) Error_descript
-   logical read_well
+   logical read_well, XYZ_SAVE
    type(Atom), dimension(:), allocatable :: MDAtoms ! if more then one supercell
    real(8), dimension(size(matter%Atoms)) :: perc
    real(8), dimension(3,3) :: unit_cell   ! temporary storage of supercell vectors
@@ -1694,9 +1708,20 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
       if (.not.allocated(MDAtoms)) deallocate(MDAtoms)
 
    case (3) ! coordinates in the XYZ file
+      if (present(XYZ_SAVE_file)) then
+         XYZ_SAVE = XYZ_SAVE_file
+      else ! default
+         XYZ_SAVE = .false.
+      endif
+
       ! Replicate unit cell, if requested:
-      unit_cell = Scell(SCN)%Supce  ! use it to resize the supercell
-      call set_supercell_size_from_unitcells(Scell, SCN, matter, unit_cell, .true.)   ! below
+      if (XYZ_SAVE) then ! XYZ from SAVE files requires no replication:
+         unit_cell = Scell(SCN)%Supce  ! use it to resize the supercell
+         call set_single_supercell_size(Scell, SCN, matter, unit_cell, .true.)   ! below
+      else  ! replicate, since it isn't an exception:
+         unit_cell = Scell(SCN)%Supce  ! use it to resize the supercell
+         call set_supercell_size_from_unitcells(Scell, SCN, matter, unit_cell, .true.)   ! below
+      endif
 
       ! In case atoms were not specified yet, but must be set in a mix/alloy:
       call make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript) ! below
@@ -1706,7 +1731,8 @@ subroutine get_initial_atomic_coord(FN, File_name, Scell, SCN, which_one, matter
       endif
 
       ! Set coordinates in the sueprcell:
-      call set_initial_coords(matter, Scell, SCN, FN, File_name, Nat=Scell(SCN)%Na, INFO=INFO, Error_descript=Error_descript, XYZ=1)
+      call set_initial_coords(matter, Scell, SCN, FN, File_name, Nat=Scell(SCN)%Na, INFO=INFO, Error_descript=Error_descript, &
+                              XYZ=1, XYZ_SAVE_file = XYZ_SAVE)
       if (INFO .NE. 0) then
          call Save_error_details(Err, INFO, Error_descript)
          goto 3417
@@ -2162,7 +2188,7 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
 end subroutine make_alloy
 
 
-subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descript,XYZ)
+subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descript,XYZ, XYZ_SAVE_file)
    type(solid), intent(inout) :: matter	! material parameters
    type(Super_cell), dimension(:), intent(inout) :: Scell ! suoer-cell with all the atoms inside
    integer, intent(in) :: SCN ! number of supercell
@@ -2172,14 +2198,15 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
    integer, intent(out) :: INFO ! did we read well from the file
    character(200), intent(inout) :: Error_descript
    integer, intent(in), optional :: XYZ   ! if XYZ file was given and read from
+   logical, intent(in), optional :: XYZ_SAVE_file    ! flag if this is an exception (SAVE XYZ fiel requires no unit-cell builder)
    !-----------------------------
    real(8) a, b, l2, x, y, z, RN, epsylon, coord_shift
    integer i, j, k, ik, nx, ny, nz, ncellx, ncelly, ncellz, Na
    !real(8), dimension(3,8) :: Relcoat
    real(8), dimension(:,:), allocatable :: Relcoat
    integer, dimension(:), allocatable :: KOA
-   integer Reason, count_lines
-   logical read_well, to_read
+   integer Reason, count_lines, cell_x, cell_y, cell_z
+   logical read_well, to_read, XYZ_SAVE
 
    epsylon = 1.0d-10    ! for tiny shift of coords
 
@@ -2203,7 +2230,24 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
    allocate(Relcoat(3,Na))
    allocate(KOA(Na))
 
-   Scell(SCN)%Na = Na*matter%cell_x*matter%cell_y*matter%cell_z ! Number of atoms is defined this way
+   if (present(XYZ_SAVE_file)) then ! check if it is an exception (XYZ SAVE-file)
+      XYZ_SAVE = XYZ_SAVE_file
+   else     ! default
+      XYZ_SAVE = .false.
+   endif
+
+   if (XYZ_SAVE) then   ! no need to replicate cell
+      cell_x = 1
+      cell_y = 1
+      cell_z = 1
+   else ! default, replicate
+      cell_x = matter%cell_x
+      cell_y = matter%cell_y
+      cell_z = matter%cell_z
+   endif
+   !Scell(SCN)%Na = Na*matter%cell_x*matter%cell_y*matter%cell_z ! Number of atoms is defined this way
+   Scell(SCN)%Na = Na*cell_x*cell_y*cell_z ! Number of atoms is defined this way
+
    !Scell(SCN)%Ne = matter%Atoms(1)%Ne_shell(matter%Atoms(1)%sh)*Scell(SCN)%Na	! number of valence electrons
    Scell(SCN)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)/SUM(matter%Atoms(:)%percentage)*Scell(SCN)%Na
    Scell(SCN)%Ne_low = Scell(SCN)%Ne ! at the start, all electrons are low-energy
@@ -2245,9 +2289,13 @@ subroutine set_initial_coords(matter,Scell,SCN,FN,File_name,Nat,INFO,Error_descr
 
    ! All atoms distribution (in the super-cell):
    j = 0 ! for the beginning
-   ncellx = matter%cell_x
-   ncelly = matter%cell_y
-   ncellz = matter%cell_z
+   !ncellx = matter%cell_x
+   !ncelly = matter%cell_y
+   !ncellz = matter%cell_z
+   ncellx = cell_x
+   ncelly = cell_y
+   ncellz = cell_z
+
    do nx = 0, ncellx-1
       do ny = 0, ncelly-1
          do nz = 0, ncellz-1
@@ -2567,6 +2615,36 @@ subroutine set_supercell_size_from_unitcells(Scell, SCN, matter, unit_cell, def_
       Scell(SCN)%supce_eq = Scell(SCN)%supce	! [A] equilibrium lengths of super-cell
    endif
 end subroutine set_supercell_size_from_unitcells
+
+
+
+subroutine set_single_supercell_size(Scell, SCN, matter, unit_cell, def_par)
+   type(Super_cell), dimension(:), intent(inout) :: Scell ! super-cell with all the atoms inside
+   integer, intent(in) :: SCN    ! index of supercell (=1)
+   type(Solid), intent(in) :: matter	! all material parameters
+   real(8), dimension(3,3), intent(in) :: unit_cell   ! unit cell vectors to construct the supercell
+   logical, intent(in) :: def_par   ! flag to define other parameters of the supercell
+   !-----------------------
+   ! Use single cell provided:
+   Scell(SCN)%supce(:,1) = 1.0*unit_cell(:,1)   ! [A] length of super-cell X
+   Scell(SCN)%supce(:,2) = 1.0*unit_cell(:,2)   ! [A] length of super-cell Y
+   Scell(SCN)%supce(:,3) = 1.0*unit_cell(:,3)   ! [A] length of super-cell Z
+   ! Instead of replication:
+   !Scell(SCN)%supce(1,:) = matter%cell_x*unit_cell(1,:)  ! [A] length of super-cell X
+   !Scell(SCN)%supce(2,:) = matter%cell_y*unit_cell(2,:)  ! [A] length of super-cell Y
+   !Scell(SCN)%supce(3,:) = matter%cell_z*unit_cell(3,:)  ! [A] length of super-cell Z
+   Scell(SCN)%supce0 = Scell(SCN)%supce   ! [A] length of super-cell on the previous time-step
+   Scell(SCN)%Vsupce = 0.0d0  ! initial velocity is 0
+   Scell(SCN)%Vsupce0 = 0.0d0 ! initial velocity is 0
+   if (def_par) then ! define volume, reciprocal, etc.
+      Scell(SCN)%SCforce%rep = 0.0d0
+      Scell(SCN)%SCforce%att = 0.0d0
+      Scell(SCN)%SCforce%total = 0.0d0
+      call Det_3x3(Scell(SCN)%supce, Scell(SCN)%V) ! finding initial volume of the super-cell, module "Algebra_tools"
+      call Reciproc(Scell(SCN)%supce, Scell(SCN)%k_supce) ! create reciprocal super-cell, module "Algebra_tools"
+      Scell(SCN)%supce_eq = Scell(SCN)%supce	! [A] equilibrium lengths of super-cell
+   endif
+end subroutine set_single_supercell_size
 
 
 

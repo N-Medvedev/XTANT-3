@@ -94,10 +94,28 @@ cd Source_files
 
       :: List compiler options
       SET "Compile_options=/F9999999999 /fpp /real-size:64 /O1 /fpe:0 /fp:fast /Qipo /Qopt-report /standard-semantics"
+      :: SET "Compile_options=/fpp /real-size:64 /O1 /fpe:0 /fp:fast /heap-arrays /standard-semantics /Qopenmp /Qmkl=parallel /F:1073741824"
       SET "Linking_options=/Qopenmp /Qmkl=parallel"
 
       :: Set name of the executable:
       SET "Name_of_exe=XTANT_OMP.exe"
+
+      del *.pdb
+   )
+
+   IF /I %arg1%==HEAP (
+      echo %Starline%
+      echo Compiling with FAST option, OpenMP, no optimizations, no debug
+      echo Started at: %date% %time%
+      echo %Starline%
+
+      :: List compiler options
+      :: SET "Compile_options=/F9999999999 /fpp /real-size:64 /O1 /fpe:0 /fp:fast /Qipo /Qopt-report /standard-semantics"
+      SET "Compile_options=/fpp /real-size:64 /O1 /fpe:0 /fp:fast /heap-arrays /standard-semantics /Qopenmp /Qmkl=parallel /F:1073741824"
+      SET "Linking_options=/Qopenmp /Qmkl=parallel"
+
+      :: Set name of the executable:
+      SET "Name_of_exe=XTANT_HEAPED.exe"
 
       del *.pdb
    )
