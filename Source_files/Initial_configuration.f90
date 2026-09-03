@@ -487,7 +487,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             inquire(file=trim(adjustl(File_name_XYZ_vel)),exist=XYZ_vel_file_exists)
 
             if (.not.XYZ_vel_file_exists) then ! check the other default name, constructed from the coordinates-file name
-               Cell_vel_filename = Cell_filename(1:LEN(trim(adjustl(Cell_filename)))-4)//'_vel.xyz'  ! default name
+               Cell_vel_filename = Cell_filename(1:LEN(trim(adjustl(Cell_filename)))-5)//'_vel.xyz'  ! default name
                write(File_name_XYZ_vel, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                                          trim(adjustl(Cell_vel_filename))
                inquire(file=trim(adjustl(File_name_XYZ_vel)),exist=XYZ_vel_file_exists)
@@ -853,13 +853,13 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
       matter%At_dens = matter%dens/(SUM(matter%Atoms(:)%Ma*matter%Atoms(:)%percentage)/(SUM(matter%Atoms(:)%percentage))*1d3)   ! atomic density [1/cm^3]
    endif
 
-   print*, 'Atomic density: ', matter%dens
+   !print*, 'Atomic density: ', matter%dens
 
 
    ! Identify the sample size (may be different from the supercell size:
    call find_sample_size(Scell(1))      ! module "Atomic_tools"
 
-   print*, "V size: ", Scell(1)%V, Scell(1)%V_sample
+   !print*, "V size: ", Scell(1)%V, Scell(1)%V_sample
 
 
 3416 continue

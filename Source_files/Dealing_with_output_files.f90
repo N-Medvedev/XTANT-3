@@ -57,7 +57,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 26.08.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 03.09.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -4177,9 +4177,9 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
    ! What format of SAVE files is used:
    select case (numpar%type_of_SAVE)
    case default
-      write(print_to,'(a)') ' SAVE files are in internal format: SAVE_atoms.dat, SAVE_supercell.dat'
+      write(print_to,'(a)') ' SAVE files will be in internal format: SAVE_atoms.dat, SAVE_supercell.dat'
    case (1) ! XYZ format for atomic coordinates and supercell
-      write(print_to,'(a)') ' SAVE files are in XYZ format: SAVE_coordinates.xyz, SAVE_velocities.xyz'
+      write(print_to,'(a)') ' SAVE files will be in XYZ format: SAVE_coordinates.xyz, SAVE_velocities.xyz'
    end select
 
    !ooooooooooooooooooooooooooooooooooooooooooooo
