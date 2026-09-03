@@ -163,6 +163,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             Cell_filename = trim(adjustl(numpar%Cell_filename))
          endif
 
+         XYZ_SAVE_file = .false.    ! deafult
          if (Cell_filename == 'SAVE_coordinates.xyz') then   ! SAVE file
             XYZ_SAVE_file = .true.  ! mark that it is an exception
          endif
