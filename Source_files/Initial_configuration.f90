@@ -89,10 +89,11 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
    integer i, Nsc, Natoms, FN, FN2, Reason, count_lines, N, j, k, n1, FN3, FN4, FN_XYZ, FN_POSCAR, FN_mol2
    character(200) :: File_name, File_name2, Error_descript, File_name_S1, File_name_S2, &
                      File_name_XYZ, File_name_XYZ_vel, File_name_POSCAR, &
-                     File_name_mol2, Cell_filename, Cell_vel_filename
+                     File_name_mol2, Cell_filename, Cell_vel_filename, &
+                     File_name_temp
    character(10) :: file_extension
    logical :: file_exist, file_opened, read_well, file_exist_1, file_exist_2, XYZ_file_exists, &
-              XYZ_vel_file_exists, POSCAR_file_exists, mol2_file_exists, XYZ_SAVE_file
+              XYZ_vel_file_exists, POSCAR_file_exists, mol2_file_exists, XYZ_SAVE_file, file_exist_3
    real(8) RN, temp, Mass, V2, Ta
    type(Substitute_data) :: substitution_data
 
@@ -156,26 +157,33 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
             end select
          endif
 
-         ! Check if there is extended XYZ-format with the unit/super-cell:
-         if (.not.XYZ_file_exists) then   ! there is no name given, use default
-            Cell_filename = 'SAVE_coordinates.xyz'    ! default SAVE name
-         else
-            Cell_filename = trim(adjustl(numpar%Cell_filename))
-         endif
 
-         XYZ_SAVE_file = .false.    ! deafult
-         if (Cell_filename == 'SAVE_coordinates.xyz') then   ! SAVE file
-            XYZ_SAVE_file = .true.  ! mark that it is an exception
-         endif
-
+         ! XYZ file option:
+         ! First check: SAVE-file in xyz format (should supercede any given xyz file name):
          FN_XYZ = 9004
-         write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+         write(File_name_temp, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'SAVE_coordinates.xyz'
+         inquire(file=trim(adjustl(File_name_temp)),exist=file_exist_3)
+         if (file_exist_3) then   ! SAVE file
+            XYZ_SAVE_file = .true.  ! mark that it is an exception
+            File_name_XYZ = File_name_temp
+            XYZ_file_exists = .true.
+         else ! maybe not the SAVE but just xyz file
+            XYZ_SAVE_file = .false.    ! deafult
+
+            if (XYZ_file_exists) then   ! there is no name given, use default
+               Cell_filename = trim(adjustl(numpar%Cell_filename))
+            endif
+            ! Check if for some reason it is a SAVE file:
+            if (Cell_filename == 'SAVE_coordinates.xyz') then   ! SAVE file
+               XYZ_SAVE_file = .true.  ! mark that it is an exception
+            endif
+
+            write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                                          trim(adjustl(Cell_filename))
+         endif
+         ! Check if xyz-file exists:
          inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
-         if (XYZ_file_exists) then
-            XYZ_SAVE_file = .true.  ! mark it, this file is an exception from supercell builder from unit cells
-         else !if (.not.XYZ_file_exists) then   ! check the default cell name:
-            XYZ_SAVE_file = .false.  ! mark it, this file is an exception from supercell builder from unit cells
+         if (.not.XYZ_file_exists) then         ! check additionally the default cell name
             Cell_filename = 'Cell.xyz'          ! default name
             write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                                          trim(adjustl(Cell_filename))
@@ -219,6 +227,7 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          FN = 9000
          write(File_name, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, 'SAVE_supercell.dat'
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
+
          
          ! Select among different possibilities to set the super-cell:
          ! In the following priorities:

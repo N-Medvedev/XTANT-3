@@ -4200,6 +4200,9 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_labels, &
    if (present(col_nums2)) N_cols = N_cols + size(col_nums2)   ! include the second one, if present
 
 
+   ! Imports
+   write(FN,'(a)') 'import os'
+   write(FN,'(a)') 'import sys'
    write(FN,'(a)') 'import pandas as pd'
    write(FN,'(a)') 'import numpy as np'
    write(FN,'(a)') 'import matplotlib.pyplot as plt'
@@ -4230,7 +4233,14 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_labels, &
 
    ! Process the data file:
    write(FN,'(a)') '# Read the output file:'
-   write(FN,'(a)') 'df = pd.read_csv(r"'//trim(adjustl(Data_file))//'", '//"sep=r'\s+', "//'header=None, comment="#", skipinitialspace=True)'
+   !write(FN,'(a)') 'df = pd.read_csv(r"'//trim(adjustl(Data_file))//'", '//"sep=r'\s+', "//'header=None, comment="#", skipinitialspace=True)'
+   ! 1) Check if the primary data file exists:
+   write(FN,'(a)') 'data_file = r"'//trim(adjustl(Data_file))//'"'
+   write(FN,'(a)') 'if not os.path.exists(data_file):'
+   write(FN,'(a)') '    print(f"Warning: Data file ''{data_file}'' not found. Skipping plot.")'
+   write(FN,'(a)') '    sys.exit(0)'  ! Graceful exit
+   ! 2) Read data handling leading spaces and blank lines
+   write(FN,'(a)') 'df = pd.read_csv(data_file, sep=r"\s+", header=None, comment="#", skipinitialspace=True, skip_blank_lines=True)'
 
    ! Log-scale, if required:
    if (present(set_x_log)) then
@@ -4334,43 +4344,50 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_labels, &
 
    !-----------------------
    ! If we want to add data from another file on the same plot:
+   !if (present(Data_file2) .and. present(col_nums2) .and. present(col_labels2)) then !# Add a curve from the second file
+   !   write(FN,'(a)') '# Add a curve from the second file'
+   !   write(FN,'(a)') 'df2 = pd.read_csv(r"'//trim(adjustl(Data_file2))//'", '//"sep=r'\s+', "// &
+   !                     'header=None, comment="#", skipinitialspace=True)'
    if (present(Data_file2) .and. present(col_nums2) .and. present(col_labels2)) then !# Add a curve from the second file
       write(FN,'(a)') '# Add a curve from the second file'
-      write(FN,'(a)') 'df2 = pd.read_csv(r"'//trim(adjustl(Data_file2))//'", '//"sep=r'\s+', "// &
-                        'header=None, comment="#", skipinitialspace=True)'
+      write(FN,'(a)') 'data_file2 = r"'//trim(adjustl(Data_file2))//'"'
+      write(FN,'(a)') 'if not os.path.exists(data_file2):'
+      write(FN,'(a)') '    print(f"Warning: Second data file ''{data_file2}'' not found. Skipping second dataset.")'
+      write(FN,'(a)') 'else:'
+      write(FN,'(a)') '    df2 = pd.read_csv(data_file2, sep=r"\s+", header=None, comment="#", skipinitialspace=True, skip_blank_lines=True)'
 
       ! Set a list of which columns to plot:
-      write(FN,'(a)', advance='no') 'columns_to_plot2 = ['
+      write(FN,'(a)', advance='no') '    columns_to_plot2 = ['
       do i = 1, size(col_nums2)
          ! Column numbers:
          if (i > 1) then   ! add come in between
-            write(FN,'(a)', advance='no') ', '
+            write(FN,'(a)', advance='no') '    , '
          endif
          write(temp_txt,'(i)') col_nums2(i)
-         write(FN,'(a)', advance='no') trim(adjustl(temp_txt))
+         write(FN,'(a)', advance='no') "    "//trim(adjustl(temp_txt))
       enddo
-      write(FN,'(a)')  ']'
+      write(FN,'(a)')  '    ]'
 
       ! Column labels, if required:
       if (allocated(col_labels2)) then ! the legend is required:
-         write(FN,'(a)', advance='no') 'labels2 = ['
+         write(FN,'(a)', advance='no') '    labels2 = ['
          do i = 1, size(col_labels2)
             ! Column numbers:
             if (i > 1) then   ! add come in between
-               write(FN,'(a)', advance='no') ', '
+               write(FN,'(a)', advance='no') '    , '
             endif
-            write(FN,'(a)', advance='no') trim(adjustl(col_labels2(i)))
+            write(FN,'(a)', advance='no') "    "//trim(adjustl(col_labels2(i)))
          enddo
-         write(FN,'(a)') ']'
+         write(FN,'(a)') '    ]'
       endif
 
-      write(FN,'(a)') '# Create second part of the plot:'
+      write(FN,'(a)') '    # Create second part of the plot:'
       if (allocated(col_labels2)) then ! the legend is required:
-         write(FN,'(a)') 'for col, label in zip(columns_to_plot2, labels2):'
-         write(FN,'(a)') '    plt.plot(df2.iloc[:, 0], df2.iloc[:, col], label=label, linestyle="--")'
+         write(FN,'(a)') '    for col, label in zip(columns_to_plot2, labels2):'
+         write(FN,'(a)') '        plt.plot(df2.iloc[:, 0], df2.iloc[:, col], label=label, linestyle="--")'
       else ! No legend:
-         write(FN,'(a)') 'for col in columns_to_plot2:'
-         write(FN,'(a)') '    plt.plot(df2.iloc[:, 0], df2.iloc[:, col])'
+         write(FN,'(a)') '    for col in columns_to_plot2:'
+         write(FN,'(a)') '        plt.plot(df2.iloc[:, 0], df2.iloc[:, col])'
       endif
    endif
    !-----------------------
