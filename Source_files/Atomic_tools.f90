@@ -3040,10 +3040,16 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
 
          ! Scattering amplitude:
          !Fijk = Fijk + FF * exp(-g_2Pi * g_CI * (SUM(dble(Scell(1)%diff_peaks%ijk_diff_peak(:,i)) * Scell(1)%MDAtoms(j)%S(:)) ) )
+         ! Original:
          Fijk_cur = FF * exp(-g_2Pi * g_CI * ( &
-                dble(Scell(1)%diff_peaks%ijk_diff_peak(1,i)) * Scell(1)%MDAtoms(j)%S(1) * matter%cell_x + &
-                dble(Scell(1)%diff_peaks%ijk_diff_peak(2,i)) * Scell(1)%MDAtoms(j)%S(2) * matter%cell_y + &
-                dble(Scell(1)%diff_peaks%ijk_diff_peak(3,i)) * Scell(1)%MDAtoms(j)%S(3) * matter%cell_z ) )
+                 dble(Scell(1)%diff_peaks%ijk_diff_peak(1,i)) * Scell(1)%MDAtoms(j)%S(1) * matter%cell_x + &
+                 dble(Scell(1)%diff_peaks%ijk_diff_peak(2,i)) * Scell(1)%MDAtoms(j)%S(2) * matter%cell_y + &
+                 dble(Scell(1)%diff_peaks%ijk_diff_peak(3,i)) * Scell(1)%MDAtoms(j)%S(3) * matter%cell_z ) )
+         ! Test indices (WRONG):
+         !Fijk_cur = FF * exp(-g_2Pi * g_CI * ( &
+         !       dble(Scell(1)%diff_peaks%ijk_diff_peak(i,1)) * Scell(1)%MDAtoms(j)%S(1) * matter%cell_x + &
+         !       dble(Scell(1)%diff_peaks%ijk_diff_peak(i,2)) * Scell(1)%MDAtoms(j)%S(2) * matter%cell_y + &
+         !       dble(Scell(1)%diff_peaks%ijk_diff_peak(i,3)) * Scell(1)%MDAtoms(j)%S(3) * matter%cell_z ) )
          Fijk = Fijk + Fijk_cur     ! sum up the contributions
 
          ! If we need element-specific data:

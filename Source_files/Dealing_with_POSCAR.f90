@@ -60,9 +60,15 @@ subroutine read_POSCAR(FN_POSCAR, File_name_POSCAR, Scell, SCN, matter, numpar, 
    Scalfac(:) = 0.0d0   ! to start with
    count_lines = 0      ! to start with
 
+
+   !print*, "read_POSCAR"
+
    ! First line in POSCAR, comment:
    read(FN_POSCAR,*,IOSTAT=Reason) ! skip
+   !print*, "read_POSCAR", Reason
+
    call read_file(Reason, count_lines, read_well)
+   !print*, "read_POSCAR", Reason, read_well
 
    ! Second line in POSCAR, Scaling factor(s):
    read(FN_POSCAR,*,IOSTAT=Reason) read_line

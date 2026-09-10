@@ -165,30 +165,33 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
          inquire(file=trim(adjustl(File_name_temp)),exist=file_exist_3)
          if (file_exist_3) then   ! SAVE file
             XYZ_SAVE_file = .true.  ! mark that it is an exception
-            File_name_XYZ = File_name_temp
             XYZ_file_exists = .true.
+            File_name_XYZ = File_name_temp
          else ! maybe not the SAVE but just xyz file
             XYZ_SAVE_file = .false.    ! deafult
-
             if (XYZ_file_exists) then   ! there is no name given, use default
                Cell_filename = trim(adjustl(numpar%Cell_filename))
-            endif
-            ! Check if for some reason it is a SAVE file:
-            if (Cell_filename == 'SAVE_coordinates.xyz') then   ! SAVE file
-               XYZ_SAVE_file = .true.  ! mark that it is an exception
-            endif
+               ! Check if for some reason it is a SAVE file:
+               if (Cell_filename == 'SAVE_coordinates.xyz') then   ! SAVE file
+                  XYZ_SAVE_file = .true.  ! mark that it is an exception
+               endif
 
-            write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
+               write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                                          trim(adjustl(Cell_filename))
+            endif
          endif
          ! Check if xyz-file exists:
-         inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
-         if (.not.XYZ_file_exists) then         ! check additionally the default cell name
+         if (XYZ_file_exists) then   ! xyz-file name was provided
+            ! Check if such a file actually exists:
+            inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
+         else ! check default xyz-name
             Cell_filename = 'Cell.xyz'          ! default name
             write(File_name_XYZ, '(a,a,a)') trim(adjustl(numpar%input_path)), trim(adjustl(matter%Name))//numpar%path_sep, &
                                          trim(adjustl(Cell_filename))
             inquire(file=trim(adjustl(File_name_XYZ)),exist=XYZ_file_exists)
          endif
+         ! Test xyz-input file identification:
+         !print*, 'SAVE:', XYZ_file_exists, File_name_XYZ
 
 
          ! Check if there is POSCAR-format with the unit/super-cell:
