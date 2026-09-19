@@ -7026,16 +7026,18 @@ subroutine get_chemical_formula(numpar, read_line, matter_Name, Chem, Chemical_f
 
       ! Check if the filename with atomic coordinates is also provided here:
       ! 1) Check if it wasn't already read before:
-      if (LEN(trim(adjustl(Cell_filename))) == 0) then ! no name was given
-         read(FN,*,IOSTAT=Reason) File_name2
-         if (Reason == 0) then  ! read well
+      read(FN,*,IOSTAT=Reason) File_name2 ! Try reading the file name from the file:
+      if (Reason == 0) then  ! read well
+         if (LEN(trim(adjustl(Cell_filename))) == 0) then ! no name was given, assing it
             Cell_filename = trim(adjustl(File_name2))
          else
-            if (numpar%verbose) print*, 'Chemical formula reading: No filename with coordinates provided'
+            ! Name from the input file superceeds the name here
          endif
+      else
+         if (numpar%verbose) print*, 'Chemical formula reading: No filename with coordinates provided'
       endif
 
-      ! Check if the filename with atomic coordinates is also provided here:
+      ! Check if the filename with atomic velocities is also provided here:
       ! 2) Check if it wasn't already read before:
       if (LEN(trim(adjustl(Cell_vel_filename))) == 0) then ! no name was given
          read(FN,*,IOSTAT=Reason) File_name3
