@@ -451,7 +451,7 @@ def analyze_run(powder_path: str, peak_info: PeakInfo, intensity_col="Total",
                                  half_width_deg=half_width_deg, **fit_kwargs)
 
         end_time = datetime.now()
-        print(f"    Finished time {t:.2f} fs, extracted {len(results)} peaks "
+        print(f"               Finished time {t:.2f} fs, extracted {len(results)} peaks "
               f"(real time {end_time.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]})")
 
         for r in results:
