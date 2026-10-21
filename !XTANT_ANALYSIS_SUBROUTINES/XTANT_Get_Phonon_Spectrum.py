@@ -43,6 +43,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 TEMP_FILE = SCRIPT_DIR / "OUTPUT_temperatures.dat"
 VEL_FILE = SCRIPT_DIR / "OUTPUT_atomic_velocities.xyz"
 OUTPUT_PNG = SCRIPT_DIR / "phonon_spectra.png"
+OUTPUT_SPECTRA_DAT = SCRIPT_DIR / "OUT_phonon_spectra.dat"
+OUTPUT_CV_DAT = SCRIPT_DIR / "OUT_heat_capacity.dat"
+OUTPUT_VACF_DAT = SCRIPT_DIR / "OUT_vacf_windows.dat"
 
 # Windowing: a new VACF window starts every WINDOW_STEP_FS fs; each window
 # is WINDOW_LENGTH_FS fs long. Set them equal for non-overlapping windows,
@@ -61,9 +64,9 @@ DAMPING_TIME_FS = 400.0
 
 # Plot / frequency axis
 FREQ_UNIT = "THz"          # 'THz' or 'cm-1'
-MAX_FREQ = 30.0            # upper limit of the frequency axis, in FREQ_UNIT
+MAX_FREQ = 100.0            # upper limit of the frequency axis, in FREQ_UNIT
 NORMALIZE_CURVES = False    # scale each window's spectrum to its own max
-MAX_FREQ_PLOT = 30.0
+MAX_FREQ_PLOT = 100.0
 MAX_FREQ_CV = 100.0
 
 # Heat-capacity output
@@ -260,6 +263,9 @@ def main():
     cv_atom = []
     cv_molar = []
     
+    all_spectra = []
+    all_vacf = []
+    
     #times = read_time_grid(TEMP_FILE)
     times, temperatures = read_temperature_data(TEMP_FILE)
     species, vel = read_velocity_trajectory(VEL_FILE)
@@ -296,8 +302,30 @@ def main():
         vel_window = vel[idx]
         C = vacf_normalized(vel_window)
         C_damped = apply_damping(C, dt_fs, DAMPING_TIME_FS, DAMPING_TYPE)
+        
+        # Save into arrays:
+        vacf_time = np.arange(len(C)) * dt_fs
+        for j in range(len(C)):
+            all_vacf.append([
+                t0,
+                t1,
+                vacf_time[j],
+                C[j],
+                C_damped[j]
+            ])
+    
         freq_per_fs, power = spectrum_from_vacf(C_damped, dt_fs)
         freq = convert_freq(freq_per_fs, FREQ_UNIT)
+        
+        # Save into files:
+        freq_THz = freq_per_fs * 1000.0
+        for j in range(len(freq)):
+            all_spectra.append([
+                t0,
+                t1,
+                freq_THz[j],
+                power[j]
+            ])
 
         physical_power = power.copy()
 
@@ -362,19 +390,63 @@ def main():
     fig.savefig(OUTPUT_PNG, dpi=200)
     print(f"Saved: {OUTPUT_PNG}")
     
+    # --------------------------------------------------
+    # Save data files:
+    # --------------------------------------------------
+    vacf_array = np.asarray(all_vacf)
+    np.savetxt(
+        OUTPUT_VACF_DAT,
+        vacf_array,
+        header=(
+            "t_start_fs  t_end_fs  lag_fs  "
+            "VACF  VACF_damped"
+        )
+    )
+    print(f"Saved: {OUTPUT_VACF_DAT}")
+    
+    spectra_array = np.asarray(all_spectra)
+    np.savetxt(
+        OUTPUT_SPECTRA_DAT,
+        spectra_array,
+        header=(
+            "t_start_fs  t_end_fs  "
+            "frequency_THz  VDOS"
+        )
+    )
+    print(f"Saved: {OUTPUT_SPECTRA_DAT}")
+    
     
     # --------------------------------------------------
-    # Plot heat capacity versus time
+    # Save data and plot heat capacity versus time
     # --------------------------------------------------
     if len(cv_times) == 0:
         print("No valid heat-capacity points computed.")
         return
+    
     cv_times = np.asarray(cv_times)
     cv_atom = np.asarray(cv_atom)
     cv_molar = np.asarray(cv_molar)
+        
+    cv_data = np.column_stack(
+        (
+            cv_times,
+            cv_atom,
+            cv_molar
+        )   
+    )
+    np.savetxt(
+        OUTPUT_CV_DAT,
+        cv_data,
+        header=(
+            "time_fs  "
+            "Cv_J_per_atom_K  "
+            "Cv_J_per_mol_K"
+        )
+    )
+    print(f"Saved: {OUTPUT_CV_DAT}")
 
-    fig_cv, ax_cv = plt.subplots(figsize=(7, 5))
-    
+
+    fig_cv, ax_cv = plt.subplots(figsize=(7, 5))    
     ax_cv.plot(
         cv_times,
         cv_molar,
