@@ -48,7 +48,7 @@ OUTPUT_PNG = SCRIPT_DIR / "phonon_spectra.png"
 # is WINDOW_LENGTH_FS fs long. Set them equal for non-overlapping windows,
 # or WINDOW_LENGTH_FS > WINDOW_STEP_FS for overlapping ones.
 WINDOW_STEP_FS = 200.0
-WINDOW_LENGTH_FS = 400.0
+WINDOW_LENGTH_FS = 500.0
 
 # Damping applied to the VACF before the Fourier transform. This controls
 # the spectral linewidth: shorter DAMPING_TIME_FS -> broader, smoother
@@ -57,12 +57,20 @@ WINDOW_LENGTH_FS = 400.0
 # 'gaussian':    w(t) = exp(-0.5*(t/DAMPING_TIME_FS)**2)  (Gaussian broadening)
 #DAMPING_TYPE = "exponential"
 DAMPING_TYPE = "gaussian"
-DAMPING_TIME_FS = 100.0
+DAMPING_TIME_FS = 400.0
 
 # Plot / frequency axis
 FREQ_UNIT = "THz"          # 'THz' or 'cm-1'
 MAX_FREQ = 30.0            # upper limit of the frequency axis, in FREQ_UNIT
 NORMALIZE_CURVES = False    # scale each window's spectrum to its own max
+MAX_FREQ_PLOT = 30.0
+MAX_FREQ_CV = 100.0
+
+# Heat-capacity output
+OUTPUT_CV_PNG = SCRIPT_DIR / "phonon_heat_capacity.png"
+PLANCK = 6.62607015e-34       # J s
+KB = 1.380649e-23             # J/K
+AVOGADRO = 6.02214076e23      # mol^-1
 # ======================================================================
 
 
@@ -177,9 +185,11 @@ def spectrum_from_vacf(C_damped, dt_fs):
     # Build the symmetric (even) extension: C[M-1], ..., C[1], C[0], C[1], ..., C[M-1]
     full = np.concatenate([C_damped[::-1], C_damped[1:]])
     spec = np.fft.rfft(full)
-    power = np.abs(spec)
+    #power = np.abs(spec)
+    power = np.maximum(spec.real, 0.0)
     freq = np.fft.rfftfreq(len(full), d=dt_fs)  # 1/fs
     return freq, power
+
 
 
 def convert_freq(freq_per_fs, unit):
@@ -191,10 +201,67 @@ def convert_freq(freq_per_fs, unit):
         return freq_THz * 33.35641  # THz -> cm^-1
     else:
         raise ValueError(f"Unknown FREQ_UNIT '{unit}'")
+        
+
+def read_temperature_data(path):
+    """Read time [fs] and temperature [K] from the temperature file."""
+    data = np.loadtxt(path, skiprows=2)
+    times = data[:, 0]
+    temperatures = data[:, 2]  # Assumes temperature is column 2
+    return times, temperatures
+
+
+def heat_capacity_from_vdos(freq_THz, vdos, temperature):
+    """
+    Quantum harmonic phonon heat capacity.
+    """
+
+    if temperature <= 0:
+        return np.nan, np.nan
+
+    area = np.trapz(vdos, freq_THz)
+
+    if not np.isfinite(area) or area <= 0:
+        return np.nan, np.nan
+
+    g = vdos / area
+
+    nu_Hz = freq_THz * 1e12
+
+    x = PLANCK * nu_Hz / (KB * temperature)
+
+    mode_cv = np.zeros_like(x)
+
+    small = x < 1e-4
+    regular = ~small
+
+    mode_cv[small] = 1.0
+
+    ex = np.exp(-x[regular])
+
+    mode_cv[regular] = (
+        x[regular]**2 * ex /
+        (1.0 - ex)**2
+    )
+
+    cv_per_atom = (
+        3.0 * KB *
+        np.trapz(g * mode_cv, freq_THz)
+    )
+
+    cv_molar = cv_per_atom * AVOGADRO
+
+    return cv_per_atom, cv_molar
 
 
 def main():
-    times = read_time_grid(TEMP_FILE)
+    
+    cv_times = []
+    cv_atom = []
+    cv_molar = []
+    
+    #times = read_time_grid(TEMP_FILE)
+    times, temperatures = read_temperature_data(TEMP_FILE)
     species, vel = read_velocity_trajectory(VEL_FILE)
 
     nsteps_vel = vel.shape[0]
@@ -206,6 +273,7 @@ def main():
     nsteps = min(len(times), nsteps_vel)
     times = times[:nsteps]
     vel = vel[:nsteps]
+    temperatures = temperatures[:nsteps]
 
     dt_fs = float(np.median(np.diff(times)))
     natoms = vel.shape[1]
@@ -231,14 +299,55 @@ def main():
         freq_per_fs, power = spectrum_from_vacf(C_damped, dt_fs)
         freq = convert_freq(freq_per_fs, FREQ_UNIT)
 
+        physical_power = power.copy()
+
         if NORMALIZE_CURVES and power.max() > 0:
             power = power / power.max()
 
-        mask = freq <= MAX_FREQ
+        mask = freq <= MAX_FREQ_PLOT
         color = cmap(i / max(1, len(t0_grid) - 1))
         ax.plot(freq[mask], power[mask], color=color,
                 label=f"{t0:.0f}\u2013{t1:.0f} fs")
         any_curve = True
+        
+        
+        # Use the computed spectrum as VDOS estimate
+        freq_THz = freq_per_fs * 1000.0
+
+        #vdos_raw = np.maximum(power, 0.0)
+        vdos_raw = np.maximum(physical_power, 0.0)
+
+        mask_cv = (
+            np.isfinite(freq_THz) &
+            np.isfinite(vdos_raw) &
+            (freq_THz > 0.0) &
+            (freq_THz <= MAX_FREQ_CV)
+        )
+
+        freq_cv = freq_THz[mask_cv]
+        vdos_cv = vdos_raw[mask_cv]
+
+        if len(freq_cv) < 2:
+            continue
+
+        T_window = np.mean(temperatures[idx])
+
+        cv_a, cv_m = heat_capacity_from_vdos(
+            freq_cv,
+            vdos_cv,
+            T_window
+        )
+
+        cv_times.append(np.mean(times[idx]))
+        cv_atom.append(cv_a)
+        cv_molar.append(cv_m)
+
+        print(
+            f"Window {t0:.0f}-{t1:.0f} fs : "
+            f"T = {T_window:.1f} K, "
+            f"Cv = {cv_m:.3f} J/mol/K"
+                )
+        
 
     if not any_curve:
         raise RuntimeError("No windows produced a spectrum - check WINDOW_LENGTH_FS vs. trajectory length.")
@@ -252,7 +361,40 @@ def main():
     fig.tight_layout()
     fig.savefig(OUTPUT_PNG, dpi=200)
     print(f"Saved: {OUTPUT_PNG}")
+    
+    
+    # --------------------------------------------------
+    # Plot heat capacity versus time
+    # --------------------------------------------------
+    if len(cv_times) == 0:
+        print("No valid heat-capacity points computed.")
+        return
+    cv_times = np.asarray(cv_times)
+    cv_atom = np.asarray(cv_atom)
+    cv_molar = np.asarray(cv_molar)
+
+    fig_cv, ax_cv = plt.subplots(figsize=(7, 5))
+    
+    ax_cv.plot(
+        cv_times,
+        cv_molar,
+        color="tab:red",
+        linewidth=1.8,
+        label=r"$C_V$ (quantum harmonic phonons)"
+    )
+
+    ax_cv.set_xlabel("Time (fs)")
+    ax_cv.set_ylabel("Molar heat capacity (J mol$^{-1}$ K$^{-1}$)")
+    ax_cv.set_title("Vibrational heat capacity from the VACF-derived VDOS")
+    ax_cv.grid(False)
+    ax_cv.legend()
+    fig_cv.tight_layout()
+    fig_cv.savefig(OUTPUT_CV_PNG, dpi=200)
+    plt.close(fig_cv)
+
+    print(f"Saved: {OUTPUT_CV_PNG}")
 
 
 if __name__ == "__main__":
     main()
+    
