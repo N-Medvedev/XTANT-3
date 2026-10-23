@@ -3008,7 +3008,7 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
       ! This version works for non-orthogonal supercell too:
       qA = sqrt( SUM( (Scell(1)%diff_peaks%ijk_diff_peak(1,i) * Scell(1)%k_supce(1,:)*matter%cell_x)**2 + &
                       (Scell(1)%diff_peaks%ijk_diff_peak(2,i) * Scell(1)%k_supce(2,:)*matter%cell_y)**2 + &
-                      (Scell(1)%diff_peaks%ijk_diff_peak(3,i) * Scell(1)%k_supce(3,:)*matter%cell_y)**2) )      ! [1/A]
+                      (Scell(1)%diff_peaks%ijk_diff_peak(3,i) * Scell(1)%k_supce(3,:)*matter%cell_z)**2) )      ! [1/A]
 
 !       print*, qA, g_2Pi * sqrt ( &
 !              (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/(Scell(1)%Supce(1,1)/matter%cell_x))**2 + &
@@ -3237,7 +3237,7 @@ subroutine get_Debye_temperature_from_diffraction(Scell, matter)
       lnIq = log(Scell(1)%diff_peaks%I_diff_peak(i))
 
       if (abs(lnIq) > 1.0d-10) then ! non-zero:
-         TDebye2 = - Scell(1)%Ta * (6.0d0 * g_h**2 * (Scell(1)%diff_peaks%ijk_qA(i)*1.0d10)**2) / (Mmean * g_kb_J * lnIq)
+         TDebye2 = - Scell(1)%Ta * (3.0d0 * g_h**2 * (Scell(1)%diff_peaks%ijk_qA(i)*1.0d10)**2) / (Mmean * g_kb_J * lnIq)
       else  ! undefined
          TDebye2 = -1.0d0
       endif
