@@ -3237,7 +3237,7 @@ subroutine get_Debye_temperature_from_diffraction(Scell, matter)
       lnIq = log(Scell(1)%diff_peaks%I_diff_peak(i))
 
       if (abs(lnIq) > 1.0d-10) then ! non-zero:
-         TDebye2 = - Scell(1)%Ta * (6.0d0 * g_h**2 * (Scell(1)%diff_peaks%ijk_qA(i)*1.0d10)**2) / (Mmean * g_kb_J * lnIq)
+         TDebye2 = - Scell(1)%Ta * (3.0d0 * g_h**2 * (Scell(1)%diff_peaks%ijk_qA(i)*1.0d10)**2) / (Mmean * g_kb_J * lnIq)
       else  ! undefined
          TDebye2 = -1.0d0
       endif
