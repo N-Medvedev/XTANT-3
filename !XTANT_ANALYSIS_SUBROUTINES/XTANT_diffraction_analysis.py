@@ -13,12 +13,20 @@ from typing import Dict, Optional
 
 # Module variables:
 starline="*"*70
+m_two_third = 2.0 / 3.0
+m_five_sixteenth = 5.0 / 16.0
+
+
+m_Thom_factor = 20.6074     # Thomson factor (Eq. 2.5 [1])
+g_me = 9.1093821545e-31     # [kg] Electron mass
+g_alpha = 0.00729735256     # fine structure constant
+g_cvel = 299792458.0        # [m/s] speed of light
+
+
 
 
 
 def main():
-
-
     # Define miller indices for diffraction peaks:
     hkl_list = [
         (2,0,0),
@@ -210,6 +218,55 @@ def main():
 
     plot_dw_peak_intensities(
         intensities, output_file="OUT_DW_origin_peak_intensities.png", DW_title="DW origin"
+    )
+
+
+    # ----------------------------------------
+    # Full diffraction calculation
+    # ----------------------------------------
+    intensities_full = compute_full_peak_intensities(
+        cells=cells,
+        coords=coords,
+        species=species,
+        hkl_list=hkl_list,
+        n_cells=n_cells,
+        normalize=False,
+    )
+
+    # Save raw intensities
+    save_dw_peak_intensities(
+        "OUT_full_peak_intensities.dat",
+        intensities_full
+    )
+
+    # Plots full peaks:
+    plot_dw_peak_intensities(
+        intensities_full,
+        output_file="OUT_full_peak_intensities_raw.png",
+        DW_title="Full diffraction calculation"
+    )
+
+    # Also calculate intensities normalized to the first frame
+    intensities_full_norm = compute_full_peak_intensities(
+        cells=cells,
+        coords=coords,
+        species=species,
+        hkl_list=hkl_list,
+        n_cells=n_cells,
+        normalize=True,
+    )
+
+    # Save normalized intensities
+    save_dw_peak_intensities(
+        "OUT_full_peak_intensities_normalized.dat",
+        intensities_full_norm
+    )
+
+    # Plot normalized intensities
+    plot_dw_peak_intensities(
+        intensities_full_norm,
+        output_file="OUT_full_peak_intensities_normalized.png",
+        DW_title="Full diffraction calculation"
     )
 
 
@@ -957,6 +1014,215 @@ def reciprocal_lattice(cell):
 
 
 
+def compute_full_peak_intensities(
+        cells,
+        coords,
+        species,
+        hkl_list,
+        n_cells=(1, 1, 1),
+        normalize=False,
+        form_factor_file="Atomic_form_factors.dat"):
+    """
+    Calculate kinematic diffraction intensities from atomic positions
+    and atomic form factors.
+
+    Parameters
+    ----------
+    cells : list of ndarray, each (3,3)
+        Supercell vectors in Angstrom; vectors are rows.
+
+    coords : list of ndarray, each (natoms,3)
+        Atomic Cartesian coordinates in Angstrom.
+
+    species : ndarray (natoms,)
+        Atomic symbols in the same order as coords.
+
+    hkl_list : list of (h,k,l)
+        Miller indices with respect to the unit cell.
+
+    n_cells : tuple of 3 ints
+        Number of unit cells along each supercell direction.
+
+    normalize : bool
+        If True, normalize each intensity to its frame-0 value.
+
+    form_factor_file : str
+        File containing the five fitted coefficients per element.
+
+    Returns
+    -------
+    intensities : dict
+        {(h,k,l): ndarray (nframes,)}
+    """
+
+    # Physical constants (SI)
+    HBAR = 1.054571817e-34  # J s
+    ANGSTROM_TO_M = 1.0e-10
+
+    # ---------------------------------------------
+    # Read atomic form-factor coefficients
+    # ---------------------------------------------
+    ff_data = np.loadtxt(form_factor_file, skiprows=1)
+
+    # Map each atom to its atomic number and form-factor coefficients
+    atomic_data = load_atomic_data()
+
+    atomic_numbers = []
+    coefficients = []
+
+    for symbol in species:
+        element = get_element(atomic_data, name=symbol)
+
+        if element is None:
+            raise ValueError(
+                f"Element '{symbol}' not found in INPUT_atomic_data.dat"
+            )
+
+        Z = element["number"]
+
+        if Z > ff_data.shape[0]:
+            raise ValueError(
+                f"No form-factor coefficients available for {symbol} "
+                f"(Z={Z})"
+            )
+
+        atomic_numbers.append(Z)
+        coefficients.append(ff_data[Z - 1, :])
+
+    atomic_numbers = np.asarray(atomic_numbers)
+    coefficients = np.asarray(coefficients)
+
+    nframes = len(coords)
+    natoms = len(species)
+
+    if len(cells) != nframes:
+        raise ValueError("cells and coords must contain the same number of frames")
+
+    n = np.asarray(n_cells, dtype=float)
+
+    if n.shape != (3,) or np.any(n < 1) or not np.allclose(n, np.rint(n)):
+        raise ValueError("n_cells must contain three positive integers")
+
+    intensities = {
+        tuple(hkl): np.zeros(nframes)
+        for hkl in hkl_list
+    }
+
+    # ---------------------------------------------
+    # Calculate intensity for each frame and peak
+    # ---------------------------------------------
+    for iframe in range(nframes):
+
+        cell = np.asarray(cells[iframe], dtype=float)
+
+        # Reciprocal lattice vectors of the supercell [1/Angstrom]
+        B_super = np.asarray(reciprocal_lattice(cell))
+
+        # Reciprocal lattice vectors of the unit cell
+        B_unit = B_super * n[:, None]
+
+        # Coordinates of all atoms in this frame [Angstrom]
+        r = np.asarray(coords[iframe], dtype=float)
+
+        if r.shape != (natoms, 3):
+            raise ValueError(
+                f"Unexpected coordinate shape in frame {iframe}: {r.shape}"
+            )
+
+        for hkl in hkl_list:
+
+            hkl_array = np.asarray(hkl, dtype=float)
+
+            # Scattering vector Q [1/Angstrom]
+            G = hkl_array @ B_unit
+            Q = np.linalg.norm(G)
+
+            # Momentum transfer q = hbar*Q [kg m/s]
+            q = HBAR * Q / ANGSTROM_TO_M
+
+            # Atomic form factors f_j(Q)
+            f = np.array([
+                form_factor(q, coefficients[j], atomic_numbers[j])
+                for j in range(natoms)
+            ])
+
+            # Complex scattering amplitude
+            phase = r @ G
+            F = np.sum(f * np.exp(1j * phase))
+
+            # Full coherent intensity
+            intensities[tuple(hkl)][iframe] = np.abs(F)**2
+
+    if normalize:
+        for hkl in intensities:
+            I0 = intensities[hkl][0]
+
+            if I0 > 0.0:
+                intensities[hkl] /= I0
+            else:
+                intensities[hkl][:] = np.nan
+
+    return intensities
+
+
+
+##########################
+# Calculations of the form factors:
+#FF = form_factor(q, a, Z)
+
+
+def form_factor(q: float,
+                a: list[float],
+                Z: float) -> float:
+    """
+    Atomic form factor (Eq. 2.7, 2.8, 2.9).
+
+    Parameters
+    ----------
+    q : float
+        Momentum transfer.
+    a : list of float
+        Fitted coefficients (length 5).
+    Z : float
+        Atomic number.
+
+    Returns
+    -------
+    FF : float
+        Form factor value.
+    """
+    mc = g_me * g_cvel
+    x = q / mc * m_Thom_factor   # Eq. (2.5)
+    x2 = x * x
+    x4 = x2 * x2
+    demf = 1.0 + a[3] * x2 + a[4] * x4
+
+    numr = (1.0 + a[0] * x2 + a[1] * x * x2 + a[2] * x4)
+
+    if ( demf > 1e8 * numr ):
+        fxz = 0.0
+    else :
+        #fxz = Z * (1.0 + a[0] * x2 + a[1] * x * x2 + a[2] * x4) / (demf * demf)  # Eq. (2.7)
+        fxz = Z * numr / (demf * demf)  # Eq. (2.7)
+
+    FF = fxz
+
+    if Z > 10.0 and fxz < 2.0:
+        al = g_alpha * (Z - m_five_sixteenth)   # Eq. (2.9)
+        b = np.sqrt(1.0 - al * al)              # Eq. (2.9)
+        CapQ = q / (2.0 * mc * al)              # Eq. (2.9)
+
+        denom = b * CapQ * (1.0 + CapQ * CapQ) ** b
+
+        #Fk = np.sin(2.0 * b * np.arctan(CapQ)) / ( b * CapQ * (1.0 + CapQ * CapQ) ** b )    # Eq. (2.8)
+        if (denom > 1.0e10):
+            Fk = 0.0
+        else:
+            Fk = np.sin(2.0 * b * np.arctan(CapQ)) / denom    # Eq. (2.8)
+
+        if FF < Fk:
+            FF = Fk
+    return FF
 
 
 ##########################
@@ -1317,6 +1583,54 @@ def get_element(data: Dict[int, Dict], atomic_number: int = None, name: str = No
                 return props
 
     return None
+
+
+
+
+
+def get_atomic_form_factors(targetpar, filename: str = "Atomic_form_factors.dat") -> None:
+    """
+    Read atomic form factor parameters (a1..a5) from database and attach them
+    to each element in targetpar.element_data.
+
+    Parameters
+    ----------
+    targetpar : TargetPar
+        Target parameters with attributes:
+        - elements : list of element symbols
+        - element_data : dict mapping symbol -> element dict
+    filename : str
+        Path to the atomic form factors database file.
+    """
+
+    # Resolve path depending on frozen/executable vs source
+    #if getattr(sys, 'frozen', False):
+    #    project_root = Path(sys.executable).parent
+    #else:
+    #    project_root = Path(__file__).resolve().parent.parent
+    #file_path = project_root / "INPUT" / "Atomic_data" / filename
+    file_path = Path(filename)
+
+    # --- Check file existence ---
+    if not file_path.exists():
+        print(f"Atomic form factors file not found: {file_path}")
+        #sys.exit(1)
+
+    # --- Load numeric data (rows = elements, cols = 5 coefficients) ---
+    # Skip the first line (header with column names)
+    data = np.loadtxt(file_path, skiprows=1)  # shape (N_elements, 5)
+
+    # --- Distribute to all elements ---
+    for elem in targetpar.elements:
+        edata = targetpar.element_data[elem]
+        Z = edata["number"]
+
+        if Z > data.shape[0]:
+            print(f"Atomic form factors: Element #{Z} not found in {filename}")
+            sys.exit(1)
+
+        # Store coefficients as a list or NumPy array
+        edata["Form_factor"] = data[Z-1, :].tolist()   # Fortran arrays are 1-based
 
 
 
