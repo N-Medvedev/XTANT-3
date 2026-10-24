@@ -42,7 +42,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 
 TEMP_FILE = SCRIPT_DIR / "OUTPUT_temperatures.dat"
 VEL_FILE = SCRIPT_DIR / "OUTPUT_atomic_velocities.xyz"
-OUTPUT_PNG = SCRIPT_DIR / "phonon_spectra.png"
+OUTPUT_PNG = SCRIPT_DIR / "OUT_phonon_spectra.png"
 OUTPUT_SPECTRA_DAT = SCRIPT_DIR / "OUT_phonon_spectra.dat"
 OUTPUT_CV_DAT = SCRIPT_DIR / "OUT_heat_capacity.dat"
 OUTPUT_VACF_DAT = SCRIPT_DIR / "OUT_vacf_windows.dat"
@@ -70,7 +70,7 @@ MAX_FREQ_PLOT = 100.0
 MAX_FREQ_CV = 100.0
 
 # Heat-capacity output
-OUTPUT_CV_PNG = SCRIPT_DIR / "phonon_heat_capacity.png"
+OUTPUT_CV_PNG = SCRIPT_DIR / "OUT_phonon_heat_capacity.png"
 PLANCK = 6.62607015e-34       # J s
 KB = 1.380649e-23             # J/K
 AVOGADRO = 6.02214076e23      # mol^-1
