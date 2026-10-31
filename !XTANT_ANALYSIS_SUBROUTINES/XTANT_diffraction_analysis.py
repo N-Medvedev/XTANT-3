@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 import matplotlib.pyplot as plt
 import numpy as np
 import re
@@ -11,33 +10,55 @@ from pathlib import Path
 from typing import Dict, Optional
 
 
+#----------------------
+# Constants:
 # Module variables:
 starline="*"*70
 m_two_third = 2.0 / 3.0
 m_five_sixteenth = 5.0 / 16.0
-
-
 m_Thom_factor = 20.6074     # Thomson factor (Eq. 2.5 [1])
 g_me = 9.1093821545e-31     # [kg] Electron mass
 g_alpha = 0.00729735256     # fine structure constant
 g_cvel = 299792458.0        # [m/s] speed of light
 
+#----------------------
+# Output filenames:
+OUT_average_positions   = "OUT_average_positions.xyz"
+OUT_MSD_file            = "OUT_MSD_analysis.dat"
+OUT_Debye_file          = "OUT_Debye_temperature.dat"
+OUT_DW_thermal_peak_intensities         = "OUT_DW_thermal_peak_intensities.dat"
+OUT_DW_origin_peak_intensities          = "OUT_DW_origin_peak_intensities.dat"
+OUT_full_peak_intensities               = "OUT_full_peak_intensities.dat"
+OUT_full_peak_intensities_normalized    = "OUT_full_peak_intensities_normalized.dat"
 
+
+#----------------------
+# Parameters of the analysis:
+# Define miller indices for diffraction peaks:
+hkl_list = [
+        (2,0,0),
+        (1,0,1),
+        (2,1,1),
+        (2,2,0),
+        (1,1,2),
+        (0,0,4)
+        ]
+
+# Define the size of the supercell in the units of the unit-cell:
+n_cells=(4, 4, 7)
+
+
+# File with reference coordinates (ideal structure):
+#IN_reference_atomic_positions = "OUT_average_positions.xyz"
+IN_reference_atomic_positions = "None"  # must be string
+# Option to use the displacements from the reference points instead of the absolute coordinates:
+use_displacements_set=False         # option to use : R(t) =  r_ref + (r(t) - r(0))
+
+#----------------------
 
 
 
 def main():
-    # Define miller indices for diffraction peaks:
-    hkl_list = [
-        (2,0,0),
-        (2,2,0),
-        (3,1,1),
-        (1,1,1)
-    ]
-
-    # Define the size of the supercell in the units of the unit-cell:
-    n_cells=(3, 3, 3)
-
 
     filename = (
         sys.argv[1]
@@ -46,6 +67,7 @@ def main():
     )
 
     print(f"Reading {filename}...")
+
 
     # Read the XYZ file:
     (
@@ -60,6 +82,15 @@ def main():
         f"with {coords[0].shape[0]} atoms."
     )
 
+    # Get time grid, if possible:
+    time_file = "OUTPUT_temperatures.dat"
+    time = read_time_grid(time_file)   # None if the file is absent
+
+
+    if time is not None:
+        print(f"Time grid read from file {time_file}")
+    else:
+        print(f"Time grid not found in file {time_file}, using frames instead")
 
     # --------------------
     # Get MSDs:
@@ -67,82 +98,83 @@ def main():
     # Unwrapped trajectory
     traj = unwrap_trajectory(cells, coords)
 
-    # Get the atom-by-atom displacements:
-    dr0 = traj - traj[0]
-    disp2_initial = np.sum(
-        dr0 * dr0,
-        axis=2
-    )
+    # Check if reference atomic positions are provided:
+    ref_positions = None
+    if os.path.isfile(IN_reference_atomic_positions):
+        ref_positions, ref_cell = load_reference_positions(IN_reference_atomic_positions, traj[0], cells[0], species=species)
+        ref_cell = np.asarray(ref_cell, dtype=float).reshape(-1, 3, 3)[0]   # reshape to ensure required shape
 
-    # Existing MSD from frame 0:
-    msd = np.mean(
-        disp2_initial,
-        axis=1
-    )
+        use_displacements = use_displacements_set
+        print(f"Using reference positions from {IN_reference_atomic_positions}")
+    else:
+        ref_positions = traj[0]
+        ref_cell = cells[0]
+        use_displacements = False
+        print("Reference file not found; using frame 0 as reference.")
+
+    # Atom-by-atom displacements from the reference
+    dr0 = traj - ref_positions[None, :, :]
+    disp2_initial = np.sum(dr0 * dr0, axis=2)
+
+    # MSD from the reference
+    msd = np.mean(disp2_initial, axis=1)
 
 
     # New time-origin averaged MSD
     msd_avg = compute_time_origin_averaged_msd(traj)
 
     # Analyse the MSD and get the average thermal MSD:
-    (
-        thermal_msd,
-        thermal_msd_avg,
+    ( thermal_msd, thermal_msd_avg, mean_positions, disp2_thermal ) = compute_thermal_msd(traj)
+
+    # Save the average atomic positions:
+    write_extxyz(
+        OUT_average_positions,
+        species,
         mean_positions,
-        disp2_thermal
-    ) = compute_thermal_msd(traj)
-
-
-    out = np.column_stack(
-        (
-            np.arange(len(msd)),
-            msd,
-        )
+        cell=np.mean(cells, axis=0),                   # average cell
+        extra={"thermal_msd": disp2_thermal.mean(axis=0)},   # per-atom <|dr|^2> [A^2]
+        comment_info={"thermal_msd_avg": f"{thermal_msd_avg:.8e}"},
+        wrap=True,
     )
 
-    # Save the calcualted data:
-    OUT_MSD_file = "OUT_MSD_analysis.dat"
+
+
+    out = np.column_stack( ( np.arange(len(msd)), msd, ) )
+
+    if time is not None:
+        x_label = "Time (fs)"
+    else:
+        x_label = "Frame"
 
     # Prepare the output file:
-    header = (
-    f"Average_thermal_MSD = "
+    header = (f"Average_thermal_MSD = "
     f"{thermal_msd_avg:.10e} Angstrom^2\n"
     f"RMS_thermal_displacement = "
     f"{np.sqrt(thermal_msd_avg):.10e} Angstrom\n"
-    f"Frame "
+    f"{x_label} "
     f"MSD_from_frame0_Angstrom2 "
     f"MSD_time_origin_averaged_Angstrom2 "
     f"MSD_thermal_Angstrom2"
     )
 
-
     # Save output file:
+    if time is not None and len(time) == len(msd):   # use defined time:
+        first_col = np.asarray(time, dtype=float)
+        first_fmt = "%.6e"
+    else:                                            # use frame numbers instead of time:
+        first_col = np.arange(len(msd))
+        first_fmt = "%8d"
+
     np.savetxt(
         OUT_MSD_file,
-        np.column_stack(
-        (
-            np.arange(len(msd)),
-            msd,
-            msd_avg,
-            thermal_msd,
-        )
-        ),
-        fmt=[
-        "%8d",
-        "%.10e",
-        "%.10e",
-        "%.10e",
-        ],
+        np.column_stack((first_col, msd, msd_avg, thermal_msd)),
+        fmt=[first_fmt, "%.10e", "%.10e", "%.10e"],
         header=header
     )
 
     print(f"Saved MSD in the file: {OUT_MSD_file}")
     # And plot the MSDs:
-    plot_msd(
-        msd,
-        msd_avg,
-        thermal_msd
-    )
+    plot_msd(msd, msd_avg, thermal_msd, x_label=x_label)
 
 
     #------------------
@@ -151,9 +183,7 @@ def main():
     # Debye temperature evaluation:
     # Check if there is kinetic energy:
     if kinetic_energies is not None:
-        print(
-            "Found kinetic_energy property, evaluating Debye temperature."
-        )
+        print("Found kinetic_energy property, evaluating Debye temperature.")
         # Next, get the atomic mass:
         masses_amu = get_atomic_masses(species)
 
@@ -161,33 +191,16 @@ def main():
         temperature = compute_temperature(kinetic_energies)
 
         # Get the Debye temperatures:
-        theta_initial = compute_debye_temperature(
-            temperature,
-            disp2_initial,
-            masses_amu
-        )
-
-        theta_thermal = compute_debye_temperature(
-            temperature,
-            disp2_thermal,
-            masses_amu
-        )
+        # For displacements with respect to initial:
+        theta_initial = compute_debye_temperature(temperature, disp2_initial, masses_amu)
+        # For displacements with respect to thermal:
+        theta_thermal = compute_debye_temperature(temperature, disp2_thermal, masses_amu)
 
         # Get the Debye temperatures:
-        OUT_Debye_file = ("OUT_Debye_temperature.dat")
         # Save them into file:
-        save_debye_temperature(
-            OUT_Debye_file,
-            temperature,
-            theta_initial,
-            theta_thermal
-        )
+        save_debye_temperature(OUT_Debye_file, temperature, theta_initial, theta_thermal, time=time)
         # also plot them:
-        plot_debye_temperature(
-            temperature,
-            theta_initial,
-            theta_thermal,
-            output_file="OUT_Debye_temperature.png")
+        plot_debye_temperature(temperature, theta_initial, theta_thermal, output_file="OUT_Debye_temperature.png", x_label=x_label)
 
     else:
         print(
@@ -197,179 +210,65 @@ def main():
 
     #---------------------
     # Get the DW diffraction intensities:
-
-    intensities = compute_dw_peak_intensities(thermal_msd, cells, hkl_list, n_cells)
-
-    save_dw_peak_intensities(
-        "OUT_DW_thermal_peak_intensities.dat",
-        intensities
-    )
-
-    plot_dw_peak_intensities(
-        intensities, output_file="OUT_DW_thermal_peak_intensities.png", DW_title="DW thermal"
-    )
-    # Compare with the DW from MSD with respect to the zero-time:
+    # DW from MSD with respect to reference positions (or the frame from zero-time):
     intensities = compute_dw_peak_intensities(msd, cells, hkl_list, n_cells)
+    save_dw_peak_intensities(OUT_DW_origin_peak_intensities, intensities)
+    plot_dw_peak_intensities(intensities, time=time, output_file="OUT_DW_origin_peak_intensities.png", DW_title="DW origin")
 
-    save_dw_peak_intensities(
-        "OUT_DW_origin_peak_intensities.dat",
-        intensities
-    )
-
-    plot_dw_peak_intensities(
-        intensities, output_file="OUT_DW_origin_peak_intensities.png", DW_title="DW origin"
-    )
+    # DW from thermal MSD:
+    intensities = compute_dw_peak_intensities(thermal_msd, cells, hkl_list, n_cells)
+    save_dw_peak_intensities(OUT_DW_thermal_peak_intensities, intensities)
+    plot_dw_peak_intensities(intensities, time=time, output_file="OUT_DW_thermal_peak_intensities.png", DW_title="DW thermal")
 
 
     # ----------------------------------------
     # Full diffraction calculation
     # ----------------------------------------
     intensities_full = compute_full_peak_intensities(
-        cells=cells,
-        coords=coords,
-        species=species,
-        hkl_list=hkl_list,
-        n_cells=n_cells,
-        normalize=False,
-    )
+        cells=cells, coords=coords, species=species, hkl_list=hkl_list, n_cells=n_cells, normalize=False, )
 
     # Save raw intensities
-    save_dw_peak_intensities(
-        "OUT_full_peak_intensities.dat",
-        intensities_full
-    )
+    save_dw_peak_intensities(OUT_full_peak_intensities, intensities_full)
 
     # Plots full peaks:
-    plot_dw_peak_intensities(
-        intensities_full,
-        output_file="OUT_full_peak_intensities_raw.png",
-        DW_title="Full diffraction calculation"
-    )
+    plot_dw_peak_intensities(intensities_full, time=time, output_file="OUT_full_peak_intensities_raw.png",
+                             DW_title="Diffraction (raw peaks)")
 
-    # Also calculate intensities normalized to the first frame
-    intensities_full_norm = compute_full_peak_intensities(
-        cells=cells,
-        coords=coords,
-        species=species,
-        hkl_list=hkl_list,
-        n_cells=n_cells,
-        normalize=True,
-    )
+    # Also calculate intensities normalized to the the given reference points (or first frame):
+    #ref_positions = load_reference_positions("reference_positions.xyz", traj[0], cells[0], species=species)
+    if ref_positions is not None:
+        intensities_full_norm = compute_full_peak_intensities(
+            cells, coords, species, hkl_list, n_cells=n_cells,
+            normalize=True,
+            reference_positions=ref_positions,
+            reference_cell = ref_cell,
+            normalize_to_reference=True,            # option 1
+            use_displacements=use_displacements,    # option 2: set True to use r_ref + (r(t) - r(0))
+            )
+    else:   # use first frame as reference for normalization:
+        intensities_full_norm = compute_full_peak_intensities(
+            cells=cells, coords=coords, species=species, hkl_list=hkl_list, n_cells=n_cells, normalize=True, )
+
+    # No need to recalculate, use precalculated full intensities:
+    # for hkl in intensities_full:
+    #     I0 = intensities_full[hkl][0]
+    #     if I0 > 0.0:
+    #         intensities_full_norm[hkl] = intensities_full[hkl] / I0[hkl]
+    #     else:
+    #         intensities_full_norm[hkl][:] = np.nan
 
     # Save normalized intensities
-    save_dw_peak_intensities(
-        "OUT_full_peak_intensities_normalized.dat",
-        intensities_full_norm
-    )
+    save_dw_peak_intensities(OUT_full_peak_intensities_normalized, intensities_full_norm)
 
     # Plot normalized intensities
-    plot_dw_peak_intensities(
-        intensities_full_norm,
-        output_file="OUT_full_peak_intensities_normalized.png",
-        DW_title="Full diffraction calculation"
-    )
+    plot_dw_peak_intensities(intensities_full_norm, time=time, output_file="OUT_full_peak_intensities_normalized.png",
+                             DW_title="Diffraction (normalized)")
 
 
 
 
-def save_dw_peak_intensities(
-        filename,
-        intensities):
-    """
-    Save DW peak intensities.
-    """
-
-    hkls = list(
-        intensities.keys()
-    )
-
-    nframes = len(
-        intensities[hkls[0]]
-    )
-
-    data = [
-        np.arange(nframes)
-    ]
-
-    labels = ["Frame"]
-
-    for hkl in hkls:
-
-        data.append(
-            intensities[hkl]
-        )
-
-        labels.append(
-            f"I_{hkl[0]}{hkl[1]}{hkl[2]}"
-        )
-
-    header = " ".join(labels)
-
-    np.savetxt(
-        filename,
-        np.column_stack(data),
-        fmt="%.10e",
-        header=header
-    )
-
-    print(
-        f"Saved diffraction intensities: "
-        f"{filename}"
-    )
-
-
-
-def save_debye_temperature(
-        filename,
-        temperature,
-        theta_initial,
-        theta_thermal):
-
-    avg_temperature = np.nanmean(temperature)
-    avg_theta_initial = np.nanmean(theta_initial)
-    avg_theta_thermal = np.nanmean(theta_thermal)
-
-    header = (
-        f"Average_temperature = "
-        f"{avg_temperature:.10e} K\n"
-        f"Average_Debye_temperature_initial = "
-        f"{avg_theta_initial:.10e} K\n"
-        f"Average_Debye_temperature_thermal = "
-        f"{avg_theta_thermal:.10e} K\n"
-        f"Frame "
-        f"Temperature_K "
-        f"ThetaD_initial_K "
-        f"ThetaD_thermal_K"
-    )
-    print(header)
-
-    np.savetxt(
-        filename,
-        np.column_stack(
-            (
-                np.arange(len(temperature)),
-                temperature,
-                theta_initial,
-                theta_thermal
-            )
-        ),
-        fmt=[
-            "%8d",
-            "%.10e",
-            "%.10e",
-            "%.10e"
-        ],
-        header=header
-    )
-
-    print(
-        f"Saved Debye temperatures in file: "
-        f"{filename}"
-    )
-
-
-
-
+##########################
+# Reading files:
 
 def read_extxyz(filename):
     """
@@ -554,6 +453,90 @@ def parse_properties(comment):
     return prop_map
 
 
+
+
+def read_time_grid(filename="OUTPUT_temperatures.dat", skip_lines=2):
+    """
+    Read the time grid [fs] from the first column of the file.
+
+    Returns
+    -------
+    time : ndarray or None
+        Time in fs, or None if the file is absent or unreadable.
+    """
+    if not os.path.isfile(filename):
+        return None
+    try:
+        time = np.loadtxt(filename, skiprows=skip_lines, usecols=0, ndmin=1)
+    except (ValueError, OSError) as err:
+        print(f"Warning: could not read time from {filename} ({err}); using frames.")
+        return None
+    return time
+
+
+
+def get_x_axis(nframes, time=None):
+    """
+    Return (x, xlabel). Uses time [fs] if its length matches the number
+    of frames, otherwise frame indices.
+    """
+    if time is not None:
+        if len(time) == nframes:
+            return time, "Time (fs)"
+        print(f"Warning: time grid has {len(time)} points but there are "
+              f"{nframes} frames; using frames instead.")
+    return np.arange(nframes), "Frame"
+
+
+
+
+def load_reference_positions(filename, traj0, cell0, species=None, tol_frac=0.5):
+    """
+    Read reference atomic positions and align them with the unwrapped trajectory.
+
+    Parameters
+    ----------
+    filename : str
+        Extended XYZ file with one (or more; the first is used) frame.
+    traj0 : ndarray (N, 3)
+        Unwrapped positions at frame 0 [A].
+    cell0 : ndarray (3, 3)
+        Cell at frame 0, lattice vectors as rows.
+    species : ndarray (N,) or None
+        Species of the trajectory, to verify atom order.
+
+    Returns
+    -------
+    ref : ndarray (N, 3)
+        Reference positions, each shifted by lattice vectors to the image
+        closest to traj0.
+    """
+    ref_cells, ref_coords, ref_species, _ = read_extxyz(filename)
+    ref = np.asarray(ref_coords[0], dtype=float)
+
+    if ref.shape != traj0.shape:
+        raise ValueError(
+            f"Reference has {ref.shape[0]} atoms, trajectory has {traj0.shape[0]}."
+        )
+    if species is not None and not np.array_equal(ref_species, species):
+        raise ValueError("Reference species/order differ from the trajectory.")
+
+    # Minimum-image alignment in fractional coordinates of the frame-0 cell
+    d_frac = (ref - traj0) @ np.linalg.inv(cell0)
+    if np.any(np.abs(d_frac - np.rint(d_frac)) > tol_frac * 0.999):
+        print("Warning: some atoms are close to half a cell from the reference; "
+              "periodic alignment may be ambiguous.")
+    d_frac -= np.rint(d_frac)
+    return traj0 + d_frac @ cell0, ref_cells
+
+
+
+
+
+
+
+#########################
+# Calculations:
 
 def cart_to_frac(r, cell):
     """
@@ -987,34 +970,174 @@ def reciprocal_lattice(cell):
     a2 = cell[1]
     a3 = cell[2]
 
-    V = np.dot(
-        a1,
-        np.cross(a2, a3)
-    )
+    V = np.dot(a1, np.cross(a2, a3))
 
-    b1 = (
-        2.0 * np.pi
-        * np.cross(a2, a3)
-        / V
-    )
-
-    b2 = (
-        2.0 * np.pi
-        * np.cross(a3, a1)
-        / V
-    )
-
-    b3 = (
-        2.0 * np.pi
-        * np.cross(a1, a2)
-        / V
-    )
+    b1 = (2.0 * np.pi * np.cross(a2, a3) / V )
+    b2 = (2.0 * np.pi * np.cross(a3, a1) / V )
+    b3 = (2.0 * np.pi * np.cross(a1, a2) / V )
 
     return b1, b2, b3
 
 
 
 def compute_full_peak_intensities(
+        cells,
+        coords,
+        species,
+        hkl_list,
+        n_cells=(1, 1, 1),
+        normalize=False,
+        form_factor_file="Atomic_form_factors.dat",
+        reference_positions=None,
+        reference_cell=None,
+        normalize_to_reference=False,
+        use_displacements=False,
+        coords_unwrapped=False):
+    """
+    Kinematic diffraction intensities from atomic positions and form factors.
+
+    Parameters
+    ----------
+    cells, coords, species, hkl_list, n_cells, normalize, form_factor_file :
+        As before.
+
+    reference_positions : ndarray (natoms, 3) or None
+        Reference structure (Cartesian, Angstrom), same atom order as coords.
+        Align it to the trajectory first (e.g. load_reference_positions).
+
+    reference_cell : ndarray (3, 3) or None
+        Cell of the reference structure; defaults to cells[0].
+
+    normalize_to_reference : bool
+        If True (and normalize=True), I0 is the intensity of the reference
+        structure instead of frame 0.
+
+    use_displacements : bool
+        If True, each frame uses  r_eff(t) = r_ref(t) + [r(t) - r(0)],
+        i.e. the displacements from frame 0 are added to the reference
+        positions. r_ref(t) is the reference scaled with the cell of frame t.
+
+    coords_unwrapped : bool
+        Set True if coords are already unwrapped. Otherwise they are
+        unwrapped internally when use_displacements=True.
+    """
+    # ---------------------------------------------
+    # Form-factor coefficients per atom
+    # ---------------------------------------------
+    ff_data = np.loadtxt(form_factor_file, skiprows=1)
+    atomic_data = load_atomic_data()
+
+    atomic_numbers, coefficients = [], []
+    for symbol in species:
+        element = get_element(atomic_data, name=symbol)
+        if element is None:
+            raise ValueError(f"Element '{symbol}' not found in INPUT_atomic_data.dat")
+        Z = element["number"]
+        if Z > ff_data.shape[0]:
+            raise ValueError(f"No form-factor coefficients available for {symbol} (Z={Z})")
+        atomic_numbers.append(Z)
+        coefficients.append(ff_data[Z - 1, :])
+    atomic_numbers = np.asarray(atomic_numbers)
+    coefficients = np.asarray(coefficients)
+
+    nframes = len(coords)
+    natoms = len(species)
+    if len(cells) != nframes:
+        raise ValueError("cells and coords must contain the same number of frames")
+
+    n = np.asarray(n_cells, dtype=float)
+    if n.shape != (3,) or np.any(n < 1) or not np.allclose(n, np.rint(n)):
+        raise ValueError("n_cells must contain three positive integers")
+
+    # ---------------------------------------------
+    # Reference structure
+    # ---------------------------------------------
+    ref = None
+    if reference_positions is not None:
+        ref = np.asarray(reference_positions, dtype=float)
+        if ref.shape != (natoms, 3):
+            raise ValueError(f"reference_positions must have shape ({natoms}, 3), got {ref.shape}")
+        ref_cell = np.asarray(cells[0] if reference_cell is None else reference_cell, dtype=float)
+        ref_frac = ref @ np.linalg.inv(ref_cell)       # fractional coordinates
+
+    if (use_displacements or normalize_to_reference) and ref is None:
+        raise ValueError("use_displacements / normalize_to_reference require reference_positions")
+
+    # ---------------------------------------------
+    # Displacements from frame 0 (option 2)
+    # ---------------------------------------------
+    if use_displacements:
+        traj = np.asarray(coords, dtype=float) if coords_unwrapped \
+            else np.asarray(unwrap_trajectory(cells, coords), dtype=float)
+        disp = traj - traj[0][None, :, :]
+        # Reference expressed in the frame-0 cell; identical to ref when
+        # reference_cell is None or equals cells[0]
+        r_ref0 = ref_frac @ np.asarray(cells[0], dtype=float)
+
+    # ---------------------------------------------
+    # Intensities frame by frame
+    # ---------------------------------------------
+    intensities = {tuple(hkl): np.zeros(nframes) for hkl in hkl_list}
+
+    for iframe in range(nframes):
+        cell = np.asarray(cells[iframe], dtype=float)
+
+        if use_displacements:
+            #r = ref_frac @ cell + disp[iframe]
+            r = r_ref0 + disp[iframe]
+        else:
+            r = np.asarray(coords[iframe], dtype=float)
+            if r.shape != (natoms, 3):
+                raise ValueError(f"Unexpected coordinate shape in frame {iframe}: {r.shape}")
+
+        I_frame = _frame_intensities(r, cell, hkl_list, n, coefficients, atomic_numbers)
+        for hkl, val in I_frame.items():
+            intensities[hkl][iframe] = val
+
+    # ---------------------------------------------
+    # Normalization (option 1)
+    # ---------------------------------------------
+    if normalize:
+        if normalize_to_reference:
+            I_ref = _frame_intensities(ref, ref_cell, hkl_list, n, coefficients, atomic_numbers)
+        for hkl in intensities:
+            I0 = I_ref[hkl] if normalize_to_reference else intensities[hkl][0]
+            if I0 > 0.0:
+                intensities[hkl] /= I0
+            else:
+                intensities[hkl][:] = np.nan
+
+    return intensities
+
+
+def _frame_intensities(r, cell, hkl_list, n, coefficients, atomic_numbers):
+    """Kinematic intensity |F|^2 of every hkl for one set of positions."""
+    HBAR = 1.054571817e-34      # J s
+    ANGSTROM_TO_M = 1.0e-10
+
+    B_super = np.asarray(reciprocal_lattice(cell), dtype=float)
+    B_unit = B_super * n[:, None]
+    natoms = len(r)
+
+    out = {}
+    for hkl in hkl_list:
+        G = np.asarray(hkl, dtype=float) @ B_unit
+        q = HBAR * np.linalg.norm(G) / ANGSTROM_TO_M
+        f = np.array([
+            form_factor(q, coefficients[j], atomic_numbers[j])
+            for j in range(natoms)
+        ])
+        F = np.sum(f * np.exp(1j * (r @ G)))
+        out[tuple(hkl)] = np.abs(F) ** 2
+    return out
+
+
+
+
+
+
+
+def compute_full_peak_intensities_OLD(
         cells,
         coords,
         species,
@@ -1225,16 +1348,71 @@ def form_factor(q: float,
     return FF
 
 
+
+
 ##########################
-# Plotting subroutines:
+# Saving output files:
 
 
-def plot_dw_peak_intensities(
-        intensities,
-        output_file="OUT_DW_peak_intensities.png",
-        DW_title="Debye-Waller intensities"):
+def write_extxyz(
+        filename,
+        symbols,
+        positions,
+        cell=None,
+        pbc=(True, True, True),
+        comment_info=None,
+        extra=None,
+        wrap=False):
     """
-    Plot Debye-Waller peak intensities.
+    Write one frame in extended XYZ format.
+
+    extra : dict {name: ndarray (N,)} of additional per-atom scalar properties.
+    wrap  : if True, wrap positions into the cell (needs `cell`).
+    """
+    positions = np.asarray(positions, dtype=float)
+    n = len(symbols)
+    if positions.shape != (n, 3):
+        raise ValueError(f"positions must have shape ({n}, 3), got {positions.shape}")
+
+    if wrap:
+        if cell is None:
+            raise ValueError("wrap=True requires a cell")
+        frac = positions @ np.linalg.inv(cell)
+        frac -= np.floor(frac)
+        positions = frac @ cell
+
+    extra = extra or {}
+    props = "species:S:1:pos:R:3" + "".join(f":{k}:R:1" for k in extra)
+
+    parts = []
+    if cell is not None:
+        lat = " ".join(f"{x:.10f}" for x in np.asarray(cell, float).reshape(9))
+        parts.append(f'Lattice="{lat}"')
+    parts.append(f"Properties={props}")
+    parts.append('pbc="' + " ".join("T" if p else "F" for p in pbc) + '"')
+    for key, val in (comment_info or {}).items():
+        parts.append(f"{key}={val}")
+
+    extra_cols = [np.asarray(v, float) for v in extra.values()]
+
+    filename = unique_filename(filename) # make sure it won't overwrite existng files
+    with open(filename, "x") as f:        # "x" = fail if the file appeared in the meantime
+        f.write(f"{n}\n{' '.join(parts)}\n")
+        for i in range(n):
+            line = f"{symbols[i]:<3s} " + " ".join(f"{x:16.10f}" for x in positions[i])
+            line += "".join(f" {c[i]:16.10e}" for c in extra_cols)
+            f.write(line + "\n")
+    print(f"Saved thermal positions: {filename}")
+
+
+
+
+
+def save_dw_peak_intensities(
+        filename,
+        intensities):
+    """
+    Save DW peak intensities.
     """
 
     hkls = list(
@@ -1245,71 +1423,145 @@ def plot_dw_peak_intensities(
         intensities[hkls[0]]
     )
 
-    frames = np.arange(
-        nframes
-    )
-
-    fig, ax = plt.subplots(
-        figsize=(5,4)
-    )
-
-    styles = [
-        "-",
-        "--",
-        ":",
-        "-."
+    data = [
+        np.arange(nframes)
     ]
 
-    for i, hkl in enumerate(hkls):
+    labels = ["Frame"]
 
+    for hkl in hkls:
+
+        data.append(
+            intensities[hkl]
+        )
+
+        labels.append(
+            f"I_{hkl[0]}{hkl[1]}{hkl[2]}"
+        )
+
+    header = " ".join(labels)
+
+    np.savetxt(
+        filename,
+        np.column_stack(data),
+        fmt="%.10e",
+        header=header
+    )
+
+    print(
+        f"Saved diffraction intensities: "
+        f"{filename}"
+    )
+
+
+
+def save_debye_temperature(
+        filename,
+        temperature,
+        theta_initial,
+        theta_thermal,
+        time=None):
+
+    avg_temperature = np.nanmean(temperature)
+    avg_theta_initial = np.nanmean(theta_initial)
+    avg_theta_thermal = np.nanmean(theta_thermal)
+
+
+    if time is not None and len(time) == len(temperature):   # use defined time:
+        x_label = "Time (fs)"
+        first_col = np.asarray(time, dtype=float)
+        first_fmt = "%.6e"
+    else:
+        x_label = "Frame"
+        first_col = np.arange(len(temperature))
+        first_fmt = "%8d"
+
+    header = (
+        f"Average_temperature = "
+        f"{avg_temperature:.10e} K\n"
+        f"Average_Debye_temperature_initial = "
+        f"{avg_theta_initial:.10e} K\n"
+        f"Average_Debye_temperature_thermal = "
+        f"{avg_theta_thermal:.10e} K\n"
+        f"{x_label} "
+        f"Temperature_K "
+        f"ThetaD_initial_K "
+        f"ThetaD_thermal_K"
+    )
+    print(header)
+
+    np.savetxt(
+        filename,
+        np.column_stack((first_col, temperature, theta_initial, theta_thermal)),
+        fmt=[first_fmt, "%.10e", "%.10e", "%.10e"],
+        header=header
+    )
+
+    print(
+        f"Saved Debye temperatures in file: "
+        f"{filename}"
+    )
+
+
+def unique_filename(filename):
+    """
+    Return `filename` if it does not exist yet; otherwise insert an index
+    before the extension: name.ext -> name_001.ext, name_002.ext, ...
+    """
+    if not os.path.exists(filename):
+        return filename
+    base, ext = os.path.splitext(filename)
+    i = 1
+    while True:
+        candidate = f"{base}_{i:03d}{ext}"
+        if not os.path.exists(candidate):
+            return candidate
+        i += 1
+
+
+##########################
+# Plotting subroutines:
+
+def plot_dw_peak_intensities(
+        intensities,
+        time=None,
+        output_file="OUT_DW_peak_intensities.png",
+        DW_title="Debye-Waller intensities",
+        ylabel=r"$I/I_0$"):
+    """
+    Plot Debye-Waller peak intensities.
+    """
+
+    hkls = list(intensities.keys())
+    nframes = len(intensities[hkls[0]])
+    x, xlabel = get_x_axis(nframes, time)
+
+    frames = np.arange(nframes)
+
+    fig, ax = plt.subplots(figsize=(5, 4))
+
+    styles = ["-", "--", ":", "-."]
+
+    for i, hkl in enumerate(hkls):
         ax.plot(
-            frames,
-            intensities[hkl],
-            lw=2.0,
-            ls=styles[
-                i % len(styles)
-            ],
+            x, intensities[hkl],
+            lw=1.0,
+            ls=styles[i % len(styles)],
             label=f"({hkl[0]}{hkl[1]}{hkl[2]})"
         )
 
-    ax.set_xlabel(
-        "Frame",
-        fontsize=14
-    )
-
-    ax.set_ylabel(
-        r"$I/I_0$",
-        fontsize=14
-    )
-
-    ax.set_ylim(
-        0.0,
-        1.05
-    )
-
-    ax.grid(
-        False
-    )
-
-    ax.legend(
-        frameon=False
-    )
-
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=12)
+    ax.set_ylim(0.0, 1.05)
+    ax.grid(False)
+    ax.legend(frameon=True)
     ax.set_title(DW_title)
 
     fig.tight_layout()
-
-    fig.savefig(
-        output_file,
-        dpi=300,
-        bbox_inches="tight"
-    )
-
+    fig.savefig(output_file, dpi=300, bbox_inches="tight")
     plt.close(fig)
+    print(f"Saved figure: {output_file}")
 
-    print(
-        f"Saved figure: {output_file}"
-    )
 
 
 
@@ -1318,7 +1570,8 @@ def plot_debye_temperature(
         temperature,
         theta_initial,
         theta_thermal,
-        output_file="OUT_Debye_temperature.png"):
+        output_file="OUT_Debye_temperature.png",
+        x_label = "Frame"):
     """
     Plot Debye temperatures.
     """
@@ -1347,7 +1600,7 @@ def plot_debye_temperature(
     ax.plot(
         frames,
         theta_initial,
-        lw=2.0,
+        lw=1.0,
         color="tab:blue",
         label=r"$\Theta_D$ from initial MSD"
     )
@@ -1355,21 +1608,14 @@ def plot_debye_temperature(
     ax.plot(
         frames,
         theta_thermal,
-        lw=2.0,
+        lw=1.0,
         ls="--",
         color="tab:red",
         label=r"$\Theta_D$ from thermal MSD"
     )
 
-    ax.set_xlabel(
-        "Frame",
-        fontsize=14
-    )
-
-    ax.set_ylabel(
-        r"Debye temperature (K)",
-        fontsize=14
-    )
+    ax.set_xlabel(x_label, fontsize=12)
+    ax.set_ylabel(r"Debye temperature (K)", fontsize=12)
 
     # Set y-axis range
     ax.set_ylim(
@@ -1386,7 +1632,7 @@ def plot_debye_temperature(
 
     ax.legend(
         fontsize=12,
-        frameon=False
+        frameon=True
     )
 
     fig.tight_layout()
@@ -1415,7 +1661,7 @@ def plot_debye_temperature(
 
 
 def plot_msd(msd, msd_avg, thermal_msd,
-             output_file="OUT_MSDs.png"):
+             output_file="OUT_MSDs.png", x_label="Frame"):
     """
     Plot MSD curves and save to PNG.
 
@@ -1441,14 +1687,14 @@ def plot_msd(msd, msd_avg, thermal_msd,
     ax.plot(
         frames,
         msd,
-        lw=2.0,
+        lw=1.0,
         label="MSD from frame 0",
     )
 
     ax.plot(
         frames,
         msd_avg,
-        lw=2.0,
+        lw=1.0,
         ls="--",
         label="Time-origin averaged MSD",
     )
@@ -1456,15 +1702,15 @@ def plot_msd(msd, msd_avg, thermal_msd,
     ax.plot(
         frames,
         thermal_msd,
-        lw=2.0,
+        lw=1.0,
         ls=":",
         label="Thermal MSD",
     )
 
-    ax.set_xlabel("Frame")
-    ax.set_ylabel(r"MSD ($\AA^2$)")
+    ax.set_xlabel(x_label, fontsize=12)
+    ax.set_ylabel(r"MSD ($\AA^2$)", fontsize=12)
     ax.grid(False)
-    ax.legend()
+    ax.legend(fontsize=10)
     fig.tight_layout()
 
     fig.savefig(

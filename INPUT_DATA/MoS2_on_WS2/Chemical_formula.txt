@@ -1,0 +1,2 @@
+MoWS4
+MoS2_on_WS2.xyz

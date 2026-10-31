@@ -2080,7 +2080,11 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
          if (matter%Atoms(i)%mulliken_q /= 0.0d0) then ! mulliken is precalculated
             Q_tot = SUM(Scell%MDAtoms(:)%q, MASK = (Scell%MDatoms(:)%KOA == i) ) ! element "i"
             n_ak = real(count(Scell%MDatoms(:)%KOA == i))      ! number of atoms of this kind
-            Q_tot = Q_tot / n_ak    ! per atom
+            if (n_ak > 0) then ! there are such atoms
+               Q_tot = Q_tot / n_ak    ! per atom
+            else  ! no such atoms
+               Q_tot = 0.0d0
+            endif
             if ( (abs(Q_tot) > 1.0d-8) .and. (abs(matter%Atoms(i)%mulliken_q) > 1.0d-8) ) then ! only for non-zero charge
                if ( abs(Q_tot - matter%Atoms(i)%mulliken_q) > 1.0d-1*max(abs(Q_tot), abs(matter%Atoms(i)%mulliken_q)) ) then
                   print*, 'PROBLEM #2 in get_Mulliken_each_atom: poor element charge conservation:', i, Q_tot, matter%Atoms(i)%mulliken_q, n_ak
