@@ -25,7 +25,7 @@
 
 MODULE Dealing_with_CDF
 use Universal_Constants   ! let it use universal constants
-use Objects, only : Save_error_details, Solid, Numerics_param, Error_handling, At_data
+use Objects, only : Save_error_details, Solid, Numerics_param, Error_handling, At_data, Ritchi
 use Periodic_table, only : Decompose_compound
 use Dealing_with_files, only : read_file
 use Dealing_with_EADL, only : READ_EADL_TYPE_FILE_real, READ_EADL_TYPE_FILE_int, select_imin_imax
@@ -38,13 +38,14 @@ public :: read_CDF_file, write_CDF_file
  contains
 
 
-subroutine read_CDF_file(FN, matter, numpar, Err, File_name, file_atomic_parameters, file_EADL_file, INFO)
+subroutine read_CDF_file(FN, matter, numpar, Err, File_name, file_atomic_parameters, file_EADL_file, INFO, VB_CDF)
    integer, intent(in) :: FN  ! file number (must be already opened)
    type(Solid), intent(inout) :: matter   ! all material parameters
    type(Numerics_param), intent(inout) :: numpar   ! all numerical parameters
    type(Error_handling), intent(inout) :: Err   ! error save
    character(*), intent(in) :: File_name, file_atomic_parameters, file_EADL_file ! files with CDF, atomic parameters, and EADL
    integer, intent(out) :: INFO  ! error flag
+   type(Ritchi), intent(out) :: VB_CDF  ! temporary coefficients of CDF
    !===============================================
    integer, dimension(:), allocatable :: at_numbers
    real(8), dimension(:), allocatable :: at_percentage
@@ -52,12 +53,13 @@ subroutine read_CDF_file(FN, matter, numpar, Err, File_name, file_atomic_paramet
    character(25), dimension(:), allocatable :: at_names ! full name of the element
    real(8), dimension(:), allocatable :: at_masses ! mass of each element [Mp]
    integer, dimension(:), allocatable :: at_NVE    ! number of valence electrons
-   integer FN1, i, j, k, Z
+   integer :: FN1, i, j, k, Z, CDF_coef, Shl_num
    character(200) :: error_message, Error_descript
-   character(200) :: Folder_name, Folder_name2
+   character(200) :: Folder_name, Folder_name2, ch_temp
    logical file_exist, file_opened, read_well
-   integer Reason, count_lines, temp
-   real(8) retemp
+   integer Reason, count_lines, temp, Shl
+   real(8) :: retemp, temp_r(5)
+   real(8) :: dens, sound, fermi, gap ! density [g/cm^3], speed of sound [m/s], fermi energy [eV], band gap [eV]
    character(11) :: ch_nul
    parameter (ch_nul = '')
 
@@ -104,19 +106,85 @@ subroutine read_CDF_file(FN, matter, numpar, Err, File_name, file_atomic_paramet
       !pause 'get_CDF_data'
    enddo
 
-   read(FN,*,IOSTAT=Reason) retemp ! skip this line - density is given elsewhere
+   read(FN, '(a)', IOSTAT=Reason) ch_temp ! density [g/cm^3], speed of sound [m/s], fermi energy [eV], band gap [eV]
    call read_file(Reason, count_lines, read_well) ! module "Dealing_with_files"
    if (.not. read_well) then
-      write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+      write(Error_descript,'(a,i5,a,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name)), &
+            "Line: "//trim(adjustl(ch_temp))
       call Save_error_details(Err, 3, Error_descript) ! modlue "Objects"
       print*, trim(adjustl(Error_descript))
       INFO = 1   ! error in reading file
       return ! exit the subroutine
    endif
-   if (matter%dens .LE. 0.0d0) matter%dens = retemp ! in case density is not given elsewhere
+   ! Read parameters from this line, if needed:
+   if (matter%dens .LE. 0.0d0) then
+       read(ch_temp, * , IOSTAT=Reason) dens, sound, fermi, gap
+       if (Reason /= 0) then ! assume there are 3 numbers given:
+          read(ch_temp, *, IOSTAT=Reason) dens, sound, fermi
+          gap = 0.0d0 ! given elsewhere
+       endif
+       matter%dens = dens ! in case density is not given elsewhere
+       ! other parameters are currently unused in XTANT-3
+   endif
 
-   AT_NUM:do i = 1, matter%N_KAO ! for each kind of atoms:
-      read(FN,*,IOSTAT=Reason) matter%Atoms(i)%sh  ! number of shells in this element
+   ! Next lines may define CDF parameters for all shells of all elements, or only partially:
+   !-----------
+   ! Check if there is a flag, or a number:
+   ch_temp = ''   ! to restart
+   READ(FN,'(a)',IOSTAT=Reason) ch_temp
+   READ(ch_temp,*,IOSTAT=Reason) Shl ! number of shells in the first atom kind:
+   call read_file(Reason, count_lines, read_well) ! reports if everything read well
+
+   SP_CDF:if (.not. read_well) then ! check if there is a CDF
+      ! Check if there are partial CDF defined:
+      ! markers "VALENCE" or "PHONON"
+      backspace(FN)     ! read this line again:
+      Reason = 0        ! restart
+      do while (Reason == 0)
+         READ(FN,'(a)',IOSTAT=Reason) ch_temp
+         IF (Reason == 0)  THEN ! normal reading, try to interprete
+            if (LEN(trim(adjustl(ch_temp))) > 0) then ! there is something written
+               select case( trim(adjustl(ch_temp(1:3))) )
+               !--------------
+               case ('VAL', 'Val', 'val') ! valence CDF
+                  READ(FN,*,IOSTAT=Reason) CDF_coef, Shl_num, temp_r(1), temp_r(2), temp_r(3)
+                  call read_file(Reason, count_lines, read_well) ! reports if everything read well
+                  if (.not. read_well) then
+                        write(Error_descript,'(a,i5,a,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name)), &
+                              "Line: "//trim(adjustl(ch_temp))
+                        call Save_error_details(Err, 3, Error_descript) ! modlue "Objects"
+                        print*, trim(adjustl(Error_descript))
+                        INFO = 1   ! error in reading file
+                        return ! exit the subroutine
+                     endif ! (.not. read_well)
+
+                  if (.not. allocated(VB_CDF%A)) allocate(VB_CDF%A(CDF_coef))
+                  if (.not. allocated(VB_CDF%E0)) allocate(VB_CDF%E0(CDF_coef))
+                  if (.not. allocated(VB_CDF%G)) allocate(VB_CDF%G(CDF_coef))
+
+                  !do k = 1, matter%Atoms(i)%N_CDF(j)  ! for all CDF-functions for this shell
+                  do k = 1, CDF_coef
+                     read(FN,*,IOSTAT=Reason) VB_CDF%E0(k), VB_CDF%A(k), VB_CDF%G(k)
+                     call read_file(Reason, count_lines, read_well) ! reports if everything read well
+
+                     if (.not. read_well) then
+                        write(Error_descript,'(a,i5,a,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name)), &
+                              "Line: "//trim(adjustl(ch_temp))
+                        call Save_error_details(Err, 3, Error_descript) ! modlue "Objects"
+                        print*, trim(adjustl(Error_descript))
+                        INFO = 1   ! error in reading file
+                        return ! exit the subroutine
+                     endif ! (.not. read_well)
+                  enddo ! k=1
+               endselect
+            endif ! (LEN(trim(adjustl(ch_temp))) > 0)
+         endif ! (Reason == 0)
+      enddo ! while (Reason == 0)
+   !-----------
+   ! Read CDF parameters for all shells in the legacy format:
+   else SP_CDF ! it is a number, read it below again
+    AT_NUM:do i = 1, matter%N_KAO ! for each kind of atoms:
+      read(ch_temp,*,IOSTAT=Reason) matter%Atoms(i)%sh  ! number of shells in this element
       call read_file(Reason, count_lines, read_well) ! module "Dealing_with_files"
       if (.not. read_well) then
          write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
@@ -187,7 +255,8 @@ subroutine read_CDF_file(FN, matter, numpar, Err, File_name, file_atomic_paramet
             matter%Atoms(i)%TOCSph(j) = 0 ! EPDL cross-section
          endif DOCDF
       enddo
-   enddo AT_NUM
+    enddo AT_NUM
+   endif SP_CDF
 end subroutine read_CDF_file
 
 

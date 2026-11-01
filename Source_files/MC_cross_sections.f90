@@ -377,8 +377,13 @@ subroutine get_MFPs(Scell, NSC, matter, laser, numpar, TeeV, Err)
                   call sumrules(matter%Atoms(i)%CDF(j)%A, matter%Atoms(i)%CDF(j)%E0, matter%Atoms(i)%CDF(j)%G, &
                                                 ksum, fsum, matter%Atoms(i)%Ip(j), Omega) ! below
                endif
-               write(*,'(a,f7.2,e12.2)') 'Sum rules for '//trim(adjustl(matter%Atoms(i)%Name))//', Ip='// &
+               if (ksum < 1e4) then
+                  write(*,'(a,f7.2,e12.2)') 'Sum rules for '//trim(adjustl(matter%Atoms(i)%Name))//', Ip='// &
                                                 trim(adjustl(chtemp))//'eV are (k,f):', ksum, fsum !, sqrt(Omega)
+               else
+                  write(*,'(a,e12.2,e12.2)') 'Sum rules for '//trim(adjustl(matter%Atoms(i)%Name))//', Ip='// &
+                                                trim(adjustl(chtemp))//'eV are (k,f):', ksum, fsum !, sqrt(Omega)
+               endif
             end select
          endif
 
@@ -519,7 +524,9 @@ subroutine set_single_pole_CDF(Scell, NSC, matter, numpar, i, j)  ! only for VB/
    !----------------
    real(8) :: Omega, NVB, ksum, fsum, Nat, contrib
    integer :: Nshl
+   logical :: predefined
 
+   predefined = .false. ! to start with, asume CDF was not predefined
    Nshl = size(matter%Atoms(1)%Ip)  ! index of the valence band
 
    if (.not. allocated(matter%Atoms(i)%N_CDF)) allocate(matter%Atoms(i)%N_CDF(matter%Atoms(i)%sh)) ! allocate number of electrons
@@ -529,9 +536,15 @@ subroutine set_single_pole_CDF(Scell, NSC, matter, numpar, i, j)  ! only for VB/
       allocate(matter%Atoms(i)%CDF(j)%A(matter%Atoms(i)%N_CDF(j)))
       allocate(matter%Atoms(i)%CDF(j)%E0(matter%Atoms(i)%N_CDF(j)))
       allocate(matter%Atoms(i)%CDF(j)%G(matter%Atoms(i)%N_CDF(j)))
+   else
+      ! Update number of CDF functions (for VB) if already defined:
+      matter%Atoms(i)%N_CDF(j)  = size( matter%Atoms(i)%CDF(j)%A )
+      predefined = .true. ! VB CDF was already given
    endif
 
    ! Check if the flag for CS needs to be changed:
+   !print*, 'set_single_pole_CDF:', i, j, trim(adjustl(numpar%At_base))
+
    select case (trim(adjustl(numpar%At_base)))
    case('CDF', 'CDF_sp')
       matter%Atoms(i)%TOCS(j) = 1      ! mark it as CDF cross-section
@@ -544,6 +557,12 @@ subroutine set_single_pole_CDF(Scell, NSC, matter, numpar, i, j)  ! only for VB/
    end select
 
    if ( (i == 1) .and. (j == Nshl) ) then ! the valence band
+
+      if (predefined) then ! define it within single pole approximation:
+         return ! nothing else to do here, it was already done
+      endif
+
+
       NVB = dble(Scell(NSC)%Ne) / dble(Scell(NSC)%Na) ! valence electrons per atom
 
       ! Set them according to the single-pole approximation:
