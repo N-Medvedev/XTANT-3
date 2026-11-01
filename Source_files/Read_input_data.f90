@@ -845,26 +845,64 @@ subroutine read_atomic_parameters(matter, numpar, Err)
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Error_handling), intent(inout) :: Err	! error save
-   integer i, FN7
+   integer i, FN7, Nshl, j
    character(200) :: File_name, File_form_factors, Folder_name, Path
    logical :: file_exist, read_well
+   type(Ritchi) :: VB_CDF  ! temporary coefficients of VB CDF
    
-   select case (trim(adjustl(numpar%At_base)))
+   select case (trim(adjustl(numpar%At_base(1:3) ) ) )
    case('CDF', 'cdf') ! read data from corresponding *.cdf file
 
       ! Check if file with CDF oscillator parameters exists:
       call check_CDF_file_exists(numpar, matter, File_name, file_exist) ! below
 
       if (file_exist) then
-         call get_CDF_data(matter, numpar, Err, File_name) ! see below
+         call get_CDF_data(matter, numpar, Err, File_name, VB_CDF) ! see below
       else
          print*, 'File '//trim(adjustl(File_name))//' could not be found,', ' using single-pole CDF approximation'
-         numpar%At_base = 'CDF_sp'
+         !numpar%At_base = 'CDF_sp'
+         ! Get the atomic parameters:
          call get_EADL_data(matter, numpar, Err) ! see below
       endif
+
+      ! Only VB CDF coefficients were read from cdf file:
+      if (allocated(VB_CDF%A)) then ! get the missing atomic data
+         print*, 'File '//trim(adjustl(File_name))//' has only CDF for VB;', ' using single-pole approximation for core shells'
+         ! Get the atomic parameters to be used for core shells:
+         call get_EADL_data(matter, numpar, Err) ! see below
+
+         !-------------------------------------
+         ! If needed, allocate the CDF arrays to be filled later by the single-pole approximation:
+         ATOMS:do i = 1, size(matter%Atoms) ! for all atoms
+            Nshl = size(matter%Atoms(i)%Ip)
+            SHELLS:do j = 1, Nshl ! for all shells of this atom
+               ! Check if CDF coefficients are set:
+               if (.not. allocated(matter%Atoms(i)%CDF)) then
+                  allocate(matter%Atoms(i)%CDF(Nshl))
+               endif
+               ! And save the VB CDF coefficients into it:
+               if ( (i == 1) .and. (j == Nshl) ) then ! the valence band
+                   if (.not.allocated(matter%Atoms(i)%CDF(j)%A)) allocate( matter%Atoms(i)%CDF(j)%A(size(VB_CDF%A)))
+                   matter%Atoms(i)%CDF(j)%A = VB_CDF%A
+
+                   if (.not.allocated(matter%Atoms(i)%CDF(j)%E0)) allocate( matter%Atoms(i)%CDF(j)%E0(size(VB_CDF%E0)))
+                   matter%Atoms(i)%CDF(j)%E0 = VB_CDF%E0
+
+                   if (.not.allocated(matter%Atoms(i)%CDF(j)%G)) allocate( matter%Atoms(i)%CDF(j)%G(size(VB_CDF%G)))
+                   matter%Atoms(i)%CDF(j)%G = VB_CDF%G
+
+                   ! Mark cross section for this shell as CDF:
+                   matter%Atoms(i)%TOCS(j) = 1
+
+               endif ! valence band
+            enddo SHELLS
+         enddo ATOMS
+      endif ! (allocated(VB_CDF%A))
+
    case ('XATOM') ! get data from XATOM code
       ! to be integrated with XATOM later...
-   case default ! ('EADL', 'BEB'), read data from EADL database
+
+   case default ! ('EPICS', 'EADL', 'BEB'), read data from EADL database
       call get_EADL_data(matter, numpar, Err) ! see below
    end select
 
@@ -926,11 +964,12 @@ end subroutine read_form_factors
 
 
 
-subroutine get_CDF_data(matter, numpar, Err, File_name)
+subroutine get_CDF_data(matter, numpar, Err, File_name, VB_CDF)
    type(Solid), intent(inout) :: matter	! all material parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    type(Error_handling), intent(inout) :: Err	! error save
    character(*), intent(in) :: File_name  ! CDF file
+   type(Ritchi), intent(out) :: VB_CDF    ! temporary coefficients of VB CDF
    !===============================================
    integer, dimension(:), allocatable :: at_numbers
    real(8), dimension(:), allocatable :: at_percentage
@@ -944,6 +983,7 @@ subroutine get_CDF_data(matter, numpar, Err, File_name)
    logical file_exist, file_opened, read_well
    integer FN, Reason, count_lines, temp
    real(8) retemp
+
 
    ! Make sure this file exists:
    inquire(file=trim(adjustl(File_name)),exist=file_exist)
@@ -962,10 +1002,8 @@ subroutine get_CDF_data(matter, numpar, Err, File_name)
       endif
 
       ! Read the file in the CDF format:
-      !call read_CDF_file(FN, matter, numpar, Err, trim(adjustl(File_name)), &
-      !                  trim(adjustl(m_Atomic_parameters)), trim(adjustl(m_EADL_file)), INFO) ! module "Dealing_with_CDF"
       call read_CDF_file(FN, matter, numpar, Err, trim(adjustl(File_name)), &
-                        trim(adjustl(m_Atomic_parameters)), trim(adjustl(numpar%EADL_file)), INFO) ! module "Dealing_with_CDF"
+                        trim(adjustl(m_Atomic_parameters)), trim(adjustl(numpar%EADL_file)), INFO, VB_CDF) ! module "Dealing_with_CDF"
 
       ! When done, close the CDF file
       close(FN)
@@ -4834,6 +4872,8 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
 
    ! Make the name of the database used standard for easier interpretation later in the code:
    call standardize_At_base(numpar%At_base)  ! below
+
+   !print*, 'numpar%At_base = ', numpar%At_base
 
    ! [g/cm^3] density of the material (used in MC in case of EADL parameters):
    read(FN, '(a)', IOSTAT=Reason) read_line
