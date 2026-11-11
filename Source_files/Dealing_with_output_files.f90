@@ -57,7 +57,7 @@ use MPI_subroutines, only : MPI_barrier_wrapper, broadcast_variable
 implicit none
 PRIVATE
 
-character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 01.11.2026)'
+character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 11.11.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
@@ -2129,13 +2129,17 @@ subroutine update_save_files(time, atoms, matter, numpar, Scell)
 
       ! SAVE_supercell.dat :
       rewind(701)	! overwrite the old state
-      write(701,*) Scell%supce(:,:)
+      !write(701,*) Scell%supce(:,:)
+      write(701,'(3es25.16)') Scell%supce(:,:)
       write(701,'(a)') ''
-      write(701,*) Scell%supce0(:,:)
+      !write(701,*) Scell%supce0(:,:)
+      write(701,'(3es25.16)') Scell%supce0(:,:)
       write(701,'(a)') ''
-      write(701,*) Scell%Vsupce(:,:)
+      !write(701,*) Scell%Vsupce(:,:)
+      write(701,'(3es25.16)') Scell%Vsupce(:,:)
       write(701,'(a)') ''
-      write(701,*) Scell%Vsupce0(:,:)
+      !write(701,*) Scell%Vsupce0(:,:)
+      write(701,'(3es25.16)') Scell%Vsupce0(:,:)
       write(701,'(a)') ''
    case (1) ! XYZ format for atomic coordinates and supercell
       ! SAVE_coordinates.xyz :

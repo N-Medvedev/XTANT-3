@@ -864,6 +864,11 @@ subroutine get_forces_DFTB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_
          else	! two different atoms
             j = Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
          endif
+
+         ! Forces are non-zero only if k=i or k=j,
+         ! so no need to even calculate anything if it's not one of those atoms:
+         if ((k/=i) .and. (k/=j)) cycle
+
          j4 = (j-1)*n_orb	! orbitals
          IJ:if (j >= i) then ! it's a new pair of atoms, calculate everything
             ! Get the matrix of dH/drij and dS/drij:
@@ -873,6 +878,12 @@ subroutine get_forces_DFTB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_
                j4j1 = j4+j1
                do i1 = 1,n_orb	! all orbitals
                   i4i1 = i4+i1
+
+!                   if ( ANY(abs(dH1(:,i1,j1)) > 1.0e-12) .and. (k/=i) .and. (k/=j) ) then    ! test of forces
+!                      print*, 'AHA! Non-zero element found for k/=i and k/=j'
+!                      print*, 'get_forces_DFTB:', i, j, k, dH1(:,i1,j1)
+!                   endif
+
                   dH(:,i4i1,j4j1) = dH1(:,i1,j1)	! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40)
                   dS(:,i4i1,j4j1) = dS1(:,i1,j1)	! construct the total Overlap Matrix from the blocks of one-atom overlap matrices
 !                   dH(:,i4i1,j4j1) = dH1(:,j1,i1)	! construct the total Hamiltonian from the blocks of one-atom Hamiltonian, Eq.(2.40) ! WRONG
@@ -893,6 +904,11 @@ subroutine get_forces_DFTB(k, numpar, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_
          j = Scell(NSC)%Near_neighbor_list(i,atom_2) ! this is the list of such close atoms
          j4 = (j-1)*n_orb
          if (j < i) then ! this pair of atoms was already calculated, use the symmetry
+
+            ! Forces are non-zero only if k=i or k=j,
+            ! so no need to copy zeros back and forth:
+            if ((k/=i) .and. (k/=j)) cycle
+
             do j1 = 1,n_orb	! all orbitals
                j4j1 = j4+j1
                do i1 = 1,n_orb	! all orbitals

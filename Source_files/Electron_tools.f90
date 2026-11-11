@@ -1577,6 +1577,10 @@ subroutine identify_fragment_for_orbital(Scell)
       allocate(Scell%orb_in_atom(Nlev), source = 0)
    endif
 
+   if (.not. allocated(Scell%Dmatrix)) then     ! warn me
+      print*, "In identify_fragment_for_orbital, matrix Scell%Dmatrix unallocated: ", allocated(Scell%Dmatrix)
+   endif
+
    ! For all energy levels, identify which fragment they belong by the maximal contribution of the atomic orbitals into this level:
    do i = 1, Nlev
       ! Which atom contributes to this orbital the most:
@@ -1690,6 +1694,10 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
    allocate(e_spectrum(size(Scell(NSC)%fe)), source = 0.0d0)
    !allocate(E_e_spectrum(size(Scell(NSC)%fe)), source = 0.0d0)   ! not needed currently
 
+
+   if (.not. allocated(Scell(NSC)%Dmatrix)) then     ! warn me
+      print*, "In get_fragments_data_for_electrons, matrix Scell(NSC)%Dmatrix unallocated: ", allocated(Scell(NSC)%Dmatrix)
+   endif
 
    do i = 1, Nsiz
       !Scell(NSC)%fragments%N_e(i) = SUM( Scell(NSC)%fe(:), MASK = orbital_fragments(:) ) ! TOO CRUDE, DESON'T WORK WELL

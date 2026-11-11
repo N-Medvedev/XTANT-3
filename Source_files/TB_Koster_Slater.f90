@@ -843,11 +843,14 @@ pure function d_t_dxz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi,
    real(8), intent(in) :: l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi, dVdd_pi, Vdd_delta, dVdd_delta
    real(8) :: ln, l2m2, dl2m2, temp, temp1
    ln = l*n
-   l2m2 = l*l - n*n
+   !l2m2 = l*l - n*n
+   l2m2 = l*l - m*m
    dl2m2 = 2.0d0*(dl*l - dm*m)
    temp = (1.0d0-2.0d0*l2m2)
    temp1 = (1.0d0-0.5d0*l2m2)
-   Ecc = ( 1.50d0*(dl2m2*Vdd_sigma+l2m2*dVdd_sigma) + (-2.0d0*dl2m2*Vdd_pi + temp*dVdd_pi) - (temp1*dVdd_delta - 0.5d0*dl2m2*Vdd_delta) )*ln
+   Ecc = ( 1.50d0*(dl2m2*Vdd_sigma+l2m2*dVdd_sigma) + &
+         (-2.0d0*dl2m2*Vdd_pi + temp*dVdd_pi) - &
+         (temp1*dVdd_delta - 0.5d0*dl2m2*Vdd_delta) )*ln
    Ecc = Ecc + ( 1.50d0*l2m2*Vdd_sigma + temp*Vdd_pi + temp1*Vdd_delta )*(dl*n+l*dn)
 end function d_t_dxz_dx2_y2
 

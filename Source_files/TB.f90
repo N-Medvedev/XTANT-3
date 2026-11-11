@@ -2119,7 +2119,9 @@ subroutine get_Mulliken_each_atom(Mulliken_model, Scell, matter, numpar, forced_
 end subroutine get_Mulliken_each_atom
 
 
-subroutine band_potential_energy_atom(Scell, numpar)
+
+! Manual matrix multiplication:
+subroutine band_potential_energy_atom_MANUAL(Scell, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
    !-------------------------------
@@ -2211,6 +2213,67 @@ subroutine band_potential_energy_atom(Scell, numpar)
 #endif
 
    deallocate(mulliken_Ne, D)
+end subroutine band_potential_energy_atom_MANUAL
+
+
+! Replaced manual matrix multiplication with BLAS routines:
+subroutine band_potential_energy_atom(Scell, numpar)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   !-------------------------------
+   real(8), dimension(:,:), allocatable :: D, SC
+   real(8), dimension(:), allocatable :: mulliken_Ne, w, Dw
+   integer :: N_at, i_at, Nsiz, N_orb, j1, j2, ncol
+   character(100) :: error_part
+
+   N_at = size(Scell%MDAtoms) ! total number of atoms
+   Nsiz = size(Scell%Ha,1) ! total number of orbitals
+   N_orb = Nsiz/N_at ! orbitals per atom
+   allocate(D(Nsiz,Nsiz), source = 0.0d0)
+
+   ! 1) Density matrix without occupations: D = C o (S*C)  (elementwise product)
+#ifdef MPI_USED   ! use the MPI version
+   ! Each process takes a contiguous block of columns j1:j2:
+   j1 = (numpar%MPI_param%process_rank * Nsiz) / numpar%MPI_param%size_of_cluster + 1
+   j2 = ((numpar%MPI_param%process_rank + 1) * Nsiz) / numpar%MPI_param%size_of_cluster
+   ncol = j2 - j1 + 1
+   if (ncol > 0) then
+      if (allocated(Scell%Sij)) then
+         allocate(SC(Nsiz,ncol))
+         call dgemm('N', 'N', Nsiz, ncol, Nsiz, 1.0d0, Scell%Sij, Nsiz, Scell%Ha(1,j1), Nsiz, 0.0d0, SC, Nsiz)
+         D(:,j1:j2) = Scell%Ha(:,j1:j2) * SC
+         deallocate(SC)
+      else ! orthogonal
+         D(:,j1:j2) = Scell%Ha(:,j1:j2) * Scell%Ha(:,j1:j2)
+      endif
+   endif
+   ! Collect information from all processes and distribute the final array to all processes:
+   error_part = 'Error in band_potential_energy_atom:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'D', D) ! module "MPI_subroutines"
+#else ! use OpenMP instead (threading comes from the BLAS library)
+   if (allocated(Scell%Sij)) then
+      allocate(SC(Nsiz,Nsiz))
+      call dgemm('N', 'N', Nsiz, Nsiz, Nsiz, 1.0d0, Scell%Sij, Nsiz, Scell%Ha, Nsiz, 0.0d0, SC, Nsiz)
+      D = Scell%Ha * SC
+      deallocate(SC)
+   else ! orthogonal
+      D = Scell%Ha * Scell%Ha
+   endif
+#endif
+
+   ! 2) Band potential energy per atom:
+   !    mulliken_Ne(i_at) = sum over orbitals of the atom, sum over states of Ei*fe*D
+   allocate(w(Nsiz), Dw(Nsiz), mulliken_Ne(N_at))
+   w = Scell%Ei(:) * Scell%fe(:)
+   call dgemv('N', Nsiz, Nsiz, 1.0d0, D, Nsiz, w, 1, 0.0d0, Dw, 1)   ! Dw = D*w
+   do i_at = 1, N_at
+      mulliken_Ne(i_at) = SUM( Dw((i_at-1)*N_orb+1 : i_at*N_orb) )
+   enddo
+
+   ! Add band contribution to the precalculated repulsive part:
+   Scell%MDAtoms(:)%Epot = Scell%MDAtoms(:)%Epot + mulliken_Ne(:)
+
+   deallocate(mulliken_Ne, w, Dw, D)
 end subroutine band_potential_energy_atom
 
 

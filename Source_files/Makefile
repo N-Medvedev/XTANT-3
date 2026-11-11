@@ -152,7 +152,8 @@ endif
 
 # compile and load
 $(EXE):	$(OBJS)
-	$(F90) $(F90FLAGS) $(LDFLAGS) -o $(EXE)  $(OBJS)
+	$(F90) $(F90FLAGS) -o $(EXE) $(OBJS) $(LDFLAGS)
+#	$(F90) $(F90FLAGS) $(LDFLAGS) -o $(EXE) $(OBJS)
 
 .SUFFIXES: .f90 .o .mod
 .f90.o:

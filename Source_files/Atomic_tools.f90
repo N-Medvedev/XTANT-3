@@ -4313,6 +4313,8 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
    integer, pointer :: KOA1, KOA2
+   real(8), dimension(:), allocatable :: hist
+   real(8), dimension(:,:,:), allocatable :: hist_part
 
    n = size(atoms)
    if (.not. allocated(matter%PCF)) then
@@ -4382,7 +4384,10 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
    nullify(KOA1, KOA2)
 
 #else
-   !$omp PARALLEL private(i,j,a_r,k, KOA1, KOA2)
+   allocate(hist(m), source = 0.0d0)
+   allocate(hist_part(matter%N_KAO, matter%N_KAO, m), source = 0.0d0)
+
+   !$omp PARALLEL private(i,j,a_r,k, KOA1, KOA2) reduction(+:hist,hist_part)
    !$omp do schedule(dynamic)
    do i = 1, n	! trace all atoms
       do j = 1, n	! trace all neighbours for PCF
@@ -4393,27 +4398,33 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
             else
                call Find_in_array_monoton(matter%PCF, a_r, 1, k)	! module "Little_subroutines"
             endif
-            matter%PCF(2,k) = matter%PCF(2,k) + 1.0d0
+            !matter%PCF(2,k) = matter%PCF(2,k) + 1.0d0
+            hist(k) = hist(k) + 1.0d0     ! temporary storage to sum up
             ! Partial PCF:
             if (matter%N_KAO > 1) then ! only makes sence if there is more then one element in the compound:
                KOA1 => Scell(NSC)%MDatoms(i)%KOA   ! kind of atom #1
                KOA2 => Scell(NSC)%MDatoms(j)%KOA   ! kind of atom #2
-               matter%PCF_part(min(KOA1,KOA2), max(KOA1,KOA2), k) = matter%PCF_part(min(KOA1,KOA2), max(KOA1,KOA2), k) + 1.0d0
+               !matter%PCF_part(min(KOA1,KOA2), max(KOA1,KOA2), k) = matter%PCF_part(min(KOA1,KOA2), max(KOA1,KOA2), k) + 1.0d0
+               hist_part(min(KOA1,KOA2), max(KOA1,KOA2), k) = hist_part(min(KOA1,KOA2), max(KOA1,KOA2), k) + 1.0d0      ! temporary sum
             endif
          endif
       enddo ! j
    enddo ! i
    !$omp end do
-   !$omp do
+   nullify(KOA1, KOA2)
+   !$omp end parallel
+
+   matter%PCF(2,:) = hist     ! save
+   if (matter%N_KAO > 1) matter%PCF_part = hist_part  ! save
+   deallocate(hist, hist_part)      ! clean up
+
    do k = 1,m	! all points of the PCF
       matter%PCF(2,k) = matter%PCF(2,k)/(matter%PCF(1,k)*matter%PCF(1,k))
       if (matter%N_KAO > 1) then ! only makes sence if there is more then one element in the compound:
          matter%PCF_part(:,:,k) = matter%PCF_part(:,:,k)/(matter%PCF(1,k)*matter%PCF(1,k))
       endif
    enddo
-   !$omp end do
-   nullify(KOA1, KOA2)
-   !$omp end parallel
+
    dr = matter%PCF(1,2) - matter%PCF(1,1)
    matter%PCF(2,:) = matter%PCF(2,:)/(4.0d0*g_Pi*dr)*Scell(NSC)%V/dble(Scell(NSC)%Na*Scell(NSC)%Na) ! normalizing per volume
    if (matter%N_KAO > 1) then ! only makes sence if there is more then one element in the compound:
