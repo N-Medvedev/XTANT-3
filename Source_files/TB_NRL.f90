@@ -2477,8 +2477,9 @@ subroutine get_forces(k, TB, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_
    Nsiz = size(Scell(NSC)%Ha,1)	! total number of orbitals
    n_orb = 9		! number of orbitals per atom for sp3d5 basis set
 
-!    print*, 'get_forces: 0'
-   
+   dH1 = 0.0d0    ! to start with
+   dS1 = 0.0d0    ! to start with
+
    if (.not.allocated(dH)) allocate(dH(3,Nsiz,Nsiz), source=0.0d0, stat=INFO)
    if (INFO /= 0) print*, 'Problem allocating dH in get_forces, module TB_NRL'
    if (.not.allocated(dS)) allocate(dS(3,Nsiz,Nsiz), source=0.0d0, stat=INFO)

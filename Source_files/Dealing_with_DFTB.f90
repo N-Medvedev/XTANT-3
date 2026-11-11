@@ -263,8 +263,9 @@ subroutine read_DFTB_spline(FN, count_lines, TB_Rep, error_message)
    call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
    if (.not. read_well) goto 2013 ! exit
    ! Convert into units used in the code:
-   TB_Rep%a(1) = TB_Rep%a(1) * g_A2au  ! 1/[Bohr] -> 1/[A]
-   TB_Rep%a(3) = TB_Rep%a(3) * g_au2ev  ! [Hartree] -> [eV]
+   TB_Rep%a(1) = TB_Rep%a(1) * g_A2au           ! 1/[Bohr] -> 1/[A]
+   TB_Rep%a(2) = TB_Rep%a(2) + log(g_au2ev)     ! prefactor Hartree -> eV
+   TB_Rep%a(3) = TB_Rep%a(3) * g_au2ev          ! [Hartree] -> [eV]
 
    ! spline parameters:
    do i = 1, N_spline_grid
@@ -291,7 +292,7 @@ subroutine read_DFTB_spline(FN, count_lines, TB_Rep, error_message)
    temp3 = temp2 * g_A2au
    TB_Rep%V_rep(:,4) = TB_Rep%V_rep(:,4) * temp3    ! [eV/Bohr^3] -> [eV/A^3]
    TB_Rep%V_rep(:,5) = TB_Rep%V_rep(:,5) * temp2 * temp2    ! [eV/Bohr^4] -> [eV/A^4]
-   TB_Rep%V_rep(:,6) = TB_Rep%V_rep(:,6) * temp3 * temp3    ! [eV/Bohr^5] -> [eV/A^5]
+   TB_Rep%V_rep(:,6) = TB_Rep%V_rep(:,6) * temp3 * temp2    ! [eV/Bohr^5] -> [eV/A^5]
 
 !    pause 'read_DFTB_spline'
 2013 continue
