@@ -1198,7 +1198,7 @@ type :: Particle ! basic class for all particles
    real(8) :: ti            ! time of impact
    real(8) :: R(3)          ! its current coordinates [A]
    real(8) :: V(3)          ! its current velocity [A]
-   integer :: birthmark     ! index of how this particle was created:
+   integer :: birthmark = -1     ! index of how this particle was created:
    ! -1 = uninitialized
    ! 0 = external (incomming) particle
    ! 1 = photo-electron (hole)
@@ -1274,8 +1274,8 @@ subroutine freeze_atom(this, n)  ! to freeze particular atom
     this%At_ind(n) = .true.
     this%anything_to_do = .true.
 end subroutine freeze_atom
-! Defreezing particulat atoms:
-subroutine defreeze_atom(this, n)  ! to freeze particular atom
+! Defreezing particular atoms:
+subroutine defreeze_atom(this, n)  ! to defreeze particular atom
     class(Freeze_atoms), intent(inout) :: this
     integer, intent(in) :: n
 
@@ -1308,7 +1308,7 @@ end subroutine destroy
 
 ! How to write the log about an error:
 subroutine Save_error_details(Err_name, Err_num, Err_data, Err_data2, empty, Warn)
-   class(Error_handling) :: Err_name
+   class(Error_handling), intent(inout) :: Err_name
    integer, intent(in) :: Err_num
    character(*), intent(in) :: Err_data
    character(*), intent(in), optional :: Err_data2

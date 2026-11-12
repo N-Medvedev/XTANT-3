@@ -1,0 +1,10 @@
+XTANT_atomic_data_analysis.f90
+XTANT_autocorrelators.f90
+XTANT_average_diffraction.f90
+XTANT_average_kappa.f90
+XTANT_coupling_parameter.f90
+XTANT_dielectric_function_analysis.f90
+XTANT_average_DOS.f90
+XTANT_fragmentation.f90
+XTANT_entropy.f90
+XTANT_el_distribution_analysis.f90

@@ -1480,6 +1480,17 @@ subroutine Complex_Hamil_tot(numpar, Scell, NSC, atoms, TB, Hij, CHij, ksx, ksy,
    real(8) :: kx, ky, kz ! k-point to get Hamiltonian at, [1/A]
    REAL(8), DIMENSION(4,4) :: Hij1
    complex(8) :: C_I, expfac
+   logical :: k_is_zero
+
+
+   if (.not.present(Hij) .AND. .not.present(CHij)) then
+      print*, 'Neither real, nor complex Hamiltonian is present,'
+      print*, 'so, what do you expect this subroutine to do?'
+      print*, 'The subroutine "Complex_Hamil_tot" from the module TB_Hamiltonian'
+      print*, 'requires at least one of them to be present.'
+      return
+   endif
+
 
    nat = size(atoms) ! number of atoms
    Ne = Scell(NSC)%Ne  ! initial number of VB electrons
@@ -1503,16 +1514,11 @@ subroutine Complex_Hamil_tot(numpar, Scell, NSC, atoms, TB, Hij, CHij, ksx, ksy,
 
    call Reciproc(Scell(NSC)%supce, Scell(NSC)%k_supce) ! create reciprocal super-cell, module "Algebra_tools"
    call Reciproc_rel_to_abs(ksx, ksy, ksz, Scell, NSC, kx, ky, kz) ! get absolute k-values
+   k_is_zero = ((abs(kx) .LT. 1.0d-14) .AND. (abs(ky) .LT. 1.0d-14) .AND. (abs(kz) .LT. 1.0d-14))
+
 !     print*, matter%k_supce
 !     print*, 'k', kx, ky, kz
 !     pause 'PAUSE'
-
-   if (.not.present(Hij) .AND. .not.present(CHij)) then
-      print*, 'Neither real, nor complex Hamiltonian is present,'
-      print*, 'so, what do you expect this subroutine to do?'
-      print*, 'The subroutine "Complex_Hamil_tot" from the module TB_Hamiltonian'
-      print*, 'requires at least one of them to be present.'
-   endif
 
    if (present(Hij) .AND. .not.present(CHij)) then ! just get real Hamiltonian:
       call Hamil_tot(numpar, Scell, NSC, TB, Hij) ! see below
@@ -1538,7 +1544,8 @@ subroutine Complex_Hamil_tot(numpar, Scell, NSC, atoms, TB, Hij, CHij, ksx, ksy,
                !NumTB = numpar%El_num_ij(Scell(NSC)%MDatoms(j)%KOA, Scell(NSC)%MDatoms(i)%KOA)
                call Hamilton_one(Scell, NSC, i, j, atoms, TB(Scell(NSC)%MDatoms(j)%KOA, Scell(NSC)%MDatoms(i)%KOA), Hij1, x1=x, y1=y, z1=z, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z)
                !expfac = exp(2.0d0*g_Pi*C_I*(kx*real(cell_x) + ky*real(cell_y) + kz*real(cell_z)))
-               if ((abs(kx) .LT. 1.0d-14) .AND. (abs(ky) .LT. 1.0d-14) .AND. (abs(kz) .LT. 1.0d-14)) then
+               !if ((abs(kx) .LT. 1.0d-14) .AND. (abs(ky) .LT. 1.0d-14) .AND. (abs(kz) .LT. 1.0d-14)) then
+               if (k_is_zero) then
                   expfac = cmplx(1.0d0,0.0d0)
                else
                   expfac = exp(C_I*(kx*x + ky*y + kz*z))
@@ -1602,7 +1609,8 @@ subroutine Complex_Hamil_tot(numpar, Scell, NSC, atoms, TB, Hij, CHij, ksx, ksy,
             if (i .GT. 0) then
                call shortest_distance(Scell, NSC, atoms, i, j, r, x1=x, y1=y, z1=z, cell_x=cell_x, cell_y=cell_y, cell_z=cell_z)
                !expfac = exp(2.0d0*g_Pi*C_I*(kx*real(cell_x) + ky*real(cell_y) + kz*real(cell_z)))
-               if ((abs(kx) .LT. 1.0d-14) .AND. (abs(ky) .LT. 1.0d-14) .AND. (abs(kz) .LT. 1.0d-14)) then
+               !if ((abs(kx) .LT. 1.0d-14) .AND. (abs(ky) .LT. 1.0d-14) .AND. (abs(kz) .LT. 1.0d-14)) then
+               if (k_is_zero) then
                   expfac = dcmplx(1.0d0,0.0d0)
                else
 !                   expfac = cexp(C_I*(kx*x + ky*y + kz*z))
@@ -1624,8 +1632,10 @@ subroutine Complex_Hamil_tot(numpar, Scell, NSC, atoms, TB, Hij, CHij, ksx, ksy,
 !                       endif
 
                      if ((isnan(real(CHij(k,l)))) .OR. isnan(aimag(CHij(k,l)))) then
-                        print*, i, j, k, l, CHij(k,l)
-                        pause 'ISNAN'
+                        !print*, i, j, k, l, CHij(k,l)
+                        !pause 'ISNAN'
+                        print*, 'NaN in Complex_Hamil_tot:', i, j, k, l, CHij(k,l)
+                        stop 'Complex_Hamil_tot: NaN in the complex Hamiltonian'
                      endif
 
                      if (numpar%optic_model .EQ. 2) then ! create matrix element:
@@ -2490,6 +2500,8 @@ subroutine construct_dfx_matrix(Scell, TB_Repuls, numpar, psi_vec, dfx_vec, d2fx
 
    if (.not.allocated(dfx_vec)) allocate(dfx_vec(size(psi_vec)))
    if (.not.allocated(d2fx_vec)) allocate(d2fx_vec(size(psi_vec)))
+   dfx_vec = 0.0d0    ! to start with
+   d2fx_vec = 0.0d0   ! to start with
 
 #ifdef MPI_USED   ! use the MPI version
    N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
@@ -2526,6 +2538,7 @@ subroutine construct_psi_matrix(M_Phi, psi_vec, numpar)
    character(100) :: error_part
 
    if (.not.allocated(psi_vec)) allocate(psi_vec(size(M_Phi,1)))
+   psi_vec = 0.0d0    ! to start with
 
 #ifdef MPI_USED   ! use the MPI version
    N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
