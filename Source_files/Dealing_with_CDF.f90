@@ -241,6 +241,7 @@ subroutine read_CDF_file(FN, matter, numpar, Err, File_name, file_atomic_paramet
             do k = 1, matter%Atoms(i)%N_CDF(j)  ! for all CDF-functions for this shell
                read(FN,*,IOSTAT=Reason) matter%Atoms(i)%CDF(j)%E0(k), matter%Atoms(i)%CDF(j)%A(k), matter%Atoms(i)%CDF(j)%G(k)
 !                 write(*,*) matter%Atoms(i)%CDF(j)%E0(k), matter%Atoms(i)%CDF(j)%A(k), matter%Atoms(i)%CDF(j)%G(k)
+               call read_file(Reason, count_lines, read_well) ! module "Dealing_with_files"
                if (.not. read_well) then
                   write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                   call Save_error_details(Err, 3, Error_descript) ! modlue "Objects"
@@ -314,7 +315,7 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot, file_atom
    character(*), intent(in) :: file_atomic_parameters, file_EADL_file
    !===============================================
    character(200) :: Folder_name, File_name, Error_descript
-   integer FN, INFO, j, Z, imax, imin, N_shl
+   integer FN, INFO, j, Z, imax, imin, N_shl, Reason
    real(8), dimension(:), allocatable :: Nel   ! number of electrons in each shell
    integer, dimension(:), allocatable :: Shl_num ! shell designator
    character(11), dimension(:), allocatable :: Shell_name
@@ -327,7 +328,8 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot, file_atom
    File_name = trim(adjustl(Folder_name))//trim(adjustl(numpar%path_sep))//trim(adjustl(file_EADL_file))
 
    !call open_file('readonly', File_name, FN, INFO, Error_descript)
-   INFO = 0
+   INFO = 0                   ! to start with
+   file_opened = .false.      ! to start with
    inquire(file=trim(adjustl(File_name)),exist=file_exist)
    if (.not.file_exist) then
       INFO = 1
@@ -337,13 +339,17 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot, file_atom
    else
       !open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), status = 'old')
       FN=104
-      open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read')
-      inquire(file=trim(adjustl(File_name)),opened=file_opened)
-      if (.not.file_opened) then
+      !open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read')
+      !inquire(file=trim(adjustl(File_name)),opened=file_opened)
+      !if (.not.file_opened) then
+      open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read', IOSTAT=Reason)
+      if (Reason /= 0) then
          INFO = 2
          Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
          call Save_error_details(Err, INFO, Error_descript)
          print*, trim(adjustl(Error_descript))
+      else
+         file_opened = .true.
       endif
    endif
 
@@ -358,6 +364,28 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot, file_atom
          else ! core shell
             call READ_EADL_TYPE_FILE_int(FN, File_name, Z, 912, INFO, error_message=Error_descript, N_shl=N_shl, &
                   Nel=Nel, Shell_name=Shell_name)    ! module "Dealing_with_EADL"
+
+            if (INFO /= 0) then
+               call Save_error_details(Err, INFO, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               goto 9999
+            endif
+            if (.not.allocated(Shell_name)) then
+               INFO = 3
+               Error_descript = 'EADL shell names were not returned for '//trim(adjustl(File_name))
+               call Save_error_details(Err, INFO, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               goto 9999
+            endif
+            if ((cur_shl < 1) .or. (cur_shl > size(Shell_name))) then
+               INFO = 3
+               write(Error_descript,'(a,i0,a,i0,a)') 'Shell index ', cur_shl, ' exceeds EADL shell count ', &
+                                                    size(Shell_name), ' in '//trim(adjustl(File_name))
+               call Save_error_details(Err, INFO, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               goto 9999
+            endif
+
             matter%Atoms(i)%Shell_name(cur_shl) = Shell_name(cur_shl)
          endif
       endif
@@ -410,12 +438,13 @@ subroutine check_atomic_data(matter, numpar, Err, i, cur_shl, shl_tot, file_atom
             goto 9999
          endif
       endif
-      close (FN)
+      !close (FN) ! close at the end
    case default
       call Save_error_details(Err, INFO, Error_descript)
       print*, trim(adjustl(Error_descript))
    end select
 9999 continue
+if (file_opened) close(FN)
 end subroutine check_atomic_data
 
 

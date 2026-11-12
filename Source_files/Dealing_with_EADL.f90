@@ -59,7 +59,7 @@ subroutine READ_EADL_TYPE_FILE_int(FN, File_name, Z_needed, I_needed, INFO, erro
    integer, intent(inout) :: INFO  ! 0=file read well; 1=no file; 2=couldn't open; 3=error while reading
    character(100), intent(inout) :: error_message
    ! output varuables:
-   integer, intent(out) :: N_shl ! how many shells we have in this atom
+   integer, intent(inout) :: N_shl ! how many shells we have in this atom
    real(8), dimension(:), allocatable, intent(inout) :: Nel   ! number of electrons in each shell
    character(11), dimension(:), allocatable, intent(out), optional :: Shell_name   ! names of the shells
    integer, dimension(:), allocatable, intent(out), optional :: PQN   ! principal quantum number
@@ -74,35 +74,83 @@ subroutine READ_EADL_TYPE_FILE_int(FN, File_name, Z_needed, I_needed, INFO, erro
    real(8) AW, X1
    real(8) READ1, READ2, READ3, READ4
    integer run_i, Reason, imin, imax
-   logical File_opened
+   logical File_opened, File_exist
+
+   ! To start with:
+   INFO = 0
+   error_message = ''
 
    inquire(file=trim(adjustl(File_name)),opened=File_opened,number=FN)
    if (.not. File_opened) then
+      inquire(file=trim(adjustl(File_name)),exist=File_exist)
+      if (.not. File_exist) then
+         INFO = 1
+         error_message = 'EADL database file was not found: '//trim(adjustl(File_name))
+         return
+      endif
       FN = 336
-      open(unit=FN, FILE = trim(adjustl(File_name)), status = 'old', action = 'read')
-      !open(newunit=FN, FILE = trim(adjustl(File_name)), status = 'old', action = 'read')
+      open(unit=FN, FILE = trim(adjustl(File_name)), status = 'old', action = 'read', iostat=Reason)
+      if (Reason /= 0) then
+         INFO = 2
+         error_message = 'Could not open EADL database file: '//trim(adjustl(File_name))
+         return
+      endif
    endif
 
    Z = 0
    do while (Z .NE. Z_needed)
-      call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
-      call How_many_lines(FN, counter, EndCheck) ! to know how many lines are there
-      if (Z .GE. 100) then !print*, 'The element is not found in the EADL database...'
+      !call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
+      call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck, Reason)
+      if (Reason /= 0) then
+         if (Reason == -1) then ! end of file reached
+            INFO = 4
+            write(error_message,*) 'Element #', Z_needed, ' was not found in the EADL database'
+         else ! error in the records
+            INFO = 3
+            error_message = 'Invalid record in EADL database (#1)'
+         endif
+         goto 9990
+      endif
+      call How_many_lines(FN, counter, EndCheck, Reason) ! to know how many lines are there
+      if (Reason /= 0 .or. EndCheck < 0) then
+         INFO = 3
+         error_message = 'Invalid data block in EADL database (#1)'
+         goto 9990
+      endif
+      if (Z .GT. Z_needed) then
+      !if (Z .GE. 100) then !print*, 'The element is not found in the EADL database...'
          write(error_message,*) '(INT) Element #', Z_needed, ' was not found in the database: eadl.all'
          INFO = 4
+          goto 9990
       endif
-      if (Z .GE. 100) exit
+      !if (Z .GE. 100) exit
    enddo
 
    if (Z .EQ. Z_needed) then ! this is the element we were looking for
       do while (I .NE. I_needed) ! find the value that we need
-         call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
-         call How_many_lines(FN, counter, EndCheck) ! to know how many lines are there
+         call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck, Reason)
+         if (Reason /= 0) then
+            if (Reason == -1) then  ! end of file
+               INFO = 4
+               write(error_message,*) 'I-value ', I_needed, ' was not found for element ', Z_needed, ' in the EADL database'
+            else  ! wrong format
+               INFO = 3
+               error_message = 'Invalid record in EADL database (#2)'
+            endif
+            goto 9990
+         endif
+         call How_many_lines(FN, counter, EndCheck, Reason) ! to know how many lines are there
+         if (Reason /= 0 .or. EndCheck < 0) then
+            INFO = 3
+            error_message = 'Invalid data block in EADL database (#2)'
+            goto 9990
+         endif
+
          if (Z .GT. Z_needed) then !print*, 'INT: The I-value is not found in the EADL database...'
             write(error_message,*) '(INT) The I-value ', Z, Z_needed, I_needed, ' is not found in the EADL database: eadl.all'
             INFO = 4
+            goto 9990
          endif
-         if (Z .GT. Z_needed) exit
       enddo
       do run_i = 1, counter+1
          backspace(FN)
@@ -196,6 +244,7 @@ subroutine READ_EADL_TYPE_FILE_int(FN, File_name, Z_needed, I_needed, INFO, erro
    endif
 
 !    flush(FN)
+9990 continue
    rewind(FN)
 9999   format(I3,I3,I2,I2,E11.4,I6)	! 1st line
 9998   format(I2,I3,I3,E11.4)		! 2st line
@@ -220,42 +269,101 @@ subroutine READ_EADL_TYPE_FILE_real(FN, File_name, Z_needed, I_needed, Array1, c
    real(8) AW, X1
    real(8) READ1, READ2, READ3, READ4
    integer run_i, imax, imin, Reason, icont
-   logical File_opened, Exist_val
+   logical File_opened, Exist_val, File_exist
 
+   INFO = 0
+   error_message = ''
    Exist_val = .true.
 
    inquire(file=trim(adjustl(File_name)),opened=File_opened,number=FN)
    if (.not. File_opened) then
       !open(newunit=FN, FILE = trim(adjustl(File_name)), status = 'old', action = 'read') ! EADL
+      inquire(file=trim(adjustl(File_name)),exist=File_exist)
+      if (.not. File_exist) then
+         INFO = 1
+         error_message = 'EADL database file was not found: '//trim(adjustl(File_name))
+         return
+      endif
+
       FN = 100
-      open(unit=FN, FILE = trim(adjustl(File_name)), status = 'old', action = 'read') ! EADL
+      !open(unit=FN, FILE = trim(adjustl(File_name)), status = 'old', action = 'read') ! EADL
+      open(unit=FN, FILE = trim(adjustl(File_name)), status = 'old', action = 'read', iostat=Reason) ! EADL
+      if (Reason /= 0) then
+         INFO = 2
+         error_message = 'Could not open EADL database file: '//trim(adjustl(File_name))
+         return
+      endif
    endif
    Z = 0 ! to start with
    
    do while (Z .NE. Z_needed)
-      call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
-      call How_many_lines(FN, counter, EndCheck) ! to know how many lines are there
-      if (Z .GE. 100) then 
+      !call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
+      !call How_many_lines(FN, counter, EndCheck) ! to know how many lines are there
+      !if (Z .GE. 100) then
+      call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck, Reason)
+      if (Reason /= 0) then
+         if (Reason == -1) then ! end of file
+            INFO = 4
+            write(error_message,*) 'Element #', Z_needed, ' was not found in the EADL database'
+         else ! wrong format
+            INFO = 3
+            error_message = 'Invalid record in EADL database'
+         endif
+         goto 9990
+      endif
+      call How_many_lines(FN, counter, EndCheck, Reason) ! to know how many lines are there
+      if (Reason /= 0 .or. EndCheck < 0) then
+         INFO = 3
+         error_message = 'Invalid data block in EADL database'
+         goto 9990
+      endif
+      if (Z .GT. Z_needed) then
          write(error_message,*) 'Element #', Z_needed, ' was not found in the database: eadl.all'
          INFO = 4
+         goto 9990
       endif
-      if (Z .GE. 100) exit
+      !if (Z .GE. 100) exit
    enddo
 
    if (Z .EQ. Z_needed) then ! this is the element we were looking for
       do while (I .NE. I_needed) ! find the value that we need
-         call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
-         call How_many_lines(FN, counter, EndCheck) ! to know how many lines are there
+         !call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
+         !call How_many_lines(FN, counter, EndCheck) ! to know how many lines are there
+
+         call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck, Reason)
+         if (Reason /= 0) then
+            if (Reason == -1) then
+               INFO = 4
+               write(error_message,*) 'I-value ', I_needed, ' was not found for element ', Z_needed, ' in the EADL database'
+               Exist_val = .false.
+               exit
+            else
+               INFO = 3
+               error_message = 'Invalid record in EADL database'
+               goto 9990
+            endif
+         endif
+         call How_many_lines(FN, counter, EndCheck, Reason) ! to know how many lines are there
+         if (Reason /= 0 .or. EndCheck < 0) then
+            INFO = 3
+            error_message = 'Invalid data block in EADL database'
+            goto 9990
+         endif
          if (Z .GT. Z_needed) then
             write(error_message,*) 'The I-value ', Z, Z_needed, I_needed, ' is not found in the EADL database: eadl.all'
-!             INFO = 4
+            INFO = 4
             Exist_val = .false.
          endif
-         if (Z .GT. Z_needed) exit
+         !if (Z .GT. Z_needed) exit
       enddo
-      do run_i = 1, counter+1
-         backspace(FN)
-      enddo
+
+      if (Exist_val) then
+         do run_i = 1, counter+1
+            backspace(FN)
+         enddo
+      else if (present(cur_shl)) then
+         goto 9990
+      endif
 
       if (present(cur_shl)) then ! this shell only:
          if (.not. allocated(Array1)) then
@@ -281,22 +389,59 @@ subroutine READ_EADL_TYPE_FILE_real(FN, File_name, Z_needed, I_needed, Array1, c
             if (Reason .LT. 0) then ! If there is no such shell in the database, try to sum up sub-shells:
                 Z = 0
                 do while (Z .NE. Z_needed)
-                   call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
-                   call How_many_lines(FN, counter, EndCheck) ! to know how many lines are there
-                   if (Z .GE. 100) then
+                   !call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
+                   !call How_many_lines(FN, counter, EndCheck) ! to know how many lines are there
+                   !if (Z .GE. 100) then
+                   call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck, Reason)
+                   if (Reason /= 0) then
+                      if (Reason == -1) then  ! end of file
+                         INFO = 4
+                         write(error_message,*) 'Element #', Z_needed, ' was not found in the EADL database'
+                      else  ! wrong format
+                         INFO = 3
+                         error_message = 'Invalid record in EADL database'
+                      endif
+                      goto 9990
+                   endif
+                   call How_many_lines(FN, counter, EndCheck, Reason) ! to know how many lines are there
+                   if (Reason /= 0 .or. EndCheck < 0) then
+                      INFO = 3
+                      error_message = 'Invalid data block in EADL database'
+                      goto 9990
+                   endif
+                   if (Z .GT. Z_needed) then
                       write(error_message,*) 'The element ', Z_needed, ' is not found in the EADL database: eadl.all'
                       INFO = 4
+                      goto 9990
                    endif
-                   if (Z .GE. 100) exit
+                   !if (Z .GE. 100) exit
                 enddo
                 do while (I .NE. I_needed) ! find the value that we need
-                   call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
-                   call How_many_lines(FN, counter, EndCheck) ! to know how many lines are there
+                   !call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
+                   !call How_many_lines(FN, counter, EndCheck) ! to know how many lines are there
+                   call read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck, Reason)
+                   if (Reason /= 0) then
+                      if (Reason == -1) then  ! end of file
+                         INFO = 4
+                         write(error_message,*) 'I-value ', I_needed, ' was not found for element ', Z_needed, ' in the EADL database'
+                      else  ! wrong format
+                         INFO = 3
+                         error_message = 'Invalid record in EADL database'
+                      endif
+                      goto 9990
+                   endif
+                   call How_many_lines(FN, counter, EndCheck, Reason) ! to know how many lines are there
+                   if (Reason /= 0 .or. EndCheck < 0) then
+                      INFO = 3
+                      error_message = 'Invalid data block in EADL database'
+                      goto 9990
+                   endif
                    if (Z .GT. Z_needed) then
                       write(error_message,*) 'INT: The I-value is not found in the EADL database: eadl.all'
                       INFO = 4
+                      goto 9990
                    endif
-                   if (Z .GT. Z_needed) exit
+                   !if (Z .GT. Z_needed) exit
                 enddo
                 do run_i = 1, counter+1
                    backspace(FN)
@@ -372,6 +517,8 @@ subroutine READ_EADL_TYPE_FILE_real(FN, File_name, Z_needed, I_needed, Array1, c
       endif
    endif
 !    flush(FN)
+
+9990 continue
    rewind(FN)
 9999   format(I3,I3,I2,I2,E11.4,I6)	! 1st line
 9998   format(I2,I3,I3,E11.4)		! 2st line
@@ -790,13 +937,35 @@ end subroutine read_throu_EPDL
 
 
 ! Reading first 2 lines with the descriptions in EADL database:
-subroutine read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
+subroutine read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck, Reason)
    integer, intent (inout) :: FN, Z, A, Yi, Yo, Date, C, I, S, EndCheck
+   integer, intent(out) :: Reason
    real(8), intent (inout) :: AW, X1
+
    EndCheck = 0
-   read(FN,9999) Z, A, Yi, Yo, AW, Date  	! 1st line
-   read(FN,9998) C, I, S, X1  			! 2st line
-   read(FN,9997) EndCheck  			! 3st line, cheking...
+
+   !read(FN,9999) Z, A, Yi, Yo, AW, Date  	! 1st line
+   read(FN,9999,IOSTAT=Reason) Z, A, Yi, Yo, AW, Date  	! 1st line
+   if (Reason /= 0) then
+      if (Reason < 0) Reason = -1
+      EndCheck = -1
+      return
+   endif
+
+   !read(FN,9998) C, I, S, X1  			! 2st line
+   read(FN,9998,IOSTAT=Reason) C, I, S, X1  			! 2st line
+   if (Reason /= 0) then
+      Reason = 1
+      EndCheck = -1
+      return
+   endif
+
+   !read(FN,9997) EndCheck  			! 3st line, cheking...
+   read(FN,9997,IOSTAT=Reason) EndCheck  			! 3st line, cheking...
+   if (Reason /= 0) then
+      Reason = 1
+      EndCheck = -1
+   endif
 
 9999   format(I3,I3,I2,I2,E11.4,I6)	! 1st line
 9998   format(I2,I3,I3,E11.4)		! 2st line
@@ -804,47 +973,38 @@ subroutine read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
 end subroutine read_throu 
 
 
-! ! Reading first 2 lines with the descriptions in EPDL database: 
-! subroutine read_throu_EPDL(FN, Z, A, Yi, Yo, AW, Date1, Iflag, C, I, S, X1, EndCheck)
-!    integer, intent (inout) :: FN, Z, A, Yi, Yo, Date1, Iflag, C, I, S, EndCheck
-!    real(8), intent (inout) :: AW, X1
-!    real(8) skipread
-!    EndCheck = 0
-!    read(FN,'(i3, i3,i2, i2, E11.4, 2x, i8, i1)') Z, A, Yi, Yo, AW, Date1, Iflag  	! 1st line
-!    !read(FN,'(i2,i3,i3,E11.4,E11.4)') C, I, S, skipread, X1  			! 2st line
-!    read(FN,'(i2,i3,i3,13X,E11.4)') C, I, S, X1  			! 2st line
-!    read(FN,9997) EndCheck  			! 3st line, cheking...
-! 9009   format(i3,i3,i2,i2,e11.4,i6)	! 1st line
-! 9999   format(I3,I3,I2,I2,E11.4,I6,I1)	! 1st line
-! 9998   format(I2,I3,I3,E11.4)		! 2st line
-! 9997   format(71X,I1)			! last line
-! end subroutine read_throu_EPDL
-! 
-! ! Reading first 2 lines with the descriptions in EADL database:
-! subroutine read_throu(FN, Z, A, Yi, Yo, AW, Date, C, I, S, X1, EndCheck)
-!    integer, intent (inout) :: FN, Z, A, Yi, Yo, Date, C, I, S, EndCheck
-!    real(8), intent (inout) :: AW, X1
-!    EndCheck = 0
-!    read(FN,9999) Z, A, Yi, Yo, AW, Date  	! 1st line
-!    read(FN,9998) C, I, S, X1  			! 2st line
-!    read(FN,9997) EndCheck  			! 3st line, cheking...
-! 9999   format(I3,I3,I2,I2,E11.4,I6)	! 1st line
-! 9998   format(I2,I3,I3,E11.4)		! 2st line
-! 9997   format(71X,I1)			! last line
-! end subroutine read_throu 
-
-
 ! Counts how many lines contain the data in a block of EADL, EPDL-databases
-subroutine How_many_lines(FN,counter, EndCheck)
+subroutine How_many_lines(FN,counter, EndCheck, Reason)
    integer, intent(in) :: FN
    integer, intent(inout) :: counter, EndCheck
+   integer, intent(out), optional :: Reason
+   integer :: read_status
+
    counter = 0
    do while (EndCheck .NE. 1) ! until end of data for this sub-shell/input
       counter = counter + 1 ! how many lines are there
-      read(FN,9997) EndCheck  			! 3st line, cheking...
+      !read(FN,9997) EndCheck  			! 3st line, cheking...
+      read(FN,9997,IOSTAT=read_status) EndCheck  			! 3st line, cheking...
+      if (present(Reason)) Reason = read_status
+      if (read_status /= 0) then
+         EndCheck = -1
+         exit
+      endif
+
       !print*, 'How_many_lines ', counter, EndCheck
-      if (counter .GE. 5000) EndCheck = -1	! indicates some ERROR
-      if (counter .GE. 5000) exit	! if something went wrong...
+      !if (counter .GE. 5000) EndCheck = -1	! indicates some ERROR
+      !if (counter .GE. 5000) exit	! if something went wrong...
+
+      if (counter .GE. 5000) then
+         EndCheck = -1	! indicates some ERROR
+         if (present(Reason)) Reason = 1
+         exit	! if something went wrong...
+      endif
+
+      if (present(Reason)) then
+         if (EndCheck == 1) Reason = 0
+      endif
+
    enddo
 9997   format(71X,I1)			! last line
 end subroutine How_many_lines

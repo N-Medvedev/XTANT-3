@@ -54,14 +54,27 @@ subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_pot)
    logical, intent(in), optional :: rep_pot   ! flag for no repulsion file
    !-----------------------
    real(8) :: dr, temp_r, rd_param(20), temp2, temp3, temp4, temp8
-   integer :: Reason, count_lines, Ngrid, i, temp_i, N_basis
-   logical :: read_well, rep_present
+   integer :: Reason, count_lines, Ngrid, i, temp_i, N_basis, requested_ToP
+   logical :: read_well, rep_present, has_polynomial
+
    character(100) :: temp_ch
    error_message = ''   ! no error at the start
    N_basis = 10 ! number of overlap functions for sp3d5
    count_lines = 0
+
+   requested_ToP = TB_Rep%ToP
+   if (requested_ToP /= 0 .and. requested_ToP /= 1) then
+      error_message = 'Invalid DFTB repulsive-potential type: expected 0 (polynomial) or 1 (spline)'
+      goto 2012
+   endif
+
    temp_ch = ''   ! to start with
    read(FN,*,IOSTAT=Reason) temp_ch
+   if (Reason /= 0) then
+      error_message = 'Could not read the DFTB SKF header'
+      goto 2012
+   endif
+
    if (temp_ch(1:1) == '@') then    ! it is parameterization with f orbital, currently not suported!
       error_message = 'DFTB parameterization includes f orbital, not supported in XTANT!'
       goto 2012 ! exit
@@ -81,6 +94,12 @@ subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_pot)
 
    call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
    if (.not.read_well) goto 2012 ! exit
+
+   if (Ngrid <= 1 .or. dr <= 0.0d0) then
+      error_message = 'Invalid DFTB radial grid: the grid size must exceed 1 and the spacing must be positive'
+      goto 2012
+   endif
+
    Ngrid = Ngrid - 1
    dr = dr*g_au2A ! [Bohr] -> [A]
    ! Knowing the size, allocate the arrays:
@@ -109,7 +128,7 @@ subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_pot)
       TB_Hamil%Ud = 0.0d0
    endif
 
-   ! Read parameters of repulsive potential in the polinomial form:
+   ! Read parameters of repulsive potential in the polynomial form:
    read(FN,*,IOSTAT=Reason) temp_r, TB_Rep%c(:), TB_Rep%rcut   ! [a.u.] coefficients for repulsive potential in polinomial form
    call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
    if (.not.read_well) goto 2012 ! exit
@@ -128,6 +147,7 @@ subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_pot)
    temp8 = temp4 * temp4
    TB_Rep%c(7) = TB_Rep%c(7) * temp4 * temp4   ! [eV/Bohr^8] -> [eV/A^8]
    TB_Rep%c(8) = TB_Rep%c(8) * temp8 * g_A2au   ! [eV/Bohr^9] -> [eV/A^9]
+   has_polynomial = (TB_Rep%rcut > 0.0d0)
 
    ! Now we know the grid step, can set the radial grid and read the parametres from the file:
    TB_Hamil%Rr(1) = dr  ! [A]
@@ -143,7 +163,8 @@ subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_pot)
    TB_Hamil%Vr = TB_Hamil%Vr * g_au2ev  ! [Hartree] -> [eV]
    
    ! Read the precalculated repulsive potential in Spline form:
-   call read_DFTB_spline(FN, count_lines, TB_Rep, error_message)   ! below
+   !call read_DFTB_spline(FN, count_lines, TB_Rep, error_message)   ! below
+   call read_DFTB_spline(FN, count_lines, TB_Rep, requested_ToP, has_polynomial, error_message)   ! below
 
 2012 continue
 end subroutine read_skf_file
@@ -167,7 +188,14 @@ subroutine read_skf_file_no_rep(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_po
    error_message = ''   ! no error at the start
    N_basis = 10 ! number of overlap functions for sp3d5
    count_lines = 0
+   temp_ch = ''
    read(FN,*,IOSTAT=Reason) temp_ch
+
+   if (Reason /= 0) then
+      error_message = 'Could not read the DFTB SKF header'
+      goto 2012
+   endif
+
    if (temp_ch(1:1) == '@') then    ! it is parameterization with f orbital, currently not suported!
       error_message = 'DFTB parameterization includes f orbital, not supported in XTANT!'
       goto 2012 ! exit
@@ -177,6 +205,12 @@ subroutine read_skf_file_no_rep(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_po
    read(FN,*,IOSTAT=Reason) dr, Ngrid   ! radial grid step [Bohr], size of the grid
    call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
    if (.not.read_well) goto 2012 ! exit
+
+   if (Ngrid <= 1 .or. dr <= 0.0d0) then
+      error_message = 'Invalid DFTB radial grid: the grid size must exceed 1 and the spacing must be positive'
+      goto 2012
+   endif
+
    Ngrid = Ngrid - 1
    dr = dr*g_au2A ! [Bohr] -> [A]
    ! Knowing the size, allocate the arrays:
@@ -227,28 +261,54 @@ subroutine read_skf_file_no_rep(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_po
 end subroutine read_skf_file_no_rep
 
 
-subroutine read_DFTB_spline(FN, count_lines, TB_Rep, error_message)
+subroutine read_DFTB_spline(FN, count_lines, TB_Rep, requested_ToP, has_polynomial, error_message)
    integer, intent(in) :: FN    ! skf file to read from (must be already opened)
    integer, intent(inout) :: count_lines    ! to read from this line on
    type(TB_Rep_DFTB), intent(inout) :: TB_Rep   ! repulsive potential
+   integer, intent(in) :: requested_ToP
+   logical, intent(in) :: has_polynomial
    character(100), intent(inout) :: error_message
    !--------------------------------
    real(8) :: temp_r, temp2, temp3
-   character(6) :: temp_ch
+   character(256) :: temp_ch
    integer :: i, Reason, N_spline_grid
    logical :: read_well, found_line
+
+   TB_Rep%ToP = requested_ToP
+   if (requested_ToP == 0 .and. has_polynomial) return ! if it's not supposed to be spline
+
    found_line = .false.
    do while (.not.found_line) 
-      read(FN,*, IOSTAT=Reason) temp_ch  ! read the parameters line by line
-      call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
-      if (.not. read_well) goto 2013 ! exit
+      !read(FN,*, IOSTAT=Reason) temp_ch  ! read the parameters line by line
+      !call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
+      !if (.not. read_well) goto 2013 ! exit
+      read(FN,'(a)', IOSTAT=Reason) temp_ch
+      if (Reason < 0) then    ! end of file reached
+         if (has_polynomial) then
+            TB_Rep%ToP = 0
+         else
+            error_message = 'SKF file contains neither the requested DFTB repulsive parameters nor a fallback'
+         endif
+         return
+      elseif (Reason > 0) then      ! wrong format in the line somehow
+         call read_file(Reason, count_lines, read_well, error_message)
+         return
+      endif
+      count_lines = count_lines + 1
       found_line = (trim(adjustl(temp_ch)) == 'Spline')
    enddo
+   TB_Rep%ToP = 1 ! this is the format of the repulsive potential to be used
    
    ! the number of (subsequent) intervals being described by various cubic splines and cutoff the cutoff of the repulsive interaction:
    read(FN,*, IOSTAT=Reason) N_spline_grid, TB_Rep%rcut_spline
    call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
    if (.not. read_well) goto 2013 ! exit
+
+   if (N_spline_grid < 2) then
+      error_message = 'Invalid DFTB spline grid: at least two grid points are required'
+      goto 2013
+   endif
+
    ! Convert into units used in the code:
    TB_Rep%rcut_spline = TB_Rep%rcut_spline * g_au2A  ! [Bohr] -> [A]
    

@@ -30,7 +30,7 @@
 !
 ! For Wolf's et al. treatement of truncated Coulomb, see:
 ! [3] D. Wolf, et al., J. Chem. Phys. 110, 8254 (1999); https://doi.org/10.1063/1.478738
-! [4] C. J. Fennell and J. D. Gezelter, J. Chem. Phys. 124, 234104 (2006)
+! [4] C. J. Fennell and J. D. Gezelter, J. Chem. Phys. 124, 234104 (2006)
 
 
 
@@ -85,6 +85,7 @@ subroutine get_Coulomb_Wolf_s(Scell, NSC, matter, E_coulomb, numpar, gam_ij)   !
    nat = Scell(NSC)%Na ! number of atoms
    ! Get the cut-off distance
    r_cut = cut_off_distance(Scell(NSC)) ! below
+   alpha = 3.0d0/(4.0d0*r_cut) ! it's chosen according to optimal value from [4]
    sum_a = 0.0d0  ! to start with
 
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
@@ -105,7 +106,6 @@ subroutine get_Coulomb_Wolf_s(Scell, NSC, matter, E_coulomb, numpar, gam_ij)   !
          q2 = matter%Atoms(KOA2)%NVB - matter%Atoms(KOA2)%mulliken_Ne ! Mulliken charge of atom #2
 
          r => Scell(NSC)%Near_neighbor_dist(j,atom_2,4) ! distance between atoms #1 and #2, R [A]
-         alpha = 3.0d0/(4.0d0*r_cut) ! it's chosen according to optimal value from [4]
 
          Coul_pot = Coulomb_Wolf_pot(q1, q2, r, r_cut, alpha)    ! function below
          if (present(gam_ij)) then  ! Effective value according to Hubbard model:
@@ -123,7 +123,7 @@ subroutine get_Coulomb_Wolf_s(Scell, NSC, matter, E_coulomb, numpar, gam_ij)   !
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{sum_a}', sum_a) ! module "MPI_subroutines"
 
 #else
-   !$omp PARALLEL private( j, KOA1, q1, m, atom_2, i, KOA2, q2, r, alpha, Coul_pot )
+   !$omp PARALLEL private( j, KOA1, q1, m, atom_2, i, KOA2, q2, r, Coul_pot) firstprivate(alpha)
    !$omp do reduction( + : sum_a)
    do j = 1, nat  ! atom #1
       KOA1 => Scell(NSC)%MDatoms(j)%KOA   ! kind of atom #1
@@ -135,7 +135,6 @@ subroutine get_Coulomb_Wolf_s(Scell, NSC, matter, E_coulomb, numpar, gam_ij)   !
          q2 = matter%Atoms(KOA2)%NVB - matter%Atoms(KOA2)%mulliken_Ne ! Mulliken charge of atom #2
 
          r => Scell(NSC)%Near_neighbor_dist(j,atom_2,4) ! distance between atoms #1 and #2, R [A]
-         alpha = 3.0d0/(4.0d0*r_cut) ! it's chosen according to optimal value from [4]
 
          Coul_pot = Coulomb_Wolf_pot(q1, q2, r, r_cut, alpha)    ! function below
          if (present(gam_ij)) then  ! Effective value according to Hubbard model:
@@ -259,17 +258,18 @@ subroutine d_Coulomb_forces(Scell, NSC, numpar, F_Coul, dF_Coul)   ! vdW force a
    call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{dF_Coul}', dF_Coul) ! module "MPI_subroutines"
 
 #else
-   !$omp PARALLEL private(i1, j1, a_r, x_cell, y_cell, z_cell, zb, origin_cell, x, y, z, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, KOA1, KOA2, F_r, dF_r, F, dF)
+   !$omp PARALLEL private(j1, a_r, x_cell, y_cell, z_cell, zb, origin_cell, x, y, z, drdrx, drdry, drdrz, d2rdr2x, d2rdr2y, d2rdr2z, KOA1, KOA2, F_r, dF_r, F, dF)
+
    !$omp do
-   XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
-      YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
-         ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
-            zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
-            origin_cell = ALL(zb==0) ! if it is the origin cell
-            do i1 = 1, Scell(NSC)%Na ! all atoms
-               KOA1 => Scell(NSC)%MDatoms(i1)%KOA   ! atom #1
-               F = 0.0d0   ! to restart
-               dF = 0.0d0  ! to restart
+   do i1 = 1, Scell(NSC)%Na ! each atom is handled by one thread
+      KOA1 => Scell(NSC)%MDatoms(i1)%KOA   ! atom #1
+      F = 0.0d0
+      dF = 0.0d0
+      XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
+         YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+            ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+               zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+               origin_cell = ALL(zb==0) ! if it is the origin cell
                do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
                   if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
 
@@ -301,13 +301,13 @@ subroutine d_Coulomb_forces(Scell, NSC, numpar, F_Coul, dF_Coul)   ! vdW force a
 
                   endif ! (j1 .NE. i1)
                enddo ! j1
-               ! And save for each atom:
-               F_Coul(:,i1) = F_Coul(:,i1) + F
-               dF_Coul(:,i1) = dF_Coul(:,i1) + dF
-            enddo ! i1
-         enddo ZC
-      enddo YC
-   enddo XC
+            enddo ZC
+         enddo YC
+      enddo XC
+      ! And save for each atom:
+      F_Coul(:,i1) = F_Coul(:,i1) + F
+      dF_Coul(:,i1) = dF_Coul(:,i1) + dF
+   enddo ! i1
    !$omp end do
    nullify(KOA1, KOA2)
    !$omp end parallel
@@ -363,7 +363,8 @@ pure function Coulomb_Wolf_self_term(q1, Rc, alpha) result(SelfPot)   ! Self-ter
    real(8), intent(in) :: q1    ! [e] charges
    real(8), intent(in) :: Rc    ! [A] interatomic distance, truncation distance
    real(8), intent(in) :: alpha ! truncation parameter
-   SelfPot = m_k*q1*q1*(erfc(alpha*Rc)/Rc + 2.0d0*alpha/m_sqrtPi)    ! [eV]
+   !SelfPot = m_k*q1*q1*(erfc(alpha*Rc)/Rc + 2.0d0*alpha/m_sqrtPi)    ! [eV]
+   SelfPot = -m_k*q1*q1*(erfc(alpha*Rc)/Rc + 2.0d0*alpha/m_sqrtPi)    ! [eV]
 end function Coulomb_Wolf_self_term
 
 
@@ -441,7 +442,9 @@ subroutine get_mirror_cell_num_C(Scell, NSC, TB_Coul, atoms, Nx, Ny, Nz)
    real(8), dimension(3) :: zb ! super cell indices
    real(8) :: R_cut
 
-   R_cut = TB_Coul(1,1)%dm ! [A] cut-off distance
+   !R_cut = TB_Coul(1,1)%dm ! [A] cut-off distance
+   R_cut = maxval(TB_Coul(:,:)%dm + 10.0d0*TB_Coul(:,:)%dd) ! [A] full smooth-cutoff range
+
    call get_number_of_image_cells(Scell, NSC, atoms, R_cut, Nx, Ny, Nz) ! module "Atomic_tools"
 
    ! It has to be at least one image cell:
@@ -471,7 +474,7 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
    call get_mirror_cell_num_C(Scell, NSC, TB_Coul, Scell(NSC)%MDatoms, Nx, Ny, Nz) ! subroutine above
    
 !    call Find_outermost_atom(Scell, 3, 'UP', N_ind)	! module "Atomic_tools"
-   tot_pot = 0.0d0
+!    tot_pot = 0.0d0
    
    sum_a = 0.0d0
 
@@ -485,6 +488,7 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
    ! Do the cycle (parallel) calculations:
    do i1 = Nstart, Nend, N_incr  ! each process does its own part
    !do i1 = 1, Scell(NSC)%Na ! all atoms
+      E_rep = 0.0d0 ! to start woth
       XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
          YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
             ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
@@ -497,13 +501,15 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
                      call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
                      Coul_pot = Coulomb_pot(Scell, NSC, TB_Coul, i1, j1, a_r)    ! function below
                      sum_a = sum_a + Coul_pot
-                     E_rep_array(i1) = E_rep_array(i1) + Coul_pot
+                     !E_rep_array(i1) = E_rep_array(i1) + Coul_pot
+                     E_rep = E_rep + Coul_pot
 !                      if (i1 == N_ind) tot_pot = tot_pot + Coul_pot
                   endif ! (j1 .NE. i1)
                enddo ! j1
             enddo ZC
          enddo YC
       enddo XC
+      E_rep_array(i1) = 0.5d0*E_rep
    enddo ! i1
 
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
@@ -514,17 +520,18 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
    Scell(NSC)%MDAtoms(:)%Epot = Scell(NSC)%MDAtoms(:)%Epot + E_rep_array(:)
 
 #else
-   !$omp PARALLEL private(i1,j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell, Coul_pot, E_rep)
+   !$omp PARALLEL private(j1,a_r,x_cell,y_cell,z_cell,zb,origin_cell, Coul_pot, E_rep)
 !   !$omp do reduction( + : sum_a, tot_pot)
    !$omp do reduction( + : sum_a)
-   XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
-      YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
-         ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
-            !zb = (/dble(Nx),dble(Ny),dble(Nx)/) ! vector of image of the super-cell
-            zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
-            origin_cell = ALL(zb==0) ! if it is the origin cell
-            do i1 = 1, Scell(NSC)%Na ! all atoms
-               E_rep = 0.0d0  ! to restart
+   do i1 = 1, Scell(NSC)%Na ! each atom is handled by one thread
+      E_rep = 0.0d0
+      XC:do x_cell = -Nx, Nx ! all images of the super-cell along X
+         YC:do y_cell = -Ny, Ny ! all images of the super-cell along Y
+            ZC:do z_cell = -Nz, Nz ! all images of the super-cell along Z
+               !zb = (/dble(Nx),dble(Ny),dble(Nx)/) ! vector of image of the super-cell
+               zb = (/x_cell,y_cell,z_cell/) ! vector of image of the super-cell
+               origin_cell = ALL(zb==0) ! if it is the origin cell
+
                do j1 = 1, Scell(NSC)%Na ! all pairs of atoms
                   if ((j1 /= i1) .or. (.not.origin_cell)) then ! exclude self-interaction only within original super cell
                      call distance_to_given_cell(Scell, NSC, Scell(NSC)%MDatoms, dble(zb), i1, j1, a_r) ! module "Atomic_tools"
@@ -534,17 +541,20 @@ subroutine get_Coulomb_s(TB_Coul, Scell, NSC, numpar, a)   ! Coulomb energy
 !                      if (i1 == N_ind) tot_pot = tot_pot + Coul_pot
                   endif ! (j1 .NE. i1)
                enddo ! j1
-               ! And save for each atom:
-               Scell(NSC)%MDAtoms(i1)%Epot = Scell(NSC)%MDAtoms(i1)%Epot + E_rep
-            enddo ! i1
-         enddo ZC
-      enddo YC
-   enddo XC
+
+            enddo ZC
+         enddo YC
+      enddo XC
+      ! And save for each atom:
+      Scell(NSC)%MDAtoms(i1)%Epot = Scell(NSC)%MDAtoms(i1)%Epot + 0.5d0*E_rep
+   enddo ! i1
    !$omp end do
    !$omp end parallel
 #endif
 
-   a = sum_a	! [eV]
+   !a = sum_a	! [eV]
+   a = 0.5d0*sum_a	! [eV], remove ordered-pair double counting
+
 !    write(*,'(a,i4,f,f,f,f)') 'tot_pot', N_ind, Scell(NSC)%MDAtoms(N_ind)%S(3), tot_pot, tot_pot + Coulomb_pot(Scell, NSC, TB_Coul, N_ind, N_ind, 0.25d0), sum_a/dble(Scell(NSC)%Na)
 end subroutine get_Coulomb_s
 
@@ -824,7 +834,7 @@ subroutine Construct_B_C(TB_Coul, Scell, NSC, numpar, atoms, Bij, A_rij, XijSupc
 
 
 #else ! use OpenMP instead:
-      !$omp PARALLEL private(i1,j1,x,y,z,sx,sy,sz,x_cell,y_cell,z_cell,zb,origin_cell,coun_cell)
+      !$omp PARALLEL private(j1,x,y,z,sx,sy,sz,x_cell,y_cell,z_cell,zb,origin_cell,coun_cell)
       !$omp do
       do i1 = 1,n
          do j1 = 1,n
