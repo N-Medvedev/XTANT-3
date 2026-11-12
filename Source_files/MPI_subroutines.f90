@@ -1838,6 +1838,7 @@ subroutine MPI_share_Scell(numpar, Scell)
          Scell(1)%Ta_var(:) = 0.0d0
          Scell(1)%Ta_r_var(:) = 0.0d0
          Scell(1)%Ta_conf_run_average(:) = 0.0d0
+         Scell(1)%Ta_conf_run_average_count = 0
          Scell(1)%Fv = 0.0d0
          Scell(1)%Tconf = 0.0d0
          Scell(1)%Tconf2 = 0.0d0

@@ -1,5 +1,5 @@
 :: This file was written by N.Medvedev
-:: in 2018-2024
+:: in 2018-2026
 :: -----------------------------------------------------
 :: Brief notes on cmd programming :  https://ss64.com/nt/if.html
 :: -----------------------------------------------------
@@ -39,8 +39,11 @@ cd Source_files
    SET "Compiler=ifx"
    SET "Linking_options="
 
-:: List of all program files to be compiled
-   SET "List_of_files=Universal_constants.f90 Objects.f90 Variables.f90 MPI_subroutines.f90 BS_Cartesian_Gaussians.f90 BS_Spherical_Gaussians.f90 Periodic_table.f90 Algebra_tools.f90 BS_Basis_sets.f90 TB_Koster_Slater.f90 Dealing_with_files.f90 Gnuplotting.f90 Little_subroutines.f90 Dealing_with_EADL.f90 Plots_gnuplot.f90 Plots_python.f90 Dealing_with_DFTB.f90 Dealing_with_3TB.f90 Dealing_with_BOP.f90 Dealing_with_xTB.f90 Atomic_tools.f90 Atomic_thermodynamics.f90 MC_cross_sections.f90 Electron_electron_scattering.f90 Electron_tools.f90 Nonadiabatic.f90 Dealing_with_POSCAR.f90 Dealing_with_mol2.f90 Dealing_with_CDF.f90 ZBL_potential.f90 Read_input_data.f90 Van_der_Waals.f90 Coulomb.f90 Exponential_wall.f90  Dealing_with_output_files.f90 Monte_Carlo.f90 TB_Fu.f90 TB_Pettifor.f90 TB_Molteni.f90 TB_NRL.f90 TB_DFTB.f90 TB_3TB.f90 TB_BOP.f90 TB_xTB.f90 TB.f90 Dealing_with_eXYZ.f90 Initial_configuration.f90 Optical_parameters.f90 TB_complex.f90 Transport.f90 XTANT_analyses.f90 XTANT_MAIN_FILE.f90"
+:: Read the ordered source list shared with the Unix Makefile
+   SET "List_of_files="
+   FOR /F "usebackq tokens=*" %%A IN ("sources.txt") DO (
+      SET "List_of_files=!List_of_files! %%A"
+   )
 
    :: List compiler options and the name of the executable:
    IF /I %arg1%==clean (
@@ -162,12 +165,12 @@ cd Source_files
          :: Construct the command line for compilation of the current module:
          SET "Output=%Compiler% -c %Compile_options% %%A !Linking_options! 2>&1"
          echo * Compilation : !Output!
+         :: Execute the compilation of the module:
+         CALL !Output!
          IF ERRORLEVEL 1 (
             echo Error compiling %%A! See Captured Output above. Exiting...
             EXIT /B 1
          )
-         :: Execute the compilation of the module:
-         CALL !Output!
       )
       echo %Starline%
 
@@ -180,13 +183,13 @@ cd Source_files
 ::   ifx.exe %Compile_options% *.obj /exe:%Name_of_exe%
 :: Construct the command line for creation fo executable:
       SET "Output=%Compiler% %Compile_options% *.obj /exe:%Name_of_exe% !Linking_options! 2>&1"
-      IF ERRORLEVEL 1 (
-         echo Error compiling %%A! See Captured Output above. Exiting...
-         EXIT /B 1
-      )
       echo * Executable : !Output!
       :: Combine modules into the executable:
       CALL !Output!
+      IF ERRORLEVEL 1 (
+         echo Error linking %Name_of_exe%. Exiting...
+         EXIT /B 1
+      )
 
       echo %Starline%
 ::   echo Completed: %date% %time%

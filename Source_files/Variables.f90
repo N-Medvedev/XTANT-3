@@ -87,6 +87,16 @@ subroutine deallocate_all()
    if (allocated(g_numpar%FN_displacements)) deallocate(g_numpar%FN_displacements)
    if (allocated(g_numpar%FN_diff_peaks_part)) deallocate(g_numpar%FN_diff_peaks_part)
    if (allocated(g_numpar%Freeze_filter)) deallocate(g_numpar%Freeze_filter)
+
+   if (allocated(g_numpar%FN_fragments)) deallocate(g_numpar%FN_fragments)
+   if (allocated(g_matter%PCF_part)) deallocate(g_matter%PCF_part)
+   if (allocated(g_matter%El_MFP_tot%E)) deallocate(g_matter%El_MFP_tot%E)
+   if (allocated(g_matter%El_MFP_tot%L)) deallocate(g_matter%El_MFP_tot%L)
+   if (allocated(g_matter%El_EMFP_tot%E)) deallocate(g_matter%El_EMFP_tot%E)
+   if (allocated(g_matter%El_EMFP_tot%L)) deallocate(g_matter%El_EMFP_tot%L)
+   if (allocated(g_matter%Ph_MFP_tot%E)) deallocate(g_matter%Ph_MFP_tot%E)
+   if (allocated(g_matter%Ph_MFP_tot%L)) deallocate(g_matter%Ph_MFP_tot%L)
+
    call g_numpar%Frozen_atoms%free()   ! procedural function from module "Objects"
 end subroutine deallocate_all
 

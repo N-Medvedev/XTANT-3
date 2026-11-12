@@ -280,7 +280,7 @@ subroutine update_Ta_config_running_average(Scell, matter, numpar)
       !print*, Scell%Ta_var(6), Scell%Ta_var(7), Scell%Ta_var(8)
 
       ! Update the running average of the configurational tempreature:
-      call update_running_average(Scell%Ta_var(8), Scell%Ta_conf_run_average)  ! below
+      call update_running_average(Scell%Ta_var(8), Scell%Ta_conf_run_average, Scell%Ta_conf_run_average_count)  ! below
    endif
 end subroutine update_Ta_config_running_average
 
@@ -293,7 +293,9 @@ function Get_configurational_temperature_numeric(Scell, matter, numpar) result(T
    type(Numerics_param), intent(in) :: numpar   ! numerical parameters
    !-------------------
    integer :: Nat, i
-   real(8) :: F(3), F0(3), F2(3), dF(3), Pot_tot, acc(3), acc0(3), V(3), Pot_den, Pot_num, V_ave, Vol
+   real(8) :: F(3), F0(3), acc(3), acc0(3), V(3), Pot_den, Pot_num, V_ave, Vol, Pot_tot
+   integer :: ik
+
    real(8), pointer :: Mass
 
    Nat = size(Scell%MDAtoms)  ! number of atoms
@@ -302,8 +304,7 @@ function Get_configurational_temperature_numeric(Scell, matter, numpar) result(T
    V_ave = SUM(SQRT(Scell%MDAtoms(:)%V(1)*Scell%MDAtoms(:)%V(1) + &
                     Scell%MDAtoms(:)%V(2)*Scell%MDAtoms(:)%V(2) + &
                     Scell%MDAtoms(:)%V(3)*Scell%MDAtoms(:)%V(3) ) )/dble(Nat)
-   F2 = 0.0d0  ! to start with
-   dF = 0.0d0  ! to start with
+
    Pot_den = 0.0d0   ! to start with
    Pot_num = 0.0d0   ! to start with
    ! For all atoms:
@@ -314,23 +315,21 @@ function Get_configurational_temperature_numeric(Scell, matter, numpar) result(T
       acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
       ! Get the force:
       F(:) = Mass * acc(:) ! [N]
-      F2(:) = F(:)**2
-      ! Numerator:
-      Pot_num = Pot_num + SUM(F2(:))
-
 
       ! Get Div*F via chain rule:
       acc0(:) = Scell%MDAtoms(i)%accel0(:) * 1.0d20     ! [A/fs^2] -> [m/s^2]
       F0(:) = Mass * acc0(:) ! [N]
       V(:) = Scell%MDAtoms(i)%V(:)  ! [A/fs]
 
-      if (ANY(abs(V(:)) < 1.0d-5*V_ave)) then
-         cycle  ! skip undefined contribution
-      endif
-      ! Numerical div*F:
-      dF(:) = (F(:) - F0(:)) / numpar%dt / V(:) ! [N/A]
-      ! Denominator:
-      Pot_den = Pot_den + SUM(dF(:))
+      do ik = 1, 3
+         ! Numerical div*F:
+         if (abs(V(ik)) <= 1.0d-5*V_ave) cycle  ! skip undefined contribution
+         ! Numerator:
+         Pot_num = Pot_num + F(ik)**2
+         ! Denominator:
+         Pot_den = Pot_den + (F(ik) - F0(ik)) / numpar%dt / V(ik)
+      enddo
+
    enddo ! i
    ! Configurational temperature:
    if (abs(Pot_den) > 1.0d-12) then ! Ta defined
@@ -360,30 +359,28 @@ end function Get_configurational_temperature_numeric
 
 
 
-subroutine update_running_average(Ta_conf, Ta_run_average)
+subroutine update_running_average(Ta_conf, Ta_run_average, N_values)
    real(8), intent(inout) :: Ta_conf
    real(8), dimension(:), intent(inout) :: Ta_run_average
+   integer, intent(inout) :: N_values
    !-------------------------
-   integer :: i, Nsiz, Ncur
-   real(8) :: Tmin
+   integer :: i, Nsiz
 
    Nsiz = size(Ta_run_average)
    ! Find minimal value to check if the running-average array is filled or not yet (first Nsiz steps of the simulation):
-   Tmin = minval( abs(Ta_run_average) )
-   if (abs(Tmin) < 1.0d-12) then ! the array is not filled yet, there are zeroes:
-      Ncur = transfer(minloc( abs(Ta_run_average)), Ncur)
-   else  ! the array is full:
-      Ncur = Nsiz
+   if (N_values < Nsiz) then
+      N_values = N_values + 1
+      Ta_run_average(N_values) = Ta_conf
+   else
       ! Update all array:
       do i = 1, Nsiz-1
          Ta_run_average(i) = Ta_run_average(i+1)
       enddo ! i
+      Ta_run_average(Nsiz) = Ta_conf
    endif
-   ! 1) Save the latest value in the running average array:
-   Ta_run_average(Ncur) = Ta_conf
 
-   ! 2) Update the configurational temperature to the value of running average:
-   Ta_conf = SUM(Ta_run_average(1:Ncur)) / dble(Ncur)
+   ! Update the configurational temperature to the value of running average:
+   Ta_conf = SUM(Ta_run_average(1:N_values)) / dble(N_values)
 
    !print*, "Tconf=", Ta_run_average, Ta_conf, Ncur
 end subroutine update_running_average
@@ -504,7 +501,9 @@ subroutine get_fragments_data(Scell, NSC, numpar, matter)
       Scell(NSC)%fragments%N_frag_max = Nsiz
       ! And update the fragments-files array:
       if (allocated(numpar%FN_fragments)) then ! make sure its size is ok
-         call extend_array_size(numpar%FN_fragments)  ! module "Little_subroutines"
+         do while (size(numpar%FN_fragments) < Nsiz)
+            call extend_array_size(numpar%FN_fragments)  ! module "Little_subroutines"
+         enddo
       else
          allocate(numpar%FN_fragments(Nsiz))  ! allocate it to the given size
       endif
@@ -806,8 +805,7 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
    logical, intent(in), optional :: non_periodic   ! if we want to use nonperiodic expression
    !------------------------------
    integer :: Nat, i, j, zb(3)
-   real(8) :: F(3), acc(3), r(3), Pot, Pot_r(3), Pot_tot, a_r, zbr(3), zero_vec(3), V
-   logical, dimension(:), allocatable :: atoms_group_ind
+   real(8) :: F(3), acc(3), r(3), Pot, Pot_r(3), Pot_tot, a_r, zbr(3), zero_vec(3), V, R_cm(3), M_tot
    real(8), pointer :: Mass
    logical :: do_nonper
 
@@ -827,60 +825,32 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
      V = min(Scell%V, Scell%V_sample)   ! [A^3]
      !Ta = -Pot_tot * (Scell%V * 1e-30) / dble(Nat) / g_e   ! [eV]
      Ta = -Pot_tot * (V * 1e-30) / dble(Nat) / g_e   ! [eV]
-
-   else ! nonperiodic boundaries (Eq.(22) [2], unfinished, only works for non-periodic!)
+   else ! nonperiodic boundaries (Eq.(22) [2]
       Pot_tot = 0.0d0   ! to start with
 
-      ! Identify the groups of atoms to deal with:
-      !call define_atoms_groups(Scell, atoms_group_ind, 1)  ! below
+      M_tot = 0.0d0
+      R_cm = 0.0d0
+      do i = 1, Nat
+         Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma
+         M_tot = M_tot + Mass
+         R_cm = R_cm + Mass * Scell%MDatoms(i)%R
+      enddo
+      R_cm = R_cm / M_tot
 
-      ! For all the atoms in the group in the groud cell:
-      !do i = 1, Nat  ! for all atoms relative to atom ! Eq.(22) [2]
-      i = 1
-         !if (atoms_group_ind(i)) then ! atom in the ground cell, get its contribution
-            do j = 1, Nat  ! for all atoms relative to atom #i ! Eq.(22) [2]
-               ! Convert acceleration into SI units:
-               acc(:) = Scell%MDAtoms(j)%accel(:) * 1.0d20 ! [A/fs^2] -> [m/s^2]
-               Mass => matter%Atoms(Scell%MDatoms(j)%KOA)%Ma ! atomic mass [kg]
+      do i = 1, Nat
+         acc(:) = Scell%MDAtoms(i)%accel(:) * 1.0d20 ! [A/fs^2] -> [m/s^2]
+         Mass => matter%Atoms(Scell%MDatoms(i)%KOA)%Ma
+         F(:) = Mass * acc(:) ! [N]
+         r(:) = (Scell%MDatoms(i)%R(:) - R_cm(:)) * 1.0d-10 ! [m]
+         Pot_tot = Pot_tot + SUM(F(:) * r(:)) / g_e ! [eV]
+      enddo
 
-               ! Get the force:
-               F(:) = Mass * acc(:) ! [N]
-
-               !! Get the coordinate relative to the center of the supercell:
-               !r(:) = position_relative_to_center(Scell, i) ! below
-               if (i == j) then  ! atom #1 defining the group [2]:
-                  !cycle
-                  r(:) = Scell%MDatoms(i)%r(:)
-               else  ! atoms in the group define by atom #i:
-                  ! Get the coordinate in the group related to the first atom, Eq.(22) [2]:
-                  ! Find which cell the nearest replica of atom 'j' (relative to atom 'i') is in:
-                  call shortest_distance(Scell, j, i, a_r, x1=r(1), y1=r(2), z1=r(3), cell_x=zb(1), cell_y=zb(2), cell_z=zb(3))    ! module "Atomic_tools"
-                  zbr(:) = dble(zb(:))
-                  !call distance_to_given_point(Scell, j, zbr, (/0.0d0,0.0d0,0.0d0/), a_r, r(1), r(2), r(3)) ! module "Atomic_tools"
-                  zero_vec = (/0.0d0,0.0d0,0.0d0/)
-                  call distance_to_given_point(Scell, j, zbr, zero_vec, a_r, r(1), r(2), r(3)) ! module "Atomic_tools"
-
-                  !print*, j, r(:), Scell%MDatoms(i)%r(:)
-                  !print*, i, zb
-                  !print*, '------------------------'
-               endif ! (i == 1)
-               r(:) = r(:) * 1.0d-10   ! [A] -> [m]
-
-               ! Construct the potential energy contribution:
-               Pot = SUM(F(:) * r(:)) / g_e ! [eV]
-
-               ! Total potential contribution to get the temperature
-               Pot_tot = Pot_tot + Pot
-            enddo ! j
-         !endif ! (atoms_group_ind(i))
-      !enddo ! i
-      !Pot_tot = Pot_tot / dble( count(atoms_group_ind(:)) )
-
-      ! Configurational temperature from the equipartition theorem as potential energy per atom per degree of freedom:
-      Ta = (Pot_tot+matter%p_ext) / (3.0d0 * dble(Nat))   ! [eV]
+      V = min(Scell%V, Scell%V_sample) ! [A^3]
+      Pot_tot = Pot_tot + matter%p_ext * V * 1.0d-30 / g_e ! [eV]
+      Ta = Pot_tot / (3.0d0 * dble(Nat)) ! [eV]
    endif
 
-   ! Convert [eV] -> {K}:
+   ! Convert [eV] -> [K]:
    Ta = -Ta * g_kb   ! and account for T = -<r*F>
 
    !Ta = abs(Ta)   ! ensure it is non-negative, even though pressure may be

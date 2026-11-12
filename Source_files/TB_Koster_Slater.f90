@@ -1016,6 +1016,7 @@ pure function d2_V(dVss_sigma, d2Vss_sigma, rij, rijg, i, j, k) result(d2V)
    da = delt * rijg / rij
    ! d^2r_ij/dr^2_k,g:
    dda = delt * (1.0d0 - da**2)
+   !dda = delt**2 * (1.0d0 - (rijg/rij)**2) / rij
    ! d^2V/dr^2_k,g:
    d2V = d2Vss_sigma*da**2 + dVss_sigma*dda
 end function d2_V
