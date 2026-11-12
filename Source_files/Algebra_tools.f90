@@ -112,7 +112,7 @@ pure function numerical_delta(x, eta) result(delta)
 end function numerical_delta
 
 
-subroutine make_cubic_splines(x_array, y_array, a, b, c, d)
+subroutine make_cubic_splines_OLD(x_array, y_array, a, b, c, d)
    ! The subroutine for creating an array of cubic splines on arbitrary (non necesserely equidistant) grid
    ! (the grid, however, must be orderred and cannot contain degeneracies [i.e., x(i)/=x(i+1), for any i])
    ! https://en.wikipedia.org/wiki/Spline_(mathematics)
@@ -187,10 +187,10 @@ subroutine make_cubic_splines(x_array, y_array, a, b, c, d)
 
    ! clean up
    deallocate(h, h_inv, f_prime, f_prime2)
-end subroutine make_cubic_splines
+end subroutine make_cubic_splines_OLD
 
 
-pure function get_first_derivative(x_array, y_array, i) result(df)
+pure function get_first_derivative_OLD(x_array, y_array, i) result(df)
    ! The subroutine for calculation of the finite-difference derivative on arbitrary (non necesserely equidistant) grid
    ! (the grid, however, must be orderred and cannot contain degeneracies [i.e., x(i)/=x(i+1), for any i])
    real(8) df
@@ -216,10 +216,10 @@ pure function get_first_derivative(x_array, y_array, i) result(df)
 
    ! Get the first derivative:
    df = (y_array(j+1) - y_array(j))/(x_array(j+1)-x_array(j))
-end function get_first_derivative
+end function get_first_derivative_OLD
 
 
-pure function get_second_derivative(x_array, y_array, i) result(df)
+pure function get_second_derivative_OLD(x_array, y_array, i) result(df)
    ! The subroutine for calculation of the finite-difference second derivative on arbitrary (non necesserely equidistant) grid
    ! (the grid, however, must be orderred and cannot contain degeneracies [i.e., x(i)/=x(i+1), for any i])
    real(8) df
@@ -249,6 +249,113 @@ pure function get_second_derivative(x_array, y_array, i) result(df)
    xn1n2 = x_array(j) - x_array(j-1)
    xnn2 = x_array(j+1) - x_array(j-1)
    df = 2.0d0*(y_array(j+1)*xn1n2 - y_array(j)*xnn2 + y_array(j-1)*xnn1)/(xnn2*xn1n2*xnn1)
+end function get_second_derivative_OLD
+
+
+subroutine make_cubic_splines(x_array, y_array, a, b, c, d)
+   ! Piecewise cubic Hermite interpolant on an arbitrary ordered grid.
+   ! On interval i, with t = x - x_array(i):  S(t) = a(i) + b(i)*t + c(i)*t^2 + d(i)*t^3
+   ! It passes exactly through every data point and is C1 (slopes from 3-point
+   ! finite differences, 2nd-order accurate on non-uniform grids).
+   ! The last point carries a(N)=y(N), b(N)=slope, c(N)=d(N)=0 (so it is usable for x = x(N)).
+   ! (Old version did not interpolate the data: error ~1e-1 on sin(x), N=21.)
+   real(8), dimension(:), intent(in) :: x_array, y_array
+   real(8), dimension(:), allocatable, intent(inout) :: a, b, c, d
+   !-----------------------------
+   integer :: Nsiz, i
+   real(8), dimension(:), allocatable :: m
+   real(8) :: h, delta, hl, hr, h1, h2
+
+   Nsiz = size(x_array)
+
+   ! always start from unallocated arrays (old code crashed on 'allocate' of an already-allocated array of the right size)
+   if (allocated(a)) deallocate(a)
+   if (allocated(b)) deallocate(b)
+   if (allocated(c)) deallocate(c)
+   if (allocated(d)) deallocate(d)
+
+   if (Nsiz > 1) then
+      allocate(m(Nsiz))
+
+      ! Slopes at the nodes:
+      if (Nsiz == 2) then
+         m(1) = (y_array(2) - y_array(1))/(x_array(2) - x_array(1))
+         m(2) = m(1)
+      else
+         do i = 2, Nsiz-1   ! centred 3-point formula, non-uniform grid
+            hl = x_array(i) - x_array(i-1)
+            hr = x_array(i+1) - x_array(i)
+            m(i) = -hr/(hl*(hl+hr))*y_array(i-1) + (hr-hl)/(hl*hr)*y_array(i) + hl/(hr*(hl+hr))*y_array(i+1)
+         enddo
+
+         h1 = x_array(2) - x_array(1)   ! one-sided, first point
+         h2 = x_array(3) - x_array(2)
+         m(1) = -(2.0d0*h1+h2)/(h1*(h1+h2))*y_array(1) + (h1+h2)/(h1*h2)*y_array(2) - h1/(h2*(h1+h2))*y_array(3)
+
+         h1 = x_array(Nsiz) - x_array(Nsiz-1)   ! one-sided, last point
+         h2 = x_array(Nsiz-1) - x_array(Nsiz-2)
+         m(Nsiz) = h1/(h2*(h1+h2))*y_array(Nsiz-2) - (h1+h2)/(h1*h2)*y_array(Nsiz-1) &
+                   + (2.0d0*h1+h2)/(h1*(h1+h2))*y_array(Nsiz)
+      endif
+
+      allocate(a(Nsiz), source = y_array)
+      allocate(b(Nsiz), source = m)
+      allocate(c(Nsiz), source = 0.0d0)
+      allocate(d(Nsiz), source = 0.0d0)
+
+      ! Define c and d coefficients:
+      do i = 1, Nsiz-1
+         h = x_array(i+1) - x_array(i)
+         delta = (y_array(i+1) - y_array(i))/h
+         c(i) = (3.0d0*delta - 2.0d0*m(i) - m(i+1))/h
+         d(i) = (m(i) + m(i+1) - 2.0d0*delta)/(h*h)
+      enddo
+
+      deallocate(m)
+   endif
+end subroutine make_cubic_splines
+
+
+pure function get_first_derivative(x_array, y_array, i) result(df)
+   ! forward finite difference on [x_j, x_j+1], j clamped to 1..N-1
+   real(8) df
+   real(8), dimension(:), intent(in) :: x_array, y_array
+   integer, intent(in) :: i
+   integer :: Nsiz, j
+
+   ! Define the size:
+   Nsiz = min(size(x_array), size(y_array))
+   if (Nsiz < 2) then
+      df = 0.0d0
+   else
+      j = min(max(i,1), Nsiz-1)
+      ! Get the first derivative:
+      df = (y_array(j+1) - y_array(j))/(x_array(j+1) - x_array(j))
+   endif
+end function get_first_derivative
+
+
+pure function get_second_derivative(x_array, y_array, i) result(df)
+   ! 3-point second derivative on a non-uniform grid; returns 0 if fewer than 3 points
+   ! (used to read x_array(3) out of bounds for N=2)
+   real(8) df
+   real(8), dimension(:), intent(in) :: x_array, y_array
+   integer, intent(in) :: i
+   integer :: Nsiz, j
+   real(8) :: xnn1, xn1n2, xnn2
+
+   ! Define the size:
+   Nsiz = min(size(x_array), size(y_array))
+   if (Nsiz < 3) then
+      df = 0.0d0
+   else
+      j = min(max(i,2), Nsiz-1)
+      xnn1  = x_array(j+1) - x_array(j)
+      xn1n2 = x_array(j)   - x_array(j-1)
+      xnn2  = x_array(j+1) - x_array(j-1)
+      ! Get the second derivative:
+      df = 2.0d0*(y_array(j+1)*xn1n2 - y_array(j)*xnn2 + y_array(j-1)*xnn1)/(xnn2*xn1n2*xnn1)
+   endif
 end function get_second_derivative
 
 
@@ -346,7 +453,7 @@ end subroutine d_Laguerre_up_to_6
 
 
 
-pure function Moivre_cos(m, gamm) result(cos_mg)
+pure function Moivre_cos_OLD(m, gamm) result(cos_mg)
    real(8) :: cos_mg
    integer, intent(in) :: m   ! coefficient
    real(8), intent(in) :: gamm ! variable
@@ -368,11 +475,31 @@ pure function Moivre_cos(m, gamm) result(cos_mg)
       enddo
       cos_mg = summ
    endif
+end function Moivre_cos_OLD
+
+
+pure function Moivre_cos(m, gamm) result(cos_mg)   ! cos(m*gamma), any integer m
+   real(8) :: cos_mg
+   integer, intent(in) :: m
+   real(8), intent(in) :: gamm
+   !-------------------
+   integer :: k, mm, k2
+   real(8) :: summ, cos_gam, sin_gam
+
+   mm = abs(m)             ! cos is even: use |m|
+   cos_gam = cos(gamm)
+   sin_gam = sin(gamm)
+   summ = 0.0d0
+   do k = 0, mm/2
+      k2 = 2*k
+      summ = summ + (-1)**k * binomial_coef(mm, k2) * cos_gam**(mm-k2) * sin_gam**k2
+   enddo
+   cos_mg = summ
 end function Moivre_cos
 
 
 
-pure function Moivre_sin(m, gamm) result(sin_mg)
+pure function Moivre_sin_OLD(m, gamm) result(sin_mg)
    real(8) :: sin_mg
    integer, intent(in) :: m   ! coefficient
    real(8), intent(in) :: gamm ! variable
@@ -392,13 +519,38 @@ pure function Moivre_sin(m, gamm) result(sin_mg)
          bcoef = binomial_coef(m, k2+1)   ! below
          summ = summ + (-1)**k * bcoef * cos_gam**(abs(m)-k2-1) * sin_gam**(k2+1)
       enddo
+      if (m < 0) summ = -summ   ! sin is odd (this sign was missing)
+      sin_mg = summ
+   endif
+end function Moivre_sin_OLD
+
+pure function Moivre_sin(m, gamm) result(sin_mg)   ! sin(m*gamma), any integer m
+   real(8) :: sin_mg
+   integer, intent(in) :: m
+   real(8), intent(in) :: gamm
+   !-------------------
+   integer :: k, mm, k2
+   real(8) :: summ, cos_gam, sin_gam
+
+   mm = abs(m)
+   if (mm == 0) then
+      sin_mg = 0.0d0
+   else
+      cos_gam = cos(gamm)
+      sin_gam = sin(gamm)
+      summ = 0.0d0
+      do k = 0, (mm-1)/2
+         k2 = 2*k
+         summ = summ + (-1)**k * binomial_coef(mm, k2+1) * cos_gam**(mm-k2-1) * sin_gam**(k2+1)
+      enddo
+      if (m < 0) summ = -summ   ! sin is odd
       sin_mg = summ
    endif
 end function Moivre_sin
 
 
 
-pure function binomial_coef(n, k) result(bc)
+pure function binomial_coef_OLD(n, k) result(bc)
    real(8) :: bc  ! binomial coefficient
    integer, intent(in) :: k, n
    integer :: nk, i
@@ -423,28 +575,41 @@ pure function binomial_coef(n, k) result(bc)
       ! Collect the terms of the binomial coefficient:
       bc = n_f/(k_f * nk_f)
    endif
+end function binomial_coef_OLD
+
+
+pure function binomial_coef(n, k) result(bc)   ! C(n,k), exact 0 for k>n or k<0
+   real(8) :: bc
+   integer, intent(in) :: n, k
+   integer :: i, kk
+
+   if ((k < 0) .or. (k > n)) then
+      bc = 0.0d0
+   elseif ((k == 0) .or. (k == n)) then
+      bc = 1.0d0
+   else
+      kk = min(k, n-k)
+      bc = 1.0d0
+      do i = 1, kk      ! multiplicative formula, no factorial overflow
+         bc = bc*dble(n-kk+i)/dble(i)
+      enddo
+   endif
 end function binomial_coef
 
 
 
-pure function get_factorial(n, step) result(fact)   ! factorial of an integer number "n"
+pure function get_factorial(n, step) result(fact)   ! n! (step=1), n!! (step=2), n!!! (step=3) ...
    real(8) :: fact
    integer, intent(in) :: n
    integer, intent(in), optional :: step    ! factorial step
-   integer :: i, i_start, i_by
-   
-   fact = 1.0d0 ! to start from
-   if (n > 1) then
-      i_start = 2
-      if (present (step)) then
-         i_by = step
-      else
-         i_by = 1
-      endif
-      do i = i_start, n, i_by
-         fact = fact*dble(i)
-      enddo
-   endif
+   integer :: i, i_by
+
+   fact = 1.0d0
+   i_by = 1
+   if (present(step)) i_by = max(1, step)    ! step <= 0 used to loop forever
+   do i = n, 2, -i_by                        ! n*(n-step)*(n-2*step)*...
+      fact = fact*dble(i)
+   enddo
 end function get_factorial
  
 
@@ -455,9 +620,9 @@ pure function double_factorial(n)
    double_factorial = 1.0d0
    if (n > 1) then
       if (mod( n, 2 ) == 0) then ! odd number
-         i_start = 1
-      else ! even number
          i_start = 2
+      else ! even number
+         i_start = 3
       endif
       do i = i_start, n, 2
          double_factorial = double_factorial*dble(i)
@@ -522,7 +687,6 @@ end function Heavyside_tau
 
 
 
-
 subroutine nonsym_diagonalize_r(M, Ev, Error_descript, print_Ei, check_M)
    real(8), dimension(:,:), intent(inout) :: M	! matrix
    real(8), dimension(:), intent(out) :: Ev	! eigenvalues
@@ -536,6 +700,10 @@ subroutine nonsym_diagonalize_r(M, Ev, Error_descript, print_Ei, check_M)
    real(8), dimension(:,:), allocatable :: VR	! matrix of right eigenvectors
    real(8), dimension(:), allocatable :: Im_Ev	! imaginary parts of eigenvalues
    integer :: i_countin, FN, i, j
+   logical :: do_check
+
+   do_check = .false.
+   if (present(check_M)) do_check = check_M
 
    N = size(M,1)
    allocate(M_save(N,N))
@@ -559,7 +727,7 @@ subroutine nonsym_diagonalize_r(M, Ev, Error_descript, print_Ei, check_M)
       print*, trim(adjustl(Error_descript))
    endif
 
-   if (present(check_M)) then
+   if (do_check) then
       i = 1
       do while (i <= N)
          if (ABS(Im_Ev(i)) /= 0.0d0) then 
@@ -727,13 +895,13 @@ end subroutine nonsym_diagonalize_cc
 subroutine sort_eigenvalues(Ev, Evec)
    complex, dimension(:), intent(inout) :: Ev	! eigenvalues
    complex, dimension(:,:), intent(inout), optional :: Evec	! eigenvectors
-   real(8) :: temp
    complex :: temp_c
    complex, dimension(:), allocatable :: temp_c2
    integer N,i,j
    LOGICAL :: swapped
    N = size(Ev)
-   allocate(temp_c2(N))
+   !allocate(temp_c2(N))
+   if (present(Evec)) allocate(temp_c2(size(Evec,1)))
    do j = N-1, 1, -1
       swapped = .false. ! nothing swapped at the start
       do i = 1, j
@@ -753,11 +921,13 @@ subroutine sort_eigenvalues(Ev, Evec)
       enddo
       IF (.NOT. swapped) EXIT
    enddo
+   if (allocated(temp_c2)) deallocate(temp_c2)
 end subroutine sort_eigenvalues
 
 
 
-subroutine sort_array_r_2d(array_in)  ! bubble sorting algorithm for real 2d array by first index
+
+subroutine sort_array_r_2d_OLD(array_in)  ! bubble sorting algorithm for real 2d array by first index (only for size=2)
    real(8), dimension(:,:), intent(inout) :: array_in
    !-------------------------------------
    real(8) :: temp, temp2
@@ -783,6 +953,30 @@ subroutine sort_array_r_2d(array_in)  ! bubble sorting algorithm for real 2d arr
       enddo
       if (.not. swapped) exit ! sorted, no element is smaller than previous one
    enddo
+end subroutine sort_array_r_2d_OLD
+
+
+subroutine sort_array_r_2d(array_in)  ! bubble sort of columns by the value in the first row (arbitrary size)
+   real(8), dimension(:,:), intent(inout) :: array_in
+   real(8), dimension(:), allocatable :: tmp
+   integer :: N, i, j
+   logical :: swapped
+
+   N = size(array_in,2)
+   allocate(tmp(size(array_in,1)))
+   do j = N-1, 1, -1
+      swapped = .false.
+      do i = 1, j
+         if (array_in(1,i) > array_in(1,i+1)) then
+            tmp(:) = array_in(:,i)             ! swap whole columns (old code moved only rows 1 and 2)
+            array_in(:,i) = array_in(:,i+1)
+            array_in(:,i+1) = tmp(:)
+            swapped = .true.
+         endif
+      enddo
+      if (.not. swapped) exit
+   enddo
+   deallocate(tmp)
 end subroutine sort_array_r_2d
 
 
@@ -827,6 +1021,25 @@ subroutine sort_array_c(array_in)  ! bubble sorting algorithm for complex 1d arr
       if (.not. swapped) exit
    enddo
 end subroutine sort_array_c
+
+! subroutine sort_array_c8(array_in)  ! bubble sort of a complex 1d array by real part
+!    complex(8), dimension(:), intent(inout) :: array_in
+!    complex(8) :: temp
+!    integer :: N, i, j
+!    logical :: swapped
+!
+!    N = size(array_in)
+!    do j = N-1, 1, -1
+!       swapped = .false.
+!       do i = 1, j
+!          if (real(array_in(i)) > real(array_in(i+1))) then
+!             temp = array_in(i);  array_in(i) = array_in(i+1);  array_in(i+1) = temp
+!             swapped = .true.
+!          endif
+!       enddo
+!       if (.not. swapped) exit
+!    enddo
+! end subroutine sort_array_c8
 
 
 
@@ -879,7 +1092,7 @@ end subroutine Partition
 
 
 
-subroutine r_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, use_DSYEV)
+subroutine r_diagonalize_OLD(M, Ev, Error_descript, MPI_param, print_Ei, check_M, use_DSYEV)
    real(8), dimension(:,:), intent(inout) :: M	! matrix
    real(8), dimension(:), intent(out) :: Ev	! eigenvalues
    character(*), intent(inout) :: Error_descript	! error description
@@ -963,6 +1176,80 @@ subroutine r_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, us
          enddo
       endif
    endif
+end subroutine r_diagonalize_OLD
+
+
+
+subroutine r_diagonalize(M, Ev, Error_descript, MPI_param, print_Ei, check_M, use_DSYEV)
+   ! Fixes: check_M is honoured by value; check_Ha runs once; a stale ScaLAPACK error
+   ! string is cleared when the LAPACK fallback succeeds.
+   real(8), dimension(:,:), intent(inout) :: M
+   real(8), dimension(:), intent(out) :: Ev
+   character(*), intent(inout) :: Error_descript
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   logical, intent(in), optional :: print_Ei
+   logical, intent(in), optional :: check_M
+   logical, intent(in), optional :: use_DSYEV
+   !-------------------------------
+   integer :: LIWORK, LWORK, N, INFO, i_countin
+   real(8), dimension(:), allocatable :: LAPWORK
+   integer, dimension(:), allocatable :: IWORK
+   real(8), dimension(:,:), allocatable :: M_save
+   logical :: must_use_DSYEV, do_check
+
+   ! Defaults:
+   must_use_DSYEV = .false.
+   if (present(use_DSYEV)) must_use_DSYEV = use_DSYEV
+   do_check = .false.
+   if (present(check_M)) do_check = check_M
+
+   Error_descript = ''
+   INFO = 0
+   N = size(M,1)
+   allocate(M_save(N,N))
+   LIWORK = 30 + 5*N
+   LWORK = 10 + 6*N + 2*N*N
+   allocate(LAPWORK(LWORK))
+   allocate(IWORK(LIWORK))
+
+   M_save = M ! save matrix before diagonalization just in case
+
+#ifdef MPI_USED
+   call ScaLAPACK_diagonalize(M, Ev, Error_descript, MPI_param, must_use_DSYEV)
+   if (len_trim(Error_descript) > 0) then
+      print*, trim(adjustl(Error_descript))
+      INFO = -1
+   endif
+#else ! use OpenMP instead:
+   if (.not. must_use_DSYEV) then
+      call dsyevd('V', 'U', N, M, N, Ev, LAPWORK, LWORK, IWORK, LIWORK, INFO)
+   else
+      call DSYEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, INFO)
+   endif
+#endif
+
+   if (INFO /= 0) then ! divide-and-conquer / ScaLAPACK failed, try the plain LAPACK routine:
+      M = M_save
+      call DSYEV('V', 'U', N, M, N, Ev, LAPWORK, LWORK, INFO)
+      if (INFO /= 0) then
+         Error_descript = 'Module Algebra_tools: real matrix diagonalization failed!'
+         print*, trim(adjustl(Error_descript))
+      else
+         Error_descript = ''
+      endif
+   endif
+
+   if (do_check .and. (INFO == 0)) call check_Ha(M_save, M, Ev)
+
+   if (present(print_Ei)) then
+      if (print_Ei) then
+         do i_countin = 1, size(Ev)
+            write(*,'(a,i4,a,f12.5)') 'Eigenvalue #', i_countin, ' is ', Ev(i_countin)
+         enddo
+      endif
+   endif
+
+   deallocate(M_save, LAPWORK, IWORK)
 end subroutine r_diagonalize
 
 
@@ -1123,6 +1410,23 @@ subroutine check_Ha_r(Mat, Eigenvec, Eigenval) ! real matrix real eigenstates
       endif
    enddo
 end subroutine check_Ha_r
+
+
+subroutine check_Ha_r_matmul(Mat, Eigenvec, Eigenval) ! real matrix, real eigenstates
+   real(8), dimension(:,:), intent(in) :: Mat
+   real(8), dimension(:,:), intent(in) :: Eigenvec
+   real(8), dimension(:), intent(in) :: Eigenval
+   real(8) :: Ev, scl
+   integer :: i
+
+   scl = maxval(abs(Eigenval))
+   do i = 1, size(Eigenval)
+      Ev = dot_product(Eigenvec(:,i), matmul(Mat, Eigenvec(:,i))) / dot_product(Eigenvec(:,i), Eigenvec(:,i))
+      if (abs(Ev - Eigenval(i)) > 1.0d-6*scl) then
+         print*, 'Problem in check_Ha_r: Ev:', i, Ev, Eigenval(i)
+      endif
+   enddo
+end subroutine check_Ha_r_matmul
 
 
 
@@ -1454,6 +1758,44 @@ subroutine test_diagonalization_c8(Ev, M, M_save, INFO, text_called_from, add_te
       enddo ! j
    enddo CH2 ! i
 end subroutine test_diagonalization_c8
+
+
+subroutine test_diagonalization_c88(Ev, M, M_save, INFO, text_called_from, add_text)
+   real(8), dimension(:), intent(in) :: Ev
+   complex(8), dimension(:,:), intent(in) :: M        ! matrix to check (eigenvectors)
+   complex(8), dimension(:,:), intent(in) :: M_save   ! matrix before diagonalization
+   integer, intent(inout) :: INFO
+   character(*), intent(in), optional :: text_called_from
+   character(*), intent(in), optional :: add_text
+   integer :: i, j
+   character(200) :: extra_text
+
+   extra_text = ''
+   if (present(add_text)) extra_text = add_text      ! old code used add_text directly although optional
+
+   INFO = 0
+   do i = 1, size(M,1)
+      if (isnan(Ev(i))) then
+         print*, 'Module Algebra_tools: complex matrix diagonalization: Ev is NaN after '//trim(adjustl(extra_text)), i
+         if (present(text_called_from)) then
+            if (len_trim(text_called_from) > 0) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+         endif
+         INFO = -1
+         return
+      endif
+      do j = 1, size(M,2)
+         if (isnan(real(M(i,j))) .or. isnan(aimag(M(i,j)))) then
+            print*, 'Module Algebra_tools: complex matrix diagonalization: M is NaN after '//trim(adjustl(extra_text)), &
+                    i, j, M(i,j), M_save(i,j)
+            if (present(text_called_from)) then
+               if (len_trim(text_called_from) > 0) print*, 'Subroutine called from: '//trim(adjustl(text_called_from))
+            endif
+            INFO = -2
+            return
+         endif
+      enddo
+   enddo
+end subroutine test_diagonalization_c88
 
 
 subroutine find_optimal_sizes_for_ZHEEVD(M, Ev, N, LWORK, LRWORK, LIWORK, INFO)
@@ -1794,6 +2136,26 @@ subroutine check_Ha_c8(Mat, Eigenvec, Eigenval) ! real matrix, complex eigenstat
 end subroutine check_Ha_c8
 
 
+subroutine check_Ha_c8_matmul(Mat, Eigenvec, Eigenval) ! complex matrix, real eigenvalues (Hermitian case)
+   complex(8), dimension(:,:), intent(in) :: Mat
+   complex(8), dimension(:,:), intent(in) :: Eigenvec
+   real(8), dimension(:), intent(in) :: Eigenval
+   real(8) :: Ev, scl
+   integer :: i
+
+   scl = maxval(abs(Eigenval))
+   do i = 1, size(Eigenval)
+      ! dot_product conjugates its first argument: <v|M|v>/<v|v>
+      Ev = dble(dot_product(Eigenvec(:,i), matmul(Mat, Eigenvec(:,i)))) &
+           / dble(dot_product(Eigenvec(:,i), Eigenvec(:,i)))
+      if (abs(Ev - Eigenval(i)) > 1.0d-6*scl) then
+         print*, 'Ev_c8:', i, Ev, Eigenval(i)
+      endif
+   enddo
+end subroutine check_Ha_c8_matmul
+
+
+
 
 subroutine check_Ha_cc(Mat, Eigenvec, Eigenval) ! complex matrix, complex eigenstates
    complex, dimension(:,:), intent(in) :: Mat	! matrix
@@ -1818,7 +2180,25 @@ subroutine check_Ha_cc(Mat, Eigenvec, Eigenval) ! complex matrix, complex eigens
 end subroutine check_Ha_cc
 
 
-subroutine check_symmetry(Ha, MPI_param)
+subroutine check_Ha_cc_matmul(Mat, Eigenvec, Eigenval) ! complex matrix, complex eigenvalues (general case)
+   complex(8), dimension(:,:), intent(in) :: Mat
+   complex(8), dimension(:,:), intent(in) :: Eigenvec
+   complex(8), dimension(:), intent(in) :: Eigenval
+   complex(8) :: Ev
+   real(8) :: scl
+   integer :: i
+
+   scl = maxval(abs(Eigenval))
+   do i = 1, size(Eigenval)
+      Ev = dot_product(Eigenvec(:,i), matmul(Mat, Eigenvec(:,i))) / dot_product(Eigenvec(:,i), Eigenvec(:,i))
+      if (abs(Ev - Eigenval(i)) > 1.0d-6*scl) then
+         print*, 'Ev_cc:', i, Ev, Eigenval(i)
+      endif
+   enddo
+end subroutine check_Ha_cc_matmul
+
+
+subroutine check_symmetry_OLD(Ha, MPI_param)
    real(8), dimension(:,:), intent(in) :: Ha	! matrix to check
    type(Used_MPI_parameters), intent(in) :: MPI_param
    !---------------------
@@ -1858,10 +2238,50 @@ subroutine check_symmetry(Ha, MPI_param)
    enddo
    !$OMP END PARALLEL DO
 #endif
+end subroutine check_symmetry_OLD
+
+
+subroutine check_symmetry(Ha, MPI_param)
+   real(8), dimension(:,:), intent(in) :: Ha
+   type(Used_MPI_parameters), intent(in) :: MPI_param
+   !---------------------
+   integer :: i, j
+   integer :: N_incr, Nstart, Nend
+   real(8) :: scl
+   real(8), parameter :: epsylon = 1.0d-8
+
+#ifdef MPI_USED
+   N_incr = MPI_param%size_of_cluster
+   Nstart = 1 + MPI_param%process_rank
+   Nend = size(Ha,1)
+   do i = Nstart, Nend, N_incr
+      do j = i+1, size(Ha,2)
+         scl = max(abs(Ha(i,j)), abs(Ha(j,i)))     ! symmetric in (i,j): also catches Ha(i,j)=0, Ha(j,i)/=0
+         if (scl > 0.0d0) then
+            if (abs(Ha(i,j)-Ha(j,i))/scl >= epsylon) then
+               write(*,'(a, i4, i4, es25.16, es25.16)') 'Nonsymmetric element found:', i, j, Ha(i,j), Ha(j,i)
+            endif
+         endif
+      enddo
+   enddo
+#else ! use OpenMP
+   !$OMP PARALLEL DO PRIVATE(i,j,scl), SHARED(Ha)
+   do i = 1, size(Ha,1)
+      do j = i+1, size(Ha,2)
+         scl = max(abs(Ha(i,j)), abs(Ha(j,i)))
+         if (scl > 0.0d0) then
+            if (abs(Ha(i,j)-Ha(j,i))/scl >= epsylon) then
+               write(*,'(a, i4, i4, es25.16, es25.16)') 'Nonsymmetric element found:', i, j, Ha(i,j), Ha(j,i)
+            endif
+         endif
+      enddo
+   enddo
+   !$OMP END PARALLEL DO
+#endif
 end subroutine check_symmetry
 
 
-subroutine check_hermiticity(Ha, MPI_param)
+subroutine check_hermiticity_OLD(Ha, MPI_param)
    complex, dimension(:,:), intent(in) :: Ha	! matrix to check
    type(Used_MPI_parameters), intent(in) :: MPI_param
    !---------------------
@@ -1915,11 +2335,54 @@ subroutine check_hermiticity(Ha, MPI_param)
    enddo ! i = 1, size(Ha,1)
    !$OMP END PARALLEL DO
 #endif
+end subroutine check_hermiticity_OLD
+
+
+subroutine check_hermiticity(Ha, MPI_param)
+   complex(8), dimension(:,:), intent(in) :: Ha
+   type(Used_MPI_parameters), intent(in) :: MPI_param
+   !---------------------
+   integer :: i, j
+   real(8), parameter :: epsylon = 1.0d-8
+   real(8) :: scl
+   complex(8) :: temp
+   integer :: N_incr, Nstart, Nend
+
+#ifdef MPI_USED
+   N_incr = MPI_param%size_of_cluster
+   Nstart = 1 + MPI_param%process_rank
+   Nend = size(Ha,1)
+   do i = Nstart, Nend, N_incr
+      do j = i, size(Ha,2)
+         temp = Ha(i,j) - CONJG(Ha(j,i))
+         scl = max(abs(Ha(i,j)), abs(Ha(j,i)))     ! old code ignored Ha(j,i) when Ha(i,j) was ~0
+         if (scl > epsylon) then
+            if (abs(temp)/scl >= epsylon) then
+               write(*,'(a, i4, i4, 6es25.16)') 'Nonhermitian element:', i, j, Ha(i,j), Ha(j,i), temp
+            endif
+         endif
+      enddo
+   enddo
+#else
+   !$OMP PARALLEL DO PRIVATE(i,j,temp,scl), SHARED(Ha)
+   do i = 1, size(Ha,1)
+      do j = i, size(Ha,2)
+         temp = Ha(i,j) - CONJG(Ha(j,i))
+         scl = max(abs(Ha(i,j)), abs(Ha(j,i)))
+         if (scl > epsylon) then
+            if (abs(temp)/scl >= epsylon) then
+               write(*,'(a, i4, i4, 6es25.16)') 'Nonhermitian element:', i, j, Ha(i,j), Ha(j,i), temp
+            endif
+         endif
+      enddo
+   enddo
+   !$OMP END PARALLEL DO
+#endif
 end subroutine check_hermiticity
 
 
 ! This subroutine multiplies two real matrices:
-subroutine mkl_matrix_mult_r(TRANSA, TRANSB, A, B, ResultM)
+subroutine mkl_matrix_mult_r_OLD(TRANSA, TRANSB, A, B, ResultM)
    !DGEMM  performs one of the matrix-matrix operations
    !C := alpha*op( A )*op( B ) + beta*C,
    !where  op( X ) is one of
@@ -1955,6 +2418,53 @@ subroutine mkl_matrix_mult_r(TRANSA, TRANSB, A, B, ResultM)
 !    print*, 'CUBLAS'
    CALL cublas_dgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)
 #else	! if standard MKL or BLAS library is used
+   CALL dgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)
+#endif
+#endif
+end subroutine mkl_matrix_mult_r_OLD
+
+
+subroutine mkl_matrix_mult_r(TRANSA, TRANSB, A, B, ResultM)
+   ! ResultM = op(A)*op(B), op = identity or transpose. Works for rectangular matrices.
+   ! Dimensions are derived from op(), leading dimensions are the true first
+   ! dimensions of the stored arrays (old code only worked for equal square matrices).
+   real(8), dimension(:,:), intent(in) :: A, B
+   real(8), dimension(:,:), intent(inout) :: ResultM
+   character(1), intent(in) :: TRANSA, TRANSB
+   real(8) :: ALPHA, BETA
+   integer :: M, N, K, KB
+   integer :: LDA, LDB, LDC
+   logical :: tA, tB
+
+   ALPHA = 1.0d0
+   BETA = 0.0d0
+
+   tA = (TRANSA /= 'N') .and. (TRANSA /= 'n')
+   tB = (TRANSB /= 'N') .and. (TRANSB /= 'n')
+   if (tA) then
+      M = size(A,2);  K  = size(A,1)
+   else
+      M = size(A,1);  K  = size(A,2)
+   endif
+   if (tB) then
+      N = size(B,1);  KB = size(B,2)
+   else
+      N = size(B,2);  KB = size(B,1)
+   endif
+   if ((KB /= K) .or. (size(ResultM,1) /= M) .or. (size(ResultM,2) /= N)) then
+      print*, 'Error in mkl_matrix_mult_r: inconsistent matrix dimensions'
+      return
+   endif
+   LDA = max(1, size(A,1))
+   LDB = max(1, size(B,1))
+   LDC = max(1, size(ResultM,1))
+
+#ifdef MPI_USED
+   CALL dgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)  ! LAPACK until ScaLAPACK is implemented
+#else
+#ifdef CUBLAS
+   CALL cublas_dgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)
+#else
    CALL dgemm (TRANSA, TRANSB, M, N, K, ALPHA, A, LDA, B, LDB, BETA, ResultM, LDC)
 #endif
 #endif
@@ -2149,7 +2659,8 @@ subroutine Det_3x3(A,detA)
    detA = A(1,1)*( A(2,2)*A(3,3) - A(2,3)*A(3,2) ) - &
           A(1,2)*( A(2,1)*A(3,3) - A(2,3)*A(3,1) ) + &
           A(1,3)*( A(2,1)*A(3,2) - A(2,2)*A(3,1) )
-   if (detA .LE. 0.0d0) print*, 'Det A = 0 in Det_3x3'
+   if (abs(detA) < tiny(1.0d0)) print*, 'Det A = 0 in Det_3x3:', detA
+   if (detA < 0.0d0) print*, 'Det A < 0 in Det_3x3:', detA
 end subroutine Det_3x3 ! checked!
 
 
@@ -2187,20 +2698,23 @@ subroutine Invers_3x3(A, InvA, ref_sub)
    InvA(3,2) = -(A(1,1)*A(3,2) - A(3,1)*A(1,2)) ! H
    InvA(3,3) = A(1,1)*A(2,2) - A(1,2)*A(2,1)    ! K
    if (detA .LE. 0.0e0) then
-      print*, 'Det A = 0 in Invers_3x3, called from '//trim(adjustl(ref_sub))
+      print*, 'Det A <= 0 in Invers_3x3, called from '//trim(adjustl(ref_sub)), detA
       InvA = 1.0d29
    else
       InvA = InvA/detA
    endif
-   if (ABS(InvA(1,1)) .GT. 1.0e30) print*, 'InvA(1,1) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(1,1)
-   if (ABS(InvA(1,2)) .GT. 1.0e30) print*, 'InvA(1,2) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(1,2)
-   if (ABS(InvA(1,3)) .GT. 1.0e30) print*, 'InvA(1,3) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(1,2)
-   if (ABS(InvA(2,1)) .GT. 1.0e30) print*, 'InvA(2,1) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(2,1)
-   if (ABS(InvA(2,2)) .GT. 1.0e30) print*, 'InvA(2,2) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(2,2)
-   if (ABS(InvA(2,3)) .GT. 1.0e30) print*, 'InvA(2,3) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(2,3)
-   if (ABS(InvA(3,1)) .GT. 1.0e30) print*, 'InvA(3,1) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(3,1)
-   if (ABS(InvA(3,2)) .GT. 1.0e30) print*, 'InvA(3,2) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(3,2)
-   if (ABS(InvA(3,3)) .GT. 1.0e30) print*, 'InvA(3,3) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(3,3)
+
+   if (any(abs(InvA) > 1.0d30)) print*, 'InvA = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), InvA
+
+!    if (ABS(InvA(1,1)) .GT. 1.0e30) print*, 'InvA(1,1) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(1,1)
+!    if (ABS(InvA(1,2)) .GT. 1.0e30) print*, 'InvA(1,2) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(1,2)
+!    if (ABS(InvA(1,3)) .GT. 1.0e30) print*, 'InvA(1,3) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(1,3)
+!    if (ABS(InvA(2,1)) .GT. 1.0e30) print*, 'InvA(2,1) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(2,1)
+!    if (ABS(InvA(2,2)) .GT. 1.0e30) print*, 'InvA(2,2) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(2,2)
+!    if (ABS(InvA(2,3)) .GT. 1.0e30) print*, 'InvA(2,3) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(2,3)
+!    if (ABS(InvA(3,1)) .GT. 1.0e30) print*, 'InvA(3,1) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(3,1)
+!    if (ABS(InvA(3,2)) .GT. 1.0e30) print*, 'InvA(3,2) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(3,2)
+!    if (ABS(InvA(3,3)) .GT. 1.0e30) print*, 'InvA(3,3) = infinity in Invers_3x3, called from '//trim(adjustl(ref_sub)), A(3,3)
 end subroutine Invers_3x3 ! checked!
 
 
@@ -2208,7 +2722,7 @@ end subroutine Invers_3x3 ! checked!
 subroutine Matrix_Vec_Prod(M, V, OutV) ! subroutine for single thread, to be used inside parallel regions
    REAL(8), DIMENSION(:,:), INTENT(in) :: M ! input matrix (NxN)
    REAL(8), DIMENSION(:), INTENT(in) :: V ! input vector (size N)
-   REAL(8), DIMENSION(:), INTENT(out) :: OutV ! output product, vector(N)
+   REAL(8), DIMENSION(:), INTENT(out) :: OutV ! output product, vector(N): M(j,i)*V(j), i.e. M^T*V
    !---------------------
    integer i, j, n, l
 
@@ -2223,13 +2737,31 @@ subroutine Matrix_Vec_Prod(M, V, OutV) ! subroutine for single thread, to be use
       enddo ! j 
    enddo ! i
    !!$omp END PARALLEL DO
-end subroutine Matrix_Vec_Prod ! checked
+end subroutine Matrix_Vec_Prod ! checked: this version is needed in calcualtions
+
+
+subroutine Matrix_Vec_Prod_untransposed(M, V, OutV)   ! OutV = M*V ; single thread, safe inside parallel regions
+   REAL(8), DIMENSION(:,:), INTENT(in) :: M
+   REAL(8), DIMENSION(:), INTENT(in) :: V
+   REAL(8), DIMENSION(:), INTENT(out) :: OutV
+   !---------------------
+   integer :: j
+
+   OutV = 0.0d0
+   if ((size(M,2) /= size(V)) .or. (size(M,1) /= size(OutV))) then
+      print*, '(Matrix x Vector) failed - different dimensions!'
+      return
+   endif
+   do j = 1, size(V)     ! column-wise (contiguous) access
+      OutV(:) = OutV(:) + M(:,j)*V(j)
+   enddo
+end subroutine Matrix_Vec_Prod_untransposed
 
 
 subroutine Matrix_Vec_Prod_MPI(M, V, OutV, MPI_param) ! subroutine for multiple threads
    REAL(8), DIMENSION(:,:), INTENT(in) :: M ! input matrix (NxN)
    REAL(8), DIMENSION(:), INTENT(in) :: V ! input vector (size N)
-   REAL(8), DIMENSION(:), INTENT(out) :: OutV ! output product, vector(N)
+   REAL(8), DIMENSION(:), INTENT(out) :: OutV ! output product, vector(N): OutV = M^T*V
    type(Used_MPI_parameters), intent(inout) :: MPI_param
    !---------------------
    integer i, j, n, l
@@ -2265,6 +2797,42 @@ subroutine Matrix_Vec_Prod_MPI(M, V, OutV, MPI_param) ! subroutine for multiple 
    !$omp END PARALLEL DO
 #endif
 end subroutine Matrix_Vec_Prod_MPI ! checked
+
+
+subroutine Matrix_Vec_Prod_MPI_untransposed(M, V, OutV, MPI_param)   ! OutV = M*V, MPI or OpenMP
+   REAL(8), DIMENSION(:,:), INTENT(in) :: M
+   REAL(8), DIMENSION(:), INTENT(in) :: V
+   REAL(8), DIMENSION(:), INTENT(out) :: OutV
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   !---------------------
+   integer :: i, j, n
+   integer :: N_incr, Nstart
+   character(100) :: error_part
+
+   n = size(V)
+   OutV = 0.0d0
+   if ((size(M,2) /= n) .or. (size(M,1) /= size(OutV))) then
+      print*, 'Error in Matrix_Vec_Prod_MPI: (Matrix x Vector) failed - different dimensions!'
+      return
+   endif
+
+#ifdef MPI_USED
+   N_incr = MPI_param%size_of_cluster
+   Nstart = 1 + MPI_param%process_rank
+   do j = Nstart, n, N_incr      ! each process accumulates its share of columns
+      OutV(:) = OutV(:) + M(:,j)*V(j)
+   enddo
+   ! Sum partial results over all processes:
+   error_part = 'Error in Matrix_Vec_Prod_MPI'
+   call do_MPI_Allreduce(MPI_param, trim(adjustl(error_part))//'OutV', OutV)
+#else ! use OpenMP instead
+   !$omp PARALLEL DO private(i), SHARED(M,V,OutV)
+   do i = 1, size(OutV)
+      OutV(i) = SUM(M(i,:)*V(:))
+   enddo
+   !$omp END PARALLEL DO
+#endif
+end subroutine Matrix_Vec_Prod_MPI_untransposed
 
 
 
@@ -2347,11 +2915,11 @@ subroutine Two_Vect_Matr(V1,V2,M)
 end subroutine Two_Vect_Matr ! checked
 
 
-! This subroutine multiplies two sqare matricis:
+! This subroutine multiplies two sqare matrices:
 subroutine Two_Matr_mult_r(M1,M2,Mout)
    REAL(8), DIMENSION(:,:), INTENT(in) :: M1 ! input matrix 1
    REAL(8), DIMENSION(:,:), INTENT(in) :: M2 ! input matrix 2
-   REAL(8), DIMENSION(:,:), INTENT(out) :: Mout ! output matrix
+   REAL(8), DIMENSION(:,:), INTENT(out) :: Mout ! output matrix: Mout = M1^T * M2^T
    integer i,j,k,n,l,n2,l2
    n = size(M1,1)
    n2 = size(M2,1)
@@ -2363,11 +2931,26 @@ subroutine Two_Matr_mult_r(M1,M2,Mout)
    Mout = 0.0d0
    do i = 1,l2
       do j = 1,l
-         !Mout(i,j) = Mout(i,j) + SUM(M1(i,:)*M2(:,j)) ! incorrect
-         Mout(i,j) = Mout(i,j) + SUM(M1(:,i)*M2(j,:)) ! correct
+         !Mout(i,j) = Mout(i,j) + SUM(M1(i,:)*M2(:,j)) ! incorrect for XTANT-3
+         Mout(i,j) = Mout(i,j) + SUM(M1(:,i)*M2(j,:)) ! correct for XTANT-3
       enddo ! j
    enddo ! i
 end subroutine Two_Matr_mult_r ! checked!
+
+
+subroutine Two_Matr_mult_r_untransposed(M1,M2,Mout)   ! Mout = M1*M2
+   ! Was Mout = M1^T * M2^T. If some caller relied on that, use
+   !    matmul(transpose(M1), transpose(M2))  there instead.
+   REAL(8), DIMENSION(:,:), INTENT(in) :: M1, M2
+   REAL(8), DIMENSION(:,:), INTENT(out) :: Mout
+
+   if ((size(M1,2) /= size(M2,1)) .or. (size(Mout,1) /= size(M1,1)) .or. (size(Mout,2) /= size(M2,2))) then
+      print*, 'Two_Matr_mult_r Failed! Ranges of matrices are inconsistent!'
+      Mout = 0.0d0
+      return
+   endif
+   Mout = matmul(M1, M2)
+end subroutine Two_Matr_mult_r_untransposed
 
 
 subroutine Two_Matr_mult_c(M1,M2,Mout)
@@ -2389,6 +2972,19 @@ subroutine Two_Matr_mult_c(M1,M2,Mout)
       enddo ! j
    enddo ! i
 end subroutine Two_Matr_mult_c
+
+
+subroutine Two_Matr_mult_c_matmul(M1,M2,Mout)   ! Mout = M1*M2
+   complex(8), DIMENSION(:,:), INTENT(in) :: M1, M2
+   complex(8), DIMENSION(:,:), INTENT(out) :: Mout
+
+   if ((size(M1,2) /= size(M2,1)) .or. (size(Mout,1) /= size(M1,1)) .or. (size(Mout,2) /= size(M2,2))) then
+      print*, 'Two_Matr_mult_c Failed! Ranges of matrices are inconsistent!'
+      Mout = (0.0d0, 0.0d0)
+      return
+   endif
+   Mout = matmul(M1, M2)
+end subroutine Two_Matr_mult_c_matmul
 
 
 
