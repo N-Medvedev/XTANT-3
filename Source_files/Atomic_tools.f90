@@ -2683,7 +2683,7 @@ subroutine update_atom_crossing_boundary(numpar, matter, Scell, NSC, k, axis_ind
    integer, intent(in) :: k   ! index of the atom
    integer, intent(in) :: axis_ind  ! which boundary: 1=X, 2=Y, 3=Z
    !-------------
-   integer :: axis_ind2, axis_ind3, nat
+   integer :: axis_ind2, axis_ind3, nat, crossings
    real(8) :: S, dS, dS0, V_tot, V_left, V_tot0, V_left0, RN
 
    select case (numpar%boundary_scheme(axis_ind)) ! X
@@ -2706,18 +2706,30 @@ subroutine update_atom_crossing_boundary(numpar, matter, Scell, NSC, k, axis_ind
       !print*, k, axis_ind, Scell(NSC)%MDatoms(k)%S(axis_ind), numpar%Frozen_atoms%At_ind(k)
 
    case (3) ! reflecting boundaries
-      ! Change its velosity to the opposite (reflect back):
-      Scell(NSC)%MDatoms(k)%SV(axis_ind)  = -Scell(NSC)%MDatoms(k)%SV(axis_ind)
-      Scell(NSC)%MDatoms(k)%SV0(axis_ind) = -Scell(NSC)%MDatoms(k)%SV0(axis_ind)
-      ! And effective terms for Martyna-Tuckerman algorithm:
-      Scell(NSC)%MDatoms(k)%A(axis_ind)  = -Scell(NSC)%MDatoms(k)%A(axis_ind)
-      Scell(NSC)%MDatoms(k)%A0(axis_ind) = -Scell(NSC)%MDatoms(k)%A0(axis_ind)
-      Scell(NSC)%MDatoms(k)%A_tild(axis_ind)  = -Scell(NSC)%MDatoms(k)%A_tild(axis_ind)
-      Scell(NSC)%MDatoms(k)%A_tild0(axis_ind) = -Scell(NSC)%MDatoms(k)%A_tild0(axis_ind)
-      Scell(NSC)%MDatoms(k)%v_F(axis_ind)  = -Scell(NSC)%MDatoms(k)%v_F(axis_ind)
-      Scell(NSC)%MDatoms(k)%v_F0(axis_ind) = -Scell(NSC)%MDatoms(k)%v_F0(axis_ind)
-      Scell(NSC)%MDatoms(k)%v_J(axis_ind)  = -Scell(NSC)%MDatoms(k)%v_J(axis_ind)
-      Scell(NSC)%MDatoms(k)%v_J0(axis_ind) = -Scell(NSC)%MDatoms(k)%v_J0(axis_ind)
+      ! Fold the position back into the box, reflecting once per crossed wall.
+      ! Reflecting boundaries fold the coordinate into [0,1],
+      ! including overshoots across multiple walls,
+      ! and reverse velocity and integrator terms only for an odd number of wall crossings:
+      S = Scell(NSC)%MDatoms(k)%S(axis_ind)
+      crossings = FLOOR(S)
+      S = MODULO(S, 2.0d0)
+      if (S > 1.0d0) S = 2.0d0 - S
+      Scell(NSC)%MDatoms(k)%S(axis_ind) = S
+      Scell(NSC)%MDatoms(k)%S0(axis_ind) = S
+      if (MODULO(crossings, 2) /= 0) then
+         ! Change its velosity to the opposite (reflect back):
+         Scell(NSC)%MDatoms(k)%SV(axis_ind)  = -Scell(NSC)%MDatoms(k)%SV(axis_ind)
+         Scell(NSC)%MDatoms(k)%SV0(axis_ind) = -Scell(NSC)%MDatoms(k)%SV0(axis_ind)
+         ! And effective terms for Martyna-Tuckerman algorithm:
+         Scell(NSC)%MDatoms(k)%A(axis_ind)  = -Scell(NSC)%MDatoms(k)%A(axis_ind)
+         Scell(NSC)%MDatoms(k)%A0(axis_ind) = -Scell(NSC)%MDatoms(k)%A0(axis_ind)
+         Scell(NSC)%MDatoms(k)%A_tild(axis_ind)  = -Scell(NSC)%MDatoms(k)%A_tild(axis_ind)
+         Scell(NSC)%MDatoms(k)%A_tild0(axis_ind) = -Scell(NSC)%MDatoms(k)%A_tild0(axis_ind)
+         Scell(NSC)%MDatoms(k)%v_F(axis_ind)  = -Scell(NSC)%MDatoms(k)%v_F(axis_ind)
+         Scell(NSC)%MDatoms(k)%v_F0(axis_ind) = -Scell(NSC)%MDatoms(k)%v_F0(axis_ind)
+         Scell(NSC)%MDatoms(k)%v_J(axis_ind)  = -Scell(NSC)%MDatoms(k)%v_J(axis_ind)
+         Scell(NSC)%MDatoms(k)%v_J0(axis_ind) = -Scell(NSC)%MDatoms(k)%v_J0(axis_ind)
+      endif
 
       ! Update the absolute velocity accordingly:
       call velocities_rel_to_abs(Scell, NSC)    ! below
@@ -2933,7 +2945,7 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
    type(Numerics_param), intent(inout) :: numpar ! numerical parameters, including MC energy cut-off
    !--------------------------------
    integer :: i, j, k, N_diff_peak, N_KOA
-   real(8) :: Nat, FF, FF2, q, Z, Z2, Fpowder, Rij, qA, arg, F_cur, Mmean, MSD
+   real(8) :: Nat, FF, FF2, q, Z, Z2, Fpowder, Rij, qA, arg, F_cur, Mmean, MSD, q_vec(3)
    complex :: Fijk, Fijk_cur
    complex, dimension(:), allocatable :: Fijk_part
    real(8), dimension(:,:), allocatable :: Fpowder_part
@@ -3006,9 +3018,14 @@ subroutine get_diffraction_peaks(Scell, matter, numpar)
       !       (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/(Scell(1)%Supce(2,2)/matter%cell_y))**2 + &
       !       (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/(Scell(1)%Supce(3,3)/matter%cell_z))**2 )      ! [1/A]
       ! This version works for non-orthogonal supercell too:
-      qA = sqrt( SUM( (Scell(1)%diff_peaks%ijk_diff_peak(1,i) * Scell(1)%k_supce(1,:)*matter%cell_x)**2 + &
-                      (Scell(1)%diff_peaks%ijk_diff_peak(2,i) * Scell(1)%k_supce(2,:)*matter%cell_y)**2 + &
-                      (Scell(1)%diff_peaks%ijk_diff_peak(3,i) * Scell(1)%k_supce(3,:)*matter%cell_z)**2) )      ! [1/A]
+      !qA = sqrt( SUM( (Scell(1)%diff_peaks%ijk_diff_peak(1,i) * Scell(1)%k_supce(1,:)*matter%cell_x)**2 + &
+      !                (Scell(1)%diff_peaks%ijk_diff_peak(2,i) * Scell(1)%k_supce(2,:)*matter%cell_y)**2 + &
+      !                (Scell(1)%diff_peaks%ijk_diff_peak(3,i) * Scell(1)%k_supce(3,:)*matter%cell_z)**2) )      ! [1/A]
+      ! *Correction: vector sum first, abs after:
+      q_vec = dble(Scell(1)%diff_peaks%ijk_diff_peak(1,i)) * Scell(1)%k_supce(1,:) * matter%cell_x + &
+              dble(Scell(1)%diff_peaks%ijk_diff_peak(2,i)) * Scell(1)%k_supce(2,:) * matter%cell_y + &
+              dble(Scell(1)%diff_peaks%ijk_diff_peak(3,i)) * Scell(1)%k_supce(3,:) * matter%cell_z
+      qA = sqrt(sum(q_vec**2))      ! [1/A]
 
 !       print*, qA, g_2Pi * sqrt ( &
 !              (Scell(1)%diff_peaks%ijk_diff_peak(1,i)/(Scell(1)%Supce(1,1)/matter%cell_x))**2 + &
@@ -3184,7 +3201,7 @@ subroutine get_Miller_index_angle(Scell, matter, i, ijk_theta, qA)
    real(8), intent(out) :: ijk_theta      ! [deg] angle corresponding to the Miller index
    real(8), intent(out), optional :: qA   ! [1/A] q-vector corresponding to the Miller index
    !----------------------
-   real(8) :: q, qn
+   real(8) :: q, q_vec(3)
 
    !-------------------------------
    ! This part only works for orthagonal supercell (to be improved later!):
@@ -3193,12 +3210,16 @@ subroutine get_Miller_index_angle(Scell, matter, i, ijk_theta, qA)
    !          (Scell(1)%diff_peaks%ijk_diff_peak(2,i)/(Scell(1)%Supce(2,2)/matter%cell_y))**2 + &
    !          (Scell(1)%diff_peaks%ijk_diff_peak(3,i)/(Scell(1)%Supce(3,3)/matter%cell_z))**2 )      ! [1/A]
    ! This version works for non-orthogonal supercell too:
-   q = sqrt( SUM( (Scell(1)%diff_peaks%ijk_diff_peak(1,i) * Scell(1)%k_supce(1,:)*matter%cell_x)**2 + &
-                  (Scell(1)%diff_peaks%ijk_diff_peak(2,i) * Scell(1)%k_supce(2,:)*matter%cell_y)**2 + &
-                  (Scell(1)%diff_peaks%ijk_diff_peak(3,i) * Scell(1)%k_supce(3,:)*matter%cell_y)**2) )      ! [1/A]
+   !q = sqrt( SUM( (Scell(1)%diff_peaks%ijk_diff_peak(1,i) * Scell(1)%k_supce(1,:)*matter%cell_x)**2 + &
+   !               (Scell(1)%diff_peaks%ijk_diff_peak(2,i) * Scell(1)%k_supce(2,:)*matter%cell_y)**2 + &
+   !               (Scell(1)%diff_peaks%ijk_diff_peak(3,i) * Scell(1)%k_supce(3,:)*matter%cell_y)**2) )      ! [1/A]
+   ! *Correction: vector sum first, abs later:
+   q_vec = dble(Scell(1)%diff_peaks%ijk_diff_peak(1,i)) * Scell(1)%k_supce(1,:) * matter%cell_x + &
+           dble(Scell(1)%diff_peaks%ijk_diff_peak(2,i)) * Scell(1)%k_supce(2,:) * matter%cell_y + &
+           dble(Scell(1)%diff_peaks%ijk_diff_peak(3,i)) * Scell(1)%k_supce(3,:) * matter%cell_z
+   q = sqrt(sum(q_vec**2))      ! [1/A]
 
    !print*, 'q_ijk=', q, qn, 2.0d0*asin(q*1.0d10*g_h/g_h * (Scell(1)%diff_peaks%l) / (4.0d0*g_Pi)) * g_rad2deg
-
 
    if (present(qA)) qA = q   ! to printout
 
@@ -4376,8 +4397,10 @@ subroutine pair_correlation_function(atoms, matter, Scell, NSC, MPI_param)
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
    error_part = 'Error in pair_correlation_function'
    call do_MPI_Allreduce(MPI_param, trim(adjustl(error_part))//'matter%PCF', matter%PCF) ! module "MPI_subroutines"
-   error_part = 'Error in pair_correlation_function_2'
-   call do_MPI_Allreduce(MPI_param, trim(adjustl(error_part))//'matter%PCF_part', matter%PCF_part) ! module "MPI_subroutines"
+   if (matter%N_KAO > 1) then
+      error_part = 'Error in pair_correlation_function_2'
+      call do_MPI_Allreduce(MPI_param, trim(adjustl(error_part))//'matter%PCF_part', matter%PCF_part) ! module "MPI_subroutines"
+   endif
    ! Restore the grid:
    matter%PCF(1,:) = matter%PCF(1,:) / N_incr
 
