@@ -48,7 +48,8 @@ PRIVATE
 public :: Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_drij_DFTB, &
           Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB, &
           identify_DFTB_orbitals_per_atom, identify_DFTB_basis_size, Get_overlap_S_matrix_DFTB, &
-          Hopping_DFTB, get_Erep_s_DFTB_no, dErdr_s_DFTB_no, dErdr_Pressure_s_DFTB_no
+          Hopping_DFTB, get_Erep_s_DFTB_no, dErdr_s_DFTB_no, dErdr_Pressure_s_DFTB_no, &
+          dHij_r_DFTB, dE2rep_dr2_DFTB
 
  contains
  
