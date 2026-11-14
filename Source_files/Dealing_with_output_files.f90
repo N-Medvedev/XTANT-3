@@ -1168,10 +1168,11 @@ subroutine write_atomic_xyz(FN, atoms, matter, Supce, print_mass, print_charge, 
                                                                atoms(i)%V(1), atoms(i)%V(2), atoms(i)%V(3)
       endif
 
-      if (do_mass) write(FN, '(es25.16)', advance='no') matter%Atoms(atoms(i)%KOA)%Ma
+      !if (do_mass) write(FN, '(es25.16)', advance='no') matter%Atoms(atoms(i)%KOA)%Ma
       !if (do_charge) write(FN, '(es25.16)', advance='no') matter%Atoms(atoms(i)%KOA)%mulliken_q
       if (do_charge) write(FN, '(es25.16)', advance='no') atoms(i)%q
       if (do_Ekin) write(FN, '(es25.16)', advance='no') atoms(i)%Ekin
+      if (do_mass) write(FN, '(es25.16)', advance='no') matter%Atoms(atoms(i)%KOA)%Ma
       write(FN, '(a)') ''  ! to end the line
    enddo
 end subroutine write_atomic_xyz
@@ -1922,7 +1923,14 @@ subroutine prepare_output_files(Scell, matter, laser, numpar, TB_Hamil, TB_Repul
 
 
    ! Create directory where the output files will be saved:
-   call create_output_folder(Scell, matter, laser, numpar)	! module "Dealing_with_output_files"
+   !call create_output_folder(Scell, matter, laser, numpar)	! module "Dealing_with_output_files"
+   call create_output_folder(Scell, matter, laser, numpar, INFO)	! module "Dealing_with_output_files"
+   if (INFO /= 0) then
+      Error_descript = 'Could not create output folder'
+      call Save_error_details(Err, 2, Error_descript)
+      print*, trim(adjustl(Error_descript))
+      return
+   endif
 
    ! Save input files, so that repeating the same calculations would be easy:
    if (numpar%which_input >= 1) then
@@ -2983,15 +2991,17 @@ end subroutine output_parameters_file
 
 
 ! Create the folder where the results will be storred:
-subroutine create_output_folder(Scell, matter, laser, numpar)
+subroutine create_output_folder(Scell, matter, laser, numpar, INFO)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
    type(Solid), intent(in) :: matter
    type(Pulse), dimension(:), intent(in) :: laser		! Laser pulse parameters
    type(Numerics_param), intent(inout) :: numpar 	! all numerical parameters
+   integer, intent(out) :: INFO
    !--------------------
    real(8) :: Ta
    integer i, iret
-   character(200) :: File_name, File_name2, command, matter_name
+   character(200) :: File_name, File_name2, matter_name
+   character(300) :: command
    character(100) :: ch1, ch2, ch3, ch4
    logical :: file_exist
 
@@ -3131,10 +3141,17 @@ subroutine create_output_folder(Scell, matter, laser, numpar)
       command='md "'//trim(adjustl(File_name2))//'"' ! to create a folder use this command
       !CALL system(command)  ! create the folder
    else
-      command='mkdir '//trim(adjustl(File_name2)) ! to create a folder use this command
+      !command='mkdir '//trim(adjustl(File_name2)) ! to create a folder use this command
+      command='mkdir "'//trim(adjustl(File_name2))//'"' ! to create a folder use this command
+
       !CALL system(command)  ! create the folder
    endif
    iret = system(command)
+   INFO = iret
+   if (INFO /= 0) then
+      numpar%output_path = ''
+      return
+   endif
    numpar%output_path = File_name2
 end subroutine create_output_folder
 
@@ -3178,7 +3195,7 @@ subroutine communicate(FN, time, numpar, matter)
       read_well = .true.   ! to start with
       Reason = 1  ! to start with
       do while (Reason >= 0) ! read all lines if there is more than one
-         call pars_comunications_file(FN, i, given_line, given_num, Reason) ! below
+         call pars_comunications_file(FN, given_line, given_num, Reason) ! below
          if (Reason == 0) then
             call act_on_comunication(given_line, given_num, numpar, matter, time)   ! below
             smth_read_master = .true.
@@ -3321,8 +3338,10 @@ subroutine printout_fluence_dose_conversion(Scell, laser, numpar, matter, INFO, 
    Nsiz = size(laser)
 
    ! Which inelastic cross section to use (BEB vs CDF):
+   i_CS = 1
    do i = 1, size(matter%Atoms)
-      i_CS = minval(matter%Atoms(i)%TOCS(:))
+      !i_CS = minval(matter%Atoms(i)%TOCS(:))
+      i_CS = min(i_CS, minval(matter%Atoms(i)%TOCS(:)))
    enddo
 
    ! To write into Parameters file, find or open it:
@@ -3669,21 +3688,24 @@ end subroutine set_OMP_number
 
 
 
-subroutine pars_comunications_file(FN, i, out_line, out_num, Reason)
+subroutine pars_comunications_file(FN, out_line, out_num, Reason)
    integer, intent(in) :: FN
-   integer, intent(inout) :: i
    character(*), intent(out) :: out_line
    real(8), intent(out) :: out_num
    integer, intent(out) :: Reason
    !---------------------------------
    character(200) :: read_line
    logical :: read_well
-   read_well = .false.
+
    out_line = ''
    out_num = 0.0d0
 
    read(FN, '(a)', IOSTAT=Reason) read_line
+   if (Reason /= 0) return
+
    call pars_comunications(read_line, out_line, out_num, read_well)  ! below
+
+   if (.not. read_well) Reason = 1
 end subroutine pars_comunications_file
 
 
@@ -3694,26 +3716,43 @@ subroutine pars_comunications(readline, out_line, out_num, read_well)
    logical, intent(out) :: read_well
    !---------------------------------
    integer :: Reason, i
+   character(200) :: extra_token
+
    read_well = .false.
    out_line = ''
    out_num = 0.0d0
 
    i = 1    ! to start with
    read(readline, *, IOSTAT=Reason) out_line, out_num
+   if (Reason == 0) then
+      read_well = .true.
+      return
+   endif
    !print*, 'Reason', Reason, out_line, out_num
-   if (Reason /= 0) then ! try again but with one variable
-      read(readline, *, IOSTAT=Reason) out_line
-      !print*, 'Reason2', Reason, out_line
+
+   extra_token = ''
+   read(readline, *, IOSTAT=Reason) out_line, extra_token
+   if (Reason == 0) then
+      print*, 'Given number could not be interpreted as a number: '//trim(adjustl(readline))
+      return
    endif
-   call read_file(Reason, i, read_well)  ! module "Dealing_with_files"
-   if (Reason .LT. 0) then
-      print*, 'No descriptor or value found in the communication file'
-   else if (Reason .GT. 0) then
-      print*, 'Given number interpreted as', out_num, ', it does not match the variable type'
+
+   out_line = ''
+   read(readline, *, IOSTAT=Reason) out_line
+   if (Reason /= 0) then
+      print*, 'No descriptor or value found in the communication file: '//trim(adjustl(readline))
+      return
    endif
-   if (.not.read_well) then
-      print*, 'Wrong format of input in Comunication, could not interpret.'
-   endif
+
+   ! Valid one-word commands:
+   select case (trim(adjustl(out_line)))
+   case ('verbose', 'VERBOSE', 'Verbose', 'verbose_off', 'VERBOSE_OFF', 'Verbose_off', &
+         'no_verbose', 'noverbose', 'no-verbose')
+      read_well = .true.
+   case default ! anything else is invalid:
+      print*, 'A numerical value is required for communication command: ', trim(adjustl(out_line))
+   end select
+
 end subroutine pars_comunications
 
 

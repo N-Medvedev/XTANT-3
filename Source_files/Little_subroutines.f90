@@ -288,6 +288,17 @@ function name_of_orbitals(norb, i_orb) result(orb_name)
       case default
          orb_name = 's'
       endselect
+   case (10) ! sp3d5s*
+      select case (i_orb)
+      case (2)
+         orb_name = 'p'
+      case (3)
+         orb_name = 'd'
+      case (4)
+         orb_name = 's*'
+      case default
+         orb_name = 's'
+      endselect
    endselect
 end function name_of_orbitals
  
@@ -528,7 +539,8 @@ subroutine convolution(FN, Gaus_conv)
    !character(100), dimension(:), allocatable :: First_line
    logical file_exists, file_opened, file_named
 
-   t_g = Gaus_conv ! [fs] FWHM of gaussian to convolve with
+   !t_g = Gaus_conv ! [fs] FWHM of gaussian to convolve with
+   t_g = Gaus_conv/(2.0d0*sqrt(2.0d0*log(2.0d0))) ! convert FWHM to standard deviation [fs]
 
    !open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='read')
    inquire(UNIT=FN, opened=file_opened, named=file_named, name=File_name)
@@ -573,6 +585,11 @@ subroutine convolution(FN, Gaus_conv)
          endif
       endif
 
+      if (N < 2) then
+         write(*,'(a,a)') 'Not enough data points to convolve file ', trim(adjustl(File_name))
+         goto 1010
+      endif
+
       allocate(Spectr(N,M))
       allocate(Conv_Spectr(N,M))
       Spectr = 0.0d0
@@ -591,18 +608,25 @@ subroutine convolution(FN, Gaus_conv)
       enddo
       Conv_Spectr(:,1) = Spectr(:,1)
       dt = Spectr(2,1) - Spectr(1,1) ! [fs], timestep, assuming equal steps everywhere
+      if (dt <= 0.0d0) then
+         write(*,'(a,a)') 'Invalid time step in file ', trim(adjustl(File_name))
+         goto 1010
+      endif
 
       ! Analysis:
       File_name2 = trim(adjustl(File_name(1:len(trim(adjustl(File_name)))-4)))//'_CONVOLVED.dat'
 
       open (newunit=FN2, file=trim(adjustl(File_name2))) ! output file
       write(FN2,'(a)')  First_line  !e.g. '#Time[fs]	Reflectivity	Transmittion	Absorbtion  n   k   Re(e)   Im(e)'
-      i_start = min(int(20/dt),N)
+      !i_start = min(int(20/dt),N)
+      i_start = max(1,min(int(20/dt),N))
+
       do i = 1,N ! all time steps
          if (Spectr(i,1) <= Spectr(1,1)+t_g*3.0+dt*0.5d0) then ! incomplete data at the start
             do j = 1,min(CEILING((Spectr(1,1)+t_g*3.0-Spectr(i,1))/dt),N)  ! convolve with initial value
                call Gaussian(mu=Spectr(i,1), sigma=t_g, x=(Spectr(i,1)-t_g*3.0)+(Spectr(j,1)-Spectr(1,1)), Gaus=Gaus)  ! Gaussian weight
-               Conv_Spectr(i,2:) = Conv_Spectr(i,2:) + Spectr(i_start,2:)*Gaus   ! Convolution of all arrays
+               !Conv_Spectr(i,2:) = Conv_Spectr(i,2:) + Spectr(i_start,2:)*Gaus   ! Convolution of all arrays
+               Conv_Spectr(i,2:) = Conv_Spectr(i,2:) + Spectr(i_start,2:)*Gaus*dt   ! Convolution of all arrays
             enddo
          endif
 
@@ -610,13 +634,15 @@ subroutine convolution(FN, Gaus_conv)
             ! do convolution only within 3*sigma interval:
             if ((Spectr(j,1) >= Spectr(i,1)-t_g*3.0-dt*0.5d0) .and. (Spectr(j,1) <= Spectr(i,1)+t_g*3.0+dt*0.5d0)) then
                call Gaussian(mu=Spectr(i,1), sigma=t_g, x=Spectr(j,1), Gaus=Gaus)  ! Gaussian weight
-               Conv_Spectr(i,2:) = Conv_Spectr(i,2:) + Spectr(j,2:)*Gaus   ! Convolution of all arrays
+               !Conv_Spectr(i,2:) = Conv_Spectr(i,2:) + Spectr(j,2:)*Gaus   ! Convolution of all arrays
+               Conv_Spectr(i,2:) = Conv_Spectr(i,2:) + Spectr(j,2:)*Gaus*dt   ! Convolution of all arrays
             endif
          enddo
          if (Spectr(i,1) >= Spectr(N,1)-t_g*3.0+dt*0.5d0) then ! incomplete data at the end
             do j = 1,min(N,CEILING((Spectr(i,1)-(Spectr(N,1)-t_g*3.0))/dt))  ! convolve with final value
                call Gaussian(mu=Spectr(i,1), sigma=t_g, x=Spectr(N,1)+(Spectr(j,1)-Spectr(1,1))+dt, Gaus=Gaus)  ! Gaussian weight
-               Conv_Spectr(i,2:) = Conv_Spectr(i,2:) + Spectr(N-1,2:)*Gaus   ! Convolution of all arrays
+               !Conv_Spectr(i,2:) = Conv_Spectr(i,2:) + Spectr(N-1,2:)*Gaus   ! Convolution of all arrays
+               Conv_Spectr(i,2:) = Conv_Spectr(i,2:) + Spectr(N,2:)*Gaus*dt   ! Convolution of all arrays
             enddo
          endif
          WRITE(FN2,'(e25.16,$)') Conv_Spectr(i,:)
@@ -1015,8 +1041,9 @@ subroutine interpolate_data_on_grid(given_array_x, given_array_y, given_grid, ar
       if (given_grid(i) >= given_array_x(i_closest)) then
          if (i_closest > 1) then
             do while (ABS(given_array_x(i_closest) - given_array_x(i_closest-1)) < eps) ! exclude the same value
+               if (i_closest >= size(given_array_x)) exit
                i_closest = i_closest + 1
-               if (i_closest == N) exit
+               !if (i_closest == N) exit
             enddo
          endif
          call linear_interpolation(given_array_x, given_array_y, given_grid(i), array_to_fill(i), i_closest)	! see below
@@ -1157,12 +1184,20 @@ subroutine Find_in_1D_array(Array, Value, Number)
    REAL(8), dimension(:), INTENT(in) :: Array ! in which we are looking for the Value
    REAL(8), INTENT(in) :: Value   ! to be found in the array as near as possible
    integer, INTENT(out) :: Number ! number of the element which we are looking for 
-   integer i
+   integer i, N
+
+   N = size(Array)
+   if (N == 0) then
+      Number = 0
+      return
+   endif
+
    i = 1
-   do while (Array(i) .LT. Value-1.0d-10)
+   !do while (Array(i) .LT. Value-1.0d-10)
+   do while (i < N .and. Array(i) .LT. Value-1.0d-10)
       i = i + 1
    enddo
-   Number = i
+   Number = min(i, N)
 end subroutine Find_in_1D_array
 
 subroutine Find_in_2D_array(Array, Value, Indx, Number)
@@ -1170,12 +1205,19 @@ subroutine Find_in_2D_array(Array, Value, Indx, Number)
    REAL(8), INTENT(in) :: Value   ! to be found in the array as near as possible
    integer, INTENT(in) :: Indx    ! index of the array, showing in which colonm we search
    integer, INTENT(out) :: Number ! number of the element which we are looking for 
-   integer i
+   integer i, N
+   N = size(Array,2)
+   if (N == 0) then
+      Number = 0
+      return
+   endif
+
    i = 1
-   do while (Array(Indx,i) .LT. Value)
+   !do while (Array(Indx,i) .LT. Value)
+   do while (i < N .and. Array(Indx,i) .LT. Value)
       i = i + 1
    enddo
-   Number = i
+   Number = min(i, N)
 end subroutine Find_in_2D_array
 
 
@@ -1185,44 +1227,69 @@ subroutine Find_monotonous_LE(Array, Value0, Number)    ! monotoneausly increasi
    REAL(8), dimension(:), INTENT(in) :: Array ! in which we are looking for the Value
    REAL(8), INTENT(in) :: Value0   ! to be found in the array as near as possible
    integer, INTENT(out) :: Number ! number of the element which we are looking for 
-   integer i, N, i_cur, i_1, i_2, coun
+   integer i, N, i_cur, i_1, i_2, coun, i_cur2
    real(8) temp_val, val_1, val_2
+
+   N = size(Array)
+   if (N == 0) then
+       Number = 0
+       return
+   endif
+
 
    if (isnan(Value0)) then
         print*, 'The subroutine Find_monotonous_LE'
         print*, 'cannot proceed, the value of Value0 is', Value0
         write(*, '(f25.16,f25.16,f25.16,f25.16)') Value0, Array(i_cur), Array(i_1), Array(i_2)
-        pause 'STOPPED WORKING...'
+        !pause 'STOPPED WORKING...'
+        Number = 0
+        return
    else
-       N = size(Array)
        if (Value0 .LE. Array(1)) then ! it's the first value, no need to search
            i_cur = 1
        else if (Value0 .GE. Array(N)) then ! it's the last value, no need to search
            i_cur = N
        else
+           ! OLD:
+!            i_1 = 1
+!            i_2 = N
+!            i_cur = FLOOR((i_1+i_2)/2.0)
+!            temp_val = Array(i_cur)
+!            coun = 0
+!            do ! until the Value is in between Array(i_cur) and Array(i_cur+1) => we found i_cur
+!                 if ((Value0 .GE. Array(i_cur)) .AND. (Value0 .LT. Array(i_cur+1))) exit ! when the Value is in between Array(i_cur) and Array(i_cur+1) => we found i_cur
+!                 if (temp_val .LT. Value0) then
+!                    i_1 = i_cur
+!                 else
+!                    i_2 = i_cur
+!                 endif
+!                 i_cur = FLOOR((i_1+i_2)/2.0)
+!                 temp_val = Array(i_cur)
+!                 coun = coun + 1
+!                 if (coun .GT. 1e3) then
+!                     print*, 'PROBLEM WITH CONVERGANCE IN'
+!                     print*, 'Find_monotonous_LE', coun
+!                     write(*, '(f25.16,f25.16,f25.16,f25.16)') Value0, Array(i_cur), Array(i_1), Array(i_2)
+!                     pause 'STOPPED WORKING...'
+!                 endif
+!            enddo
+!            i_cur2 = i_cur   ! for testing
+
+           ! NEW:
            i_1 = 1
            i_2 = N
-           i_cur = FLOOR((i_1+i_2)/2.0)
-           temp_val = Array(i_cur)
-           coun = 0
-           do ! until the Value is in between Array(i_cur) and Array(i_cur+1) => we found i_cur
-                if ((Value0 .GE. Array(i_cur)) .AND. (Value0 .LT. Array(i_cur+1))) exit ! when the Value is in between Array(i_cur) and Array(i_cur+1) => we found i_cur
-                if (temp_val .LT. Value0) then
-                   i_1 = i_cur
-                else
-                   i_2 = i_cur
-                endif
-                i_cur = FLOOR((i_1+i_2)/2.0)
-                temp_val = Array(i_cur)
-                coun = coun + 1
-                if (coun .GT. 1e3) then
-                    print*, 'PROBLEM WITH CONVERGANCE IN'
-                    print*, 'Find_monotonous_LE', coun
-                    write(*, '(f25.16,f25.16,f25.16,f25.16)') Value0, Array(i_cur), Array(i_1), Array(i_2)
-                    pause 'STOPPED WORKING...'
-                endif
+           do while (i_1 < i_2)
+              i_cur = (i_1+i_2+1)/2
+              if (Array(i_cur) .LE. Value0) then
+                 i_1 = i_cur
+              else
+                 i_2 = i_cur - 1
+              endif
            enddo
-       endif
+           i_cur = i_1
+!            print*, 'Find_monotonous_LE:', i_cur2, i_cur   ! tested, same
+
+       endif ! (Value0 .LE. Array(1))
    endif    ! isnan
    Number = i_cur
 end subroutine Find_monotonous_LE

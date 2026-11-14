@@ -166,7 +166,7 @@ subroutine which_shell(E, Atoms, matter, which_mfp, KOA, SHL)
                   call Find_in_array_monoton(Atoms(i)%El_MFP(j)%E, E, N) ! module "Little_subroutines"
                   ! Interpolate to the actual value:
                   if ((E > matter%Atoms(i)%Ip(j)) .and. (N > 1)) then
-                     if (Atoms(i)%Ph_MFP(j)%L(N-1) < 1.0d-15) then
+                     if (Atoms(i)%El_MFP(j)%L(N-1) < 1.0d-15) then
 !                         print*, 'which_shell 1'
                         call linear_interpolation(Atoms(i)%El_MFP(j)%E, Atoms(i)%El_MFP(j)%L, E, Lcur, N, x0=matter%Atoms(i)%Ip(j), y0=0.0d0, replac=.true.) ! module "Little_subroutines"
                      else
@@ -1901,6 +1901,7 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
    if (.not.allocated(matter%Ph_MFP_tot%E)) allocate(matter%Ph_MFP_tot%E(N_grid))
    matter%Ph_MFP_tot%E = matter%Atoms(1)%Ph_MFP(1)%E
    if (.not.allocated(matter%Ph_MFP_tot%L)) allocate(matter%Ph_MFP_tot%L(N_grid), source = 0.0d0)
+   matter%Ph_MFP_tot%L(:) = 0.0d0 ! to start with
 
 !    ATOMS:do i = 1, Nat ! for all atoms
    ATOMS:do i = Nat, 1, -1   ! for all atoms, counting backwards (to reach the VB the last)
@@ -1913,6 +1914,9 @@ subroutine get_photon_attenuation(matter, laser, numpar, Err)
          allocate(matter%Atoms(1)%Ph_MFP(indVB)%L(N_grid))
          matter%Atoms(1)%Ph_MFP(indVB)%L = 0.0d0  ! just to start
       endif
+      ! Reset the VB accumulator before assembling contributions:
+      if (i == Nat) matter%Atoms(1)%Ph_MFP(indVB)%L(:) = 0.0d0
+
       !------------------------------------------------------------------------------------
       ! Use new subroutines to deal with EPDL (faster versions):
       if (size(matter%Atoms(i)%TOCSph) > 0) then  ! if this element have more than VB

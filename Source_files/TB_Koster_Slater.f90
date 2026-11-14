@@ -46,7 +46,8 @@ public :: KS_s, KS_ss_hetero, KS_sp3_hetero, KS_sp3d5_hetero, drij_dska, ddija_d
          d_KS_s, d_KS_sp3_hetero, d_KS_sp3d5_hetero, dda_dhgd, drij_dhab, drij_drka, &
          ddija_drkb, d2dija_drkb2, m_sqrt3, t_s_dab, t_s_dx2_y2, t_s_dz2_r2, t_s_s, t_pa_pa, &
          t_dab_dab, t_dx2_y2_dx2_y2, t_d3z2_r2_d3z2_r2, KS_sp3_hetero_TEST, KS_sp3d5_hetero_TEST, &
-         KS_sp3d5, d_KS_sp3d5, d_KS_sp3d5_TEST, KS_Cmnj_orbital, d_KS_Cmnj_orbital, d2_KS_Cmnj_orbital
+         KS_sp3d5, d_KS_sp3d5, d_KS_sp3d5_TEST, KS_Cmnj_orbital, d_KS_Cmnj_orbital, d2_KS_Cmnj_orbital, &
+         d2rij_drka_drlb
 
 
  contains
@@ -209,7 +210,7 @@ pure function ddija_drkb(i, j, k, alpha, beta, rija, rijb, rij)
 end function ddija_drkb
 
 
-! Second derivatives of the direction cosine by a coordinate of a third  nad fourth atom:
+! Second derivatives of the direction cosine by a coordinate of a third and fourth atom:
 ! d^2 d_{ij,a} / (d r_{k,b} d r_{l,g})1
 pure function d2dija_drkb_drlg(i, j, k, l, alpha, beta, gamma, rija, rijb, rijg, rij) result(d2d)
    real(8) :: d2d
@@ -237,7 +238,7 @@ pure function d2dija_drkb2(i, j, k, alpha, beta, rija, rijb, rij)
    integer, intent (in) :: i, j, k, alpha, beta
    real(8), intent (in) :: rija, rijb, rij
    real(8) :: dik, djk, dab, rij2, rij3
-   real(8) :: dija, dijb
+   real(8) :: dija, dijb, delt
    ! Delta-symbols:
    dik = Kronecker_delta(i,k) 	! module "Algebra_tools"
    djk = Kronecker_delta(j,k) 	! module "Algebra_tools"
@@ -246,11 +247,13 @@ pure function d2dija_drkb2(i, j, k, alpha, beta, rija, rijb, rij)
    dija = rija / rij
    dijb = rijb / rij
    rij2 = rij*rij
-   !rij3 = rij*rij2
+   delt = dik - djk
 
-   d2dija_drkb2 = -(dik - djk)/rij2 * ( 2.0d0*(dab - dija*dijb)*dijb + dija*(1.0d0 - dijb*dijb) )
    !d2dija_drkb2 = -(dik - djk)/rij3 * ( 2.0d0*rijb*(dab - rija*rijb/rij2) + rija*(1.0d0 - rijb*rijb/rij2) )   ! OLD
+   !d2dija_drkb2 = -(dik - djk)/rij2 * ( 2.0d0*(dab - dija*dijb)*dijb + dija*(1.0d0 - dijb*dijb) )
+   d2dija_drkb2 = -delt*delt/rij2 * ( 2.0d0*(dab - dija*dijb)*dijb + dija*(1.0d0 - dijb*dijb) )
 end function d2dija_drkb2
+
 
 
 !---------------------------------------------------------------------
@@ -851,7 +854,7 @@ pure function d_t_dxz_dx2_y2(l, dl, m, dm, n, dn, Vdd_sigma, dVdd_sigma, Vdd_pi,
    Ecc = ( 1.50d0*(dl2m2*Vdd_sigma+l2m2*dVdd_sigma) + &
          (-2.0d0*dl2m2*Vdd_pi + temp*dVdd_pi) - &
          (temp1*dVdd_delta - 0.5d0*dl2m2*Vdd_delta) )*ln
-   Ecc = Ecc + ( 1.50d0*l2m2*Vdd_sigma + temp*Vdd_pi + temp1*Vdd_delta )*(dl*n+l*dn)
+   Ecc = Ecc + ( 1.50d0*l2m2*Vdd_sigma + temp*Vdd_pi - temp1*Vdd_delta )*(dl*n+l*dn)
 end function d_t_dxz_dx2_y2
 
 
@@ -1015,8 +1018,9 @@ pure function d2_V(dVss_sigma, d2Vss_sigma, rij, rijg, i, j, k) result(d2V)
    ! d rij / d r_ij,g:
    da = delt * rijg / rij
    ! d^2r_ij/dr^2_k,g:
-   dda = delt * (1.0d0 - da**2)
+   !dda = delt * (1.0d0 - da**2)    ! wrong
    !dda = delt**2 * (1.0d0 - (rijg/rij)**2) / rij
+   dda = delt*delt * (1.0d0 - (rijg/rij)**2) / rij           ! d^2 rij / d r_k,g^2
    ! d^2V/dr^2_k,g:
    d2V = d2Vss_sigma*da**2 + dVss_sigma*dda
 end function d2_V
@@ -1034,7 +1038,7 @@ end function d2_t_s_s
 pure function d2_t_s_px(da, dda, d2da, Vsp_sigma, dVsp_sigma, d2Vss_sigma) result (Ecc)
    real(8) :: Ecc
    real(8), intent(in) :: da, dda, d2da, Vsp_sigma, dVsp_sigma, d2Vss_sigma
-   Ecc = d2da*Vsp_sigma + 2.0d0*da*dVsp_sigma + da*d2Vss_sigma
+   Ecc = d2da*Vsp_sigma + 2.0d0*dda*dVsp_sigma + da*d2Vss_sigma
 end function d2_t_s_px
 
 
@@ -5889,5 +5893,73 @@ pure subroutine d_KS_sp3d5_hetero_TEST(Vsr12, Vsr21, dVsr12, dVsr21, l, m, n, dl
    ts(9,8) = d_t_dx2_y2_d3z2_r2(l, dl, m, dm, n, dn, Vsr21(8), dVsr21(8), Vsr21(9), dVsr21(9), Vsr21(10), dVsr21(10)) 	! d3z2-r2 dx2-y2 
    ts(9,9) = d_t_d3z2_r2_d3z2_r2(l, dl, m, dm, n, dn, Vsr12(8), dVsr12(8), Vsr12(9), dVsr12(9), Vsr12(10), dVsr12(10)) 	! d3z2-r2 d3z2-r2
 end subroutine d_KS_sp3d5_hetero_TEST
+
+
+
+
+
+
+
+! --------------------------------------------------------------------------------------------
+! 5) NEW: complete second derivatives of the hopping blocks (s only, sp3, sp3d5), same conventions as d_KS_*_hetero
+!
+!    Along a path parameter t (e.g. the Cartesian coordinate of atom k):
+!      V12, V21        radial integrals at the current point
+!      dV12, dV21      dV/dt   = (dV/dr) * dr/dt
+!      d2V12, d2V21    d2V/dt2 = (d2V/dr2)*(dr/dt)^2 + (dV/dr)*d2r/dt2
+!      l,m,n           direction cosines;  dl,dm,dn = d/dt;  d2l,d2m,d2n = d2/dt2
+!    Output: dts = first derivative (same as d_KS_*_hetero), d2ts = second derivative of the block.
+!
+!    Method: the block is linear in V and a polynomial of degree <= 4 in (l,m,n). d_KS_* returns G = grad(T).(dargs), linear in
+!    its derivative arguments. Then   T'' = G(args; args'')  +  d/dh G(args + h*args'; args') |_{h=0}.
+!    The last term is a 5-point central difference of G in h: EXACT (up to round-off) because G is a polynomial of degree <= 4
+!    in h, for any h (checked: independent of h to 1e-13, and equal to brute-force finite differences of the 9x9 block).
+!    The result is the second derivative of the same function whose first derivative is d_KS_*_hetero
+!    (i.e. including its sign convention for the s-p and p-d blocks).
+! --------------------------------------------------------------------------------------------
+pure subroutine d2_KS_sp3_hetero(Vsr12, Vsr21, dVsr12, dVsr21, d2Vsr12, d2Vsr21, l, m, n, dl, dm, dn, d2l, d2m, d2n, dts, d2ts)
+   real(8), intent(in) :: l, m, n, dl, dm, dn, d2l, d2m, d2n
+   real(8), dimension(4), intent(in) :: Vsr12, Vsr21, dVsr12, dVsr21, d2Vsr12, d2Vsr21
+   real(8), dimension(4,4), intent(out) :: dts, d2ts
+   !--------------------------
+   real(8), parameter :: h = 0.05d0
+   real(8), dimension(4), parameter :: xs = (/  2.0d0,  1.0d0, -1.0d0, -2.0d0 /)
+   real(8), dimension(4), parameter :: ws = (/ -1.0d0,  8.0d0, -8.0d0,  1.0d0 /)
+   real(8), dimension(4,4) :: tmp
+   real(8), dimension(4) :: tV12, tV21
+   integer :: is
+
+   call d_KS_sp3_hetero(Vsr12, Vsr21, dVsr12, dVsr21, l, m, n, dl, dm, dn, dts)
+   call d_KS_sp3_hetero(Vsr12, Vsr21, d2Vsr12, d2Vsr21, l, m, n, d2l, d2m, d2n, d2ts)   ! linear term
+   do is = 1, 4
+      tV12 = Vsr12 + xs(is)*h*dVsr12
+      tV21 = Vsr21 + xs(is)*h*dVsr21
+      call d_KS_sp3_hetero(tV12, tV21, dVsr12, dVsr21, l+xs(is)*h*dl, m+xs(is)*h*dm, n+xs(is)*h*dn, dl, dm, dn, tmp)
+      d2ts = d2ts + (ws(is)/(12.0d0*h))*tmp
+   enddo
+end subroutine d2_KS_sp3_hetero
+
+
+pure subroutine d2_KS_sp3d5_hetero(Vsr12, Vsr21, dVsr12, dVsr21, d2Vsr12, d2Vsr21, l, m, n, dl, dm, dn, d2l, d2m, d2n, dts, d2ts)
+   real(8), intent(in) :: l, m, n, dl, dm, dn, d2l, d2m, d2n
+   real(8), dimension(10), intent(in) :: Vsr12, Vsr21, dVsr12, dVsr21, d2Vsr12, d2Vsr21
+   real(8), dimension(9,9), intent(out) :: dts, d2ts
+   !--------------------------
+   real(8), parameter :: h = 0.05d0
+   real(8), dimension(4), parameter :: xs = (/  2.0d0,  1.0d0, -1.0d0, -2.0d0 /)
+   real(8), dimension(4), parameter :: ws = (/ -1.0d0,  8.0d0, -8.0d0,  1.0d0 /)
+   real(8), dimension(9,9) :: tmp
+   real(8), dimension(10) :: tV12, tV21
+   integer :: is
+
+   call d_KS_sp3d5_hetero(Vsr12, Vsr21, dVsr12, dVsr21, l, m, n, dl, dm, dn, dts)
+   call d_KS_sp3d5_hetero(Vsr12, Vsr21, d2Vsr12, d2Vsr21, l, m, n, d2l, d2m, d2n, d2ts)   ! linear term
+   do is = 1, 4
+      tV12 = Vsr12 + xs(is)*h*dVsr12
+      tV21 = Vsr21 + xs(is)*h*dVsr21
+      call d_KS_sp3d5_hetero(tV12, tV21, dVsr12, dVsr21, l+xs(is)*h*dl, m+xs(is)*h*dm, n+xs(is)*h*dn, dl, dm, dn, tmp)
+      d2ts = d2ts + (ws(is)/(12.0d0*h))*tmp
+   enddo
+end subroutine d2_KS_sp3d5_hetero
 
 END MODULE TB_Koster_Slater

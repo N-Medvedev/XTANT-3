@@ -323,8 +323,8 @@ subroutine read_DFTB_spline(FN, count_lines, TB_Rep, requested_ToP, has_polynomi
    call read_file(Reason, count_lines, read_well, error_message)   ! module "Dealing_with_files"
    if (.not. read_well) goto 2013 ! exit
    ! Convert into units used in the code:
-   TB_Rep%a(1) = TB_Rep%a(1) * g_A2au           ! 1/[Bohr] -> 1/[A]
-   TB_Rep%a(2) = TB_Rep%a(2) + log(g_au2ev)     ! prefactor Hartree -> eV
+   TB_Rep%a(1) = TB_Rep%a(1) * g_A2au           ! [log(Hartree)/Bohr] -> [log(Hartree)/A]
+   !TB_Rep%a(2) = TB_Rep%a(2) + log(g_au2ev)    ! [log(Hartree)] -> [log(eV)] ! no need, accounted for in TB_DFTB module
    TB_Rep%a(3) = TB_Rep%a(3) * g_au2ev          ! [Hartree] -> [eV]
 
    ! spline parameters:

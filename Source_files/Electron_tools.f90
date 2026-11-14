@@ -210,11 +210,12 @@ subroutine find_band_gap(wr, Scell, matter, numpar)
    endif
    ! If top energy level is excluded (in parameterization, or just too high due to convergence issues)
    j = siz  ! start from the last one
-   Scell%E_top = wr(j)		! [eV] current top of the (meaningful) conduction band
-   do while (wr(j)>=79.0d0)
+   !do while (wr(j)>=79.0d0)
+   do while (j > 1)
+      if (wr(j) < 79.0d0) exit
       j = j - 1
-      Scell%E_top = wr(j)		! [eV] current top of the (meaningful) conduction band
    enddo
+   Scell%E_top = wr(j)		! [eV] current top of the (meaningful) conduction band
    Scell%E_VB_bottom = wr(1)	! [eV] current bottom of the valence band
    Scell%E_VB_top = wr(i)		! [eV] current top of the valence band
    
@@ -306,6 +307,7 @@ subroutine update_ionization_CS(matter, Nshl, dE, numpar)
    matter%Atoms(1)%El_MFP(Nshl)%E(:) = matter%Atoms(1)%El_MFP(Nshl)%E(:) + dE
 
    ! And total cross-section:
+   matter%El_MFP_tot%L(:) = 0.0d0   ! reset it
    do i = 1, size(matter%Atoms) ! for all atoms
       N_sh = size(matter%Atoms(i)%Ip)
       do j = 1, N_sh ! for all shells of this atom
@@ -319,7 +321,8 @@ subroutine update_ionization_CS(matter, Nshl, dE, numpar)
    ! Now, add the shifted VB:
    do iE = 1, size(matter%Atoms(1)%El_MFP(Nshl)%E)
       call Mean_free_path(matter%El_MFP_tot%E(iE), matter%Atoms(1)%El_MFP(Nshl), IMFP, inversed=.true.) ! [1/A], module "MC_cross_section"
-      matter%El_MFP_tot%L(:) = matter%El_MFP_tot%L(:) + IMFP ! [1/A] inverse MFP
+      !matter%El_MFP_tot%L(:) = matter%El_MFP_tot%L(:) + IMFP ! [1/A] inverse MFP
+      matter%El_MFP_tot%L(iE) = matter%El_MFP_tot%L(iE) + IMFP ! [1/A] inverse MFP
    enddo
 end subroutine update_ionization_CS
 
@@ -1612,6 +1615,7 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
    !logical, dimension(size(Scell(NSC)%MDAtoms)) :: fragment_mask
    logical, dimension(:), allocatable :: fragment_mask
    real(8), dimension(:), allocatable :: e_spectrum, E_e_spectrum
+   character(80) :: error_part
 
    !real(8), dimension(:), allocatable :: fe_eq_frag
 
@@ -1708,7 +1712,7 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
       Ee = 0.0d0  ! to start with
 
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
-      do do i_at = Nstart, Nend, N_incr  ! each process does its own part
+      do i_at = Nstart, Nend, N_incr  ! each process does its own part
          do i_orb = 1, N_orb  ! all orbitals of this atom i_at
             j = (i_at-1)*N_orb + i_orb ! current orbital among all
 
@@ -2911,7 +2915,8 @@ function get_E_partial_Fermi(wr, mu, Te, i_start, i_end) result(Ee)
    if (Te > 1.0d-6) then
       Ee = 2.0d0 * SUM(wr(i_start:i_end)/(1.0d0 + dexp((wr(i_start:i_end) - mu)/Te))) ! Fermi-function
    else
-      Ee = 2.0d0 * SUM(wr(i_start:i_end), mask = wr(:) <= mu) ! Fermi-function at T=0
+      !Ee = 2.0d0 * SUM(wr(i_start:i_end), mask = wr(:) <= mu) ! Fermi-function at T=0
+      Ee = 2.0d0 * SUM(wr(i_start:i_end), mask = wr(i_start:i_end) <= mu) ! Fermi-function at T=0
    endif
 end function get_E_partial_Fermi
 
@@ -3008,8 +3013,8 @@ function get_E_tot(wrD, mu, Te, norm_fe, i_start, i_end)
       else  ! by default, spin degenerate
          f_norm = 2.0d0
       endif
-!       get_E_tot = 2.0d0*SUM(wrD(:), mask = wrD(:) .LT. mu)
-      get_E_tot = f_norm*SUM(wrD(i_low:i_high), mask = wrD(:) <= mu)
+      !get_E_tot = f_norm*SUM(wrD(i_low:i_high), mask = wrD(:) <= mu)
+      get_E_tot = f_norm*SUM(wrD(i_low:i_high), mask = wrD(i_low:i_high) <= mu)
    endif
 end function get_E_tot
 

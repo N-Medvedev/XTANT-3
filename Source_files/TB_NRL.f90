@@ -303,6 +303,11 @@ subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err
       enddo ! j
    enddo ! i
 
+   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+   error_part = 'Error in Hamil_tot_NRL:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Sij', Sij) ! module "MPI_subroutines"
+
    ! b) Construct lower triangle - use symmetry:
    do j = Nstart, Nend, N_incr  ! each process does its own part
    !do j = 1,nat	! all atoms
@@ -321,10 +326,6 @@ subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err
          endif
       enddo ! j
    enddo ! i
-   ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
-   error_part = 'Error in Hamil_tot_NRL:'
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
-   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Sij', Sij) ! module "MPI_subroutines"
 
 
 #else    ! OpenMP to use instead
@@ -468,12 +469,14 @@ subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err
                      if (i == j) then ! for the diagonal elements according to Trani:
 !                         SH_1 = 0.270d0*(Scell(NSC)%Ei(k) - Scell(NSC)%Ei(l))
 !                         SH_1 =  0.0d0
-                        SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        !SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(l) * Scell(NSC)%Sij(k,l))    ! to test
                         Scell(NSC)%PRRx(k,l) = SH_1
                         Scell(NSC)%PRRy(k,l) = SH_1
                         Scell(NSC)%PRRz(k,l) = SH_1
                      else
-                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        !SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(l) * Scell(NSC)%Sij(k,l)) ! to test
                         Scell(NSC)%PRRx(k,l) = x*SH_1
                         Scell(NSC)%PRRy(k,l) = y*SH_1
                         Scell(NSC)%PRRz(k,l) = z*SH_1
@@ -516,12 +519,14 @@ subroutine Hamil_tot_NRL(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Err
                      if (i == j) then ! for the diagonal elements according to Trani:
 !                         SH_1 = 0.270d0*(Scell(NSC)%Ei(k) - Scell(NSC)%Ei(l))
 !                         SH_1 =  0.0d0 
-                        SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        !SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(l) * Scell(NSC)%Sij(k,l))    ! to test
                         Scell(NSC)%PRRx(k,l) = SH_1
                         Scell(NSC)%PRRy(k,l) = SH_1
                         Scell(NSC)%PRRz(k,l) = SH_1
                      else
-                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        !SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(l) * Scell(NSC)%Sij(k,l)) ! to test
                         Scell(NSC)%PRRx(k,l) = x*SH_1
                         Scell(NSC)%PRRy(k,l) = y*SH_1
                         Scell(NSC)%PRRz(k,l) = z*SH_1
@@ -783,7 +788,8 @@ subroutine Hamil_tot_NRL_unitcell(numpar, Scell, NSC, TB_Hamil, Err)
                         endif
                      else
                         ! [1] Nonorthagonal expression:
-                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        !SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(l) * Scell(NSC)%Sij(k,l)) ! to test
                         Scell(NSC)%PRRx(k,l) = x*SH_1
                         Scell(NSC)%PRRy(k,l) = y*SH_1
                         Scell(NSC)%PRRz(k,l) = z*SH_1
@@ -840,7 +846,8 @@ subroutine Hamil_tot_NRL_unitcell(numpar, Scell, NSC, TB_Hamil, Err)
                         endif
                      else
                         ! [1] Nonorthagonal expression:
-                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        !SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(l) * Scell(NSC)%Sij(k,l))
                         ! Testing alternative orthogonalized Hamiltonian:
                         !SH_1 = Scell(NSC)%Hij(k,l)
                         !Testing orthogonal expression (Trani):
@@ -1294,12 +1301,14 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
                      endif
                   else	! different atoms at distance {x,y,z}:
                      ! [1] Nonorthagonal expression:
-                     SH_1 = CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)
+                     !SH_1 = CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)
+                     SH_1 = CHij_non(k,l) - DCMPLX(Ei(l),0.0d0)*CSij_save(k,l)
+
                      Scell(NSC)%cPRRx(k,l) = DCMPLX(x1,0.0d0)*SH_1
                      Scell(NSC)%cPRRy(k,l) = DCMPLX(y1,0.0d0)*SH_1
                      Scell(NSC)%cPRRz(k,l) = DCMPLX(z1,0.0d0)*SH_1
                   endif
-                  if (real(Scell(NSC)%cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, Scell(NSC)%cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(k), x1
+                  if (real(Scell(NSC)%cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, Scell(NSC)%cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(l), x1
                   if (real(Scell(NSC)%cPRRy(k,l)) .GT. 1d10) print*, i, j, Scell(NSC)%cPRRy(k,l)
                   if (real(Scell(NSC)%cPRRz(k,l)) .GT. 1d10) print*, i, j, Scell(NSC)%cPRRz(k,l)
                enddo ! i1
@@ -1355,7 +1364,9 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
                      endif
                   else	! different atoms at distance {x,y,z}:
                      ! [1] Nonorthagonal expression:
-                     SH_1 = CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)
+                     !SH_1 = CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)
+                     SH_1 = CHij_non(k,l) - DCMPLX(Ei(l),0.0d0)*CSij_save(k,l)
+
                      ! Testing alternative orthogonalized Hamiltonian:
                      !SH_1 = CHij_orth(k,l)
                      ! Testing orthogonal expression (Trani):
@@ -1365,7 +1376,7 @@ subroutine Complex_Hamil_NRL(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz, 
                      Scell(NSC)%cPRRy(k,l) = DCMPLX(y1,0.0d0)*SH_1
                      Scell(NSC)%cPRRz(k,l) = DCMPLX(z1,0.0d0)*SH_1
                   endif
-                  if (real(Scell(NSC)%cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, Scell(NSC)%cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(k), x1
+                  if (real(Scell(NSC)%cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, Scell(NSC)%cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(l), x1
                   if (real(Scell(NSC)%cPRRy(k,l)) .GT. 1d10) print*, i, j, Scell(NSC)%cPRRy(k,l)
                   if (real(Scell(NSC)%cPRRz(k,l)) .GT. 1d10) print*, i, j, Scell(NSC)%cPRRz(k,l)
                enddo ! i1
@@ -1845,7 +1856,8 @@ subroutine Hamilton_one_NRL(Scell, NSC, i, j, atom_2, TB, Hij, M_Vij, M_lmn)
          endif
       enddo
    else	! For pairs of atoms, fill the hamiltonain with Hopping Integrals:
-      r = Scell(NSC)%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
+      !r = Scell(NSC)%Near_neighbor_dist(i,atom_2,4) ! at this distance, R
+      r = Scell(NSC)%Near_neighbor_dist(j,atom_2,4) ! at this distance, R
       r = r*g_A2au	! convert into [Bohr]
       rm => TB(KOA1,KOA2)%Rc ! cut-off radius
 !       Hij = 0.0d0   ! Nondiagonals are zeros
@@ -2435,7 +2447,8 @@ subroutine get_dHij_drij_NRL(TB_Hamil, Scell, NSC, numpar, Aij, M_Vij, M_dVij, M
    enddo
 
    ! Do the cycle (parallel) calculations:
-   ATOMS:do k = 1, nat	! forces for all atoms
+   !ATOMS:do k = 1, nat	! forces for all atoms
+   ATOMS:do k = Nstart, Nend, N_incr  ! forces for this rank
       call get_forces(k, TB_Hamil, Scell, NSC, Aij, M_Vij, M_dVij, M_SVij, M_dSVij, M_lmn, Aij_x_Ei)	! see below
    enddo ATOMS
 

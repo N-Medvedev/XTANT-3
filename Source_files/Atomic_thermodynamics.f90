@@ -846,7 +846,8 @@ function get_temperature_from_equipartition(Scell, matter, numpar, non_periodic)
       enddo
 
       V = min(Scell%V, Scell%V_sample) ! [A^3]
-      Pot_tot = Pot_tot + matter%p_ext * V * 1.0d-30 / g_e ! [eV]
+      !Pot_tot = Pot_tot + matter%p_ext * V * 1.0d-30 / g_e ! [eV]
+      Pot_tot = Pot_tot - 3.0d0 * matter%p_ext * V * 1.0d-30 / g_e     ! [eV]
       Ta = Pot_tot / (3.0d0 * dble(Nat)) ! [eV]
    endif
 

@@ -130,6 +130,7 @@ subroutine Electron_ion_collision_int(Scell, matter, numpar, nrg, Mij, wr, wr0, 
 
          !print*, 'Electron_ion_collision_int test 0'
 
+         ! Since the wave-functions are calcualted on the MD steps, we use the same step for the matrix element (not small_dt):
          call get_el_ion_kernel(Scell, matter, numpar, Mij, wr, wr0, numpar%dt*(1d-15), kind_M, distre_temp2, dfdt_e2, dfdt_A2, dfdt_B2, &
                                  DOS_weights, G_ei_partial, dE_ij, dE_at) ! below
 
@@ -298,8 +299,8 @@ subroutine sort_dE_per_atoms(G_ei_per_atom, dE_ij, Scell, numpar)
 #ifdef MPI_USED   ! only does anything if the code is compiled with MPI
       N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
       Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
-      Nend = N_at
-
+      Nend = Nsiz
+      D_m = 0.0d0 ! to start with
       do i_cur = Nstart, Nend, N_incr  ! each process does its own part
          ! Density matrix: contribution of all levels into orbital i:
          D_m(i_cur) = SUM(Scell%Dmatrix(i_cur,:))
@@ -308,6 +309,7 @@ subroutine sort_dE_per_atoms(G_ei_per_atom, dE_ij, Scell, numpar)
       error_part = 'Error #1 in sort_dE_per_atoms:'
       call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'{D_m}', D_m) ! module "MPI_subroutines"
 
+      Nend = N_at
       do i_at = Nstart, Nend, N_incr  ! each process does its own part
          do i_orb = 1, N_orb  ! all orbitals of atom #1
             i_cur = (i_at-1)*N_orb + i_orb ! current orbital among all
@@ -690,15 +692,21 @@ subroutine get_nonadiabatic_Pij(i, j, Mij, dt_small, vi, vj, P2)
    real(8), dimension(3), intent(in) :: vi, vj   ! [m/s] atomic velosity
    real(8), intent(out) :: P2 ! squared matric element of he momentum opereator
    !--------------
-   real(8) :: Mij2, vi2, vj2
+   real(8) :: Mij2, vi2, vj2, denom
    Mij2 = (Mij(i,j) / dt_small)
    Mij2 = Mij2**2 ! [1/s]
 
    ! Square velosities:
    vi2 = sum(vi(:)*vi(:))
    vj2 = sum(vj(:)*vj(:))
+   !P2 = -g_h**2 / (vi2*vj2) * sum(vi(:)*vj(:))/3.0d0 * Mij2    ! [(kg*m/s)^2]
 
-   P2 = -g_h**2 / (vi2*vj2) * sum(vi(:)*vj(:))/3.0d0 * Mij2    ! [(kg*m/s)^2]
+   denom = vi2*vj2
+   if (denom <= tiny(denom)) then
+      P2 = 0.0d0
+      return
+   endif
+   P2 = -g_h**2 / denom * sum(vi(:)*vj(:))/3.0d0 * Mij2    ! [(kg*m/s)^2]
 end subroutine get_nonadiabatic_Pij
 
 
@@ -710,11 +718,17 @@ subroutine get_nonadiabatic_Pij_abs(i, j, Mij, dt_small, v, P2)
    real(8), intent(in) :: v   ! [m/s] atomic velosity
    real(8), intent(out) :: P2 ! squared matric element of he momentum opereator
    !--------------
-   real(8) :: Mij2
+   real(8) :: Mij2, denom
    Mij2 = (Mij(i,j) / dt_small)
    Mij2 = Mij2**2 ! [1/s]
 
-   P2 = -(g_h/v)**2 * Mij2    ! [(kg*m/s)^2]
+   !P2 = -(g_h/v)**2 * Mij2    ! [(kg*m/s)^2]
+   denom = v*v
+   if (denom <= tiny(denom)) then
+      P2 = 0.0d0
+      return
+   endif
+   P2 = -g_h**2 / denom * Mij2    ! [(kg*m/s)^2]
 end subroutine get_nonadiabatic_Pij_abs
 
 

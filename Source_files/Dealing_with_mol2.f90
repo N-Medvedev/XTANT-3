@@ -53,7 +53,8 @@ subroutine read_mol2(FN, File_name, Scell, SCN, matter, numpar, Err) ! basic mol
    integer :: count_lines, Reason, Nat, i, temp_i, KOA
    logical :: read_well, read_atoms, read_supercell
    character(1000) :: read_line, Error_descript
-   character(30) :: cut_line, read_marker
+   character(30) :: cut_line, read_marker, atom_type
+   character(30) :: atom_name
    character(10) :: El_name_read
    character(3) :: El_name
    character(*), parameter :: comment_flag = '#'   ! comments in mol2 are starting with it
@@ -67,58 +68,87 @@ subroutine read_mol2(FN, File_name, Scell, SCN, matter, numpar, Err) ! basic mol
    readmol2:do ! read until the end of file
       read(FN,'(a)',IOSTAT=Reason) read_line
       call read_file(Reason, count_lines, read_well)
-      if (Reason .LT. 0) exit readmol2
+      if (Reason .LT. 0) return
       if (.not. read_well) then
          write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
          call Save_error_details(Err, 3, Error_descript)
          print*, trim(adjustl(Error_descript))
-         exit readmol2
+         return
       endif
 
       select case ( trim(adjustl(read_line(1:1))) )
       case (marker_flag)
          ! Here is something useful:
          cut_line = trim(adjustl(read_line(10:)))
+         read_marker = ''
          read(cut_line,*,IOSTAT=Reason) read_marker
          count_lines = count_lines - 1    ! reading the same line
-         call read_file(Reason, count_lines, read_well)
+         !call read_file(Reason, count_lines, read_well)
+         call read_file(Reason, count_lines, read_well, Error_descript)
+         if (.not. read_well) then
+            call Save_error_details(Err, 3, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            return
+         endif
+
          !print*, trim(adjustl(read_marker)) ! test reading line
 
          select case ( trim(adjustl(read_marker)) )
          !----------------------------
          case ('MOLECULE', 'molecule', 'Molecule') ! to get number of atoms
             read(FN, '(a)', IOSTAT=Reason) read_line  ! skip the name of the molecule
+            call read_file(Reason, count_lines, read_well, Error_descript)
             if (.not. read_well) then
                write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                call Save_error_details(Err, 3, Error_descript)
                print*, trim(adjustl(Error_descript))
-               exit readmol2
+               return
             endif
 
             read(FN,*,IOSTAT=Reason) Nat ! number of atoms
+            call read_file(Reason, count_lines, read_well, Error_descript)
             if (.not. read_well) then
                write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                call Save_error_details(Err, 3, Error_descript)
                print*, trim(adjustl(Error_descript))
-               exit readmol2
+               return
             endif
 
-            Scell(SCN)%Na = Nat  ! knowng the number of atoms, save it and use it
-            allocate(Scell(SCN)%MDAtoms(Nat))
+            if (Nat <= 0) then
+               Error_descript = 'Invalid atom count in file '//trim(adjustl(File_name))
+               call Save_error_details(Err, 3, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               return
+            endif
+
+            !allocate(Scell(SCN)%MDAtoms(Nat))
+            allocate(Scell(SCN)%MDAtoms(Nat), stat=Reason)
+            if (Reason /= 0) then
+               Error_descript = 'Could not allocate atoms from file '//trim(adjustl(File_name))
+               call Save_error_details(Err, 3, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               return
+            endif
+            Scell(SCN)%Na = Nat  ! knowing the number of atoms, save it and use it
+
 
          !----------------------------
          case ('ATOM', 'Atom', 'atom') ! to get atomic species and coordinates
             ! Read atomis parameters (element name and coordinates):
             do i = 1, Scell(SCN)%Na
-               read(FN,*,IOSTAT=Reason) temp_i, El_name_read, Scell(SCN)%MDAtoms(i)%R(:)
+               !read(FN,*,IOSTAT=Reason) temp_i, El_name_read, Scell(SCN)%MDAtoms(i)%R(:)
+               read(FN,*,IOSTAT=Reason) temp_i, atom_name, Scell(SCN)%MDAtoms(i)%R(:), atom_type
+
+               call read_file(Reason, count_lines, read_well, Error_descript)
                if (.not. read_well) then
-                  write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+                  !write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                   call Save_error_details(Err, 3, Error_descript)
                   print*, trim(adjustl(Error_descript))
-                  exit readmol2
+                  return
                endif
                ! Make sure it is just the element name:
-               call trim_element_name(El_name_read, El_name)   ! below
+               !call trim_element_name(El_name_read, El_name)   ! below
+               call trim_element_name(atom_type, El_name)   ! below
 
                ! Get the internal element number:
                call get_KOA_from_element(El_name, matter, KOA) ! module "Dealing_with_POSCAR"
@@ -127,7 +157,7 @@ subroutine read_mol2(FN, File_name, Scell, SCN, matter, numpar, Err) ! basic mol
                                                       ' from file '//trim(adjustl(File_name))
                   call Save_error_details(Err, 3, Error_descript)
                   print*, trim(adjustl(Error_descript))
-                  exit readmol2
+                  return
                endif
                Scell(SCN)%MDAtoms(i)%KOA = KOA
 
@@ -138,11 +168,12 @@ subroutine read_mol2(FN, File_name, Scell, SCN, matter, numpar, Err) ! basic mol
          !----------------------------
          case ('CRYSIN', 'crysin', 'Crysin') ! to get supercell sizes
             read(FN,*,IOSTAT=Reason) a, b, c, alpha, beta, gamm
+            call read_file(Reason, count_lines, read_well, Error_descript)
             if (.not. read_well) then
                write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
                call Save_error_details(Err, 3, Error_descript)
                print*, trim(adjustl(Error_descript))
-               exit readmol2
+               return
             endif
 
             ! Convert angles from deg to rad:
@@ -155,7 +186,7 @@ subroutine read_mol2(FN, File_name, Scell, SCN, matter, numpar, Err) ! basic mol
                write(Error_descript,'(a)') 'Supercell parameters are wrong in file '//trim(adjustl(File_name))
                call Save_error_details(Err, 3, Error_descript)
                print*, trim(adjustl(Error_descript))
-               exit readmol2
+               return
             endif
             ! Save supercell vectors:
             Scell(SCN)%Supce(:,1) = a_vec
@@ -216,7 +247,10 @@ subroutine trim_element_name(El_name_read, El_name)
    name_length = LEN(trim(adjustl(El_name_read)))
    counter = 0
    do i = 1, name_length
-      if (verify(trim(adjustl(El_name_read(i:i))), trim(adjustl(numbers))) /= 0) then ! it is not a number
+      !if (verify(trim(adjustl(El_name_read(i:i))), trim(adjustl(numbers))) /= 0) then ! it is not a number
+      if (verify(trim(adjustl(El_name_read(i:i))), trim(adjustl(numbers))) /= 0 .and. &
+          El_name_read(i:i) /= '.') then ! it is part of the element symbol
+
          counter = counter + 1
          El_name(counter:counter) = trim(adjustl(El_name_read(i:i)))
       else ! it is a number

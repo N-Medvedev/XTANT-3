@@ -28,6 +28,7 @@ MODULE Dealing_with_POSCAR
 use Objects
 use Dealing_with_files, only : read_file, number_of_columns
 use Atomic_tools, only :  Coordinates_abs_to_rel, velocities_abs_to_rel
+use Algebra_tools, only : Det_3x3
 
 implicit none
 PRIVATE
@@ -48,165 +49,272 @@ subroutine read_POSCAR(FN_POSCAR, File_name_POSCAR, Scell, SCN, matter, numpar, 
    type(Numerics_param), intent(in) :: numpar 	! all numerical parameters
    type(Error_handling), intent(inout) :: Err	! error save
    !-------------------
-   real(8) :: Scalfac(3), coord(3)
-   integer :: count_lines, Reason, Nat, Ncol, i, kind_count, atoms_count, KOA
+   real(8) :: Scalfac(3), coord(3), cell_volume, scale_factor
+   integer :: count_lines, Reason, Nat, Ncol, i, kind_count, atoms_count, KOA, velocity_mode
    integer, dimension(:), allocatable :: i_temp
-   logical :: read_well
+   logical :: read_well, cartesian_coordinates, allocated_atoms
    character(1000) :: read_line, Error_descript
    character(10) :: ch_temp
    character(3), dimension(:), allocatable :: El_name
    character(*), parameter :: numbers = '0123456789'
 
-   Scalfac(:) = 0.0d0   ! to start with
-   count_lines = 0      ! to start with
-
+   Scalfac = 1.0d0            ! to start with
+   count_lines = 0            ! to start with
+   allocated_atoms = .false.  ! to start with
 
    !print*, "read_POSCAR"
+   !pause 'Starting to read_POSCAR'
 
    ! First line in POSCAR, comment:
-   read(FN_POSCAR,*,IOSTAT=Reason) ! skip
-   !print*, "read_POSCAR", Reason
-
+   !read(FN_POSCAR,*,IOSTAT=Reason) ! skip
+   read(FN_POSCAR,'(a)',IOSTAT=Reason) read_line   ! skip
    call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not read the comment line')
+      goto 4400
+   endif
    !print*, "read_POSCAR", Reason, read_well
 
    ! Second line in POSCAR, Scaling factor(s):
-   read(FN_POSCAR,*,IOSTAT=Reason) read_line
+   read(FN_POSCAR,'(a)',IOSTAT=Reason) read_line
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not read the scaling factors')
       goto 4400
    endif
+   read_line = adjustl(read_line)
+
    Ncol = number_of_columns(read_line) ! module "Dealing_with_files"
-   select case(Ncol)
-   case (3)
-      read(read_line,*,IOSTAT=Reason) Scalfac   ! three numbers
-   case default
-      read(read_line,*,IOSTAT=Reason) Scalfac(1)   ! one number
-      Scalfac(2:3) = Scalfac(1)
-   end select
+   if (Ncol /= 1 .and. Ncol /= 3) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Expected one or three scaling factors')
+      goto 4400
+   endif
+   if (Ncol == 1) then
+      read(read_line,*,IOSTAT=Reason) Scalfac(1)
+   else
+      read(read_line,*,IOSTAT=Reason) Scalfac
+   endif
+   if (Reason /= 0) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Invalid scaling factor')
+      goto 4400
+   endif
+
 
    ! Lines 3-5 in POSCAR, Lattice:
-   read(FN_POSCAR,*,IOSTAT=Reason) coord(:)
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
-      goto 4400
-   endif
-   Scell(SCN)%Supce(1,:) = coord(:)  ! three numbers
+   do i = 1, 3
+      read(FN_POSCAR,'(a)',IOSTAT=Reason) read_line
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not read a lattice vector')
+         goto 4400
+      endif
+      read(read_line,*,IOSTAT=Reason) coord
+      if (Reason /= 0) then
+         call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Invalid lattice vector')
+         goto 4400
+      endif
+      Scell(SCN)%Supce(i,:) = coord
+   enddo
 
-   read(FN_POSCAR,*,IOSTAT=Reason) coord(:)
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
+   ! Get the volume:
+   call Det_3x3(Scell(SCN)%Supce, Scell(SCN)%V)
+   cell_volume = abs(Scell(SCN)%V)
+   if (cell_volume <= tiny(cell_volume)) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Lattice vectors define a zero-volume cell')
       goto 4400
    endif
-   Scell(SCN)%Supce(2,:) = coord(:)  ! three numbers
 
-   read(FN_POSCAR,*,IOSTAT=Reason) coord(:)
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
+   ! Apply scaling:
+   if (Ncol == 1) then  ! Single scaling factor
+      if (Scalfac(1) == 0.0d0) then
+         call report_poscar_error(Err, File_name_POSCAR, 2, 'The scalar scaling factor must not be zero')
+         goto 4400
+      else if (Scalfac(1) < 0.0d0) then
+         scale_factor = (abs(Scalfac(1))/cell_volume)**(1.0d0/3.0d0)
+         Scalfac = scale_factor
+      else
+         Scalfac(2:3) = Scalfac(1)
+      endif
+   else if (any(Scalfac <= 0.0d0)) then
+      call report_poscar_error(Err, File_name_POSCAR, 2, 'Three scaling factors must be positive')
       goto 4400
    endif
-   Scell(SCN)%Supce(3,:) = coord(:)  ! three numbers
 
    ! Scaling factor:
-   Scell(SCN)%Supce(:,1) = Scell(SCN)%Supce(:,1) * Scalfac(1)
-   Scell(SCN)%Supce(:,2) = Scell(SCN)%Supce(:,2) * Scalfac(2)
-   Scell(SCN)%Supce(:,3) = Scell(SCN)%Supce(:,3) * Scalfac(3)
-
+   !Scell(SCN)%Supce(:,1) = Scell(SCN)%Supce(:,1) * Scalfac(1)
+   !Scell(SCN)%Supce(:,2) = Scell(SCN)%Supce(:,2) * Scalfac(2)
+   !Scell(SCN)%Supce(:,3) = Scell(SCN)%Supce(:,3) * Scalfac(3)
+   do i = 1, 3
+      Scell(SCN)%Supce(i,:) = Scell(SCN)%Supce(i,:) * Scalfac(i)
+   enddo
+   ! Update volume:
+   call Det_3x3(Scell(SCN)%Supce, Scell(SCN)%V)
    ! Previous step:
    Scell(SCN)%Supce0 = Scell(SCN)%Supce   ! initial
 
    ! Line 6 in POSCAR, Species names (optional):
    read_line = '' ! to restart
-   read(FN_POSCAR, '(a200)', IOSTAT=Reason) read_line ! read names or numbers of species
+   read(FN_POSCAR,'(a)',IOSTAT=Reason) read_line ! read names or numbers of species
    !print*, Reason, 'read_line', trim(adjustl(read_line))
    call read_file(Reason, count_lines, read_well)
    if (.not. read_well) then
-      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not read species names or atom counts')
       goto 4400
    endif
+   read_line = adjustl(read_line)
+
+   Ncol = number_of_columns(trim(adjustl(read_line))) ! module "Dealing_with_files"
+   if (Ncol == 0) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Species or atom-count line is empty')
+      goto 4400
+   endif
+
    ! Check if the line contains optional names, or the mandatory numbers:
    !if (verify(trim(adjustl(read_line(1:1))), trim(adjustl(numbers))) /= 0) then ! it was optional line with names
    read(read_line,*,IOSTAT=Reason) ch_temp
-   if (verify(trim(adjustl(ch_temp(1:1))), trim(adjustl(numbers))) /= 0) then ! it was optional line with names
-      Ncol = number_of_columns(trim(adjustl(read_line))) ! module "Dealing_with_files"
-      allocate(El_name(Ncol))
-      read(read_line,*,IOSTAT=Reason) El_name(:) ! read kinds of species
-
-      ! Next line, numbers of atoms:
-      read(FN_POSCAR,'(a200)',IOSTAT=Reason) read_line ! read numbers of species
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
-         goto 4400
-      endif
-   endif
-   ! Having the numbers of species, get the total number of atoms:
-   Ncol = number_of_columns(trim(adjustl(read_line))) ! module "Dealing_with_files"
-   allocate(i_temp(Ncol), source = 0)
-   read(read_line,*,IOSTAT=Reason) i_temp(:) ! read numbers of species
-   !print*, 'Ncol', Ncol
-   Nat = SUM(i_temp) ! count all the atoms
-   !print*, 'Nat=', Nat, size(i_temp), i_temp, ': ', read_line
-   !pause 'poscar'
-   Scell(SCN)%Na = Nat
-   allocate(Scell(SCN)%MDAtoms(Nat))
-
-   ! Selective dynamics (optional) OR specification of coordinate format:
-   read(FN_POSCAR,*,IOSTAT=Reason) read_line ! read names or numbers of species
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
-      call Save_error_details(Err, 3, Error_descript)
-      print*, trim(adjustl(Error_descript))
+   if (Reason /= 0) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Invalid species or atom-count line')
       goto 4400
    endif
-   ! Check if it was optional line or not
-   select case(read_line(1:1))
-   case('S', 's') ! read the next mandatory line with specification of coordinate format
-      call read_file(Reason, count_lines, read_well)
-      if (.not. read_well) then
-         write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
+
+   if (verify(ch_temp(1:1), numbers) /= 0 .and. ch_temp(1:1) /= '+' .and. ch_temp(1:1) /= '-') then
+      allocate(El_name(Ncol), stat=Reason)
+      if (Reason /= 0) then
+         call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not allocate species names')
          goto 4400
       endif
-   endselect
+      read(read_line,*,IOSTAT=Reason) El_name   ! read kinds of species
+      if (Reason /= 0) then
+         call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Invalid species-name line')
+         goto 4400
+      endif
+
+      ! Next line, numbers of atoms:
+      read(FN_POSCAR,'(a)',IOSTAT=Reason) read_line
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not read atom counts')
+         goto 4400
+      endif
+      read_line = adjustl(read_line)
+   endif
+
+
+   ! Having the numbers of species, get the total number of atoms:
+   Ncol = number_of_columns(trim(adjustl(read_line))) ! module "Dealing_with_files"
+   if (Ncol == 0) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Atom-count line is empty')
+      goto 4400
+   endif
+   if (allocated(El_name)) then
+      if (size(El_name) /= Ncol) then
+         call report_poscar_error(Err, File_name_POSCAR, count_lines, &
+                                  'Species-name and atom-count columns do not match')
+         goto 4400
+      endif
+!    else if (Ncol > size(matter%Atoms)) then
+!       call report_poscar_error(Err, File_name_POSCAR, count_lines, &
+!                                'Atom-count line has more species than the configured material')
+!       goto 4400
+   endif
+
+
+   !allocate(i_temp(Ncol), source = 0)
+   allocate(i_temp(Ncol), stat=Reason)
+   if (Reason /= 0) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not allocate atom counts')
+      goto 4400
+   endif
+
+   read(read_line,*,IOSTAT=Reason) i_temp(:) ! read numbers of species
+   if (Reason /= 0) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Invalid atom-count line')
+      goto 4400
+   endif
+   if (any(i_temp < 0)) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Atom counts must not be negative')
+      goto 4400
+   endif
+
+   !print*, 'Ncol', Ncol
+   !Nat = SUM(i_temp) ! count all the atoms
+   Nat = 0
+   do i = 1, Ncol
+      if (i_temp(i) > huge(Nat) - Nat) then
+         call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Total atom count is too large')
+         goto 4400
+      endif
+      Nat = Nat + i_temp(i)
+   enddo
+   if (Nat <= 0) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'POSCAR must contain at least one atom')
+      goto 4400
+   endif
+
+   !print*, 'Nat=', Nat, size(i_temp), i_temp, ': ', read_line
+   !pause 'poscar'
+   allocate(Scell(SCN)%MDAtoms(Nat), stat=Reason)
+   if (Reason /= 0) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not allocate atom data')
+      goto 4400
+   endif
+   allocated_atoms = .true.
+   Scell(SCN)%Na = Nat
+
+
+   ! Selective dynamics (optional) OR specification of coordinate format:
+   read(FN_POSCAR,'(a)',IOSTAT=Reason) read_line ! read names or numbers of species
+   call read_file(Reason, count_lines, read_well)
+   if (.not. read_well) then
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not read coordinate mode')
+      goto 4400
+   endif
+   read_line = adjustl(read_line)
+   ! Check if it was optional line or not
+   select case(read_line(1:1))
+   case ('S', 's')   ! needs to read next line with the coordinates
+      read(FN_POSCAR,'(a)',IOSTAT=Reason) read_line
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not read coordinate mode after selective dynamics')
+         goto 4400
+      endif
+      read_line = adjustl(read_line)
+   end select
+   !definition of coordinates format:
+   select case(read_line(1:1))
+   case ('C', 'c', 'K', 'k')
+      cartesian_coordinates = .true.
+   case ('D', 'd')
+      cartesian_coordinates = .false.
+   case default
+      call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Unknown POSCAR coordinate mode')
+      goto 4400
+   end select
+
+
    ! Check what format coordinates are given in (relative or absolute):
 
    ! Next lines contain at least the atomic type and coordinates:
    kind_count = 1
    atoms_count = i_temp(kind_count)
    do i = 1, Scell(SCN)%Na
-      if (i > atoms_count) then
+      !if (i > atoms_count) then
+      !   kind_count = kind_count + 1   ! next index of kinds of atoms
+      !   atoms_count = atoms_count + i_temp(kind_count)  ! next boundary for this kind of atoms
+      !endif
+      do while (i > atoms_count .and. kind_count < Ncol)
          kind_count = kind_count + 1   ! next index of kinds of atoms
          atoms_count = atoms_count + i_temp(kind_count)  ! next boundary for this kind of atoms
-      endif
+      enddo
 
       ! Define kind of atom:
       if (allocated(El_name)) then ! element names are given
          ! Find the index from the element name:
          call get_KOA_from_element(El_name(kind_count), matter, KOA) ! below
          if (KOA <= 0) then
-            write(Error_descript,'(a,i3,a,$)') 'In the target, there is no element ', trim(adjustl(El_name(kind_count))), &
-                                               ' from file '//trim(adjustl(File_name_POSCAR))
-            call Save_error_details(Err, 3, Error_descript)
-            print*, trim(adjustl(Error_descript))
+            call report_poscar_error(Err, File_name_POSCAR, count_lines, &
+                                     'POSCAR species is not present in the configured material')
             goto 4400
          endif
          Scell(SCN)%MDAtoms(i)%KOA = KOA
@@ -215,56 +323,95 @@ subroutine read_POSCAR(FN_POSCAR, File_name_POSCAR, Scell, SCN, matter, numpar, 
       endif
 
       ! Define atomic coordinates:
-      read(FN_POSCAR,*,IOSTAT=Reason) coord(:)
+      !read(FN_POSCAR,*,IOSTAT=Reason) coord(:)
+      read(FN_POSCAR,'(a)',IOSTAT=Reason) read_line
+      call read_file(Reason, count_lines, read_well)
       if (.not. read_well) then
-         write(Error_descript,'(a,i3,a)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name_POSCAR))
-         call Save_error_details(Err, 3, Error_descript)
-         print*, trim(adjustl(Error_descript))
+         call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not read atomic coordinates')
          goto 4400
       endif
 
-      select case(read_line(1:1))
-      case ('C', 'c', 'K', 'k') ! Absolute
+      read(read_line,*,IOSTAT=Reason) coord
+      if (Reason /= 0) then
+         call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Invalid atomic coordinates')
+         goto 4400
+      endif
+
+      if (cartesian_coordinates) then ! Absolute
          Scell(SCN)%MDAtoms(i)%R(:) = coord(:) * Scalfac(:)
          Scell(SCN)%MDAtoms(i)%R0(:) = Scell(SCN)%MDAtoms(i)%R(:)
          ! Get the relative coordinates from the absolute ones provided:
          call Coordinates_abs_to_rel(Scell, SCN, if_old=.true.) ! module "Atomic_tools"
-      case default ! Relative
+      else ! Relative
          Scell(SCN)%MDAtoms(i)%S(:) = coord(:)
          Scell(SCN)%MDAtoms(i)%S0(:) = Scell(SCN)%MDAtoms(i)%S(:)
-      endselect
+      endif
       !print*, i, Scell(SCN)%MDAtoms(i)%KOA, Scell(SCN)%MDAtoms(i)%S(:)
    enddo
 
-   ! Optional lines from here (incl. velosities)
-   read_well = .true.   ! to start with
-   RDID: do while (read_well)
-      read(FN_POSCAR,*,IOSTAT=Reason) read_line ! read names or numbers of species
-      call read_file(Reason, count_lines, read_well)
 
-      ! Sort the atomic velocities that were read:
-      select case(trim(adjustl(read_line)))
-      case ('CARTESIAN', 'Cartesian', 'cartesian') ! Absolute
-         do i = 1, Scell(SCN)%Na
-            read(FN_POSCAR,*,IOSTAT=Reason) Scell(SCN)%MDAtoms(i)%V(:)
-            call read_file(Reason, count_lines, read_well)
-            Scell(SCN)%MDAtoms(i)%V0(:) = Scell(SCN)%MDAtoms(i)%V(:)
-            ! Get the relative velocities from the absolute ones provided:
-            call velocities_abs_to_rel(Scell, SCN, if_old=.true.) ! module "Atomic_tools"
-         enddo
-      case('DIRECT', 'Direct', 'direct')  ! relative
-         do i = 1, Scell(SCN)%Na
-            read(FN_POSCAR,*,IOSTAT=Reason) Scell(SCN)%MDAtoms(i)%SV(:)
-            call read_file(Reason, count_lines, read_well)
-            Scell(SCN)%MDAtoms(i)%SV0(:) = Scell(SCN)%MDAtoms(i)%SV(:)
-         enddo
+   ! Optional lines from here (incl. velosities)
+   velocity_mode = 0
+   do
+      read(FN_POSCAR,'(a)',IOSTAT=Reason) read_line
+      if (Reason < 0) exit
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not read optional velocity data')
+         goto 4400
+      endif
+      read_line = adjustl(read_line)
+      if (len_trim(read_line) == 0) cycle
+      select case(read_line(1:1))
+      case ('C', 'c')
+         velocity_mode = 1
+         exit
+      case ('D', 'd')
+         velocity_mode = 2
+         exit
       end select
-   enddo RDID
+   enddo
+
+   if (velocity_mode == 1 .or. velocity_mode == 2) then
+      do i = 1, Scell(SCN)%Na
+         read(FN_POSCAR,'(a)',IOSTAT=Reason) read_line
+         call read_file(Reason, count_lines, read_well)
+         if (.not. read_well) then
+            call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Could not read atomic velocities')
+            goto 4400
+         endif
+         read(read_line,*,IOSTAT=Reason) coord
+         if (Reason /= 0) then
+            call report_poscar_error(Err, File_name_POSCAR, count_lines, 'Invalid atomic velocities')
+            goto 4400
+         endif
+         if (velocity_mode == 1) then
+            Scell(SCN)%MDAtoms(i)%V = coord
+            Scell(SCN)%MDAtoms(i)%V0 = coord
+         else
+            Scell(SCN)%MDAtoms(i)%SV = coord
+            Scell(SCN)%MDAtoms(i)%SV0 = coord
+         endif
+      enddo
+      ! Get the relative velocities from the absolute ones provided:
+      if (velocity_mode == 1) call velocities_abs_to_rel(Scell, SCN, if_old=.true.) ! module "Atomic_tools"
+   endif
 
    if (allocated(El_name)) deallocate(El_name)
-   deallocate(i_temp)
-4400 continue
-!    pause 'read_POSCAR'
+   if (allocated(i_temp)) deallocate(i_temp)
+
+   !pause 'read_POSCAR'
+
+   return   ! if sucsessful, exit
+
+4400 continue  ! if not sucsessful, deallocated MDAtoms and reset Scell(SCN)%Na
+   if (allocated(El_name)) deallocate(El_name)
+   if (allocated(i_temp)) deallocate(i_temp)
+   if (allocated_atoms) then
+      deallocate(Scell(SCN)%MDAtoms)
+      Scell(SCN)%Na = 0
+   endif
+
 end subroutine read_POSCAR
 
 
@@ -283,6 +430,20 @@ subroutine get_KOA_from_element(El_name, matter, KOA)
       endif
    enddo
 end subroutine get_KOA_from_element
+
+
+
+
+subroutine report_poscar_error(Err, File_name_POSCAR, line_number, message)
+   type(Error_handling), intent(inout) :: Err
+   character(*), intent(in) :: File_name_POSCAR, message
+   integer, intent(in) :: line_number
+   character(1000) :: Error_descript
+
+   write(Error_descript,'(a,i0,a,a)') trim(message)//' on line ', line_number, ' in file ', trim(File_name_POSCAR)
+   call Save_error_details(Err, 3, trim(Error_descript))
+   print*, trim(Error_descript)
+end subroutine report_poscar_error
 
 
 END MODULE Dealing_with_POSCAR

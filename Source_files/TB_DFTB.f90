@@ -405,6 +405,11 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
       enddo ! i
       deallocate(Hij1, Sij1)
 
+      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
+      error_part = 'Error in Hamil_tot_DFTB:'
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
+      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Sij', Sij) ! module "MPI_subroutines"
+
       ! b) Construct lower triangle - use symmetry:
       do j = Nstart, Nend, N_incr  ! each process does its own part
       !do j = 1,nat	! all atoms
@@ -423,11 +428,6 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
             endif
          enddo ! j
       enddo ! i
-
-      ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
-      error_part = 'Error in Hamil_tot_DFTB:'
-      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Hij', Hij) ! module "MPI_subroutines"
-      call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'Sij', Sij) ! module "MPI_subroutines"
 
 
 #else    ! OpenMP to use instead
@@ -584,12 +584,14 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
 !                      if (abs(i) > nat*n_orb) print*, 'TEST i', i, j, l, k
                      if (i == j) then ! for the diagonal elements according to Trani:
                         !SH_1 =  0.0d0
-                        SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        !SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(l) * Scell(NSC)%Sij(k,l))    ! to test
                         Scell(NSC)%PRRx(k,l) = SH_1
                         Scell(NSC)%PRRy(k,l) = SH_1
                         Scell(NSC)%PRRz(k,l) = SH_1
                      else
-                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        !SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(l) * Scell(NSC)%Sij(k,l)) ! to test
                         Scell(NSC)%PRRx(k,l) = x*SH_1
                         Scell(NSC)%PRRy(k,l) = y*SH_1
                         Scell(NSC)%PRRz(k,l) = z*SH_1
@@ -631,12 +633,14 @@ subroutine Hamil_tot_DFTB(numpar, Scell, NSC, TB_Hamil, M_Vij, M_SVij, M_lmn, Er
 !                      if (abs(i) > nat*n_orb) print*, 'TEST i', i, j, l, k
                      if (i == j) then ! for the diagonal elements according to Trani:
                         !SH_1 =  0.0d0
-                        SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        !SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        SH_1 =  0.270d0*(Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(l) * Scell(NSC)%Sij(k,l))
                         Scell(NSC)%PRRx(k,l) = SH_1
                         Scell(NSC)%PRRy(k,l) = SH_1
                         Scell(NSC)%PRRz(k,l) = SH_1
                      else
-                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        !SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(k) * Scell(NSC)%Sij(k,l))
+                        SH_1 = (Scell(NSC)%H_non(k,l) - Scell(NSC)%Ei(l) * Scell(NSC)%Sij(k,l)) ! to test
                         Scell(NSC)%PRRx(k,l) = x*SH_1
                         Scell(NSC)%PRRy(k,l) = y*SH_1
                         Scell(NSC)%PRRz(k,l) = z*SH_1
@@ -1071,8 +1075,10 @@ subroutine d_Hamilton_one_DFTB(basis_ind, k, Scell, NSC, i, j, atom_2, dH, M_Vij
       
       select case (basis_ind)
       case (0) ! s
-         call d_KS_s(vec_M_Vij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
-         call d_KS_s(vec_M_SVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
+         !call d_KS_s(vec_M_Vij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
+         !call d_KS_s(vec_M_SVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
+         call d_KS_s(vec_M_dVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
+         call d_KS_s(vec_M_dSVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
       case (1) ! sp3
          call d_KS_sp3_hetero(vec_M_Vij12, vec_M_Vij21, vec_M_dVij12, vec_M_dVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), M_dlmn(1), M_dlmn(4), M_dlmn(7),  dH1)	! module "TB_Koster_Slater"
          call d_KS_sp3_hetero(vec_M_SVij12, vec_M_SVij21, vec_M_dSVij12, vec_M_dSVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), M_dlmn(1), M_dlmn(4), M_dlmn(7),  dS1)	! module "TB_Koster_Slater"
@@ -1097,8 +1103,10 @@ subroutine d_Hamilton_one_DFTB(basis_ind, k, Scell, NSC, i, j, atom_2, dH, M_Vij
       vec_M_dSVij12(:) = M_dSVij(j,i,:)*drij_dsk(2)
       select case (basis_ind)
       case (0) ! s
-         call d_KS_s(vec_M_Vij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
-         call d_KS_s(vec_M_SVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
+         !call d_KS_s(vec_M_Vij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
+         !call d_KS_s(vec_M_SVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
+         call d_KS_s(vec_M_dVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
+         call d_KS_s(vec_M_dSVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
       case (1) ! sp3
          call d_KS_sp3_hetero(vec_M_Vij12, vec_M_Vij21, vec_M_dVij12, vec_M_dVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), M_dlmn(2), M_dlmn(5), M_dlmn(8),  dH1)	! module "TB_Koster_Slater"
          call d_KS_sp3_hetero(vec_M_SVij12, vec_M_SVij21, vec_M_dSVij12, vec_M_dSVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), M_dlmn(2), M_dlmn(5), M_dlmn(8),  dS1)	! module "TB_Koster_Slater"
@@ -1124,8 +1132,10 @@ subroutine d_Hamilton_one_DFTB(basis_ind, k, Scell, NSC, i, j, atom_2, dH, M_Vij
       vec_M_dSVij12(:) = M_dSVij(j,i,:)*drij_dsk(3)
       select case (basis_ind)
       case (0) ! s
-         call d_KS_s(vec_M_Vij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
-         call d_KS_s(vec_M_SVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
+         !call d_KS_s(vec_M_Vij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
+         !call d_KS_s(vec_M_SVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
+         call d_KS_s(vec_M_dVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
+         call d_KS_s(vec_M_dSVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
       case (1) ! sp3
          call d_KS_sp3_hetero(vec_M_Vij12, vec_M_Vij21, vec_M_dVij12, vec_M_dVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), M_dlmn(3), M_dlmn(6), M_dlmn(9),  dH1)	! module "TB_Koster_Slater"
          call d_KS_sp3_hetero(vec_M_SVij12, vec_M_SVij21, vec_M_dSVij12, vec_M_dSVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), M_dlmn(3), M_dlmn(6), M_dlmn(9),  dS1)	! module "TB_Koster_Slater"
@@ -1422,8 +1432,10 @@ subroutine dHopping_Press_DFTB(i, atom_2, Scell, NSC, norb, n_overlap, M_Vij, M_
          
          select case (norb)
          case (1) ! s
-            call d_KS_s(vec_M_Vij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
-            call d_KS_s(vec_M_SVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
+            !call d_KS_s(vec_M_Vij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
+            !call d_KS_s(vec_M_SVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
+            call d_KS_s(vec_M_dVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dH1)	! module "TB_Koster_Slater"
+            call d_KS_s(vec_M_dSVij12, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), dS1)	! module "TB_Koster_Slater"
          case (4) ! sp3
 !             call d_KS_sp3_hetero_TEST(vec_M_Vij12, vec_M_Vij21, vec_M_dVij12, vec_M_dVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), M_dlmn(1), M_dlmn(2), M_dlmn(3),  dH1)	! module "TB_Koster_Slater" ! WRONG
 !             call d_KS_sp3_hetero_TEST(vec_M_SVij12, vec_M_SVij21, vec_M_dSVij12, vec_M_dSVij21, M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), M_dlmn(1), M_dlmn(2), M_dlmn(3),  dS1)	! module "TB_Koster_Slater"
@@ -1671,17 +1683,19 @@ subroutine Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz,
                do i1 = 1,norb	! all orbitals for sp3d5
                   k = (i-1)*norb+i1
                   if (i == j) then ! contribution of the same atom, according to Trani:
-                     SH_1 = DCMPLX(0.27d0,0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
+                     !SH_1 = DCMPLX(0.27d0,0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
+                     SH_1 = DCMPLX(0.27d0,0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(l),0.0d0)*CSij_save(k,l))
                      Scell(NSC)%cPRRx(k,l) = SH_1
                      Scell(NSC)%cPRRy(k,l) = SH_1
                      Scell(NSC)%cPRRz(k,l) = SH_1
                   else	! different atoms at distance {x,y,z}:
-                     SH_1 = CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)
+                     !SH_1 = CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)
+                     SH_1 = CHij_non(k,l) - DCMPLX(Ei(l),0.0d0)*CSij_save(k,l)
                      Scell(NSC)%cPRRx(k,l) = DCMPLX(x1,0.0d0)*SH_1
                      Scell(NSC)%cPRRy(k,l) = DCMPLX(y1,0.0d0)*SH_1
                      Scell(NSC)%cPRRz(k,l) = DCMPLX(z1,0.0d0)*SH_1
                   endif
-                  if (real(Scell(NSC)%cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, Scell(NSC)%cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(k), x1
+                  if (real(Scell(NSC)%cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, Scell(NSC)%cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(l), x1
                   if (real(Scell(NSC)%cPRRy(k,l)) .GT. 1d10) print*, i, j, Scell(NSC)%cPRRy(k,l)
                   if (real(Scell(NSC)%cPRRz(k,l)) .GT. 1d10) print*, i, j, Scell(NSC)%cPRRz(k,l)
                enddo ! i1
@@ -1717,17 +1731,19 @@ subroutine Complex_Hamil_DFTB(numpar, Scell, NSC, CHij, CSij, Ei, ksx, ksy, ksz,
                do i1 = 1,norb	! all orbitals for sp3d5
                   k = (i-1)*norb+i1
                   if (i == j) then ! contribution of the same atom, according to Trani:
-                     SH_1 = DCMPLX(0.27d0,0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
+                     !SH_1 = DCMPLX(0.27d0,0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l))
+                     SH_1 = DCMPLX(0.27d0,0.0d0) * (CHij_non(k,l) - DCMPLX(Ei(l),0.0d0)*CSij_save(k,l))
                      Scell(NSC)%cPRRx(k,l) = SH_1
                      Scell(NSC)%cPRRy(k,l) = SH_1
                      Scell(NSC)%cPRRz(k,l) = SH_1
                   else	! different atoms at distance {x,y,z}:
-                     SH_1 = CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)
+                     !SH_1 = CHij_non(k,l) - DCMPLX(Ei(k),0.0d0)*CSij_save(k,l)
+                     SH_1 = CHij_non(k,l) - DCMPLX(Ei(l),0.0d0)*CSij_save(k,l)
                      Scell(NSC)%cPRRx(k,l) = DCMPLX(x1,0.0d0)*SH_1
                      Scell(NSC)%cPRRy(k,l) = DCMPLX(y1,0.0d0)*SH_1
                      Scell(NSC)%cPRRz(k,l) = DCMPLX(z1,0.0d0)*SH_1
                   endif
-                  if (real(Scell(NSC)%cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, Scell(NSC)%cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(k), x1
+                  if (real(Scell(NSC)%cPRRx(k,l)) .GT. 1d10) write(*,'(i5,i5,es,es, es,es, es,es, es, es)') i, j, Scell(NSC)%cPRRx(k,l),  CHij_non(k,l), CSij_save(k,l),  Ei(l), x1
                   if (real(Scell(NSC)%cPRRy(k,l)) .GT. 1d10) print*, i, j, Scell(NSC)%cPRRy(k,l)
                   if (real(Scell(NSC)%cPRRz(k,l)) .GT. 1d10) print*, i, j, Scell(NSC)%cPRRz(k,l)
                enddo ! i1
@@ -1926,6 +1942,7 @@ end function DFTB_polinomial
 end function DFTB_spline
 
 
+
 !RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR
 ! Forces for the repulsive part:
 
@@ -1972,7 +1989,7 @@ subroutine dErdr_s_DFTB(TB_Repuls, Scell, NSC, numpar) ! derivatives of the repu
    ! Do the cycle (parallel) calculations:
    do ian = Nstart, Nend, N_incr  ! each process does its own part
    !do ian = 1, n	! Forces for all atoms
-      Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = 0.0d0 ! just to start with
       do i1 = 1, n	! contribution from all atoms
          if (ian == i1) then	! Kroniker delta
             dik = 1
@@ -2020,7 +2037,8 @@ subroutine dErdr_s_DFTB(TB_Repuls, Scell, NSC, numpar) ! derivatives of the repu
 
    do ian = 1, n	! Forces for all atoms
       ! Add exponential wall force to already calculated other forces:
-      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)*0.5d0	! factor 0.5 to compensate for double-counting
+      !Scell(NSC)%MDatoms(ian)%forces%rep(:) = Scell(NSC)%MDatoms(ian)%forces%rep(:) + Erx_s(:,ian)*0.5d0	! factor 0.5 to compensate for double-counting
+      Scell(NSC)%MDatoms(ian)%forces%rep(:) = Erx_s(:,ian)*0.5d0	! factor 0.5 to compensate for double-counting
    enddo
 
 #else    ! OpenMP to use instead
@@ -2140,7 +2158,8 @@ function d_DFTB_spline(a, c, R, rcut, r_dist) result (F)
       rr03 = rr02 * rr0
       F = c(Nsiz,2) + 2.0d0*c(Nsiz,3)*rr0 + 3.0d0*c(Nsiz,4)*rr02 + 4.0d0*c(Nsiz,5)*rr03 + 5.0d0*c(Nsiz,6)*rr02*rr02
    elseif (r_dist <= R(1)) then  ! "exponential wall"
-      F = -a(1)*exp(-a(1)*r_dist + a(2))    ! [eV/A]
+      !F = -a(1)*exp(-a(1)*r_dist + a(2))    ! [eV/A]
+      F = -a(1)*exp(-a(1)*r_dist + a(2))*g_au2ev    ! [eV/A], consistent with DFTB_spline
    else ! spline
       ! This only works for equidistant arrays:
       !i_array = CEILING((r_dist-R(1))/(R(2)-R(1)))   ! index of the nearest radial grid point for the equally-spaced grid
@@ -2148,10 +2167,15 @@ function d_DFTB_spline(a, c, R, rcut, r_dist) result (F)
       call Find_in_array_monoton(R, r_dist, i_array)  ! module "Little_subroutines"
       i_array = i_array - 1   ! we need floor instead of ceiling
 
-      if (i_array > Nsiz) then
-         write(6,'(a,f,f)') 'Error 1 in d_DFTB_spline:', i_array, Nsiz
-      elseif ((r_dist < R(i_array)) .or. (R(i_array+1) < r_dist)) then
-         write(6,'(a,f,f,f)') 'Error 2 in d_DFTB_spline:', R(i_array), R(i_array+1), r_dist
+      if ((i_array < 1) .or. (i_array >= Nsiz)) then
+         !write(6,'(a,f,f)') 'Error 1 in d_DFTB_spline:', i_array, Nsiz
+         write(6,'(a,i0,a,i0)') 'Error 1 in d_DFTB_spline: i_array=', i_array, ', Nsiz=', Nsiz
+         F = 0.0d0
+         return
+      endif
+
+      if ((r_dist < R(i_array)) .or. (R(i_array+1) < r_dist)) then
+         write(6,'(a,3es18.8)') 'Error 2 in d_DFTB_spline: ', R(i_array), R(i_array+1), r_dist
          write(6,'(i,f,f,f)') i_array, R(i_array), R(1), R(Nsiz)
       endif
 
@@ -2230,6 +2254,548 @@ subroutine dErdr_Pressure_s_DFTB_no(TB_Repuls, Scell, NSC, numpar) ! derivatives
       Scell(NSC)%SCforce%rep = 0.0d0    ! to start with
    endif
 end subroutine dErdr_Pressure_s_DFTB_no
+
+
+
+
+
+! ============================================================================================
+! Second derivatives by r (analogous to dHij_r / dE2rep_dr2 of the module TB_Pettifor)
+!   dHij_r_DFTB:     F(3,Nat)  = sum_ij [ dH_ij/dr_k * A_ij  -  dS_ij/dr_k * AE_ij ]    [eV/A]
+!                    dF(3,Nat) = sum_ij [ d2H_ij/dr_k^2 * A_ij - d2S_ij/dr_k^2 * AE_ij ] [eV/A^2]
+!                    (A = Aij, AE = Aij_x_Ei: density matrices are kept FIXED, exactly like in the
+!                     Pettifor module: only explicit second derivatives of H and S are included)
+!   dE2rep_dr2_DFTB: F, dF of the repulsive pair potential, same meaning.
+!   Derivatives are by Cartesian r (not by relative s): F(:,k) = matmul(supce, forces%att) inverse relation:
+!        forces%att(alpha) (by s)  =  sum_beta supce(alpha,beta) * F(beta,k)       (cross-check!)
+! METHOD (second derivative of the Slater-Koster block)
+!   The block is ts = T(V12,V21,l,m,n): linear in V, polynomial of degree <= 4 in (l,m,n).
+!   The existing routines d_KS_sp3_hetero / d_KS_sp3d5_hetero return  G = grad(T).dargs  (linear in dargs).
+!   Along the path "coordinate alpha of atom k":   T'' = G(args; args'')  +  d/dh G(args + h*args'; args')|h=0
+!   The last term is evaluated with a 5-point stencil of G; since G is a polynomial of degree <= 4 in h,
+!   the stencil is EXACT (checked numerically with sympy for sd, pd, dd-type elements). No second-derivative
+!   KS routines are needed, and the conventions of d_Hamilton_one_DFTB (V12/V21 order, M_lmn(:,i,j)) are kept.
+!   Geometry factors (dr, d2r, du, d2u) are closed-form, with kappa = delta_ik - delta_jk, D = r_i - r_j:
+!        dr = kappa*u_al,           d2r = kappa^2 (1-u_al^2)/r
+!        du_a = kappa (delta_a,al - u_a u_al)/r
+!        d2u_a = kappa^2 * ( -3 u_a (1-u_a^2)/r^2   if a = al ;   -u_a (1-3 u_al^2)/r^2   if a /= al )
+! RADIAL FUNCTIONS: the DFTB integrals are tabulated and linearly interpolated, so their exact second
+!   derivative is zero inside a cell. We use the centred second difference of the table (O(dr^2) at the
+!   cell centre), cell-wise constant like the existing first derivative. With the Fermi cutoff f(r):
+!        (V f)'' = V'' f + 2 V' f' + V f'',    f'' = -f' (1-2f)/d     (logistic form assumed)
+! ============================================================================================
+
+!--------------------------------------------------------------------------------------------
+! 1. Radial functions
+!--------------------------------------------------------------------------------------------
+function d2_DFTB_radial_function(r_given, r_grid, param_array, ind_array) result(f_out)
+   ! second derivative of the tabulated radial function (central second difference of the table)
+   real(8) :: f_out
+   real(8), intent(in) :: r_given  ! [A]
+   real(8), dimension(:), intent(in) :: r_grid  ! [A] radial grid (r_k = k*dr)
+   real(8), dimension(:,:), intent(in) :: param_array    ! [eV]
+   integer, intent(in) :: ind_array
+   !-------------------------------------
+   integer :: c, Nsiz
+   real(8) :: dr
+
+   dr = r_grid(1)   ! grid step of the uniform grid
+   Nsiz = size(r_grid)
+   c = CEILING(r_given/dr)   ! cell index, as in d_DFTB_radial_function
+   if ((c > Nsiz) .or. (Nsiz < 3)) then
+      f_out = 0.0d0
+   elseif (c <= 2) then   ! first cells: second difference at node 2
+      f_out = (param_array(3,ind_array) - 2.0d0*param_array(2,ind_array) + param_array(1,ind_array))/(dr*dr)
+   elseif (c >= Nsiz) then   ! last cell: second difference at node Nsiz-1
+      f_out = (param_array(Nsiz,ind_array) - 2.0d0*param_array(Nsiz-1,ind_array) + param_array(Nsiz-2,ind_array))/(dr*dr)
+   else   ! centred on the cell
+      f_out = (param_array(c+1,ind_array) - param_array(c,ind_array) - param_array(c-1,ind_array) &
+               + param_array(c-2,ind_array))/(2.0d0*dr*dr)
+   endif
+end function d2_DFTB_radial_function
+
+
+function d2_Fermi_function_DFTB(rcut, d, r) result(F)
+   ! second derivative of f(r) = 1/(1+exp((r-rcut)/d)):  f'' = -f'*(1-2f)/d
+   ! (assumes that Fermi_function / d_Fermi_function of Little_subroutines have this logistic form)
+   real(8) :: F
+   real(8), intent(in) :: rcut, d, r
+   F = -d_Fermi_function(rcut, d, r)*(1.0d0 - 2.0d0*Fermi_function(rcut, d, r))/d
+end function d2_Fermi_function_DFTB
+
+
+subroutine radial_set_DFTB(basis_ind, TBp, r, V, dV, d2V, S, dS, d2S)
+   ! raw (not smoothed) tabulated radial functions, their first and second derivatives, in the order used by M_Vij
+   integer, intent(in) :: basis_ind
+   type(TB_H_DFTB), intent(in) :: TBp
+   real(8), intent(in) :: r
+   real(8), dimension(:), intent(out) :: V, dV, d2V, S, dS, d2S
+   integer :: ihop, N_bs
+   integer, dimension(10) :: idx
+
+   N_bs = identify_DFTB_basis_size(basis_ind)
+   select case (basis_ind)
+   case (0) ! s
+      idx(1) = 1
+   case (1) ! sp3: (s s sigma), (s p sigma), (p p sigma), (p p pi)
+      idx(1:4) = (/1, 2, 4, 5/)
+   case default ! sp3d5
+      do ihop = 1, 10
+         idx(ihop) = ihop
+      enddo
+   end select
+   do ihop = 1, N_bs
+      V(ihop)   = DFTB_radial_function(r, TBp%Rr, TBp%Vr, idx(ihop))
+      dV(ihop)  = d_DFTB_radial_function(r, TBp%Rr, TBp%Vr, idx(ihop))
+      d2V(ihop) = d2_DFTB_radial_function(r, TBp%Rr, TBp%Vr, idx(ihop))
+      S(ihop)   = DFTB_radial_function(r, TBp%Rr, TBp%Sr, idx(ihop))
+      dS(ihop)  = d_DFTB_radial_function(r, TBp%Rr, TBp%Sr, idx(ihop))
+      d2S(ihop) = d2_DFTB_radial_function(r, TBp%Rr, TBp%Sr, idx(ihop))
+   enddo
+end subroutine radial_set_DFTB
+
+
+subroutine set_d2Vij_for_atom_DFTB(numpar, TB, Scell, NSC, j, M_d2Vij, M_d2SVij)
+   type(Numerics_param), intent(in) :: numpar
+   type(TB_H_DFTB), dimension(:,:), intent(in) :: TB
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   integer, intent(in) :: NSC, j
+   real(8), dimension(:,:,:), intent(inout) :: M_d2Vij, M_d2SVij
+   !-------------------------------
+   integer :: m, atom_2, i, N_bs, KOA1, KOA2
+   real(8) :: r, Fermi, dFermi, d2Fermi
+   real(8), dimension(:), allocatable :: V, dV, d2V, S, dS, d2S
+
+   N_bs = identify_DFTB_basis_size(numpar%basis_size_ind)
+   allocate(V(N_bs), dV(N_bs), d2V(N_bs), S(N_bs), dS(N_bs), d2S(N_bs))
+   m = Scell(NSC)%Near_neighbor_size(j)
+   do atom_2 = 1, m
+      i = Scell(NSC)%Near_neighbor_list(j,atom_2)
+      KOA1 = Scell(NSC)%MDatoms(i)%KOA   ! same order as in Construct_Vij_DFTB
+      KOA2 = Scell(NSC)%MDatoms(j)%KOA
+      r = Scell(NSC)%Near_neighbor_dist(j,atom_2,4)
+      call radial_set_DFTB(numpar%basis_size_ind, TB(KOA1,KOA2), r, V, dV, d2V, S, dS, d2S)
+      Fermi   = Fermi_function(TB(KOA1,KOA2)%rcut, TB(KOA1,KOA2)%d, r)
+      dFermi  = d_Fermi_function(TB(KOA1,KOA2)%rcut, TB(KOA1,KOA2)%d, r)
+      d2Fermi = d2_Fermi_function_DFTB(TB(KOA1,KOA2)%rcut, TB(KOA1,KOA2)%d, r)
+      M_d2Vij(j,i,1:N_bs)  = d2V*Fermi + 2.0d0*dV*dFermi + V*d2Fermi
+      M_d2SVij(j,i,1:N_bs) = d2S*Fermi + 2.0d0*dS*dFermi + S*d2Fermi
+   enddo
+   deallocate(V, dV, d2V, S, dS, d2S)
+end subroutine set_d2Vij_for_atom_DFTB
+
+
+subroutine Construct_d2Vij_DFTB(numpar, TB, Scell, NSC, M_d2Vij, M_d2SVij)
+   ! Second derivatives (by r) of the Fermi-smoothed radial Hamiltonian and overlap functions,
+   ! same layout as M_dVij, M_dSVij of Construct_Vij_DFTB: M_d2Vij(j,i,ihop)
+   type(Numerics_param), intent(inout) :: numpar
+   type(TB_H_DFTB), dimension(:,:), intent(in) :: TB
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   integer, intent(in) :: NSC
+   real(8), dimension(:,:,:), allocatable :: M_d2Vij, M_d2SVij
+   !----------------------------------
+   integer :: nat, N_bs, j
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+   nat = Scell(NSC)%Na
+   N_bs = identify_DFTB_basis_size(numpar%basis_size_ind)
+   if (allocated(M_d2Vij)) then
+      if (any(shape(M_d2Vij) /= (/nat,nat,N_bs/))) deallocate(M_d2Vij)
+   endif
+   if (allocated(M_d2SVij)) then
+      if (any(shape(M_d2SVij) /= (/nat,nat,N_bs/))) deallocate(M_d2SVij)
+   endif
+   if (.not.allocated(M_d2Vij)) allocate(M_d2Vij(nat,nat,N_bs))
+   if (.not.allocated(M_d2SVij)) allocate(M_d2SVij(nat,nat,N_bs))
+   M_d2Vij = 0.0d0
+   M_d2SVij = 0.0d0
+
+#ifdef MPI_USED
+   N_incr = numpar%MPI_param%size_of_cluster
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = nat
+   do j = Nstart, Nend, N_incr
+      call set_d2Vij_for_atom_DFTB(numpar, TB, Scell, NSC, j, M_d2Vij, M_d2SVij)
+   enddo
+   error_part = 'Error in Construct_d2Vij_DFTB:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_d2Vij', M_d2Vij)
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_d2SVij', M_d2SVij)
+#else
+   !$omp parallel do private(j)
+   do j = 1, nat
+      call set_d2Vij_for_atom_DFTB(numpar, TB, Scell, NSC, j, M_d2Vij, M_d2SVij)
+   enddo
+   !$omp end parallel do
+#endif
+end subroutine Construct_d2Vij_DFTB
+
+
+!--------------------------------------------------------------------------------------------
+! 2. Derivatives of the Slater-Koster block (by a path parameter t)
+!--------------------------------------------------------------------------------------------
+subroutine d_KS_block_DFTB(basis_ind, V12, V21, dV12, dV21, l, m, n, dl, dm, dn, dts)
+   ! first derivative of the block along a path; dV12, dV21, dl, dm, dn are the derivatives along the path
+   integer, intent(in) :: basis_ind
+   real(8), dimension(:), intent(in) :: V12, V21, dV12, dV21
+   real(8), intent(in) :: l, m, n, dl, dm, dn
+   real(8), dimension(:,:), intent(out) :: dts
+
+   select case (basis_ind)
+   case (0) ! s only: the block is the radial function itself, so its derivative is dV (not V!)
+      dts = 0.0d0
+      dts(1,1) = dV12(1)
+   case (1) ! sp3
+      call d_KS_sp3_hetero(V12, V21, dV12, dV21, l, m, n, dl, dm, dn, dts)   ! module "TB_Koster_Slater"
+   case default ! sp3d5
+      call d_KS_sp3d5_hetero(V12, V21, dV12, dV21, l, m, n, dl, dm, dn, dts) ! module "TB_Koster_Slater"
+   end select
+end subroutine d_KS_block_DFTB
+
+
+subroutine d2_KS_block_DFTB(basis_ind, V12, V21, dV12, dV21, d2V12, d2V21, l, m, n, dl, dm, dn, d2l, d2m, d2n, dts, d2ts)
+   ! first (dts) and second (d2ts) derivative of the block along a path. See the header for the method.
+   integer, intent(in) :: basis_ind
+   real(8), dimension(:), intent(in) :: V12, V21, dV12, dV21, d2V12, d2V21
+   real(8), intent(in) :: l, m, n, dl, dm, dn, d2l, d2m, d2n
+   real(8), dimension(:,:), intent(out) :: dts, d2ts
+   !-----------------------------------
+   real(8), parameter :: h = 0.05d0   ! any value is fine for polynomials of degree <= 4; not too small (round-off)
+   real(8), dimension(4), parameter :: xs = (/  2.0d0,  1.0d0, -1.0d0, -2.0d0 /)
+   real(8), dimension(4), parameter :: ws = (/ -1.0d0,  8.0d0, -8.0d0,  1.0d0 /)   ! 5-point first-derivative stencil
+   real(8), dimension(size(dts,1),size(dts,2)) :: tmp
+   real(8), dimension(size(V12)) :: tV12, tV21
+   integer :: is
+
+   call d_KS_block_DFTB(basis_ind, V12, V21, dV12, dV21, l, m, n, dl, dm, dn, dts)   ! first derivative
+
+   if (basis_ind == 0) then   ! s only: no angular part
+      d2ts = 0.0d0
+      d2ts(1,1) = d2V12(1)
+      return
+   endif
+
+   ! 1) linear term with the second derivatives of all arguments:
+   call d_KS_block_DFTB(basis_ind, V12, V21, d2V12, d2V21, l, m, n, d2l, d2m, d2n, d2ts)
+   ! 2) quadratic term: d/dh of the first-derivative routine with shifted arguments, shift along the path direction:
+   do is = 1, 4
+      tV12 = V12 + xs(is)*h*dV12
+      tV21 = V21 + xs(is)*h*dV21
+      call d_KS_block_DFTB(basis_ind, tV12, tV21, dV12, dV21, l+xs(is)*h*dl, m+xs(is)*h*dm, n+xs(is)*h*dn, dl, dm, dn, tmp)
+      d2ts = d2ts + (ws(is)/(12.0d0*h))*tmp
+   enddo
+end subroutine d2_KS_block_DFTB
+
+
+subroutine d2_Hamilton_one_DFTB(basis_ind, k, Scell, NSC, i, j, atom_2, dH, d2H, dS, d2S, &
+                                M_Vij, M_dVij, M_d2Vij, M_lmn, M_SVij, M_dSVij, M_d2SVij)
+   ! First (dH, dS) and second (d2H, d2S) derivatives BY r (Cartesian) of the block for the pair (i,j), j=Near_neighbor_list(i,atom_2),
+   ! with respect to the coordinates of atom k. Same conventions as d_Hamilton_one_DFTB (which differentiates by s).
+   ! Index 1 of the outputs: 1,2,3 = x,y,z coordinate of atom k.
+   integer, intent(in) :: basis_ind  ! 0=s, 1=sp3, 2=sp3d5
+   integer, intent(in) :: k, NSC, i, j, atom_2
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   real(8), dimension(:,:,:), intent(out) :: dH, d2H, dS, d2S   ! (3,n_orb,n_orb)
+   real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij, M_lmn
+   !---------------------------------------
+   integer :: kap, al, a, n_overlap, n_orb
+   real(8) :: D(3), r, u(3), dr, d2r, du(3), d2u(3), kap2
+   real(8), dimension(:), allocatable :: V12, V21, S12, S21
+   real(8), dimension(:), allocatable :: pV12, pV21, pS12, pS21   ! first derivatives of the radial functions along the path
+   real(8), dimension(:), allocatable :: qV12, qV21, qS12, qS21   ! second derivatives along the path
+   real(8), dimension(:,:), allocatable :: dH1, d2H1, dS1, d2S1
+
+   dH = 0.0d0
+   d2H = 0.0d0
+   dS = 0.0d0
+   d2S = 0.0d0
+   if (i == j) return   ! onsite terms are constants
+
+   ! kappa = delta_ik - delta_jk ; nothing depends on atom k otherwise
+   kap = 0
+   if (k == i) kap = kap + 1
+   if (k == j) kap = kap - 1
+   if (kap == 0) return
+   kap2 = dble(kap*kap)
+
+   n_overlap = identify_DFTB_basis_size(basis_ind)
+   n_orb = identify_DFTB_orbitals_per_atom(basis_ind)
+   allocate(V12(n_overlap), V21(n_overlap), S12(n_overlap), S21(n_overlap))
+   allocate(pV12(n_overlap), pV21(n_overlap), pS12(n_overlap), pS21(n_overlap))
+   allocate(qV12(n_overlap), qV21(n_overlap), qS12(n_overlap), qS21(n_overlap))
+   allocate(dH1(n_orb,n_orb), d2H1(n_orb,n_orb), dS1(n_orb,n_orb), d2S1(n_orb,n_orb))
+
+   ! Geometry of this pair (D = r_i - r_j as stored in Near_neighbor_dist):
+   D(1) = Scell(NSC)%Near_neighbor_dist(i,atom_2,1)
+   D(2) = Scell(NSC)%Near_neighbor_dist(i,atom_2,2)
+   D(3) = Scell(NSC)%Near_neighbor_dist(i,atom_2,3)
+   r    = Scell(NSC)%Near_neighbor_dist(i,atom_2,4)
+   u = D/r
+
+   ! Same assignment of the radial functions as in d_Hamilton_one_DFTB ("correct" there):
+   V21 = M_Vij(i,j,:)
+   V12 = M_Vij(j,i,:)
+   S21 = M_SVij(i,j,:)
+   S12 = M_SVij(j,i,:)
+
+   do al = 1, 3   ! coordinate x, y, z of atom k
+      dr  = dble(kap)*u(al)                  ! dr/dr_{k,al}
+      d2r = kap2*(1.0d0 - u(al)**2)/r        ! d2r/dr_{k,al}^2
+      do a = 1, 3
+         if (a == al) then
+            du(a)  = dble(kap)*(1.0d0 - u(a)*u(al))/r
+            d2u(a) = kap2*(-3.0d0*u(a)*(1.0d0 - u(a)**2))/(r*r)
+         else
+            du(a)  = dble(kap)*(-u(a)*u(al))/r
+            d2u(a) = kap2*(-u(a)*(1.0d0 - 3.0d0*u(al)**2))/(r*r)
+         endif
+      enddo
+
+      ! first and second derivatives of the radial functions along the path (chain rule):
+      pV21 = M_dVij(i,j,:)*dr
+      pV12 = M_dVij(j,i,:)*dr
+      pS21 = M_dSVij(i,j,:)*dr
+      pS12 = M_dSVij(j,i,:)*dr
+      qV21 = M_d2Vij(i,j,:)*dr*dr + M_dVij(i,j,:)*d2r
+      qV12 = M_d2Vij(j,i,:)*dr*dr + M_dVij(j,i,:)*d2r
+      qS21 = M_d2SVij(i,j,:)*dr*dr + M_dSVij(i,j,:)*d2r
+      qS12 = M_d2SVij(j,i,:)*dr*dr + M_dSVij(j,i,:)*d2r
+
+      call d2_KS_block_DFTB(basis_ind, V12, V21, pV12, pV21, qV12, qV21, &
+                            M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), du(1), du(2), du(3), d2u(1), d2u(2), d2u(3), dH1, d2H1)
+      call d2_KS_block_DFTB(basis_ind, S12, S21, pS12, pS21, qS12, qS21, &
+                            M_lmn(1,i,j), M_lmn(2,i,j), M_lmn(3,i,j), du(1), du(2), du(3), d2u(1), d2u(2), d2u(3), dS1, d2S1)
+      dH(al,:,:)  = dH1(:,:)
+      d2H(al,:,:) = d2H1(:,:)
+      dS(al,:,:)  = dS1(:,:)
+      d2S(al,:,:) = d2S1(:,:)
+   enddo
+
+   deallocate(V12, V21, S12, S21, pV12, pV21, pS12, pS21, qV12, qV21, qS12, qS21, dH1, d2H1, dS1, d2S1)
+end subroutine d2_Hamilton_one_DFTB
+
+
+!--------------------------------------------------------------------------------------------
+! 3. Attractive part: forces and their derivatives by r
+!--------------------------------------------------------------------------------------------
+subroutine dHij_r_one_atom_DFTB(k, numpar, Scell, NSC, Aij, Aij_x_Ei, M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij, M_lmn, Fk, dFk)
+   ! derivatives for one atom k; no dense (3,N,N) matrices are needed: only the pairs that contain atom k contribute
+   integer, intent(in) :: k, NSC
+   type(Numerics_param), intent(in) :: numpar
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   real(8), dimension(:,:), intent(in) :: Aij, Aij_x_Ei
+   real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij, M_lmn
+   real(8), dimension(3), intent(out) :: Fk, dFk
+   !---------------------------------
+   integer :: nat, n_orb, i, j, atom_2, m, a, b, i4, j4
+   real(8), dimension(:,:,:), allocatable :: dH, d2H, dS, d2S
+
+   Fk = 0.0d0
+   dFk = 0.0d0
+   nat = size(Scell(NSC)%MDatoms)
+   n_orb = identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)
+   allocate(dH(3,n_orb,n_orb), d2H(3,n_orb,n_orb), dS(3,n_orb,n_orb), d2S(3,n_orb,n_orb))
+
+   do i = 1, nat
+      i4 = (i-1)*n_orb
+      m = Scell(NSC)%Near_neighbor_size(i)
+      do atom_2 = 1, m
+         j = Scell(NSC)%Near_neighbor_list(i,atom_2)
+         if (j <= i) cycle   ! each pair once (block (i,j) with j>i, as in get_forces_DFTB); onsite derivatives are 0
+         if ((k /= i) .and. (k /= j)) cycle
+         j4 = (j-1)*n_orb
+         call d2_Hamilton_one_DFTB(numpar%basis_size_ind, k, Scell, NSC, i, j, atom_2, dH, d2H, dS, d2S, &
+                                   M_Vij, M_dVij, M_d2Vij, M_lmn, M_SVij, M_dSVij, M_d2SVij)
+         ! blocks (i,j) and (j,i) contribute equally (symmetric matrices): factor 2
+         do b = 1, n_orb
+            do a = 1, n_orb
+               Fk(:)  = Fk(:)  + 2.0d0*(dH(:,a,b)*Aij(i4+a,j4+b)  - dS(:,a,b)*Aij_x_Ei(i4+a,j4+b))
+               dFk(:) = dFk(:) + 2.0d0*(d2H(:,a,b)*Aij(i4+a,j4+b) - d2S(:,a,b)*Aij_x_Ei(i4+a,j4+b))
+            enddo
+         enddo
+      enddo
+   enddo
+   deallocate(dH, d2H, dS, d2S)
+end subroutine dHij_r_one_atom_DFTB
+
+
+subroutine dHij_r_DFTB(numpar, Scell, NSC, Aij, Aij_x_Ei, M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij, M_lmn, F, dF)
+   ! Attractive (band-structure) part: F = dE/dr, dF = d2E/dr2 (diagonal, per Cartesian component), at fixed density matrices
+   type(Numerics_param), intent(inout) :: numpar
+   type(Super_cell), dimension(:), intent(inout) :: Scell
+   integer, intent(in) :: NSC
+   real(8), dimension(:,:), intent(in) :: Aij, Aij_x_Ei   ! sum_k f_k c_i c_j  and  sum_k f_k E_k c_i c_j
+   real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij, M_lmn
+   real(8), dimension(:,:), allocatable, intent(inout) :: F, dF   ! [eV/A], [eV/A^2], shape (3,Nat)
+   !---------------------------------
+   integer :: nat, k
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+   nat = size(Scell(NSC)%MDatoms)
+   if (allocated(F)) then
+      if (any(shape(F) /= (/3,nat/))) deallocate(F)
+   endif
+   if (allocated(dF)) then
+      if (any(shape(dF) /= (/3,nat/))) deallocate(dF)
+   endif
+   if (.not.allocated(F)) allocate(F(3,nat))
+   if (.not.allocated(dF)) allocate(dF(3,nat))
+   F = 0.0d0
+   dF = 0.0d0
+
+#ifdef MPI_USED
+   N_incr = numpar%MPI_param%size_of_cluster
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = nat
+   do k = Nstart, Nend, N_incr
+      call dHij_r_one_atom_DFTB(k, numpar, Scell, NSC, Aij, Aij_x_Ei, M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij, M_lmn, F(:,k), dF(:,k))
+   enddo
+   error_part = 'Error in dHij_r_DFTB:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'F', F)
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dF', dF)
+#else
+   !$omp parallel do private(k)
+   do k = 1, nat
+      call dHij_r_one_atom_DFTB(k, numpar, Scell, NSC, Aij, Aij_x_Ei, M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij, M_lmn, F(:,k), dF(:,k))
+   enddo
+   !$omp end parallel do
+#endif
+end subroutine dHij_r_DFTB
+
+
+!--------------------------------------------------------------------------------------------
+! 4. Repulsive part
+!--------------------------------------------------------------------------------------------
+function d2_DFTB_repulsive_one(TB_Repuls, r) result (F)
+   real(8) F    ! second derivative of the repulsive pair potential [eV/A^2]
+   type(TB_Rep_DFTB), intent(in) :: TB_Repuls
+   real(8), intent(in) :: r ! [A]
+   select case (TB_Repuls%ToP) ! 0=polinomial, 1=spline
+   case (0)
+      F = d2_DFTB_polinomial(TB_Repuls%c, TB_Repuls%rcut, r)
+   case default
+      F = d2_DFTB_spline(TB_Repuls%a, TB_Repuls%V_rep, TB_Repuls%R, TB_Repuls%rcut_spline, r)
+   end select
+end function d2_DFTB_repulsive_one
+
+
+pure function d2_DFTB_polinomial(C, rcut, r) result (F)
+   real(8) F
+   real(8), dimension(:), intent(in) :: C
+   real(8), intent(in) :: rcut, r
+   integer :: i
+   F = 0.0d0
+   if (r <= rcut) then   ! E = sum_i C_i (rcut-r)^(i+1)  =>  E'' = sum_i (i+1) i C_i (rcut-r)^(i-1)
+      do i = 1, 8
+         F = F + dble(i+1)*dble(i)*C(i)*(rcut - r)**(i-1)
+      enddo
+   endif
+end function d2_DFTB_polinomial
+
+
+function d2_DFTB_spline(a, c, R, rcut, r_dist) result (F)
+   real(8) F    ! [eV/A^2]
+   real(8), dimension(:), intent(in) :: a
+   real(8), dimension(:,:), intent(in) :: c
+   real(8), dimension(:), intent(in) :: R
+   real(8), intent(in) :: rcut, r_dist
+   !----------------------------------------
+   integer :: Nsiz, i_array
+   real(8) :: rr0
+
+   Nsiz = size(R)
+   if (r_dist >= rcut) then
+      F = 0.0d0
+   elseif (r_dist > R(Nsiz)) then    ! last segment, 5th order polynomial
+      rr0 = r_dist - R(Nsiz)
+      F = 2.0d0*c(Nsiz,3) + 6.0d0*c(Nsiz,4)*rr0 + 12.0d0*c(Nsiz,5)*rr0*rr0 + 20.0d0*c(Nsiz,6)*rr0*rr0*rr0
+   elseif (r_dist <= R(1)) then  ! "exponential wall" (consistent with the energy, including g_au2ev)
+      F = a(1)*a(1)*exp(-a(1)*r_dist + a(2))*g_au2ev
+   else ! cubic spline
+      call Find_in_array_monoton(R, r_dist, i_array)
+      i_array = i_array - 1   ! floor instead of ceiling
+      rr0 = r_dist - R(i_array)
+      F = 2.0d0*c(i_array,3) + 6.0d0*c(i_array,4)*rr0
+   endif
+end function d2_DFTB_spline
+
+
+subroutine dE2rep_dr2_DFTB(TB_Repuls, Scell, NSC, numpar, F, dF)
+   ! First and second derivatives of the repulsive energy by r (Cartesian), diagonal in the atom and coordinate:
+   !   F(:,k) = dE_rep/dr_k ,  dF(:,k) = d2E_rep/dr_{k,alpha}^2   [eV/A], [eV/A^2]
+   type(TB_Rep_DFTB), dimension(:,:), intent(in) :: TB_Repuls
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   integer, intent(in) :: NSC
+   type(Numerics_param), intent(inout) :: numpar
+   real(8), dimension(:,:), allocatable, intent(out) :: F, dF
+   !---------------------------------------
+   integer :: n, ian
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+   n = Scell(NSC)%Na
+   allocate(F(3,n), dF(3,n))
+   F = 0.0d0
+   dF = 0.0d0
+
+#ifdef MPI_USED
+   N_incr = numpar%MPI_param%size_of_cluster
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = n
+   do ian = Nstart, Nend, N_incr
+      call dE2rep_one_atom_DFTB(ian, TB_Repuls, Scell, NSC, F(:,ian), dF(:,ian))
+   enddo
+   error_part = 'Error in dE2rep_dr2_DFTB:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'F', F)
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dF', dF)
+#else
+   !$omp parallel do private(ian)
+   do ian = 1, n
+      call dE2rep_one_atom_DFTB(ian, TB_Repuls, Scell, NSC, F(:,ian), dF(:,ian))
+   enddo
+   !$omp end parallel do
+#endif
+end subroutine dE2rep_dr2_DFTB
+
+
+subroutine dE2rep_one_atom_DFTB(ian, TB_Repuls, Scell, NSC, Fk, dFk)
+   integer, intent(in) :: ian, NSC
+   type(TB_Rep_DFTB), dimension(:,:), intent(in) :: TB_Repuls
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   real(8), dimension(3), intent(out) :: Fk, dFk
+   !---------------------------------
+   integer :: i1, atom_2, j1, m, kap, al, KOA1, KOA2
+   real(8) :: r, u(3), V1, V2
+
+   Fk = 0.0d0
+   dFk = 0.0d0
+   do i1 = 1, Scell(NSC)%Na   ! same loops and exclusions as dErdr_s_DFTB (pairs are counted twice: factor 0.5 below)
+      m = Scell(NSC)%Near_neighbor_size(i1)
+      KOA1 = Scell(NSC)%MDatoms(i1)%KOA
+      do atom_2 = 1, m
+         j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2)
+         if (j1 <= 0) cycle
+         kap = 0
+         if (ian == i1) kap = kap + 1
+         if (ian == j1) kap = kap - 1
+         if (kap == 0) cycle   ! also excludes the self-images j1 == i1
+         KOA2 = Scell(NSC)%MDatoms(j1)%KOA
+         r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4)
+         u(1) = Scell(NSC)%Near_neighbor_dist(i1,atom_2,1)/r
+         u(2) = Scell(NSC)%Near_neighbor_dist(i1,atom_2,2)/r
+         u(3) = Scell(NSC)%Near_neighbor_dist(i1,atom_2,3)/r
+         V1 = d_DFTB_repulsive_one(TB_Repuls(KOA1,KOA2), r)
+         V2 = d2_DFTB_repulsive_one(TB_Repuls(KOA1,KOA2), r)
+         do al = 1, 3
+            Fk(al)  = Fk(al)  + V1*dble(kap)*u(al)
+            dFk(al) = dFk(al) + dble(kap*kap)*(V2*u(al)*u(al) + V1*(1.0d0 - u(al)*u(al))/r)
+         enddo
+      enddo
+   enddo
+   Fk = 0.5d0*Fk     ! factor 0.5 to compensate for double-counting
+   dFk = 0.5d0*dFk
+end subroutine dE2rep_one_atom_DFTB
 
 
 

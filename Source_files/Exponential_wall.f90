@@ -57,7 +57,7 @@ subroutine get_short_range_rep_s(TB_Expwall, Scell, NSC, matter, numpar, a)   ! 
    integer(4) :: i, atom_2
    real(8), pointer :: a_r, Z1, Z2
    integer, pointer :: j, KOA1, KOA2, m
-   real(8), dimension(Scell(1)%Na) :: E_pot_array
+   real(8), dimension(Scell(NSC)%Na) :: E_pot_array
    integer :: Nstart, Nend, N_incr
    character(100) :: error_part
 
@@ -775,12 +775,20 @@ function d_tabulated_potential(r, f_tab) result(Pot)
       Nsiz = size(f_tab%R)
 
       ! Find the value of radius in the array:
-      if (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
+      if (Nsiz < 2) then
+         E = 0.0d0
+      else if (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
+
          E = 0.0d0
       else  ! (r > f_tab%R(Nsiz))
          call Find_monotonous_LE(f_tab%R, r, i_closest) ! module "Little_subroutines"
          if (i_closest == 1) then
-            E = (f_tab%E(i_closest+1) - f_tab%E(i_closest)) / (f_tab%R(i_closest+1) - f_tab%R(i_closest))
+            if (f_tab%use_spline) then
+               E = d_cubic_function(r-f_tab%R(i_closest), f_tab%b(i_closest), &
+                                    f_tab%c(i_closest), f_tab%d(i_closest))
+            else
+                E = (f_tab%E(i_closest+1) - f_tab%E(i_closest)) / (f_tab%R(i_closest+1) - f_tab%R(i_closest))
+            endif
          else
             if (f_tab%use_spline) then  ! use cubic spline instead of the finite difference
 
@@ -812,33 +820,37 @@ function d2_tabulated_potential(r, f_tab) result(Pot)
    type(Rep_tab), intent(in) :: f_tab
    !---------------------------
    integer :: i_closest, Nsiz
-   real(8) :: E
+   real(8) :: E, h_left, h_right, slope_left, slope_right
 
    if (f_tab%use_it) then  ! and only then
       Nsiz = size(f_tab%R)
 
       ! Find the value of radius in the array:
-      if (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
+      if (Nsiz < 2) then
+         E = 0.0d0
+      elseif (r > f_tab%R(Nsiz)) then ! nullify potential beyond the grid:
          E = 0.0d0
       else  ! (r > f_tab%R(Nsiz))
          call Find_monotonous_LE(f_tab%R, r, i_closest) ! module "Little_subroutines"
-         if (i_closest == 1) then
-            E = (f_tab%E(i_closest+1) - f_tab%E(i_closest)) / (f_tab%R(i_closest+1) - f_tab%R(i_closest))
+
+         if (f_tab%use_spline) then
+            E = d2_cubic_function(r-f_tab%R(i_closest), f_tab%c(i_closest), f_tab%d(i_closest))
+         else if (Nsiz < 3) then
+            E = 0.0d0
+         else if (i_closest == 1) then
+            h_left = f_tab%R(2) - f_tab%R(1)
+            h_right = f_tab%R(3) - f_tab%R(2)
+            E = 2.0d0 * (f_tab%E(1)/(h_left*(h_left+h_right)) - &
+                 f_tab%E(2)/(h_left*h_right) + f_tab%E(3)/(h_right*(h_left+h_right)))
          else
-            if (i_closest == Nsiz) i_closest = Nsiz - 1
-            if (f_tab%use_spline) then  ! use cubic spline instead of the finite difference
-               ! For spline, only the interval N-1 is defined, so use it for too large distances:
-               E = d2_cubic_function(r-f_tab%R(i_closest), f_tab%c(i_closest), f_tab%d(i_closest))  ! module "Algebra_tools"
+            h_left = f_tab%R(i_closest) - f_tab%R(i_closest-1)
+            h_right = f_tab%R(i_closest+1) - f_tab%R(i_closest)
+            slope_left = (f_tab%E(i_closest) - f_tab%E(i_closest-1))/h_left
+            slope_right = (f_tab%E(i_closest+1) - f_tab%E(i_closest))/h_right
+            E = 2.0d0 * (slope_right - slope_left)/(h_left + h_right)
+         endif
 
-            else ! use finite diference
-               i_closest = i_closest + 1  ! set upper point for interpolation between i-1 and i
-               ! Numerical second derivative:
-               E = (f_tab%E(i_closest) - 2.0d0*f_tab%E(i_closest-1)+f_tab%E(i_closest-2)) / &
-                   (f_tab%R(i_closest) - f_tab%R(i_closest-1))*(f_tab%R(i_closest-1) - f_tab%R(i_closest-2))
-
-            endif ! (f_tab%use_spline)
-         endif ! (i_closest == 1)
-      endif ! (f_tab%use_spline)
+      endif ! (Nsiz < 2)
    else  ! no potenital => no force
       E = 0.0d0
    endif ! (f_tab%use_it)
@@ -996,7 +1008,7 @@ subroutine get_Exp_wall_s(TB_Expwall, Scell, NSC, numpar, a)   ! Exponential wal
    !----------------------
    real(8), pointer :: a_r
    real(8) :: sum_a, Expwall_pot, E_pot
-   real(8), dimension(Scell(1)%Na) :: E_pot_array
+   real(8), dimension(Scell(NSC)%Na) :: E_pot_array
    INTEGER(4) i, atom_2
    integer, pointer :: j, KOA1, KOA2, m
    integer :: Nstart, Nend, N_incr
@@ -1094,23 +1106,41 @@ end function Exp_wall_pot
 pure function Wall_potential(C, r0, r) ! Exponential wall potential
    real(8) :: Wall_potential
    real(8), intent(in) :: C, r0, r
-   real(8) arg
+   real(8) arg, arg_limit
+   !-----------
    arg = r - r0
-   if (abs(arg) <= log(TINY(r))) then	! atoms are too close
-      Wall_potential = sign(1.0d25,C)	! "infinity"
+   arg_limit = wall_argument_limit()    ! below
+
+   !if (abs(arg) <= log(TINY(r))) then	! atoms are too close
+   if (abs(arg) <= arg_limit) then
+      if (arg >= 0.0d0) then
+         Wall_potential = sign(1.0d25,C)    ! "infinity"
+      else
+         Wall_potential = 0.0d0
+      endif
    else	! proper potential:
       Wall_potential = C*exp(1.0d0/arg) ! [eV]
    endif
 end function Wall_potential
 
+! hehlper function:
+pure function wall_argument_limit() result(arg_limit)
+   real(8) :: arg_limit, log_huge
+   log_huge = log(huge(1.0d0))
+   ! Leave headroom for inverse-distance powers in the potential derivatives.
+   arg_limit = 1.0d0/(log_huge - 10.0d0*log(log_huge))
+end function wall_argument_limit
+
 
 pure function d_Wall_potential(C, r0, r)  ! derivative of exponential wall potential
    real(8) :: d_Wall_potential
    real(8), intent(in) :: C, r0, r
-   real(8) :: rr0, arg
+   real(8) :: rr0, arg, arg_limit
    arg = r - r0
-   if (abs(arg) <= log(TINY(r))) then	! atoms are too close
-      d_Wall_potential = 0.0d0	! no contribution to force at "infinite" potential
+   arg_limit = wall_argument_limit()    ! above
+   !if (abs(arg) <= log(TINY(r))) then	! atoms are too close
+   if (abs(arg) <= arg_limit) then
+      d_Wall_potential = 0.0d0  ! no contribution to force at "infinite" potential
    else	! proper potential:
       rr0 = 1.0d0/arg
       d_Wall_potential = -C*exp(rr0)*rr0*rr0
@@ -1121,9 +1151,11 @@ end function d_Wall_potential
 pure function d2_Wall_potential(C, r0, r) result(dF) ! second derivative of exponential wall potential
    real(8) :: dF
    real(8), intent(in) :: C, r0, r
-   real(8) :: rr0, arg
+   real(8) :: rr0, arg, arg_limit
    arg = r - r0
-   if (abs(arg) <= log(TINY(r))) then	! atoms are too close
+   arg_limit = wall_argument_limit()
+   !if (abs(arg) <= log(TINY(r))) then	! atoms are too close
+   if (abs(arg) <= arg_limit) then
       dF = 0.0d0	! no contribution to force at "infinite" potential
    else	! proper potential:
       rr0 = 1.0d0/arg

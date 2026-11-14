@@ -98,7 +98,10 @@ subroutine ensure_correct_path_separator(Path, path_sep_in, no_slash)
 
 
    ! 3) Sanitize (ensure no harmful characters):
-   call sanitize_line(Path, no_slash_allowed) ! below
+   !call sanitize_line(Path, no_slash_allowed) ! below
+   ! Sanitize filename additions only; ordinary paths must retain drive letters and "..".
+   if (no_slash_allowed) call sanitize_line(Path, no_slash_allowed) ! below
+
    !print*, 'Path-3:', trim(adjustl(Path))
 end subroutine ensure_correct_path_separator
 
@@ -288,27 +291,61 @@ subroutine read_file(Reason, i, read_well, Error_descript)
 end subroutine read_file
 
 
-pure function number_of_columns(line)
+pure function number_of_columns_OLD(line) result(number_of_columns)
+! Fails if the line starts with TAB
    integer :: number_of_columns
    character(*), intent(in) :: line
    integer i, n
    logical :: same_space
+   character(1000) :: line_temp
+
+   line_temp = trim(adjustl(line))  ! trim trailing spaces around
    same_space = .false.
    i = 0
-   n = len(line)
+   !n = len(line)
+   n = LEN(trim(adjustl(line_temp)))    ! only the values, no spaces around
    number_of_columns = 0
    do while(i < n) ! scan through all the line
       i = i + 1
-      selectcase (line(i:I))
-      case (' ', '	') ! space or tab can be a separator between the columns
+      selectcase (line(i:i))
+      case (' ', ACHAR(9)) ! space or tab can be a separator between the columns
          if (.not.same_space) number_of_columns = number_of_columns + 1
          same_space = .true. ! in case columns are separated by more than one space or tab
       case default ! column data themselves, not a space inbetween
          same_space = .false.
       endselect
+      !print*, i, '"'//line(i:i)//'"', number_of_columns
    enddo
    number_of_columns = number_of_columns + 1	! number of columns is by 1 more than number of spaces inbetween
+
+   !pause 'number_of_columns_OLD'
+end function number_of_columns_OLD
+
+
+pure function number_of_columns(line)
+   integer :: number_of_columns
+   character(*), intent(in) :: line
+   integer :: i
+   logical :: in_column
+
+   number_of_columns = 0
+   in_column = .false.
+   do i = 1, len(line)
+      if (line(i:i) == ' ' .or. line(i:i) == ACHAR(9)) then
+         in_column = .false.
+      else
+         if (.not.in_column) number_of_columns = number_of_columns + 1
+         in_column = .true.
+      endif
+   enddo
+!    print*, line
+!    print*, 'Ncol new=', number_of_columns
+!    print*, 'Ncol old=', number_of_columns_OLD(line)
+!    print*, '------------------'
 end function number_of_columns
+
+
+
 
 
 subroutine Count_columns_in_file(File_num, N, skip_lines)
@@ -365,8 +402,8 @@ subroutine Count_lines_in_file(File_num, N, skip_lines, skip_empty, skip_comment
     logical, intent(in), optional :: skip_empty ! if you want to skip empty lines
     character(*), intent(in), optional :: skip_comment
     !-------------------------------
-    integer i
-    logical :: skip_empty_lines
+    integer i, j
+    logical :: skip_empty_lines, skip_comment_lines, skip_current_line
     character (200) :: read_line
     character(1) :: comment
 
@@ -376,29 +413,51 @@ subroutine Count_lines_in_file(File_num, N, skip_lines, skip_empty, skip_comment
        skip_empty_lines = .false.
     endif
 
+    skip_comment_lines = .false.
     if (present(skip_comment)) then
-       comment = skip_comment(1:1)  ! first character is the comment
+       !comment = skip_comment(1:1)  ! first character is the comment
+       if (len_trim(skip_comment) > 0) then
+          comment = skip_comment(1:1)
+          skip_comment_lines = .true.
+       endif
     endif
 
     if (present(skip_lines)) then
         do i=1,skip_lines
-            read(File_num,*, end=604)
+            !read(File_num,*, end=604)
+            read(File_num,'(a)', end=604) read_line
         enddo
         604 continue
     endif
     i = 0
 
-    if (skip_empty_lines) then
-       do
-           read(File_num,*, end=603) read_line
-           if (LEN(trim(adjustl(read_line))) > 0) i = i + 1 ! only non-empty lines count
-       enddo
-    else ! default version:
-       do
-           read(File_num,*, end=603)
-           i = i + 1    ! count all lines
-       enddo
-    endif ! (skip_empty_lines)
+!     if (skip_empty_lines) then
+!        do
+!            read(File_num,*, end=603) read_line
+!            if (LEN(trim(adjustl(read_line))) > 0) i = i + 1 ! only non-empty lines count
+!        enddo
+!     else ! default version:
+!        do
+!            read(File_num,*, end=603)
+!            i = i + 1    ! count all lines
+!        enddo
+!     endif ! (skip_empty_lines)
+
+     do
+       read(File_num,'(a)', end=603) read_line
+       if (skip_empty_lines .and. number_of_columns(read_line) == 0) cycle
+       if (skip_comment_lines) then
+          skip_current_line = .false.
+          do j = 1, len(read_line)
+             if (read_line(j:j) == ' ' .or. read_line(j:j) == ACHAR(9)) cycle
+             skip_current_line = (read_line(j:j) == comment)
+             exit
+          enddo
+          if (skip_current_line) cycle
+       endif
+       i = i + 1 ! count all non-comment lines
+    enddo
+
 
     603 continue
     rewind (File_num) ! to read next time from the beginning, not continue from the line we ended now.

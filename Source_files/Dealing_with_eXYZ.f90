@@ -140,6 +140,12 @@ subroutine interpret_XYZ_comment_line(line_2, Supce, ind_S, ind_R, ind_V, ind_at
          block_min = max(current_block+eq_pos+1, current_block+block_start+1)
          block_max = max(current_block+block_start+block_end-1 , str_len)
          call interprete_substitute_line( line_2(current_block+block_start+1:current_block+block_start+block_end-1), substitution_data) ! below
+         if (substitution_data%required) then
+            if (substitution_data%percentage < 0.0d0 .or. substitution_data%percentage > 1.0d0) then
+               Error_descript = 'Substitution fraction must be between 0 and 1'
+               goto 2012
+            endif
+         endif
 
       !-----------------
       case default
@@ -283,7 +289,8 @@ subroutine interprete_properties_line(prop_block, ind_S, ind_R, ind_V)
       case ('Vel','vel', 'Velo', 'velo')
          if ( (trim(adjustl(read_char)) == 'S' ) .or. &
               (trim(adjustl(read_char)) == 's' ) ) then
-            ind_V = 0   ! Relative velocity VS is set
+            !ind_V = 0   ! Relative velocity VS is set
+            ind_V = 2   ! Relative velocity VS is set
          else
             ind_V = 1   ! Absolute velocity V is set
          endif
