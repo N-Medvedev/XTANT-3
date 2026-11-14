@@ -30,6 +30,7 @@ use TB, only : k_point_choice, construct_complex_Hamiltonian, get_DOS_sort
 use TB_NRL, only : test_nonorthogonal_solution_c
 use Optical_parameters, only : allocate_Eps_hw, get_Onsager_coeffs, get_Kubo_Greenwood_CDF, get_kappa_e_e, get_Onsager_dynamic
 use Little_subroutines, only : Find_in_array_monoton, linear_interpolation, print_time_step
+use Electron_tools, only : get_Ce_and_mu
 
 #ifdef _OPENMP
    USE OMP_LIB, only : OMP_GET_THREAD_NUM
@@ -70,7 +71,7 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
    real(8), dimension(:), allocatable :: kappa, kappa_ee, kappa_temp, kappa_ee_temp    ! electron heat conductivity vs Te
    real(8), dimension(:), allocatable :: kappa_mu_grid, kappa_mu_grid_temp, kappa_Ce_grid, kappa_Ce_grid_temp
    integer :: Nsiz_Te, Nsiz_DOS_1, Nsiz_DOS_2, Nsiz_DOS_3
-   real(8) :: Te_min, Te_max, dTe, kap_temp
+   real(8) :: Te_min, Te_max, dTe, kap_temp, Ce_temp
    real(8), dimension(:,:), allocatable :: DOS, DOS_temp  ! [eV] grid; [a.u.] DOS
    real(8), dimension(:,:,:), allocatable :: DOS_partial, DOS_partial_temp ! partial DOS made of each orbital type
    logical :: anything_to_do
@@ -196,6 +197,12 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
          ! Only gamma-point calculations, so only 1 time:
          call get_Onsager_dynamic(numpar, matter, Scell, NSC, kappa_temp) ! module "Optical_parameters"
 
+         ! Define kappa_mu_grid_temp:
+         do i = 1, Nsiz_Te
+            call get_Ce_and_mu(Scell, NSC, Scell(NSC)%kappa_Te_grid(i), Scell(NSC)%Ei, &
+                               Ce_temp, kappa_mu_grid_temp(i), .true.)
+         enddo
+
          ! Contribution of the electronic term:
          call get_kappa_e_e(numpar, matter, Scell, NSC, Scell(NSC)%Ei, kappa_mu_grid_temp, &
                               Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! module "Optical_parameters"
@@ -264,11 +271,13 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
       !-------------------------------
       ! Get DOS:
       if (numpar%save_DOS) then ! if required
+         !$omp critical (complex_hamiltonian_dos)
          if ( ( abs(kx) < 1.0d-10) .and. (abs(ky)<1.0d-10) .and. (abs(kz)<1.0d-10) ) then ! real Hamiltonian
             call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp) ! below
          else ! complex
             call get_DOS_on_k_points(numpar, Scell(NSC), matter, Ei, DOS_temp, DOS_partial_temp, CHij, CSij) ! below
          endif
+         !$omp end critical (complex_hamiltonian_dos)
       else  ! skip DOS calculations
          DOS_temp = 0.0d0
          DOS_partial_temp = 0.0d0
@@ -299,17 +308,27 @@ subroutine use_complex_Hamiltonian(numpar, matter, Scell, NSC, Err)  ! From Ref.
                               Scell(NSC)%kappa_Te_grid, kappa_mu_grid_temp, kappa_Ce_grid_temp)   ! module "Optical_parameters"
 
          ! Contribution of the electronic term:
+         !$omp critical (kappa_e_e_cross_section_update)
          call get_kappa_e_e(numpar, matter, Scell, NSC, Ei, kappa_mu_grid_temp, &
                               Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! module "Optical_parameters"
+         !$omp end critical (kappa_e_e_cross_section_update)
       endif
 
       if (numpar%do_kappa_dyn .and. (Ngp == 1)) then ! (dynamic)
          ! Only gamma-point calculations, so only 1 time:
          call get_Onsager_dynamic(numpar, matter, Scell, NSC, kappa_temp) ! module "Optical_parameters"
 
+         ! Define kappa_mu_grid_temp:
+         do i = 1, Nsiz_Te
+            call get_Ce_and_mu(Scell, NSC, Scell(NSC)%kappa_Te_grid(i), Scell(NSC)%Ei, &
+                               Ce_temp, kappa_mu_grid_temp(i), .true.)
+         enddo
+
          ! Contribution of the electronic term:
+         !$omp critical (kappa_e_e_cross_section_update)
          call get_kappa_e_e(numpar, matter, Scell, NSC, Scell(NSC)%Ei, kappa_mu_grid_temp, &
                               Scell(NSC)%kappa_Te_grid, kappa_ee_temp) ! module "Optical_parameters"
+         !$omp end critical (kappa_e_e_cross_section_update)
       endif
 
       !-------------------------------

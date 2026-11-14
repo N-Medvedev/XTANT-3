@@ -39,7 +39,7 @@ implicit none
 PRIVATE
 
 public :: Construct_M_Vs, Complex_Hamil_tot, dHij_s, Attract_TB_Forces_Press, dErdr_s, dErdr_Pressure_s, &
-         construct_TB_H_Pettifor, get_Erep_s, dHij_r, dE2rep_dr2
+         construct_TB_H_Pettifor, get_Erep_s, dHij_r, dE2rep_dr2, dHij_r_response
 
  contains
 
@@ -134,6 +134,133 @@ subroutine dHij_r(TB_Hamil, atoms, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, F,
 !$omp end parallel
 #endif
 end subroutine dHij_r
+
+
+
+
+! --------------------------------------------------------------------------------------------
+!  dFatr from dHij_r is the "frozen" second derivative  sum_ij A_ij d2H_ij/dr2  (eigenvectors and occupations kept fixed).
+!  The exact diagonal of the Hessian of the band energy U = sum_n f_n eps_n also contains the second-order response of
+!  the electronic states:
+!       d2U/dx_k^2 = sum_n f_n <n|H''|n>  +  sum_{n/=m} (f_n - f_m)/(eps_n - eps_m) * |<n|dH/dx_k|m>|^2
+!                    [ + occupation response  sum_n (df_n/d eps_n) <n|dH/dx_k|n>^2  if the occupations follow a Fermi function ]
+!  Cost: for every atom k only the orbitals of k and of its neighbours are affected by dH/dx_k, so
+!  V = C_I^T dH_II C_I is two dgemm calls with the thin matrix C_I (|I| x Nsiz); no dense Nsiz x Nsiz x Nsiz products.
+! --------------------------------------------------------------------------------------------
+subroutine dHij_r_response(TB_Hamil, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, dFresp, fermi_following, Te)
+   type(TB_H_Pettifor), dimension(:,:), intent(in) :: TB_Hamil   ! parameters of the Hamiltonian of TB
+   type(Super_cell), dimension(:), intent(in), target :: Scell   ! supercell (eigenvectors Ha, levels Ei, occupations fe)
+   type(Numerics_param), intent(inout) :: numpar
+   real(8), dimension(:,:,:), intent(in) :: M_Vs, M_dVs, M_d2Vs, M_cos
+   real(8), dimension(:,:), allocatable, intent(inout) :: dFresp  ! (3,Nat) response part of d2U/dr2 [eV/A^2]
+   logical, intent(in), optional :: fermi_following   ! .true. if the occupations follow a Fermi function of the levels at Te
+   real(8), intent(in), optional :: Te                ! [eV]; needed if fermi_following
+   !---------------------------------
+   integer :: Nat, n_orb, Nsiz, k, al, i, j, a, b, m, atom_2, n_I, nI4
+   integer, dimension(:), allocatable :: iat, Idx
+   real(8), dimension(:,:), allocatable :: W, dHx, dHy, dHz, d2Hx, d2Hy, d2Hz
+   real(8), dimension(:,:), allocatable :: dHII, CI, T1, V
+   real(8), parameter :: tol = 1.0d-8   ! [eV] degeneracy threshold
+   real(8) :: dE, Te_use
+   logical :: use_f
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+   Nat = size(Scell(1)%MDAtoms)
+   n_orb = size(TB_Hamil(Scell(1)%MDatoms(1)%KOA, Scell(1)%MDatoms(1)%KOA)%V0)   ! orbitals per atom
+   Nsiz = Nat*n_orb
+   if (allocated(dFresp)) deallocate(dFresp)
+   allocate(dFresp(3,Nat))
+   dFresp = 0.0d0
+
+   use_f = .false.
+   Te_use = 0.0d0
+   if (present(fermi_following)) use_f = fermi_following
+   if (present(Te)) Te_use = Te
+   if (use_f .and. (Te_use <= 0.0d0)) use_f = .false.
+
+   ! Weights W(n,m) = (f_n - f_m)/(eps_n - eps_m); for degenerate pairs the limit df/deps (zero for fixed occupations):
+   allocate(W(Nsiz,Nsiz))
+   do b = 1, Nsiz
+      do a = 1, Nsiz
+         dE = Scell(1)%Ei(a) - Scell(1)%Ei(b)
+         if (abs(dE) > tol) then
+            W(a,b) = (Scell(1)%fe(a) - Scell(1)%fe(b))/dE
+         elseif (use_f) then
+            W(a,b) = -Scell(1)%fe(a)*(1.0d0 - 0.5d0*Scell(1)%fe(a))/Te_use   ! fe = 2*f_FD:  d fe/d eps
+         else
+            W(a,b) = 0.0d0
+         endif
+      enddo
+   enddo
+
+   allocate(dHx(Nsiz,Nsiz), dHy(Nsiz,Nsiz), dHz(Nsiz,Nsiz), d2Hx(Nsiz,Nsiz), d2Hy(Nsiz,Nsiz), d2Hz(Nsiz,Nsiz))
+   allocate(V(Nsiz,Nsiz))
+
+#ifdef MPI_USED
+   N_incr = numpar%MPI_param%size_of_cluster
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = Nat
+#else
+   N_incr = 1
+   Nstart = 1
+   Nend = Nat
+#endif
+
+   do k = Nstart, Nend, N_incr
+      call dHamil_tot_r(dHx, dHy, dHz, d2Hx, d2Hy, d2Hz, TB_Hamil, Scell, 1, numpar, k, M_Vs, M_dVs, M_d2Vs, M_cos)
+
+      ! Orbitals touched by the displacement of atom k: atom k itself and its neighbours
+      m = Scell(1)%Near_neighbor_size(k)
+      allocate(iat(m+1))
+      n_I = 1
+      iat(1) = k
+      do atom_2 = 1, m
+         j = Scell(1)%Near_neighbor_list(k,atom_2)
+         if (j <= 0) cycle
+         if (any(iat(1:n_I) == j)) cycle
+         n_I = n_I + 1
+         iat(n_I) = j
+      enddo
+      nI4 = n_I*n_orb
+      allocate(Idx(nI4), dHII(nI4,nI4), CI(nI4,Nsiz), T1(nI4,Nsiz))
+      do i = 1, n_I
+         do a = 1, n_orb
+            Idx((i-1)*n_orb + a) = (iat(i)-1)*n_orb + a
+         enddo
+      enddo
+      do a = 1, nI4
+         CI(a,:) = Scell(1)%Ha(Idx(a),:)     ! eigenvectors: columns = states (as in Construct_Aij)
+      enddo
+
+      do al = 1, 3   ! x, y, z
+         do b = 1, nI4
+            do a = 1, nI4
+               select case (al)
+               case (1)
+                  dHII(a,b) = dHx(Idx(a),Idx(b))
+               case (2)
+                  dHII(a,b) = dHy(Idx(a),Idx(b))
+               case default
+                  dHII(a,b) = dHz(Idx(a),Idx(b))
+               end select
+            enddo
+         enddo
+         ! V = C_I^T * dH_II * C_I   (matrix elements of dH/dr_k between all eigenstates)
+         call dgemm('N', 'N', nI4, Nsiz, nI4, 1.0d0, dHII, nI4, CI, nI4, 0.0d0, T1, nI4)
+         call dgemm('T', 'N', Nsiz, Nsiz, nI4, 1.0d0, CI, nI4, T1, nI4, 0.0d0, V, Nsiz)
+         dFresp(al,k) = SUM(W(:,:)*V(:,:)*V(:,:))
+      enddo ! al
+
+      deallocate(iat, Idx, dHII, CI, T1)
+   enddo ! k
+
+#ifdef MPI_USED
+   error_part = 'Error in dHij_r_response:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dFresp', dFresp)
+#endif
+   deallocate(W, dHx, dHy, dHz, d2Hx, d2Hy, d2Hz, V)
+end subroutine dHij_r_response
 
 
 !11111111111111111111111111111111111111111111111111111111111111111111111
@@ -692,9 +819,12 @@ subroutine dHopping_r(dtsx, dtsy, dtsz,  d2tsx, d2tsy, d2tsz,  i, j, k, TB, Scel
       drdrz2 = drdrz*drdrz
       
       ! Second derivatives d2 r_{ij} / d r2_{k,alpha} = d d_{alpha} / d r_{k,alpha}:
-      d2rdr2x = ddija_drkb(i, j, k, 1, 1, x, x, r)	! module "TB_Koster_Slater"
-      d2rdr2y = ddija_drkb(i, j, k, 2, 2, y, y, r)	! module "TB_Koster_Slater"
-      d2rdr2z = ddija_drkb(i, j, k, 3, 3, z, z, r)	! module "TB_Koster_Slater"
+!       d2rdr2x = ddija_drkb(i, j, k, 1, 1, x, x, r)	! module "TB_Koster_Slater"
+!       d2rdr2y = ddija_drkb(i, j, k, 2, 2, y, y, r)	! module "TB_Koster_Slater"
+!       d2rdr2z = ddija_drkb(i, j, k, 3, 3, z, z, r)	! module "TB_Koster_Slater"
+      d2rdr2x = d2rij_drka_drlb(i, j, k, k, 1, 1, x, x, r)  ! module "TB_Koster_Slater"
+      d2rdr2y = d2rij_drka_drlb(i, j, k, k, 2, 2, y, y, r)  ! module "TB_Koster_Slater"
+      d2rdr2z = d2rij_drka_drlb(i, j, k, k, 3, 3, z, z, r)  ! module "TB_Koster_Slater"
       
       ! Derivatives of cosine directions:
       dlds(1) = ddija_drkb(i, j, k, 1, 1, x, x, r)	! module "TB_Koster_Slater"
@@ -2390,9 +2520,14 @@ subroutine dE2rep_dr2(TB_Repuls, atoms, Scell, numpar, F, dF) ! second derivativ
                   drdrz = drij_drka(i1, j1, ian, z, a_r)	! module "TB_Koster_Slater"
 
                   ! Second derivatives d2 r_{ij} / d r2_{k,alpha}
-                  d2rdr2x = ddija_drkb(i1, j1, ian, 1, 1, x, x, a_r)	! module "TB_Koster_Slater"
-                  d2rdr2y = ddija_drkb(i1, j1, ian, 2, 2, y, y, a_r)	! module "TB_Koster_Slater"
-                  d2rdr2z = ddija_drkb(i1, j1, ian, 3, 3, z, z, a_r)	! module "TB_Koster_Slater"
+                  !d2rdr2x = ddija_drkb(i1, j1, ian, 1, 1, x, x, a_r)	! module "TB_Koster_Slater"
+                  !d2rdr2y = ddija_drkb(i1, j1, ian, 2, 2, y, y, a_r)	! module "TB_Koster_Slater"
+                  !d2rdr2z = ddija_drkb(i1, j1, ian, 3, 3, z, z, a_r)	! module "TB_Koster_Slater"
+                  d2rdr2x = d2rij_drka_drlb(i1, j1, ian, ian, 1, 1, x, x, a_r)  ! module "TB_Koster_Slater"
+                  d2rdr2y = d2rij_drka_drlb(i1, j1, ian, ian, 2, 2, y, y, a_r)  ! module "TB_Koster_Slater"
+                  d2rdr2z = d2rij_drka_drlb(i1, j1, ian, ian, 3, 3, z, z, a_r)  ! module "TB_Koster_Slater"
+
+
 
                   ! Precalculated patrices of Phi-functions and d Phi / d r_{i,j}
                   dphi_point => M_dPhi(j1, i1)
@@ -2449,9 +2584,12 @@ subroutine dE2rep_dr2(TB_Repuls, atoms, Scell, numpar, F, dF) ! second derivativ
                   drdrz = drij_drka(i1, j1, ian, z, a_r)	! module "TB_Koster_Slater"
                   
                   ! Second derivatives d2 r_{ij} / d r2_{k,alpha}
-                  d2rdr2x = ddija_drkb(i1, j1, ian, 1, 1, x, x, a_r)	! module "TB_Koster_Slater"
-                  d2rdr2y = ddija_drkb(i1, j1, ian, 2, 2, y, y, a_r)	! module "TB_Koster_Slater"
-                  d2rdr2z = ddija_drkb(i1, j1, ian, 3, 3, z, z, a_r)	! module "TB_Koster_Slater"
+                  !d2rdr2x = ddija_drkb(i1, j1, ian, 1, 1, x, x, a_r)	! module "TB_Koster_Slater"
+                  !d2rdr2y = ddija_drkb(i1, j1, ian, 2, 2, y, y, a_r)	! module "TB_Koster_Slater"
+                  !d2rdr2z = ddija_drkb(i1, j1, ian, 3, 3, z, z, a_r)	! module "TB_Koster_Slater"
+                  d2rdr2x = d2rij_drka_drlb(i1, j1, ian, ian, 1, 1, x, x, a_r)  ! module "TB_Koster_Slater"
+                  d2rdr2y = d2rij_drka_drlb(i1, j1, ian, ian, 2, 2, y, y, a_r)  ! module "TB_Koster_Slater"
+                  d2rdr2z = d2rij_drka_drlb(i1, j1, ian, ian, 3, 3, z, z, a_r)  ! module "TB_Koster_Slater"
 
                   ! Precalculated patrices of Phi-functions and d Phi / d r_{i,j}
                   dphi_point => M_dPhi(j1, i1)

@@ -1266,6 +1266,7 @@ subroutine reinit(this, n)
     if (allocated(this%At_ind)) deallocate(this%At_ind)
     allocate(this%At_ind(n))
     this%At_ind = .false.
+    this%anything_to_do = .false.
 end subroutine reinit
 ! Freezing particulat atoms:
 subroutine freeze_atom(this, n)  ! to freeze particular atom
@@ -1281,7 +1282,8 @@ subroutine defreeze_atom(this, n)  ! to defreeze particular atom
     integer, intent(in) :: n
 
     this%At_ind(n) = .false.
-    if (.not.all(this%At_ind)) then ! no more frozen atoms, nothing to do
+    !if (.not.all(this%At_ind)) then ! no more frozen atoms, nothing to do
+    if (.not.any(this%At_ind)) then ! no more frozen atoms, nothing to do
        this%anything_to_do = .false.
     endif
 end subroutine defreeze_atom

@@ -60,6 +60,8 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
    !real(8), dimension(size(Scell(1)%fe)) :: d_fe, d_fe_cur
    real(8), dimension(:), allocatable :: d_fe, d_fe_cur
    real(8), dimension(:), allocatable :: Spectrum_MC  ! spectrum of the FIRST laser pulse
+   real(8), dimension(:), allocatable :: fe_high_local, fe_norm_high_local
+   real(8), dimension(:,:), allocatable :: fe_bybirth_local
    integer :: N_incr, Nstart, Nend
    character(100) :: error_part
    
@@ -192,13 +194,35 @@ subroutine MC_Propagate(MC, numpar, matter, Scell, laser, tim, Err) ! The entire
          Scell(NSC)%fe(:) = Scell(NSC)%fe(:) + d_fe(:)/NMC_real
 
          ! And the distribution on the grid:
-         if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
-            ! Sort distribution of electrons
-            call get_high_energy_distribution(Scell(NSC), MC, numpar)  ! below
-
-            ! Sort the numbers of high-eenrgy electrons by type:
-            call sort_electrons_by_type(Scell(NSC), MC, numpar)  ! below
+!          if (numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it
+!             ! Sort distribution of electrons
+!             call get_high_energy_distribution(Scell(NSC), MC, numpar)  ! below
+!
+!             ! Sort the numbers of high-eenrgy electrons by type:
+!             call sort_electrons_by_type(Scell(NSC), MC, numpar)  ! below
+!          endif
+         ! Corrected for the case of MPI:
+         if (numpar%save_fe_grid) then
+            allocate(fe_high_local(size(Scell(NSC)%fe_high_on_grid)), source=0.0d0)
+            allocate(fe_norm_high_local(size(Scell(NSC)%fe_norm_high_on_grid)), source=0.0d0)
+            allocate(fe_bybirth_local(size(Scell(NSC)%fe_bybirth_on_grid,1), &
+                                      size(Scell(NSC)%fe_bybirth_on_grid,2)), source=0.0d0)
+            call get_high_energy_distribution(Scell(NSC), MC, numpar, fe_high_local, &
+                                              fe_norm_high_local, fe_bybirth_local)
+#ifdef MPI_USED
+            call do_MPI_Allreduce(numpar%MPI_param, 'Error in MC_Propagate: {fe_high_local}', fe_high_local)
+            call do_MPI_Allreduce(numpar%MPI_param, 'Error in MC_Propagate: {fe_norm_high_local}', fe_norm_high_local)
+            call do_MPI_Allreduce(numpar%MPI_param, 'Error in MC_Propagate: {fe_bybirth_local}', fe_bybirth_local)
+#endif
+            if (numpar%MPI_param%process_rank == 0) then
+               Scell(NSC)%fe_high_on_grid = Scell(NSC)%fe_high_on_grid + fe_high_local
+               Scell(NSC)%fe_norm_high_on_grid = Scell(NSC)%fe_norm_high_on_grid + fe_norm_high_local
+               Scell(NSC)%fe_bybirth_on_grid = Scell(NSC)%fe_bybirth_on_grid + fe_bybirth_local
+            endif
+            deallocate(fe_high_local, fe_norm_high_local, fe_bybirth_local)
          endif
+         ! Sort electron origins on every rank; the routine reduces their counts under MPI.
+         call sort_electrons_by_type(Scell(NSC), MC, numpar)  ! below
 
          ! Save additions to photon the spectrum of the FIRST laser pulse:
          if (allocated(laser(1)%Spectrum_MC)) then
@@ -250,7 +274,7 @@ end subroutine MC_Propagate
 
 
 
-subroutine sort_electrons_by_type(Scell, MC, numpar)
+subroutine sort_electrons_by_type_OLD(Scell, MC, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(MC_data), dimension(:), intent(in), target :: MC   ! all MC arrays for photons, electrons and holes
    type(Numerics_param), intent(inout) :: numpar   ! numerical parameters, including lists of earest neighbors
@@ -297,11 +321,76 @@ subroutine sort_electrons_by_type(Scell, MC, numpar)
    endif
 
    nullify(i_ind)
+end subroutine sort_electrons_by_type_OLD
+
+
+
+subroutine sort_electrons_by_type(Scell, MC, numpar)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(MC_data), dimension(:), intent(in), target :: MC   ! all MC arrays for photons, electrons and holes
+   type(Numerics_param), intent(inout) :: numpar   ! numerical parameters, including lists of earest neighbors
+   !--------------------
+   integer :: stat, i_el, N_incr, Nstart
+   real(8) :: NMC, Ne_photo, Ne_Auger, Ne_impact, Ne_error
+   real(8) :: origin_counts(3)
+   integer, pointer :: i_ind
+
+   ! Number of MC iterations to normalize to:
+   NMC = 1.0d0/dble(numpar%NMC)
+   Ne_photo  = 0.0d0    ! to start with
+   Ne_Auger  = 0.0d0    ! to start with
+   Ne_impact = 0.0d0    ! to start with
+   N_incr = 1
+   Nstart = 1
+#ifdef MPI_USED
+   N_incr = numpar%MPI_param%size_of_cluster
+   Nstart = 1 + numpar%MPI_param%process_rank
+#endif
+
+   ! Sort electrons from the MC iterations processed by this rank:
+   do stat = Nstart, numpar%NMC, N_incr
+      do i_el = 1, MC(stat)%noe  ! all active electrons
+         i_ind => MC(stat)%electrons(i_el)%birthmark     ! index of orgin of electron
+         select case (i_ind)  ! type of electron
+         case default ! currently there are only these many types of electrons; anything else is unknokwn
+            print*, 'ERROR: Unidentified electron in sort_electrons_by_type:'
+            print*, stat, i_el, MC(stat)%electrons(i_el)%birthmark
+         case (0) ! external electrons
+            ! we are not counting those
+         case (1) ! photoeelectron
+            Ne_photo = Ne_photo + NMC ! density of electrons per iteration
+         case (2) ! impact-ionized
+            Ne_impact = Ne_impact + NMC
+         case (3) ! Auger
+            Ne_Auger = Ne_Auger + NMC
+         endselect
+      enddo ! i_el
+   enddo ! stat
+#ifdef MPI_USED
+   origin_counts = [Ne_photo, Ne_Auger, Ne_impact]
+   call do_MPI_Allreduce(numpar%MPI_param, 'Error in sort_electrons_by_type: {origin_counts}', origin_counts)
+   Ne_photo = origin_counts(1)
+   Ne_Auger = origin_counts(2)
+   Ne_impact = origin_counts(3)
+#endif
+   ! Save the data:
+   Scell%Ne_photo  = Ne_photo
+   Scell%Ne_Auger  = Ne_Auger
+   Scell%Ne_impact = Ne_impact
+
+   ! Check consistency:
+   Ne_error = Scell%Ne_high - Scell%Ne_photo - Scell%Ne_Auger - Scell%Ne_impact
+   if ((abs(Ne_error) > 1.0d-8) .and. (numpar%MPI_param%process_rank == 0)) then
+      print*, 'PROBLEM: Inconsistent number of high-energy electrons in sort_electrons_by_type:', Ne_error
+      print*, Scell%Ne_high, Scell%Ne_photo, Scell%Ne_Auger, Scell%Ne_impact
+   endif
+
+   nullify(i_ind)
 end subroutine sort_electrons_by_type
 
 
 
-subroutine get_high_energy_distribution(Scell, MC, numpar)
+subroutine get_high_energy_distribution_OLD(Scell, MC, numpar)
    type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
    type(MC_data), dimension(:), intent(in), target :: MC   ! all MC arrays for photons, electrons and holes
    type(Numerics_param), intent(inout) :: numpar   ! numerical parameters, including lists of earest neighbors
@@ -332,7 +421,7 @@ subroutine get_high_energy_distribution(Scell, MC, numpar)
 
             ! Origin-resolved distributions:
             i_ind => MC(stat)%electrons(i_el)%birthmark     ! index of orgin of electron
-            if ((i_ind < 0) .or. (i_ind > Nsiz)) then
+            if ((i_ind <= 0) .or. (i_ind > Nsiz)) then
                print*, 'ERROR: Unidentified electron in get_high_energy_distribution:'
                print*, stat, i_el, MC(stat)%electrons(i_el)%birthmark
             else ! within array bounds, add it:
@@ -343,8 +432,60 @@ subroutine get_high_energy_distribution(Scell, MC, numpar)
 
    endif
    nullify(i_ind)
-end subroutine get_high_energy_distribution
+end subroutine get_high_energy_distribution_OLD
 
+
+
+subroutine get_high_energy_distribution(Scell, MC, numpar, fe_high, fe_norm_high, fe_bybirth)
+   type(Super_cell), intent(inout) :: Scell  ! supercell with all the atoms as one object
+   type(MC_data), dimension(:), intent(in), target :: MC   ! all MC arrays for photons, electrons and holes
+   type(Numerics_param), intent(inout) :: numpar   ! numerical parameters, including lists of earest neighbors
+   real(8), dimension(:), intent(inout) :: fe_high, fe_norm_high
+   real(8), dimension(:,:), intent(inout) :: fe_bybirth
+   !--------------------
+   integer :: stat, i_el, j, N_incr, Nstart
+   real(8) :: NMC
+   integer, pointer :: i_ind
+
+   if (numpar%save_fe_grid) then  ! only user requested
+      ! Check if high-energy DOS is set, and set it if not:
+      call set_high_DOS(Scell, numpar)  ! module "Electron_tools"
+
+
+      ! Number of MC iterations to normalize to:
+      NMC = 1.0d0/dble(numpar%NMC)
+
+      N_incr = 1
+      Nstart = 1
+#ifdef MPI_USED
+      N_incr = numpar%MPI_param%size_of_cluster
+      Nstart = 1 + numpar%MPI_param%process_rank
+#endif
+
+      ! Sort electrons from the MC iterations processed by this rank:
+      do stat = Nstart, numpar%NMC, N_incr
+         do i_el = 1, MC(stat)%noe  ! all active electrons
+            ! Find the level, closest to where electron is incomming into:
+            call Find_in_array_monoton(Scell%E_fe_grid, MC(stat)%electrons(i_el)%E, j) ! module "Little_subroutine"
+            j = max(1, min(j - 1, size(fe_high)))   ! one level below, bounded by the grid
+            ! Add electron to this energy grid point:
+            fe_high(j) = fe_high(j) + NMC ! density of electrons per iteration (without DOS)
+            fe_norm_high(j) = fe_norm_high(j) + NMC / numpar%high_DOS(j) ! electron per iteration per DOS
+
+            ! Origin-resolved distributions:
+            i_ind => MC(stat)%electrons(i_el)%birthmark     ! index of orgin of electron
+            if ((i_ind < 0) .or. (i_ind > size(fe_bybirth,1))) then
+               print*, 'ERROR: Unidentified electron in get_high_energy_distribution:'
+               print*, stat, i_el, MC(stat)%electrons(i_el)%birthmark
+            elseif (i_ind > 0) then ! external electrons (0) are not assigned an origin row
+               fe_bybirth(i_ind,j) = fe_bybirth(i_ind,j) + NMC ! density of electrons per iteration (without DOS)
+            endif
+         enddo ! i_el
+      enddo ! stat
+
+   endif
+   nullify(i_ind)
+end subroutine get_high_energy_distribution
 
 
 
@@ -449,6 +590,8 @@ subroutine MC_for_electron(tim, MC, matter, numpar, Scell, Eetot_cur, noeVB_cur,
                ! new electron (and may be hole) is created:
                call New_born_electron_n_hole(MC, KOA, shl, numpar, Scell, matter, hw, MC%electrons(j)%ti, &
                                           Eetot_cur, noeVB_cur, d_fe, min_df, 2, 'Called from MC_for_electron')
+            else  ! no scattering - no energy loss
+               hw = 0.0d0
             endif ! (.not.skip_event)
          else  elast_vs_inelast ! it is elastic scattering
             call which_atom(Ekin, matter%Atoms, EMFP, KOA) ! get which kind of atoms we scatter on, module "MC_cross_sections"
@@ -528,14 +671,20 @@ subroutine electron_disappears(MC, j)
    type(MC_data), intent(inout) :: MC	! all MC arrays for photons, electrons and holes
    integer, intent(in) :: j	! number of electron in the aray
    integer k
-   do k = j, MC%noe-1 ! one electron from Hight Energy states disappeared 
+   do k = j, MC%noe-1 ! one electron from High Energy states disappeared
       MC%electrons(k)%E = MC%electrons(k+1)%E	! [eV]
       MC%electrons(k)%ti = MC%electrons(k+1)%ti	! [fs]
+      MC%electrons(k)%t = MC%electrons(k+1)%t	! [fs]
+      MC%electrons(k)%colls = MC%electrons(k+1)%colls
+      MC%electrons(k)%R(:) = MC%electrons(k+1)%R(:) ! [A]
+      MC%electrons(k)%V(:) = MC%electrons(k+1)%V(:) ! [A]
+      MC%electrons(k)%birthmark = MC%electrons(k+1)%birthmark
    enddo ! k
    MC%electrons(MC%noe)%E = 0.0d0	! [eV]
    MC%electrons(MC%noe)%ti = 1d20	! [fs]
    MC%noe = MC%noe - 1 ! electron has fallen into the sea of CB
 end subroutine electron_disappears
+
 
 
 subroutine New_born_electron_n_hole(MC, KOA, SHL, numpar, Scell, matter, hw, t_cur, Eetot_cur, noeVB_cur, d_fe, min_df, &
@@ -1087,26 +1236,50 @@ end subroutine sort_out_holes
 
 subroutine extend_MC_array(array1)
    type(Electron), dimension(:), allocatable, intent(inout) :: array1
+   !--------------
    integer N
-   !integer, dimension(:), allocatable :: arrayE, arrayti, arrayt
    real(8), dimension(:), allocatable :: arrayE, arrayti, arrayt
-   integer, dimension(:), allocatable :: arrayBirth
+   real(8), dimension(:,:), allocatable :: arrayR, arrayV
+   integer, dimension(:), allocatable :: arrayBirth, arrayColls
+   !--------------
    N = size(array1)
    allocate(arrayE(N))
    allocate(arrayti(N))
    allocate(arrayt(N))
    allocate(arrayBirth(N))
+   allocate(arrayColls(N))
+   allocate(arrayR(N,3))
+   allocate(arrayV(N,3))
+
    arrayE = array1%E
    arrayti = array1%ti
    arrayt = array1%t
    arrayBirth = array1%birthmark
+   arrayColls = array1%colls
+   arrayR(:,1) = array1(:)%R(1)
+   arrayR(:,2) = array1(:)%R(2)
+   arrayR(:,3) = array1(:)%R(3)
+   arrayV(:,1) = array1(:)%V(1)
+   arrayV(:,2) = array1(:)%V(2)
+   arrayV(:,3) = array1(:)%V(3)
+
    deallocate(array1)
-   allocate(array1(2*N))
+   !allocate(array1(2*N))
+   allocate(array1(max(1, 2*N)))
+
    array1(1:N)%E = arrayE(1:N)
    array1(1:N)%ti = arrayti(1:N)
    array1(1:N)%t = arrayt(1:N)
    array1(1:N)%birthmark = arrayBirth(1:N)
-   deallocate(arrayE, arrayti, arrayt, arrayBirth)
+   array1(1:N)%colls = arrayColls(1:N)
+   array1(1:N)%R(1) = arrayR(1:N, 1)
+   array1(1:N)%R(2) = arrayR(1:N, 2)
+   array1(1:N)%R(3) = arrayR(1:N, 3)
+   array1(1:N)%V(1) = arrayV(1:N, 1)
+   array1(1:N)%V(2) = arrayV(1:N, 2)
+   array1(1:N)%V(3) = arrayV(1:N, 3)
+
+   deallocate(arrayE, arrayti, arrayt, arrayR, arrayV, arrayBirth, arrayColls)
 end subroutine extend_MC_array
 
 
@@ -1130,11 +1303,11 @@ subroutine choose_photon_energy(numpar, laser, MC, tim, Spectrum_MC) ! see below
    else
       Nphot_pulses = Nphot_pulses/sum_phot ! normalize fractions of different pulses to 1
    endif
-   sum_phot = Nphot_pulses(1) ! now, to summation
 
    do i = 1, N    ! for all photons
       call random_number(RN)
       coun = 1 ! start counting pulses
+      sum_phot = Nphot_pulses(1) ! start summation
       do while (sum_phot .LT. RN)
          coun = coun + 1 ! next pulse
          sum_phot = sum_phot + Nphot_pulses(coun) ! total number of photons

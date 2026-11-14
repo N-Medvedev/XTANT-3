@@ -6443,7 +6443,7 @@ subroutine interpret_user_data(FN, count_lines, read_well, text, matter, Scell, 
    ! Find the maximal number of shells:
    Nsh = 0  ! to start with
    do i = 1, Nat
-      !Nsh = max(Nsh, size(matter%Atoms(i)%Ip)) ! numer of shells is undefined yet!
+      !Nsh = max(Nsh, size(matter%Atoms(i)%Ip)) ! number of shells is undefined yet!
       Nsh = 50
    enddo
 

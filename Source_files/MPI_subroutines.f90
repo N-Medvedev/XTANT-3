@@ -1778,6 +1778,13 @@ subroutine MPI_share_laser(numpar, laser)
          ! number of absorbed photons
          call broadcast_variable(MPI_param, trim(adjustl(error_part))//' {laser(i)%Nph}', laser(i)%Nph) ! below
 
+         ! Share optional photon spectra and their derived arrays:
+         call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {laser(i)%Spectrum}', laser(i)%Spectrum)
+         call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {laser(i)%Spectrum_abs}', laser(i)%Spectrum_abs)
+         call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {laser(i)%Spectrum_MC}', laser(i)%Spectrum_MC)
+         call broadcast_allocatable_array(MPI_param, trim(adjustl(error_part))//' {laser(i)%Spectrum_int}', laser(i)%Spectrum_int)
+
+
          !print*, '[MPI process #', MPI_param%process_rank, '] test:', i, laser(i)%KOP, laser(i)%hw, laser(i)%FWHM_hw, laser(i)%t, laser(i)%t0, laser(i)%F_in, laser(i)%F, laser(i)%Fabs, laser(i)%Nph
       enddo
    endif ! array_is_allocated
@@ -2730,15 +2737,23 @@ subroutine initialize_MPI(MPI_param, Err_data)
    type(Error_handling), intent(inout) :: Err_data  ! save data about error if any
    !-----------------------
    character(100) :: Error_message
+#ifdef MPI_USED
+   integer :: abort_ierror, process_rank
+#endif
 
 #ifdef MPI_USED
+   ! Until MPI_COMM_RANK succeeds, the rank is unknown.
+   MPI_param%process_rank = -1
+
    ! Initialize MPI:
    call MPI_INIT(MPI_param%ierror)
    if (MPI_param%ierror /= 0) then
       write(Error_message, *) 'Error initializing MPI!'
       call MPI_Save_error_details(Err_data, -1, Error_message, MPI_param)   ! above
       write(6, '(a)') trim(adjustl(Error_message))
-      return
+      !return
+      call MPI_Abort(MPI_COMM_WORLD, 1, abort_ierror)
+      stop 1
    endif
 
    ! Determine the size of the group associated with a communicator (cluster size, number of processes):
@@ -2747,17 +2762,24 @@ subroutine initialize_MPI(MPI_param, Err_data)
       write(Error_message, *) 'Error getting MPI cluster size (number of processes)!'
       call MPI_Save_error_details(Err_data, -1, Error_message, MPI_param)   ! above
       write(6, '(a)') trim(adjustl(Error_message))
-      return
+      !return
+      call MPI_Abort(MPI_COMM_WORLD, 1, abort_ierror)
+      stop 1
    endif
 
    ! Determine the rank of the calling process in the communicator:
-   call MPI_COMM_RANK(MPI_COMM_WORLD, MPI_param%process_rank, MPI_param%ierror)
+   !call MPI_COMM_RANK(MPI_COMM_WORLD, MPI_param%process_rank, MPI_param%ierror)
+   call MPI_COMM_RANK(MPI_COMM_WORLD, process_rank, MPI_param%ierror)
+
    if (MPI_param%ierror /= 0) then
       write(Error_message, *) 'Error getting MPI process rank!'
       call MPI_Save_error_details(Err_data, -1, Error_message, MPI_param)   ! bove
       write(6, '(a)') trim(adjustl(Error_message))
-      return
+      !return
+      call MPI_Abort(MPI_COMM_WORLD, 1, abort_ierror)
+      stop 1
    endif
+   MPI_param%process_rank = process_rank
 
    if (MPI_param%process_rank == 0) then ! only do that for the master process
       ! initialize MPI time counter:
@@ -2774,7 +2796,7 @@ end subroutine initialize_MPI
 
 
 
-subroutine initialize_random_seed(MPI_param)
+subroutine initialize_random_seed_OLD(MPI_param)
    type(Used_MPI_parameters), intent(in) :: MPI_param
    !-----------------
    integer :: RN_seed
@@ -2783,6 +2805,30 @@ subroutine initialize_random_seed(MPI_param)
    CALL SYSTEM_CLOCK(count=RN_seed)
    RN_seed = RN_seed/100000 + MPI_param%process_Rank*100000
    call random_seed(put = (/RN_seed/) ) ! standard FORTRAN seeding of random numbers
+#else
+   ! Without MPI, use the default random seed:
+   call random_seed() ! standard FORTRAN seeding of random numbers
+#endif
+end subroutine initialize_random_seed_OLD
+
+
+subroutine initialize_random_seed(MPI_param)
+   type(Used_MPI_parameters), intent(in) :: MPI_param
+   !-----------------
+   integer :: seed_size, i, clock_count
+   integer, dimension(:), allocatable :: RN_seed
+   integer(8) :: seed_value
+#ifdef MPI_USED
+   ! Initialize different random seed for each process:
+   call random_seed(size=seed_size)
+   allocate(RN_seed(seed_size))
+   call system_clock(count=clock_count)
+   do i = 1, seed_size
+      seed_value = int(clock_count,8) + int(MPI_param%process_rank,8)*104729_8 + int(i,8)*13007_8
+      RN_seed(i) = int(modulo(seed_value, int(huge(RN_seed(i)),8)))
+   enddo
+   call random_seed(put=RN_seed)
+   deallocate(RN_seed)
 #else
    ! Without MPI, use the default random seed:
    call random_seed() ! standard FORTRAN seeding of random numbers
@@ -3137,7 +3183,36 @@ end subroutine pars_MPI_lasped_time
 
 
 
+
 subroutine MPI_Save_error_details(Err_name, Err_num, Err_data, MPI_param)
+   class(Error_handling) :: Err_name    ! object containing all details
+   integer, intent(in) :: Err_num       ! number of error assigned
+   character(*), intent(in) :: Err_data ! description of the error
+   type(Used_MPI_parameters), intent(inout) :: MPI_param
+   !---------------------
+   character(340) :: error_report
+
+   Err_name%Err = .true.
+   Err_name%Err_Num = Err_num
+   Err_name%Err_descript = Err_data
+
+   if (MPI_param%process_rank == 0) then
+      call Save_error_details(Err_name, Err_num, Err_data)  ! module "Objects"
+   else
+#ifdef MPI_USED
+      ! This routine may be called by only one rank, so do not wait for a root receive.
+      write(error_report,'(a,i0,a,i0,2a)') '[MPI process #', MPI_param%process_rank, '] Error #', &
+                                           Err_num, ': ', trim(adjustl(Err_data))
+      write(*,'(a)') trim(adjustl(error_report))
+#else
+      call Save_error_details(Err_name, Err_num, Err_data)  ! module "Objects"
+#endif
+   endif
+end subroutine MPI_Save_error_details
+
+
+
+subroutine MPI_Save_error_details_OLD(Err_name, Err_num, Err_data, MPI_param)
    class(Error_handling) :: Err_name    ! object containing all details
    integer, intent(in) :: Err_num       ! number of error asigned
    character(*), intent(in) :: Err_data   ! description of the error
@@ -3224,7 +3299,7 @@ subroutine MPI_Save_error_details(Err_name, Err_num, Err_data, MPI_param)
       call Save_error_details(Err_name, Err_num, Err_data)  ! module "Objects"
 #endif
    endif
-end subroutine MPI_Save_error_details
+end subroutine MPI_Save_error_details_OLD
 
 
 

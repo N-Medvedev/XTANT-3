@@ -481,12 +481,12 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
       Nsiz = size(Ev)   ! number of energy levels
       N_Te_grid = size(Te_grid)
 
-
-      if (.not. allocated(dmu)) then
-         allocate(dmu(N_Te_grid), source = 0.0d0)
-      else
-         dmu = 0.0d0   ! to start with
-      endif
+      ! Unused dmu, no need to allocate:
+!       if (.not. allocated(dmu)) then
+!          allocate(dmu(N_Te_grid), source = 0.0d0)
+!       else
+!          dmu = 0.0d0   ! to start with
+!       endif
 
       allocate(dfe_dT_grid(N_Te_grid, Nsiz), source = 0.0d0)
       allocate(v(Nsiz), source = 0.0d0)
@@ -501,10 +501,10 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
       Vol = Vol1*1.0d-30 ! [m^3]
 
       ! Get dmu:
-      dmu(1) = (mu(2) - mu(1)) / ((Te_grid(2)-Te_grid(1))*g_kb_EV)
-      do i = 2, N_Te_grid
-         dmu(i) = (mu(i) - mu(i-1)) / ((Te_grid(i)-Te_grid(i-1))*g_kb_EV)  !
-      enddo
+!       dmu(1) = (mu(2) - mu(1)) / ((Te_grid(2)-Te_grid(1))*g_kb_EV)
+!       do i = 2, N_Te_grid
+!          dmu(i) = (mu(i) - mu(i-1)) / ((Te_grid(i)-Te_grid(i-1))*g_kb_EV)  !
+!       enddo
 
       ! Derivative of fe by Te:
       do i = 1, N_Te_grid
@@ -554,7 +554,13 @@ subroutine get_kappa_e_e(numpar, matter, Scell, NSC, Ev, mu, Te_grid, kappa_ee)
             !print*, i, n, kappa_ee(i), dfe_dT_grid(i,n), (Ev(n) - mu(i)), v(n), L
          enddo
 
-         kappa_ee(i) = (A(i) - C(i)**2/B(i))
+         !kappa_ee(i) = (A(i) - C(i)**2/B(i))
+         if (abs(B(i)) > 0.0d0) then
+            kappa_ee(i) = A(i) - C(i)**2/B(i)
+         else
+            kappa_ee(i) = 0.0d0
+         endif
+
          !pause 'get_kappa_e_e'
       enddo ! i
 
@@ -1399,6 +1405,7 @@ subroutine get_Graf_Vogl_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref
       enddo
    else
       N = 1
+      allocate(w_grid(N), source = Scell(NSC)%eps%w)
       if (.not.allocated(Scell(NSC)%eps%Eps_hw)) then
          allocate(Scell(NSC)%eps%Eps_hw(16,N)) ! different parameters saved for all energy grid points
       endif
@@ -1896,7 +1903,9 @@ subroutine get_trani_all_complex(numpar, Scell, NSC, all_w, Err)  ! From Ref. [2
       do iy = 1, iym
          do iz = 1, izm
          
-            Ngp = (ix-1)*iym*ixm + (iy-1)*ixm + iz	! number of grid point for user defined grid
+            !Ngp = (ix-1)*iym*ixm + (iy-1)*ixm + iz	! number of grid point for user defined grid
+            Ngp = (ix-1)*iym*izm + (iy-1)*izm + iz	! number of grid point for user defined grid
+
             if (Ngp > Nsiz) goto 3457
             
 !             ! k-points choice from [J. Moreno, J. M. Soler, PRB 45, 13891 (1992)]
@@ -2049,6 +2058,10 @@ subroutine get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz,
    if (.not.allocated(Fnnx)) allocate(Fnnx(Nsiz,Nsiz))
    if (.not.allocated(Fnny)) allocate(Fnny(Nsiz,Nsiz))
    if (.not.allocated(Fnnz)) allocate(Fnnz(Nsiz,Nsiz))
+   Fnnx = 0.0d0
+   Fnny = 0.0d0
+   Fnnz = 0.0d0
+
    if (present(Fnnxy)) then ! off-diagonal
       if (.not.allocated(Fnnxy)) allocate(Fnnxy(Nsiz,Nsiz))
       if (.not.allocated(Fnnxz)) allocate(Fnnxz(Nsiz,Nsiz))
@@ -2056,6 +2069,12 @@ subroutine get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz,
       if (.not.allocated(Fnnyz)) allocate(Fnnyz(Nsiz,Nsiz))
       if (.not.allocated(Fnnzx)) allocate(Fnnzx(Nsiz,Nsiz))
       if (.not.allocated(Fnnzy)) allocate(Fnnzy(Nsiz,Nsiz))
+      Fnnxy = 0.0d0
+      Fnnxz = 0.0d0
+      Fnnyx = 0.0d0
+      Fnnyz = 0.0d0
+      Fnnzx = 0.0d0
+      Fnnzy = 0.0d0
    endif
    
 !    if (.not.allocated(Hij)) allocate(Hij(Nsiz,Nsiz))
@@ -2072,12 +2091,12 @@ subroutine get_Fnn_complex(numpar, Scell, NSC, Ei, Fnnx, Fnny, Fnnz, kx ,ky, kz,
 !    if (.not.allocated(Fnnzx)) allocate(Fnnzx(Nsiz,Nsiz))
 !    if (.not.allocated(Fnnzy)) allocate(Fnnzy(Nsiz,Nsiz))
 !    if (.not.allocated(Fnnzz)) allocate(Fnnzz(Nsiz,Nsiz))
-   allocate(Fnn_temp_x(Nsiz,Nsiz))
-   allocate(Fnn_temp_y(Nsiz,Nsiz))
-   allocate(Fnn_temp_z(Nsiz,Nsiz))
-   allocate(PBx(Nsiz,Nsiz))
-   allocate(PBy(Nsiz,Nsiz))
-   allocate(PBz(Nsiz,Nsiz))
+   allocate(Fnn_temp_x(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))
+   allocate(Fnn_temp_y(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))
+   allocate(Fnn_temp_z(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))
+   allocate(PBx(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))
+   allocate(PBy(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))
+   allocate(PBz(Nsiz,Nsiz), source = cmplx(0.0d0,0.0d0))
 
    ASSOCIATE (ARRAY => Scell(NSC)%TB_Hamil(:,:))
       select type(ARRAY)
@@ -2954,7 +2973,7 @@ subroutine get_drude(numpar, Scell, NSC)
       wl = Scell(NSC)%eps%w
       vv = 1.0d15/Scell(NSC)%eps%tau_e	! [1/fs] frequency of electron scattering
       if (Scell(NSC)%eps%tau_h .NE. Scell(NSC)%eps%tau_e) then
-         tth = 1.0d15/Scell(NSC)%eps%tau_e ! [1/sec] collisional frequency for holes
+         tth = 1.0d15/Scell(NSC)%eps%tau_h ! [1/sec] collisional frequency for holes
       else
          tth = vv/mh_eff*me_eff    ! [1/sec] collisional frequency for holes
       endif
@@ -3010,7 +3029,8 @@ subroutine Kramers_Kronig_Re_from_Im(hw, Im_CDF, Re_CDF)
                ! just exclude the special point
             else
                dw = hw(j) - hw(j-1)
-               Re_CDF(i) = Re_CDF(i) + ( Im_CDF(j)*hw(j)/(hw(j)*hw(j) - w*w) + Im_CDF(j)*hw(j-1)/(hw(j-1)*hw(j-1) - w*w) ) * 0.5d0 * dw
+               !Re_CDF(i) = Re_CDF(i) + ( Im_CDF(j)*hw(j)/(hw(j)*hw(j) - w*w) + Im_CDF(j)*hw(j-1)/(hw(j-1)*hw(j-1) - w*w) ) * 0.5d0 * dw
+               Re_CDF(i) = Re_CDF(i) + ( Im_CDF(j)*hw(j)/(hw(j)*hw(j) - w*w) + Im_CDF(j-1)*hw(j-1)/(hw(j-1)*hw(j-1) - w*w) ) * 0.5d0 * dw
             endif
          endif
       enddo ! j

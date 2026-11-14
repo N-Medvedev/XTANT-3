@@ -406,7 +406,16 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                Mass = matter%Atoms(Scell(i)%MDatoms(j)%KOA)%Ma ! atomic mass
                Ta = Ta + Mass*V2/2.0d0/g_e ! Temperature [eV], Eq.(2.62) from H.Jeschke PhD thesis, p.49
             enddo
-            Ta = Ta*2.0d0/(3.0d0*real(Natoms) - 6.0d0) ! [eV] proper normalization
+
+            !Ta = Ta*2.0d0/(3.0d0*real(Natoms) - 6.0d0) ! [eV] proper normalization
+            if (Natoms > 2) then
+               Ta = Ta*2.0d0/(3.0d0*dble(Natoms) - 6.0d0)   ! [eV] proper normalization
+            elseif (Natoms > 0) then
+               Ta = Ta*2.0d0/(3.0d0*dble(Natoms))     ! [eV] proper normalization
+            else
+               Ta = 0.0d0
+            endif
+
             Ta = Ta*g_kb	! [eV] -> [K]
 
             if (Scell(i)%Ta < 0.0d0) then ! use the SAVE-files temperature
@@ -442,7 +451,15 @@ subroutine set_initial_configuration(Scell, matter, numpar, laser, MC, Err)
                Mass = matter%Atoms(Scell(i)%MDatoms(j)%KOA)%Ma ! atomic mass
                Ta = Ta + Mass*V2/2.0d0/g_e ! Temperature [eV], Eq.(2.62) from H.Jeschke PhD thesis, p.49
             enddo
-            Ta = Ta*2.0d0/(3.0d0*dble(Natoms) - 6.0d0) ! [eV] proper normalization
+            !Ta = Ta*2.0d0/(3.0d0*dble(Natoms) - 6.0d0) ! [eV] proper normalization
+            if (Natoms > 2) then
+               Ta = Ta*2.0d0/(3.0d0*dble(Natoms) - 6.0d0)
+            elseif (Natoms > 0) then
+               Ta = Ta*2.0d0/(3.0d0*dble(Natoms))
+            else
+               Ta = 0.0d0
+            endif
+
             Ta = Ta*g_kb	! [eV] -> [K]
 
             if (Scell(i)%Ta < 0.0d0) then ! use the SAVE-files temperature
@@ -899,13 +916,21 @@ subroutine define_photon_spectrum_parameters(laser)
       int_spectrum_E = 0.0d0  ! to start with
       do i = 2, N ! entire spectrum
          dE = (laser%Spectrum(1,i) - laser%Spectrum(1,i-1)) ! energy step
-         Emean = (laser%Spectrum(1,i) + laser%Spectrum(1,i)) * 0.5d0 ! mean energy on this step
-         Dmean = (laser%Spectrum(2,i) + laser%Spectrum(2,i)) * 0.5d0 ! mean dose on this step
+         !Emean = (laser%Spectrum(1,i) + laser%Spectrum(1,i)) * 0.5d0 ! mean energy on this step
+         !Dmean = (laser%Spectrum(2,i) + laser%Spectrum(2,i)) * 0.5d0 ! mean dose on this step
+         Emean = (laser%Spectrum(1,i) + laser%Spectrum(1,i-1)) * 0.5d0 ! mean energy on this step
+         Dmean = (laser%Spectrum(2,i) + laser%Spectrum(2,i-1)) * 0.5d0 ! mean dose on this step
+
          int_spectrum = int_spectrum + Dmean*dE
          int_spectrum_E = int_spectrum_E + Dmean*Emean*dE
          !print*, 'define_photon_spectrum_parameters', i, dE, Emean, Dmean, int_spectrum
       enddo
-      mean_hw = int_spectrum_E / int_spectrum
+      !mean_hw = int_spectrum_E / int_spectrum
+      if (int_spectrum > 1.0d-12) then
+         mean_hw = int_spectrum_E / int_spectrum
+      else
+         mean_hw = 0.0d0
+      endif
       laser%hw = mean_hw
 
       !print*, 'define_photon_spectrum_parameters:', laser%hw
@@ -1214,7 +1239,8 @@ subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, i
    ! Next lines contain at least the atomic type and coordinates:
    do i = 1, Scell(SCN)%Na
       if (ind_S == 0) then ! KOA is set in the file
-         if (ind_V == 1) then ! with velocities:
+         !if (ind_V == 1) then ! with velocities:
+         if (ind_V == 1 .or. ind_V == 2) then ! with velocities:
             read(FN,*,IOSTAT=Reason) Scell(SCN)%MDAtoms(i)%KOA, coord(:), vel(:)
          else  ! no velocities, only coordinates:
             read(FN,*,IOSTAT=Reason) Scell(SCN)%MDAtoms(i)%KOA, coord(:)
@@ -1228,7 +1254,8 @@ subroutine read_XYZ_coords(FN, File_name_XYZ, count_lines, Scell, SCN, matter, i
          endif
 
       else  ! element name is set
-         if (ind_V == 1) then ! with velocities:
+         !if (ind_V == 1) then ! with velocities:
+         if (ind_V == 1 .or. ind_V == 2) then ! with velocities:
             read(FN,*,IOSTAT=Reason) El_name, coord(:), vel(:)
          else  ! no velocities, only coordinates:
             read(FN,*,IOSTAT=Reason) El_name, coord(:)
@@ -1580,7 +1607,13 @@ subroutine embed_molecule_in_water(Scell, matter, numpar)  ! below
    !-----------------------
    ! 4) Redefine parameters of the supercell:
    Scell(SCN)%Na = N_at + N_h2o  ! new number of atoms (bio/molecule + water)
+   ! Update the fractions of atoms after adding water:
+   do i = 1, size(matter%Atoms)
+      matter%Atoms(i)%percentage = dble(count(Scell(SCN)%MDatoms(:)%KOA == i))
+   enddo
+   !Scell(SCN)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)
    Scell(SCN)%Ne = SUM(matter%Atoms(:)%NVB*matter%Atoms(:)%percentage)/SUM(matter%Atoms(:)%percentage)*Scell(SCN)%Na
+
    Scell(SCN)%Ne_low = Scell(SCN)%Ne ! at the start, all electrons are low-energy
    Scell(SCN)%Ne_high = 0.0d0 ! no high-energy electrons at the start
    Scell(SCN)%Ne_emit = 0.0d0 ! no emitted electrons at the start
@@ -1872,6 +1905,10 @@ subroutine read_XYZ_velocities(File_name_XYZ_vel, Scell, matter, numpar, read_we
    if (.not. read_well) then
       goto 7777
    endif
+   if (Nat <= 0) then   ! no atoms given
+      read_well = .false.
+      goto 7777
+   endif
 
    ! 2) comment line:
    line_2 = ''
@@ -1886,7 +1923,7 @@ subroutine read_XYZ_velocities(File_name_XYZ_vel, Scell, matter, numpar, read_we
    endif
    Scell%VSupce0 = Scell%VSupce     ! values on previous timestep
 
-   ! 3) For all atomc in the simulation box, set their velocities from the file:
+   ! 3) For all atoms in the simulation box, set their velocities from the file:
    do i = 1, Nsiz
       if (i <= Nat) then ! atom can be read from file
          read(FN,*,IOSTAT=Reason) Name, Scell%MDatoms(i)%V(:)
@@ -1895,7 +1932,8 @@ subroutine read_XYZ_velocities(File_name_XYZ_vel, Scell, matter, numpar, read_we
             goto 7777
          endif
       else ! not enough atons in the file, recycle existing ones:
-         Scell%MDatoms(i)%V(:) = Scell%MDatoms(i-Nat)%V(:)
+         !Scell%MDatoms(i)%V(:) = Scell%MDatoms(i-Nat)%V(:)
+         Scell%MDatoms(i)%V(:) = Scell%MDatoms(mod(i-1, Nat)+1)%V(:)
       endif
       Scell%MDatoms(i)%V0(:) = Scell%MDatoms(i)%V(:)     ! values on previous timestep
    enddo
@@ -1964,6 +2002,9 @@ subroutine make_atomic_substitution(substitution_data, Scell, SCN, matter, numpa
    logical :: element_exists, found_element
 
    INFO = 0 ! to start with, no error
+
+   ! If nothing to substitute, early exit:
+   if (substitution_data%percentage == 0.0d0) return
 
    ! Element to substitute:
    El_name1 = substitution_data%Atoms_to_substitute
@@ -2068,7 +2109,7 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
    integer, dimension(:), allocatable :: Present_element
    real(8) :: pers_tot, coef, RN
    integer :: i, Nat, j, Na, k, i_cur, i_run, i_pers, i_cur_save
-   integer :: nx, ny, nz
+   integer :: nx, ny, nz, target_count
    character(200) :: text, text1
 
    INFO = 0 ! at the start, there is no error
@@ -2151,7 +2192,7 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
 
 
       ! Now, distribute the elements into MD atomic array:
-      allocate(element_done(size(Scell(SCN)%MDatoms)), source = .false.)      ! to start with
+      !allocate(element_done(size(Scell(SCN)%MDatoms)), source = .false.)      ! to start with
       i_run = 0   ! to start with
       i_pers = 1  ! to start with
       AMDA:do i = 1, size(Scell(SCN)%MDatoms)  ! all MD atoms
@@ -2162,10 +2203,22 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
          !if (i_run > matter%Atoms(i_pers)%percentage) then ! move to the next element:
          ! Exclude elements that are already defined:
          !print*, i, i_pers, matter%Atoms(i_pers)%percentage, Present_element(i_pers)
-         if ( i_run > INT(matter%Atoms(i_pers)%percentage-dble(Present_element(i_pers))) ) then ! move to the next element:
-            i_pers = i_pers + 1     ! next subarray
-            i_run = 1   ! restart counting atoms in this element subarray
+!          if ( i_run > INT(matter%Atoms(i_pers)%percentage-dble(Present_element(i_pers))) ) then ! move to the next element:
+!             i_pers = i_pers + 1     ! next subarray
+!             i_run = 1   ! restart counting atoms in this element subarray
+!          endif
+         do while (i_pers <= size(matter%Atoms))
+            target_count = nint(matter%Atoms(i_pers)%percentage) - Present_element(i_pers)
+            if (target_count > i_run) exit
+            i_pers = i_pers + 1
+            i_run = 0
+         enddo
+         if (i_pers > size(matter%Atoms)) then
+            INFO = 10
+            write(Error_descript,'(a)') 'Alloy composition has no remaining atoms to assign'
+            exit AMDA
          endif
+         i_run = i_run + 1
 
          call random_number(RN)
          i_cur = max(NINT(RN*Nat),1) ! trial index
@@ -2189,9 +2242,10 @@ subroutine make_alloy(Scell, SCN, matter, numpar, INFO, Error_descript)
       !   print*, i, Scell(SCN)%MDatoms(i)%KOA
       !enddo
       ! Something went wrong:
-      if ( ANY(Scell(SCN)%MDatoms(:)%KOA > size(matter%Atoms)) ) then
+      !if ( ANY(Scell(SCN)%MDatoms(:)%KOA > size(matter%Atoms)) ) then
+      if (INFO == 0 .and. (ANY(Scell(SCN)%MDatoms(:)%KOA <= 0) .or. ANY(Scell(SCN)%MDatoms(:)%KOA > size(matter%Atoms)))) then
          INFO = 11
-         write(Error_descript,'(a)') 'UNKNOWN ERROR: Atomic indices in the alloy > number of elements'
+         write(Error_descript,'(a)') 'Invalid or unassigned atomic indices in the alloy'
          print*, trim(adjustl(Error_descript))
       endif
 

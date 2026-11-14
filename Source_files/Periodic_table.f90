@@ -66,7 +66,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
    real(8), dimension(:), allocatable, intent(out), optional :: at_EN ! electronegativity
    !==============================================
    type(atomic_data), dimension(:), allocatable :: Periodic_table ! this is an internal module variable
-   integer FN, Reason, leng, i, cur, N, num, coun, NVB
+   integer FN, Reason, Open_status, leng, i, cur, N, num, coun, NVB
    real(8) C, R_cov, EN
    character(3), dimension(100) :: ElEl_Names ! all elements in the compound, assuming they are not more then 100
    real(8), dimension(100) :: ElPersent     ! persentage of this element in the compound
@@ -82,6 +82,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
    INFO = 0 ! start with no error
    Reason = 0  ! to start with
    error_message = ''
+   at_num = 0
 
    Folder_name = trim(adjustl(Path))
    if (LEN(trim(adjustl(Folder_name))) > 0) then   ! it is in a folder
@@ -95,11 +96,24 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
    inquire(file=trim(adjustl(File_name)),exist=file_exists) ! check if input file is there
    exists:if (file_exists) then   
       FN = 101
-      open (unit=FN, file=trim(adjustl(File_name)))
-      !open (newunit=FN, file=trim(adjustl(File_name)))
+      !open (unit=FN, file=trim(adjustl(File_name)))
+      open (unit=FN, file=trim(adjustl(File_name)), iostat=Open_status)
+      if (Open_status /= 0) then
+         write(error_message,*) 'Could not open Periodic Table file: ', trim(adjustl(File_name))
+         INFO = 2
+         goto 911
+      endif
+
       inquire(unit=FN,opened=file_opened)    ! check if this file is opened
       if (file_opened) then
          call Count_lines(FN, N)
+         if (N < 2) then
+            write(error_message,*) 'Atomic-data file is empty or contains no element records: ', trim(adjustl(File_name))
+            INFO = 3
+            close(FN)
+            goto 911
+         endif
+
          if (.not.allocated(Periodic_table)) allocate(Periodic_table(N-1))
          read(FN,*,IOSTAT=Reason) ! skip first line with names
          do i = 1, N-1
@@ -110,6 +124,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
          close(FN)             ! and if it is, close it
          if (Reason /= 0) goto 911
       else
+         write(error_message,*) 'Could not open Periodic Table file: ', trim(adjustl(File_name))
          INFO = 2 ! could not open file
          goto 911
       endif
@@ -117,8 +132,8 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
       devide = .false.
       coun = 0
       leng = LEN(trim(adjustl(El_Name))) ! how many characters are in the name
-      if (i == 1) then ! no name given at all
-         write(error_message,*) 'Chemicalformula was not provided or read correctly (zero length)'
+      if (leng == 0) then ! no name given at all
+         write(error_message,*) 'Chemical formula was not provided or read correctly (zero length)'
          INFO = 4
          goto 911
       endif
@@ -257,6 +272,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
 
       do i = 1, num
          call find_atomic_number(ElEl_Names(i), ElNumbers(i), NVB, Full_name, M, R_cov, EN, Periodic_table, INFO, error_message) ! below
+         if (INFO /= 0) goto 911
          if (present(at_numbers)) at_numbers(i) = ElNumbers(i)  ! element number, Z
          if (present(at_percentage)) at_percentage(i) = ElPersent(i) ! percentage
          if (present(at_short_names)) at_short_names(i) = ElEl_Names(i) ! name of the element
@@ -264,7 +280,7 @@ subroutine Decompose_compound(Path, El_Name, path_sep, INFO, error_message, at_n
          if (present(at_masses)) at_masses(i) = M  ! mass of the element in the proton-mass units
          if (present(at_NVB)) at_NVB(i) = NVB      ! number of valence electrons
          if (present(at_r_cov)) at_r_cov(i) = R_cov   ! covalent radius [A]
-         if (present(at_EN)) at_EN = EN            ! electronegativity
+         if (present(at_EN)) at_EN(i) = EN            ! electronegativity
       enddo
 
    else exists
