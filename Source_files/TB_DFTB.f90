@@ -49,7 +49,7 @@ public :: Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_dri
           Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB, &
           identify_DFTB_orbitals_per_atom, identify_DFTB_basis_size, Get_overlap_S_matrix_DFTB, &
           Hopping_DFTB, get_Erep_s_DFTB_no, dErdr_s_DFTB_no, dErdr_Pressure_s_DFTB_no, &
-          dHij_r_DFTB, dE2rep_dr2_DFTB
+          dHij_r_DFTB, dE2rep_dr2_DFTB, Construct_d2Vij_DFTB, dHij_r_response_DFTB
 
  contains
  
@@ -2663,6 +2663,163 @@ subroutine dHij_r_DFTB(numpar, Scell, NSC, Aij, Aij_x_Ei, M_Vij, M_dVij, M_d2Vij
    !$omp end parallel do
 #endif
 end subroutine dHij_r_DFTB
+
+
+!--------------------------------------------------------------------------------------------
+! THEORY of the response term for the generalised problem  H c_n = eps_n S c_n,  c^T S c = 1, fixed occupations f_n:
+!   d2/dx2 sum_n f_n eps_n =  sum_ij [ A_ij H''_ij - AE_ij S''_ij ]                              (frozen; = dHij_r_DFTB)
+!        + sum_n f_n [ -2 eps_n' S'_nn + 2 sum_{m/=n} (H'_mn - eps_n S'_mn)^2 / (eps_n - eps_m) ]   (response; below)
+!   with  eps_n' = H'_nn - eps_n S'_nn,  X'_mn = c_m^T X' c_n,  A = sum f c c^T,  AE = sum f eps c c^T.
+!   Checked numerically with random smooth H(x), S(x): frozen + response = exact to 3e-6 (finite differences).
+!   Not included: SCC charge response (numpar%scc), and the particle-number (mu) response for Fermi-following occupations.
+subroutine dHij_r_response_DFTB(numpar, Scell, NSC, M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij, M_lmn, dFresp, &
+                                fermi_following, Te)
+   type(Numerics_param), intent(inout) :: numpar
+   type(Super_cell), dimension(:), intent(inout) :: Scell
+   integer, intent(in) :: NSC
+   real(8), dimension(:,:,:), intent(in) :: M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij, M_lmn
+   real(8), dimension(:,:), allocatable, intent(inout) :: dFresp   ! (3,Nat) response part of d2E/dr2 [eV/A^2]
+   logical, intent(in), optional :: fermi_following   ! .true. if occupations follow a Fermi function of the levels at Te
+   real(8), intent(in), optional :: Te                ! [eV]
+   !---------------------------------------------
+   integer :: nat, n_orb, Nsiz, k, al, i, j, a, b, m, atom_2, n_I, nI4, n, ia, ib, other
+   integer, dimension(:), allocatable :: iat, Idx, posI
+   real(8), dimension(:,:), allocatable :: invdE, HV, SV, CI, T1
+   real(8), dimension(:,:,:), allocatable :: dHII, dSII, dH, d2H, dS, d2S
+   real(8), dimension(:), allocatable :: eps1, X
+   real(8), parameter :: tol = 1.0d-8   ! [eV] degeneracy threshold
+   real(8) :: dE, R, Te_use, dfe
+   logical :: use_f
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+   nat = size(Scell(NSC)%MDatoms)
+   n_orb = identify_DFTB_orbitals_per_atom(numpar%basis_size_ind)
+   Nsiz = size(Scell(NSC)%Ha,1)
+   if (allocated(dFresp)) deallocate(dFresp)
+   allocate(dFresp(3,nat), source = 0.0d0)
+
+   use_f = .false.
+   Te_use = 0.0d0
+   if (present(fermi_following)) use_f = fermi_following
+   if (present(Te)) Te_use = Te
+   if (use_f .and. (Te_use <= 0.0d0)) use_f = .false.
+
+   ! 1/(eps_n - eps_m), zero for degenerate pairs (they cancel for equal occupations):
+   allocate(invdE(Nsiz,Nsiz))
+   do n = 1, Nsiz
+      do m = 1, Nsiz
+         dE = Scell(NSC)%Ei(n) - Scell(NSC)%Ei(m)
+         if (abs(dE) > tol) then
+            invdE(m,n) = 1.0d0/dE
+         else
+            invdE(m,n) = 0.0d0
+         endif
+      enddo
+   enddo
+
+   allocate(HV(Nsiz,Nsiz), SV(Nsiz,Nsiz), eps1(Nsiz), X(Nsiz))
+   allocate(dH(3,n_orb,n_orb), d2H(3,n_orb,n_orb), dS(3,n_orb,n_orb), d2S(3,n_orb,n_orb))
+   allocate(iat(nat), posI(nat), source = 0)
+
+#ifdef MPI_USED
+   N_incr = numpar%MPI_param%size_of_cluster
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = nat
+#else
+   N_incr = 1
+   Nstart = 1
+   Nend = nat
+#endif
+
+   ATOMS:do k = Nstart, Nend, N_incr
+      ! Pass 1: orbitals affected by the displacement of atom k = atom k and all its partners:
+      n_I = 1
+      iat(1) = k
+      posI(k) = 1
+      do i = 1, nat
+         m = Scell(NSC)%Near_neighbor_size(i)
+         do atom_2 = 1, m
+            j = Scell(NSC)%Near_neighbor_list(i,atom_2)
+            if (j <= i) cycle   ! each pair once (as in get_forces_DFTB)
+            if ((i /= k) .and. (j /= k)) cycle
+            other = i
+            if (i == k) other = j
+            if (posI(other) == 0) then
+               n_I = n_I + 1
+               iat(n_I) = other
+               posI(other) = n_I
+            endif
+         enddo
+      enddo
+      nI4 = n_I*n_orb
+      allocate(Idx(nI4), CI(nI4,Nsiz), T1(nI4,Nsiz))
+      allocate(dHII(nI4,nI4,3), dSII(nI4,nI4,3), source = 0.0d0)
+      do i = 1, n_I
+         do a = 1, n_orb
+            Idx((i-1)*n_orb + a) = (iat(i)-1)*n_orb + a
+         enddo
+      enddo
+      do a = 1, nI4
+         CI(a,:) = Scell(NSC)%Ha(Idx(a),:)    ! eigenvectors: columns = states
+      enddo
+
+      ! Pass 2: derivative blocks of H and S by r for the pairs containing atom k (both orientations, symmetric matrices):
+      do i = 1, nat
+         m = Scell(NSC)%Near_neighbor_size(i)
+         do atom_2 = 1, m
+            j = Scell(NSC)%Near_neighbor_list(i,atom_2)
+            if (j <= i) cycle
+            if ((i /= k) .and. (j /= k)) cycle
+            call d2_Hamilton_one_DFTB(numpar%basis_size_ind, k, Scell, NSC, i, j, atom_2, dH, d2H, dS, d2S, &
+                                      M_Vij, M_dVij, M_d2Vij, M_lmn, M_SVij, M_dSVij, M_d2SVij)
+            ia = (posI(i)-1)*n_orb
+            ib = (posI(j)-1)*n_orb
+            do b = 1, n_orb
+               do a = 1, n_orb
+                  dHII(ia+a, ib+b, :) = dH(:,a,b)
+                  dHII(ib+b, ia+a, :) = dH(:,a,b)
+                  dSII(ia+a, ib+b, :) = dS(:,a,b)
+                  dSII(ib+b, ia+a, :) = dS(:,a,b)
+               enddo
+            enddo
+         enddo
+      enddo
+
+      do al = 1, 3   ! x, y, z
+         ! Matrix elements between all eigenstates: HV = C^T dH C, SV = C^T dS C  (only the rows/columns of I are non-zero)
+         call dgemm('N', 'N', nI4, Nsiz, nI4, 1.0d0, dHII(:,:,al), nI4, CI, nI4, 0.0d0, T1, nI4)
+         call dgemm('T', 'N', Nsiz, Nsiz, nI4, 1.0d0, CI, nI4, T1, nI4, 0.0d0, HV, Nsiz)
+         call dgemm('N', 'N', nI4, Nsiz, nI4, 1.0d0, dSII(:,:,al), nI4, CI, nI4, 0.0d0, T1, nI4)
+         call dgemm('T', 'N', Nsiz, Nsiz, nI4, 1.0d0, CI, nI4, T1, nI4, 0.0d0, SV, Nsiz)
+         do n = 1, Nsiz
+            eps1(n) = HV(n,n) - Scell(NSC)%Ei(n)*SV(n,n)    ! d eps_n / dr
+         enddo
+         R = 0.0d0
+         do n = 1, Nsiz
+            if (Scell(NSC)%fe(n) < 1.0d-14) cycle           ! only populated levels enter
+            X(:) = HV(:,n) - Scell(NSC)%Ei(n)*SV(:,n)       ! H'_mn - eps_n S'_mn
+            R = R + Scell(NSC)%fe(n) * ( -2.0d0*eps1(n)*SV(n,n) + 2.0d0*SUM(X(:)*X(:)*invdE(:,n)) )
+            if (use_f) then   ! occupation response, fe = 2*f_FD:  d fe/d eps = -fe*(1-fe/2)/Te
+               dfe = -Scell(NSC)%fe(n)*(1.0d0 - 0.5d0*Scell(NSC)%fe(n))/Te_use
+               R = R + dfe*eps1(n)*eps1(n)
+            endif
+         enddo
+         dFresp(al,k) = R
+      enddo ! al
+
+      do i = 1, n_I
+         posI(iat(i)) = 0
+      enddo
+      deallocate(Idx, CI, T1, dHII, dSII)
+   enddo ATOMS
+
+#ifdef MPI_USED
+   error_part = 'Error in dHij_r_response_DFTB:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dFresp', dFresp)
+#endif
+   deallocate(invdE, HV, SV, eps1, X, dH, d2H, dS, d2S, iat, posI)
+end subroutine dHij_r_response_DFTB
 
 
 !--------------------------------------------------------------------------------------------

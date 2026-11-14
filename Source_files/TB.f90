@@ -54,7 +54,7 @@ use TB_NRL, only : get_dHij_drij_NRL, dErdr_s_NRL, Construct_Vij_NRL, construct_
 use TB_DFTB, only : Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_drij_DFTB, &
                      Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB, &
                      identify_DFTB_orbitals_per_atom, dErdr_s_DFTB_no, get_Erep_s_DFTB_no, dErdr_Pressure_s_DFTB_no, &
-                     dHij_r_DFTB, dE2rep_dr2_DFTB
+                     dHij_r_DFTB, dE2rep_dr2_DFTB, Construct_d2Vij_DFTB, dHij_r_response_DFTB
 
 use TB_3TB, only : get_Erep_s_3TB, dErdr_s_3TB, dErdr_Pressure_s_3TB, Attract_TB_Forces_Press_3TB, &
                      Construct_Vij_3TB, construct_TB_H_3TB, get_Mjs_factors, get_dHij_drij_3TB
@@ -4716,14 +4716,17 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
    real(8), dimension(:,:), allocatable, intent(inout), optional :: Frep_out, Fatr_out, dFrep_out, dFatr_out	! forces and derivatives [eV/A], [eV/A^2]
    !-----------------------------------------------------------
    real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr  ! forces and derivatives [eV/A], [eV/A^2]
-   real(8), dimension(:,:,:), allocatable :: M_Vs  ! matrix of functions Vs
-   real(8), dimension(:,:,:), allocatable :: M_dVs ! matrix of functions dVs
+   real(8), dimension(:,:,:), allocatable :: M_Vs   ! matrix of functions Vs
+   real(8), dimension(:,:,:), allocatable :: M_dVs  ! matrix of functions dVs
    real(8), dimension(:,:,:), allocatable :: M_d2Vs ! matrix of functions d2Vs
-   real(8), dimension(:,:,:), allocatable :: M_cos	! matrix of directional cosines
+   real(8), dimension(:,:,:), allocatable :: M_cos  ! matrix of directional cosines
    real(8), dimension(:,:), allocatable :: Frep_vdW, dFrep_vdW      ! vdW forces and derivatives [eV/A], [eV/A^2]
    real(8), dimension(:,:), allocatable :: Frep_Coul, dFrep_Coul    ! Coulomb forces and derivatives [eV/A], [eV/A^2]
    real(8), dimension(:,:), allocatable :: Frep_wall, dFrep_wall    ! Short-range repulsive forces and derivatives [eV/A], [eV/A^2]
-   real(8), dimension(:,:), allocatable :: dFresp
+   real(8), dimension(:,:), allocatable :: dFresp   ! response (contribution of electronic population to force derivative)
+   real(8), dimension(:,:,:), allocatable :: M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij  ! radial functions, derivatives
+   real(8), dimension(:,:,:), allocatable :: M_lmn, M_x1, M_xrr                                 ! directional cosines
+   real(8), dimension(:,:), allocatable :: M_Aij_x_Ei  ! energy-weighted density matrix
 
    integer :: i, N, NSC
    
@@ -4763,18 +4766,26 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
          !print*, 'Configurational temperature calculations are not implemented for NRL: Attractive'
       type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB
          ! Construct array of functions Vs and dVs for all pairs of atoms to use for forces:
-         !call Construct_M_Vs(Scell, 1, ARRAY, numpar, M_Vs, M_dVs, M_d2Vs) ! module "TB_Pettifor"
+         if (numpar%scc) print*, 'Configurational temperature with SCC: charge-response terms are not included (approximate)'
+         ! Radial functions and their first and second derivatives for all pairs of atoms:
+         call Construct_Vij_DFTB(numpar, ARRAY, Scell, 1, M_Vij, M_dVij, M_SVij, M_dSVij)  ! module "TB_DFTB"
+         call Construct_d2Vij_DFTB(numpar, ARRAY, Scell, 1, M_d2Vij, M_d2SVij)             ! module "TB_DFTB"
 
-         ! Get attractive forces for atoms from the derivatives of the Hamiltonian:
-         !call dHij_r_DFTB(numpar, Scell, NSC, Aij, Aij_x_Ei, M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij, M_lmn, Fatr, dFatr) ! module "TB_DFTB"
+         ! Directional cosines (M_x1, M_xrr are not needed here):
+         call Construct_M_x1(Scell, 1, numpar, M_x1, M_xrr, M_lmn)                         ! below
 
-         ! exact Hessian diagonal: frozen term + electronic response (fixed occupations):
-         !call dHij_r_response(ARRAY, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, dFresp)
-         !print*, 'dFatr=', dFatr, dFresp
-         !dFatr = dFatr + dFresp     ! combine both terms, "frozen" and responce
+         ! Density matrices from the current eigenvectors / occupations:
+         call Construct_Aij(numpar, Scell(1)%Ha, Scell(1)%fe, Scell(1)%Aij)               ! below
+         call Construct_Aij_x_En(numpar, Scell(1)%Ha, Scell(1)%fe, Scell(1)%Ei, M_Aij_x_Ei) ! below
 
-         if (allocated(dFresp)) deallocate(dFresp)   ! clean up
-
+         ! Frozen terms: first derivative (forces by r) and second derivative:
+         call dHij_r_DFTB(numpar, Scell, 1, Scell(1)%Aij, M_Aij_x_Ei, M_Vij, M_dVij, M_d2Vij, &
+                         M_SVij, M_dSVij, M_d2SVij, M_lmn, Fatr, dFatr)                   ! module "TB_DFTB"
+         ! Electronic response (without it the curvature of the band part is strongly overestimated):
+         call dHij_r_response_DFTB(numpar, Scell, 1, M_Vij, M_dVij, M_d2Vij, &
+                                  M_SVij, M_dSVij, M_d2SVij, M_lmn, dFresp)               ! module "TB_DFTB"
+         dFatr = dFatr + dFresp
+         deallocate(dFresp) ! clean up
 
       type is (TB_H_3TB)  ! TB parametrization accroding to 3TB
          !print*, 'Configurational temperature calculations are not implemented for 3TB: Attractive'
@@ -4900,6 +4911,19 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
    if (allocated(dFrep_vdW)) deallocate(dFrep_vdW)
    if (allocated(Frep_Coul)) deallocate(Frep_Coul)
    if (allocated(dFrep_Coul)) deallocate(dFrep_Coul)
+   if (allocated(Frep_wall)) deallocate(Frep_wall)
+   if (allocated(dFrep_wall)) deallocate(dFrep_wall)
+   if (allocated(dFresp)) deallocate(dFresp)
+   if (allocated(M_Vij)) deallocate(M_Vij)
+   if (allocated(M_dVij)) deallocate(M_dVij)
+   if (allocated(M_d2Vij)) deallocate(M_d2Vij)
+   if (allocated(M_SVij)) deallocate(M_SVij)
+   if (allocated(M_dSVij)) deallocate(M_dSVij)
+   if (allocated(M_d2SVij)) deallocate(M_d2SVij)
+   if (allocated(M_lmn)) deallocate(M_lmn)
+   if (allocated(M_x1)) deallocate(M_x1)
+   if (allocated(M_xrr)) deallocate(M_xrr)
+   if (allocated(M_Aij_x_Ei)) deallocate(M_Aij_x_Ei)
 end subroutine get_derivatives_and_forces_r
 
 
