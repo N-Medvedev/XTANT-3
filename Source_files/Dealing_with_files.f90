@@ -30,7 +30,7 @@ implicit none
 PRIVATE
 
 public :: get_file_stat, Count_columns_in_file, Count_lines_in_file, read_file, close_file, Path_separator, copy_file, &
-          get_file_extension, number_of_columns, ensure_correct_path_separator, replace_character
+          get_file_extension, number_of_columns, ensure_correct_path_separator, replace_character, lowercase
 
  contains
 
@@ -162,6 +162,24 @@ subroutine replace_character(string, char_to_check, signal_behavior)
    enddo
 
 end subroutine replace_character
+
+
+
+pure function lowercase(str) result(out)
+   ! Subroutine for making a string all lowercase, only handles ASCII or UTF-8
+   character(len=*), intent(in) :: str
+   character(len=len(str)) :: out
+   integer :: i, delta
+
+   delta = iachar('a') - iachar('A')
+   out = str
+
+   do i = 1, len(out)
+      if (out(i:i) >= 'A' .and. out(i:i) <= 'Z') then
+         out(i:i) = achar(iachar(out(i:i)) + delta)  ! convert uppercase letter into lowercase
+      end if
+   end do
+end function lowercase
 
 
 

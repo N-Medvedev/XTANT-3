@@ -83,8 +83,8 @@ if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does 
 endif
 
 ! Check if the user needs any additional info (by setting the flags):
-call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_Err%Stopsignal, &
-      allow_rotate=g_numpar%allow_rotate, verbose=g_numpar%verbose, nonverbose=g_numpar%nonverbose) ! module "Read_input_data"
+call get_add_data(g_numpar%path_sep, change_size=g_numpar%change_size, contin=g_Err%Stopsignal, allow_rotate=g_numpar%allow_rotate, &
+                  verbose=g_numpar%verbose, too_verbose=g_numpar%too_verbose, nonverbose=g_numpar%nonverbose) ! module "Read_input_data"
 !--------------------------------------------------------------
 ! Master thread shares read info with all the other MPI-processes:
 call MPI_share_add_data(g_numpar, g_Err)  ! module "MPI_subroutines"
@@ -376,6 +376,8 @@ do while (g_time .LT. g_numpar%t_total)
 
    ! Thermalization step for low-energy electrons (used only in nonequilibrium electron kinetics simulation):
    call Electron_thermalization(g_Scell, g_numpar) ! module "Electron_tools"
+   if (g_numpar%too_verbose) call print_time_step('Electron_thermalization executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
+
 
    !write(*,'(a,f,f,f,f)') 'test 2:', g_time, SUM(g_Scell(1)%fe), SUM(g_Scell(1)%fe_eq), g_Scell(1)%Ne_low
 
@@ -424,6 +426,7 @@ do while (g_time .LT. g_numpar%t_total)
    ! Update local parameters of fragments (needed for local coupling):
    call get_fragments_data(g_Scell, 1, g_numpar, g_matter)  ! module "Atomic_thermodynamics"
    call get_fragments_data_for_electrons(g_Scell, 1, g_numpar, g_matter)  ! module "Electron_tools"
+   if (g_numpar%too_verbose) call print_time_step('Fragment data executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
    ! Write current data into output files:
    if (g_dt_save .GE. g_numpar%dt_save - 1d-6) then
@@ -434,38 +437,52 @@ do while (g_time .LT. g_numpar%t_total)
       if ((abs(g_numpar%optic_model) > 0) .and. (g_numpar%optic_model < 4) ) then ! Trani or similar model, old-style DOS
          call get_optical_parameters(g_numpar, g_matter, g_Scell, g_Err) ! module "Optical_parameters"
       endif
+      if (g_numpar%too_verbose) call print_time_step('get_optical_parameters executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
+
       call use_complex_Hamiltonian(g_numpar, g_matter, g_Scell, 1, g_Err)  ! module "TB_complex"
 !      call get_DOS(g_numpar, g_matter, g_Scell, g_Err)   ! module "TB"
+      if (g_numpar%too_verbose) call print_time_step('use_complex_Hamiltonian executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
       ! Get current Mulliken charges, if required:
       call get_Mullikens_all(g_Scell(1), g_matter, g_numpar)   ! module "TB"
+      if (g_numpar%too_verbose) call print_time_step('get_Mullikens_all executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
       ! Get current pressure in the system:
       call Get_pressure(g_Scell, g_numpar, g_matter, g_Scell(1)%Pressure, g_Scell(1)%Stress)	! module "TB"
+      if (g_numpar%too_verbose) call print_time_step('Get_pressure executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
       ! Get atomic distributions and temperatures:
       call get_atomic_distribution(g_numpar, g_Scell, 1, g_matter)   ! module "Atomic_thermodynamics"
+      if (g_numpar%too_verbose) call print_time_step('get_atomic_distribution executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
       ! Calculate the mean square displacement of all atoms:
       call get_mean_square_displacement(g_Scell, g_matter, g_Scell(1)%MSD, g_Scell(1)%MSDP, g_numpar%MSD_power, g_numpar) ! module "Atomic_tools"
+      if (g_numpar%too_verbose) call print_time_step('get_mean_square_displacement executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
       ! Calculate diffraction peaks:
       call get_diffraction_peaks(g_Scell, g_matter, g_numpar)  ! module "Atomic_tools"
+      if (g_numpar%too_verbose) call print_time_step('get_diffraction_peaks executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
       ! Calculate electron heat capacity, entropy, and orbital-resolved data:
       call get_electronic_thermal_parameters(g_numpar, g_Scell, 1, g_matter, g_Err) ! module "TB"
+      if (g_numpar%too_verbose) call print_time_step('get_electronic_thermal_parameters executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
       ! Calculate configurational temperature:
       call Get_configurational_temperature(g_Scell, g_numpar, g_matter)	! module "TB"
+      if (g_numpar%too_verbose) call print_time_step('Get_configurational_temperature executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
       ! Get testmode additional data (center-of-mass, rotation, total force, etc.):
       call Get_testmode_add_data(g_Scell, 1, g_numpar, g_matter)	! module "Atomic_tools"
+      if (g_numpar%too_verbose) call print_time_step('Get_testmode_add_data executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
       ! Save current output data:
       call write_output_files(g_numpar, g_time, g_matter, g_Scell)    ! module "Dealing_with_output_files"
+      if (g_numpar%too_verbose) call print_time_step('write_output_files executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
+
       ! Communicate with the program (program reads your commands from the communication-file):
       call communicate(g_numpar%FN_communication, g_time, g_numpar, g_matter) ! module "Dealing_with_output_files"
       g_dt_save = 0.0d0
+      if (g_numpar%too_verbose) call print_time_step('communicate executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
       if (g_numpar%verbose) call print_time_step('Output files written successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)   ! module "Little_subroutines"
    endif

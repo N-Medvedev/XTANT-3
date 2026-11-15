@@ -1795,22 +1795,20 @@ subroutine get_fragments_data_for_electrons(Scell, NSC, numpar, matter)
 
       ! Distribution of electrons:
       do i = 1, size(e_spectrum)
-         if (e_spectrum(i) < -1.0d-12) then
-            if (abs(e_spectrum(i)) < -1.0d-10) then ! numerical precision, no problem
-               e_spectrum(i) = 0.0d0      ! enforce it to be within the boundary
-            else ! outside of boundary, a problem
+         if (e_spectrum(i) < 0.0d0) then
+            if (abs(e_spectrum(i)) > 1.0d-4) then ! too large, report it
                print*, 'PROBLEM #2 in get_fragments_data_for_electrons:'
                print*, 'electron spectrum has negative value:', i, e_spectrum(i)
             endif
+            e_spectrum(i) = 0.0d0      ! enforce it to be within the boundary
          endif ! (e_spectrum(i) < -1.0d-12)
 
          if (e_spectrum(i) > 2.0d0) then ! out of bound, can't be above 2
-            if (e_spectrum(i) < 2.000000001d0) then ! numerical precision, no problem
-               e_spectrum(i) = 2.0d0      ! enforce it to be within the boundary
-            else ! outside of boundary, a problem
+            if (e_spectrum(i) > 2.0000001d0) then ! outside of numerical precision, report it
                print*, 'PROBLEM #3 in get_fragments_data_for_electrons:'
                print*, 'electron spectrum out of bound:', i, e_spectrum(i)
             endif
+            e_spectrum(i) = 2.0d0      ! enforce it to be within the boundary
          endif ! (e_spectrum(i) > 2.0d0)
       enddo
    endif

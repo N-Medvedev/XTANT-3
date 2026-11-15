@@ -4600,6 +4600,14 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
    integer :: Nat, i, NSC
    real(8), pointer :: Mass
 
+
+   !------------------------
+   ! If user did not request it, no need in various atomic temperature definitions:
+   if (.not.numpar%print_Ta) return
+   !------------------------
+
+
+
    NSC = 1  ! only one supercell
    Nat = size(Scell(1)%MDAtoms)	! number of atoms
    allocate(F(3,Nat))
