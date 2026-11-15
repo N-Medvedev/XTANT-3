@@ -40,7 +40,7 @@ use Atomic_tools, only : pair_correlation_function, get_Miller_index_angle, get_
 use Variables, only : g_numpar, g_matter
 use Little_subroutines, only : number_of_types_of_orbitals, name_of_orbitals, set_starting_time, order_of_time, convolution, &
                               convert_hw_to_wavelength, convert_wavelength_to_hw, find_order_of_number, print_time
-use Dealing_with_files, only : get_file_stat, copy_file, read_file, close_file, Count_lines_in_file
+use Dealing_with_files, only : get_file_stat, copy_file, read_file, close_file, Count_lines_in_file, lowercase
 use Dealing_with_EADL, only : define_PQN
 use Gnuplotting
 use Plots_gnuplot, only : Plot_electron_MFP_gunplot, Plot_photon_MFP_gunplot, create_gnuplot_scripts, Plot_laser_spectrum_gnuplot
@@ -3223,6 +3223,7 @@ subroutine communicate(FN, time, numpar, matter)
    if (smth_read_master) then
       call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%MOD_TIME}', numpar%MOD_TIME) ! module "MPI_subroutines"
       call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%verbose}', numpar%verbose) ! module "MPI_subroutines"
+      call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%too_verbose}', numpar%too_verbose) ! module "MPI_subroutines"
       call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%t_total}', numpar%t_total) ! module "MPI_subroutines"
       call broadcast_variable(numpar%MPI_param, trim(adjustl(error_part))//' {numpar%dt}', numpar%dt) ! module "MPI_subroutines"
       call reset_support_times(numpar)   ! above
@@ -3517,6 +3518,10 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
       given_line_processed = given_line
    endif
 
+   ! Make it lowercase to interprete easier:
+   given_line_processed = lowercase(given_line_processed)   ! module "Dealing_with_files"
+
+
    if (read_well) then
 !       File_name = trim(adjustl(numpar%output_path))//path_sep
 !       File_name = trim(adjustl(File_name))//'!OUTPUT_'//trim(adjustl(matter%Name))//'_Parameters.txt'
@@ -3534,24 +3539,32 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
       endif
 
       select case(trim(adjustl(given_line_processed)))
-      case ('verbose', 'VERBOSE', 'Verbose')
+      case ('verbose')
          numpar%verbose = .true.
          write(6,'(a)') 'Verbose option on: XTANT will print a lot of markers for testing and debugging'
          write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' verbose option was switched on'
+
       !-------------------
-      case ('verbose_off', 'VERBOSE_OFF', 'Verbose_off', 'no_verbose', 'noverbose', 'no-verbose')
+      case ('too_verbose', 'tooverbose')
+         numpar%verbose = .true.
+         numpar%too_verbose = .true.
+         write(6,'(a)') 'Too_verbose option on: XTANT will print A LOT of markers for testing and debugging'
+         write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' too_verbose option was switched on'
+
+      !-------------------
+      case ('verbose_off', 'no_verbose', 'noverbose', 'no-verbose')
          numpar%verbose = .false.
          write(6,'(a)') 'Verbose option off: XTANT will not print markers'
          write(FN,'(a,f10.3,a)') 'At time instance of ', time, ' verbose option was switched off'
 
       !-------------------
-      case ('time', 'TIME', 'Time', 'TIme', 'TIMe', 'tIme', 'emit', 'Vremya')
+      case ('time', 'vremya')
          numpar%t_total = given_num ! total duration of simulation [fs]
          write(6,'(a,f10.3)') 'Duration of simulation is changed to', given_num
          write(FN,'(a,f10.3,a,f10.3)') 'At time instance of ', time, ' duration of simulation is changed to ', given_num
 
       !-------------------
-      case ('MDdt', 'dtMD', 'mddt', 'dtmd', 'MDDT', 'DTMD', 'MD_dt', 'md_dt')
+      case ('mddt', 'dtmd', 'md_dt')
          numpar%dt = given_num ! Time step for MD [fs]
          call reset_support_times(numpar)   ! above
          !numpar%halfdt = numpar%dt/2.0d0      ! dt/2, often used
@@ -3562,13 +3575,13 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' time-step of MD simulation is changed to ', given_num 
 
       !-------------------
-      case ('SAVEdt', 'savedt', 'dtsave', 'dtSAVE', 'Savedt', 'SaveDT', 'SaveDt', 'SAVE_dt', 'Save_dt', 'save_dt')
+      case ('savedt', 'dtsave', 'save_dt')
          numpar%dt_save = given_num ! save data into files every 'dt_save_time' [fs]
          write(6,'(a,f9.3)') 'Time-step of saving output files is changed to', given_num
          write(FN,'(a,f10.3,a,f9.3)') 'At time instance of ', time, ' time-step of saving output files is changed to ', given_num
       
       !-------------------
-      case ('OMP', 'omp', 'NOMP', 'nomp', 'Nomp', 'N_OMP', 'n_omp')
+      case ('omp', 'nomp', 'n_omp', 'openmp', 'open_mp')
          ! Reset the OpenMP parallelization options:
          numpar%NOMP = given_num
          write(temp1,'(f12.3)') time
@@ -3591,7 +3604,7 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
 #endif
 
       !-------------------
-      case ('Thermostat_dt_a', 'THERMOSTAT_DT_A', 'thermostat_dt_a')
+      case ('thermostat_dt_a')
          if (given_num < 0.0d0) then
             numpar%Transport = .false. ! excluded atomic thermostat
             write(6,'(a)') 'Atomic thermostat is switched off'
@@ -3603,7 +3616,7 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
             write(FN,'(a,f10.3,a,f12.3)') 'At time instance of ', time, ' atomic thermostat time is changed to ', given_num
          endif
       !-------------------
-      case ('Thermostat_Ta', 'THERMOSTAT_Ta', 'thermostat_Ta')
+      case ('thermostat_ta')
          if (given_num < 0.0d0) then
             numpar%Transport = .false. ! excluded atomic thermostat
             write(6,'(a)') 'Atomic thermostat is switched off'
@@ -3617,7 +3630,7 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
          endif
 
       !-------------------
-      case ('Thermostat_dt_e', 'THERMOSTAT_DT_E', 'thermostat_dt_e')
+      case ('thermostat_dt_e')
          if (given_num < 0.0d0) then
             numpar%Transport_e = .false. ! excluded atomic thermostat
             write(6,'(a)') 'Electronic thermostat is switched off'
@@ -3629,7 +3642,7 @@ subroutine act_on_comunication(given_line, given_num, numpar, matter, time)
             write(FN,'(a,f10.3,a,f12.3)') 'At time instance of ', time, ' electronic thermostat time is changed to ', given_num
          endif
       !-------------------
-      case ('Thermostat_Te', 'THERMOSTAT_Te', 'thermostat_Te')
+      case ('thermostat_te')
          if (given_num < 0.0d0) then
             numpar%Transport_e = .false. ! excluded atomic thermostat
             write(6,'(a)') 'Electronic thermostat is switched off'
@@ -3715,14 +3728,14 @@ subroutine pars_comunications(readline, out_line, out_num, read_well)
    real(8), intent(out) :: out_num
    logical, intent(out) :: read_well
    !---------------------------------
-   integer :: Reason, i
+   integer :: Reason
    character(200) :: extra_token
 
    read_well = .false.
    out_line = ''
    out_num = 0.0d0
 
-   i = 1    ! to start with
+   ! Try to read two variables: marker, number
    read(readline, *, IOSTAT=Reason) out_line, out_num
    if (Reason == 0) then
       read_well = .true.
@@ -3730,27 +3743,33 @@ subroutine pars_comunications(readline, out_line, out_num, read_well)
    endif
    !print*, 'Reason', Reason, out_line, out_num
 
+   ! Try to read two variables: marker, string
    extra_token = ''
    read(readline, *, IOSTAT=Reason) out_line, extra_token
-   if (Reason == 0) then
+   if (Reason == 0) then ! report that a number is needed
       print*, 'Given number could not be interpreted as a number: '//trim(adjustl(readline))
+      out_line = ''     ! reset it, since cannot act on it
       return
    endif
 
    out_line = ''
    read(readline, *, IOSTAT=Reason) out_line
-   if (Reason /= 0) then
+   if (Reason /= 0) then ! could not read line as string at all
       print*, 'No descriptor or value found in the communication file: '//trim(adjustl(readline))
+      out_line = ''     ! reset it, since cannot act on it
       return
    endif
 
+   ! conform it to lowercase for easier interpretation:
+   out_line = lowercase(out_line)   ! module "Dealing_with_files"
+
    ! Valid one-word commands:
    select case (trim(adjustl(out_line)))
-   case ('verbose', 'VERBOSE', 'Verbose', 'verbose_off', 'VERBOSE_OFF', 'Verbose_off', &
-         'no_verbose', 'noverbose', 'no-verbose')
+   case ('verbose', 'verbose_off', 'no_verbose', 'noverbose', 'no-verbose', 'too_verbose')
       read_well = .true.
    case default ! anything else is invalid:
       print*, 'A numerical value is required for communication command: ', trim(adjustl(out_line))
+      out_line = ''     ! reset it, since cannot act on it
    end select
 
 end subroutine pars_comunications

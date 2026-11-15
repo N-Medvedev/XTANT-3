@@ -1039,6 +1039,7 @@ type Numerics_param
    ! Other parameters:
    integer :: which_input  ! number of input file used (for using more then one sequentially)
    logical :: verbose, nonverbose
+   logical :: too_verbose = .false. ! by default, don't printout too many details
    logical :: redo_MFP     ! flag to recalculate mean free paths, if needed
    logical :: print_MFP    ! flag to printout mean free paths
    ! Electronic distribution function parameters:

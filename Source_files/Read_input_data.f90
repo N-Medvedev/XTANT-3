@@ -28,7 +28,7 @@ use Objects
 use Universal_constants
 use Little_subroutines, only : print_time_step, it_is_number, convert_wavelength_to_hw, convert_frequency_to_hw, basis_set_size, Gaussian
 use Dealing_with_files, only : Path_separator, Count_lines_in_file, close_file, copy_file, read_file, get_file_extension, &
-                              ensure_correct_path_separator
+                              ensure_correct_path_separator, lowercase
 use Dealing_with_EADL, only : m_EADL_file, m_EPDL_file, m_EEDL_file, READ_EADL_TYPE_FILE_int, READ_EADL_TYPE_FILE_real, select_imin_imax
 use Dealing_with_DFTB, only : m_DFTB_directory, construct_skf_filename, read_skf_file, same_or_different_atom_types, &
                            idnetify_basis_size, m_DFTB_norep_directory, read_skf_file_no_rep
@@ -7575,9 +7575,13 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
    ! Read first argument in the line:
    read(string_in,*,IOSTAT=Reason) string
 
+   ! Convert into lower case for easier interpretation:
+   string = lowercase(string) ! module "Dealing_with_files"
+
+
    select case (trim(adjustl(string)))
    !--------------------------------
-   case ('Vel_scale', 'VEL_SCALE', 'V_scaling', 'VEL_scaling')
+   case ('vel_scale', 'v_scaling', 'vel_scaling')
       ! Model for velosity scaling:
       read(string_in,*,IOSTAT=Reason) string, N
       if (Reason == 0) then ! read well, use the variable
@@ -7592,7 +7596,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       endif
 
    !----------------------------------
-   case ('Diffraction', 'diffraction', 'DIFFRACTION', 'Diffract', 'DIFFRACT', 'diffract', 'diffraction_peaks')
+   case ('diffraction', 'diffract', 'diffraction_peaks')
       ! Calculate evolution of the following diffraction peaks:
       ! number of peaks; photon enegry [eV]; d_theta [deg]
       read(string_in,*,IOSTAT=Reason) string, N, Scell(1)%diff_peaks%hw, Scell(1)%diff_peaks%d_theta
@@ -7633,7 +7637,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
          enddo
       endif ! (Reason /= 0)
    !----------------------------------
-   case ('DW', 'dw', 'DebyeWaller', 'Debye-Waller', 'Debye_Waller')
+   case ('dw', 'debyewaller', 'debye-waller', 'debye_waller')
       ! Calculate Debye-Waller diffraction peaks with the following parameters:
       !read(FN,*,IOSTAT=Reason) numpar%DW_theta, numpar%m2, numpar%m3, numpar%m4
       !if (Reason /= 0) then ! did not read well, no DW analysis:
@@ -7644,7 +7648,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       numpar%DW_theta = 300.0d0    ! Debye-temperature [K] - 0 to skip DW analysos
 
    !----------------------------------
-   case ('TEST_MODE', 'Test_Mode', 'Test_mode', 'test_mode', 'testmode', 'Testmode', 'TESTMODE')
+   case ('test_mode', 'testmode')
       ! Prints out all optional data, including some unique data that are usually not needed:
       write(*,'(a)') ' Test mode is on: lots of printout will be genereated...'
       numpar%save_testmode = .true.
@@ -7661,7 +7665,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       !numpar%save_hw_spectrum = .true.
 
    !----------------------------------
-   case ('output_name', 'Output_name', 'Outout_Name', 'OUTPUT_NAME', 'outname', 'Outname', 'OUTNAME')
+   case ('output_name', 'outname')
       ! User-defined additional text in the output folder name INSTEAD of the default name:
       ! Read second argument in the line:
       read(string_in,*,IOSTAT=Reason) string, numpar%output_extra_name
@@ -7674,7 +7678,8 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
          !write(*,'(a)') 'Output directory name provided: '//trim(adjustl(numpar%output_extra_name))
       endif
 
-   case ('output_add', 'Output_add', 'Outout_Add', 'OUTPUT_ADD', 'outadd', 'Outdate', 'OUTADD')
+   !----------------------------------
+   case ('output_add', 'outadd')
       ! User-defined additional text in the output folder AFTER the default name:
       ! Read second argument in the line:
       read(string_in,*,IOSTAT=Reason) string, numpar%output_name_add
@@ -7687,7 +7692,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       endif
 
    !----------------------------------
-   case ('EADLname', 'EADL_name', 'EADL_Name', 'EADL_NAME')
+   case ('eadlname', 'eadl_name')
       ! User-defined name of the file with EADL database:
       read(string_in,*,IOSTAT=Reason) string, temp_ch
       if (Reason /= 0) then ! did not read well, use default:
@@ -7698,7 +7703,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
          numpar%EADL_file = trim(adjustl(temp_ch))
       endif
 
-   case ('EPDLname', 'EPDL_name', 'EPDL_Name', 'EPDL_NAME')
+   case ('epdlname', 'epdl_name')
       ! User-defined name of the file with EADL database:
       read(string_in,*,IOSTAT=Reason) string, temp_ch
       if (Reason /= 0) then ! did not read well, use default:
@@ -7710,17 +7715,17 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       endif
 
    !----------------------------------
-   case ('Set_V2', 'set_V2', 'set_v2')
+   case ('set_v2')
       ! Choice of initial atomic velocity distribution:
       numpar%ind_starting_V = 2  ! Maxwell
-   case ('Set_V1', 'set_V1', 'set_v1')
+   case ('set_v1')
       ! Choice of initial atomic velocity distribution:
       numpar%ind_starting_V = 1  ! linear
-   case ('Set_V0', 'set_V0', 'set_v0')
+   case ('set_v0')
       ! Choice of initial atomic velocity distribution:
       numpar%ind_starting_V = 0  ! equal
 
-   case ('Set_power_b', 'SET_POWER_B', 'Set_Power_b', 'Set_Power_B')
+   case ('set_power_b')
       backspace(FN)
       read(FN,*,IOSTAT=Reason) temp_ch1, N
       if (Reason ==0) then ! read well, use the number:
@@ -7729,37 +7734,37 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       !print*, numpar%power_b
 
    !----------------------------------
-   case ('Exact_Ta', 'exact_Ta', 'exact_ta', 'EXACT_TA')
+   case ('exact_ta')
       ! recalcaulte mean free paths:
       numpar%ind_exact_Ta = 1
 
    !----------------------------------
-   case ('print_Ta', 'Print_Ta', 'PRINT_TA', 'PRINT_Ta')
+   case ('print_ta')
       ! Printout various definitions of atomic temperature:
       numpar%print_Ta = .true.
 
    !----------------------------------
-   case ('print_fragments', 'Print_Fragments', 'PRINT_FRAGMENTS', 'PRINT_fragments')
+   case ('print_fragments')
       ! Printout data for various fragments of disintegrating or fragmented material
       numpar%print_fragments = .true.
 
    !----------------------------------
-   case ('print_spectrum', 'Print_Spectrum', 'Print_spectrum', 'print_hw', 'Print_hw')
+   case ('print_spectrum', 'print_hw')
       ! Printout photon spectrum data:
       numpar%save_hw_spectrum = .true.
 
    !----------------------------------
-   case ('print_MFP', 'Print_MFP', 'PRINT_MFP')
+   case ('print_mfp')
       ! Printout mean free paths:
       numpar%print_MFP = .true.
 
    !----------------------------------
-   case ('redo_MFP', 'MFP', 'REDO_MFP')
+   case ('redo_mfp', 'mfp')
       ! recalcaulte mean free paths:
       numpar%redo_MFP = .true.
 
    !----------------------------------
-   case ('el-ph', 'EL-PH', 'El-Ph', 'Coupling', 'COUPLING', 'coupling')
+   case ('el-ph', 'elph', 'coupling')
       read(FN,*,IOSTAT=Reason) num_phon   ! number of simulations for average electron-phonon coupling parameter
       call read_file(Reason, count_lines, read_well)
       if (read_well) then ! pass the number of simulations
@@ -7770,7 +7775,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       endif
 
    !----------------------------------
-   case ('WATER', 'EMBED_WATER', 'EMBED_IN_WATER', 'Water', 'water', 'embed_water', 'Embed_Water', 'Embed_in_water')
+   case ('water', 'embed_water', 'embed_in_water')
       numpar%embed_water = .true.   ! save the flag for water embedding
       read(FN,*,IOSTAT=Reason) numpar%N_water_mol   ! number of water molecules to use
       call read_file(Reason, count_lines, read_well)
@@ -7786,22 +7791,21 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       endif
 
    !----------------------------------
-   case ('DOS', 'Dos', 'dos', 'do_DOS', 'get_DOS')
+   case ('dos')
       numpar%do_DOS = .true.  ! calculate DOS
 
    !----------------------------------
-   case ('print_CDF', 'save_CDF', 'get_CDF', 'Print_CDF', 'Save_CDF', 'Get_CDF')
+   case ('print_cdf', 'save_cdf', 'get_cdf')
       numpar%save_CDF = .true.   ! printout CDF file with oscillators
 
    !----------------------------------
-   case ('KAPPA', 'Kappa', 'kappa', 'conductivity', 'do_kappa', 'Do_kappa', 'Get_kappa', 'get_kappa', &
-         'KAPPA_DYN', 'Kappa_dyn', 'kappa_dyn', 'Kappa_Dyn', 'Kappa_dynamical', 'kappa_dynamical')
+   case ('kappa', 'conductivity', 'do_kappa', 'get_kappa', 'kappa_dyn', 'kappa_dynamical')
 
       select case (trim(adjustl(string)))
-      case ('KAPPA', 'Kappa', 'kappa', 'conductivity', 'do_kappa', 'Do_kappa', 'Get_kappa', 'get_kappa')
+      case ('kappa', 'conductivity', 'do_kappa', 'get_kappa')
          print*, 'Electronic heat conductivity will be calculated (static)'
          numpar%do_kappa = .true.   ! statically calculate K (electron heat conductivity vs Te)
-      case ('KAPPA_DYN', 'Kappa_dyn', 'kappa_dyn', 'Kappa_Dyn', 'Kappa_dynamical', 'kappa_dynamical')
+      case ('kappa_dyn', 'kappa_dynamical')
          print*, 'Electronic heat conductivity will be calculated (dynamic)'
          numpar%do_kappa_dyn = .true.   ! dynamically calculate K (for transient Te)
       end select
@@ -7836,7 +7840,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       endif
 
    !----------------------------------
-   case ('PROBE', 'Probe', 'probe')
+   case ('probe')
       ! Calculate optical parameters (and electronic heat conductivity, ir requested), and with which model:
       read(FN,*,IOSTAT=Reason) numpar%optic_model, N, read_var
       call read_file(Reason, count_lines, read_well)
@@ -7901,7 +7905,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       enddo SCL
 
    !----------------------------------
-   case ('size', 'Size', 'SIZE')
+   case ('size')
       print*, 'Supercell size variation will be performed to plot potential energy curve'
       numpar%change_size = .true. ! do changing size
       ! Optional number of points for vary_size:
@@ -7928,7 +7932,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       !write(*,'(a)') trim(adjustl(m_starline))
 
    !----------------------------------
-   case ('Split', 'split', 'SPLIT')
+   case ('split')
       print*, 'Split-target cohesive energy analysis is not implemented yet'
       !print*, 'Split-target cohesive energy analysis will be performed'
       !numpar%Split_target%do_split = .true. ! do changing size with splitting material in parts
@@ -7939,7 +7943,8 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
    case default
       ! Check if the user needs any additional info (by setting the flags):
       call interprete_additional_data(string, numpar%path_sep, change_size=numpar%change_size, contin=Err%Stopsignal, &
-                  allow_rotate=numpar%allow_rotate, verbose=numpar%verbose, nonverbose=numpar%nonverbose) ! module "Read_input_data"
+                  allow_rotate=numpar%allow_rotate, verbose=numpar%verbose, too_verbose=numpar%too_verbose, &
+                  nonverbose=numpar%nonverbose) ! module "Read_input_data"
 
    endselect
 end subroutine interpret_user_data_INPUT
@@ -8312,12 +8317,12 @@ end subroutine multiply_input_files
 
 
 ! Reads additional data from the command line passed along with the XTANT:
-subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose, nonverbose)
+subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose, too_verbose, nonverbose)
    character(1), intent(inout) :: path_sep
    logical, intent(inout) :: change_size
    logical, intent(out) :: contin
    logical, intent(out) :: allow_rotate
-   logical, intent(out) :: verbose, nonverbose
+   logical, intent(out) :: verbose, too_verbose, nonverbose
    !---------------
    character(1000) :: string
    integer :: i_arg, count_args, N_arg
@@ -8326,6 +8331,7 @@ subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose, no
    ! Default values:
    change_size = .false. ! don't do changing size
    verbose = .false.    ! don't print a lot of stuff
+   too_verbose = .false. ! don't print even more stuff
    nonverbose = .false. ! print as normal
 
    ! Identify the OS by the system-used path separator:
@@ -8342,19 +8348,19 @@ subroutine get_add_data(path_sep, change_size, contin, allow_rotate, verbose, no
       call GET_COMMAND_ARGUMENT(i_arg,string)  ! intrinsic
 
       ! Act on the command passed:
-      call interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose, nonverbose)  ! below
+      call interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose, too_verbose, nonverbose)  ! below
 
    enddo ALLARG
 end subroutine get_add_data
 
 
-subroutine interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose, nonverbose)
+subroutine interprete_additional_data(string, path_sep, change_size, contin, allow_rotate, verbose, too_verbose, nonverbose)
    character(*), intent(in) :: string
    character(1), intent(inout) :: path_sep
    logical, intent(inout), optional :: change_size
    logical, intent(out), optional :: contin
    logical, intent(out), optional :: allow_rotate
-   logical, intent(out), optional :: verbose, nonverbose
+   logical, intent(out), optional :: verbose, too_verbose, nonverbose
    !---------------
    character(1000) :: read_string, printline, ch_temp, string_read
    character(200) :: file_name
@@ -8367,34 +8373,54 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
       string_read = string_read(2:)
    enddo
 
+   ! Convert to lowercase to interprete:
+   string_read = lowercase(string_read)   ! module "Dealing_with_files"
+
    ! Interpret the command:
    select case (trim(adjustl(string_read)))
-   case ('verbose', 'VERBOSE', 'Verbose')
-      print*, 'Verbose on: XTANT will print markers for testing and debugging'
-      if (present(verbose)) verbose = .true.
-      write(*,'(a)') trim(adjustl(m_starline))
+   case ('verbose')
+      if (present(verbose)) then
+         print*, 'Verbose on: XTANT will print markers for testing and debugging'
+         verbose = .true.
+         write(*,'(a)') trim(adjustl(m_starline))
+      endif
+   case ('too_verbose')
+      if (present(too_verbose)) then
+         print*, 'Too_verbose on: XTANT will print A LOT of markers for testing and debugging'
+         if (present(verbose)) verbose = .true.
+         too_verbose = .true.
+         write(*,'(a)') trim(adjustl(m_starline))
+      endif
 
-   case ('nonverbose', 'NONVERBOSE', 'Nonverbose', 'noverbose', 'NOVERBOSE')
-      print*, 'Nonverbose on: XTANT will print almost nothing'
-      if (present(nonverbose)) nonverbose = .true.
-      write(*,'(a)') trim(adjustl(m_starline))
+   case ('nonverbose')
+      if (present(nonverbose)) then
+         print*, 'Nonverbose on: XTANT will print almost nothing'
+         nonverbose = .true.
+         write(*,'(a)') trim(adjustl(m_starline))
+      endif
 
    case ('allow_rotation', 'allow_rotate', 'no_ang_removal')
-      print*, 'The angular momenta of the sample will not be removed'
-      if (present(allow_rotate)) allow_rotate = .true. ! don't remove angular momentum from initial conditions
-      write(*,'(a)') trim(adjustl(m_starline))
+      if (present(allow_rotate)) then
+         print*, 'The angular momenta of the sample will not be removed'
+         allow_rotate = .true. ! don't remove angular momentum from initial conditions
+         write(*,'(a)') trim(adjustl(m_starline))
+      endif
 
-   case ('size', 'Size', 'SIZE')
-      print*, 'Supercell size variation will be performed to plot potential energy curve'
-      if (present(change_size)) change_size = .true. ! do changing size
-      write(*,'(a)') trim(adjustl(m_starline))
+   case ('size')
+      if (present(change_size)) then
+         print*, 'Supercell size variation will be performed to plot potential energy curve'
+         change_size = .true. ! do changing size
+         write(*,'(a)') trim(adjustl(m_starline))
+      endif
 
-   case ('test', 'TEST', 'Test')
-      print*, 'Wow, it really works!'
-      if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
-      write(*,'(a)') trim(adjustl(m_starline))
+   case ('test')
+      if (present(contin)) then
+         print*, 'Wow, it really works!'
+         contin = .true.  ! stop calculations, user only wanted some info
+         write(*,'(a)') trim(adjustl(m_starline))
+      endif
 
-   case ('Matter', 'matter', 'MATTER', 'Materials', 'materials', 'list', 'LIST', 'List')
+   case ('matter', 'materials', 'list')
       write(*,'(a)') trim(adjustl(m_starline))
       ! Create file with list of available materials:
       call Get_list_of_materials(path_sep)  ! below
@@ -8402,7 +8428,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
       write(*,'(a)') trim(adjustl(m_starline))
       if (present(contin)) contin = .true.  ! stop calculations, user only wanted some info
 
-   case ('help', 'HELP', 'Help')
+   case ('help')
       ! Filename with help:
       file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_HELP_file))
 
@@ -8440,7 +8466,7 @@ subroutine interprete_additional_data(string, path_sep, change_size, contin, all
       write(*,'(a)') trim(adjustl(m_starline))
       if (present(contin)) contin = .true.  ! stop calculations, user only wanted some help
 
-   case ('info', 'INFO', 'Info')
+   case ('info')
       ! Filename with help:
       file_name = trim(adjustl(m_INPUT_directory))//path_sep//trim(adjustl(m_INFO_directory))//path_sep//trim(adjustl(m_INFO_file))
 
