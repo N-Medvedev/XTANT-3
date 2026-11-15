@@ -47,7 +47,7 @@ public :: KS_s, KS_ss_hetero, KS_sp3_hetero, KS_sp3d5_hetero, drij_dska, ddija_d
          ddija_drkb, d2dija_drkb2, m_sqrt3, t_s_dab, t_s_dx2_y2, t_s_dz2_r2, t_s_s, t_pa_pa, &
          t_dab_dab, t_dx2_y2_dx2_y2, t_d3z2_r2_d3z2_r2, KS_sp3_hetero_TEST, KS_sp3d5_hetero_TEST, &
          KS_sp3d5, d_KS_sp3d5, d_KS_sp3d5_TEST, KS_Cmnj_orbital, d_KS_Cmnj_orbital, d2_KS_Cmnj_orbital, &
-         d2rij_drka_drlb
+         d2rij_drka_drlb, d2_KS_sp3d5
 
 
  contains
@@ -5961,5 +5961,28 @@ pure subroutine d2_KS_sp3d5_hetero(Vsr12, Vsr21, dVsr12, dVsr21, d2Vsr12, d2Vsr2
       d2ts = d2ts + (ws(is)/(12.0d0*h))*tmp
    enddo
 end subroutine d2_KS_sp3d5_hetero
+
+
+pure subroutine d2_KS_sp3d5(Vsr, dVsr, d2Vsr, l, m, n, dl, dm, dn, d2l, d2m, d2n, dts, d2ts)
+   ! first and second derivative of the homonuclear sp3d5 block along a path (same method as d2_KS_sp3d5_hetero)
+   real(8), intent(in) :: l, m, n, dl, dm, dn, d2l, d2m, d2n
+   real(8), dimension(10), intent(in) :: Vsr, dVsr, d2Vsr   ! integrals, their d/dt and d2/dt2 along the path
+   real(8), dimension(9,9), intent(out) :: dts, d2ts
+   !-----------------------
+   real(8), parameter :: h = 0.05d0
+   real(8), dimension(4), parameter :: xs = (/  2.0d0,  1.0d0, -1.0d0, -2.0d0 /)
+   real(8), dimension(4), parameter :: ws = (/ -1.0d0,  8.0d0, -8.0d0,  1.0d0 /)
+   real(8), dimension(9,9) :: tmp
+   integer :: is
+
+   call d_KS_sp3d5(Vsr, dVsr, l, m, n, dl, dm, dn, dts)
+   call d_KS_sp3d5(Vsr, d2Vsr, l, m, n, d2l, d2m, d2n, d2ts)    ! linear term
+   do is = 1, 4
+      call d_KS_sp3d5(Vsr + xs(is)*h*dVsr, dVsr, l+xs(is)*h*dl, m+xs(is)*h*dm, n+xs(is)*h*dn, dl, dm, dn, tmp)
+      d2ts = d2ts + (ws(is)/(12.0d0*h))*tmp
+   enddo
+end subroutine d2_KS_sp3d5
+
+
 
 END MODULE TB_Koster_Slater

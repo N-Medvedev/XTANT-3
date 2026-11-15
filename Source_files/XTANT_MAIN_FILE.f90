@@ -325,13 +325,14 @@ do while (g_time .LT. g_numpar%t_total)
    ! If there is a grid for changing time-step, change it:
    call reset_dt(g_numpar, g_matter, g_time)  ! module "Dealing_with_output_files"
 
+   !----------------------------------------------------------
+   ! Atomic motion step:
+   !----------------------------------------------------------
    AT_MOVE_1:if (g_numpar%do_atoms) then ! atoms are allowed to be moving:
-
       ! Do coupling before MD step:
       ! Nonadiabatic electron-ion coupling:
       !call Electron_ion_coupling(g_time, g_matter, g_numpar, g_Scell, g_Err) !  module "TB"
       !if (g_numpar%verbose) call print_time_step('Electron_ion_coupling succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
-
 
       !1111111111111111111111111111111111111111111111111111111
       ! Update atomic data on previous timestep and move further:
@@ -349,25 +350,33 @@ do while (g_time .LT. g_numpar%t_total)
       ! Quenching of atoms (zero-temperature MD):
       call Cooling_atoms(g_numpar, g_matter, g_Scell, g_time, g_numpar%at_cool_dt, g_numpar%at_cool_start, g_numpar%do_cool) ! module "Atomic_tools"
       if (g_numpar%verbose) call print_time_step('Cooling of atoms done successfully:', msec=.true., MPI_param=g_numpar%MPI_param)
+   endif AT_MOVE_1
 
-      ! Berendsen thermostat (mimicing energy transport; only if included):
-      if (g_numpar%Transport_e) then ! for electrons
-         ! Include Berendsen thermostat in the electronic system:
-         call Electron_transport(1, g_time, g_Scell, g_numpar, g_matter, g_numpar%dt, g_matter%tau_bath_e, g_Err) ! module "Transport"
-         if (g_numpar%verbose) call print_time_step('Electron Berendsen thermostat succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
-      endif
-      if (g_numpar%Transport) then ! for atoms
+
+   !----------------------------------------------------------
+   ! Thermostats (mimicking energy transport):
+   !----------------------------------------------------------
+   ! Berendsen-like thermostats (only if included):
+   if (g_numpar%Transport_e) then   ! thermostat for electrons
+      ! Include Berendsen-like thermostat in the electronic system:
+      call Electron_transport(1, g_time, g_Scell, g_numpar, g_matter, g_numpar%dt, g_matter%tau_bath_e, g_Err) ! module "Transport"
+      if (g_numpar%verbose) call print_time_step('Electron Berendsen thermostat succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
+   endif
+   if (g_numpar%do_atoms) then      ! if atoms are moving at all
+      if (g_numpar%Transport) then  ! thermostat for atoms
          ! Include Berendsen thermostat in the atomic system:
          call Atomic_heat_transport(1, g_Scell, g_matter, g_numpar%dt, g_matter%tau_bath) ! module "Transport"
          ! Include change of the affected layer for calculation of optical constants:
          call Change_affected_layer(1, g_Scell(1)%eps%dd, g_Scell, g_numpar%dt, g_matter%tau_bath)  ! module "Transport"
          if (g_numpar%verbose) call print_time_step('Atomic Berendsen thermostat succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param)
-
       endif
-   endif AT_MOVE_1
+   endif
 
-   !write(*,'(a,f,f,f,f)') 'test 0:', g_time, SUM(g_Scell(1)%fe), SUM(g_Scell(1)%fe_eq), g_Scell(1)%Ne_low
 
+
+   !----------------------------------------------------------
+   ! Electron kinetics step:
+   !----------------------------------------------------------
    ! Monte-Carlo for photons, high-energy electrons, and core holes:
    call MC_Propagate(g_MC, g_numpar, g_matter, g_Scell, g_laser, g_time, g_Err) ! module "Monte_Carlo"
    if (g_numpar%verbose) call print_time_step('Monte Carlo model executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
@@ -378,7 +387,6 @@ do while (g_time .LT. g_numpar%t_total)
    call Electron_thermalization(g_Scell, g_numpar) ! module "Electron_tools"
    if (g_numpar%too_verbose) call print_time_step('Electron_thermalization executed successfully:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
-
    !write(*,'(a,f,f,f,f)') 'test 2:', g_time, SUM(g_Scell(1)%fe), SUM(g_Scell(1)%fe_eq), g_Scell(1)%Ne_low
 
    ! And save the (low-energy part of the) distribution on the grid, if required
@@ -388,6 +396,11 @@ do while (g_time .LT. g_numpar%t_total)
    ! Update corresponding energies of the system:
    call update_nrg_after_change(g_Scell, g_matter, g_numpar, g_time, g_Err) ! module "TB"
 
+
+
+   !----------------------------------------------------------
+   ! Second part of the atomic motion step (if used in a split-step scheme):
+   !----------------------------------------------------------
    !3333333333333333333333333333333333333333333333333333333333
    AT_MOVE_2:if (g_numpar%do_atoms) then ! atoms are allowed to be moving:
       ! Choose which MD propagator to use:
@@ -418,6 +431,11 @@ do while (g_time .LT. g_numpar%t_total)
    endif AT_MOVE_2
    if (g_numpar%verbose) call print_time_step('Second step of MD step succesful:', g_time, msec=.true., MPI_param=g_numpar%MPI_param) ! module "Little_subroutines"
 
+
+
+   !----------------------------------------------------------
+   ! Data processing and output:
+   !----------------------------------------------------------
    !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
    g_time = g_time + g_numpar%dt        ! [fs] next time-step
    g_dt_save = g_dt_save + g_numpar%dt  ! [fs] for tracing when to save the output data
@@ -499,7 +517,7 @@ endif
 
 
 ! Redo the pump-laser photon spectrum, now including the MC_sampled one:
-call printout_laser_spectrum(g_laser, g_numpar, g_matter)   ! module "Dealing_with_output_files"
+if (allocated(g_laser)) call printout_laser_spectrum(g_laser, g_numpar, g_matter)   ! module "Dealing_with_output_files"
 
 
 if (g_numpar%MPI_param%process_rank == 0) then   ! only MPI master process does it

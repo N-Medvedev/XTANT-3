@@ -60,6 +60,61 @@ PRIVATE
 character(30), parameter :: m_XTANT_version = 'XTANT-3 (version 15.11.2026)'
 character(30), parameter :: m_Error_log_file = 'OUTPUT_Error_log.txt'
 
+!-------------------
+! Output file names:
+character(50), parameter :: m_optical_coefficients    = 'OUTPUT_optical_coefficients.dat'
+character(50), parameter :: m_electron_properties     = 'OUTPUT_electron_properties.dat'
+character(50), parameter :: m_electron_entropy        = 'OUTPUT_electron_entropy.dat'
+character(50), parameter :: m_atomic_entropy          = 'OUTPUT_atomic_entropy.dat'
+character(50), parameter :: m_atomic_temperatures     = 'OUTPUT_atomic_temperatures.dat'
+character(50), parameter :: m_force_velocity_correlator     = 'OUTPUT_force_velocity_correlator.dat'
+character(50), parameter :: m_electron_temperatures   = 'OUTPUT_electron_temperatures.dat'
+character(50), parameter :: m_electron_chempotentials = 'OUTPUT_electron_chempotentials.dat'
+character(50), parameter :: m_diffraction_peaks       = 'OUTPUT_diffraction_peaks.dat'
+character(50), parameter :: m_diffraction_peaks_DW    = 'OUTPUT_diffraction_peaks_DW.dat'
+character(50), parameter :: m_Debye_temperature_from_DW     = 'OUTPUT_Debye_temperature_from_DW.dat'
+character(50), parameter :: m_diffraction_peaks_elem  = 'OUTPUT_diffraction_peaks_'
+character(50), parameter :: m_atomic_temperatures_partial   = 'OUTPUT_atomic_temperatures_partial.dat'
+character(50), parameter :: m_nearest_neighbors       = 'OUTPUT_nearest_neighbors.dat'
+character(50), parameter :: m_nearest_neighbors_part  = 'OUTPUT_nearest_neighbors_'
+character(50), parameter :: m_orbital_resolved_data   = 'OUTPUT_orbital_resolved_data.dat'
+character(50), parameter :: m_electron_hole_numbers   = 'OUTPUT_electron_hole_numbers.dat'
+character(50), parameter :: m_energies                = 'OUTPUT_energies.dat'
+character(50), parameter :: m_temperatures            = 'OUTPUT_temperatures.dat'
+character(50), parameter :: m_displacements_mask      = 'OUTPUT_displacements_'
+character(50), parameter :: m_pressure_and_stress     = 'OUTPUT_pressure_and_stress.dat'
+character(50), parameter :: m_deep_shell_holes        = 'OUTPUT_deep_shell_holes.dat'
+character(50), parameter :: m_supercell               = 'OUTPUT_supercell.dat'
+character(50), parameter :: m_electron_heat_conductivity    = 'OUTPUT_electron_heat_conductivity.dat'
+character(50), parameter :: m_electron_heat_conductivity_dyn      = 'OUTPUT_electron_heat_conductivity_dyn.dat'
+character(50), parameter :: m_diffraction_powder      = 'OUTPUT_diffraction_powder.dat'
+character(50), parameter :: m_testmode_data           = 'OUTPUT_testmode_data.dat'
+character(50), parameter :: m_coupling                = 'OUTPUT_coupling.dat'
+character(50), parameter :: m_high_energy_electrons   = 'OUTPUT_high_energy_electrons.dat'
+character(50), parameter :: m_fragments_data          = 'OUTPUT_fragments_data.dat'
+character(50), parameter :: m_fragment                = 'OUTPUT_fragment_'
+character(50), parameter :: m_electron_Ce             = 'OUTPUT_electron_Ce.dat'
+character(50), parameter :: m_coordinates_and_velocities    = 'OUTPUT_coordinates_and_velocities.dat'
+character(50), parameter :: m_SAVE_atoms              = 'SAVE_atoms.dat'
+character(50), parameter :: m_SAVE_supercell          = 'SAVE_supercell.dat'
+character(50), parameter :: m_SAVE_coordinates        = 'SAVE_coordinates.xyz'
+character(50), parameter :: m_SAVE_velocities         = 'SAVE_velocities.xyz'
+character(50), parameter :: m_SAVE_el_distribution    = 'SAVE_el_distribution.dat'
+character(50), parameter :: m_atomic_coordinates_xyz  = 'OUTPUT_atomic_coordinates.xyz'
+character(50), parameter :: m_atomic_velocities_xyz   = 'OUTPUT_atomic_velocities.xyz'
+character(50), parameter :: m_atomic_coordinates_cif  = 'OUTPUT_atomic_coordinates.cif'
+character(50), parameter :: m_energy_levels           = 'OUTPUT_energy_levels.dat'
+character(50), parameter :: m_DOS                     = 'OUTPUT_DOS.dat'
+character(50), parameter :: m_electron_distribution   = 'OUTPUT_electron_distribution.dat'
+character(50), parameter :: m_electron_distribution_on_grid = 'OUTPUT_electron_distribution_on_grid.dat'
+character(50), parameter :: m_atomic_distribution     = 'OUTPUT_atomic_distribution.dat'
+character(50), parameter :: m_atomic_distribution_pot = 'OUTPUT_atomic_distribution_pot.dat'
+character(50), parameter :: m_atomic_distribution_tot = 'OUTPUT_atomic_distribution_tot.dat'
+character(50), parameter :: m_pair_correlation_function     = 'OUTPUT_pair_correlation_function.dat'
+character(50), parameter :: m_dielectric_function     = 'OUTPUT_dielectric_function.dat'
+
+
+
 public :: write_output_files, convolve_output, reset_dt, print_title, prepare_output_files, communicate
 public :: close_save_files, close_output_files, save_duration, write_energies
 public :: XTANT_label, m_Error_log_file, printout_CDF_file, print_a_comforting_message, printout_MFP_file, printout_laser_spectrum
@@ -595,7 +650,9 @@ subroutine convolve_output(Scell, numpar, matter)
          FN = 9999
          file_path = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))
 
-         File_name = trim(adjustl(file_path))//'OUTPUT_optical_coefficients.dat'
+         !File_name = trim(adjustl(file_path))//'OUTPUT_optical_coefficients.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_optical_coefficients))
+
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))   
@@ -603,7 +660,9 @@ subroutine convolve_output(Scell, numpar, matter)
             close(FN)
          endif
 
-         File_name = trim(adjustl(file_path))//'OUTPUT_electron_properties.dat'
+         !File_name = trim(adjustl(file_path))//'OUTPUT_electron_properties.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_electron_properties))
+
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))  
@@ -611,7 +670,9 @@ subroutine convolve_output(Scell, numpar, matter)
             close(FN)
          endif
 
-         File_name = trim(adjustl(file_path))//'OUTPUT_electron_entropy.dat'
+         !File_name = trim(adjustl(file_path))//'OUTPUT_electron_entropy.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_electron_entropy))
+
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -620,7 +681,9 @@ subroutine convolve_output(Scell, numpar, matter)
          endif
 
          if (numpar%print_Ta) then
-            File_name = trim(adjustl(file_path))//'OUTPUT_atomic_entropy.dat'
+            !File_name = trim(adjustl(file_path))//'OUTPUT_atomic_entropy.dat'
+            File_name = trim(adjustl(file_path))//trim(adjustl(m_atomic_entropy))
+
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             if (file_exist) then
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -628,7 +691,9 @@ subroutine convolve_output(Scell, numpar, matter)
                close(FN)
             endif
 
-            File_name = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures.dat'
+            !File_name = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures.dat'
+            File_name = trim(adjustl(file_path))//trim(adjustl(m_atomic_temperatures))
+
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             if (file_exist) then
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -637,8 +702,20 @@ subroutine convolve_output(Scell, numpar, matter)
             endif
          endif
 
+
+         if (numpar%print_Fv) then
+            File_name = trim(adjustl(file_path))//trim(adjustl(m_force_velocity_correlator))
+            inquire(file=trim(adjustl(File_name)),exist=file_exist)
+            if (file_exist) then
+               open(UNIT=FN, FILE = trim(adjustl(File_name)))
+               call convolution(FN, Scell(i)%eps%tau) ! <force*velocity> correlator
+               close(FN)
+            endif
+         endif
+
+
          if (numpar%do_partial_thermal) then
-            File_name = trim(adjustl(file_path))//'OUTPUT_electron_temperatures.dat'
+            File_name = trim(adjustl(file_path))//trim(adjustl(m_electron_temperatures))
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             if (file_exist) then
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -646,7 +723,8 @@ subroutine convolve_output(Scell, numpar, matter)
                close(FN)
             endif
 
-            File_name = trim(adjustl(file_path))//'OUTPUT_electron_chempotentials.dat'
+            !File_name = trim(adjustl(file_path))//'OUTPUT_electron_chempotentials.dat'
+            File_name = trim(adjustl(file_path))//trim(adjustl(m_electron_chempotentials))
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             if (file_exist) then
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -656,7 +734,7 @@ subroutine convolve_output(Scell, numpar, matter)
          endif
 
 
-         File_name = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_diffraction_peaks))
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -665,7 +743,7 @@ subroutine convolve_output(Scell, numpar, matter)
          endif
 
          if ( abs(numpar%DW_theta) > 1.0d-6 ) then
-            File_name = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_DW.dat'
+            File_name = trim(adjustl(file_path))//trim(adjustl(m_diffraction_peaks_DW))
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             if (file_exist) then
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -673,7 +751,7 @@ subroutine convolve_output(Scell, numpar, matter)
                close(FN)
             endif
 
-            File_name = trim(adjustl(file_path))//'OUTPUT_Debye_temperature_from_DW.dat'
+            File_name = trim(adjustl(file_path))//trim(adjustl(m_Debye_temperature_from_DW))
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             if (file_exist) then
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -685,7 +763,7 @@ subroutine convolve_output(Scell, numpar, matter)
          ! For element-specific diffraction data:
          if (size(matter%Atoms) > 1) then
             do j = 1, size(matter%Atoms)    ! for all elements
-               File_name = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_'//trim(adjustl(matter%Atoms(j)%Name))//'.dat'
+               File_name = trim(adjustl(file_path))//trim(adjustl(m_diffraction_peaks_elem))//trim(adjustl(matter%Atoms(j)%Name))//'.dat'
                inquire(file=trim(adjustl(File_name)),exist=file_exist)
                if (file_exist) then
                   open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -696,7 +774,7 @@ subroutine convolve_output(Scell, numpar, matter)
          endif
 
          ! Atomic partial temperatures:
-         File_name = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_atomic_temperatures_partial))
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -707,7 +785,7 @@ subroutine convolve_output(Scell, numpar, matter)
 
          ! Nearest neighbors:
          if (numpar%save_NN) then
-            File_name = trim(adjustl(file_path))//'OUTPUT_nearest_neighbors.dat'
+            File_name = trim(adjustl(file_path))//trim(adjustl(m_nearest_neighbors))
             inquire(file=trim(adjustl(File_name)),exist=file_exist)
             if (file_exist) then
                open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -717,7 +795,7 @@ subroutine convolve_output(Scell, numpar, matter)
          endif
 
 
-         File_name = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_data.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_orbital_resolved_data))
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -726,7 +804,7 @@ subroutine convolve_output(Scell, numpar, matter)
          endif
 
 
-         File_name = trim(adjustl(file_path))//'OUTPUT_electron_hole_numbers.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_electron_hole_numbers))
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))   
@@ -734,7 +812,7 @@ subroutine convolve_output(Scell, numpar, matter)
             close(FN)
          endif
          
-         File_name = trim(adjustl(file_path))//'OUTPUT_energies.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_energies))
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))   
@@ -742,7 +820,7 @@ subroutine convolve_output(Scell, numpar, matter)
             close(FN)
          endif
 
-         File_name = trim(adjustl(file_path))//'OUTPUT_temperatures.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_temperatures))
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))   
@@ -754,7 +832,7 @@ subroutine convolve_output(Scell, numpar, matter)
          if (allocated(Scell(i)%Displ)) then
             Nsiz = size(Scell(i)%Displ)   ! how many masks
             do j = 1, Nsiz    ! for all masks
-               File_name = trim(adjustl(file_path))//'OUTPUT_displacements_'//trim(adjustl(Scell(i)%Displ(j)%mask_name))//'.dat'
+               File_name = trim(adjustl(file_path))//trim(adjustl(m_displacements_mask))//trim(adjustl(Scell(i)%Displ(j)%mask_name))//'.dat'
                inquire(file=trim(adjustl(File_name)),exist=file_exist)
                if (file_exist) then
                   open(UNIT=FN, FILE = trim(adjustl(File_name)))
@@ -764,7 +842,7 @@ subroutine convolve_output(Scell, numpar, matter)
             enddo ! i
          endif
          
-         File_name = trim(adjustl(file_path))//'OUTPUT_pressure_and_stress.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_pressure_and_stress))
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))   
@@ -772,7 +850,7 @@ subroutine convolve_output(Scell, numpar, matter)
             close(FN)
          endif
 
-         File_name = trim(adjustl(file_path))//'OUTPUT_deep_shell_holes.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_deep_shell_holes))
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))    
@@ -780,7 +858,7 @@ subroutine convolve_output(Scell, numpar, matter)
             close(FN)
          endif
 
-         File_name = trim(adjustl(file_path))//'OUTPUT_supercell.dat'
+         File_name = trim(adjustl(file_path))//trim(adjustl(m_supercell))
          inquire(file=trim(adjustl(File_name)),exist=file_exist)
          if (file_exist) then
             open(UNIT=FN, FILE = trim(adjustl(File_name)))    
@@ -1348,22 +1426,25 @@ subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic pa
    if (numpar%print_Ta) then
 
       ! Atomic entropy:
-      write(numpar%FN_Sa, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, Scell(NSC)%Sa, Scell(NSC)%Sa_eq, &
+      write(numpar%FN_Sa, '(6es25.16)') time, Scell(NSC)%Sa, Scell(NSC)%Sa_eq, &
       Scell(NSC)%Sa_eq_num, Scell(NSC)%Sa_conf, Scell(NSC)%Sa_tot
 
       ! kinetic; entropic; distributional; fluctuational; "potential"; configurational etc.:
-      write(numpar%FN_Ta, '(es25.16, &
-            es25.16, es25.16, es25.16, es25.16, &
-            es25.16, es25.16, es25.16, es25.16, &
-            es25.16, es25.16, es25.16)') &
+      write(numpar%FN_Ta, '(12es25.16)') &
       time, &
       Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(2), Scell(NSC)%Ta_var(3), Scell(NSC)%Ta_var(4), &
       Scell(NSC)%Ta_var(5), Scell(NSC)%Ta_var(6), Scell(NSC)%Ta_var(7), Scell(NSC)%Ta_var(8), &
       Scell(NSC)%Fv, Scell(NSC)%Tconf, Scell(NSC)%Tconf2
 
       ! partial temperatures along X,Y,Z:
-      write(numpar%FN_Ta_part, '(es25.16, es25.16, es25.16, es25.16, es25.16, es25.16, es25.16)') time, &
+      write(numpar%FN_Ta_part, '(7es25.16)') time, &
       Scell(NSC)%Ta_r_var(1:6)
+   endif
+
+   ! <Force*velocity> correlator:
+   if (numpar%print_Fv) then
+      ! partial temperatures along X,Y,Z:
+      write(numpar%FN_FV, '(2es25.16)') time, Scell(NSC)%Fv
    endif
 end subroutine write_atomic_properties
 
@@ -1431,7 +1512,7 @@ subroutine write_fragments_properties(time, Scell, NSC, matter, numpar)
       file_opened = .false.   ! to start with
 
       write(FN_char, '(i10)') i
-      file_fragment = trim(adjustl(file_path))//'OUTPUT_fragment_'//trim(adjustl(FN_char))//'.dat'
+      file_fragment = trim(adjustl(file_path))//trim(adjustl(m_fragment))//trim(adjustl(FN_char))//'.dat'
 
       ! Check if such a file already exists and is opened:
       inquire(file=trim(adjustl(file_fragment)),exist=file_exists)
@@ -2090,8 +2171,8 @@ subroutine make_save_files(path, type_of_SAVE)
    ! Select type of the SAVE files:
    select case (type_of_SAVE)
    case default   ! internat XTANT format:
-      file_name_at = trim(adjustl(path))//'SAVE_atoms.dat'
-      file_name_cell = trim(adjustl(path))//'SAVE_supercell.dat'
+      file_name_at = trim(adjustl(path))//trim(adjustl(m_SAVE_atoms))
+      file_name_cell = trim(adjustl(path))//trim(adjustl(m_SAVE_supercell))
 
       ! Open the file with the atomic coordinates and supercell in the internal format:
       open(UNIT=FN, FILE = trim(adjustl(file_name_at)))     ! atomic coordinates
@@ -2100,8 +2181,8 @@ subroutine make_save_files(path, type_of_SAVE)
    case (1) ! XYZ format for atomic coordinates and supercell
       ! No separate supercell file, the data are inside the extended-XYZ;
       ! instead a separate file with atomic velocities:
-      file_name_coord = trim(adjustl(path))//'SAVE_coordinates.xyz'
-      file_name_vel = trim(adjustl(path))//'SAVE_velocities.xyz'
+      file_name_coord = trim(adjustl(path))//trim(adjustl(m_SAVE_coordinates))
+      file_name_vel = trim(adjustl(path))//trim(adjustl(m_SAVE_velocities))
 
       ! Open the file with the atomic coordinates and velocities in eXYZ format:
       open(UNIT=FN, FILE = trim(adjustl(file_name_coord)))  ! atomic coordinates
@@ -2111,7 +2192,7 @@ subroutine make_save_files(path, type_of_SAVE)
 
    ! Open the file with the electron distribution function:
    FN3 = 702      ! number is fixed and reused below
-   file_name_fe = trim(adjustl(path))//'SAVE_el_distribution.dat'
+   file_name_fe = trim(adjustl(path))//trim(adjustl(m_SAVE_el_distribution))
    open(UNIT=FN3, FILE = trim(adjustl(file_name_fe)))    ! electron distribution
 end subroutine make_save_files
 
@@ -2232,6 +2313,10 @@ subroutine close_output_files(Scell, numpar)
       close(numpar%FN_Ta_part)
    endif
 
+   if (numpar%print_Fv) then
+      close(numpar%FN_Fv)
+   endif
+
 
    ! Number of different fragments, up to maximum registered in the simulation:
    if (numpar%print_fragments) then
@@ -2332,7 +2417,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
    file_path = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))
 
-   file_temperatures = trim(adjustl(file_path))//'OUTPUT_temperatures.dat'
+   file_temperatures = trim(adjustl(file_path))//trim(adjustl(m_temperatures))
    open(NEWUNIT=FN, FILE = trim(adjustl(file_temperatures)))
    numpar%FN_temperatures = FN
    call create_file_header(numpar%FN_temperatures, '#Time	Te	Ta(:)	Displacement(:)')
@@ -2356,7 +2441,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
          allocate(file_sect_displ_short(Nsiz))
       endif
       do i = 1, Nsiz ! for all masks
-         file_sect_displ_short(i) = 'OUTPUT_displacements_'//trim(adjustl(Scell(1)%Displ(i)%mask_name))//'.dat'
+         file_sect_displ_short(i) = trim(adjustl(m_displacements_mask))//trim(adjustl(Scell(1)%Displ(i)%mask_name))//'.dat'
          file_sect_displ(i) = trim(adjustl(file_path))//trim(adjustl(file_sect_displ_short(i)))
          open(NEWUNIT=FN, FILE = trim(adjustl(file_sect_displ(i))))
          numpar%FN_displacements(i) = FN
@@ -2379,7 +2464,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
    if (numpar%save_diff_peaks) then ! Diffraction:
       ! selected diffraction peaks:
-      file_diff_peaks = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks.dat'
+      file_diff_peaks = trim(adjustl(file_path))//trim(adjustl(m_diffraction_peaks))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_peaks)))
       numpar%FN_diff_peaks = FN
 
@@ -2388,7 +2473,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
          allocate(file_diff_peaks_part(size(matter%Atoms)))
          if (.not.allocated(numpar%FN_diff_peaks_part)) allocate(numpar%FN_diff_peaks_part(size(matter%Atoms)))
          do i = 1, size(matter%Atoms)
-            file_diff_peaks_part(i) = 'OUTPUT_diffraction_peaks_'//trim(adjustl(matter%Atoms(i)%Name))//'.dat'
+            file_diff_peaks_part(i) = trim(adjustl(m_diffraction_peaks_elem))//trim(adjustl(matter%Atoms(i)%Name))//'.dat'
             file_diff_peaks = trim(adjustl(file_path))//trim(adjustl(file_diff_peaks_part(i)))
             open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_peaks)))
             numpar%FN_diff_peaks_part(i) = FN
@@ -2434,7 +2519,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
 
       ! Powder diffraction:
-      file_diff_powder = trim(adjustl(file_path))//'OUTPUT_diffraction_powder.dat'
+      file_diff_powder = trim(adjustl(file_path))//trim(adjustl(m_diffraction_powder))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_powder)))
       numpar%FN_diff_powder = FN
       ! Create a header:
@@ -2452,7 +2537,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       ! Check if Debye-Waller analysis is required:
       if ( abs(numpar%DW_theta) > 1.0d-6 ) then
          ! 1) DW diffraction peaks:
-         file_diff_peaks_DW = trim(adjustl(file_path))//'OUTPUT_diffraction_peaks_DW.dat'
+         file_diff_peaks_DW = trim(adjustl(file_path))//trim(adjustl(m_diffraction_peaks_DW))
          open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_peaks_DW)))
          numpar%FN_diff_peaks_DW = FN
          ! Create the header, containing all the peaks:
@@ -2477,7 +2562,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
          call create_file_header(numpar%FN_diff_peaks_DW, '#q [1/A]:      ' //trim(adjustl(chtemp4)) )    ! below
 
          ! 2) Debye temperature from the diffraction peaks:
-         file_diff_peaks_DW = trim(adjustl(file_path))//'OUTPUT_Debye_temperature_from_DW.dat'
+         file_diff_peaks_DW = trim(adjustl(file_path))//trim(adjustl(m_Debye_temperature_from_DW))
          open(NEWUNIT=FN, FILE = trim(adjustl(file_diff_peaks_DW)))
          numpar%FN_Debye_temperature = FN
          ! Create the header, containing all the peaks:
@@ -2495,7 +2580,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
 
    if (numpar%save_testmode) then   ! testmode additional data (center of mass, rotation, total force, etc.)
-      file_testmode = trim(adjustl(file_path))//'OUTPUT_testmode_data.dat'
+      file_testmode = trim(adjustl(file_path))//trim(adjustl(m_testmode_data))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_testmode)))
       numpar%FN_testmode = FN
       call create_file_header(numpar%FN_testmode, '#Time	V_CoM I_tot F_tot')
@@ -2503,13 +2588,13 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    endif
 
    
-   file_pressure = trim(adjustl(file_path))//'OUTPUT_pressure_and_stress.dat'
+   file_pressure = trim(adjustl(file_path))//trim(adjustl(m_pressure_and_stress))
    open(NEWUNIT=FN, FILE = trim(adjustl(file_pressure)))
    numpar%FN_pressure = FN
    call create_file_header(numpar%FN_pressure, '#Time	Pressure	Pressure(x,x)	Pressure(x,y)	Pressure(x,z)	Pressure(y,x)	Pressure(y,y)	Pressure(y,z)	Pressure(z,x)	Pressure(z,y)	Pressure(z,z)')
    call create_file_header(numpar%FN_pressure, '#[fs]	[GPa]	[GPa]	[GPa]	[GPa]	[GPa]	[GPa]	[GPa]	[GPa]	[GPa]	[GPa]')
 
-   file_electron_properties = trim(adjustl(file_path))//'OUTPUT_electron_properties.dat'
+   file_electron_properties = trim(adjustl(file_path))//trim(adjustl(m_electron_properties))
    open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_properties)))
    numpar%FN_electron_properties = FN
    call create_file_header(numpar%FN_electron_properties, &
@@ -2517,12 +2602,12 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    call create_file_header(numpar%FN_electron_properties, &
       '#[fs]	[1/atom]	[eV]	[eV]	[J/(m^3K)]	[W/(m^3K)]	[eV]	[eV]	[eV]	[eV]  [e](:)')
 
-   file_electron_heat_capacity = trim(adjustl(file_path))//'OUTPUT_electron_Ce.dat'
+   file_electron_heat_capacity = trim(adjustl(file_path))//trim(adjustl(m_electron_Ce))
    open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_capacity)))
    numpar%FN_Ce = FN
    call write_Ce_header(numpar%FN_Ce, Scell, 1, matter) ! below
 
-   file_electron_entropy = trim(adjustl(file_path))//'OUTPUT_electron_entropy.dat'
+   file_electron_entropy = trim(adjustl(file_path))//trim(adjustl(m_electron_entropy))
    open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_entropy)))
    numpar%FN_Se = FN
    if (numpar%do_partial_thermal) then
@@ -2534,19 +2619,19 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    endif
 
    if (numpar%print_Ta) then
-      file_atomic_entropy = trim(adjustl(file_path))//'OUTPUT_atomic_entropy.dat'
+      file_atomic_entropy = trim(adjustl(file_path))//trim(adjustl(m_atomic_entropy))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_entropy)))
       numpar%FN_Sa = FN
       call create_file_header(numpar%FN_Sa, '#Time Sa  Sa_eq   Sa_eq_num   Sa_conf  Sa_tot')
       call create_file_header(numpar%FN_Sa, '#[fs]  [eV/K]   [eV/K]  [eV/K]   [eV/K] [eV/K]')
 
-      file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures.dat'
+      file_atomic_temperatures = trim(adjustl(file_path))//trim(adjustl(m_atomic_temperatures))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta = FN
       call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)  config  F*v   conf  hyperconf')
-      call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K] [-]   [K]   [K]')
+      call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K] [eV/fs]   [K]   [K]')
 
-      file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
+      file_atomic_temperatures = trim(adjustl(file_path))//trim(adjustl(m_atomic_temperatures_partial))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta_part = FN
       call create_file_header(numpar%FN_Ta_part, '#Time kin:X   kin:Y  kin:Z vir:X   vir:Y   vir:Z')
@@ -2554,8 +2639,17 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    endif
 
 
+   if (numpar%print_Fv) then
+      file_atomic_entropy = trim(adjustl(file_path))//trim(adjustl(m_force_velocity_correlator))
+      open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_entropy)))
+      numpar%FN_Fv = FN
+      call create_file_header(numpar%FN_Fv, '#Time <F*v>')
+      call create_file_header(numpar%FN_Fv, '#[fs]  [eV/fs]')
+   endif
+
+
    if (numpar%print_fragments) then ! fragments
-      file_fragments_data = trim(adjustl(file_path))//'OUTPUT_fragments_data.dat'
+      file_fragments_data = trim(adjustl(file_path))//trim(adjustl(m_fragments_data))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_fragments_data)))
       numpar%FN_fragments_data = FN
       call create_file_header(numpar%FN_fragments_data, 'Data on the transient fragments constituency')
@@ -2564,13 +2658,13 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
 
    if (numpar%do_partial_thermal) then
-      file_electron_temperatures = trim(adjustl(file_path))//'OUTPUT_electron_temperatures.dat'
+      file_electron_temperatures = trim(adjustl(file_path))//trim(adjustl(m_electron_temperatures))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_temperatures)))
       numpar%FN_Te = FN
       call create_file_header(numpar%FN_Te, '#Time Te  Te_VB Te_CB')
       call create_file_header(numpar%FN_Te, '#[fs]  [K]   [K]   [K]')
 
-      file_electron_chempot = trim(adjustl(file_path))//'OUTPUT_electron_chempotentials.dat'
+      file_electron_chempot = trim(adjustl(file_path))//trim(adjustl(m_electron_chempotentials))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_chempot)))
       numpar%FN_mu = FN
       call create_file_header(numpar%FN_mu, '#Time mu  mu_VB mu_CB')
@@ -2581,7 +2675,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    endif
 
    if (numpar%do_kappa) then
-      file_electron_heat_conductivity = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity.dat'
+      file_electron_heat_conductivity = trim(adjustl(file_path))//trim(adjustl(m_electron_heat_conductivity))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_conductivity)))
       numpar%FN_kappa = FN
       !call create_file_header(numpar%FN_kappa, '#Time kappa')
@@ -2591,14 +2685,14 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    endif
 
    if (numpar%do_kappa_dyn) then
-      file_electron_heat_conductivity = trim(adjustl(file_path))//'OUTPUT_electron_heat_conductivity_dyn.dat'
+      file_electron_heat_conductivity = trim(adjustl(file_path))//trim(adjustl(m_electron_heat_conductivity_dyn))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_electron_heat_conductivity)))
       numpar%FN_kappa_dyn = FN
       call create_file_header(numpar%FN_kappa_dyn, '#time   kappa_tot   kappa_e_ph  kappa_e_e')
       call create_file_header(numpar%FN_kappa_dyn, '#[fs]  [W/(K*m)]   [W/(K*m)]   [W/(K*m)]')
    endif
 
-   file_energies = trim(adjustl(file_path))//'OUTPUT_energies.dat'
+   file_energies = trim(adjustl(file_path))//trim(adjustl(m_energies))
    open(NEWUNIT=FN, FILE = trim(adjustl(file_energies)))
    numpar%FN_energies = FN
    call create_file_header(numpar%FN_energies, &
@@ -2606,27 +2700,27 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    call create_file_header(numpar%FN_energies, &
    '#[fs]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]	[eV/atom]  [eV/atom]')
 
-   file_numbers = trim(adjustl(file_path))//'OUTPUT_electron_hole_numbers.dat'
+   file_numbers = trim(adjustl(file_path))//trim(adjustl(m_electron_hole_numbers))
    open(NEWUNIT=FN, FILE = trim(adjustl(file_numbers)))
    numpar%FN_numbers = FN
    write(numpar%FN_numbers, '(a)') '#Time	VB_electrons	CB_electrons	High_energy_electrons	Deep_holes	Error	Photons'
    write(numpar%FN_numbers, '(a)') '#[fs]	[1/atom]	[1/atom]	[1/atom]	[1/atom]	[1/atom]	[1/atom]'
 
 
-   file_high_e = trim(adjustl(file_path))//'OUTPUT_high_energy_electrons.dat'
+   file_high_e = trim(adjustl(file_path))//trim(adjustl(m_high_energy_electrons))
    open(NEWUNIT=FN, FILE = trim(adjustl(file_high_e)))
    numpar%FN_high_e = FN
    write(numpar%FN_high_e, '(a)') '#Time	All_high_energy	Photoelectrons	Auger	Impact     Error'
    write(numpar%FN_high_e, '(a)') '#[fs]	[1/atom]	[1/atom]	[1/atom]	[1/atom]	[1/atom]'
 
 
-   file_orb_resolved = trim(adjustl(file_path))//'OUTPUT_orbital_resolved_data.dat'
+   file_orb_resolved = trim(adjustl(file_path))//trim(adjustl(m_orbital_resolved_data))
    open(NEWUNIT=FN, FILE = trim(adjustl(file_orb_resolved)))
    numpar%FN_orb_resolved = FN
    call write_orb_resolved_header(numpar%FN_orb_resolved, Scell(1), matter) ! below
 
 
-   file_deep_holes = trim(adjustl(file_path))//'OUTPUT_deep_shell_holes.dat'
+   file_deep_holes = trim(adjustl(file_path))//trim(adjustl(m_deep_shell_holes))
    open(NEWUNIT=FN, FILE = trim(adjustl(file_deep_holes)))
    numpar%FN_deep_holes = FN
    write(numpar%FN_deep_holes, '(a)', advance='no') '#Time	'
@@ -2646,7 +2740,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
 
    if (numpar%DOS_splitting == 1) then
-      file_coupling = trim(adjustl(file_path))//'OUTPUT_coupling.dat'
+      file_coupling = trim(adjustl(file_path))//trim(adjustl(m_coupling))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_coupling)))
       numpar%FN_coupling = FN
       call write_coulping_header(numpar%FN_coupling, Scell, 1, matter, numpar) ! below
@@ -2654,14 +2748,14 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
 
    if (numpar%save_raw) then
-      file_atoms_S = trim(adjustl(file_path))//'OUTPUT_coordinates_and_velocities.dat'
+      file_atoms_S = trim(adjustl(file_path))//trim(adjustl(m_coordinates_and_velocities))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atoms_S)))
       numpar%FN_atoms_S = FN
 !       write(numpar%FN_atoms_S, '(a)') 'X	Y	Z	Vx	Vy	Vz	Sx	Sy	Sz	SVx	SVy	SVz'
 !       write(numpar%FN_atoms_S, '(a)') ''
    endif
 
-   file_supercell = trim(adjustl(file_path))//'OUTPUT_supercell.dat'
+   file_supercell = trim(adjustl(file_path))//trim(adjustl(m_supercell))
    open(NEWUNIT=FN, FILE = trim(adjustl(file_supercell)))
    numpar%FN_supercell = FN
    write(numpar%FN_supercell,'(a)') '#Time	Volume	h11	h12	h13	h21	h22	h23	h31	h32	h33	Vh11	Vh12	Vh13	Vh21	Vh22	Vh23	Vh31	Vh32	Vh33  Sample_volume'
@@ -2669,71 +2763,71 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
 
    if (numpar%do_drude) then
-      file_optics = trim(adjustl(file_path))//'OUTPUT_optical_coefficients.dat'
+      file_optics = trim(adjustl(file_path))//trim(adjustl(m_optical_coefficients))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_optics)))
       numpar%FN_optics = FN
       write(numpar%FN_optics, '(a)') '#Time	Reflectivity	Transmission	Absorption	n	k	Re(e)	Im(e)	dc-conductivity	Re_Exx	ImE_xx	ReE_yy	ImE_yy	ReE_zz	ImE_zz'
    endif
 
    if (numpar%save_XYZ) then
-      file_atoms_R = trim(adjustl(file_path))//'OUTPUT_atomic_coordinates.xyz'
+      file_atoms_R = trim(adjustl(file_path))//trim(adjustl(m_atomic_coordinates_xyz))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atoms_R)))
       numpar%FN_atoms_R = FN
    endif
 
    if (numpar%save_XYZ_vel) then
-      file_atoms_V = trim(adjustl(file_path))//'OUTPUT_atomic_velocities.xyz'
+      file_atoms_V = trim(adjustl(file_path))//trim(adjustl(m_atomic_velocities_xyz))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atoms_V)))
       numpar%FN_atoms_V = FN
    endif
    
    if (numpar%save_CIF) then
-      file_atoms_cif = trim(adjustl(file_path))//'OUTPUT_atomic_coordinates.cif'
+      file_atoms_cif = trim(adjustl(file_path))//trim(adjustl(m_atomic_coordinates_cif))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atoms_cif)))
       numpar%FN_cif = FN
    endif
 
    if (numpar%save_Ei) then
-      file_Ei = trim(adjustl(file_path))//'OUTPUT_energy_levels.dat'
+      file_Ei = trim(adjustl(file_path))//trim(adjustl(m_energy_levels))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_Ei)))
       numpar%FN_Ei = FN
    endif
    
    if (numpar%save_DOS) then
-      file_DOS = trim(adjustl(file_path))//'OUTPUT_DOS.dat'
+      file_DOS = trim(adjustl(file_path))//trim(adjustl(m_DOS))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_DOS)))
       numpar%FN_DOS = FN
    endif
    
    if (numpar%save_fe) then
-      file_fe = trim(adjustl(file_path))//'OUTPUT_electron_distribution.dat'
+      file_fe = trim(adjustl(file_path))//trim(adjustl(m_electron_distribution))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_fe)))
       numpar%FN_fe = FN
    endif
 
    if (numpar%save_fe_grid) then
-      file_fe_on_grid = trim(adjustl(file_path))//'OUTPUT_electron_distribution_on_grid.dat'
+      file_fe_on_grid = trim(adjustl(file_path))//trim(adjustl(m_electron_distribution_on_grid))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_fe_on_grid)))
       numpar%FN_fe_on_grid = FN
    endif
 
    if (numpar%save_fa) then
       ! kinetic energy distribution:
-      file_fa = trim(adjustl(file_path))//'OUTPUT_atomic_distribution.dat'
+      file_fa = trim(adjustl(file_path))//trim(adjustl(m_atomic_distribution))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_fa)))
       numpar%FN_fa = FN
       ! potential energy distribution:
-      file_fa = trim(adjustl(file_path))//'OUTPUT_atomic_distribution_pot.dat'
+      file_fa = trim(adjustl(file_path))//trim(adjustl(m_atomic_distribution_pot))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_fa)))
       numpar%FN_fa_pot = FN
       ! and total energy distribution:
-      file_fa = trim(adjustl(file_path))//'OUTPUT_atomic_distribution_tot.dat'
+      file_fa = trim(adjustl(file_path))//trim(adjustl(m_atomic_distribution_tot))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_fa)))
       numpar%FN_fa_tot = FN
    endif
 
    if (numpar%save_PCF) then
-      file_PCF = trim(adjustl(file_path))//'OUTPUT_pair_correlation_function.dat'
+      file_PCF = trim(adjustl(file_path))//trim(adjustl(m_pair_correlation_function))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_PCF)))
       numpar%FN_PCF = FN
       write(numpar%FN_PCF, '(a)', advance='no') '#Radius Total'
@@ -2754,7 +2848,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    endif
    
    if (numpar%save_NN) then
-      file_NN = trim(adjustl(file_path))//'OUTPUT_nearest_neighbors.dat'
+      file_NN = trim(adjustl(file_path))//trim(adjustl(m_nearest_neighbors))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_NN)))
       numpar%FN_neighbors = FN
       write(numpar%FN_neighbors, '(a)') '#Time Average N(0)    N(1)    N(2)    N(3)    N(4)    N(5)    N(6)'
@@ -2767,7 +2861,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
       do i = 1, size(numpar%NN_radii) ! for all requested elements
 
-         file_element_NN(i) = 'OUTPUT_nearest_neighbors_'//trim(adjustl(numpar%NN_radii(i)%Name))//'.dat'
+         file_element_NN(i) = trim(adjustl(m_nearest_neighbors_part))//trim(adjustl(numpar%NN_radii(i)%Name))//'.dat'
          file_element_NN_short(i) = file_element_NN(i)      ! save short name for gnuplotting
          file_element_NN(i) = trim(adjustl(file_path))//trim(adjustl(file_element_NN(i)))
 
@@ -2785,7 +2879,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
 
    do i = 1, size(Scell)
       if (Scell(i)%eps%all_w) then
-         file_all_w = trim(adjustl(file_path))//'OUTPUT_dielectric_function.dat'
+         file_all_w = trim(adjustl(file_path))//trim(adjustl(m_dielectric_function))
          open(NEWUNIT=FN, FILE = trim(adjustl(file_all_w)))
          numpar%FN_all_w = FN
       endif
@@ -2798,69 +2892,71 @@ subroutine create_output_files(Scell, matter, laser, numpar)
    case default ! Gnuplot
       ! Prepare gnuplot scripts to plot all the output data:
       call create_gnuplot_scripts(Scell, matter, numpar, laser, file_path, &
-            'OUTPUT_temperatures.dat', &
-            'OUTPUT_pressure_and_stress.dat', &
-            'OUTPUT_energies.dat', &
-            'OUTPUT_supercell.dat', &
-            'OUTPUT_electron_properties.dat', &
-            'OUTPUT_electron_heat_conductivity.dat', &
-            'OUTPUT_electron_heat_conductivity_dyn.dat', &
-            'OUTPUT_electron_hole_numbers.dat', &
-            'OUTPUT_orbital_resolved_data.dat', &
-            'OUTPUT_deep_shell_holes.dat', &
-            'OUTPUT_optical_coefficients.dat', &
+            trim(adjustl(m_temperatures)), &
+            trim(adjustl(m_pressure_and_stress)), &
+            trim(adjustl(m_energies)), &
+            trim(adjustl(m_supercell)), &
+            trim(adjustl(m_electron_properties)), &
+            trim(adjustl(m_electron_heat_conductivity)), &
+            trim(adjustl(m_electron_heat_conductivity_dyn)), &
+            trim(adjustl(m_electron_hole_numbers)), &
+            trim(adjustl(m_orbital_resolved_data)), &
+            trim(adjustl(m_deep_shell_holes)), &
+            trim(adjustl(m_optical_coefficients)), &
             file_Ei, file_PCF, &
-            'OUTPUT_nearest_neighbors.dat', &
+            trim(adjustl(m_nearest_neighbors)), &
             file_element_NN_short, &
-            'OUTPUT_electron_entropy.dat', &
-            'OUTPUT_electron_temperatures.dat', &
-            'OUTPUT_electron_chempotentials.dat', &
-            'OUTPUT_atomic_entropy.dat', &
-            'OUTPUT_atomic_temperatures.dat', &
-            'OUTPUT_atomic_temperatures_partial.dat', &
+            trim(adjustl(m_electron_entropy)), &
+            trim(adjustl(m_electron_temperatures)), &
+            trim(adjustl(m_electron_chempotentials)), &
+            trim(adjustl(m_atomic_entropy)), &
+            trim(adjustl(m_atomic_temperatures)), &
+            trim(adjustl(m_atomic_temperatures_partial)), &
+            trim(adjustl(m_force_velocity_correlator)), &
             file_sect_displ_short, &
-            'OUTPUT_diffraction_peaks.dat', &
+            trim(adjustl(m_diffraction_peaks)), &
             file_diff_peaks_part, &
-            'OUTPUT_diffraction_powder.dat', &
-            'OUTPUT_diffraction_peaks_DW.dat', &
-            'OUTPUT_Debye_temperature_from_DW.dat', &
-            'OUTPUT_testmode_data.dat', &
-            'OUTPUT_coupling.dat', &
-            'OUTPUT_high_energy_electrons.dat', &
-            'OUTPUT_fragment_' )  ! module "Plots_gnuplot"
+            trim(adjustl(m_diffraction_powder)), &
+            trim(adjustl(m_diffraction_peaks_DW)), &
+            trim(adjustl(m_Debye_temperature_from_DW)), &
+            trim(adjustl(m_testmode_data)), &
+            trim(adjustl(m_coupling)), &
+            trim(adjustl(m_high_energy_electrons)), &
+            trim(adjustl(m_fragment)) )  ! module "Plots_gnuplot"
 
    case ('py') ! Python
       call create_python_plot_scripts(Scell, matter, numpar, laser, file_path, &
-            'OUTPUT_temperatures.dat', &
-            'OUTPUT_pressure_and_stress.dat', &
-            'OUTPUT_energies.dat', &
-            'OUTPUT_supercell.dat', &
-            'OUTPUT_electron_properties.dat', &
-            'OUTPUT_electron_heat_conductivity.dat', &
-            'OUTPUT_electron_heat_conductivity_dyn.dat', &
-            'OUTPUT_electron_hole_numbers.dat', &
-            'OUTPUT_orbital_resolved_data.dat', &
-            'OUTPUT_deep_shell_holes.dat', &
-            'OUTPUT_optical_coefficients.dat', &
-            'OUTPUT_energy_levels.dat', file_PCF, &
-            'OUTPUT_nearest_neighbors.dat', &
+            trim(adjustl(m_temperatures)), &
+            trim(adjustl(m_pressure_and_stress)), &
+            trim(adjustl(m_energies)), &
+            trim(adjustl(m_supercell)), &
+            trim(adjustl(m_electron_properties)), &
+            trim(adjustl(m_electron_heat_conductivity)), &
+            trim(adjustl(m_electron_heat_conductivity_dyn)), &
+            trim(adjustl(m_electron_hole_numbers)), &
+            trim(adjustl(m_orbital_resolved_data)), &
+            trim(adjustl(m_deep_shell_holes)), &
+            trim(adjustl(m_optical_coefficients)), &
+            trim(adjustl(m_energy_levels)), file_PCF, &
+            trim(adjustl(m_nearest_neighbors)), &
             file_element_NN_short, &
-            'OUTPUT_electron_entropy.dat', &
-            'OUTPUT_electron_temperatures.dat', &
-            'OUTPUT_electron_chempotentials.dat', &
-            'OUTPUT_atomic_entropy.dat', &
-            'OUTPUT_atomic_temperatures.dat', &
-            'OUTPUT_atomic_temperatures_partial.dat', &
+            trim(adjustl(m_electron_entropy)), &
+            trim(adjustl(m_electron_temperatures)), &
+            trim(adjustl(m_electron_chempotentials)), &
+            trim(adjustl(m_atomic_entropy)), &
+            trim(adjustl(m_atomic_temperatures)), &
+            trim(adjustl(m_atomic_temperatures_partial)), &
+            trim(adjustl(m_force_velocity_correlator)), &
             file_sect_displ_short, &
-            'OUTPUT_diffraction_peaks.dat', &
+            trim(adjustl(m_diffraction_peaks)), &
             file_diff_peaks_part, &
-            'OUTPUT_diffraction_powder.dat', &
-            'OUTPUT_diffraction_peaks_DW.dat', &
-            'OUTPUT_Debye_temperature_from_DW.dat', &
-            'OUTPUT_testmode_data.dat', &
-            'OUTPUT_coupling.dat', &
-            'OUTPUT_high_energy_electrons.dat', &
-            'OUTPUT_fragment_' )  ! module "Plots_python"
+            trim(adjustl(m_diffraction_powder)), &
+            trim(adjustl(m_diffraction_peaks_DW)), &
+            trim(adjustl(m_Debye_temperature_from_DW)), &
+            trim(adjustl(m_testmode_data)), &
+            trim(adjustl(m_coupling)), &
+            trim(adjustl(m_high_energy_electrons)), &
+            trim(adjustl(m_fragment)) )  ! module "Plots_python"
    case ('no') ! no plots required
             ! no plots required
    end select
@@ -4460,6 +4556,11 @@ subroutine Print_title(print_to, Scell, matter, laser, numpar, label_ind)
 
    if (numpar%print_Ta) then
       write(print_to,'(a)') ' Various definitions of atomic temperatures'
+      optional_output = .true.   ! there is at least some optional output
+   endif
+
+   if (numpar%print_Fv) then
+      write(print_to,'(a)') ' Atomic force*velocity correlator'
       optional_output = .true.   ! there is at least some optional output
    endif
 

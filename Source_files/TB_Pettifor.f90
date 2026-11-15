@@ -1627,7 +1627,16 @@ subroutine Complex_Hamil_tot(numpar, Scell, NSC, atoms, TB, Hij, CHij, ksx, ksy,
    if (present(Hij)) then
       Nsiz = size(Hij,1)
    else
-      Nsiz = size(TB(1,1)%V0)*Scell(1)%Na
+      !Nsiz = size(TB(1,1)%V0)*Scell(1)%Na
+      Nsiz = size(TB(atoms(1)%KOA,atoms(1)%KOA)%V0)*nat
+   endif
+
+   ! Make sure complex Hamiltonian array conforms withe the real one:
+   if (present(CHij)) then
+      if (allocated(CHij)) then
+         if ((size(CHij,1) /= Nsiz) .or. (size(CHij,2) /= Nsiz)) deallocate(CHij)
+      endif
+      if (.not.allocated(CHij)) allocate(CHij(Nsiz,Nsiz))
    endif
 
    if (numpar%optic_model .EQ. 2) then
@@ -1688,6 +1697,9 @@ subroutine Complex_Hamil_tot(numpar, Scell, NSC, atoms, TB, Hij, CHij, ksx, ksy,
                      k = (i-1)*4+i1
                      !if ((j1 .EQ. 1) .AND. (i1 .EQ. 1)) then
                      CHij(k,l) = DCMPLX(Hij1(j1,i1),0.0d0)*expfac ! make complex number of two real ones
+                     !CHij(k,l) = DCMPLX(Hij1(i1,j1),0.0d0)*expfac ! test
+
+
 !                      print*, 'a', Hij1(j1,i1), expfac
 
                      !CHij(k,l) = CMPLX(Hij1(i1,j1),0.0d0)*expfac ! make complex number of two real ones
@@ -2686,6 +2698,7 @@ subroutine construct_psi_matrix(M_Phi, psi_vec, numpar)
    do i1 = Nstart, Nend, N_incr  ! each process does its own part
    !do i1 = 1, size(psi_vec)
       psi_vec(i1) = SUM(M_Phi(:, i1))
+      !psi_vec(i1) = SUM(M_Phi(i1, :))    ! to test
    enddo
    ! Collect information from all processes into the master process, and distribute the final arrays to all processes:
    error_part = 'Error in construct_psi_matrix:'
@@ -2695,6 +2708,7 @@ subroutine construct_psi_matrix(M_Phi, psi_vec, numpar)
    !$omp PARALLEL DO private(i1)
    do i1 = 1, size(psi_vec)
       psi_vec(i1) = SUM(M_Phi(:, i1))
+      !psi_vec(i1) = SUM(M_Phi(i1, :))    ! to test
    enddo
    !$OMP END PARALLEL DO
 #endif

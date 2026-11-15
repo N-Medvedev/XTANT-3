@@ -50,7 +50,8 @@ use TB_Molteni, only : dHij_s_M, Attract_TB_Forces_Press_M, dErdr_s_M, dErdr_Pre
                      Complex_Hamil_tot_Molteni, Attract_TB_Forces_Press_M, get_Erep_s_M, dErdr_Pressure_s_M
 use TB_NRL, only : get_dHij_drij_NRL, dErdr_s_NRL, Construct_Vij_NRL, construct_TB_H_NRL, Complex_Hamil_NRL, &
                      get_Erep_s_NRL, dErdr_Pressure_s_NRL, Loewdin_Orthogonalization_c, m_two_third, &
-                     Attract_TB_Forces_Press_NRL, Loewdin_Orthogonalization_c8
+                     Attract_TB_Forces_Press_NRL, Loewdin_Orthogonalization_c8, &
+                     Construct_d2Vij_NRL, dHij_r_NRL, dHij_r_response_NRL
 use TB_DFTB, only : Construct_Vij_DFTB, construct_TB_H_DFTB, get_Erep_s_DFTB, get_dHij_drij_DFTB, &
                      Attract_TB_Forces_Press_DFTB, dErdr_s_DFTB, dErdr_Pressure_s_DFTB, Complex_Hamil_DFTB, &
                      identify_DFTB_orbitals_per_atom, dErdr_s_DFTB_no, get_Erep_s_DFTB_no, dErdr_Pressure_s_DFTB_no, &
@@ -519,6 +520,9 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
          call get_new_energies(Scell, matter, numpar, t, Err) ! below
    end select
 
+   ! SCC requires a non-orthogonal overlap matrix.
+   if (numpar%scc .and. .not.allocated(Scell(NSC)%Sij)) numpar%scc = .false.
+
    ! If we need SCC, get the charges:
    if (numpar%scc) then
       ! Save Hamiltonian prior to scc cycles (H_0 term):
@@ -552,7 +556,9 @@ subroutine create_and_diagonalize_H(Scell, NSC, numpar, matter, TB_Hamil, which_
 
       ! SCC iterations:
       eps = 1.0d-6   ! precision
-      SCC_ITER:do while ( abs(maxval(q(:) - q0(:))) > eps*abs(maxval(q(:))) )
+      !SCC_ITER:do while ( abs(maxval(q(:) - q0(:))) > eps*abs(maxval(q(:))) )
+      SCC_ITER:do while ( maxval(abs(q(:) - q0(:))) > eps*maxval(abs(q(:))) )
+
       !SCC_ITER:do while ( abs(E_coul - Scell(NSC)%nrg%E_coul_scc)/max(abs(E_coul),abs(Scell(NSC)%nrg%E_coul_scc)) > eps )
 
          i = i + 1   ! count iterations
@@ -4595,7 +4601,7 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
    !--------------------------------------------
    real(8), dimension(:,:), allocatable :: F, dF	! forces and derivatives
    real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr	! forces and derivatives [eV/A], [eV/A^2]
-   real(8) :: Tconf, F_sum, dF_sum, acc(3), Ftest(3), dF_temp, Te, F_sum2, dF_sum2, T_NPH
+   real(8) :: Tconf, Tconf1, F_sum, dF_sum, acc(3), Ftest(3), dF_temp, Te, F_sum2, dF_sum2, T_NPH
    real(8) :: F_sum_rep, F_sum_att, dF_sum_rep, dF_sum_att
    integer :: Nat, i, NSC
    real(8), pointer :: Mass
@@ -4626,14 +4632,15 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
 
    !-----------------------------------------------
    ! Dont' delete, very useful test for debugging:
-   ! Check separate repulsive and attractive parts:
+   ! Check separate repulsive and attractive parts in single-temperature limit:
 !    F_sum_rep = SUM( Frep(1,:)*F(1,:) + Frep(2,:)*F(2,:) + Frep(3,:)*F(3,:) )
 !    F_sum_att = SUM( Fatr(1,:)*F(1,:) + Fatr(2,:)*F(2,:) + Fatr(3,:)*F(3,:) )
 !    dF_sum_rep = SUM( dFrep(:,:) )
 !    dF_sum_att = SUM( dFatr(:,:) )
 !    F_sum = SUM( F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:) )
 !    dF_sum = SUM( (dF(1,:) + dF(2,:) + dF(3,:)) )
-!
+!    ! Configurational tempreature in 1-temperature limit:
+!    Tconf1 = F_sum/dF_sum/g_kb_EV
 !    write(*,'(a,f,a,f,a,f,a,f)') 'Trep [K]=', F_sum_rep/dF_sum_rep/g_kb_EV, ' Tatt [K]=', F_sum_att/dF_sum_att/g_kb_EV, &
 !            ' Tconf [K]=', F_sum/dF_sum/g_kb_EV, ' Tkin [K]=', Scell(NSC)%Ta
    !-----------------------------------------------
@@ -4650,12 +4657,15 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
 
    ! 2) Configurational temperature (B=F) derived definition for Ta /= Te:
    F_sum = SUM( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) )
+
    dF_temp = dF_sum
    ! Make sure the case of Te<<Egap in dielectrics makes some sense:
    Te = max( Scell(1)%TeeV, 0.1d0*Scell(1)%E_gap ) ! exclude Te->0
 
    !dF_sum = dF_temp + 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV
-   dF_sum = dF_temp + 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Te
+   !dF_sum = dF_temp + 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Te
+   dF_sum = dF_temp - 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Te
+
    if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
       Tconf = 0.0d0  ! [K]
    else  ! defined:
@@ -4663,6 +4673,11 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
       Tconf = Tconf*g_kb	! [eV] -> [K]
    endif
    Scell(1)%Tconf = Tconf
+
+!     Testing various tempreatures definitions:
+!    write(*,'(6(a,g0))') 'Trep [K]=', F_sum_rep/dF_sum_rep/g_kb_EV, ' Tatt [K]=', F_sum_att/dF_sum_att/g_kb_EV, &
+!            ' Tconf [K]=', Tconf1, ' Tkin [K]=', Scell(NSC)%Ta, ' Tconf2 [K]=', Tconf, " Te [K=]", Te*g_kb
+
    !write(*,'(a,f,f,f,f)') '2:', F_sum, dF_temp, 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV, Tconf
 
    ! 3) Hyperconfigurational (second moment configurational) temperature (B=F^2*F):
@@ -4674,7 +4689,10 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
                   (F(1,:)*F(1,:)       +       F(2,:)*F(2,:) + 3.0d0*F(3,:)*F(3,:)) * dF(3,:) )
    !dF_sum2 = dF_temp + 0.5d0*SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) * &
    !                                F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Te
-   dF_sum2 = dF_temp + 0.5d0*SUM( (F(1,:)*F(1,:)    + F(2,:)*F(2,:)    + F(3,:)*F(3,:)   ) * &
+   !dF_sum2 = dF_temp + 0.5d0*SUM( (F(1,:)*F(1,:)    + F(2,:)*F(2,:)    + F(3,:)*F(3,:)   ) * &
+   !                               (F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:)) ) / Te
+
+   dF_sum2 = dF_temp - 0.5d0*SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) * &
                                   (F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:)) ) / Te
 
 
@@ -4771,7 +4789,26 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
       type is (TB_H_Fu)  ! TB parametrization accroding to Fu
          !print*, 'Configurational temperature calculations are not implemented for Fu: Attractive'
       type is (TB_H_NRL)  ! TB parametrization accroding to NRL
-         !print*, 'Configurational temperature calculations are not implemented for NRL: Attractive'
+         ! Construct array of functions Vs and dVs for all pairs of atoms to use for forces:
+         if (numpar%scc) print*, 'Configurational temperature with SCC: charge-response terms are not included (approximate)'
+
+         ! Radial functions and their first and second derivatives for all pairs of atoms:
+         call Construct_Vij_NRL(numpar, ARRAY, Scell, 1, M_Vij, M_dVij, M_SVij, M_dSVij)   ! module "TB_NRL"
+         call Construct_d2Vij_NRL(numpar, ARRAY, Scell, 1, M_d2Vij, M_d2SVij)              ! module "TB_NRL"
+         ! Directional cosines (M_x1, M_xrr are not needed here):
+         call Construct_M_x1(Scell, 1, numpar, M_x1, M_xrr, M_lmn)                         ! below
+         ! Density matrices from the current eigenvectors / occupations:
+         call Construct_Aij(numpar, Scell(1)%Ha, Scell(1)%fe, Scell(1)%Aij)                ! below
+         call Construct_Aij_x_En(numpar, Scell(1)%Ha, Scell(1)%fe, Scell(1)%Ei, M_Aij_x_Ei)     ! below
+         ! Frozen terms: first derivative (forces by r) and second derivative:
+         call dHij_r_NRL(numpar, ARRAY, Scell, 1, Scell(1)%Aij, M_Aij_x_Ei, M_Vij, M_dVij, M_d2Vij, & ! module "TB_NRL"
+                         M_SVij, M_dSVij, M_d2SVij, M_lmn, Fatr, dFatr)
+         ! Electronic response (without it the curvature of the band part is strongly overestimated):
+         call dHij_r_response_NRL(numpar, ARRAY, Scell, 1, M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij, M_lmn, dFresp)  ! module "TB_NRL"
+
+         dFatr = dFatr + dFresp
+         deallocate(dFresp)   ! clean up
+
       type is (TB_H_DFTB)  ! TB parametrization accroding to DFTB
          ! Construct array of functions Vs and dVs for all pairs of atoms to use for forces:
          if (numpar%scc) print*, 'Configurational temperature with SCC: charge-response terms are not included (approximate)'
@@ -4814,20 +4851,28 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
       type is (TB_Rep_Pettifor) ! TB parametrization according to Pettifor
          ! Second derivatives of the repulsive energy by r:
          call dE2rep_dr2(ARRAY2, Scell(1)%MDAtoms, Scell, numpar, Frep, dFrep) ! module "TB_Pettifor"
+
       type is (TB_Rep_Molteni)  ! TB parametrization accroding to Molteni
          !print*, 'Configurational temperature calculations are not implemented for Molteni: Repulsive'
+
       type is (TB_Rep_Fu)  ! TB parametrization accroding to Fu
          !print*, 'Configurational temperature calculations are not implemented for Fu: Repulsive'
+
       type is (TB_Rep_NRL)  ! TB parametrization accroding to NRL
-         !print*, 'Configurational temperature calculations are not implemented for NRL: Repulsive'
+         allocate(Frep(3,size(Scell(1)%MDatoms)), dFrep(3,size(Scell(1)%MDatoms)), source = 0.0d0) ! no repulsive term in NRL
+
       type is (TB_Rep_DFTB)  ! TB parametrization accroding to DFTB
          call dE2rep_dr2_DFTB(ARRAY2, Scell, NSC, numpar, Frep, dFrep)     ! module "TB_DFTB"
+
       type is (TB_Rep_3TB)  ! TB parametrization accroding to 3TB
          !print*, 'Configurational temperature calculations are not implemented for 3TB: Repulsive'
+
       type is (TB_Rep_BOP)  ! TB parametrization accroding to BOP
          !print*, 'Configurational temperature calculations are not implemented for BOP: Repulsive'
+
       type is (TB_Rep_xTB)  ! TB parametrization accroding to xTB
          !print*, 'Configurational temperature calculations are not implemented for xTB: Repulsive'
+
       end select
    END ASSOCIATE !
 
@@ -5907,7 +5952,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
    DOS_sum = 0.0d0	! to start from
    do_partial = (present(partial_DOS) .and. present(masks_DOS))
 
-   allocate(D(size(Scell%Ha,1),size(Scell%Ha,2)))
+   allocate(D(size(Scell%Ha,1),size(Scell%Ha,2)), source = 0.0d0)
    allocate(Norm1(size(Scell%Ha,1)))
    allocate(vec1(size(Scell%Ha,1)))
 
@@ -5923,7 +5968,7 @@ subroutine get_DOS_sort(numpar, Scell, matter, Ei, DOS, smearing, partial_DOS, m
          N_incr = numpar%MPI_param%size_of_cluster    ! increment in the loop
          Nstart = 1 + numpar%MPI_param%process_rank   ! starting point for each process
          Nend = Nsiz
-         if (present(CSij) then  ! nonorthogonal
+         if (present(CSij)) then  ! nonorthogonal
             ! Normalize eigenvectors to | <n|n> |^2 = 1, if required:
             !do i = 1, N
             !   Norm1(i) = SQRT(SUM( conjg(CHij(:,i)) * CHij(:,i) ))
