@@ -54,7 +54,8 @@ public :: m_Gnuplot_all, Plot_electron_MFP_gunplot, Plot_photon_MFP_gunplot, cre
 subroutine create_gnuplot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, &
 file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_element_NN, file_electron_entropy, file_Te, file_mu, &
-file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
+file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_force_velocity, &
+file_sect_displ, &
 file_diffraction_peaks, file_diffraction_peaks_part, file_diffraction_powder, file_diffraction_peaks_DW, file_Debye_temperature, &
 file_testmode, file_coupling, file_high_e, file_fragments)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
@@ -83,6 +84,7 @@ file_testmode, file_coupling, file_high_e, file_fragments)
    character(*), intent(in) :: file_atomic_entropy ! atomic entropy
    character(*), intent(in) :: file_atomic_temperatures ! atomic temperatures (various definitions)
    character(*), intent(in) :: file_atomic_temperatures_part  ! partial atomic temperatures (X, Y, Z)
+   character(*), intent(in) :: file_force_velocity    ! force*velocity correlator
    character(*), dimension(:), allocatable, intent(in) :: file_sect_displ
    character(*), intent(in) :: file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW  ! diffraction peaks
    character(*), dimension(:), allocatable, intent(in) :: file_diffraction_peaks_part
@@ -295,6 +297,13 @@ file_testmode, file_coupling, file_high_e, file_fragments)
       File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial'//trim(adjustl(sh_cmd))
       call gnu_at_temperatures_part(numpar, File_name, file_atomic_temperatures_part, t0, t_last, &
                'OUTPUT_atomic_temperatures_partial.'//trim(adjustl(numpar%fig_extention))) ! below
+   endif
+
+   ! Force*velocity correlator:
+   if (numpar%print_Fv) then
+      File_name  = trim(adjustl(file_path))//'OUTPUT_force_velocity'//trim(adjustl(sh_cmd))
+      call gnu_force_velocity(numpar, File_name, file_force_velocity, t0, t_last, &
+               'OUTPUT_force_velocity.'//trim(adjustl(numpar%fig_extention))) ! below
    endif
 
    ! Testmode additional data:
@@ -622,6 +631,16 @@ file_testmode, file_coupling, file_high_e, file_fragments)
             trim(adjustl(file_atomic_temperatures_part(1:len(trim(adjustl(file_atomic_temperatures_part)))-4)))//'_CONVOLVED.dat', &
             t0, t_last, 'OUTPUT_atomic_temperatures_partial.'//trim(adjustl(numpar%fig_extention))) ! below
       endif
+
+      ! Force*velocity correlator:
+      if (numpar%print_Fv) then
+            File_name  = trim(adjustl(file_path))//'OUTPUT_force_velocity_CONVOLVED'//trim(adjustl(sh_cmd))
+            call gnu_force_velocity(numpar, File_name, &
+            trim(adjustl(file_force_velocity(1:len(trim(adjustl(file_force_velocity)))-4)))//'_CONVOLVED.dat', &
+            t0, t_last, &
+            'OUTPUT_force_velocity_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+      endif
+
 
       ! Electron-ion coupling parameter:
       File_name  = trim(adjustl(file_path))//'OUTPUT_coupling_parameter_CONVOLVED'//trim(adjustl(sh_cmd))
@@ -2031,6 +2050,35 @@ subroutine gnu_at_temperatures(numpar, File_name, file_Ta, t0, t_last, eps_name)
    call write_gnuplot_script_ending(numpar, FN, File_name, 1)
    close(FN)
 end subroutine gnu_at_temperatures
+
+
+
+subroutine gnu_force_velocity(numpar, File_name, file_Fv, t0, t_last, eps_name)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_Fv ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics, '<Force*velocity>', &
+         'Time (fs)', 'Force-velocity correlator (eV/fs)', trim(adjustl(eps_name)), numpar%path_sep, 0)   ! module "Gnuplotting"
+
+   if (numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "', trim(adjustl(file_Fv)), '" u 1:2 w l lt rgb "black" lw LW title "<F*v>"'
+   else ! It is linux
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Fv)), '\" u 1:2 w l lt rgb \"black\" lw \"$LW\" title \"<F*v>\"'
+   endif
+   call write_gnuplot_script_ending(numpar, FN, File_name, 1)
+   close(FN)
+end subroutine gnu_force_velocity
 
 
 

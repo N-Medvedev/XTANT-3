@@ -171,6 +171,7 @@ subroutine initialize_default_values(matter, numpar, laser, Scell)
    numpar%redo_MFP = .false.     ! no need to recalculate mean free paths by default
    numpar%print_MFP = .false.    ! no need to printout mean free paths by default
    numpar%print_Ta = .false.  ! no need in various atomic temperature definitions
+   numpar%print_Fv = .false.  ! no need in <force*velocity> correlator
    numpar%print_fragments = .false. ! no need to analyze separate fragments of material
    numpar%ind_starting_V = 2  ! by default, set Maxwellian starting velocities
    numpar%ind_exact_Ta = 0    ! by default, use simple sampling of atomic velocities
@@ -7655,6 +7656,7 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
       !write(*,'(a)') ' Verbose on: XTANT will print markers for testing and debugging'
       !numpar%verbose = .true.
       numpar%print_Ta = .true.   ! Printout various definitions of atomic temperature
+      numpar%print_Fv = .true.
       numpar%print_MFP = .true.  ! Printout mean free paths
       numpar%save_CDF = .true.   ! printout CDF file with oscillators
       numpar%save_Ei = .true.
@@ -7742,6 +7744,11 @@ subroutine interpret_user_data_INPUT(FN, File_name, count_lines, string_in, Scel
    case ('print_ta')
       ! Printout various definitions of atomic temperature:
       numpar%print_Ta = .true.
+
+   !----------------------------------
+   case ('print_fv')
+      ! Printout <force*velocity> correlator:
+      numpar%print_Fv = .true.
 
    !----------------------------------
    case ('print_fragments')

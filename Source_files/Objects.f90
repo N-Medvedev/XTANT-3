@@ -1064,11 +1064,12 @@ type Numerics_param
    integer :: i_dt        ! which timestep from the array "dt_MD_grid" to use now
    character(100) :: MD_step_grid_file   ! filename with MD time step grid
    !logical, dimension(:), allocatable :: Atomic_masks ! user-defined masks for atomic analysis
-   logical :: print_Ta ! flag for various atomic temperature definitions
+   logical :: print_Ta = .false. ! flag for various atomic temperature definitions
    logical :: print_fragments ! flag for analyzing fragments of material (if disintegrating or fragmented into pieces)
    integer :: ind_starting_V  ! index to set starting velocity distribution: 1=linear; 2=Maxwellian
    logical :: vel_from_file   ! index to mark whether velocities were read from a file or set
    integer :: ind_exact_Ta    ! index for the method of setting atomic temperature: 0=simple sampling; 1=sampling+rescaling to exact Ta
+   logical :: print_Fv = .false.  ! flag to printout <Force*velocity> correlator
    !-----------------
    ! EPICS data: EADL, EPDL, EEDL:
    character(200) :: EADL_file, EPDL_file, EEDL_file
@@ -1136,7 +1137,8 @@ type Numerics_param
    integer :: FN_high_e
    integer :: FN_deep_holes, FN_Ei, FN_fe, FN_PCF, FN_optics, FN_parameters, FN_communication, FN_cif, FN_pressure, FN_DOS
    integer :: FN_coupling, FN_neighbors, FN_Ce, FN_kappa, FN_kappa_dyn, FN_Se, FN_fe_on_grid, FN_Te, FN_mu, FN_orb_resolved
-   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot, FN_testmode, FN_diff_peaks, FN_diff_powder
+   integer :: FN_fa, FN_Sa, FN_Ta, FN_fa_pot, FN_Ta_part, FN_fa_tot, FN_Fv
+   integer :: FN_testmode, FN_diff_peaks, FN_diff_powder
    integer :: FN_diff_peaks_DW, FN_Debye_temperature
    integer, dimension(:), allocatable :: FN_diff_peaks_part
    integer, dimension(:), allocatable :: FN_element_NN

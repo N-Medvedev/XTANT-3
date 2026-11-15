@@ -4601,7 +4601,7 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
    !--------------------------------------------
    real(8), dimension(:,:), allocatable :: F, dF	! forces and derivatives
    real(8), dimension(:,:), allocatable :: Frep, Fatr, dFrep, dFatr	! forces and derivatives [eV/A], [eV/A^2]
-   real(8) :: Tconf, F_sum, dF_sum, acc(3), Ftest(3), dF_temp, Te, F_sum2, dF_sum2, T_NPH
+   real(8) :: Tconf, Tconf1, F_sum, dF_sum, acc(3), Ftest(3), dF_temp, Te, F_sum2, dF_sum2, T_NPH
    real(8) :: F_sum_rep, F_sum_att, dF_sum_rep, dF_sum_att
    integer :: Nat, i, NSC
    real(8), pointer :: Mass
@@ -4632,14 +4632,15 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
 
    !-----------------------------------------------
    ! Dont' delete, very useful test for debugging:
-   ! Check separate repulsive and attractive parts:
+   ! Check separate repulsive and attractive parts in single-temperature limit:
 !    F_sum_rep = SUM( Frep(1,:)*F(1,:) + Frep(2,:)*F(2,:) + Frep(3,:)*F(3,:) )
 !    F_sum_att = SUM( Fatr(1,:)*F(1,:) + Fatr(2,:)*F(2,:) + Fatr(3,:)*F(3,:) )
 !    dF_sum_rep = SUM( dFrep(:,:) )
 !    dF_sum_att = SUM( dFatr(:,:) )
 !    F_sum = SUM( F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:) )
 !    dF_sum = SUM( (dF(1,:) + dF(2,:) + dF(3,:)) )
-!
+!    ! Configurational tempreature in 1-temperature limit:
+!    Tconf1 = F_sum/dF_sum/g_kb_EV
 !    write(*,'(a,f,a,f,a,f,a,f)') 'Trep [K]=', F_sum_rep/dF_sum_rep/g_kb_EV, ' Tatt [K]=', F_sum_att/dF_sum_att/g_kb_EV, &
 !            ' Tconf [K]=', F_sum/dF_sum/g_kb_EV, ' Tkin [K]=', Scell(NSC)%Ta
    !-----------------------------------------------
@@ -4656,12 +4657,15 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
 
    ! 2) Configurational temperature (B=F) derived definition for Ta /= Te:
    F_sum = SUM( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) )
+
    dF_temp = dF_sum
    ! Make sure the case of Te<<Egap in dielectrics makes some sense:
    Te = max( Scell(1)%TeeV, 0.1d0*Scell(1)%E_gap ) ! exclude Te->0
 
    !dF_sum = dF_temp + 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV
-   dF_sum = dF_temp + 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Te
+   !dF_sum = dF_temp + 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Te
+   dF_sum = dF_temp - 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Te
+
    if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
       Tconf = 0.0d0  ! [K]
    else  ! defined:
@@ -4669,6 +4673,11 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
       Tconf = Tconf*g_kb	! [eV] -> [K]
    endif
    Scell(1)%Tconf = Tconf
+
+!     Testing various tempreatures definitions:
+!    write(*,'(6(a,g0))') 'Trep [K]=', F_sum_rep/dF_sum_rep/g_kb_EV, ' Tatt [K]=', F_sum_att/dF_sum_att/g_kb_EV, &
+!            ' Tconf [K]=', Tconf1, ' Tkin [K]=', Scell(NSC)%Ta, ' Tconf2 [K]=', Tconf, " Te [K=]", Te*g_kb
+
    !write(*,'(a,f,f,f,f)') '2:', F_sum, dF_temp, 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV, Tconf
 
    ! 3) Hyperconfigurational (second moment configurational) temperature (B=F^2*F):
@@ -4680,7 +4689,10 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
                   (F(1,:)*F(1,:)       +       F(2,:)*F(2,:) + 3.0d0*F(3,:)*F(3,:)) * dF(3,:) )
    !dF_sum2 = dF_temp + 0.5d0*SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) * &
    !                                F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Te
-   dF_sum2 = dF_temp + 0.5d0*SUM( (F(1,:)*F(1,:)    + F(2,:)*F(2,:)    + F(3,:)*F(3,:)   ) * &
+   !dF_sum2 = dF_temp + 0.5d0*SUM( (F(1,:)*F(1,:)    + F(2,:)*F(2,:)    + F(3,:)*F(3,:)   ) * &
+   !                               (F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:)) ) / Te
+
+   dF_sum2 = dF_temp - 0.5d0*SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) * &
                                   (F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:)) ) / Te
 
 

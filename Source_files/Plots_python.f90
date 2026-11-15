@@ -54,7 +54,8 @@ public :: collect_python_plots, execute_all_pyplots, create_python_plot_scripts,
 subroutine create_python_plot_scripts(Scell,matter,numpar,laser, file_path, file_temperatures, file_pressure, file_energies, &
 file_supercell, file_electron_properties, file_heat_capacity, file_heat_capacity_dyn, &
 file_numbers, file_orb, file_deep_holes, file_optics, file_Ei, file_PCF, file_NN, file_element_NN, file_electron_entropy, file_Te, file_mu, &
-file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_sect_displ, &
+file_atomic_entropy, file_atomic_temperatures, file_atomic_temperatures_part, file_force_velocity, &
+file_sect_displ, &
 file_diffraction_peaks, file_diffraction_peaks_part, file_diffraction_powder, file_diffraction_peaks_DW, file_Debye_temperature, &
 file_testmode, file_coupling, file_high_e, file_fragments)
    type(Super_cell), dimension(:), intent(in) :: Scell ! super-cell with all the atoms inside
@@ -83,6 +84,7 @@ file_testmode, file_coupling, file_high_e, file_fragments)
    character(*), intent(in) :: file_atomic_entropy ! atomic entropy
    character(*), intent(in) :: file_atomic_temperatures ! atomic temperatures (various definitions)
    character(*), intent(in) :: file_atomic_temperatures_part  ! partial atomic temperatures (X, Y, Z)
+   character(*), intent(in) :: file_force_velocity    ! <force*velocity>
    character(*), dimension(:), allocatable, intent(in) :: file_sect_displ
    character(*), intent(in) :: file_diffraction_peaks, file_diffraction_powder, file_diffraction_peaks_DW  ! diffraction peaks
    character(*), dimension(:), allocatable, intent(in) :: file_diffraction_peaks_part
@@ -257,6 +259,12 @@ file_testmode, file_coupling, file_high_e, file_fragments)
 
       call Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_part, t0, t_last, 'OUTPUT_atomic_temperatures_partial.py') ! below
    endif
+
+   ! Atomic <force*velocity> correlator:
+   if (numpar%print_Fv) then
+      call Python_plot_force_velocity_correlator(numpar, file_force_velocity, t0, t_last, 'OUTPUT_force_velocity.py') ! below
+   endif
+
 
 
    ! Data for fragments (if required):
@@ -500,7 +508,14 @@ file_testmode, file_coupling, file_high_e, file_fragments)
 
             call Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_last, 'OUTPUT_atomic_temperatures_CONVOLVED.py', convolved=.true.) ! below
 
-            call Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_part, t0, t_last, 'OUTPUT_atomic_temperatures_partial_CONVOLVED.py', convolved=.true.) ! below
+            call Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_part, t0, t_last, &
+            'OUTPUT_atomic_temperatures_partial_CONVOLVED.py', convolved=.true.) ! below
+      endif
+
+      ! Atomic <force*velocity> correlator:
+      if (numpar%print_Fv) then
+            call Python_plot_force_velocity_correlator(numpar, file_force_velocity, t0, t_last, &
+            'OUTPUT_force_velocity_CONVOLVED.py', convolved=.true.) ! below
       endif
 
 
@@ -2038,6 +2053,52 @@ subroutine Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_par
    close(FN)
    deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_at_temperatures_part
+
+
+
+! Atomic <force*velocity> correlator:
+subroutine Python_plot_force_velocity_correlator(numpar, file_force_velocity, t0, t_last, script_name, convolved)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_force_velocity, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
+   !----------------
+   integer :: FN, i, Nsiz
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_labels, linestyle
+   character(300) :: File_name, Plot_name, Data_file_name
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   Nsiz = 1
+
+   allocate(col_nums(Nsiz), source = 0)
+   allocate(col_labels(Nsiz))
+   allocate(linestyle(Nsiz))
+
+   col_nums(1) = 1
+   col_labels(1) = '"<F*v>"'
+   linestyle(1) = '"-"'
+
+   Plot_name = 'OUTPUT_force_velocity'
+   Data_file_name = file_force_velocity
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_force_velocity(1:len(trim(adjustl(file_force_velocity)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
+      'Time (fs)', 'Force-velocity correlator (eV/fs)', 'Force-velocity correlator', &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last, l_style=linestyle)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_labels, linestyle)
+end subroutine Python_plot_force_velocity_correlator
 
 
 
