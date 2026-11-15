@@ -83,15 +83,25 @@ subroutine get_NLH_coefficients(Z1, Z2, a, b, pathname, error_message, filename_
    character(*), intent(inout) :: error_message ! error message
    character(*), intent(in), optional :: filename_in     ! file with the coefficients, if differs from default
    !---------------------------------
-   integer :: FN, Reason, i, j
+   integer :: FN, Reason, i, j, iZ1, iZ2
    character(500) :: Filename
-   logical :: file_exists, file_opened
+   logical :: file_exists
    type(NLH_coeffs), dimension(92,92) :: NLH_data
 
    error_message = ''   ! no error to start with
    a(:) = 0.0d0 ! to start with
    b(:) = 0.0d0 ! to start with
 
+   if ((Z1 < 1.0d0) .or. (Z1 > 92.0d0) .or. (Z2 < 1.0d0) .or. (Z2 > 92.0d0)) then
+      error_message = 'Atomic numbers for NLH coefficients must be integers from 1 to 92'
+      return
+   endif
+   iZ1 = nint(Z1)
+   iZ2 = nint(Z2)
+   if ((Z1 /= dble(iZ1)) .or. (Z2 /= dble(iZ2))) then
+      error_message = 'Atomic numbers for NLH coefficients must be integers from 1 to 92'
+      return
+   endif
 
    ! Find the file with NLH coefficients:
    if (present(filename_in)) then
@@ -103,13 +113,15 @@ subroutine get_NLH_coefficients(Z1, Z2, a, b, pathname, error_message, filename_
    inquire(file=trim(adjustl(Filename)),exist=file_exists) ! check if input file is there
    exists:if (file_exists) then
       ! Read all the coefficients from this file:
-      FN = 101
-      open (unit=FN, file=trim(adjustl(Filename)))
-      inquire(unit=FN,opened=file_opened)    ! check if this file is opened
-      if (file_opened) then ! read data from it
+      open (newunit=FN, file=trim(adjustl(Filename)), status='old', action='read', iostat=Reason)
+      if (Reason /= 0) then
+         write(error_message,*) 'Could not open the file: ', trim(adjustl(Filename))
+         return
+      else
          read(FN,*,IOSTAT=Reason) ! skip first line with comments
          if (Reason /= 0) then
             write(error_message,*) 'Could not read input file: ', trim(adjustl(Filename))
+            close(FN)
             return ! nothing else to do
          endif
 
@@ -121,29 +133,28 @@ subroutine get_NLH_coefficients(Z1, Z2, a, b, pathname, error_message, filename_
                                                                                NLH_data(i,j)%a(3), NLH_data(i,j)%b(3)
                   if (Reason /= 0) then
                      write(error_message,*) 'Could not read input file: ', trim(adjustl(Filename))
+                     close(FN)
                      return ! nothing else to do
                   endif
                else ! Use symmetry to fill in the lower triangle:
                   NLH_data(i,j)%Z1 = NLH_data(j,i)%Z1
                   NLH_data(i,j)%Z2 = NLH_data(j,i)%Z2
                   NLH_data(i,j)%a(:) = NLH_data(j,i)%a(:)
-                  NLH_data(i,j)%b(:) = NLH_data(j,i)%a(:)
+                  NLH_data(i,j)%b(:) = NLH_data(j,i)%b(:)
                endif
             enddo ! j
          enddo ! i
          close(FN)
-      else
-         write(error_message,*) 'Could not open the file: ', trim(adjustl(Filename))
-         write(*,'(a)') trim(adjustl(error_message))
       endif
    else exists ! not
       write(error_message,*) 'Could not find the file: ', trim(adjustl(Filename))
       write(*,'(a)') trim(adjustl(error_message))
+      return
    endif exists
 
    ! Get out the data for the required elements:
-   a(:) = NLH_data(Z1,Z2)%a(:)
-   b(:) = NLH_data(Z1,Z2)%b(:)
+   a(:) = NLH_data(iZ1,iZ2)%a(:)
+   b(:) = NLH_data(iZ1,iZ2)%b(:)
 end subroutine get_NLH_coefficients
 
 
@@ -194,7 +205,8 @@ pure function d2_NLH_pot(Z1, Z2, r, a, b) result(d2_V_NLH)
 
    d_V_NLH  = V_NLH_part * (d_phi - phi/r)  ! [eV/A] derivative of NLH potential
 
-   d2_V_NLH  = d_V_NLH*(d_phi - phi/r) + V_NLH_part*(d2_phi - d_phi/r + phi/r**2)     ! [eV/A^2] second derivative of NLH potential
+   !d2_V_NLH  = d_V_NLH*(d_phi - phi/r) + V_NLH_part*(d2_phi - d_phi/r + phi/r**2)     ! [eV/A^2] second derivative of NLH potential
+   d2_V_NLH  = V_NLH_part*(d2_phi - 2.0d0*d_phi/r + 2.0d0*phi/r**2)     ! [eV/A^2] second derivative of NLH potential
 end function d2_NLH_pot
 
 
@@ -398,7 +410,8 @@ pure function d2_ZBL_pot(Z1, Z2, r) result(d2_V_ZBL)
    d_V_ZBL  = V_ZBL_part * (d_phi - phi/r)  ! [eV/A] derivative of ZBL potential
    d2_phi   = d2_ZBL_phi(Z1, Z2, r) ! see below
 
-   d2_V_ZBL  = d_V_ZBL*(d_phi - phi/r) + V_ZBL_part*(d2_phi - d_phi/r + phi/r**2)     ! [eV/A^2] second derivative of ZBL potential
+   !d2_V_ZBL  = d_V_ZBL*(d_phi - phi/r) + V_ZBL_part*(d2_phi - d_phi/r + phi/r**2)     ! [eV/A^2] second derivative of ZBL potential
+   d2_V_ZBL  = V_ZBL_part*(d2_phi - 2.0d0*d_phi/r + 2.0d0*phi/r**2)     ! [eV/A^2] second derivative of ZBL potential
 end function d2_ZBL_pot
 
 

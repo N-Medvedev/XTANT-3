@@ -2544,7 +2544,7 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta = FN
       call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)  config  F*v   conf  hyperconf')
-      call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K] [-]   [K]   [K]')
+      call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K] [eV/fs]   [K]   [K]')
 
       file_atomic_temperatures = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial.dat'
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))

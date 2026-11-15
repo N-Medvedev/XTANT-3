@@ -94,10 +94,53 @@ public :: double_factorial, Heavyside_tau, get_factorial, Two_Vect_Matr, Det_3x3
 public :: mkl_matrix_mult, Reciproc, check_hermiticity, Laguerre_up_to_6, d_Laguerre_up_to_6, check_symmetry
 public :: d_detH_d_h_a_b, Two_Matr_mult, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points
 public :: make_cubic_splines, cubic_function, d_cubic_function, c8_diagonalize, mkl_matrix_mult_c8, numerical_delta, &
-          d2_cubic_function
+          d2_cubic_function, nonorth_response_for_atom
 !=======================================
 
  contains
+
+
+ subroutine nonorth_response_for_atom(Nsiz, nI4, Ha_I, Ei, fe, invdE, dHII, dSII, use_f, Te_use, R)
+   ! Second-order electronic response of  sum_n f_n eps_n  to the displacement of ONE atom, generalised eigenproblem:
+   !   R_al = sum_n f_n [ -2 eps_n' S'_nn + 2 sum_{m/=n} (H'_mn - eps_n S'_mn)^2/(eps_n - eps_m) ]  (+ sum_n f_n' eps_n'^2 if use_f)
+   !   eps_n' = H'_nn - eps_n S'_nn ;   X'_mn = c_m^T X' c_n
+   ! Only the orbitals I affected by the displacement have non-zero dH, dS: Ha_I = eigenvector rows of those orbitals.
+   integer, intent(in) :: Nsiz, nI4
+   real(8), dimension(:,:), intent(in) :: Ha_I        ! (nI4,Nsiz)
+   real(8), dimension(:), intent(in) :: Ei, fe        ! levels [eV], occupations (0..2)
+   real(8), dimension(:,:), intent(in) :: invdE       ! invdE(m,n) = 1/(Ei(n)-Ei(m)), 0 for degenerate pairs
+   real(8), dimension(:,:,:), intent(in) :: dHII, dSII ! (nI4,nI4,3) derivatives for x,y,z, [eV/A], [1/A]
+   logical, intent(in) :: use_f                       ! occupations follow a Fermi function (adds the occupation response)
+   real(8), intent(in) :: Te_use                      ! [eV]
+   real(8), dimension(3), intent(out) :: R
+   !------------------------------------
+   integer :: al, n
+   real(8), dimension(:,:), allocatable :: T1, HV, SV
+   real(8), dimension(:), allocatable :: eps1, X
+   real(8) :: dfe
+
+   allocate(T1(nI4,Nsiz), HV(Nsiz,Nsiz), SV(Nsiz,Nsiz), eps1(Nsiz), X(Nsiz))
+   R = 0.0d0
+   do al = 1, 3
+      call dgemm('N', 'N', nI4, Nsiz, nI4, 1.0d0, dHII(:,:,al), nI4, Ha_I, nI4, 0.0d0, T1, nI4)
+      call dgemm('T', 'N', Nsiz, Nsiz, nI4, 1.0d0, Ha_I, nI4, T1, nI4, 0.0d0, HV, Nsiz)
+      call dgemm('N', 'N', nI4, Nsiz, nI4, 1.0d0, dSII(:,:,al), nI4, Ha_I, nI4, 0.0d0, T1, nI4)
+      call dgemm('T', 'N', Nsiz, Nsiz, nI4, 1.0d0, Ha_I, nI4, T1, nI4, 0.0d0, SV, Nsiz)
+      do n = 1, Nsiz
+         eps1(n) = HV(n,n) - Ei(n)*SV(n,n)
+      enddo
+      do n = 1, Nsiz
+         if (fe(n) < 1.0d-14) cycle    ! only populated levels enter
+         X(:) = HV(:,n) - Ei(n)*SV(:,n)
+         R(al) = R(al) + fe(n)*( -2.0d0*eps1(n)*SV(n,n) + 2.0d0*SUM(X(:)*X(:)*invdE(:,n)) )
+         if (use_f) then   ! fe = 2*f_FD:  d fe/d eps = -fe*(1-fe/2)/Te
+            dfe = -fe(n)*(1.0d0 - 0.5d0*fe(n))/Te_use
+            R(al) = R(al) + dfe*eps1(n)*eps1(n)
+         endif
+      enddo
+   enddo
+   deallocate(T1, HV, SV, eps1, X)
+end subroutine nonorth_response_for_atom
 
 
 pure function numerical_delta(x, eta) result(delta)
