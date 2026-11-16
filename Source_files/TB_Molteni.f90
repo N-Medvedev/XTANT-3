@@ -38,7 +38,7 @@ implicit none
 PRIVATE
 
 public :: construct_TB_H_Molteni, Complex_Hamil_tot_Molteni, dHij_s_M, Attract_TB_Forces_Press_M, &
-         dErdr_s_M, dErdr_Pressure_s_M, get_Erep_s_M
+         dErdr_s_M, dErdr_Pressure_s_M, get_Erep_s_M, Construct_M_Vs_M, Construct_M_d2Vs_M, dHij_r_M, dHij_r_response_M, dE2rep_dr2_M
 
  contains
 
@@ -1908,6 +1908,476 @@ subroutine dErdr_Pressure_s_M(TB_Repuls, atoms, Scell, NSC, numpar)! derivatives
       enddo ! i
    endif
 end subroutine dErdr_Pressure_s_M
+
+
+
+
+!--------------------------------------------------------------------------------------------
+! 2a. Second derivative of the hopping integrals (Harrison scaling x Fermi-like cut-off, same smoothing as dVs_M with scaling=1)
+!--------------------------------------------------------------------------------------------
+function d2Vs_M(TB, i, N1, N2, r) result(d2V)   ! d2V/dr2 of Vs_M, consistent with dVs_M(...,1)
+   real(8) :: d2V
+   type(TB_H_Molteni), dimension(:,:), intent(in), target :: TB   ! all tight binding parameters
+   integer, intent(in) :: i       ! index of V
+   integer, intent(in) :: N1, N2  ! kinds of atoms
+   real(8), intent(in) :: r       ! [A]
+   !------------------------------------
+   real(8) :: raw, n, rcut, d, e, F, dF, d2F
+
+   n = TB(N1,N2)%n
+   rcut = TB(N1,N2)%rcut
+   d = TB(N1,N2)%d
+   raw = Vs_M(TB, i, N1, N2, r, .false.)          ! V0*(r0/r)^n without cut-off;  raw' = -n raw/r,  raw'' = n(n+1) raw/r^2
+   e = exp((r - rcut)*2.0d0/d)
+   F   = 1.0d0/(1.0d0 + e)                        ! cut-off function and its derivatives
+   dF  = -(2.0d0/d)*e/((1.0d0 + e)**2)
+   d2F = -(2.0d0/d)**2*e*(1.0d0 - e)/((1.0d0 + e)**3)
+   d2V = n*(n + 1.0d0)/(r*r)*raw*F - 2.0d0*n/r*raw*dF + raw*d2F
+end function d2Vs_M
+
+
+subroutine set_M_d2Vs_for_atom(Scell, NSC, TB_Hamil, i, M_d2Vs)
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   integer, intent(in) :: NSC, i
+   type(TB_H_Molteni), dimension(:,:), intent(in) :: TB_Hamil
+   real(8), dimension(:,:,:), intent(inout) :: M_d2Vs
+   integer :: m, atom_2, j, KI, KJ
+   real(8) :: r
+
+   m = Scell(NSC)%Near_neighbor_size(i)
+   KI = Scell(NSC)%MDatoms(i)%KOA
+   do atom_2 = 1, m
+      j = Scell(NSC)%Near_neighbor_list(i,atom_2)
+      if (j > 0) then
+         KJ = Scell(NSC)%MDatoms(j)%KOA
+         r = Scell(NSC)%Near_neighbor_dist(i,atom_2,4)
+         ! same index layout as M_Vs, M_dVs of Construct_M_Vs_M: 1=ss, 2=sp, 3=ps, 4=pp sigma, 5=pp pi, 6=s*p, 7=ps*
+         M_d2Vs(1,i,j) = d2Vs_M(TB_Hamil, 1, KI, KJ, r)
+         M_d2Vs(2,i,j) = d2Vs_M(TB_Hamil, 2, KI, KJ, r)
+         M_d2Vs(3,i,j) = d2Vs_M(TB_Hamil, 2, KJ, KI, r)
+         M_d2Vs(4,i,j) = d2Vs_M(TB_Hamil, 3, KI, KJ, r)
+         M_d2Vs(5,i,j) = d2Vs_M(TB_Hamil, 4, KI, KJ, r)
+         M_d2Vs(6,i,j) = d2Vs_M(TB_Hamil, 5, KI, KJ, r)
+         M_d2Vs(7,i,j) = d2Vs_M(TB_Hamil, 5, KJ, KI, r)
+      endif
+   enddo
+end subroutine set_M_d2Vs_for_atom
+
+
+subroutine Construct_M_d2Vs_M(Scell, NSC, TB_Hamil, numpar, M_d2Vs)
+   ! matrix of second derivatives of the hopping integrals, same layout as M_Vs and M_dVs of Construct_M_Vs_M
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   integer, intent(in) :: NSC
+   type(TB_H_Molteni), dimension(:,:), intent(in) :: TB_Hamil
+   type(Numerics_param), intent(inout) :: numpar
+   real(8), dimension(:,:,:), allocatable, intent(out) :: M_d2Vs
+   integer :: nat, i
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+   nat = Scell(NSC)%Na
+   allocate(M_d2Vs(7,nat,nat), source = 0.0d0)
+#ifdef MPI_USED
+   N_incr = numpar%MPI_param%size_of_cluster
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = nat
+   do i = Nstart, Nend, N_incr
+      call set_M_d2Vs_for_atom(Scell, NSC, TB_Hamil, i, M_d2Vs)
+   enddo
+   error_part = 'Error in Construct_M_d2Vs_M:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'M_d2Vs', M_d2Vs)
+#else
+   !$omp parallel do private(i)
+   do i = 1, nat
+      call set_M_d2Vs_for_atom(Scell, NSC, TB_Hamil, i, M_d2Vs)
+   enddo
+   !$omp end parallel do
+#endif
+end subroutine Construct_M_d2Vs_M
+
+
+!--------------------------------------------------------------------------------------------
+! 2b. First and second derivatives BY r of the 5x5 hopping block of the pair (i,j), with respect to the coordinate of atom k
+!     (derivative of the same block that Hamilton_one_M puts at rows(i), columns(j))
+!--------------------------------------------------------------------------------------------
+subroutine dHopping_r_M(k, Scell, NSC, i, j, atom_2, M_Vs, M_dVs, M_d2Vs, dts, d2ts)
+   integer, intent(in) :: k, NSC, i, j, atom_2
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   real(8), dimension(:,:,:), intent(in) :: M_Vs, M_dVs, M_d2Vs
+   real(8), dimension(3,5,5), intent(out) :: dts, d2ts     ! [eV/A], [eV/A^2]; index 1 = x,y,z coordinate of atom k
+   !------------------------------------------
+   integer :: kap, al, a, b
+   real(8) :: r, u(3), dr, d2r, du(3), d2u(3), kap2, W, pW, qW
+   real(8) :: lalb, dlalb, d2lalb
+   real(8), dimension(7) :: V, p, q   ! radial functions: value, path first and second derivatives
+
+   dts = 0.0d0
+   d2ts = 0.0d0
+   if (i == j) return
+   kap = 0
+   if (k == i) kap = kap + 1
+   if (k == j) kap = kap - 1
+   if (kap == 0) return
+   kap2 = dble(kap*kap)
+
+   r = Scell(NSC)%Near_neighbor_dist(i,atom_2,4)
+   u(1) = Scell(NSC)%Near_neighbor_dist(i,atom_2,1)/r
+   u(2) = Scell(NSC)%Near_neighbor_dist(i,atom_2,2)/r
+   u(3) = Scell(NSC)%Near_neighbor_dist(i,atom_2,3)/r
+   V = M_Vs(1:7,i,j)
+
+   do al = 1, 3   ! x, y, z of atom k
+      dr  = dble(kap)*u(al)                 ! d r / d r_{k,al}
+      d2r = kap2*(1.0d0 - u(al)**2)/r       ! d2 r / d r_{k,al}^2
+      do a = 1, 3
+         if (a == al) then
+            du(a)  = dble(kap)*(1.0d0 - u(a)*u(al))/r
+            d2u(a) = kap2*(-3.0d0*u(a)*(1.0d0 - u(a)**2))/(r*r)
+         else
+            du(a)  = dble(kap)*(-u(a)*u(al))/r
+            d2u(a) = kap2*(-u(a)*(1.0d0 - 3.0d0*u(al)**2))/(r*r)
+         endif
+      enddo
+      p = M_dVs(1:7,i,j)*dr
+      q = M_d2Vs(1:7,i,j)*dr*dr + M_dVs(1:7,i,j)*d2r
+
+      ! s-s
+      dts(al,1,1)  = p(1)
+      d2ts(al,1,1) = q(1)
+      do a = 1, 3
+         ! ts(1,1+a) = -l_a*Vsp(2),  ts(1+a,1) = +l_a*Vps(3),  ts(1+a,5) = +l_a*Vps*(7),  ts(5,1+a) = -l_a*Vs*p(6)
+         dts(al,1,1+a)  = -(du(a)*V(2) + u(a)*p(2))
+         d2ts(al,1,1+a) = -(d2u(a)*V(2) + 2.0d0*du(a)*p(2) + u(a)*q(2))
+         dts(al,1+a,1)  = (du(a)*V(3) + u(a)*p(3))
+         d2ts(al,1+a,1) = (d2u(a)*V(3) + 2.0d0*du(a)*p(3) + u(a)*q(3))
+         dts(al,1+a,5)  = (du(a)*V(7) + u(a)*p(7))
+         d2ts(al,1+a,5) = (d2u(a)*V(7) + 2.0d0*du(a)*p(7) + u(a)*q(7))
+         dts(al,5,1+a)  = -(du(a)*V(6) + u(a)*p(6))
+         d2ts(al,5,1+a) = -(d2u(a)*V(6) + 2.0d0*du(a)*p(6) + u(a)*q(6))
+      enddo
+      ! p-p: ts(1+a,1+b) = l_a l_b (VppS - VppP) + delta_ab VppP
+      W = V(4) - V(5)
+      pW = p(4) - p(5)
+      qW = q(4) - q(5)
+      do b = 1, 3
+         do a = 1, 3
+            lalb   = u(a)*u(b)
+            dlalb  = du(a)*u(b) + u(a)*du(b)
+            d2lalb = d2u(a)*u(b) + 2.0d0*du(a)*du(b) + u(a)*d2u(b)
+            dts(al,1+a,1+b)  = dlalb*W + lalb*pW
+            d2ts(al,1+a,1+b) = d2lalb*W + 2.0d0*dlalb*pW + lalb*qW
+            if (a == b) then
+               dts(al,1+a,1+b)  = dts(al,1+a,1+b)  + p(5)
+               d2ts(al,1+a,1+b) = d2ts(al,1+a,1+b) + q(5)
+            endif
+         enddo
+      enddo
+   enddo
+end subroutine dHopping_r_M
+
+
+!--------------------------------------------------------------------------------------------
+! 2c. Frozen terms: F = dE_band/dr, dF = d2E_band/dr2 at fixed density matrix (diagonal in atom and coordinate)
+!--------------------------------------------------------------------------------------------
+subroutine dHij_r_one_atom_M(k, Scell, NSC, Aij, M_Vs, M_dVs, M_d2Vs, Fk, dFk)
+   integer, intent(in) :: k, NSC
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   real(8), dimension(:,:), intent(in) :: Aij   ! sum_n f_n c_i c_j
+   real(8), dimension(:,:,:), intent(in) :: M_Vs, M_dVs, M_d2Vs
+   real(8), dimension(3), intent(out) :: Fk, dFk
+   !---------------------------------
+   integer, parameter :: n_orb = 5
+   integer :: nat, i, j, atom_2, m, a, b, i4, j4
+   real(8), dimension(3,n_orb,n_orb) :: dts, d2ts
+
+   Fk = 0.0d0
+   dFk = 0.0d0
+   nat = size(Scell(NSC)%MDatoms)
+   do i = 1, nat
+      i4 = (i-1)*n_orb
+      m = Scell(NSC)%Near_neighbor_size(i)
+      do atom_2 = 1, m
+         j = Scell(NSC)%Near_neighbor_list(i,atom_2)
+         if (j <= i) cycle   ! each pair once; blocks (i,j) and (j,i) contribute equally (symmetric H, A): factor 2
+         if ((k /= i) .and. (k /= j)) cycle
+         j4 = (j-1)*n_orb
+         call dHopping_r_M(k, Scell, NSC, i, j, atom_2, M_Vs, M_dVs, M_d2Vs, dts, d2ts)
+         do b = 1, n_orb
+            do a = 1, n_orb
+               Fk(:)  = Fk(:)  + 2.0d0*dts(:,a,b)*Aij(i4+a,j4+b)
+               dFk(:) = dFk(:) + 2.0d0*d2ts(:,a,b)*Aij(i4+a,j4+b)
+            enddo
+         enddo
+      enddo
+   enddo
+end subroutine dHij_r_one_atom_M
+
+
+subroutine dHij_r_M(numpar, Scell, NSC, Aij, M_Vs, M_dVs, M_d2Vs, F, dF)
+   type(Numerics_param), intent(inout) :: numpar
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   integer, intent(in) :: NSC
+   real(8), dimension(:,:), intent(in) :: Aij
+   real(8), dimension(:,:,:), intent(in) :: M_Vs, M_dVs, M_d2Vs
+   real(8), dimension(:,:), allocatable, intent(inout) :: F, dF   ! (3,Nat)  [eV/A], [eV/A^2]
+   !---------------------------------
+   integer :: nat, k
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+   nat = size(Scell(NSC)%MDatoms)
+   if (allocated(F)) deallocate(F)
+   if (allocated(dF)) deallocate(dF)
+   allocate(F(3,nat), dF(3,nat), source = 0.0d0)
+#ifdef MPI_USED
+   N_incr = numpar%MPI_param%size_of_cluster
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = nat
+   do k = Nstart, Nend, N_incr
+      call dHij_r_one_atom_M(k, Scell, NSC, Aij, M_Vs, M_dVs, M_d2Vs, F(:,k), dF(:,k))
+   enddo
+   error_part = 'Error in dHij_r_M:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'F', F)
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dF', dF)
+#else
+   !$omp parallel do private(k)
+   do k = 1, nat
+      call dHij_r_one_atom_M(k, Scell, NSC, Aij, M_Vs, M_dVs, M_d2Vs, F(:,k), dF(:,k))
+   enddo
+   !$omp end parallel do
+#endif
+end subroutine dHij_r_M
+
+
+!--------------------------------------------------------------------------------------------
+! 2d. Electronic response of the Hessian diagonal (orthogonal basis, fixed occupations)
+!--------------------------------------------------------------------------------------------
+subroutine dHij_r_response_M(numpar, Scell, NSC, M_Vs, M_dVs, M_d2Vs, dFresp)
+   type(Numerics_param), intent(inout) :: numpar
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   integer, intent(in) :: NSC
+   real(8), dimension(:,:,:), intent(in) :: M_Vs, M_dVs, M_d2Vs
+   real(8), dimension(:,:), allocatable, intent(inout) :: dFresp   ! (3,Nat) [eV/A^2]
+   !---------------------------------------------
+   integer, parameter :: n_orb = 5
+   integer :: nat, Nsiz, k, i, j, a, b, m, atom_2, n_I, nI4, n, ia, ib, other
+   integer, dimension(:), allocatable :: iat, Idx, posI
+   real(8), dimension(:,:), allocatable :: invdE, CI
+   real(8), dimension(:,:,:), allocatable :: dHII
+   real(8), dimension(3,n_orb,n_orb) :: dts, d2ts
+   real(8), dimension(3) :: R
+   real(8), parameter :: tol = 1.0d-8   ! [eV] degeneracy threshold
+   real(8) :: dE
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+   nat = size(Scell(NSC)%MDatoms)
+   Nsiz = size(Scell(NSC)%Ha,1)
+   if (allocated(dFresp)) deallocate(dFresp)
+   allocate(dFresp(3,nat), source = 0.0d0)
+
+   allocate(invdE(Nsiz,Nsiz))
+   do n = 1, Nsiz
+      do m = 1, Nsiz
+         dE = Scell(NSC)%Ei(n) - Scell(NSC)%Ei(m)
+         if (abs(dE) > tol) then
+            invdE(m,n) = 1.0d0/dE
+         else
+            invdE(m,n) = 0.0d0
+         endif
+      enddo
+   enddo
+   allocate(iat(nat), posI(nat), source = 0)
+
+#ifdef MPI_USED
+   N_incr = numpar%MPI_param%size_of_cluster
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = nat
+#else
+   N_incr = 1
+   Nstart = 1
+   Nend = nat
+#endif
+
+   ATOMS:do k = Nstart, Nend, N_incr
+      ! Pass 1: atom k and its partners (the on-site energies of Molteni do not depend on the environment)
+      n_I = 1
+      iat(1) = k
+      posI(k) = 1
+      do i = 1, nat
+         m = Scell(NSC)%Near_neighbor_size(i)
+         do atom_2 = 1, m
+            j = Scell(NSC)%Near_neighbor_list(i,atom_2)
+            if (j <= i) cycle
+            if ((i /= k) .and. (j /= k)) cycle
+            other = i
+            if (i == k) other = j
+            if (posI(other) == 0) then
+               n_I = n_I + 1
+               iat(n_I) = other
+               posI(other) = n_I
+            endif
+         enddo
+      enddo
+      nI4 = n_I*n_orb
+      allocate(Idx(nI4), CI(nI4,Nsiz))
+      allocate(dHII(nI4,nI4,3), source = 0.0d0)
+      do i = 1, n_I
+         do a = 1, n_orb
+            Idx((i-1)*n_orb + a) = (iat(i)-1)*n_orb + a
+         enddo
+      enddo
+      do a = 1, nI4
+         CI(a,:) = Scell(NSC)%Ha(Idx(a),:)    ! eigenvectors: columns = states
+      enddo
+
+      ! Pass 2: derivative blocks of the pairs containing atom k (block (i,j) and its transpose (j,i)):
+      do i = 1, nat
+         m = Scell(NSC)%Near_neighbor_size(i)
+         do atom_2 = 1, m
+            j = Scell(NSC)%Near_neighbor_list(i,atom_2)
+            if (j <= i) cycle
+            if ((i /= k) .and. (j /= k)) cycle
+            call dHopping_r_M(k, Scell, NSC, i, j, atom_2, M_Vs, M_dVs, M_d2Vs, dts, d2ts)
+            ia = (posI(i)-1)*n_orb
+            ib = (posI(j)-1)*n_orb
+            do b = 1, n_orb
+               do a = 1, n_orb
+                  dHII(ia+a, ib+b, :) = dts(:,a,b)
+                  dHII(ib+b, ia+a, :) = dts(:,a,b)
+               enddo
+            enddo
+         enddo
+      enddo
+
+      call orth_response_for_atom(Nsiz, nI4, CI, Scell(NSC)%Ei, Scell(NSC)%fe, invdE, dHII, R)   ! module "Algebra_tools"
+      dFresp(:,k) = R(:)
+
+      do i = 1, n_I
+         posI(iat(i)) = 0
+      enddo
+      deallocate(Idx, CI, dHII)
+   enddo ATOMS
+
+#ifdef MPI_USED
+   error_part = 'Error in dHij_r_response_M:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dFresp', dFresp)
+#endif
+   deallocate(invdE, iat, posI)
+end subroutine dHij_r_response_M
+
+
+!--------------------------------------------------------------------------------------------
+! 2e. Repulsive part: E_rep = 1/2 sum_ij phi_M(TB_Repuls(KOA_j,KOA_i), r_ij)
+!--------------------------------------------------------------------------------------------
+function d2phi_M(TB_Repuls, a_x) result(d2phi)   ! second derivative of the repulsive potential, consistent with dphi_M(...,1)
+   real(8) :: d2phi
+   type(TB_Rep_Molteni), intent(in) :: TB_Repuls   ! parameters of the repulsive part of TB-H
+   real(8), intent(in) :: a_x                      ! distance between the atoms [A]
+   !-------------------------------
+   integer :: NP, m
+   real(8) :: phi1, phi2, r0, alpha, rcut, d, e, F, dF, d2F
+   real(8) :: raw, draw, d2raw, inv_r, r2
+
+   NP = TB_Repuls%NP
+   phi1 = TB_Repuls%phi1
+   phi2 = TB_Repuls%phi2
+   r0 = TB_Repuls%r0
+   rcut = TB_Repuls%rcut
+   d = TB_Repuls%d
+   select case(NP)
+   case (1) ! exp (Molteni)
+      alpha = TB_Repuls%alpha
+      raw   = phi1*exp(-(a_x - r0)/alpha) + phi2*r0/a_x
+      draw  = -phi1*exp(-(a_x - r0)/alpha)/alpha - phi2*r0/(a_x*a_x)
+      d2raw = phi1*exp(-(a_x - r0)/alpha)/(alpha*alpha) + 2.0d0*phi2*r0/(a_x*a_x*a_x)
+   case (2) ! rational (Molteni)
+      m = TB_Repuls%m
+      raw   = phi1*(r0/a_x)**m + phi2*r0/a_x
+      draw  = -dble(m)/a_x*phi1*(r0/a_x)**m - phi2*r0/(a_x*a_x)
+      d2raw = dble(m)*dble(m+1)*phi1*(r0/a_x)**m/(a_x*a_x) + 2.0d0*phi2*r0/(a_x*a_x*a_x)
+   case default ! Allen's potential: a/r^4 + b/r^6 + c/r^8
+      inv_r = 1.0d0/a_x
+      r2 = inv_r*inv_r
+      raw   = TB_Repuls%a*r2*r2 + TB_Repuls%b*r2*r2*r2 + TB_Repuls%c*r2*r2*r2*r2
+      draw  = -inv_r*(4.0d0*TB_Repuls%a*r2*r2 + 6.0d0*TB_Repuls%b*r2*r2*r2 + 8.0d0*TB_Repuls%c*r2*r2*r2*r2)
+      d2raw = r2*(20.0d0*TB_Repuls%a*r2*r2 + 42.0d0*TB_Repuls%b*r2*r2*r2 + 72.0d0*TB_Repuls%c*r2*r2*r2*r2)
+   end select
+   e = exp((a_x - rcut)*2.0d0/d)
+   F   = 1.0d0/(1.0d0 + e)
+   dF  = -(2.0d0/d)*e/((1.0d0 + e)**2)
+   d2F = -(2.0d0/d)**2*e*(1.0d0 - e)/((1.0d0 + e)**3)
+   d2phi = d2raw*F + 2.0d0*draw*dF + raw*d2F
+end function d2phi_M
+
+
+subroutine dE2rep_one_atom_M(ian, TB_Repuls, Scell, NSC, Fk, dFk)
+   integer, intent(in) :: ian, NSC
+   type(TB_Rep_Molteni), dimension(:,:), intent(in) :: TB_Repuls
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   real(8), dimension(3), intent(out) :: Fk, dFk
+   !---------------------------------
+   integer :: i1, atom_2, j1, m, kap, al
+   real(8) :: r, u, V1, V2
+
+   Fk = 0.0d0
+   dFk = 0.0d0
+   do i1 = 1, Scell(NSC)%Na   ! same loops and exclusions as dErdr_s_M (pairs are counted twice: factor 0.5 below)
+      m = Scell(NSC)%Near_neighbor_size(i1)
+      do atom_2 = 1, m
+         j1 = Scell(NSC)%Near_neighbor_list(i1,atom_2)
+         if (j1 <= 0) cycle
+         kap = 0
+         if (ian == i1) kap = kap + 1
+         if (ian == j1) kap = kap - 1
+         if (kap == 0) cycle   ! also excludes the self-images j1 == i1
+         r = Scell(NSC)%Near_neighbor_dist(i1,atom_2,4)
+         V1 = dphi_M(TB_Repuls(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA), r, 1)   ! consistent cut-off
+         V2 = d2phi_M(TB_Repuls(Scell(NSC)%MDatoms(j1)%KOA, Scell(NSC)%MDatoms(i1)%KOA), r)
+         do al = 1, 3
+            u = Scell(NSC)%Near_neighbor_dist(i1,atom_2,al)/r
+            Fk(al)  = Fk(al)  + V1*dble(kap)*u
+            dFk(al) = dFk(al) + dble(kap*kap)*(V2*u*u + V1*(1.0d0 - u*u)/r)
+         enddo
+      enddo
+   enddo
+   Fk = 0.5d0*Fk
+   dFk = 0.5d0*dFk
+end subroutine dE2rep_one_atom_M
+
+
+subroutine dE2rep_dr2_M(TB_Repuls, Scell, NSC, numpar, F, dF)
+   ! F(:,k) = dE_rep/dr_k ,  dF(:,k) = d2E_rep/dr_{k,alpha}^2   [eV/A], [eV/A^2]
+   type(TB_Rep_Molteni), dimension(:,:), intent(in) :: TB_Repuls
+   type(Super_cell), dimension(:), intent(in) :: Scell
+   integer, intent(in) :: NSC
+   type(Numerics_param), intent(inout) :: numpar
+   real(8), dimension(:,:), allocatable, intent(out) :: F, dF
+   !---------------------------------------
+   integer :: n, ian
+   integer :: N_incr, Nstart, Nend
+   character(100) :: error_part
+
+   n = Scell(NSC)%Na
+   allocate(F(3,n), dF(3,n), source = 0.0d0)
+#ifdef MPI_USED
+   N_incr = numpar%MPI_param%size_of_cluster
+   Nstart = 1 + numpar%MPI_param%process_rank
+   Nend = n
+   do ian = Nstart, Nend, N_incr
+      call dE2rep_one_atom_M(ian, TB_Repuls, Scell, NSC, F(:,ian), dF(:,ian))
+   enddo
+   error_part = 'Error in dE2rep_dr2_M:'
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'F', F)
+   call do_MPI_Allreduce(numpar%MPI_param, trim(adjustl(error_part))//'dF', dF)
+#else
+   !$omp parallel do private(ian)
+   do ian = 1, n
+      call dE2rep_one_atom_M(ian, TB_Repuls, Scell, NSC, F(:,ian), dF(:,ian))
+   enddo
+   !$omp end parallel do
+#endif
+end subroutine dE2rep_dr2_M
 
 
 

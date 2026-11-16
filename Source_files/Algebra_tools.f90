@@ -143,6 +143,38 @@ public :: make_cubic_splines, cubic_function, d_cubic_function, c8_diagonalize, 
 end subroutine nonorth_response_for_atom
 
 
+subroutine orth_response_for_atom(Nsiz, nI4, Ha_I, Ei, fe, invdE, dHII, R)
+   ! Second-order electronic response of sum_n f_n eps_n to the displacement of ONE atom, orthogonal basis, fixed occupations:
+   !   R_al = sum_n f_n * 2 * sum_{m/=n} |<m|dH_al|n>|^2 / (eps_n - eps_m)
+   ! Only the orbitals I affected by the displacement have non-zero dH: Ha_I = eigenvector rows of those orbitals.
+   integer, intent(in) :: Nsiz, nI4
+   real(8), dimension(:,:), intent(in) :: Ha_I        ! (nI4,Nsiz)
+   real(8), dimension(:), intent(in) :: fe            ! occupations (0..2)
+   real(8), dimension(:), intent(in) :: Ei            ! levels [eV] (not used directly: invdE contains the denominators)
+   real(8), dimension(:,:), intent(in) :: invdE       ! invdE(m,n) = 1/(Ei(n)-Ei(m)), 0 for degenerate pairs
+   real(8), dimension(:,:,:), intent(in) :: dHII      ! (nI4,nI4,3) derivatives for x,y,z [eV/A]
+   real(8), dimension(3), intent(out) :: R
+   !------------------------------------
+   integer :: al, n
+   real(8), dimension(:,:), allocatable :: T1, HV
+
+   allocate(T1(nI4,Nsiz), HV(Nsiz,Nsiz))
+   R = 0.0d0
+   do al = 1, 3
+      call dgemm('N', 'N', nI4, Nsiz, nI4, 1.0d0, dHII(:,:,al), nI4, Ha_I, nI4, 0.0d0, T1, nI4)
+      call dgemm('T', 'N', Nsiz, Nsiz, nI4, 1.0d0, Ha_I, nI4, T1, nI4, 0.0d0, HV, Nsiz)
+      do n = 1, Nsiz
+         if (fe(n) < 1.0d-14) cycle    ! only populated levels enter
+         R(al) = R(al) + 2.0d0*fe(n)*SUM(HV(:,n)*HV(:,n)*invdE(:,n))
+      enddo
+   enddo
+   deallocate(T1, HV)
+end subroutine orth_response_for_atom
+
+
+
+
+
 pure function numerical_delta(x, eta) result(delta)
    real(8), intent(in) :: x, eta
    real(8) delta  ! numerical approximation for Dirac's delta function

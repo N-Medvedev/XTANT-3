@@ -47,7 +47,8 @@ use TB_Pettifor, only : dHij_s, Attract_TB_Forces_Press, dErdr_s, dErdr_Pressure
                      Complex_Hamil_tot, Attract_TB_Forces_Press, get_Erep_s, dErdr_Pressure_s, Construct_M_Vs, &
                      dHij_r, dE2rep_dr2, dHij_r_response
 use TB_Molteni, only : dHij_s_M, Attract_TB_Forces_Press_M, dErdr_s_M, dErdr_Pressure_s_M, construct_TB_H_Molteni, &
-                     Complex_Hamil_tot_Molteni, Attract_TB_Forces_Press_M, get_Erep_s_M, dErdr_Pressure_s_M
+                     Complex_Hamil_tot_Molteni, Attract_TB_Forces_Press_M, get_Erep_s_M, dErdr_Pressure_s_M, &
+                     Construct_M_Vs_M, Construct_M_d2Vs_M, dHij_r_M, dHij_r_response_M, dE2rep_dr2_M
 use TB_NRL, only : get_dHij_drij_NRL, dErdr_s_NRL, Construct_Vij_NRL, construct_TB_H_NRL, Complex_Hamil_NRL, &
                      get_Erep_s_NRL, dErdr_Pressure_s_NRL, Loewdin_Orthogonalization_c, m_two_third, &
                      Attract_TB_Forces_Press_NRL, Loewdin_Orthogonalization_c8, &
@@ -4753,8 +4754,8 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
    real(8), dimension(:,:,:), allocatable :: M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij  ! radial functions, derivatives
    real(8), dimension(:,:,:), allocatable :: M_lmn, M_x1, M_xrr                                 ! directional cosines
    real(8), dimension(:,:), allocatable :: M_Aij_x_Ei  ! energy-weighted density matrix
-
    integer :: i, N, NSC
+
    
    NSC = 1  ! one supercell only
 
@@ -4785,7 +4786,18 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
          deallocate(dFresp)   ! clean up
 
       type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni
-         !print*, 'Configurational temperature calculations are not implemented for Molteni: Attractive'
+         ! Construct array of functions Vs and dVs for all pairs of atoms to use for forces:
+         call Construct_M_Vs_M(Scell, 1, ARRAY, numpar, M_Vs, M_dVs)            ! existing (hopping integrals and first derivatives)
+         call Construct_M_d2Vs_M(Scell, 1, ARRAY, numpar, M_d2Vs)               ! new
+         ! Density matrices from the current eigenvectors / occupations:
+         call Construct_Aij(numpar, Scell(1)%Ha, Scell(1)%fe, Scell(1)%Aij)     ! density matrix from the current eigenvectors
+         ! Frozen terms: first derivative (forces by r) and second derivative:
+         call dHij_r_M(numpar, Scell, 1, Scell(1)%Aij, M_Vs, M_dVs, M_d2Vs, Fatr, dFatr)
+         call dHij_r_response_M(numpar, Scell, 1, M_Vs, M_dVs, M_d2Vs, dFresp)  ! exact Hessian = frozen + response
+
+         dFatr = dFatr + dFresp
+         deallocate(dFresp, M_Vs, M_dVs, M_d2Vs)
+
       type is (TB_H_Fu)  ! TB parametrization accroding to Fu
          !print*, 'Configurational temperature calculations are not implemented for Fu: Attractive'
       type is (TB_H_NRL)  ! TB parametrization accroding to NRL
@@ -4853,15 +4865,18 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
          call dE2rep_dr2(ARRAY2, Scell(1)%MDAtoms, Scell, numpar, Frep, dFrep) ! module "TB_Pettifor"
 
       type is (TB_Rep_Molteni)  ! TB parametrization accroding to Molteni
-         !print*, 'Configurational temperature calculations are not implemented for Molteni: Repulsive'
+         ! Second derivatives of the repulsive energy by r:
+         call dE2rep_dr2_M(ARRAY2, Scell, 1, numpar, Frep, dFrep)
 
       type is (TB_Rep_Fu)  ! TB parametrization accroding to Fu
          !print*, 'Configurational temperature calculations are not implemented for Fu: Repulsive'
 
       type is (TB_Rep_NRL)  ! TB parametrization accroding to NRL
+         ! Second derivatives of the repulsive energy by r:
          allocate(Frep(3,size(Scell(1)%MDatoms)), dFrep(3,size(Scell(1)%MDatoms)), source = 0.0d0) ! no repulsive term in NRL
 
       type is (TB_Rep_DFTB)  ! TB parametrization accroding to DFTB
+         ! Second derivatives of the repulsive energy by r:
          call dE2rep_dr2_DFTB(ARRAY2, Scell, NSC, numpar, Frep, dFrep)     ! module "TB_DFTB"
 
       type is (TB_Rep_3TB)  ! TB parametrization accroding to 3TB
