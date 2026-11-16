@@ -64,7 +64,7 @@ def main():
 
     plt.xlabel("Time (fs)", fontsize=12)
     plt.ylabel("Force-velocity correlator (eV/fs)", fontsize=12)
-    plt.title(r"$\langle \mathrm{Force} \times \mathrm{velocity} \rangle$")
+    plt.title(r"$\langle \mathrm{Force} \cdot \mathrm{velocity} \rangle$")
     plt.legend()
     plt.grid(False)
     plt.tight_layout()

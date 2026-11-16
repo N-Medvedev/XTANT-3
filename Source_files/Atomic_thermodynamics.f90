@@ -63,7 +63,10 @@ subroutine get_atomic_distribution(numpar, Scell, NSC, matter, Emax_in, dE_in)
    ! Ta_var(5) "potential" temperature (not useful)
    ! Ta_var(6) virial temperature
    ! Ta_var(7) Configurational-sine: B=r^n*sin^2(Pi*l*s) : for n,l (not useful)
-   ! Ta_var(8) Configurational-Rugh
+   ! Ta_var(8) 2T-Configurational-Rugh
+   ! Ta_var(9) 1T-Configurational-Rugh
+   ! Ta_var(10) Attractive part of Configurational-Rugh
+   ! Ta_var(11) Repulsive part of Configurational-Rugh
    !----------------------------------
    integer :: i, Nat, j, Nsiz
    real(8) :: Emax, dE, E_shift, Ta_1_1, Ta_2_1, Ta_1_2

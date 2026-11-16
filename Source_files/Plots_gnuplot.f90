@@ -294,6 +294,10 @@ file_testmode, file_coupling, file_high_e, file_fragments)
       call gnu_at_temperatures(numpar, File_name, file_atomic_temperatures, t0, t_last, &
                'OUTPUT_atomic_temperatures.'//trim(adjustl(numpar%fig_extention))) ! below
 
+      File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_config'//trim(adjustl(sh_cmd))
+      call gnu_at_temperatures_config(numpar, File_name, file_atomic_temperatures, t0, t_last, &
+               'OUTPUT_atomic_temperatures_config.'//trim(adjustl(numpar%fig_extention))) ! below
+
       File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial'//trim(adjustl(sh_cmd))
       call gnu_at_temperatures_part(numpar, File_name, file_atomic_temperatures_part, t0, t_last, &
                'OUTPUT_atomic_temperatures_partial.'//trim(adjustl(numpar%fig_extention))) ! below
@@ -625,6 +629,11 @@ file_testmode, file_coupling, file_high_e, file_fragments)
          call gnu_at_temperatures(numpar, File_name, &
             trim(adjustl(file_atomic_temperatures(1:len(trim(adjustl(file_atomic_temperatures)))-4)))//'_CONVOLVED.dat', &
             t0, t_last, 'OUTPUT_atomic_temperatures_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
+
+         File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_config_CONVOLVED'//trim(adjustl(sh_cmd))
+         call gnu_at_temperatures_config(numpar, File_name, &
+            trim(adjustl(file_atomic_temperatures(1:len(trim(adjustl(file_atomic_temperatures)))-4)))//'_CONVOLVED.dat', &
+            t0, t_last, 'OUTPUT_atomic_temperatures_config_CONVOLVED.'//trim(adjustl(numpar%fig_extention))) ! below
 
          File_name  = trim(adjustl(file_path))//'OUTPUT_atomic_temperatures_partial_CONVOLVED'//trim(adjustl(sh_cmd))
          call gnu_at_temperatures_part(numpar, File_name, &
@@ -2050,6 +2059,41 @@ subroutine gnu_at_temperatures(numpar, File_name, file_Ta, t0, t_last, eps_name)
    call write_gnuplot_script_ending(numpar, FN, File_name, 1)
    close(FN)
 end subroutine gnu_at_temperatures
+
+
+
+subroutine gnu_at_temperatures_config(numpar, File_name, file_Ta, t0, t_last, eps_name)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   character(*), intent(in) :: File_name   ! file to create
+   character(*), intent(in) :: file_Ta ! input file
+   real(8), intent(in) :: t0, t_last	 ! time instance [fs]
+   character(*), intent(in) :: eps_name ! name of the figure
+   integer :: FN
+   real(8) :: x_tics
+   character(8) :: temp, time_order
+
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   ! Find order of the number, and set number of tics as tenth of it:
+   call order_of_time((t_last - t0), time_order, temp, x_tics)	! module "Little_subroutines"
+
+   call write_gnuplot_script_header_new(FN, numpar%ind_fig_extention, 3.0d0, x_tics, 'Configurational tempereature', &
+         'Time (fs)', 'Atomic temperature (K)', trim(adjustl(eps_name)), numpar%path_sep, 0)   ! module "Gnuplotting"
+
+   if (numpar%path_sep .EQ. '\') then	! if it is Windows
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] "', trim(adjustl(file_Ta)), '" u 1:11 w l lt rgb "blue" lw LW title "2T-Config" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:13 w l lt rgb "green" lw 2 dashtype "__" title "1T-config" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:14 w l lt rgb "black" lw LW title "1T-config att" ,\'
+      write(FN, '(a,a,a,i12,a)') '"', trim(adjustl(file_Ta)), '" u 1:15 w l lt rgb "red" dashtype "_." lw 2 title "1T-config rep" '
+   else ! It is linux
+      write(FN, '(a,es25.16,a,a,a)') 'p [', t0, ':][] \"' , trim(adjustl(file_Ta)), '\" u 1:11 w l lt rgb \"blue\" lw \"$LW\" title \"2T-Config\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:13 w l lt rgb \"green\" lw 2 dashtype \"__\" title \"1T-config\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:14 w l lt rgb \"black\" lw \"$LW\" title \"1T-config att\" ,\'
+      write(FN, '(a,a,a,i12,a)') '\"', trim(adjustl(file_Ta)), '\" u 1:15 w l lt rgb \"red\" dashtype \"_.\" lw 2 title \"1T-config rep\" '
+   endif
+   call write_gnuplot_script_ending(numpar, FN, File_name, 1)
+   close(FN)
+end subroutine gnu_at_temperatures_config
 
 
 

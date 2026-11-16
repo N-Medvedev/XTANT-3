@@ -1430,11 +1430,12 @@ subroutine write_atomic_properties(time, Scell, NSC, matter, numpar) ! atomic pa
       Scell(NSC)%Sa_eq_num, Scell(NSC)%Sa_conf, Scell(NSC)%Sa_tot
 
       ! kinetic; entropic; distributional; fluctuational; "potential"; configurational etc.:
-      write(numpar%FN_Ta, '(12es25.16)') &
+      write(numpar%FN_Ta, '(15es25.16)') &
       time, &
       Scell(NSC)%Ta_var(1), Scell(NSC)%Ta_var(2), Scell(NSC)%Ta_var(3), Scell(NSC)%Ta_var(4), &
       Scell(NSC)%Ta_var(5), Scell(NSC)%Ta_var(6), Scell(NSC)%Ta_var(7), Scell(NSC)%Ta_var(8), &
-      Scell(NSC)%Fv, Scell(NSC)%Tconf, Scell(NSC)%Tconf2
+      Scell(NSC)%Fv, Scell(NSC)%Tconf, Scell(NSC)%Tconf2, &
+      Scell(NSC)%Ta_var(9), Scell(NSC)%Ta_var(10), Scell(NSC)%Ta_var(11)
 
       ! partial temperatures along X,Y,Z:
       write(numpar%FN_Ta_part, '(7es25.16)') time, &
@@ -2628,8 +2629,9 @@ subroutine create_output_files(Scell, matter, laser, numpar)
       file_atomic_temperatures = trim(adjustl(file_path))//trim(adjustl(m_atomic_temperatures))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))
       numpar%FN_Ta = FN
-      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)  config  F*v   conf  hyperconf')
-      call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K] [eV/fs]   [K]   [K]')
+      call create_file_header(numpar%FN_Ta, '#Time kin   entropic distr fluct  pot   virial  sin^2(1)'// &
+                              '  config  F*v   conf  hyperconf      1T-config   1T-conf-att 1T-conf-rep')
+      call create_file_header(numpar%FN_Ta, '#[fs] [K]   [K]  [K]   [K]   [K]   [K]   [K]   [K] [eV/fs]   [K]   [K]     [K]   [K]   [K]')
 
       file_atomic_temperatures = trim(adjustl(file_path))//trim(adjustl(m_atomic_temperatures_partial))
       open(NEWUNIT=FN, FILE = trim(adjustl(file_atomic_temperatures)))

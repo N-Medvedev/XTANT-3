@@ -257,6 +257,8 @@ file_testmode, file_coupling, file_high_e, file_fragments)
 
       call Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_last, 'OUTPUT_atomic_temperatures.py') ! below
 
+      call Python_plot_config_temperatures(numpar, file_atomic_temperatures, t0, t_last, 'OUTPUT_atomic_temperatures_config.py') ! below
+
       call Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_part, t0, t_last, 'OUTPUT_atomic_temperatures_partial.py') ! below
    endif
 
@@ -507,6 +509,8 @@ file_testmode, file_coupling, file_high_e, file_fragments)
             call Python_plot_entropy_atomic(numpar, file_atomic_entropy, t0, t_last, 'OUTPUT_atomic_entropy_CONVOLVED.py', convolved=.true.) ! below
 
             call Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_last, 'OUTPUT_atomic_temperatures_CONVOLVED.py', convolved=.true.) ! below
+
+            call Python_plot_config_temperatures(numpar, file_atomic_temperatures, t0, t_last, 'OUTPUT_atomic_temperatures_config_CONVOLVED.py', convolved=.true.) ! below
 
             call Python_plot_at_temperatures_part(numpar, file_atomic_temperatures_part, t0, t_last, &
             'OUTPUT_atomic_temperatures_partial_CONVOLVED.py', convolved=.true.) ! below
@@ -2065,7 +2069,7 @@ subroutine Python_plot_force_velocity_correlator(numpar, file_force_velocity, t0
    !----------------
    integer :: FN, i, Nsiz
    integer, dimension(:), allocatable :: col_nums
-   character(30), dimension(:), allocatable :: col_labels, linestyle
+   character(50), dimension(:), allocatable :: col_labels, linestyle
    character(300) :: File_name, Plot_name, Data_file_name
 
    ! Py script file:
@@ -2079,7 +2083,8 @@ subroutine Python_plot_force_velocity_correlator(numpar, file_force_velocity, t0
    allocate(linestyle(Nsiz))
 
    col_nums(1) = 1
-   col_labels(1) = '"<F*v>"'
+   !col_labels(1) = '"<F*v>"'
+   col_labels(1) = 'r"$\langle \mathrm{F} \cdot \mathrm{v} \rangle$"'
    linestyle(1) = '"-"'
 
    Plot_name = 'OUTPUT_force_velocity'
@@ -2094,7 +2099,7 @@ subroutine Python_plot_force_velocity_correlator(numpar, file_force_velocity, t0
    call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
       'Time (fs)', 'Force-velocity correlator (eV/fs)', 'Force-velocity correlator', &
       "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
-      x_min=t0, x_max=t_last, l_style=linestyle)     ! below
+      x_min=t0, x_max=t_last, l_style=linestyle, add_vert_line=.true.)     ! below
 
    close(FN)
    deallocate(col_nums, col_labels, linestyle)
@@ -2155,6 +2160,64 @@ subroutine Python_plot_at_temperatures(numpar, file_atomic_temperatures, t0, t_l
    close(FN)
    deallocate(col_nums, col_labels, linestyle)
 end subroutine Python_plot_at_temperatures
+
+
+
+subroutine Python_plot_config_temperatures(numpar, file_atomic_temperatures, t0, t_last, script_name, convolved)
+   type(Numerics_param), intent(in) :: numpar ! numerical parameters, including MC energy cut-off
+   real(8), intent(in) :: t0, t_last      ! starting and ending time
+   character(*), intent(in) :: file_atomic_temperatures, script_name ! file with energy levels, script
+   logical, intent(in), optional :: convolved   ! is it a convolved copy of files
+   !----------------
+   integer :: FN, i, Nsiz
+   integer, dimension(:), allocatable :: col_nums
+   character(30), dimension(:), allocatable :: col_labels, linestyle
+   character(300) :: File_name, Plot_name, Data_file_name
+
+   ! Py script file:
+   File_name  = trim(adjustl(numpar%output_path))//trim(adjustl(numpar%path_sep))//trim(adjustl(script_name))
+   open(NEWUNIT=FN, FILE = trim(adjustl(File_name)), action="write", status="replace")
+
+   Nsiz = 4
+
+   allocate(col_nums(Nsiz), source = 0)
+   allocate(col_labels(Nsiz))
+   allocate(linestyle(Nsiz))
+
+
+   col_nums(1) = 10
+   col_labels(1) = '"2T-config"'
+   linestyle(1) = '"--"'
+
+   col_nums(2) = 12
+   col_labels(2) = '"1T-config"'
+   linestyle(2) = '"-"'
+
+   col_nums(3) = 13
+   col_labels(3) = '"1T-config-att"'
+   linestyle(3) = '(0,(5,2,1,2,1,2))'
+
+   col_nums(4) = 14
+   col_labels(4) = '"1T-config-rep"'
+   linestyle(4) = '"-."'
+
+   Plot_name = 'OUTPUT_atomic_temperatures_config'
+   Data_file_name = file_atomic_temperatures
+   if (present(convolved)) then
+      if (convolved) then
+         Plot_name = trim(adjustl(Plot_name))//'_CONVOLVED'
+         Data_file_name  = trim(adjustl(file_atomic_temperatures(1:len(trim(adjustl(file_atomic_temperatures)))-4)))//'_CONVOLVED.dat'
+      endif
+   endif
+
+   call Create_python_plot(FN, trim(adjustl(Data_file_name)), col_nums, col_labels, &
+      'Time (fs)', 'Atomic temperature (K)', 'Configurational temperatures', &
+      "best", trim(adjustl(Plot_name)), trim(adjustl(numpar%fig_extention)), &
+      x_min=t0, x_max=t_last, l_style=linestyle)     ! below
+
+   close(FN)
+   deallocate(col_nums, col_labels, linestyle)
+end subroutine Python_plot_config_temperatures
 
 
 
@@ -4219,7 +4282,8 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_labels, &
       set_x_log, set_y_log, &
       l_style, &
       Data_file2, col_nums2, col_labels2, &
-      colors_inverted &
+      colors_inverted, &
+      add_vert_line &
       )
    integer, intent(in) :: FN  ! file number (must be opened)
    character(*), intent(in) :: Data_file  ! data file to plot data from
@@ -4235,12 +4299,12 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_labels, &
    character(*), intent(in), optional :: Data_file2   ! data file #2 to plot data from
    integer, dimension(:), intent(in), optional :: col_nums2      ! array of columns to plot #2
    character(*), dimension(:), allocatable, intent(in), optional :: col_labels2    ! array of column labels #2
-   logical, intent(in), optional :: colors_inverted
+   logical, intent(in), optional :: colors_inverted, add_vert_line
    !------------
    character(100) :: x_min_txt, x_max_txt, y_min_txt, y_max_txt, x_tics_text, y_tics_text, temp_txt
    character(25) :: ch_var
    character(3) :: font_size
-   logical :: tics_present, color_inverse, ls_present
+   logical :: tics_present, color_inverse, ls_present, add_vertical_line
    integer :: i, N_cols
    !------------
 
@@ -4255,6 +4319,9 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_labels, &
    else ! use default
       color_inverse = .false. ! by default, don't invert
    endif
+
+   add_vertical_line = .false.
+   if (present(add_vert_line)) add_vertical_line = add_vert_line
 
    ! Total number of curves to be plotted:
    N_cols = size(col_nums)
@@ -4453,6 +4520,15 @@ subroutine Create_python_plot(FN, Data_file, col_nums, col_labels, &
    endif
    !-----------------------
 
+   if (add_vertical_line) then
+      write(FN,'(a)') 'plt.axhline('
+      write(FN,'(a)') 'y=0.0,'
+      write(FN,'(a)') "color='black',"
+      write(FN,'(a)') "linestyle='-',"
+      write(FN,'(a)') 'linewidth=0.5,'
+      write(FN,'(a)') 'alpha=0.7,'
+      write(FN,'(a)') 'zorder=0)'
+   endif
 
    ! Now add the details to the plot:
    ! Set axes:

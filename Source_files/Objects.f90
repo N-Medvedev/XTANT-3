@@ -708,17 +708,31 @@ type Super_cell
    type(MC_atoms), dimension(:), allocatable :: MChole ! number of holes in each shell of each atom
    real(8) :: Nph	! current number of absorbed photons
    real(8) :: Q		! mean unballanced charge per atom: <Ne_emit/Na>
-   ! Other data:
-   real(8) :: Ne_CB	! current number of electrons in CB only (above the band gap)
+
+   ! Various temperatures (not all of them make a lot of sense):
+   real(8) :: Ta_var(11)     ! [K] various definition of temperature: kinetic, configurational, etc.
+   ! Ta_var(1) kinetic temperature
+   ! Ta_var(2) "entropic" kinetic temperature (not useful)
+   ! Ta_var(3) kinetic temperature from numerical distribution (for cross-checking)
+   ! Ta_var(4) fluctuational temperature
+   ! Ta_var(5) "potential" temperature (not useful)
+   ! Ta_var(6) virial temperature
+   ! Ta_var(7) Configurational-sine: B=r^n*sin^2(Pi*l*s) : for n,l (not useful)
+   ! Ta_var(8) 2T-Configurational-Rugh
+   ! Ta_var(9) 1T-Configurational-Rugh
+   ! Ta_var(10) Attractive part of Configurational-Rugh
+   ! Ta_var(11) Repulsive part of Configurational-Rugh
    real(8) :: Te, Ta, Tconf, Tconf2   ! [K] temperature of electrons, kinetic temperature of atoms, (configurational Ta)
    real(8) :: Ta_init   ! desired initial atomic temperature [K] (as defined in the input file)
-   real(8) :: Ta_var(8)     ! [K] various definition of temperature: kinetic, configurational, etc.
    real(8) :: Ta_r_var(6)   ! [K] dimension-resolved temperatures along X,Y,Z
    real(8) :: Ta_conf_run_average(10)     ! [K] laset 10 points of Ta_config for running average
    integer :: Ta_conf_run_average_count = 0     ! number of steps for running average (updated as time progresses)
    real(8) :: Fv  ! <F*v> force-velocity correlator
    real(8), dimension(:), allocatable :: Ta_sub    ! [K] temperatures of different sublattices
    real(8) :: TeeV, TaeV ! [eV] electrons and atoms temperatures
+
+   ! Other data:
+   real(8) :: Ne_CB	! current number of electrons in CB only (above the band gap)
    real(8) :: Pressure	! [Pa] pressure in the atomic system
    real(8), dimension(3,3) :: Stress	! [Pa] stress tensor in the atomic system
    real(8) :: Pot_Pressure  ! [Pa] potential contribution to pressure (without kinteic energy of atoms)

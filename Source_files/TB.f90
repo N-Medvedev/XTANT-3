@@ -47,7 +47,8 @@ use TB_Pettifor, only : dHij_s, Attract_TB_Forces_Press, dErdr_s, dErdr_Pressure
                      Complex_Hamil_tot, Attract_TB_Forces_Press, get_Erep_s, dErdr_Pressure_s, Construct_M_Vs, &
                      dHij_r, dE2rep_dr2, dHij_r_response
 use TB_Molteni, only : dHij_s_M, Attract_TB_Forces_Press_M, dErdr_s_M, dErdr_Pressure_s_M, construct_TB_H_Molteni, &
-                     Complex_Hamil_tot_Molteni, Attract_TB_Forces_Press_M, get_Erep_s_M, dErdr_Pressure_s_M
+                     Complex_Hamil_tot_Molteni, Attract_TB_Forces_Press_M, get_Erep_s_M, dErdr_Pressure_s_M, &
+                     Construct_M_Vs_M, Construct_M_d2Vs_M, dHij_r_M, dHij_r_response_M, dE2rep_dr2_M
 use TB_NRL, only : get_dHij_drij_NRL, dErdr_s_NRL, Construct_Vij_NRL, construct_TB_H_NRL, Complex_Hamil_NRL, &
                      get_Erep_s_NRL, dErdr_Pressure_s_NRL, Loewdin_Orthogonalization_c, m_two_third, &
                      Attract_TB_Forces_Press_NRL, Loewdin_Orthogonalization_c8, &
@@ -4631,30 +4632,29 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
 
 
    !-----------------------------------------------
-   ! Dont' delete, very useful test for debugging:
-   ! Check separate repulsive and attractive parts in single-temperature limit:
-!    F_sum_rep = SUM( Frep(1,:)*F(1,:) + Frep(2,:)*F(2,:) + Frep(3,:)*F(3,:) )
-!    F_sum_att = SUM( Fatr(1,:)*F(1,:) + Fatr(2,:)*F(2,:) + Fatr(3,:)*F(3,:) )
-!    dF_sum_rep = SUM( dFrep(:,:) )
-!    dF_sum_att = SUM( dFatr(:,:) )
-!    F_sum = SUM( F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:) )
-!    dF_sum = SUM( (dF(1,:) + dF(2,:) + dF(3,:)) )
-!    ! Configurational tempreature in 1-temperature limit:
+   ! Save single-temperature (Ta == Te) versions of configurational temrpeautre,
+   ! its separate repulsive and attractive parts:
+   F_sum_rep = SUM( Frep(1,:)*F(1,:) + Frep(2,:)*F(2,:) + Frep(3,:)*F(3,:) )
+   F_sum_att = SUM( Fatr(1,:)*F(1,:) + Fatr(2,:)*F(2,:) + Fatr(3,:)*F(3,:) )
+   dF_sum_rep = SUM( dFrep(:,:) )
+   dF_sum_att = SUM( dFatr(:,:) )
+   F_sum = SUM( F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:) )
+   dF_sum = SUM( (dF(1,:) + dF(2,:) + dF(3,:)) )
+
+   ! 1T-Configurational-Rugh:
+   Scell(1)%Ta_var(9) = F_sum/dF_sum/g_kb_EV
+   ! Attractive part of Configurational-Rugh:
+   Scell(1)%Ta_var(10) = F_sum_att/dF_sum_att/g_kb_EV
+   ! Repulsive part of Configurational-Rugh:
+   Scell(1)%Ta_var(11) = F_sum_rep/dF_sum_rep/g_kb_EV
+
+   !    ! Configurational tempreature in 1-temperature limit:
 !    Tconf1 = F_sum/dF_sum/g_kb_EV
 !    write(*,'(a,f,a,f,a,f,a,f)') 'Trep [K]=', F_sum_rep/dF_sum_rep/g_kb_EV, ' Tatt [K]=', F_sum_att/dF_sum_att/g_kb_EV, &
 !            ' Tconf [K]=', F_sum/dF_sum/g_kb_EV, ' Tkin [K]=', Scell(NSC)%Ta
+
+
    !-----------------------------------------------
-
-
-!    ! This definition only works for Ta=Te, the standard approximation; in our case, does not work, see corrected expression below!
-!    if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
-!       Tconf = 0.0d0  ! [K]
-!    else  ! defined:
-!       Tconf = F_sum / dF_sum    ! [eV]
-!       Tconf = Tconf*g_kb	! [eV] -> [K]
-!    endif
-   !write(*,'(a,f,f,f)') '1:', F_sum, dF_sum, Tconf
-
    ! 2) Configurational temperature (B=F) derived definition for Ta /= Te:
    F_sum = SUM( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) )
 
@@ -4672,7 +4672,7 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
       Tconf = F_sum / dF_sum    ! [eV]
       Tconf = Tconf*g_kb	! [eV] -> [K]
    endif
-   Scell(1)%Tconf = Tconf
+   Scell(1)%Tconf = Tconf     ! Two-temperature configurational temperature
 
 !     Testing various tempreatures definitions:
 !    write(*,'(6(a,g0))') 'Trep [K]=', F_sum_rep/dF_sum_rep/g_kb_EV, ' Tatt [K]=', F_sum_att/dF_sum_att/g_kb_EV, &
@@ -4680,7 +4680,8 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
 
    !write(*,'(a,f,f,f,f)') '2:', F_sum, dF_temp, 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV, Tconf
 
-   ! 3) Hyperconfigurational (second moment configurational) temperature (B=F^2*F):
+   !-----------------------------------------------
+   ! 3) Hyperconfigurational (second moment configurational) temperature (B=F^2*F) for Ta /= Te:
    F_sum2 = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) * &
                ( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) ) )
 
@@ -4753,8 +4754,8 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
    real(8), dimension(:,:,:), allocatable :: M_Vij, M_dVij, M_d2Vij, M_SVij, M_dSVij, M_d2SVij  ! radial functions, derivatives
    real(8), dimension(:,:,:), allocatable :: M_lmn, M_x1, M_xrr                                 ! directional cosines
    real(8), dimension(:,:), allocatable :: M_Aij_x_Ei  ! energy-weighted density matrix
-
    integer :: i, N, NSC
+
    
    NSC = 1  ! one supercell only
 
@@ -4778,14 +4779,30 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
          call dHij_r(ARRAY, Scell(1)%MDatoms, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, Fatr, dFatr) ! module "TB_Pettifor"
 
          ! exact Hessian diagonal: frozen term + electronic response (fixed occupations):
-         call dHij_r_response(ARRAY, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, dFresp)
+         if (numpar%Nonadiabat) then      ! assume non-equilibrium distribution function, no Te:
+            call dHij_r_response(ARRAY, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, dFresp)
+         else ! assumes Fermi-distribution, additional derivative of fe for given Te (testing):
+            call dHij_r_response(ARRAY, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, dFresp, fermi_following=.true., Te=Scell(NSC)%TeeV)
+         endif
+
          !print*, 'dFatr=', dFatr, dFresp
          dFatr = dFatr + dFresp     ! combine both terms, "frozen" and responce
 
          deallocate(dFresp)   ! clean up
 
       type is (TB_H_Molteni)  ! TB parametrization accroding to Molteni
-         !print*, 'Configurational temperature calculations are not implemented for Molteni: Attractive'
+         ! Construct array of functions Vs and dVs for all pairs of atoms to use for forces:
+         call Construct_M_Vs_M(Scell, 1, ARRAY, numpar, M_Vs, M_dVs)            ! existing (hopping integrals and first derivatives)
+         call Construct_M_d2Vs_M(Scell, 1, ARRAY, numpar, M_d2Vs)               ! new
+         ! Density matrices from the current eigenvectors / occupations:
+         call Construct_Aij(numpar, Scell(1)%Ha, Scell(1)%fe, Scell(1)%Aij)     ! density matrix from the current eigenvectors
+         ! Frozen terms: first derivative (forces by r) and second derivative:
+         call dHij_r_M(numpar, Scell, 1, Scell(1)%Aij, M_Vs, M_dVs, M_d2Vs, Fatr, dFatr)
+         call dHij_r_response_M(numpar, Scell, 1, M_Vs, M_dVs, M_d2Vs, dFresp)  ! exact Hessian = frozen + response
+
+         dFatr = dFatr + dFresp
+         deallocate(dFresp, M_Vs, M_dVs, M_d2Vs)
+
       type is (TB_H_Fu)  ! TB parametrization accroding to Fu
          !print*, 'Configurational temperature calculations are not implemented for Fu: Attractive'
       type is (TB_H_NRL)  ! TB parametrization accroding to NRL
@@ -4853,15 +4870,18 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
          call dE2rep_dr2(ARRAY2, Scell(1)%MDAtoms, Scell, numpar, Frep, dFrep) ! module "TB_Pettifor"
 
       type is (TB_Rep_Molteni)  ! TB parametrization accroding to Molteni
-         !print*, 'Configurational temperature calculations are not implemented for Molteni: Repulsive'
+         ! Second derivatives of the repulsive energy by r:
+         call dE2rep_dr2_M(ARRAY2, Scell, 1, numpar, Frep, dFrep)
 
       type is (TB_Rep_Fu)  ! TB parametrization accroding to Fu
          !print*, 'Configurational temperature calculations are not implemented for Fu: Repulsive'
 
       type is (TB_Rep_NRL)  ! TB parametrization accroding to NRL
+         ! Second derivatives of the repulsive energy by r:
          allocate(Frep(3,size(Scell(1)%MDatoms)), dFrep(3,size(Scell(1)%MDatoms)), source = 0.0d0) ! no repulsive term in NRL
 
       type is (TB_Rep_DFTB)  ! TB parametrization accroding to DFTB
+         ! Second derivatives of the repulsive energy by r:
          call dE2rep_dr2_DFTB(ARRAY2, Scell, NSC, numpar, Frep, dFrep)     ! module "TB_DFTB"
 
       type is (TB_Rep_3TB)  ! TB parametrization accroding to 3TB
