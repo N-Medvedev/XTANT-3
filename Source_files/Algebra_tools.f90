@@ -94,7 +94,7 @@ public :: double_factorial, Heavyside_tau, get_factorial, Two_Vect_Matr, Det_3x3
 public :: mkl_matrix_mult, Reciproc, check_hermiticity, Laguerre_up_to_6, d_Laguerre_up_to_6, check_symmetry
 public :: d_detH_d_h_a_b, Two_Matr_mult, get_eigenvalues_from_eigenvectors, fit_parabola_to_3points
 public :: make_cubic_splines, cubic_function, d_cubic_function, c8_diagonalize, mkl_matrix_mult_c8, numerical_delta, &
-          d2_cubic_function, nonorth_response_for_atom
+          d2_cubic_function, nonorth_response_for_atom, orth_response_for_atom
 !=======================================
 
  contains

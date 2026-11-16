@@ -28,7 +28,7 @@ use Universal_constants
 use Objects
 use Atomic_tools, only : shortest_distance, Reciproc_rel_to_abs
 use Electron_tools, only : find_band_gap
-use Algebra_tools, only : Reciproc, sym_diagonalize
+use Algebra_tools, only : Reciproc, sym_diagonalize, orth_response_for_atom
 
 #ifdef MPI_USED
    use MPI_subroutines, only : do_MPI_Allreduce

@@ -4632,30 +4632,29 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
 
 
    !-----------------------------------------------
-   ! Dont' delete, very useful test for debugging:
-   ! Check separate repulsive and attractive parts in single-temperature limit:
-!    F_sum_rep = SUM( Frep(1,:)*F(1,:) + Frep(2,:)*F(2,:) + Frep(3,:)*F(3,:) )
-!    F_sum_att = SUM( Fatr(1,:)*F(1,:) + Fatr(2,:)*F(2,:) + Fatr(3,:)*F(3,:) )
-!    dF_sum_rep = SUM( dFrep(:,:) )
-!    dF_sum_att = SUM( dFatr(:,:) )
-!    F_sum = SUM( F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:) )
-!    dF_sum = SUM( (dF(1,:) + dF(2,:) + dF(3,:)) )
-!    ! Configurational tempreature in 1-temperature limit:
+   ! Save single-temperature (Ta == Te) versions of configurational temrpeautre,
+   ! its separate repulsive and attractive parts:
+   F_sum_rep = SUM( Frep(1,:)*F(1,:) + Frep(2,:)*F(2,:) + Frep(3,:)*F(3,:) )
+   F_sum_att = SUM( Fatr(1,:)*F(1,:) + Fatr(2,:)*F(2,:) + Fatr(3,:)*F(3,:) )
+   dF_sum_rep = SUM( dFrep(:,:) )
+   dF_sum_att = SUM( dFatr(:,:) )
+   F_sum = SUM( F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:) )
+   dF_sum = SUM( (dF(1,:) + dF(2,:) + dF(3,:)) )
+
+   ! 1T-Configurational-Rugh:
+   Scell(1)%Ta_var(9) = F_sum/dF_sum/g_kb_EV
+   ! Attractive part of Configurational-Rugh:
+   Scell(1)%Ta_var(10) = F_sum_att/dF_sum_att/g_kb_EV
+   ! Repulsive part of Configurational-Rugh:
+   Scell(1)%Ta_var(11) = F_sum_rep/dF_sum_rep/g_kb_EV
+
+   !    ! Configurational tempreature in 1-temperature limit:
 !    Tconf1 = F_sum/dF_sum/g_kb_EV
 !    write(*,'(a,f,a,f,a,f,a,f)') 'Trep [K]=', F_sum_rep/dF_sum_rep/g_kb_EV, ' Tatt [K]=', F_sum_att/dF_sum_att/g_kb_EV, &
 !            ' Tconf [K]=', F_sum/dF_sum/g_kb_EV, ' Tkin [K]=', Scell(NSC)%Ta
+
+
    !-----------------------------------------------
-
-
-!    ! This definition only works for Ta=Te, the standard approximation; in our case, does not work, see corrected expression below!
-!    if (abs(dF_sum) <= abs(F_sum) * 1.0d-10) then ! undifined, or infinite
-!       Tconf = 0.0d0  ! [K]
-!    else  ! defined:
-!       Tconf = F_sum / dF_sum    ! [eV]
-!       Tconf = Tconf*g_kb	! [eV] -> [K]
-!    endif
-   !write(*,'(a,f,f,f)') '1:', F_sum, dF_sum, Tconf
-
    ! 2) Configurational temperature (B=F) derived definition for Ta /= Te:
    F_sum = SUM( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) )
 
@@ -4673,7 +4672,7 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
       Tconf = F_sum / dF_sum    ! [eV]
       Tconf = Tconf*g_kb	! [eV] -> [K]
    endif
-   Scell(1)%Tconf = Tconf
+   Scell(1)%Tconf = Tconf     ! Two-temperature configurational temperature
 
 !     Testing various tempreatures definitions:
 !    write(*,'(6(a,g0))') 'Trep [K]=', F_sum_rep/dF_sum_rep/g_kb_EV, ' Tatt [K]=', F_sum_att/dF_sum_att/g_kb_EV, &
@@ -4681,7 +4680,8 @@ subroutine Get_configurational_temperature(Scell, numpar, matter)
 
    !write(*,'(a,f,f,f,f)') '2:', F_sum, dF_temp, 0.5d0*SUM( F(1,:)*Fatr(1,:) + F(2,:)*Fatr(2,:) + F(3,:)*Fatr(3,:) ) / Scell(1)%TeeV, Tconf
 
-   ! 3) Hyperconfigurational (second moment configurational) temperature (B=F^2*F):
+   !-----------------------------------------------
+   ! 3) Hyperconfigurational (second moment configurational) temperature (B=F^2*F) for Ta /= Te:
    F_sum2 = SUM( (F(1,:)*F(1,:) + F(2,:)*F(2,:) + F(3,:)*F(3,:)) * &
                ( (Frep(1,:) + 0.5d0*Fatr(1,:))*F(1,:) + (Frep(2,:) + 0.5d0*Fatr(2,:))*F(2,:) + (Frep(3,:) + 0.5d0*Fatr(3,:))*F(3,:) ) )
 
@@ -4779,7 +4779,12 @@ subroutine get_derivatives_and_forces_r(Scell, numpar, matter, F, dF, Frep_out, 
          call dHij_r(ARRAY, Scell(1)%MDatoms, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, Fatr, dFatr) ! module "TB_Pettifor"
 
          ! exact Hessian diagonal: frozen term + electronic response (fixed occupations):
-         call dHij_r_response(ARRAY, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, dFresp)
+         if (numpar%Nonadiabat) then      ! assume non-equilibrium distribution function, no Te:
+            call dHij_r_response(ARRAY, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, dFresp)
+         else ! assumes Fermi-distribution, additional derivative of fe for given Te (testing):
+            call dHij_r_response(ARRAY, Scell, numpar, M_Vs, M_dVs, M_d2Vs, M_cos, dFresp, fermi_following=.true., Te=Scell(NSC)%TeeV)
+         endif
+
          !print*, 'dFatr=', dFatr, dFresp
          dFatr = dFatr + dFresp     ! combine both terms, "frozen" and responce
 
