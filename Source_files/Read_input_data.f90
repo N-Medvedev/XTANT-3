@@ -65,34 +65,34 @@ PRIVATE
 character(25) :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_INPUT_MINIMUM, m_INPUT_ALL, m_Atomic_parameters, &
                   m_Hubbard_U, m_Communication, m_COPY_INPUT, m_form_factors, m_Short_range_potentials, m_chemical_file
 
-character(70), parameter :: m_starline = '*************************************************************'
-character(70), parameter :: m_dashline = '-------------------------------------------------------------'
-character(70), parameter :: m_warnline = ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::'
-character(*), parameter :: m_numbers = '0123456789'
-character(*), parameter :: m_LowCase = 'abcdefghijklmnopqrstuvwxyz'
-character(*), parameter :: m_UpCase  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+character(70), parameter :: m_starline    = '*************************************************************'
+character(70), parameter :: m_dashline    = '-------------------------------------------------------------'
+character(70), parameter :: m_warnline    = ':::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::'
+character(*), parameter :: m_numbers      = '0123456789'
+character(*), parameter :: m_LowCase      = 'abcdefghijklmnopqrstuvwxyz'
+character(*), parameter :: m_UpCase       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
-character(15), parameter :: m_INFO_directory = 'INFO'  ! folder with the help-texts
-character(15), parameter :: m_INFO_file = 'INFO.txt'  ! file with some XTANT info
-character(15), parameter :: m_HELP_file = 'HELP.txt'  ! file with the helpful info
-character(15), parameter :: m_QUOTES_file = 'Quotes.txt' ! file with comforting quotes
-character(25), parameter :: m_List_ofmaterials = 'List_of_materials.txt'  ! list of materials existing
+character(15), parameter :: m_INFO_directory    = 'INFO'  ! folder with the help-texts
+character(15), parameter :: m_INFO_file         = 'INFO.txt'  ! file with some XTANT info
+character(15), parameter :: m_HELP_file         = 'HELP.txt'  ! file with the helpful info
+character(15), parameter :: m_QUOTES_file       = 'Quotes.txt' ! file with comforting quotes
+character(25), parameter :: m_List_ofmaterials  = 'List_of_materials.txt'  ! list of materials existing
 
-parameter (m_INPUT_directory = 'INPUT_DATA')    ! directory with all the input data
-parameter (m_INPUT_MATERIAL = 'INPUT_MATERIAL') ! old format, material and pulse parameters
-parameter (m_NUMERICAL_PARAMETERS = 'NUMERICAL_PARAMETERS') ! old format, numerical parameters
-parameter (m_INPUT_MINIMUM = 'INPUT_MINIMUM') ! format with only parameters different from default (to be depricated)
-parameter (m_INPUT_ALL = 'INPUT') ! new format with all parameters together
-parameter (m_COPY_INPUT = 'Copy_input.txt') ! file with info on preparing multiple input files by copying INPUT
-parameter (m_Atomic_parameters = 'Atomic_parameters') ! data-file with atomic parameters
-parameter (m_Hubbard_U = 'INPUT_Hubbard_U.dat') ! data-file with Hubbard-U parameters (for SCC calculations)
-parameter (m_form_factors = 'Atomic_form_factors.dat')      ! file with atomic form factors parameters
-parameter (m_Communication = 'Communication.txt')  ! file for comunication with the user
+parameter (m_INPUT_directory        = 'INPUT_DATA')    ! directory with all the input data
+parameter (m_INPUT_MATERIAL         = 'INPUT_MATERIAL') ! old format, material and pulse parameters
+parameter (m_NUMERICAL_PARAMETERS   = 'NUMERICAL_PARAMETERS') ! old format, numerical parameters
+parameter (m_INPUT_MINIMUM          = 'INPUT_MINIMUM') ! format with only parameters different from default (to be depricated)
+parameter (m_INPUT_ALL              = 'INPUT') ! new format with all parameters together
+parameter (m_COPY_INPUT             = 'Copy_input.txt') ! file with info on preparing multiple input files by copying INPUT
+parameter (m_Atomic_parameters      = 'Atomic_parameters') ! data-file with atomic parameters
+parameter (m_Hubbard_U              = 'INPUT_Hubbard_U.dat') ! data-file with Hubbard-U parameters (for SCC calculations)
+parameter (m_form_factors           = 'Atomic_form_factors.dat')      ! file with atomic form factors parameters
+parameter (m_Communication          = 'Communication.txt')  ! file for comunication with the user
 parameter (m_Short_range_potentials = '!Short_range_potentials') ! path to short-range potentials stored
-parameter (m_chemical_file = 'Chemical_formula.txt')   ! default name of file with chemical formula
+parameter (m_chemical_file          = 'Chemical_formula.txt')   ! default name of file with chemical formula
 
-character(25), parameter :: m_short_pot = 'TB_short.txt'  ! filename for short-range potential
-character(25), parameter :: m_wall_pot = 'TB_wall.txt'  ! obsolete filename for short-range potential
+character(25), parameter :: m_short_pot   = 'TB_short.txt'  ! filename for short-range potential
+character(25), parameter :: m_wall_pot    = 'TB_wall.txt'  ! obsolete filename for short-range potential
 
 public :: m_INPUT_directory, m_INPUT_MATERIAL, m_NUMERICAL_PARAMETERS, m_Atomic_parameters, m_Hubbard_U, &
           m_INFO_directory, m_INFO_file, m_HELP_file, m_QUOTES_file, m_starline, m_INPUT_MINIMUM, m_INPUT_ALL, &
@@ -4827,7 +4827,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    case (:1)      ! periodic
       numpar%boundary_scheme(2) = 1
    case (2:4)     ! absorbing, reflecting, white
-      numpar%boundary_scheme(2) = temp1
+      numpar%boundary_scheme(2) = temp2
    case default   ! undefined, assume periodic
       numpar%boundary_scheme(2) = 1
    end select
@@ -4836,7 +4836,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    case (:1)      ! periodic
       numpar%boundary_scheme(3) = 1
    case (2:4)     ! absorbing, reflecting, white
-      numpar%boundary_scheme(3) = temp1
+      numpar%boundary_scheme(3) = temp3
    case default   ! undefined, assume periodic
       numpar%boundary_scheme(3) = 1
    end select
