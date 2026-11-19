@@ -62,6 +62,9 @@ def main():
     alpha=0.7,
     zorder=0)
 
+    plt.xlim(None,None)
+    plt.ylim(None,None)
+
     plt.xlabel("Time (fs)", fontsize=12)
     plt.ylabel("Force-velocity correlator (eV/fs)", fontsize=12)
     plt.title(r"$\langle \mathrm{Force} \cdot \mathrm{velocity} \rangle$")

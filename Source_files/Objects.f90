@@ -90,7 +90,7 @@ endtype Basis_set_STO
 
 
 !+111111111111111111111111111111111111111111111
-! 1) TB parameters by Pettifor (or similar):
+! 1) TB parameters:
 ! a) repulsive part:
 type, EXTENDS (TB_repulsive) :: TB_Rep_Pettifor	! repulsive potential coefficients:
    real(8) :: E0_TB   ! [eV] constant shift of the Hamiltonain, H. Jeschke PhD thesis, p. 142
@@ -130,8 +130,8 @@ end type TB_Rep_BOP
 
 type, EXTENDS (TB_repulsive) :: TB_Rep_DFTB	! repulsive potential coefficients:
    ! www.dftb.org
-   character(200) :: param_name  ! name of parameterization used
-   integer :: ToP   ! type of parameterization: 0=polinomial, 1=spline
+   character(200) :: param_name = '' ! name of parameterization used
+   integer :: ToP = -1  ! type of parameterization: 0=polinomial, 1=spline (-1 undefined)
    ! Polinomial coefficients:
    real(8), dimension(8) :: c   ! [eV] c2, . . . , c9 are the polynomial coefficients
    real(8) :: rcut  ! [A] cutoff radius of the repulsive interaction (can be zero, if the repulsive is described by splines)

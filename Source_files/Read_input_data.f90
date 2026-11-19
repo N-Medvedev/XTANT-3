@@ -1291,9 +1291,12 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
    class(TB_Exp_wall),  dimension(:,:), allocatable, intent(out) :: TB_Expwall	! parameters of the exponential wall with TB
    type(Error_handling), intent(inout) :: Err	! error save
    !========================================================
-   integer FN, count_lines, Reason, INFO, i, j !, N
+   integer :: FN, count_lines, Reason, INFO, i, j !, N
+   integer :: FN_TB_H, FN_REP
    character(500) :: Error_descript, Folder_name, File_name, Path, ch_temp
-   logical file_exists, file_opened, read_well
+   character(500) :: File_name_TB_H, File_name_REP
+   logical :: file_exists, file_opened, read_well
+   logical :: file_H_TB_exists, file_H_rep_exists
    !Folder_name = 'INPUT_DATA'//trim(adjustl(numpar%path_sep))
    Folder_name = trim(adjustl(numpar%input_path))
    Path = trim(adjustl(Folder_name))//trim(adjustl(matter%Name))
@@ -1301,8 +1304,10 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
    do_first:do i = 1, matter%N_KAO
       do_second:do j = 1, matter%N_KAO
 
-         !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
-         ! First read Hamiltonian (hopping integrals) parametrization:
+         !-----------------------------------------
+         ! Read the specification of the TB parametrization:
+         ! First read Hamiltonian (hopping integrals) specification:
+         !-----------------------------------------
          write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
          write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Hamiltonian_parameters.txt'
          inquire(file=trim(adjustl(File_name)),exist=file_exists)
@@ -1313,9 +1318,15 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             if (numpar%verbose) write(*,'(a)') 'Trying '//trim(adjustl(File_name))//' file instead.'
             inquire(file=trim(adjustl(File_name)),exist=file_exists)
          endif
-         
+
+         ! Found file with the TB Hamiltonian parameters, mark it:
+         File_name_TB_H = File_name
+         file_H_TB_exists = file_exists
+
          if (file_exists) then
             FN=106
+            FN_TB_H = FN ! mark the file unit
+
             open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
             inquire(file=trim(adjustl(File_name)),opened=file_opened)
             if (.not.file_opened) then
@@ -1443,6 +1454,157 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                print*, trim(adjustl(Error_descript))
                goto 3421
             end select
+         else ! file_exists (file_H_TB_exists)
+            write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
+            call Save_error_details(Err, 1, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3421
+         endif ! file_exists
+
+
+         !-----------------------------------------
+         ! Secodnd, read the repulsive part specifications:
+         !-----------------------------------------
+         write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
+         write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Repulsive_parameters.txt'
+         inquire(file=trim(adjustl(File_name)),exist=file_exists)
+
+         if (.not.file_exists) then ! try general name used for multiple species at once:
+            if (numpar%verbose) write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
+            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), 'TB_Repulsive_parameters.txt'
+            if (numpar%verbose) write(*,'(a)') 'Trying '//trim(adjustl(File_name))//' file instead.'
+            inquire(file=trim(adjustl(File_name)),exist=file_exists)
+         endif
+
+         ! Found file with the repulsive part parameters, mark it:
+         File_name_REP = File_name
+         file_H_rep_exists = file_exists
+
+         if (file_exists) then
+            FN=107
+            FN_REP = FN ! mark the file unit
+            open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
+            inquire(file=trim(adjustl(File_name)),opened=file_opened)
+            if (.not.file_opened) then
+               Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
+               call Save_error_details(Err, 2, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               goto 3421
+            endif
+            count_lines = 0
+            INFO = 0
+
+            ! Read first line to figure out which TB parametrization is used for this material:
+            read(FN,*,IOSTAT=Reason) ch_temp
+            call read_file(Reason, count_lines, read_well)
+            if (.not. read_well) then
+               write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
+               call Save_error_details(Err, 3, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               goto 3421
+            endif
+
+            if (j .GT. 1) then
+               if (trim(adjustl(ch_temp)) .NE. trim(adjustl(TB_Repuls(1,1)%Param)) ) then
+                  write(Error_descript,'(a,$)') 'Format of TB-repulseive parameters "', trim(adjustl(ch_temp)), '" does not coinside with parameters in the first file "'//trim(adjustl(TB_Repuls(1,1)%Param))//'" .Inconsistent parameterization is not allowed.'
+                  call Save_error_details(Err, 5, Error_descript)
+                  print*, trim(adjustl(Error_descript))
+                  goto 3421
+               endif
+            endif
+
+            ! Make the TB parameters of a selected class, depending on what is read in the file:
+            select case (trim(adjustl(ch_temp)))
+            case ('Pettifor')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_Pettifor::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for Pettifor parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+            case ('Molteni')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_Molteni::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for Molteni parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+             case ('Fu')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_Fu::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for Fu parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+            case ('Mehl', 'NRL')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_NRL::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for NRL parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+            case ('DFTB')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_DFTB::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for DFTB parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+
+               ! Read the type of the Repulsive potential to be used: polynomial vs spline
+               Error_descript = ''
+               select type (TB_Repuls)
+               type is (TB_Rep_DFTB)
+                  call read_DFTB_TB_repulsive(FN, i,j, TB_Repuls, Error_descript, INFO)    ! below
+               endselect
+               if (INFO .NE. 0) then
+                  Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name))
+                  call Save_error_details(Err, INFO, Err%Err_descript)
+                  print*, trim(adjustl(Err%Err_descript))
+                  goto 3421
+               endif
+
+            case ('DFTB_no_repulsion', 'DFTB_no_repulsive', 'DFTB_no_rep')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_DFTB_no::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for DFTB parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+            case ('3TB')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_3TB::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for 3TB parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+            case ('BOP')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_BOP::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for BOP parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+            case ('xTB')
+               if (.not.allocated(TB_Repuls)) then
+                  allocate(TB_Rep_xTB::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for xTB parametrization
+                  TB_Repuls%Param = ''
+               endif
+               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
+            case default
+               write(Error_descript,'(a,a,a,$)') 'Wrong TB-repulsive parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
+               call Save_error_details(Err, 4, Error_descript)
+               print*, trim(adjustl(Error_descript))
+               goto 3421
+            end select
+         else ! file_exists
+            write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
+            call Save_error_details(Err, 1, Error_descript)
+            print*, trim(adjustl(Error_descript))
+            goto 3421
+         endif ! file_exists (file_H_rep_exists)
+
+
+         !-----------------------------------------
+         ! Read the parameters of the TB Hamiltonian:
+         !-----------------------------------------
+
+         if (file_H_TB_exists) then
+            ! Use the TB Hamiltonian file:
+            File_name = File_name_TB_H
+            FN = FN_TB_H
 
             ! Prior to use TB parameters, we now always have to find out which class they belong to:
             select type (TB_Hamil)
@@ -1509,6 +1671,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                   print*, trim(adjustl(Err%Err_descript))
                   goto 3421
                endif
+
             type is (TB_H_3TB)
                Error_descript = ''
                call read_3TB_TB_Params(FN, i, j, TB_Hamil, numpar, matter, Error_descript, INFO) ! below
@@ -1544,12 +1707,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                endif
             end select
             close(FN)
-         else
-            write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
-            call Save_error_details(Err, 1, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 3421
-         endif
+         endif ! file_H_TB_exists
 
          ! Derine basis size from the index:
          numpar%N_basis_size = basis_set_size(numpar%basis_size_ind) ! module "Little_subroutines"
@@ -1557,116 +1715,15 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
          !pause 'numpar%basis_size_ind'
 
 
-         !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
-         ! Now read repulsive part parametrization:
-         write(ch_temp,'(a)') trim(adjustl(matter%Atoms(i)%Name))//'_'//trim(adjustl(matter%Atoms(j)%Name))//'_'
-         write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), trim(adjustl(ch_temp))//'TB_Repulsive_parameters.txt'
-         inquire(file=trim(adjustl(File_name)),exist=file_exists)
+         !-----------------------------------------
+         ! Read the parameters of the Repulsive part:
+         !-----------------------------------------
+         if (file_H_rep_exists) then
+            ! Use the TB Hamiltonian file:
+            File_name = File_name_REP
+            FN = FN_REP
 
-         if (.not.file_exists) then ! try general name used for multiple species at once:
-
-            if (numpar%verbose) write(*,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found. '
-            write(File_name, '(a,a,a)') trim(adjustl(Path)), trim(adjustl(numpar%path_sep)), 'TB_Repulsive_parameters.txt'
-            if (numpar%verbose) write(*,'(a)') 'Trying '//trim(adjustl(File_name))//' file instead.'
-            inquire(file=trim(adjustl(File_name)),exist=file_exists)
-         endif
-
-         if (file_exists) then
-            FN=107
-            open(UNIT=FN, FILE = trim(adjustl(File_name)), status = 'old', action='READ')
-            inquire(file=trim(adjustl(File_name)),opened=file_opened)
-            if (.not.file_opened) then
-               Error_descript = 'File '//trim(adjustl(File_name))//' could not be opened, the program terminates'
-               call Save_error_details(Err, 2, Error_descript)
-               print*, trim(adjustl(Error_descript))
-               goto 3421
-            endif
-            count_lines = 0
-            INFO = 0
-
-            ! Read first line to figure out which TB parametrization is used for this material:
-            read(FN,*,IOSTAT=Reason) ch_temp
-            call read_file(Reason, count_lines, read_well)
-            if (.not. read_well) then
-               write(Error_descript,'(a,i5,a,$)') 'Could not read line ', count_lines, ' in file '//trim(adjustl(File_name))
-               call Save_error_details(Err, 3, Error_descript)
-               print*, trim(adjustl(Error_descript))
-               goto 3421
-            endif
-
-            if (j .GT. 1) then
-               if (trim(adjustl(ch_temp)) .NE. trim(adjustl(TB_Repuls(1,1)%Param)) ) then
-                  write(Error_descript,'(a,$)') 'Format of TB-repulseive parameters "', trim(adjustl(ch_temp)), '" does not coinside with parameters in the first file "'//trim(adjustl(TB_Repuls(1,1)%Param))//'" .Inconsistent parameterization is not allowed.'
-                  call Save_error_details(Err, 5, Error_descript)
-                  print*, trim(adjustl(Error_descript))
-                  goto 3421
-               endif
-            endif
-
-            ! Make the TB parameters of a selected class, depending on what is read in the file:
-            select case (trim(adjustl(ch_temp)))
-            case ('Pettifor')
-               if (.not.allocated(TB_Repuls)) then
-                  allocate(TB_Rep_Pettifor::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for Pettifor parametrization
-                  TB_Repuls%Param = ''
-               endif
-               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
-            case ('Molteni')
-               if (.not.allocated(TB_Repuls)) then
-                  allocate(TB_Rep_Molteni::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for Molteni parametrization
-                  TB_Repuls%Param = ''
-               endif
-               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
-             case ('Fu')
-               if (.not.allocated(TB_Repuls)) then
-                  allocate(TB_Rep_Fu::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for Fu parametrization
-                  TB_Repuls%Param = ''
-               endif
-               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
-            case ('Mehl', 'NRL')
-               if (.not.allocated(TB_Repuls)) then
-                  allocate(TB_Rep_NRL::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for NRL parametrization
-                  TB_Repuls%Param = ''
-               endif
-               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
-            case ('DFTB')
-               if (.not.allocated(TB_Repuls)) then
-                  allocate(TB_Rep_DFTB::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for DFTB parametrization
-                  TB_Repuls%Param = ''
-               endif
-               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
-            case ('DFTB_no_repulsion', 'DFTB_no_repulsive', 'DFTB_no_rep')
-               if (.not.allocated(TB_Repuls)) then
-                  allocate(TB_Rep_DFTB_no::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for DFTB parametrization
-                  TB_Repuls%Param = ''
-               endif
-               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
-            case ('3TB')
-               if (.not.allocated(TB_Repuls)) then
-                  allocate(TB_Rep_3TB::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for 3TB parametrization
-                  TB_Repuls%Param = ''
-               endif
-               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
-            case ('BOP')
-               if (.not.allocated(TB_Repuls)) then
-                  allocate(TB_Rep_BOP::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for BOP parametrization
-                  TB_Repuls%Param = ''
-               endif
-               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
-            case ('xTB')
-               if (.not.allocated(TB_Repuls)) then
-                  allocate(TB_Rep_xTB::TB_Repuls(matter%N_KAO,matter%N_KAO)) ! make it for xTB parametrization
-                  TB_Repuls%Param = ''
-               endif
-               TB_Repuls(i,j)%Param = trim(adjustl(ch_temp))
-            case default
-               write(Error_descript,'(a,a,a,$)') 'Wrong TB-repulsive parametrization class '//trim(adjustl(ch_temp))//' specified in file '//trim(adjustl(File_name))
-               call Save_error_details(Err, 4, Error_descript)
-               print*, trim(adjustl(Error_descript))
-               goto 3421
-            end select
-
-            ! Prior to use TB parameters, we now always have to find out which class they belong to:
+            ! Prior to use TB parameters, we have to find out which class they belong to:
             select type (TB_Repuls)
             type is (TB_Rep_Pettifor)
                Error_descript = ''
@@ -1699,14 +1756,16 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
                Error_descript = ''
                ! There is no repulsive part in NRL
             type is (TB_Rep_DFTB)
+               ! The repulsive part is part of the skf-file, read above
                Error_descript = ''
-               call read_DFTB_TB_repulsive(FN, i,j, TB_Repuls, Error_descript, INFO)    ! below
-               if (INFO .NE. 0) then
-                  Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name)) 
-                  call Save_error_details(Err, INFO, Err%Err_descript)
-                  print*, trim(adjustl(Err%Err_descript))
-                  goto 3421
-               endif
+
+               !call read_DFTB_TB_repulsive(FN, i,j, TB_Repuls, Error_descript, INFO)    ! below
+               !if (INFO .NE. 0) then
+               !   Err%Err_descript = trim(adjustl(Error_descript))//' in file '//trim(adjustl(File_name))
+               !   call Save_error_details(Err, INFO, Err%Err_descript)
+               !   print*, trim(adjustl(Err%Err_descript))
+               !   goto 3421
+               !endif
             type is (TB_Rep_DFTB_no)
                Error_descript = ''
                ! Nothing to read, since repulsive potential is not provided in skf-file
@@ -1723,12 +1782,7 @@ subroutine read_TB_parameters(matter, numpar, TB_Repuls, TB_Hamil, TB_Waals, TB_
             end select
             close(FN)
             !PAUSE 'READING INPUT'
-         else
-            write(Error_descript,'(a,$)') 'File '//trim(adjustl(File_name))//' could not be found, the program terminates'
-            call Save_error_details(Err, 1, Error_descript)
-            print*, trim(adjustl(Error_descript))
-            goto 3421
-         endif
+         endif ! (file_H_rep_exists)
          
          
          !rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
@@ -3258,24 +3312,31 @@ subroutine read_Fu_TB_repulsive(FN, i, j, TB_Repuls, Error_descript, INFO)
 end subroutine read_Fu_TB_repulsive
 
 
-subroutine read_DFTB_TB_repulsive(FN, i,j, TB_Repuls, Error_descript, INFO)
+subroutine read_DFTB_TB_repulsive(FN, i,j, TB_Repuls, Error_descript, INFO, skipline)
    integer, intent(in) :: FN ! file number where to read from
    integer, intent(in) :: i, j ! numbers of pair of elements for which we read the data
    type(TB_Rep_DFTB), dimension(:,:), intent(inout) ::  TB_Repuls ! parameters of the Hamiltonian of TB
    character(*), intent(out) :: Error_descript	! error save
    integer, intent(out) :: INFO	! error description
+   logical, optional, intent(in) :: skipline
+   !--------------------------
    integer count_lines, Reason
-   logical read_well
+   logical read_well, skip
    count_lines = 1
 
-   ! Skip first line as it are already defined within the Hamiltonian file
-   read(FN,*,IOSTAT=Reason)
-   call read_file(Reason, count_lines, read_well)
-   if (.not. read_well) then
-      write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
-      INFO = 3
-      goto 3415
-   endif
+   skip = .true.  ! by default, assume the first line was already read
+   if (present(skipline)) skip = skipline
+
+   ! Skip line with parametrization name as it was already defined within the Hamiltonian file
+   if (skip) then ! skip
+      read(FN,*,IOSTAT=Reason)
+      call read_file(Reason, count_lines, read_well)
+      if (.not. read_well) then
+         write(Error_descript,'(a,i3)') 'Could not read line ', count_lines
+         INFO = 3
+         goto 3415
+      endif
+   endif ! skip
 
    read(FN,*,IOSTAT=Reason) TB_Repuls(i,j)%ToP   ! type of parameterization: 0=polinomial, 1=spline
    call read_file(Reason, count_lines, read_well)

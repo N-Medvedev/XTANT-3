@@ -66,6 +66,9 @@ subroutine read_skf_file(FN, TB_Hamil, TB_Rep, ToA, error_message, rep_pot)
    if (requested_ToP /= 0 .and. requested_ToP /= 1) then
       error_message = 'Invalid DFTB repulsive-potential type: expected 0 (polynomial) or 1 (spline)'
       goto 2012
+   else
+      !print*, 'Type of repulsive DFTB parametrization: ', requested_ToP
+      !pause 'read_skf_file'
    endif
 
    temp_ch = ''   ! to start with
