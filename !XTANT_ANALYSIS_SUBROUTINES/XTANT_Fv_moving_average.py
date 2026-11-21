@@ -38,10 +38,22 @@ def main():
     y = data[:, 1]
 
     # Moving average
-    y_ma = moving_average(y, args.window)
-
+    #y_ma = moving_average(y, args.window)
     # Corresponding x values for the averaged data
-    offset = (args.window - 1) // 2
+    #offset = (args.window - 1) // 2
+    #x_ma = x[offset:offset + len(y_ma)]
+
+    # Moving average:
+    window = args.window
+    if window > len(y):
+        print(f"WARNING: window ({window}) > number of points ({len(y)}); "
+              f"using window = {len(y)}")
+        window = len(y)
+
+    y_ma = moving_average(y, window)
+
+    # Corresponding x values for the averaged data:
+    offset = (window - 1) // 2
     x_ma = x[offset:offset + len(y_ma)]
 
     plt.figure(figsize=(5, 4))
@@ -51,7 +63,8 @@ def main():
 
     plt.plot(x_ma, y_ma,
              lw=1.5, color="red",
-             label=f"{args.window}-point moving average")
+             #label=f"{args.window}-point moving average")
+             label=f"{window}-point moving average")
     
     
     plt.axhline(

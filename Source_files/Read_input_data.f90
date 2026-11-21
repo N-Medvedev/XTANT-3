@@ -5065,7 +5065,7 @@ subroutine read_numerical_parameters(File_name, matter, numpar, laser, Scell, us
    endif
 
    ! Col#1: -1=nonperturbative (default), 0=no coupling, 1=dynamical coupling, 2=Fermi golden rule (DO NOT USE!)
-   ! Col#2: 0=Maxwellian atomic distribution; 1=transient nonequilibrium
+   ! Col#2: 0=Maxwellian atomic distribution; 1=transient nonequilibrium; 2=delta (per atom)
    read(FN, '(a)', IOSTAT=Reason) read_line
    read(read_line,*,IOSTAT=Reason) numpar%NA_kind, numpar%ind_at_distr
    if (Reason /= 0) then ! try to read just single variable (old format):
