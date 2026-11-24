@@ -523,7 +523,25 @@ subroutine unix_unlimiting()
 end subroutine unix_unlimiting
 
 
+
 subroutine Path_separator(path_sep)
+    CHARACTER(len=1), intent(out) :: path_sep   ! path separator
+    !-------------------------
+    character(len=1024) :: windir
+    integer :: stat
+
+    call get_environment_variable("WINDIR", windir, status=stat)
+
+    if (stat == 0) then ! Windows
+        path_sep = '\'
+    else                ! Not Windows
+        path_sep = '/'
+    endif
+end subroutine Path_separator
+
+
+
+subroutine Path_separator_OLD(path_sep)
    CHARACTER(len=1), intent(out) :: path_sep
    CHARACTER(len = 100) :: path
    CALL get_environment_variable("PATH",path)
@@ -535,7 +553,7 @@ subroutine Path_separator(path_sep)
        path_sep = ''
        print*, 'Path separator is not defined'    !Unknown OS
    endif 
-end subroutine Path_separator
+end subroutine Path_separator_OLD
 
 
 END MODULE Dealing_with_files

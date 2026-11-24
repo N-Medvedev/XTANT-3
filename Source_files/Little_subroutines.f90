@@ -779,11 +779,10 @@ subroutine parse_time(chtest, sec_in, c0_in, c1_in)
          case (4,6,9,11) ! 30-day month
             days = (c1(3)-0) + (30-c0(3))
          case (2) ! February
-            ! Check if it is a leap year:
-            if ( MOD(c1(1), 4) == 0) then ! it is => 29 days
-               days = (c1(3)-0) + (29-c0(3))
-            else ! it is not => 28 days
-               days = (c1(3)-0) + (28-c0(3))
+            if (is_leap_year(c1(1))) then   ! it is => 29 days
+               days = c1(3) + (29 - c0(3))
+            else    ! it is not => 28 days
+               days = c1(3) + (28 - c0(3))
             endif
          endselect
       endif
@@ -857,6 +856,13 @@ subroutine parse_time(chtest, sec_in, c0_in, c1_in)
    endif
 end subroutine parse_time
 
+
+pure logical function is_leap_year(year)
+    integer, intent(in) :: year
+
+    is_leap_year = (mod(year,400) == 0) .or. &
+                   ((mod(year,4) == 0) .and. (mod(year,100) /= 0))
+end function is_leap_year
 
 
 
