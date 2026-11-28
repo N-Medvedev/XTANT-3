@@ -1,6 +1,7 @@
 ![XTANT3_logo_small_new](https://github.com/N-Medvedev/XTANT-3/assets/104917286/4258b260-88ed-42a3-bfc5-5e228591ce27)
 
-[![DOI](https://zenodo.org/badge/490215542.svg)](https://zenodo.org/badge/latestdoi/490215542)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8392569.svg)](https://doi.org/10.5281/zenodo.8392569)
+
 
 <b>XTANT-3: X-ray-induced Thermal And Nonthermal Transitions</b>
 
